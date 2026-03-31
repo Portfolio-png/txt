@@ -29,7 +29,9 @@ class PPAgingTable extends StatelessWidget {
         ),
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final targetWidth = constraints.maxWidth > minWidth ? constraints.maxWidth : minWidth;
+            final targetWidth = constraints.maxWidth > minWidth
+                ? constraints.maxWidth
+                : minWidth;
 
             return SingleChildScrollView(
               child: SingleChildScrollView(
@@ -73,7 +75,10 @@ class _AgingHeaderRow extends StatelessWidget {
         children: [
           _AgingHeaderCell(width: _partyColumnWidth, child: Text('Party Name')),
           SizedBox(width: _columnGap),
-          _AgingHeaderCell(width: _valueColumnWidth, child: Text('Total Outstanding')),
+          _AgingHeaderCell(
+            width: _valueColumnWidth,
+            child: Text('Total Outstanding'),
+          ),
           SizedBox(width: _columnGap),
           _AgingHeaderCell(width: _valueColumnWidth, child: Text('0 - 30')),
           SizedBox(width: _columnGap),
@@ -124,21 +129,43 @@ class _AgingDataRow extends StatelessWidget {
                       row.partyName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 16, color: Color(0xFF3C3C3C), fontWeight: FontWeight.w600),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        color: Color(0xFF3C3C3C),
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                   const SizedBox(width: _columnGap),
-                  _AgingValueCell(width: _valueColumnWidth, child: Text(_currency(row.totalOutstanding))),
+                  _AgingValueCell(
+                    width: _valueColumnWidth,
+                    child: Text(_currency(row.totalOutstanding)),
+                  ),
                   const SizedBox(width: _columnGap),
-                  _AgingValueCell(width: _valueColumnWidth, child: Text(_currency(row.bucket0To30))),
+                  _AgingValueCell(
+                    width: _valueColumnWidth,
+                    child: Text(_currency(row.bucket0To30)),
+                  ),
                   const SizedBox(width: _columnGap),
-                  _AgingValueCell(width: _valueColumnWidth, child: Text(_currency(row.bucket31To60))),
+                  _AgingValueCell(
+                    width: _valueColumnWidth,
+                    child: Text(_currency(row.bucket31To60)),
+                  ),
                   const SizedBox(width: _columnGap),
-                  _AgingValueCell(width: _valueColumnWidth, child: Text(_currency(row.bucket61To90))),
+                  _AgingValueCell(
+                    width: _valueColumnWidth,
+                    child: Text(_currency(row.bucket61To90)),
+                  ),
                   const SizedBox(width: _columnGap),
-                  _AgingValueCell(width: _valueColumnWidth, child: Text(_currency(row.bucketOver90))),
+                  _AgingValueCell(
+                    width: _valueColumnWidth,
+                    child: Text(_currency(row.bucketOver90)),
+                  ),
                   const SizedBox(width: _columnGap),
-                  _AgingValueCell(width: _valueColumnWidth, child: Text(_currency(row.advance))),
+                  _AgingValueCell(
+                    width: _valueColumnWidth,
+                    child: Text(_currency(row.advance)),
+                  ),
                 ],
               ),
             ),

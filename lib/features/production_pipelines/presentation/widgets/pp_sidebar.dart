@@ -28,27 +28,31 @@ class PPSidebar extends StatelessWidget {
           const SizedBox(height: 20),
           Text('Options', style: sectionStyle),
           const SizedBox(height: 8),
-          ..._options.map((item) => Padding(
-                padding: const EdgeInsets.only(bottom: 5),
-                child: _SidebarNavItem(
-                  compact: compact,
-                  item: item,
-                  isActive: selectedKey == item.key,
-                  onTap: () => onTap(item.key),
-                ),
-              )),
+          ..._options.map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 5),
+              child: _SidebarNavItem(
+                compact: compact,
+                item: item,
+                isActive: selectedKey == item.key,
+                onTap: () => onTap(item.key),
+              ),
+            ),
+          ),
           const SizedBox(height: 12),
           Text('Configurators', style: sectionStyle),
           const SizedBox(height: 8),
-          ..._configurators.map((item) => Padding(
-                padding: const EdgeInsets.only(bottom: 5),
-                child: _SidebarNavItem(
-                  compact: compact,
-                  item: item,
-                  isActive: selectedKey == item.key,
-                  onTap: () => onTap(item.key),
-                ),
-              )),
+          ..._configurators.map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 5),
+              child: _SidebarNavItem(
+                compact: compact,
+                item: item,
+                isActive: selectedKey == item.key,
+                onTap: () => onTap(item.key),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -114,7 +118,9 @@ class _SidebarNavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bgColor = isActive ? const Color(0xFF6049E3) : const Color(0xFF13161F);
+    final bgColor = isActive
+        ? const Color(0xFF6049E3)
+        : const Color(0xFF13161F);
     final fgColor = isActive ? Colors.white : const Color(0xFFE3E3E3);
 
     return Material(
@@ -174,6 +180,10 @@ const List<_SidebarItem> _options = [
 
 const List<_SidebarItem> _configurators = [
   _SidebarItem('config_gst', 'Gst', Icons.settings_outlined),
-  _SidebarItem('production_pipelines', 'Production Pipelines', Icons.apps_outlined),
+  _SidebarItem(
+    'production_pipelines',
+    'Production Pipelines',
+    Icons.apps_outlined,
+  ),
   _SidebarItem('config_books', 'Books', Icons.book_outlined),
 ];

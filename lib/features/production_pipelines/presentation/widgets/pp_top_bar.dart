@@ -25,7 +25,7 @@ class PPTopBar extends StatelessWidget {
               if (!compact) const Spacer(),
               Expanded(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 410),
+                  constraints: const BoxConstraints(maxWidth: 873),
                   child: const _SearchInput(),
                 ),
               ),
@@ -45,7 +45,11 @@ class PPTopBar extends StatelessWidget {
                   borderRadius: BorderRadius.circular(999),
                 ),
                 alignment: Alignment.center,
-                child: const Icon(Icons.cloud, size: 24, color: Color(0xFF3BBE3D)),
+                child: const Icon(
+                  Icons.cloud,
+                  size: 24,
+                  color: Color(0xFF3BBE3D),
+                ),
               ),
             ],
           ),
@@ -61,7 +65,7 @@ class _SearchInput extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 30,
+      height: 24,
       child: TextField(
         style: const TextStyle(
           fontSize: 11,
@@ -70,15 +74,22 @@ class _SearchInput extends StatelessWidget {
         ),
         cursorColor: const Color(0xFF5E5E5E),
         cursorWidth: 1.2,
-        cursorHeight: 12,
+        cursorHeight: 10,
         textAlignVertical: TextAlignVertical.center,
         decoration: InputDecoration(
           hintText: 'Search Company',
           hintStyle: const TextStyle(fontSize: 11, color: Color(0xFF7D7D7D)),
-          prefixIcon: const Icon(Icons.search, size: 16, color: Color(0xFF6E6E6E)),
-          prefixIconConstraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+          prefixIcon: const Icon(
+            Icons.search,
+            size: 14,
+            color: Color(0xFF6E6E6E),
+          ),
+          prefixIconConstraints: const BoxConstraints(
+            minWidth: 24,
+            minHeight: 24,
+          ),
           isDense: true,
-          contentPadding: const EdgeInsets.only(top: 8, right: 10, bottom: 8),
+          contentPadding: const EdgeInsets.only(top: 6, right: 10, bottom: 6),
           filled: true,
           fillColor: const Color(0xFFF8F8F8),
           border: OutlineInputBorder(

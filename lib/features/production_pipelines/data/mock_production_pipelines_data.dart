@@ -43,11 +43,36 @@ class MockProductionPipelinesData {
   };
 
   static const List<SummaryMetric> summaryCards = [
-    SummaryMetric(id: '90_days', label: 'Pending Since', periodLabel: '90 Days', value: 20),
-    SummaryMetric(id: '1_month', label: 'Pending Since', periodLabel: '1 Month', value: 5),
-    SummaryMetric(id: '3_month', label: 'Pending Since', periodLabel: '3 Month', value: 5),
-    SummaryMetric(id: '6_month', label: 'Pending Since', periodLabel: '6 Month', value: 5),
-    SummaryMetric(id: '1_year', label: 'Pending Since', periodLabel: '1 Year', value: 5),
+    SummaryMetric(
+      id: '90_days',
+      label: 'Pending Since',
+      periodLabel: '90 Days',
+      value: 20,
+    ),
+    SummaryMetric(
+      id: '1_month',
+      label: 'Pending Since',
+      periodLabel: '1 Month',
+      value: 5,
+    ),
+    SummaryMetric(
+      id: '3_month',
+      label: 'Pending Since',
+      periodLabel: '3 Month',
+      value: 5,
+    ),
+    SummaryMetric(
+      id: '6_month',
+      label: 'Pending Since',
+      periodLabel: '6 Month',
+      value: 5,
+    ),
+    SummaryMetric(
+      id: '1_year',
+      label: 'Pending Since',
+      periodLabel: '1 Year',
+      value: 5,
+    ),
   ];
 
   static const List<AgingRow> rows = [

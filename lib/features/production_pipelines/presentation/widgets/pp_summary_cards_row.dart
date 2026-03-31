@@ -24,7 +24,7 @@ class PPSummaryCardsRow extends StatelessWidget {
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           itemCount: cards.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          separatorBuilder: (_, _) => const SizedBox(width: 8),
           itemBuilder: (context, index) => SizedBox(
             width: 220,
             child: _SummaryMetricCard(
@@ -77,12 +77,14 @@ class _SummaryMetricCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(10),
             onTap: onTap,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
               decoration: BoxDecoration(
                 color: active ? const Color(0xFFF6F4FF) : Colors.white,
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: active ? const Color(0xFF8E7EF5) : const Color(0xFFE8E8E8),
+                  color: active
+                      ? const Color(0xFF8E7EF5)
+                      : const Color(0xFFE8E8E8),
                 ),
               ),
               child: Row(
@@ -102,7 +104,10 @@ class _SummaryMetricCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 5),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2.5),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 2.5,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.white,
                             border: Border.all(color: const Color(0xFFE1DBFF)),

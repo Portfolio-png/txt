@@ -6,21 +6,21 @@ import 'production_pipelines_state.dart';
 
 class ProductionPipelinesController extends ChangeNotifier {
   ProductionPipelinesController()
-      : _state = ProductionPipelinesState(
-          selectedSidebarKey: 'production_pipelines',
-          selectedFilters: const {
-            'Party': kAllValue,
-            'Group': kAllValue,
-            'Outstanding': kAllValue,
-            'Status': kAllValue,
-          },
-          selectedRowIds: <String>{},
-          selectedSummaryCardId: null,
-          sortBy: 'partyName',
-          sortAscending: true,
-          summaryCards: MockProductionPipelinesData.summaryCards,
-          rows: MockProductionPipelinesData.rows,
-        );
+    : _state = ProductionPipelinesState(
+        selectedSidebarKey: 'production_pipelines',
+        selectedFilters: const {
+          'Party': kAllValue,
+          'Group': kAllValue,
+          'Outstanding': kAllValue,
+          'Status': kAllValue,
+        },
+        selectedRowIds: <String>{},
+        selectedSummaryCardId: null,
+        sortBy: 'partyName',
+        sortAscending: true,
+        summaryCards: MockProductionPipelinesData.summaryCards,
+        rows: MockProductionPipelinesData.rows,
+      );
 
   ProductionPipelinesState _state;
 
@@ -52,8 +52,7 @@ class ProductionPipelinesController extends ChangeNotifier {
     final sortedRows = [...rows];
     sortedRows.sort((a, b) {
       final int result = switch (_state.sortBy) {
-        'totalOutstanding' =>
-          a.totalOutstanding.compareTo(b.totalOutstanding),
+        'totalOutstanding' => a.totalOutstanding.compareTo(b.totalOutstanding),
         _ => a.partyName.compareTo(b.partyName),
       };
 

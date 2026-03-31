@@ -111,58 +111,85 @@ class PPFilterToolbar extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          filterRow,
+          const Text(
+            'Heading',
+            style: TextStyle(
+              fontSize: 20,
+              color: Color(0xFF3C3C3C),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
           const SizedBox(height: 12),
           actionButtons,
+          const SizedBox(height: 12),
+          filterRow,
           const SizedBox(height: 8),
           controls,
         ],
       );
     }
 
-    return Column(
-      children: [
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final maxWidth = constraints.maxWidth;
-            final targetFilterWidth = maxWidth >= 1280
-                ? 652.0
-                : (maxWidth * 0.62).clamp(460.0, 652.0);
-            final stackActionsBelow = maxWidth < 1200;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth;
+        final targetFilterWidth = maxWidth >= 1280
+            ? 562.0
+            : (maxWidth * 0.62).clamp(420.0, 562.0);
+        final stackRows = maxWidth < 1200;
 
-            if (stackActionsBelow) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        if (stackRows) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  SizedBox(
-                    width: targetFilterWidth,
-                    child: filterRow,
+                  const Text(
+                    'Heading',
+                    style: TextStyle(
+                      fontSize: 20,
+                      color: Color(0xFF3C3C3C),
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: actionButtons,
-                  ),
+                  const Spacer(),
+                  actionButtons,
                 ],
-              );
-            }
+              ),
+              const SizedBox(height: 12),
+              SizedBox(width: targetFilterWidth, child: filterRow),
+              const SizedBox(height: 8),
+              Align(alignment: Alignment.centerRight, child: controls),
+            ],
+          );
+        }
 
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        return Column(
+          children: [
+            Row(
               children: [
-                SizedBox(
-                  width: targetFilterWidth,
-                  child: filterRow,
+                const Text(
+                  'Heading',
+                  style: TextStyle(
+                    fontSize: 20,
+                    color: Color(0xFF3C3C3C),
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
                 const Spacer(),
                 actionButtons,
               ],
-            );
-          },
-        ),
-        const SizedBox(height: 8),
-        Align(alignment: Alignment.centerRight, child: controls),
-      ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                SizedBox(width: targetFilterWidth, child: filterRow),
+                const Spacer(),
+                controls,
+              ],
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -245,7 +272,11 @@ class _SelectedAndControls extends StatelessWidget {
                 shape: BoxShape.circle,
               ),
               alignment: Alignment.center,
-              child: const Icon(Icons.close, size: 19, color: Color(0xFF444444)),
+              child: const Icon(
+                Icons.close,
+                size: 19,
+                color: Color(0xFF444444),
+              ),
             ),
           ),
         ),
@@ -256,11 +287,7 @@ class _SelectedAndControls extends StatelessWidget {
           onTap: onSortPressed,
         ),
         const SizedBox(width: 10),
-        _ControlChip(
-          label: 'Filters',
-          icon: Icons.filter_list,
-          onTap: () {},
-        ),
+        _ControlChip(label: 'Filters', icon: Icons.filter_list, onTap: () {}),
       ],
     );
   }
@@ -348,13 +375,17 @@ class _JoinedSegmentSelectorState extends State<_JoinedSegmentSelector> {
 
   Future<void> _openMenu() async {
     final box = context.findRenderObject() as RenderBox?;
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox?;
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
     if (box == null || overlay == null) {
       return;
     }
 
     final topLeft = box.localToGlobal(Offset.zero, ancestor: overlay);
-    final bottomRight = box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlay);
+    final bottomRight = box.localToGlobal(
+      box.size.bottomRight(Offset.zero),
+      ancestor: overlay,
+    );
     final rect = Rect.fromPoints(topLeft, bottomRight);
     final menuWidth = box.size.width;
 
@@ -384,11 +415,18 @@ class _JoinedSegmentSelectorState extends State<_JoinedSegmentSelector> {
                         style: TextStyle(
                           fontSize: 12,
                           color: const Color(0xFF2F3744),
-                          fontWeight: option == widget.value ? FontWeight.w600 : FontWeight.w400,
+                          fontWeight: option == widget.value
+                              ? FontWeight.w600
+                              : FontWeight.w400,
                         ),
                       ),
                     ),
-                    if (option == widget.value) const Icon(Icons.check, size: 14, color: Color(0xFF6049E3)),
+                    if (option == widget.value)
+                      const Icon(
+                        Icons.check,
+                        size: 14,
+                        color: Color(0xFF6049E3),
+                      ),
                   ],
                 ),
               ),
@@ -418,7 +456,11 @@ class _JoinedSegmentSelectorState extends State<_JoinedSegmentSelector> {
           child: Row(
             children: [
               if (widget.showLeadingFilterIcon) ...[
-                const Icon(Icons.filter_alt_outlined, size: 12, color: Color(0xFF2F3744)),
+                const Icon(
+                  Icons.filter_alt_outlined,
+                  size: 12,
+                  color: Color(0xFF2F3744),
+                ),
                 const SizedBox(width: 6),
               ],
               Expanded(
@@ -426,7 +468,11 @@ class _JoinedSegmentSelectorState extends State<_JoinedSegmentSelector> {
                   '${widget.label}: ${widget.value}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF2F3744), fontWeight: FontWeight.w500),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF2F3744),
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
               const SizedBox(width: 6),
@@ -434,7 +480,11 @@ class _JoinedSegmentSelectorState extends State<_JoinedSegmentSelector> {
                 turns: _open ? 0.5 : 0,
                 duration: const Duration(milliseconds: 180),
                 curve: Curves.easeOut,
-                child: const Icon(Icons.keyboard_arrow_down, size: 16, color: Color(0xFF5E5E5E)),
+                child: const Icon(
+                  Icons.keyboard_arrow_down,
+                  size: 16,
+                  color: Color(0xFF5E5E5E),
+                ),
               ),
             ],
           ),
@@ -503,7 +553,8 @@ class _AnimatedFilterSelector extends StatefulWidget {
   final bool compact;
 
   @override
-  State<_AnimatedFilterSelector> createState() => _AnimatedFilterSelectorState();
+  State<_AnimatedFilterSelector> createState() =>
+      _AnimatedFilterSelectorState();
 }
 
 class _AnimatedFilterSelectorState extends State<_AnimatedFilterSelector> {
@@ -511,13 +562,17 @@ class _AnimatedFilterSelectorState extends State<_AnimatedFilterSelector> {
 
   Future<void> _openAnchoredMenu() async {
     final box = context.findRenderObject() as RenderBox?;
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox?;
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
     if (box == null || overlay == null) {
       return;
     }
 
     final topLeft = box.localToGlobal(Offset.zero, ancestor: overlay);
-    final bottomRight = box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlay);
+    final bottomRight = box.localToGlobal(
+      box.size.bottomRight(Offset.zero),
+      ancestor: overlay,
+    );
     final rect = Rect.fromPoints(topLeft, bottomRight);
 
     setState(() => _open = true);
@@ -575,43 +630,39 @@ class _AnimatedFilterSelectorState extends State<_AnimatedFilterSelector> {
         borderRadius: BorderRadius.circular(8),
         onTap: _openAnchoredMenu,
         child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
-        padding: const EdgeInsets.symmetric(horizontal: 2),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                widget.text,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: widget.textStyle,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  widget.text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: widget.textStyle,
+                ),
               ),
-            ),
-            const SizedBox(width: 6),
-            AnimatedRotation(
-              turns: _open ? 0.5 : 0,
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeOutCubic,
-              child: Icon(
-                Icons.keyboard_arrow_down,
-                size: widget.compact ? 20 : 16,
-                color: const Color(0xFF5E5E5E),
+              const SizedBox(width: 6),
+              AnimatedRotation(
+                turns: _open ? 0.5 : 0,
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                child: Icon(
+                  Icons.keyboard_arrow_down,
+                  size: widget.compact ? 20 : 16,
+                  color: const Color(0xFF5E5E5E),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
 }
 
-enum _ActionVariant {
-  tertiary,
-  tertiaryActive,
-  primary,
-}
+enum _ActionVariant { tertiary, tertiaryActive, primary }
 
 class _TextActionButton extends StatelessWidget {
   const _TextActionButton({
@@ -639,14 +690,14 @@ class _TextActionButton extends StatelessWidget {
           foregroundColor: isPrimary
               ? Colors.white
               : isActiveTertiary
-                  ? const Color(0xFF6049E3)
-                  : const Color(0xFF5E5E5E),
+              ? const Color(0xFF6049E3)
+              : const Color(0xFF5E5E5E),
           side: BorderSide(
             color: isPrimary
                 ? const Color(0xFF6049E3)
                 : isActiveTertiary
-                    ? const Color(0xFF8E7EF5)
-                    : const Color(0xFFDCDCDC),
+                ? const Color(0xFF8E7EF5)
+                : const Color(0xFFDCDCDC),
             width: isActiveTertiary ? 2 : 1,
           ),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),

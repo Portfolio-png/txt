@@ -1,19 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
-import 'features/production_pipelines/presentation/screens/production_pipelines_screen.dart';
+import 'app/shell/app_shell.dart';
+import 'app/shell/navigation_provider.dart';
+import 'features/inventory/data/repositories/api_inventory_repository.dart';
+import 'features/inventory/data/repositories/inventory_repository.dart';
+import 'features/inventory/presentation/providers/inventory_provider.dart';
 
 void main() {
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({super.key, this.inventoryRepository});
+
+  final InventoryRepository? inventoryRepository;
 
   @override
   Widget build(BuildContext context) {
     final base = ThemeData(
       useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF6049E3)),
+      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF6C63FF)),
       scaffoldBackgroundColor: const Color(0xFFF1F1F1),
       fontFamily: 'Segoe UI',
       textTheme: const TextTheme(
@@ -24,16 +31,37 @@ class MyApp extends StatelessWidget {
       ),
     );
 
-    return MaterialApp(
-      title: 'Paper',
-      debugShowCheckedModeBanner: false,
-      theme: base.copyWith(
-        textTheme: base.textTheme.apply(
-          bodyColor: const Color(0xFF3C3C3C),
-          displayColor: const Color(0xFF3C3C3C),
+    return MultiProvider(
+      providers: [
+        Provider<InventoryRepository>(
+          create: (_) => inventoryRepository ?? _buildInventoryRepository(),
         ),
+        ChangeNotifierProvider(create: (_) => NavigationProvider()),
+        ChangeNotifierProxyProvider<InventoryRepository, InventoryProvider>(
+          create: (context) =>
+              InventoryProvider(repository: context.read<InventoryRepository>())
+                ..initialize(),
+          update: (context, repository, previous) =>
+              previous ?? InventoryProvider(repository: repository)
+                ..initialize(),
+        ),
+      ],
+      child: MaterialApp(
+        title: 'Paper',
+        debugShowCheckedModeBanner: false,
+        theme: base.copyWith(
+          textTheme: base.textTheme.apply(
+            bodyColor: const Color(0xFF3C3C3C),
+            displayColor: const Color(0xFF3C3C3C),
+          ),
+        ),
+        home: const AppShell(),
       ),
-      home: const ProductionPipelinesScreen(),
     );
+  }
+
+  InventoryRepository _buildInventoryRepository() {
+    const baseUrl = 'http://10.225.57.229:8080';
+    return ApiInventoryRepository(baseUrl: baseUrl, useMockResponses: false);
   }
 }
