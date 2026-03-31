@@ -20,6 +20,26 @@ class PipelineTemplate {
   final List<ProcessNode> nodes;
   final List<MaterialFlow> flows;
 
+  factory PipelineTemplate.fromJson(Map<String, dynamic> json) {
+    return PipelineTemplate(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+      stageLabels: List<String>.from(
+        json['stageLabels'] as List<dynamic>? ?? const [],
+      ),
+      laneLabels: List<String>.from(
+        json['laneLabels'] as List<dynamic>? ?? const [],
+      ),
+      nodes: (json['nodes'] as List<dynamic>? ?? const [])
+          .map((item) => ProcessNode.fromJson(item as Map<String, dynamic>))
+          .toList(growable: false),
+      flows: (json['flows'] as List<dynamic>? ?? const [])
+          .map((item) => MaterialFlow.fromJson(item as Map<String, dynamic>))
+          .toList(growable: false),
+    );
+  }
+
   PipelineTemplate copyWith({
     String? id,
     String? name,
@@ -38,5 +58,17 @@ class PipelineTemplate {
       nodes: nodes ?? this.nodes,
       flows: flows ?? this.flows,
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'description': description,
+      'stageLabels': stageLabels,
+      'laneLabels': laneLabels,
+      'nodes': nodes.map((node) => node.toJson()).toList(),
+      'flows': flows.map((flow) => flow.toJson()).toList(),
+    };
   }
 }

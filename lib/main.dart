@@ -6,6 +6,7 @@ import 'app/shell/navigation_provider.dart';
 import 'features/inventory/data/repositories/api_inventory_repository.dart';
 import 'features/inventory/data/repositories/inventory_repository.dart';
 import 'features/inventory/presentation/providers/inventory_provider.dart';
+import 'features/production_pipelines/data/repositories/pipeline_run_repository.dart';
 
 void main() {
   runApp(const MyApp());
@@ -36,6 +37,9 @@ class MyApp extends StatelessWidget {
         Provider<InventoryRepository>(
           create: (_) => inventoryRepository ?? _buildInventoryRepository(),
         ),
+        Provider<PipelineRunRepository>(
+          create: (_) => _buildPipelineRunRepository(),
+        ),
         ChangeNotifierProvider(create: (_) => NavigationProvider()),
         ChangeNotifierProxyProvider<InventoryRepository, InventoryProvider>(
           create: (context) =>
@@ -61,7 +65,18 @@ class MyApp extends StatelessWidget {
   }
 
   InventoryRepository _buildInventoryRepository() {
-    const baseUrl = 'http://10.225.57.229:8080';
+    const baseUrl = String.fromEnvironment(
+      'PAPER_API_BASE_URL',
+      defaultValue: 'https://paper-backend.fly.dev',
+    );
     return ApiInventoryRepository(baseUrl: baseUrl, useMockResponses: false);
+  }
+
+  PipelineRunRepository _buildPipelineRunRepository() {
+    const baseUrl = String.fromEnvironment(
+      'PAPER_API_BASE_URL',
+      defaultValue: 'https://paper-backend.fly.dev',
+    );
+    return ApiPipelineRunRepository(baseUrl: baseUrl);
   }
 }
