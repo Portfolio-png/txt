@@ -151,6 +151,7 @@ class ApiInventoryRepository implements InventoryRepository {
         grade: current.grade,
         thickness: current.thickness,
         supplier: current.supplier,
+        unitId: current.unitId,
         unit: current.unit,
         notes: current.notes,
         isParent: current.isParent,
@@ -205,6 +206,7 @@ class ApiInventoryRepository implements InventoryRepository {
         grade: current.grade,
         thickness: current.thickness,
         supplier: current.supplier,
+        unitId: current.unitId,
         unit: current.unit,
         notes: current.notes,
         isParent: current.isParent,
@@ -257,6 +259,7 @@ class ApiInventoryRepository implements InventoryRepository {
       grade: input.grade,
       thickness: input.thickness,
       supplier: input.supplier,
+      unitId: input.unitId,
       unit: input.unit,
       notes: input.notes,
       isParent: true,
@@ -279,6 +282,7 @@ class ApiInventoryRepository implements InventoryRepository {
           grade: input.grade,
           thickness: input.thickness,
           supplier: input.supplier,
+          unitId: input.unitId,
           unit: input.unit,
           notes: input.notes,
           isParent: false,
@@ -352,7 +356,16 @@ class ApiInventoryRepository implements InventoryRepository {
     if (body.isEmpty) {
       return null;
     }
-    return jsonDecode(body);
+    try {
+      return jsonDecode(body);
+    } on FormatException {
+      return {
+        'success': false,
+        'error': body.trim().isEmpty
+            ? 'Unexpected response from server.'
+            : body.trim(),
+      };
+    }
   }
 
   String _generateParentBarcode() {

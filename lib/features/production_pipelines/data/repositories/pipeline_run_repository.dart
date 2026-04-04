@@ -196,7 +196,16 @@ class ApiPipelineRunRepository implements PipelineRunRepository {
     if (body.isEmpty) {
       return null;
     }
-    return jsonDecode(body);
+    try {
+      return jsonDecode(body);
+    } on FormatException {
+      return {
+        'success': false,
+        'error': body.trim().isEmpty
+            ? 'Unexpected response from server.'
+            : body.trim(),
+      };
+    }
   }
 }
 

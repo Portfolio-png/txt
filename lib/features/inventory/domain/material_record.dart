@@ -7,6 +7,7 @@ class MaterialRecord {
     required this.grade,
     required this.thickness,
     required this.supplier,
+    this.unitId,
     this.unit = '',
     this.notes = '',
     required this.createdAt,
@@ -24,6 +25,7 @@ class MaterialRecord {
   final String grade;
   final String thickness;
   final String supplier;
+  final int? unitId;
   final String unit;
   final String notes;
   final DateTime createdAt;

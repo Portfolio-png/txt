@@ -4,9 +4,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../features/groups/presentation/screens/groups_screen.dart';
 import '../../features/inventory/presentation/screens/inventory_screen.dart';
 import '../../features/inventory/presentation/screens/material_scan_screen.dart';
+import '../../features/items/presentation/screens/items_screen.dart';
+import '../../features/clients/presentation/screens/clients_screen.dart';
+import '../../features/orders/presentation/screens/orders_screen.dart';
 import '../../features/production_pipelines/presentation/screens/production_pipelines_screen.dart';
+import '../../features/units/presentation/screens/units_screen.dart';
 import 'app_sidebar.dart';
 import 'app_topbar.dart';
 import 'navigation_provider.dart';
@@ -22,7 +27,7 @@ class AppShell extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isMobile = constraints.maxWidth < 900;
-        final sidebarWidth = constraints.maxWidth >= 1280 ? 248.0 : 90.0;
+        const sidebarWidth = 272.0;
 
         return Scaffold(
           backgroundColor: const Color(0xFFF4F5F9),
@@ -43,7 +48,7 @@ class AppShell extends StatelessWidget {
                 if (!isMobile)
                   SizedBox(
                     width: sidebarWidth,
-                    child: AppSidebar(compact: constraints.maxWidth < 1280),
+                    child: const AppSidebar(compact: false),
                   ),
                 Expanded(
                   child: _DesktopContentFrame(
@@ -128,7 +133,29 @@ class _ShellContentSwitcher extends StatelessWidget {
               'inventory' => const InventoryScreen(),
               'inventory_scan' => const MaterialScanScreen(),
               'production_pipelines' => const ProductionPipelinesScreen(),
-              _ => const _DashboardPlaceholder(),
+              'orders' => const OrdersScreen(),
+              'configurator' => const _ModulePlaceholder(
+                title: 'Configurator',
+                description:
+                    'Choose a master-data section from the sidebar to manage configuration records.',
+                icon: Icons.tune_outlined,
+              ),
+              'configurator_clients' => const ClientsScreen(),
+              'configurator_vendors' => const _ModulePlaceholder(
+                title: 'Vendors',
+                description:
+                    'Vendor master data will appear here inside Configurator.',
+                icon: Icons.storefront_outlined,
+              ),
+              'configurator_items' => const ItemsScreen(),
+              'configurator_groups' => const GroupsScreen(),
+              'configurator_units' => const UnitsScreen(),
+              _ => const _ModulePlaceholder(
+                title: 'Dashboard',
+                description:
+                    'The shell is ready. Inventory and Production are live, and dashboard widgets can be added into this slot next.',
+                icon: Icons.dashboard_customize_outlined,
+              ),
             },
           ),
         );
@@ -137,8 +164,16 @@ class _ShellContentSwitcher extends StatelessWidget {
   }
 }
 
-class _DashboardPlaceholder extends StatelessWidget {
-  const _DashboardPlaceholder();
+class _ModulePlaceholder extends StatelessWidget {
+  const _ModulePlaceholder({
+    required this.title,
+    required this.description,
+    required this.icon,
+  });
+
+  final String title;
+  final String description;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -154,21 +189,17 @@ class _DashboardPlaceholder extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              Icons.dashboard_customize_outlined,
-              size: 42,
-              color: Color(0xFF6C63FF),
-            ),
+            Icon(icon, size: 42, color: const Color(0xFF6C63FF)),
             const SizedBox(height: 16),
             Text(
-              'Dashboard placeholder',
+              title,
               style: Theme.of(
                 context,
               ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
             Text(
-              'The shell is ready. Inventory and Production Pipelines are live, and dashboard widgets can be added into this slot next.',
+              description,
               textAlign: TextAlign.center,
               style: Theme.of(
                 context,

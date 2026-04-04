@@ -12,6 +12,7 @@ class MaterialDto {
     required this.grade,
     required this.thickness,
     required this.supplier,
+    required this.unitId,
     required this.unit,
     required this.notes,
     required this.isParent,
@@ -29,6 +30,7 @@ class MaterialDto {
   final String grade;
   final String thickness;
   final String supplier;
+  final int? unitId;
   final String unit;
   final String notes;
   final bool isParent;
@@ -52,6 +54,7 @@ class MaterialDto {
       grade: json['grade'] as String? ?? '',
       thickness: json['thickness'] as String? ?? '',
       supplier: json['supplier'] as String? ?? '',
+      unitId: json['unitId'] as int?,
       unit: json['unit'] as String? ?? '',
       notes: json['notes'] as String? ?? '',
       isParent: json['isParent'] as bool? ?? false,
@@ -74,6 +77,7 @@ class MaterialDto {
       'grade': grade,
       'thickness': thickness,
       'supplier': supplier,
+      'unitId': unitId,
       'unit': unit,
       'notes': notes,
       'isParent': isParent,
@@ -94,6 +98,7 @@ class MaterialDto {
       grade: grade,
       thickness: thickness,
       supplier: supplier,
+      unitId: unitId,
       unit: unit,
       notes: notes,
       createdAt: createdAt,
@@ -114,6 +119,7 @@ class MaterialDto {
       grade: record.grade,
       thickness: record.thickness,
       supplier: record.supplier,
+      unitId: record.unitId,
       unit: record.unit,
       notes: record.notes,
       isParent: record.isParent,
@@ -133,6 +139,7 @@ class CreateParentRequest {
     required this.grade,
     required this.thickness,
     required this.supplier,
+    required this.unitId,
     required this.unit,
     required this.notes,
     required this.numberOfChildren,
@@ -143,6 +150,7 @@ class CreateParentRequest {
   final String grade;
   final String thickness;
   final String supplier;
+  final int? unitId;
   final String unit;
   final String notes;
   final int numberOfChildren;
@@ -154,6 +162,7 @@ class CreateParentRequest {
       grade: input.grade,
       thickness: input.thickness,
       supplier: input.supplier,
+      unitId: input.unitId,
       unit: input.unit,
       notes: input.notes,
       numberOfChildren: input.numberOfChildren,
@@ -167,6 +176,7 @@ class CreateParentRequest {
       'grade': grade,
       'thickness': thickness,
       'supplier': supplier,
+      'unitId': unitId,
       'unit': unit,
       'notes': notes,
       'numberOfChildren': numberOfChildren,

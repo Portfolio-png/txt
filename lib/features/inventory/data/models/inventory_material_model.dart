@@ -11,6 +11,7 @@ class InventoryMaterialModel {
     required this.grade,
     required this.thickness,
     required this.supplier,
+    required this.unitId,
     required this.unit,
     required this.notes,
     required this.createdAt,
@@ -28,6 +29,7 @@ class InventoryMaterialModel {
   final String grade;
   final String thickness;
   final String supplier;
+  final int? unitId;
   final String unit;
   final String notes;
   final DateTime createdAt;
@@ -47,6 +49,7 @@ class InventoryMaterialModel {
       grade: map['grade'] as String? ?? '',
       thickness: map['thickness'] as String? ?? '',
       supplier: map['supplier'] as String? ?? '',
+      unitId: map['unit_id'] as int?,
       unit: map['unit'] as String? ?? '',
       notes: map['notes'] as String? ?? '',
       createdAt: DateTime.parse(map['created_at'] as String),
@@ -69,6 +72,7 @@ class InventoryMaterialModel {
       'grade': grade,
       'thickness': thickness,
       'supplier': supplier,
+      'unit_id': unitId,
       'unit': unit,
       'notes': notes,
       'created_at': createdAt.toIso8601String(),
@@ -89,6 +93,7 @@ class InventoryMaterialModel {
       grade: grade,
       thickness: thickness,
       supplier: supplier,
+      unitId: unitId,
       unit: unit,
       notes: notes,
       createdAt: createdAt,

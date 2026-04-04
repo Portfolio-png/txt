@@ -6,6 +6,7 @@ class CreateParentMaterialInput {
     required this.thickness,
     required this.supplier,
     required this.numberOfChildren,
+    this.unitId,
     this.unit = '',
     this.notes = '',
   });
@@ -16,6 +17,7 @@ class CreateParentMaterialInput {
   final String thickness;
   final String supplier;
   final int numberOfChildren;
+  final int? unitId;
   final String unit;
   final String notes;
 }

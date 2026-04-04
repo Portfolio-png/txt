@@ -2,6 +2,29 @@
 
 Flutter application for the Paper ERP-style dashboard experience.
 
+## Local Development
+
+The local Paper stack now defaults to `http://localhost:18080` for the backend so it does not collide with older services that may still be running on `8080`.
+
+Start the backend:
+
+```bash
+cd backend
+npm start
+```
+
+Start the Flutter app:
+
+```bash
+flutter run
+```
+
+If you need a different backend URL, override it explicitly:
+
+```bash
+flutter run --dart-define=PAPER_API_BASE_URL=http://localhost:8080
+```
+
 ## Project Layout Pattern
 
 This project follows a `sidebar navigation + dynamic main content area` layout.

@@ -14,6 +14,9 @@ import '../../../../core/widgets/app_section_title.dart';
 import '../../domain/create_parent_material_input.dart';
 import '../../domain/material_record.dart';
 import '../providers/inventory_provider.dart';
+import '../../../units/domain/unit_definition.dart';
+import '../../../units/presentation/providers/units_provider.dart';
+import '../../../units/presentation/screens/units_screen.dart';
 
 class InventoryScreen extends StatelessWidget {
   const InventoryScreen({super.key});
@@ -21,83 +24,11 @@ class InventoryScreen extends StatelessWidget {
   bool get _isDesktopPlatform =>
       kIsWeb || Platform.isWindows || Platform.isMacOS || Platform.isLinux;
 
-  @override
-  Widget build(BuildContext context) {
-    return Consumer<InventoryProvider>(
-      builder: (context, inventory, _) {
-        if (inventory.isLoading && inventory.materials.isEmpty) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            final isNarrow = constraints.maxWidth < 800 || !_isDesktopPlatform;
-
-            return Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  AppSectionTitle(
-                    title: 'Inventory Materials',
-                    subtitle:
-                        'Create parent sheets, auto-generate child barcodes, and track scan count across the flow.',
-                    trailing: Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: [
-                        AppButton(
-                          label: 'Open Scan',
-                          icon: Icons.qr_code_scanner_outlined,
-                          variant: AppButtonVariant.secondary,
-                          onPressed: () {
-                            context.read<NavigationProvider>().select(
-                              'inventory_scan',
-                            );
-                          },
-                        ),
-                        if (_isDesktopPlatform)
-                          AppButton(
-                            label: 'Add New Big Sheet',
-                            icon: Icons.add,
-                            isLoading: inventory.isSaving,
-                            onPressed: () => _openAddMaterialForm(
-                              context,
-                              isNarrow: isNarrow,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  if (!_isDesktopPlatform) ...[
-                    const SizedBox(height: 12),
-                    const _DesktopOnlyNotice(),
-                  ],
-                  if (inventory.errorMessage != null) ...[
-                    const SizedBox(height: 12),
-                    _ErrorBanner(message: inventory.errorMessage!),
-                  ],
-                  const SizedBox(height: 20),
-                  Expanded(
-                    child: isNarrow
-                        ? _InventoryStackedLayout(
-                            materials: inventory.materials,
-                          )
-                        : _InventoryWideLayout(materials: inventory.materials),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Future<void> _openAddMaterialForm(
-    BuildContext context, {
-    required bool isNarrow,
-  }) async {
+  static Future<void> openAddMaterialForm(BuildContext context) async {
+    final isDesktopPlatform =
+        kIsWeb || Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+    final isNarrow =
+        MediaQuery.of(context).size.width < 800 || !isDesktopPlatform;
     final body = const _AddMaterialForm();
     if (isNarrow) {
       await showModalBottomSheet<void>(
@@ -123,6 +54,79 @@ class InventoryScreen extends StatelessWidget {
           child: body,
         ),
       ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<InventoryProvider>(
+      builder: (context, inventory, _) {
+        if (inventory.isLoading && inventory.materials.isEmpty) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final isNarrow = constraints.maxWidth < 800 || !_isDesktopPlatform;
+            final showShellActions = !isNarrow;
+
+            return Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AppSectionTitle(
+                    title: 'Inventory Materials',
+                    subtitle:
+                        'Create parent sheets, auto-generate child barcodes, and track scan count across the flow.',
+                    trailing: showShellActions
+                        ? null
+                        : Wrap(
+                            spacing: 12,
+                            runSpacing: 12,
+                            children: [
+                              AppButton(
+                                label: 'Open Scan',
+                                icon: Icons.qr_code_scanner_outlined,
+                                variant: AppButtonVariant.secondary,
+                                onPressed: () {
+                                  context.read<NavigationProvider>().select(
+                                    'inventory_scan',
+                                  );
+                                },
+                              ),
+                              if (_isDesktopPlatform)
+                                AppButton(
+                                  label: 'Add New Big Sheet',
+                                  icon: Icons.add,
+                                  isLoading: inventory.isSaving,
+                                  onPressed: () => openAddMaterialForm(context),
+                                ),
+                            ],
+                          ),
+                  ),
+                  if (!_isDesktopPlatform) ...[
+                    const SizedBox(height: 12),
+                    const _DesktopOnlyNotice(),
+                  ],
+                  if (inventory.errorMessage != null) ...[
+                    const SizedBox(height: 12),
+                    _ErrorBanner(message: inventory.errorMessage!),
+                  ],
+                  const SizedBox(height: 20),
+                  Expanded(
+                    child: isNarrow
+                        ? _InventoryStackedLayout(
+                            materials: inventory.materials,
+                          )
+                        : _InventoryWideLayout(materials: inventory.materials),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -374,6 +378,8 @@ class _MaterialDetailsPane extends StatelessWidget {
         AppInfoRow(label: 'Grade', value: selected.grade),
         AppInfoRow(label: 'Thickness', value: selected.thickness),
         AppInfoRow(label: 'Supplier', value: selected.supplier),
+        if (selected.unit.isNotEmpty)
+          AppInfoRow(label: 'Unit', value: selected.unit),
         AppInfoRow(
           label: 'Relationship',
           value: selected.isParent
@@ -429,6 +435,7 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
   final _thicknessFocus = FocusNode();
   final _supplierFocus = FocusNode();
   final _childrenFocus = FocusNode();
+  UnitDefinition? _selectedUnit;
 
   @override
   void dispose() {
@@ -500,7 +507,18 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
                 controller: _supplierController,
                 label: 'Supplier',
                 focusNode: _supplierFocus,
-                nextFocus: _childrenFocus,
+              ),
+              const SizedBox(height: 12),
+              _UnitPickerField(
+                selectedUnit: _selectedUnit,
+                onTap: () async {
+                  final selected = await _openUnitPicker(context);
+                  if (selected != null) {
+                    setState(() {
+                      _selectedUnit = selected;
+                    });
+                  }
+                },
               ),
               const SizedBox(height: 12),
               _FormField(
@@ -544,6 +562,8 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
         grade: _gradeController.text.trim(),
         thickness: _thicknessController.text.trim(),
         supplier: _supplierController.text.trim(),
+        unitId: _selectedUnit?.id,
+        unit: _selectedUnit?.symbol ?? '',
         numberOfChildren: childrenCount,
       ),
     );
@@ -553,6 +573,35 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
     }
 
     Navigator.of(context).maybePop();
+  }
+
+  Future<UnitDefinition?> _openUnitPicker(BuildContext context) {
+    final isNarrow = MediaQuery.of(context).size.width < 900;
+    final body = _UnitSelectionSheet(selectedUnit: _selectedUnit);
+    if (isNarrow) {
+      return showModalBottomSheet<UnitDefinition?>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: body,
+        ),
+      );
+    }
+
+    return showDialog<UnitDefinition?>(
+      context: context,
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.all(32),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: body,
+        ),
+      ),
+    );
   }
 }
 
@@ -615,6 +664,178 @@ class _FormField extends StatelessWidget {
         }
         onSubmitted?.call();
       },
+    );
+  }
+}
+
+class _UnitPickerField extends StatelessWidget {
+  const _UnitPickerField({required this.selectedUnit, required this.onTap});
+
+  final UnitDefinition? selectedUnit;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: 'Unit',
+          helperText: 'Choose from configurator units or create one inline',
+          filled: true,
+          fillColor: const Color(0xFFF9FAFB),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+          ),
+          suffixIcon: const Icon(Icons.arrow_drop_down),
+        ),
+        child: Text(
+          selectedUnit?.displayLabel ?? 'Select a unit',
+          style: TextStyle(
+            color: selectedUnit == null
+                ? const Color(0xFF6B7280)
+                : const Color(0xFF111827),
+            fontWeight: selectedUnit == null
+                ? FontWeight.w500
+                : FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UnitSelectionSheet extends StatefulWidget {
+  const _UnitSelectionSheet({required this.selectedUnit});
+
+  final UnitDefinition? selectedUnit;
+
+  @override
+  State<_UnitSelectionSheet> createState() => _UnitSelectionSheetState();
+}
+
+class _UnitSelectionSheetState extends State<_UnitSelectionSheet> {
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<UnitsProvider>();
+    final query = UnitsProvider.normalizeValue(_searchController.text);
+    final units = provider.activeUnits
+        .where((unit) {
+          if (query.isEmpty) {
+            return true;
+          }
+          return UnitsProvider.normalizeValue(unit.name).contains(query) ||
+              UnitsProvider.normalizeValue(unit.symbol).contains(query);
+        })
+        .toList(growable: false);
+    final exactMatch = units.any(
+      (unit) =>
+          UnitsProvider.normalizeValue(unit.name) == query ||
+          UnitsProvider.normalizeValue(unit.symbol) == query,
+    );
+
+    return Material(
+      color: Colors.white,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const AppSectionTitle(
+                title: 'Select Unit',
+                subtitle:
+                    'Pick an active unit from Configurator or create a new one without leaving this form.',
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _searchController,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  hintText: 'Search unit name or symbol',
+                  prefixIcon: const Icon(Icons.search),
+                  filled: true,
+                  fillColor: const Color(0xFFF9FAFB),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 320),
+                child: units.isEmpty
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(12),
+                          child: Text('No active units match this search.'),
+                        ),
+                      )
+                    : ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: units.length,
+                        separatorBuilder: (context, index) =>
+                            const Divider(height: 1, color: Color(0xFFE5E7F0)),
+                        itemBuilder: (context, index) {
+                          final unit = units[index];
+                          final isSelected = widget.selectedUnit?.id == unit.id;
+                          return ListTile(
+                            dense: true,
+                            selected: isSelected,
+                            title: Text(unit.displayLabel),
+                            subtitle: unit.notes.isEmpty
+                                ? null
+                                : Text(unit.notes),
+                            trailing: Text('${unit.usageCount} used'),
+                            onTap: () => Navigator.of(context).pop(unit),
+                          );
+                        },
+                      ),
+              ),
+              if (_searchController.text.trim().isNotEmpty && !exactMatch) ...[
+                const SizedBox(height: 12),
+                AppButton(
+                  label: 'Create "${_searchController.text.trim()}"',
+                  variant: AppButtonVariant.secondary,
+                  icon: Icons.add,
+                  onPressed: () async {
+                    final created = await UnitsScreen.openEditor(
+                      context,
+                      initialName: _searchController.text.trim(),
+                    );
+                    if (!context.mounted || created == null) {
+                      return;
+                    }
+                    Navigator.of(context).pop(created);
+                  },
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -23,7 +23,7 @@ class LocalInventoryRepository implements InventoryRepository {
     final dbPath = p.join(directory.path, 'paper_inventory.db');
     _database = await openDatabase(
       dbPath,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE materials (
@@ -34,6 +34,7 @@ class LocalInventoryRepository implements InventoryRepository {
             grade TEXT,
             thickness TEXT,
             supplier TEXT,
+            unit_id INTEGER,
             unit TEXT,
             notes TEXT,
             created_at TEXT NOT NULL,
@@ -61,6 +62,11 @@ class LocalInventoryRepository implements InventoryRepository {
             'ALTER TABLE materials ADD COLUMN notes TEXT DEFAULT \'\'',
           );
         }
+        if (oldVersion < 3) {
+          await db.execute(
+            'ALTER TABLE materials ADD COLUMN unit_id INTEGER',
+          );
+        }
       },
     );
   }
@@ -83,6 +89,7 @@ class LocalInventoryRepository implements InventoryRepository {
         grade: 'A1',
         thickness: '1.2 mm',
         supplier: 'Shree Metals',
+        unitId: null,
         numberOfChildren: 3,
       ),
     );
@@ -93,6 +100,7 @@ class LocalInventoryRepository implements InventoryRepository {
         grade: 'B2',
         thickness: '2.0 mm',
         supplier: 'Metro Steels',
+        unitId: null,
         numberOfChildren: 2,
       ),
     );
@@ -103,6 +111,7 @@ class LocalInventoryRepository implements InventoryRepository {
         grade: 'AA',
         thickness: '0.8 mm',
         supplier: 'Skyline Supplies',
+        unitId: null,
         numberOfChildren: 4,
       ),
     );
@@ -129,6 +138,7 @@ class LocalInventoryRepository implements InventoryRepository {
         grade: input.grade,
         thickness: input.thickness,
         supplier: input.supplier,
+        unitId: input.unitId,
         unit: input.unit,
         notes: input.notes,
         createdAt: now,
@@ -150,6 +160,7 @@ class LocalInventoryRepository implements InventoryRepository {
           grade: input.grade,
           thickness: input.thickness,
           supplier: input.supplier,
+          unitId: input.unitId,
           unit: input.unit,
           notes: input.notes,
           createdAt: now,
