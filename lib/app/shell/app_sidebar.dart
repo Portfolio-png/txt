@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'navigation_provider.dart';
@@ -15,6 +16,162 @@ class AppSidebar extends StatefulWidget {
 
 class _AppSidebarState extends State<AppSidebar> {
   bool _isConfiguratorExpanded = true;
+  final FocusScopeNode _focusScopeNode = FocusScopeNode(
+    debugLabel: 'app_sidebar_scope',
+  );
+  final Map<String, FocusNode> _focusNodes = <String, FocusNode>{};
+
+  static const List<_SidebarItemData> _moduleItems = <_SidebarItemData>[
+    _SidebarItemData('dashboard', 'Dashboard', Icons.dashboard_outlined),
+    _SidebarItemData('orders', 'Orders', Icons.receipt_long_outlined),
+    _SidebarItemData('inventory', 'Inventory', Icons.inventory_2_outlined),
+    _SidebarItemData(
+      'production_pipelines',
+      'Production',
+      Icons.account_tree_outlined,
+    ),
+    _SidebarItemData('pm', 'PM', Icons.widgets_outlined),
+  ];
+
+  static const List<_SidebarItemData> _configuratorItems = <_SidebarItemData>[
+    _SidebarItemData('configurator_clients', 'Clients', Icons.groups_outlined),
+    _SidebarItemData(
+      'configurator_vendors',
+      'Vendors',
+      Icons.storefront_outlined,
+    ),
+    _SidebarItemData('configurator_items', 'Items', Icons.inventory_outlined),
+    _SidebarItemData('configurator_groups', 'Groups', Icons.grid_view_outlined),
+    _SidebarItemData('configurator_units', 'Units', Icons.straighten_outlined),
+  ];
+
+  @override
+  void dispose() {
+    for (final focusNode in _focusNodes.values) {
+      focusNode.dispose();
+    }
+    _focusScopeNode.dispose();
+    super.dispose();
+  }
+
+  FocusNode _focusNodeFor(String key) {
+    return _focusNodes.putIfAbsent(
+      key,
+      () => FocusNode(debugLabel: 'sidebar_$key'),
+    );
+  }
+
+  List<String> _visibleSidebarKeys({required bool isConfiguratorExpanded}) {
+    return <String>[
+      ..._moduleItems.map((item) => item.key),
+      'configurator',
+      if (isConfiguratorExpanded) ..._configuratorItems.map((item) => item.key),
+    ];
+  }
+
+  void _selectKey(String key) {
+    widget.onItemSelected?.call(key);
+    if (widget.onItemSelected == null) {
+      context.read<NavigationProvider>().select(key);
+    }
+    if (kConfiguratorNavigationKeys.contains(key) && !_isConfiguratorExpanded) {
+      setState(() {
+        _isConfiguratorExpanded = true;
+      });
+    }
+  }
+
+  void _requestFocus(String key) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _focusNodeFor(key).requestFocus();
+    });
+  }
+
+  void _moveSidebarFocus({
+    required List<String> visibleKeys,
+    required String selectedKey,
+    required bool reverse,
+  }) {
+    if (visibleKeys.isEmpty) {
+      return;
+    }
+
+    final currentIndex = visibleKeys.indexWhere(_isKeyFocused);
+    final fallbackKey = visibleKeys.contains(selectedKey)
+        ? selectedKey
+        : visibleKeys.first;
+
+    if (currentIndex == -1) {
+      _requestFocus(fallbackKey);
+      return;
+    }
+
+    final delta = reverse ? -1 : 1;
+    final nextIndex =
+        (currentIndex + delta + visibleKeys.length) % visibleKeys.length;
+    _requestFocus(visibleKeys[nextIndex]);
+  }
+
+  void _selectRelativeSidebarItem({
+    required List<String> visibleKeys,
+    required String selectedKey,
+    required bool reverse,
+  }) {
+    if (visibleKeys.isEmpty) {
+      return;
+    }
+
+    final selectedIndex = visibleKeys.indexOf(selectedKey);
+    final currentIndex = selectedIndex == -1
+        ? visibleKeys.indexWhere(_isKeyFocused)
+        : selectedIndex;
+    final safeCurrentIndex = currentIndex == -1 ? 0 : currentIndex;
+    final delta = reverse ? -1 : 1;
+    final nextIndex =
+        (safeCurrentIndex + delta + visibleKeys.length) % visibleKeys.length;
+    final nextKey = visibleKeys[nextIndex];
+
+    _selectKey(nextKey);
+    _requestFocus(nextKey);
+  }
+
+  bool _isKeyFocused(String key) => _focusNodeFor(key).hasFocus;
+
+  KeyEventResult _handleSidebarKeyEvent({
+    required KeyEvent event,
+    required String selectedKey,
+    required bool isConfiguratorExpanded,
+  }) {
+    if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.tab) {
+      return KeyEventResult.ignored;
+    }
+    if (!_focusScopeNode.hasFocus) {
+      return KeyEventResult.ignored;
+    }
+
+    final visibleKeys = _visibleSidebarKeys(
+      isConfiguratorExpanded: isConfiguratorExpanded,
+    );
+    final isReverse = HardwareKeyboard.instance.isShiftPressed;
+    if (HardwareKeyboard.instance.isControlPressed) {
+      _selectRelativeSidebarItem(
+        visibleKeys: visibleKeys,
+        selectedKey: selectedKey,
+        reverse: isReverse,
+      );
+      return KeyEventResult.handled;
+    }
+
+    _moveSidebarFocus(
+      visibleKeys: visibleKeys,
+      selectedKey: selectedKey,
+      reverse: isReverse,
+    );
+    return KeyEventResult.handled;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,132 +187,92 @@ class _AppSidebarState extends State<AppSidebar> {
           'configurator_groups',
           'configurator_units',
         }.contains(selectedKey);
+    final isConfiguratorExpanded =
+        _isConfiguratorExpanded ||
+        kConfiguratorNavigationKeys.contains(selectedKey);
 
     return Container(
       color: const Color(0xFF13161F),
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 18, 12, 18),
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-            decoration: BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Row(
-              children: [
-                const CircleAvatar(
-                  radius: 14,
-                  backgroundColor: Color(0xFF6C63FF),
-                  child: Icon(
-                    Icons.factory_outlined,
-                    color: Colors.white,
-                    size: 16,
-                  ),
+      child: FocusScope(
+        node: _focusScopeNode,
+        child: Focus(
+          onKeyEvent: (node, event) => _handleSidebarKeyEvent(
+            event: event,
+            selectedKey: selectedKey,
+            isConfiguratorExpanded: isConfiguratorExpanded,
+          ),
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(12, 18, 12, 18),
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 14,
                 ),
-                if (!widget.compact) ...[
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Paper ERP',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  children: [
+                    const CircleAvatar(
+                      radius: 14,
+                      backgroundColor: Color(0xFF6C63FF),
+                      child: Icon(
+                        Icons.factory_outlined,
                         color: Colors.white,
-                        fontWeight: FontWeight.w700,
+                        size: 16,
                       ),
                     ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 22),
-          _SidebarSection(
-            title: 'Modules',
-            compact: widget.compact,
-            children: [
-              _SidebarItemData(
-                'dashboard',
-                'Dashboard',
-                Icons.dashboard_outlined,
+                    if (!widget.compact) ...[
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Paper ERP',
+                          style: Theme.of(context).textTheme.bodyLarge
+                              ?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
-              _SidebarItemData('orders', 'Orders', Icons.receipt_long_outlined),
-              _SidebarItemData(
-                'inventory',
-                'Inventory',
-                Icons.inventory_2_outlined,
+              const SizedBox(height: 22),
+              _SidebarSection(
+                title: 'Modules',
+                compact: widget.compact,
+                children: _moduleItems,
+                selectedKey: selectedKey,
+                onSelected: _selectKey,
+                focusNodeForKey: _focusNodeFor,
               ),
-              _SidebarItemData(
-                'production_pipelines',
-                'Production',
-                Icons.account_tree_outlined,
-              ),
-              _SidebarItemData('pm', 'PM', Icons.widgets_outlined),
-            ],
-            selectedKey: selectedKey,
-            onSelected: (key) {
-              widget.onItemSelected?.call(key);
-              if (widget.onItemSelected == null) {
-                context.read<NavigationProvider>().select(key);
-              }
-            },
-          ),
-          const SizedBox(height: 18),
-          _SidebarSection(
-            title: 'Configurator',
-            compact: widget.compact,
-            children: [
-              _SidebarItemData(
-                'configurator_clients',
-                'Clients',
-                Icons.groups_outlined,
-              ),
-              _SidebarItemData(
-                'configurator_vendors',
-                'Vendors',
-                Icons.storefront_outlined,
-              ),
-              _SidebarItemData(
-                'configurator_items',
-                'Items',
-                Icons.inventory_outlined,
-              ),
-              _SidebarItemData(
-                'configurator_groups',
-                'Groups',
-                Icons.grid_view_outlined,
-              ),
-              _SidebarItemData(
-                'configurator_units',
-                'Units',
-                Icons.straighten_outlined,
+              const SizedBox(height: 18),
+              _SidebarSection(
+                title: 'Configurator',
+                compact: widget.compact,
+                children: _configuratorItems,
+                selectedKey: selectedKey,
+                isExpandable: true,
+                isExpanded: isConfiguratorExpanded,
+                isParentSelected: isConfiguratorSelected,
+                onExpansionToggle: () {
+                  setState(() {
+                    _isConfiguratorExpanded = !_isConfiguratorExpanded;
+                  });
+                },
+                onHeaderTap: () {
+                  _selectKey('configurator');
+                  _requestFocus('configurator');
+                },
+                onSelected: _selectKey,
+                focusNodeForKey: _focusNodeFor,
               ),
             ],
-            selectedKey: selectedKey,
-            isExpandable: true,
-            isExpanded: _isConfiguratorExpanded,
-            isParentSelected: isConfiguratorSelected,
-            onExpansionToggle: () {
-              setState(() {
-                _isConfiguratorExpanded = !_isConfiguratorExpanded;
-              });
-            },
-            onHeaderTap: () {
-              widget.onItemSelected?.call('configurator');
-              if (widget.onItemSelected == null) {
-                context.read<NavigationProvider>().select('configurator');
-              }
-              setState(() {
-                _isConfiguratorExpanded = true;
-              });
-            },
-            onSelected: (key) {
-              widget.onItemSelected?.call(key);
-              if (widget.onItemSelected == null) {
-                context.read<NavigationProvider>().select(key);
-              }
-            },
           ),
-        ],
+        ),
       ),
     );
   }
@@ -173,6 +290,7 @@ class _SidebarSection extends StatelessWidget {
     this.isParentSelected = false,
     this.onExpansionToggle,
     this.onHeaderTap,
+    required this.focusNodeForKey,
   });
 
   final String title;
@@ -185,6 +303,7 @@ class _SidebarSection extends StatelessWidget {
   final bool isParentSelected;
   final VoidCallback? onExpansionToggle;
   final VoidCallback? onHeaderTap;
+  final FocusNode Function(String key) focusNodeForKey;
 
   @override
   Widget build(BuildContext context) {
@@ -210,6 +329,7 @@ class _SidebarSection extends StatelessWidget {
               compact: compact,
               isExpanded: isExpanded,
               isSelected: isParentSelected,
+              focusNode: focusNodeForKey('configurator'),
               onTap: onHeaderTap ?? onExpansionToggle ?? () {},
               onChevronTap: onExpansionToggle ?? () {},
             ),
@@ -225,6 +345,7 @@ class _SidebarSection extends StatelessWidget {
                 item: item,
                 compact: compact,
                 isSelected: item.key == selectedKey,
+                focusNode: focusNodeForKey(item.key),
                 onTap: () => onSelected(item.key),
               ),
             ),
@@ -240,6 +361,7 @@ class _SidebarExpandableHeader extends StatelessWidget {
     required this.compact,
     required this.isExpanded,
     required this.isSelected,
+    required this.focusNode,
     required this.onTap,
     required this.onChevronTap,
   });
@@ -248,58 +370,75 @@ class _SidebarExpandableHeader extends StatelessWidget {
   final bool compact;
   final bool isExpanded;
   final bool isSelected;
+  final FocusNode focusNode;
   final VoidCallback onTap;
   final VoidCallback onChevronTap;
 
   @override
   Widget build(BuildContext context) {
-    final foreground = isSelected ? Colors.white : const Color(0xFFE5E7EB);
+    return ListenableBuilder(
+      listenable: focusNode,
+      builder: (context, child) {
+        final hasFocus = focusNode.hasFocus;
+        final foreground = isSelected || hasFocus
+            ? Colors.white
+            : const Color(0xFFE5E7EB);
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: onTap,
-        child: Container(
-          height: 44,
-          padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 14),
-          decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFF6C63FF) : Colors.transparent,
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            key: const ValueKey<String>('sidebar_tile_configurator'),
+            focusNode: focusNode,
+            canRequestFocus: true,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: isSelected
-                  ? const Color(0xFF6C63FF)
-                  : const Color(0xFF20242F),
+            onTap: () {
+              focusNode.requestFocus();
+              onTap();
+            },
+            child: Container(
+              height: 44,
+              padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 14),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? const Color(0xFF6C63FF)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: isSelected || hasFocus
+                      ? const Color(0xFF6C63FF)
+                      : const Color(0xFF20242F),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.tune_outlined, color: foreground, size: 18),
+                  if (!compact) ...[
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: foreground,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: onChevronTap,
+                      splashRadius: 18,
+                      icon: Icon(
+                        isExpanded ? Icons.expand_less : Icons.expand_more,
+                        color: foreground,
+                        size: 18,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
-          child: Row(
-            children: [
-              Icon(Icons.tune_outlined, color: foreground, size: 18),
-              if (!compact) ...[
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: foreground,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  onPressed: onChevronTap,
-                  splashRadius: 18,
-                  icon: Icon(
-                    isExpanded ? Icons.expand_less : Icons.expand_more,
-                    color: foreground,
-                    size: 18,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -308,55 +447,73 @@ class _SidebarTile extends StatelessWidget {
   const _SidebarTile({
     required this.item,
     required this.isSelected,
+    required this.focusNode,
     required this.onTap,
     required this.compact,
   });
 
   final _SidebarItemData item;
   final bool isSelected;
+  final FocusNode focusNode;
   final VoidCallback onTap;
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
-    final foreground = isSelected ? Colors.white : const Color(0xFFE5E7EB);
+    return ListenableBuilder(
+      listenable: focusNode,
+      builder: (context, child) {
+        final hasFocus = focusNode.hasFocus;
+        final foreground = isSelected || hasFocus
+            ? Colors.white
+            : const Color(0xFFE5E7EB);
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: onTap,
-        child: Container(
-          height: 44,
-          padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 14),
-          decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFF6C63FF) : Colors.transparent,
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            key: ValueKey<String>('sidebar_tile_${item.key}'),
+            focusNode: focusNode,
+            canRequestFocus: true,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: isSelected
-                  ? const Color(0xFF6C63FF)
-                  : const Color(0xFF20242F),
+            onTap: () {
+              focusNode.requestFocus();
+              onTap();
+            },
+            child: Container(
+              height: 44,
+              padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 14),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? const Color(0xFF6C63FF)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: isSelected || hasFocus
+                      ? const Color(0xFF6C63FF)
+                      : const Color(0xFF20242F),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(item.icon, color: foreground, size: 18),
+                  if (!compact) ...[
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        item.label,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: foreground,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
-          child: Row(
-            children: [
-              Icon(item.icon, color: foreground, size: 18),
-              if (!compact) ...[
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    item.label,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: foreground,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

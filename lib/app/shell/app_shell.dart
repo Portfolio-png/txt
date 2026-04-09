@@ -2,6 +2,7 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../features/groups/presentation/screens/groups_screen.dart';
@@ -25,48 +26,64 @@ class AppShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isMobile = constraints.maxWidth < 900;
-        const sidebarWidth = 272.0;
-
-        return Scaffold(
-          backgroundColor: const Color(0xFFF4F5F9),
-          drawer: isMobile
-              ? Drawer(width: 260, child: _ShellDrawerContent())
-              : null,
-          appBar: isMobile
-              ? AppBar(
-                  backgroundColor: const Color(0xFF6C63FF),
-                  foregroundColor: Colors.white,
-                  title: const Text('Paper ERP'),
-                )
-              : null,
-          body: SafeArea(
-            top: !isMobile,
-            child: Row(
-              children: [
-                if (!isMobile)
-                  SizedBox(
-                    width: sidebarWidth,
-                    child: const AppSidebar(compact: false),
-                  ),
-                Expanded(
-                  child: _DesktopContentFrame(
-                    enabled: _isDesktopPlatform,
-                    child: Column(
-                      children: [
-                        if (!isMobile) const AppTopBar(),
-                        const Expanded(child: _ShellContentSwitcher()),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.tab, control: true): () =>
+            context.read<NavigationProvider>().selectRelativeSidebarItem(),
+        const SingleActivator(
+          LogicalKeyboardKey.tab,
+          control: true,
+          shift: true,
+        ): () => context.read<NavigationProvider>().selectRelativeSidebarItem(
+          reverse: true,
+        ),
       },
+      child: Focus(
+        autofocus: true,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isMobile = constraints.maxWidth < 900;
+            const sidebarWidth = 272.0;
+
+            return Scaffold(
+              backgroundColor: const Color(0xFFF4F5F9),
+              drawer: isMobile
+                  ? Drawer(width: 260, child: _ShellDrawerContent())
+                  : null,
+              appBar: isMobile
+                  ? AppBar(
+                      backgroundColor: const Color(0xFF6C63FF),
+                      foregroundColor: Colors.white,
+                      title: const Text('Paper ERP'),
+                    )
+                  : null,
+              body: SafeArea(
+                top: !isMobile,
+                child: Row(
+                  children: [
+                    if (!isMobile)
+                      SizedBox(
+                        width: sidebarWidth,
+                        child: const AppSidebar(compact: false),
+                      ),
+                    Expanded(
+                      child: _DesktopContentFrame(
+                        enabled: _isDesktopPlatform,
+                        child: Column(
+                          children: [
+                            if (!isMobile) const AppTopBar(),
+                            const Expanded(child: _ShellContentSwitcher()),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 }

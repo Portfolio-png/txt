@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:paper/features/groups/data/repositories/group_repository.dart';
@@ -1275,6 +1276,13 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  bool sidebarTileHasFocus(WidgetTester tester, String key) {
+    final widget = tester.widget<InkWell>(
+      find.byKey(ValueKey<String>('sidebar_tile_$key')),
+    );
+    return widget.focusNode?.hasFocus ?? false;
+  }
+
   testWidgets('app opens into inventory shell', (tester) async {
     await pumpApp(tester);
 
@@ -1316,6 +1324,43 @@ void main() {
       findsOneWidget,
     );
     expect(find.byType(TextField), findsOneWidget);
+  });
+
+  testWidgets('ctrl+tab cycles sidebar navigation forward', (tester) async {
+    await pumpApp(tester);
+
+    await tester.tap(find.text('Orders'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Search orders, clients, PO, items, or status'),
+      findsOneWidget,
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Search groups, items, barcode, supplier, or notes'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('tab focus stays looped inside sidebar items', (tester) async {
+    await pumpApp(tester);
+
+    await tester.tap(find.text('Units'));
+    await tester.pumpAndSettle();
+
+    expect(sidebarTileHasFocus(tester, 'configurator_units'), isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+
+    expect(sidebarTileHasFocus(tester, 'configurator_units'), isFalse);
+    expect(sidebarTileHasFocus(tester, 'dashboard'), isTrue);
   });
 
   testWidgets('inventory top strip actions invoke navigation callbacks', (
