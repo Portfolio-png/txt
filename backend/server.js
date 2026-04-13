@@ -6,9 +6,12 @@ const sqlite3 = require('sqlite3').verbose();
 const app = express();
 const PORT = Number(process.env.PORT || 18080);
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'paper.db');
+let dbReady = false;
+let dbInitError = null;
 const db = new sqlite3.Database(DB_PATH, (error) => {
   if (error) {
     console.error('Failed to open SQLite database:', error);
+    dbInitError = error;
     return;
   }
   console.log(`SQLite database opened at ${DB_PATH}`);
@@ -28,11 +31,35 @@ app.use(express.json());
 app.get('/health', (_req, res) => {
   res.json({
     success: true,
-    status: 'ok',
+    status: dbReady ? 'ok' : 'starting',
     port: PORT,
     dbPath: DB_PATH,
+    dbReady,
+    dbInitError: dbInitError?.message ?? null,
     timestamp: new Date().toISOString(),
   });
+});
+
+app.use((req, res, next) => {
+  if (req.path === '/health') {
+    next();
+    return;
+  }
+  if (dbInitError) {
+    res.status(500).json({
+      success: false,
+      error: `Database initialization failed: ${dbInitError.message}`,
+    });
+    return;
+  }
+  if (!dbReady) {
+    res.status(503).json({
+      success: false,
+      error: 'Backend is still starting. Please retry in a moment.',
+    });
+    return;
+  }
+  next();
 });
 
 function run(sql, params = []) {
@@ -4261,15 +4288,23 @@ async function resetAndSeedDemoData() {
 
 function startServer() {
   console.log(`Booting Paper backend on port ${PORT} using ${DB_PATH}`);
-  console.log('Initializing database schema...');
-  return initDb().then(() => {
-    console.log('Database schema ready.');
-    return new Promise((resolve) => {
-      const server = app.listen(PORT, '0.0.0.0', () => {
-        console.log(`Paper backend running on port ${PORT} using ${DB_PATH}`);
-        resolve(server);
-      });
+  return new Promise((resolve, reject) => {
+    const server = app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Paper backend listening on port ${PORT}`);
+      console.log('Initializing database schema...');
+      initDb()
+        .then(() => {
+          dbReady = true;
+          console.log('Database schema ready.');
+          console.log(`Paper backend running on port ${PORT} using ${DB_PATH}`);
+        })
+        .catch((error) => {
+          dbInitError = error;
+          console.error('Failed to initialize backend database:', error);
+        });
+      resolve(server);
     });
+    server.on('error', reject);
   });
 }
 
