@@ -1966,7 +1966,7 @@ async function saveItem({
         };
       }
 
-      const nextSegments = [...pathSegments, `${parentPropertyName}: ${trimmedName}`];
+      const nextSegments = [...pathSegments, trimmedName];
       const children = sanitizeNodes(node.children || [], 'property', nextSegments, '');
       return {
         kind,
@@ -2089,39 +2089,152 @@ async function seedItemsIfEmpty() {
   }
 
   await saveItem({
-    name: 'Bottle',
-    alias: 'Classic Bottle',
-    displayName: 'Bottle - 100',
-    quantity: 100,
+    name: 'Switch Action Dolly',
+    alias: 'Finish Goods Variant',
+    displayName: 'Switch Action Dolly - 1',
+    quantity: 1,
     groupId: kraftGroup.id,
     unitId: sheetUnit.id,
     variationTree: [
       {
         kind: 'property',
-        name: 'Color',
+        name: 'Action Dolly Amp',
         children: [
           {
             kind: 'value',
-            name: 'Black',
+            name: '5 Amp',
             children: [
               {
                 kind: 'property',
-                name: 'Finish',
+                name: 'Action Patti + Dabbi',
                 children: [
-                  { kind: 'value', name: 'Matte' },
-                  { kind: 'value', name: 'Glossy' },
+                  {
+                    kind: 'value',
+                    name: '11+1',
+                    children: [
+                      {
+                        kind: 'property',
+                        name: 'Action Dolly Alloy',
+                        children: [
+                          {
+                            kind: 'value',
+                            name: 'Brass',
+                            children: [
+                              {
+                                kind: 'property',
+                                name: 'Action Dolly Contact',
+                                children: [
+                                  {
+                                    kind: 'value',
+                                    name: '1 Way',
+                                    children: [
+                                      {
+                                        kind: 'property',
+                                        name: 'Action Dolly Type',
+                                        children: [
+                                          {
+                                            kind: 'value',
+                                            name: 'Dolly',
+                                            children: [
+                                              {
+                                                kind: 'property',
+                                                name: 'Action Dolly Plating',
+                                                children: [
+                                                  {
+                                                    kind: 'value',
+                                                    name: 'Without Plating',
+                                                    displayName:
+                                                      '5 Amp 11+1 Brass 1 Way Dolly Without Plating',
+                                                  },
+                                                  {
+                                                    kind: 'value',
+                                                    name: 'With Plating',
+                                                    displayName:
+                                                      '5 Amp 11+1 Brass 1 Way Dolly With Plating',
+                                                  },
+                                                ],
+                                              },
+                                            ],
+                                          },
+                                        ],
+                                      },
+                                    ],
+                                  },
+                                ],
+                              },
+                            ],
+                          },
+                        ],
+                      },
+                    ],
+                  },
                 ],
               },
             ],
           },
           {
             kind: 'value',
-            name: 'White',
+            name: '6 Amp',
             children: [
               {
                 kind: 'property',
-                name: 'Finish',
-                children: [{ kind: 'value', name: 'Glossy' }],
+                name: 'Action Patti + Dabbi',
+                children: [
+                  {
+                    kind: 'value',
+                    name: '11+1',
+                    children: [
+                      {
+                        kind: 'property',
+                        name: 'Action Dolly Alloy',
+                        children: [
+                          {
+                            kind: 'value',
+                            name: 'Brass',
+                            children: [
+                              {
+                                kind: 'property',
+                                name: 'Action Dolly Contact',
+                                children: [
+                                  {
+                                    kind: 'value',
+                                    name: '1 Way',
+                                    children: [
+                                      {
+                                        kind: 'property',
+                                        name: 'Action Dolly Type',
+                                        children: [
+                                          {
+                                            kind: 'value',
+                                            name: 'Dolly',
+                                            children: [
+                                              {
+                                                kind: 'property',
+                                                name: 'Action Dolly Plating',
+                                                children: [
+                                                  {
+                                                    kind: 'value',
+                                                    name: 'Without Plating',
+                                                    displayName:
+                                                      '6 Amp 11+1 Brass 1 Way Dolly Without Plating',
+                                                  },
+                                                ],
+                                              },
+                                            ],
+                                          },
+                                        ],
+                                      },
+                                    ],
+                                  },
+                                ],
+                              },
+                            ],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
               },
             ],
           },
@@ -2145,6 +2258,280 @@ async function seedItemsIfEmpty() {
         },
       ],
     });
+
+    await saveItem({
+      name: 'Luxury Pump Bottle',
+      alias: 'Cosmetic Pack',
+      displayName: 'Luxury Pump Bottle - 100',
+      quantity: 100,
+      groupId: kraftGroup.id,
+      unitId: sheetUnit.id,
+      variationTree: [
+        {
+          kind: 'property',
+          name: 'Bottle Material',
+          children: [
+            {
+              kind: 'value',
+              name: 'PET',
+              children: [
+                {
+                  kind: 'property',
+                  name: 'Bottle Color',
+                  children: [
+                    {
+                      kind: 'value',
+                      name: 'Frosted Clear',
+                      children: [
+                        {
+                          kind: 'property',
+                          name: 'Pump Finish',
+                          children: [
+                            {
+                              kind: 'value',
+                              name: 'Matte Silver',
+                              children: [
+                                {
+                                  kind: 'property',
+                                  name: 'Lock Type',
+                                  children: [
+                                    {
+                                      kind: 'value',
+                                      name: 'Left Lock',
+                                      displayName:
+                                        'PET Frosted Clear Matte Silver Left Lock',
+                                    },
+                                    {
+                                      kind: 'value',
+                                      name: 'Right Lock',
+                                      displayName:
+                                        'PET Frosted Clear Matte Silver Right Lock',
+                                    },
+                                  ],
+                                },
+                              ],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                    {
+                      kind: 'value',
+                      name: 'Amber',
+                      children: [
+                        {
+                          kind: 'property',
+                          name: 'Pump Finish',
+                          children: [
+                            {
+                              kind: 'value',
+                              name: 'Gloss Gold',
+                              children: [
+                                {
+                                  kind: 'property',
+                                  name: 'Lock Type',
+                                  children: [
+                                    {
+                                      kind: 'value',
+                                      name: 'Left Lock',
+                                      displayName:
+                                        'PET Amber Gloss Gold Left Lock',
+                                    },
+                                  ],
+                                },
+                              ],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              kind: 'value',
+              name: 'Glass',
+              children: [
+                {
+                  kind: 'property',
+                  name: 'Bottle Color',
+                  children: [
+                    {
+                      kind: 'value',
+                      name: 'Clear',
+                      children: [
+                        {
+                          kind: 'property',
+                          name: 'Pump Finish',
+                          children: [
+                            {
+                              kind: 'value',
+                              name: 'Rose Gold',
+                              children: [
+                                {
+                                  kind: 'property',
+                                  name: 'Lock Type',
+                                  children: [
+                                    {
+                                      kind: 'value',
+                                      name: 'Right Lock',
+                                      displayName:
+                                        'Glass Clear Rose Gold Right Lock',
+                                    },
+                                  ],
+                                },
+                              ],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    await saveItem({
+      name: 'Premium Mono Carton',
+      alias: 'Retail Carton',
+      displayName: 'Premium Mono Carton - 500',
+      quantity: 500,
+      groupId: kraftGroup.id,
+      unitId: sheetUnit.id,
+      variationTree: [
+        {
+          kind: 'property',
+          name: 'Board GSM',
+          children: [
+            {
+              kind: 'value',
+              name: '300 GSM',
+              children: [
+                {
+                  kind: 'property',
+                  name: 'Print Finish',
+                  children: [
+                    {
+                      kind: 'value',
+                      name: 'Matte',
+                      children: [
+                        {
+                          kind: 'property',
+                          name: 'Foil',
+                          children: [
+                            {
+                              kind: 'value',
+                              name: 'Gold Foil',
+                              children: [
+                                {
+                                  kind: 'property',
+                                  name: 'Window',
+                                  children: [
+                                    {
+                                      kind: 'value',
+                                      name: 'With Window',
+                                      displayName:
+                                        '300 GSM Matte Gold Foil With Window',
+                                    },
+                                    {
+                                      kind: 'value',
+                                      name: 'No Window',
+                                      displayName:
+                                        '300 GSM Matte Gold Foil No Window',
+                                    },
+                                  ],
+                                },
+                              ],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                    {
+                      kind: 'value',
+                      name: 'Gloss',
+                      children: [
+                        {
+                          kind: 'property',
+                          name: 'Foil',
+                          children: [
+                            {
+                              kind: 'value',
+                              name: 'No Foil',
+                              children: [
+                                {
+                                  kind: 'property',
+                                  name: 'Window',
+                                  children: [
+                                    {
+                                      kind: 'value',
+                                      name: 'No Window',
+                                      displayName:
+                                        '300 GSM Gloss No Foil No Window',
+                                    },
+                                  ],
+                                },
+                              ],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              kind: 'value',
+              name: '350 GSM',
+              children: [
+                {
+                  kind: 'property',
+                  name: 'Print Finish',
+                  children: [
+                    {
+                      kind: 'value',
+                      name: 'Matte',
+                      children: [
+                        {
+                          kind: 'property',
+                          name: 'Foil',
+                          children: [
+                            {
+                              kind: 'value',
+                              name: 'Rose Gold Foil',
+                              children: [
+                                {
+                                  kind: 'property',
+                                  name: 'Window',
+                                  children: [
+                                    {
+                                      kind: 'value',
+                                      name: 'With Window',
+                                      displayName:
+                                        '350 GSM Matte Rose Gold Foil With Window',
+                                    },
+                                  ],
+                                },
+                              ],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
   }
 }
 
@@ -2164,10 +2551,27 @@ async function ensureItemRecord({
   unitId,
   variationTree,
   isArchived = false,
+  matchDisplayNames = [],
 }) {
-  const existing = await findItemByDisplayName(displayName);
+  let existing = await findItemByDisplayName(displayName);
+  for (const candidate of matchDisplayNames) {
+    if (existing) {
+      break;
+    }
+    existing = await findItemByDisplayName(candidate);
+  }
+
   const item = existing
-    ? existing
+    ? await saveItem({
+        id: existing.id,
+        name,
+        alias,
+        displayName,
+        quantity,
+        groupId,
+        unitId,
+        variationTree,
+      })
     : await saveItem({
         name,
         alias,
@@ -2230,6 +2634,7 @@ async function ensureDemoItemsPresent() {
       quantity: 100,
       groupId: kraft.id,
       unitId: sheetUnit.id,
+      matchDisplayNames: ['Bottle - 100'],
       variationTree: [
         {
           kind: 'property',
@@ -2274,6 +2679,7 @@ async function ensureDemoItemsPresent() {
       quantity: 25,
       groupId: adhesives.id,
       unitId: kilogramUnit.id,
+      matchDisplayNames: ['Glue Compound - 1'],
       variationTree: [
         {
           kind: 'property',

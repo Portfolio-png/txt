@@ -887,10 +887,10 @@ class FakeItemRepository extends ItemRepository {
           <ItemDefinition>[
             ItemDefinition(
               id: 1,
-              name: 'Bottle',
-              alias: 'Classic Bottle',
-              displayName: 'Bottle - 100',
-              quantity: 100,
+              name: 'Switch Action Dolly',
+              alias: 'Finish Goods Variant',
+              displayName: 'Switch Action Dolly - 1',
+              quantity: 1,
               groupId: 2,
               unitId: 2,
               isArchived: false,
@@ -902,29 +902,123 @@ class FakeItemRepository extends ItemRepository {
                   id: 1,
                   itemId: 1,
                   kind: ItemVariationNodeKind.property,
-                  name: 'Color',
+                  name: 'Action Dolly Amp',
                   children: [
                     _node(
                       id: 2,
                       itemId: 1,
                       parentNodeId: 1,
                       kind: ItemVariationNodeKind.value,
-                      name: 'Black',
+                      name: '5 Amp',
                       children: [
                         _node(
                           id: 3,
                           itemId: 1,
                           parentNodeId: 2,
                           kind: ItemVariationNodeKind.property,
-                          name: 'Finish',
+                          name: 'Action Patti + Dabbi',
                           children: [
                             _node(
                               id: 4,
                               itemId: 1,
                               parentNodeId: 3,
                               kind: ItemVariationNodeKind.value,
-                              name: 'Matte',
-                              displayName: 'Color: Black | Finish: Matte',
+                              name: '11+1',
+                              children: [
+                                _node(
+                                  id: 10,
+                                  itemId: 1,
+                                  parentNodeId: 4,
+                                  kind: ItemVariationNodeKind.property,
+                                  name: 'Action Dolly Alloy',
+                                  children: [
+                                    _node(
+                                      id: 11,
+                                      itemId: 1,
+                                      parentNodeId: 10,
+                                      kind: ItemVariationNodeKind.value,
+                                      name: 'Brass',
+                                      children: [
+                                        _node(
+                                          id: 12,
+                                          itemId: 1,
+                                          parentNodeId: 11,
+                                          kind: ItemVariationNodeKind.property,
+                                          name: 'Action Dolly Contact',
+                                          children: [
+                                            _node(
+                                              id: 13,
+                                              itemId: 1,
+                                              parentNodeId: 12,
+                                              kind: ItemVariationNodeKind.value,
+                                              name: '1 Way',
+                                              children: [
+                                                _node(
+                                                  id: 14,
+                                                  itemId: 1,
+                                                  parentNodeId: 13,
+                                                  kind: ItemVariationNodeKind
+                                                      .property,
+                                                  name: 'Action Dolly Type',
+                                                  children: [
+                                                    _node(
+                                                      id: 15,
+                                                      itemId: 1,
+                                                      parentNodeId: 14,
+                                                      kind:
+                                                          ItemVariationNodeKind
+                                                              .value,
+                                                      name: 'Dolly',
+                                                      children: [
+                                                        _node(
+                                                          id: 16,
+                                                          itemId: 1,
+                                                          parentNodeId: 15,
+                                                          kind:
+                                                              ItemVariationNodeKind
+                                                                  .property,
+                                                          name:
+                                                              'Action Dolly Plating',
+                                                          children: [
+                                                            _node(
+                                                              id: 17,
+                                                              itemId: 1,
+                                                              parentNodeId: 16,
+                                                              kind:
+                                                                  ItemVariationNodeKind
+                                                                      .value,
+                                                              name:
+                                                                  'Without Plating',
+                                                              displayName:
+                                                                  '5 Amp 11+1 Brass 1 Way Dolly Without Plating',
+                                                            ),
+                                                            _node(
+                                                              id: 18,
+                                                              itemId: 1,
+                                                              parentNodeId: 16,
+                                                              kind:
+                                                                  ItemVariationNodeKind
+                                                                      .value,
+                                                              name:
+                                                                  'With Plating',
+                                                              displayName:
+                                                                  '5 Amp 11+1 Brass 1 Way Dolly With Plating',
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -935,22 +1029,104 @@ class FakeItemRepository extends ItemRepository {
                       itemId: 1,
                       parentNodeId: 1,
                       kind: ItemVariationNodeKind.value,
-                      name: 'White',
+                      name: '6 Amp',
                       children: [
                         _node(
                           id: 6,
                           itemId: 1,
                           parentNodeId: 5,
                           kind: ItemVariationNodeKind.property,
-                          name: 'Finish',
+                          name: 'Action Patti + Dabbi',
                           children: [
                             _node(
                               id: 7,
                               itemId: 1,
                               parentNodeId: 6,
                               kind: ItemVariationNodeKind.value,
-                              name: 'Glossy',
-                              displayName: 'Color: White | Finish: Glossy',
+                              name: '11+1',
+                              children: [
+                                _node(
+                                  id: 19,
+                                  itemId: 1,
+                                  parentNodeId: 7,
+                                  kind: ItemVariationNodeKind.property,
+                                  name: 'Action Dolly Alloy',
+                                  children: [
+                                    _node(
+                                      id: 20,
+                                      itemId: 1,
+                                      parentNodeId: 19,
+                                      kind: ItemVariationNodeKind.value,
+                                      name: 'Brass',
+                                      children: [
+                                        _node(
+                                          id: 21,
+                                          itemId: 1,
+                                          parentNodeId: 20,
+                                          kind: ItemVariationNodeKind.property,
+                                          name: 'Action Dolly Contact',
+                                          children: [
+                                            _node(
+                                              id: 22,
+                                              itemId: 1,
+                                              parentNodeId: 21,
+                                              kind: ItemVariationNodeKind.value,
+                                              name: '1 Way',
+                                              children: [
+                                                _node(
+                                                  id: 23,
+                                                  itemId: 1,
+                                                  parentNodeId: 22,
+                                                  kind: ItemVariationNodeKind
+                                                      .property,
+                                                  name: 'Action Dolly Type',
+                                                  children: [
+                                                    _node(
+                                                      id: 24,
+                                                      itemId: 1,
+                                                      parentNodeId: 23,
+                                                      kind:
+                                                          ItemVariationNodeKind
+                                                              .value,
+                                                      name: 'Dolly',
+                                                      children: [
+                                                        _node(
+                                                          id: 25,
+                                                          itemId: 1,
+                                                          parentNodeId: 24,
+                                                          kind:
+                                                              ItemVariationNodeKind
+                                                                  .property,
+                                                          name:
+                                                              'Action Dolly Plating',
+                                                          children: [
+                                                            _node(
+                                                              id: 26,
+                                                              itemId: 1,
+                                                              parentNodeId: 25,
+                                                              kind:
+                                                                  ItemVariationNodeKind
+                                                                      .value,
+                                                              name:
+                                                                  'Without Plating',
+                                                              displayName:
+                                                                  '6 Amp 11+1 Brass 1 Way Dolly Without Plating',
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -985,7 +1161,210 @@ class FakeItemRepository extends ItemRepository {
                       parentNodeId: 8,
                       kind: ItemVariationNodeKind.value,
                       name: 'Fast Cure',
-                      displayName: 'Cure Speed: Fast Cure',
+                      displayName: 'Fast Cure',
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            ItemDefinition(
+              id: 3,
+              name: 'Luxury Pump Bottle',
+              alias: 'Cosmetic Pack',
+              displayName: 'Luxury Pump Bottle - 100',
+              quantity: 100,
+              groupId: 2,
+              unitId: 2,
+              isArchived: false,
+              usageCount: 1,
+              createdAt: DateTime(2024),
+              updatedAt: DateTime(2024),
+              variationTree: [
+                _node(
+                  id: 27,
+                  itemId: 3,
+                  kind: ItemVariationNodeKind.property,
+                  name: 'Bottle Material',
+                  children: [
+                    _node(
+                      id: 28,
+                      itemId: 3,
+                      parentNodeId: 27,
+                      kind: ItemVariationNodeKind.value,
+                      name: 'PET',
+                      children: [
+                        _node(
+                          id: 29,
+                          itemId: 3,
+                          parentNodeId: 28,
+                          kind: ItemVariationNodeKind.property,
+                          name: 'Bottle Color',
+                          children: [
+                            _node(
+                              id: 30,
+                              itemId: 3,
+                              parentNodeId: 29,
+                              kind: ItemVariationNodeKind.value,
+                              name: 'Frosted Clear',
+                              children: [
+                                _node(
+                                  id: 31,
+                                  itemId: 3,
+                                  parentNodeId: 30,
+                                  kind: ItemVariationNodeKind.property,
+                                  name: 'Pump Finish',
+                                  children: [
+                                    _node(
+                                      id: 32,
+                                      itemId: 3,
+                                      parentNodeId: 31,
+                                      kind: ItemVariationNodeKind.value,
+                                      name: 'Matte Silver',
+                                      children: [
+                                        _node(
+                                          id: 33,
+                                          itemId: 3,
+                                          parentNodeId: 32,
+                                          kind: ItemVariationNodeKind.property,
+                                          name: 'Lock Type',
+                                          children: [
+                                            _node(
+                                              id: 34,
+                                              itemId: 3,
+                                              parentNodeId: 33,
+                                              kind: ItemVariationNodeKind.value,
+                                              name: 'Left Lock',
+                                              displayName:
+                                                  'PET Frosted Clear Matte Silver Left Lock',
+                                            ),
+                                            _node(
+                                              id: 35,
+                                              itemId: 3,
+                                              parentNodeId: 33,
+                                              kind: ItemVariationNodeKind.value,
+                                              name: 'Right Lock',
+                                              displayName:
+                                                  'PET Frosted Clear Matte Silver Right Lock',
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            _node(
+                              id: 36,
+                              itemId: 3,
+                              parentNodeId: 29,
+                              kind: ItemVariationNodeKind.value,
+                              name: 'Amber',
+                              children: [
+                                _node(
+                                  id: 37,
+                                  itemId: 3,
+                                  parentNodeId: 36,
+                                  kind: ItemVariationNodeKind.property,
+                                  name: 'Pump Finish',
+                                  children: [
+                                    _node(
+                                      id: 38,
+                                      itemId: 3,
+                                      parentNodeId: 37,
+                                      kind: ItemVariationNodeKind.value,
+                                      name: 'Gloss Gold',
+                                      children: [
+                                        _node(
+                                          id: 39,
+                                          itemId: 3,
+                                          parentNodeId: 38,
+                                          kind: ItemVariationNodeKind.property,
+                                          name: 'Lock Type',
+                                          children: [
+                                            _node(
+                                              id: 40,
+                                              itemId: 3,
+                                              parentNodeId: 39,
+                                              kind: ItemVariationNodeKind.value,
+                                              name: 'Left Lock',
+                                              displayName:
+                                                  'PET Amber Gloss Gold Left Lock',
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    _node(
+                      id: 41,
+                      itemId: 3,
+                      parentNodeId: 27,
+                      kind: ItemVariationNodeKind.value,
+                      name: 'Glass',
+                      children: [
+                        _node(
+                          id: 42,
+                          itemId: 3,
+                          parentNodeId: 41,
+                          kind: ItemVariationNodeKind.property,
+                          name: 'Bottle Color',
+                          children: [
+                            _node(
+                              id: 43,
+                              itemId: 3,
+                              parentNodeId: 42,
+                              kind: ItemVariationNodeKind.value,
+                              name: 'Clear',
+                              children: [
+                                _node(
+                                  id: 44,
+                                  itemId: 3,
+                                  parentNodeId: 43,
+                                  kind: ItemVariationNodeKind.property,
+                                  name: 'Pump Finish',
+                                  children: [
+                                    _node(
+                                      id: 45,
+                                      itemId: 3,
+                                      parentNodeId: 44,
+                                      kind: ItemVariationNodeKind.value,
+                                      name: 'Rose Gold',
+                                      children: [
+                                        _node(
+                                          id: 46,
+                                          itemId: 3,
+                                          parentNodeId: 45,
+                                          kind: ItemVariationNodeKind.property,
+                                          name: 'Lock Type',
+                                          children: [
+                                            _node(
+                                              id: 47,
+                                              itemId: 3,
+                                              parentNodeId: 46,
+                                              kind: ItemVariationNodeKind.value,
+                                              name: 'Right Lock',
+                                              displayName:
+                                                  'Glass Clear Rose Gold Right Lock',
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -993,6 +1372,209 @@ class FakeItemRepository extends ItemRepository {
             ),
             ItemDefinition(
               id: 4,
+              name: 'Premium Mono Carton',
+              alias: 'Retail Carton',
+              displayName: 'Premium Mono Carton - 500',
+              quantity: 500,
+              groupId: 2,
+              unitId: 2,
+              isArchived: false,
+              usageCount: 0,
+              createdAt: DateTime(2024),
+              updatedAt: DateTime(2024),
+              variationTree: [
+                _node(
+                  id: 48,
+                  itemId: 4,
+                  kind: ItemVariationNodeKind.property,
+                  name: 'Board GSM',
+                  children: [
+                    _node(
+                      id: 49,
+                      itemId: 4,
+                      parentNodeId: 48,
+                      kind: ItemVariationNodeKind.value,
+                      name: '300 GSM',
+                      children: [
+                        _node(
+                          id: 50,
+                          itemId: 4,
+                          parentNodeId: 49,
+                          kind: ItemVariationNodeKind.property,
+                          name: 'Print Finish',
+                          children: [
+                            _node(
+                              id: 51,
+                              itemId: 4,
+                              parentNodeId: 50,
+                              kind: ItemVariationNodeKind.value,
+                              name: 'Matte',
+                              children: [
+                                _node(
+                                  id: 52,
+                                  itemId: 4,
+                                  parentNodeId: 51,
+                                  kind: ItemVariationNodeKind.property,
+                                  name: 'Foil',
+                                  children: [
+                                    _node(
+                                      id: 53,
+                                      itemId: 4,
+                                      parentNodeId: 52,
+                                      kind: ItemVariationNodeKind.value,
+                                      name: 'Gold Foil',
+                                      children: [
+                                        _node(
+                                          id: 54,
+                                          itemId: 4,
+                                          parentNodeId: 53,
+                                          kind: ItemVariationNodeKind.property,
+                                          name: 'Window',
+                                          children: [
+                                            _node(
+                                              id: 55,
+                                              itemId: 4,
+                                              parentNodeId: 54,
+                                              kind: ItemVariationNodeKind.value,
+                                              name: 'With Window',
+                                              displayName:
+                                                  '300 GSM Matte Gold Foil With Window',
+                                            ),
+                                            _node(
+                                              id: 56,
+                                              itemId: 4,
+                                              parentNodeId: 54,
+                                              kind: ItemVariationNodeKind.value,
+                                              name: 'No Window',
+                                              displayName:
+                                                  '300 GSM Matte Gold Foil No Window',
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            _node(
+                              id: 57,
+                              itemId: 4,
+                              parentNodeId: 50,
+                              kind: ItemVariationNodeKind.value,
+                              name: 'Gloss',
+                              children: [
+                                _node(
+                                  id: 58,
+                                  itemId: 4,
+                                  parentNodeId: 57,
+                                  kind: ItemVariationNodeKind.property,
+                                  name: 'Foil',
+                                  children: [
+                                    _node(
+                                      id: 59,
+                                      itemId: 4,
+                                      parentNodeId: 58,
+                                      kind: ItemVariationNodeKind.value,
+                                      name: 'No Foil',
+                                      children: [
+                                        _node(
+                                          id: 60,
+                                          itemId: 4,
+                                          parentNodeId: 59,
+                                          kind: ItemVariationNodeKind.property,
+                                          name: 'Window',
+                                          children: [
+                                            _node(
+                                              id: 61,
+                                              itemId: 4,
+                                              parentNodeId: 60,
+                                              kind: ItemVariationNodeKind.value,
+                                              name: 'No Window',
+                                              displayName:
+                                                  '300 GSM Gloss No Foil No Window',
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    _node(
+                      id: 62,
+                      itemId: 4,
+                      parentNodeId: 48,
+                      kind: ItemVariationNodeKind.value,
+                      name: '350 GSM',
+                      children: [
+                        _node(
+                          id: 63,
+                          itemId: 4,
+                          parentNodeId: 62,
+                          kind: ItemVariationNodeKind.property,
+                          name: 'Print Finish',
+                          children: [
+                            _node(
+                              id: 64,
+                              itemId: 4,
+                              parentNodeId: 63,
+                              kind: ItemVariationNodeKind.value,
+                              name: 'Matte',
+                              children: [
+                                _node(
+                                  id: 65,
+                                  itemId: 4,
+                                  parentNodeId: 64,
+                                  kind: ItemVariationNodeKind.property,
+                                  name: 'Foil',
+                                  children: [
+                                    _node(
+                                      id: 66,
+                                      itemId: 4,
+                                      parentNodeId: 65,
+                                      kind: ItemVariationNodeKind.value,
+                                      name: 'Rose Gold Foil',
+                                      children: [
+                                        _node(
+                                          id: 67,
+                                          itemId: 4,
+                                          parentNodeId: 66,
+                                          kind: ItemVariationNodeKind.property,
+                                          name: 'Window',
+                                          children: [
+                                            _node(
+                                              id: 68,
+                                              itemId: 4,
+                                              parentNodeId: 67,
+                                              kind: ItemVariationNodeKind.value,
+                                              name: 'With Window',
+                                              displayName:
+                                                  '350 GSM Matte Rose Gold Foil With Window',
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            ItemDefinition(
+              id: 5,
               name: 'Legacy Stock',
               alias: '',
               displayName: 'Legacy Stock - 5',
@@ -1008,8 +1590,8 @@ class FakeItemRepository extends ItemRepository {
           ];
 
   final List<ItemDefinition> _items;
-  int _nextId = 5;
-  int _nextNodeId = 10;
+  int _nextId = 6;
+  int _nextNodeId = 69;
 
   @override
   Future<void> init() async {}
@@ -1464,7 +2046,7 @@ void main() {
         navLabel: 'Items',
         query: 'glue',
         visibleText: 'Glue Compound - 1',
-        hiddenText: 'Bottle - 100',
+        hiddenText: 'Switch Action Dolly - 1',
       );
       await expectSharedSearch(
         navLabel: 'Groups',
@@ -1518,21 +2100,61 @@ void main() {
       find.byKey(const ValueKey<String>('orders-editor-item-field')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Bottle - 100').last);
+    await tester.tap(find.text('Switch Action Dolly - 1').last);
     await tester.pumpAndSettle();
 
     await tester.tap(
-      find.byKey(const ValueKey<String>('orders-editor-color-field')),
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-amp-field'),
+      ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Black').last);
+    await tester.tap(find.text('5 Amp').last);
     await tester.pumpAndSettle();
 
     await tester.tap(
-      find.byKey(const ValueKey<String>('orders-editor-finish-field')),
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-patti-+-dabbi-field'),
+      ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Matte').last);
+    await tester.tap(find.text('11+1').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-alloy-field'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Brass').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-contact-field'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('1 Way').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-type-field'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Dolly').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-plating-field'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Without Plating').last);
     await tester.pumpAndSettle();
 
     await tester.enterText(
@@ -1550,7 +2172,9 @@ void main() {
     expect(find.text('Acme Packaging Pvt. Ltd.'), findsOneWidget);
     expect(find.text('PO-42'), findsOneWidget);
     expect(
-      find.text('Bottle - 100 · Color: Black | Finish: Matte'),
+      find.text(
+        'Switch Action Dolly - 1 · 5 Amp 11+1 Brass 1 Way Dolly Without Plating',
+      ),
       findsOneWidget,
     );
     expect(find.text('25 Pieces'), findsOneWidget);
@@ -1585,19 +2209,55 @@ void main() {
       find.byKey(const ValueKey<String>('orders-editor-item-field')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Bottle - 100').last);
+    await tester.tap(find.text('Switch Action Dolly - 1').last);
     await tester.pumpAndSettle();
     await tester.tap(
-      find.byKey(const ValueKey<String>('orders-editor-color-field')),
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-amp-field'),
+      ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Black').last);
+    await tester.tap(find.text('5 Amp').last);
     await tester.pumpAndSettle();
     await tester.tap(
-      find.byKey(const ValueKey<String>('orders-editor-finish-field')),
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-patti-+-dabbi-field'),
+      ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Matte').last);
+    await tester.tap(find.text('11+1').last);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-alloy-field'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Brass').last);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-contact-field'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('1 Way').last);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-type-field'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Dolly').last);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-plating-field'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Without Plating').last);
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey<String>('orders-editor-quantity-field')),
@@ -1656,19 +2316,55 @@ void main() {
         find.byKey(const ValueKey<String>('orders-editor-item-field')),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Bottle - 100').last);
+      await tester.tap(find.text('Switch Action Dolly - 1').last);
       await tester.pumpAndSettle();
       await tester.tap(
-        find.byKey(const ValueKey<String>('orders-editor-color-field')),
+        find.byKey(
+          const ValueKey<String>('orders-editor-action-dolly-amp-field'),
+        ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Black').last);
+      await tester.tap(find.text('5 Amp').last);
       await tester.pumpAndSettle();
       await tester.tap(
-        find.byKey(const ValueKey<String>('orders-editor-finish-field')),
+        find.byKey(
+          const ValueKey<String>('orders-editor-action-patti-+-dabbi-field'),
+        ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Matte').last);
+      await tester.tap(find.text('11+1').last);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('orders-editor-action-dolly-alloy-field'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Brass').last);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('orders-editor-action-dolly-contact-field'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('1 Way').last);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('orders-editor-action-dolly-type-field'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Dolly').last);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('orders-editor-action-dolly-plating-field'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Without Plating').last);
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const ValueKey<String>('orders-editor-quantity-field')),
@@ -1715,19 +2411,55 @@ void main() {
       find.byKey(const ValueKey<String>('orders-editor-item-field')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Bottle - 100').last);
+    await tester.tap(find.text('Switch Action Dolly - 1').last);
     await tester.pumpAndSettle();
     await tester.tap(
-      find.byKey(const ValueKey<String>('orders-editor-color-field')),
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-amp-field'),
+      ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Black').last);
+    await tester.tap(find.text('5 Amp').last);
     await tester.pumpAndSettle();
     await tester.tap(
-      find.byKey(const ValueKey<String>('orders-editor-finish-field')),
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-patti-+-dabbi-field'),
+      ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Matte').last);
+    await tester.tap(find.text('11+1').last);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-alloy-field'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Brass').last);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-contact-field'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('1 Way').last);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-type-field'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Dolly').last);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-plating-field'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Without Plating').last);
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey<String>('orders-editor-quantity-field')),
@@ -1818,19 +2550,55 @@ void main() {
       find.byKey(const ValueKey<String>('orders-editor-item-field')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Bottle - 100').last);
+    await tester.tap(find.text('Switch Action Dolly - 1').last);
     await tester.pumpAndSettle();
     await tester.tap(
-      find.byKey(const ValueKey<String>('orders-editor-color-field')),
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-amp-field'),
+      ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Black').last);
+    await tester.tap(find.text('5 Amp').last);
     await tester.pumpAndSettle();
     await tester.tap(
-      find.byKey(const ValueKey<String>('orders-editor-finish-field')),
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-patti-+-dabbi-field'),
+      ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Matte').last);
+    await tester.tap(find.text('11+1').last);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-alloy-field'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Brass').last);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-contact-field'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('1 Way').last);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-type-field'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Dolly').last);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('orders-editor-action-dolly-plating-field'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Without Plating').last);
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey<String>('orders-editor-quantity-field')),
@@ -2072,8 +2840,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(TextField), findsOneWidget);
-    expect(find.text('Bottle - 100'), findsOneWidget);
+    expect(find.text('Switch Action Dolly - 1'), findsOneWidget);
     expect(find.text('Glue Compound - 1'), findsOneWidget);
+    expect(find.text('Luxury Pump Bottle - 100'), findsOneWidget);
+    expect(find.text('Premium Mono Carton - 500'), findsOneWidget);
 
     await tester.tap(find.text('Archived'));
     await tester.pumpAndSettle();
@@ -2172,10 +2942,7 @@ void main() {
         .single;
     expect(created.displayName, 'Bottle / Travel Bottle - 200');
     expect(created.topLevelProperties.single.name, 'Color');
-    expect(
-      created.leafVariationNodes.single.displayName,
-      'Color: Black | Finish: Glossy',
-    );
+    expect(created.leafVariationNodes.single.displayName, 'Black Glossy');
   });
 
   testWidgets('items duplicate sibling names are blocked', (tester) async {

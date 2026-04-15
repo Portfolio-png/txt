@@ -101,18 +101,13 @@ class SearchableSelectField<T> extends FormField<T> {
              child: InputDecorator(
                decoration: effectiveDecoration,
                isEmpty: selected == null,
-               child: Text(
-                 selected?.label ?? effectiveDecoration.hintText ?? '',
-                 maxLines: 1,
-                 overflow: TextOverflow.ellipsis,
-                 style: selected == null
-                     ? Theme.of(state.context).textTheme.bodyLarge?.copyWith(
-                         color: Theme.of(
-                           state.context,
-                         ).hintColor.withValues(alpha: 0.9),
-                       )
-                     : null,
-               ),
+               child: selected == null
+                   ? const SizedBox.shrink()
+                   : Text(
+                       selected.label,
+                       maxLines: 1,
+                       overflow: TextOverflow.ellipsis,
+                     ),
              ),
            );
          },

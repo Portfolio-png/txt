@@ -375,21 +375,37 @@ class ApiItemRepository implements ItemRepository {
     final now = DateTime(2024);
 
     final bottleId = _mockNextItemId++;
-    final colorPropertyId = _mockNextNodeId++;
-    final blackValueId = _mockNextNodeId++;
-    final blackFinishPropertyId = _mockNextNodeId++;
-    final matteValueId = _mockNextNodeId++;
-    final glossyBlackValueId = _mockNextNodeId++;
-    final whiteValueId = _mockNextNodeId++;
-    final whiteFinishPropertyId = _mockNextNodeId++;
-    final glossyWhiteValueId = _mockNextNodeId++;
+    final ampPropertyId = _mockNextNodeId++;
+    final fiveAmpValueId = _mockNextNodeId++;
+    final fiveAmpCountPropertyId = _mockNextNodeId++;
+    final fiveAmpCountValueId = _mockNextNodeId++;
+    final fiveAmpAlloyPropertyId = _mockNextNodeId++;
+    final fiveAmpAlloyValueId = _mockNextNodeId++;
+    final fiveAmpContactPropertyId = _mockNextNodeId++;
+    final fiveAmpContactValueId = _mockNextNodeId++;
+    final fiveAmpTypePropertyId = _mockNextNodeId++;
+    final fiveAmpTypeValueId = _mockNextNodeId++;
+    final fiveAmpPlatingPropertyId = _mockNextNodeId++;
+    final withoutPlatingValueId = _mockNextNodeId++;
+    final withPlatingValueId = _mockNextNodeId++;
+    final sixAmpValueId = _mockNextNodeId++;
+    final sixAmpCountPropertyId = _mockNextNodeId++;
+    final sixAmpCountValueId = _mockNextNodeId++;
+    final sixAmpAlloyPropertyId = _mockNextNodeId++;
+    final sixAmpAlloyValueId = _mockNextNodeId++;
+    final sixAmpContactPropertyId = _mockNextNodeId++;
+    final sixAmpContactValueId = _mockNextNodeId++;
+    final sixAmpTypePropertyId = _mockNextNodeId++;
+    final sixAmpTypeValueId = _mockNextNodeId++;
+    final sixAmpPlatingPropertyId = _mockNextNodeId++;
+    final sixAmpWithoutPlatingValueId = _mockNextNodeId++;
     final bottleTree = [
       ItemVariationNodeDefinition(
-        id: colorPropertyId,
+        id: ampPropertyId,
         itemId: bottleId,
         parentNodeId: null,
         kind: ItemVariationNodeKind.property,
-        name: 'Color',
+        name: 'Action Dolly Amp',
         displayName: '',
         position: 0,
         isArchived: false,
@@ -397,11 +413,11 @@ class ApiItemRepository implements ItemRepository {
         updatedAt: now,
         children: [
           ItemVariationNodeDefinition(
-            id: blackValueId,
+            id: fiveAmpValueId,
             itemId: bottleId,
-            parentNodeId: colorPropertyId,
+            parentNodeId: ampPropertyId,
             kind: ItemVariationNodeKind.value,
-            name: 'Black',
+            name: '5 Amp',
             displayName: '',
             position: 0,
             isArchived: false,
@@ -409,11 +425,11 @@ class ApiItemRepository implements ItemRepository {
             updatedAt: now,
             children: [
               ItemVariationNodeDefinition(
-                id: blackFinishPropertyId,
+                id: fiveAmpCountPropertyId,
                 itemId: bottleId,
-                parentNodeId: blackValueId,
+                parentNodeId: fiveAmpValueId,
                 kind: ItemVariationNodeKind.property,
-                name: 'Finish',
+                name: 'Action Patti + Dabbi',
                 displayName: '',
                 position: 0,
                 isArchived: false,
@@ -421,41 +437,161 @@ class ApiItemRepository implements ItemRepository {
                 updatedAt: now,
                 children: [
                   ItemVariationNodeDefinition(
-                    id: matteValueId,
+                    id: fiveAmpCountValueId,
                     itemId: bottleId,
-                    parentNodeId: blackFinishPropertyId,
+                    parentNodeId: fiveAmpCountPropertyId,
                     kind: ItemVariationNodeKind.value,
-                    name: 'Matte',
-                    displayName: 'Color: Black | Finish: Matte',
+                    name: '11+1',
+                    displayName: '',
                     position: 0,
                     isArchived: false,
                     createdAt: now,
                     updatedAt: now,
-                    children: const [],
-                  ),
-                  ItemVariationNodeDefinition(
-                    id: glossyBlackValueId,
-                    itemId: bottleId,
-                    parentNodeId: blackFinishPropertyId,
-                    kind: ItemVariationNodeKind.value,
-                    name: 'Glossy',
-                    displayName: 'Color: Black | Finish: Glossy',
-                    position: 1,
-                    isArchived: false,
-                    createdAt: now,
-                    updatedAt: now,
-                    children: const [],
+                    children: [
+                      ItemVariationNodeDefinition(
+                        id: fiveAmpAlloyPropertyId,
+                        itemId: bottleId,
+                        parentNodeId: fiveAmpCountValueId,
+                        kind: ItemVariationNodeKind.property,
+                        name: 'Action Dolly Alloy',
+                        displayName: '',
+                        position: 0,
+                        isArchived: false,
+                        createdAt: now,
+                        updatedAt: now,
+                        children: [
+                          ItemVariationNodeDefinition(
+                            id: fiveAmpAlloyValueId,
+                            itemId: bottleId,
+                            parentNodeId: fiveAmpAlloyPropertyId,
+                            kind: ItemVariationNodeKind.value,
+                            name: 'Brass',
+                            displayName: '',
+                            position: 0,
+                            isArchived: false,
+                            createdAt: now,
+                            updatedAt: now,
+                            children: [
+                              ItemVariationNodeDefinition(
+                                id: fiveAmpContactPropertyId,
+                                itemId: bottleId,
+                                parentNodeId: fiveAmpAlloyValueId,
+                                kind: ItemVariationNodeKind.property,
+                                name: 'Action Dolly Contact',
+                                displayName: '',
+                                position: 0,
+                                isArchived: false,
+                                createdAt: now,
+                                updatedAt: now,
+                                children: [
+                                  ItemVariationNodeDefinition(
+                                    id: fiveAmpContactValueId,
+                                    itemId: bottleId,
+                                    parentNodeId: fiveAmpContactPropertyId,
+                                    kind: ItemVariationNodeKind.value,
+                                    name: '1 Way',
+                                    displayName: '',
+                                    position: 0,
+                                    isArchived: false,
+                                    createdAt: now,
+                                    updatedAt: now,
+                                    children: [
+                                      ItemVariationNodeDefinition(
+                                        id: fiveAmpTypePropertyId,
+                                        itemId: bottleId,
+                                        parentNodeId: fiveAmpContactValueId,
+                                        kind: ItemVariationNodeKind.property,
+                                        name: 'Action Dolly Type',
+                                        displayName: '',
+                                        position: 0,
+                                        isArchived: false,
+                                        createdAt: now,
+                                        updatedAt: now,
+                                        children: [
+                                          ItemVariationNodeDefinition(
+                                            id: fiveAmpTypeValueId,
+                                            itemId: bottleId,
+                                            parentNodeId: fiveAmpTypePropertyId,
+                                            kind: ItemVariationNodeKind.value,
+                                            name: 'Dolly',
+                                            displayName: '',
+                                            position: 0,
+                                            isArchived: false,
+                                            createdAt: now,
+                                            updatedAt: now,
+                                            children: [
+                                              ItemVariationNodeDefinition(
+                                                id: fiveAmpPlatingPropertyId,
+                                                itemId: bottleId,
+                                                parentNodeId:
+                                                    fiveAmpTypeValueId,
+                                                kind: ItemVariationNodeKind
+                                                    .property,
+                                                name: 'Action Dolly Plating',
+                                                displayName: '',
+                                                position: 0,
+                                                isArchived: false,
+                                                createdAt: now,
+                                                updatedAt: now,
+                                                children: [
+                                                  ItemVariationNodeDefinition(
+                                                    id: withoutPlatingValueId,
+                                                    itemId: bottleId,
+                                                    parentNodeId:
+                                                        fiveAmpPlatingPropertyId,
+                                                    kind: ItemVariationNodeKind
+                                                        .value,
+                                                    name: 'Without Plating',
+                                                    displayName:
+                                                        '5 Amp 11+1 Brass 1 Way Dolly Without Plating',
+                                                    position: 0,
+                                                    isArchived: false,
+                                                    createdAt: now,
+                                                    updatedAt: now,
+                                                    children: const [],
+                                                  ),
+                                                  ItemVariationNodeDefinition(
+                                                    id: withPlatingValueId,
+                                                    itemId: bottleId,
+                                                    parentNodeId:
+                                                        fiveAmpPlatingPropertyId,
+                                                    kind: ItemVariationNodeKind
+                                                        .value,
+                                                    name: 'With Plating',
+                                                    displayName:
+                                                        '5 Amp 11+1 Brass 1 Way Dolly With Plating',
+                                                    position: 1,
+                                                    isArchived: false,
+                                                    createdAt: now,
+                                                    updatedAt: now,
+                                                    children: const [],
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ],
               ),
             ],
           ),
           ItemVariationNodeDefinition(
-            id: whiteValueId,
+            id: sixAmpValueId,
             itemId: bottleId,
-            parentNodeId: colorPropertyId,
+            parentNodeId: ampPropertyId,
             kind: ItemVariationNodeKind.value,
-            name: 'White',
+            name: '6 Amp',
             displayName: '',
             position: 1,
             isArchived: false,
@@ -463,11 +599,11 @@ class ApiItemRepository implements ItemRepository {
             updatedAt: now,
             children: [
               ItemVariationNodeDefinition(
-                id: whiteFinishPropertyId,
+                id: sixAmpCountPropertyId,
                 itemId: bottleId,
-                parentNodeId: whiteValueId,
+                parentNodeId: sixAmpValueId,
                 kind: ItemVariationNodeKind.property,
-                name: 'Finish',
+                name: 'Action Patti + Dabbi',
                 displayName: '',
                 position: 0,
                 isArchived: false,
@@ -475,17 +611,133 @@ class ApiItemRepository implements ItemRepository {
                 updatedAt: now,
                 children: [
                   ItemVariationNodeDefinition(
-                    id: glossyWhiteValueId,
+                    id: sixAmpCountValueId,
                     itemId: bottleId,
-                    parentNodeId: whiteFinishPropertyId,
+                    parentNodeId: sixAmpCountPropertyId,
                     kind: ItemVariationNodeKind.value,
-                    name: 'Glossy',
-                    displayName: 'Color: White | Finish: Glossy',
+                    name: '11+1',
+                    displayName: '',
                     position: 0,
                     isArchived: false,
                     createdAt: now,
                     updatedAt: now,
-                    children: const [],
+                    children: [
+                      ItemVariationNodeDefinition(
+                        id: sixAmpAlloyPropertyId,
+                        itemId: bottleId,
+                        parentNodeId: sixAmpCountValueId,
+                        kind: ItemVariationNodeKind.property,
+                        name: 'Action Dolly Alloy',
+                        displayName: '',
+                        position: 0,
+                        isArchived: false,
+                        createdAt: now,
+                        updatedAt: now,
+                        children: [
+                          ItemVariationNodeDefinition(
+                            id: sixAmpAlloyValueId,
+                            itemId: bottleId,
+                            parentNodeId: sixAmpAlloyPropertyId,
+                            kind: ItemVariationNodeKind.value,
+                            name: 'Brass',
+                            displayName: '',
+                            position: 0,
+                            isArchived: false,
+                            createdAt: now,
+                            updatedAt: now,
+                            children: [
+                              ItemVariationNodeDefinition(
+                                id: sixAmpContactPropertyId,
+                                itemId: bottleId,
+                                parentNodeId: sixAmpAlloyValueId,
+                                kind: ItemVariationNodeKind.property,
+                                name: 'Action Dolly Contact',
+                                displayName: '',
+                                position: 0,
+                                isArchived: false,
+                                createdAt: now,
+                                updatedAt: now,
+                                children: [
+                                  ItemVariationNodeDefinition(
+                                    id: sixAmpContactValueId,
+                                    itemId: bottleId,
+                                    parentNodeId: sixAmpContactPropertyId,
+                                    kind: ItemVariationNodeKind.value,
+                                    name: '1 Way',
+                                    displayName: '',
+                                    position: 0,
+                                    isArchived: false,
+                                    createdAt: now,
+                                    updatedAt: now,
+                                    children: [
+                                      ItemVariationNodeDefinition(
+                                        id: sixAmpTypePropertyId,
+                                        itemId: bottleId,
+                                        parentNodeId: sixAmpContactValueId,
+                                        kind: ItemVariationNodeKind.property,
+                                        name: 'Action Dolly Type',
+                                        displayName: '',
+                                        position: 0,
+                                        isArchived: false,
+                                        createdAt: now,
+                                        updatedAt: now,
+                                        children: [
+                                          ItemVariationNodeDefinition(
+                                            id: sixAmpTypeValueId,
+                                            itemId: bottleId,
+                                            parentNodeId: sixAmpTypePropertyId,
+                                            kind: ItemVariationNodeKind.value,
+                                            name: 'Dolly',
+                                            displayName: '',
+                                            position: 0,
+                                            isArchived: false,
+                                            createdAt: now,
+                                            updatedAt: now,
+                                            children: [
+                                              ItemVariationNodeDefinition(
+                                                id: sixAmpPlatingPropertyId,
+                                                itemId: bottleId,
+                                                parentNodeId: sixAmpTypeValueId,
+                                                kind: ItemVariationNodeKind
+                                                    .property,
+                                                name: 'Action Dolly Plating',
+                                                displayName: '',
+                                                position: 0,
+                                                isArchived: false,
+                                                createdAt: now,
+                                                updatedAt: now,
+                                                children: [
+                                                  ItemVariationNodeDefinition(
+                                                    id: sixAmpWithoutPlatingValueId,
+                                                    itemId: bottleId,
+                                                    parentNodeId:
+                                                        sixAmpPlatingPropertyId,
+                                                    kind: ItemVariationNodeKind
+                                                        .value,
+                                                    name: 'Without Plating',
+                                                    displayName:
+                                                        '6 Amp 11+1 Brass 1 Way Dolly Without Plating',
+                                                    position: 0,
+                                                    isArchived: false,
+                                                    createdAt: now,
+                                                    updatedAt: now,
+                                                    children: const [],
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -497,10 +749,10 @@ class ApiItemRepository implements ItemRepository {
     _mockItems.add(
       ItemDefinition(
         id: bottleId,
-        name: 'Bottle',
-        alias: 'Classic Bottle',
-        displayName: 'Bottle - 100',
-        quantity: 100,
+        name: 'Switch Action Dolly',
+        alias: 'Finish Goods Variant',
+        displayName: 'Switch Action Dolly - 1',
+        quantity: 1,
         groupId: 2,
         unitId: 2,
         isArchived: false,
@@ -533,7 +785,7 @@ class ApiItemRepository implements ItemRepository {
             parentNodeId: cureSpeedPropertyId,
             kind: ItemVariationNodeKind.value,
             name: 'Fast Cure',
-            displayName: 'Cure Speed: Fast Cure',
+            displayName: 'Fast Cure',
             position: 0,
             isArchived: false,
             createdAt: now,
@@ -557,6 +809,676 @@ class ApiItemRepository implements ItemRepository {
         createdAt: now,
         updatedAt: now,
         variationTree: glueTree,
+      ),
+    );
+
+    final bottleShowcaseId = _mockNextItemId++;
+    final bottleMaterialPropertyId = _mockNextNodeId++;
+    final petValueId = _mockNextNodeId++;
+    final bottleColorPropertyId = _mockNextNodeId++;
+    final frostedClearValueId = _mockNextNodeId++;
+    final pumpFinishPropertyId = _mockNextNodeId++;
+    final matteSilverValueId = _mockNextNodeId++;
+    final lockTypePropertyId = _mockNextNodeId++;
+    final leftLockValueId = _mockNextNodeId++;
+    final rightLockValueId = _mockNextNodeId++;
+    final amberValueId = _mockNextNodeId++;
+    final amberPumpFinishPropertyId = _mockNextNodeId++;
+    final glossGoldValueId = _mockNextNodeId++;
+    final amberLockTypePropertyId = _mockNextNodeId++;
+    final amberLeftLockValueId = _mockNextNodeId++;
+    final glassValueId = _mockNextNodeId++;
+    final glassColorPropertyId = _mockNextNodeId++;
+    final clearValueId = _mockNextNodeId++;
+    final glassPumpFinishPropertyId = _mockNextNodeId++;
+    final roseGoldValueId = _mockNextNodeId++;
+    final glassLockTypePropertyId = _mockNextNodeId++;
+    final glassRightLockValueId = _mockNextNodeId++;
+    final bottleShowcaseTree = [
+      ItemVariationNodeDefinition(
+        id: bottleMaterialPropertyId,
+        itemId: bottleShowcaseId,
+        parentNodeId: null,
+        kind: ItemVariationNodeKind.property,
+        name: 'Bottle Material',
+        displayName: '',
+        position: 0,
+        isArchived: false,
+        createdAt: now,
+        updatedAt: now,
+        children: [
+          ItemVariationNodeDefinition(
+            id: petValueId,
+            itemId: bottleShowcaseId,
+            parentNodeId: bottleMaterialPropertyId,
+            kind: ItemVariationNodeKind.value,
+            name: 'PET',
+            displayName: '',
+            position: 0,
+            isArchived: false,
+            createdAt: now,
+            updatedAt: now,
+            children: [
+              ItemVariationNodeDefinition(
+                id: bottleColorPropertyId,
+                itemId: bottleShowcaseId,
+                parentNodeId: petValueId,
+                kind: ItemVariationNodeKind.property,
+                name: 'Bottle Color',
+                displayName: '',
+                position: 0,
+                isArchived: false,
+                createdAt: now,
+                updatedAt: now,
+                children: [
+                  ItemVariationNodeDefinition(
+                    id: frostedClearValueId,
+                    itemId: bottleShowcaseId,
+                    parentNodeId: bottleColorPropertyId,
+                    kind: ItemVariationNodeKind.value,
+                    name: 'Frosted Clear',
+                    displayName: '',
+                    position: 0,
+                    isArchived: false,
+                    createdAt: now,
+                    updatedAt: now,
+                    children: [
+                      ItemVariationNodeDefinition(
+                        id: pumpFinishPropertyId,
+                        itemId: bottleShowcaseId,
+                        parentNodeId: frostedClearValueId,
+                        kind: ItemVariationNodeKind.property,
+                        name: 'Pump Finish',
+                        displayName: '',
+                        position: 0,
+                        isArchived: false,
+                        createdAt: now,
+                        updatedAt: now,
+                        children: [
+                          ItemVariationNodeDefinition(
+                            id: matteSilverValueId,
+                            itemId: bottleShowcaseId,
+                            parentNodeId: pumpFinishPropertyId,
+                            kind: ItemVariationNodeKind.value,
+                            name: 'Matte Silver',
+                            displayName: '',
+                            position: 0,
+                            isArchived: false,
+                            createdAt: now,
+                            updatedAt: now,
+                            children: [
+                              ItemVariationNodeDefinition(
+                                id: lockTypePropertyId,
+                                itemId: bottleShowcaseId,
+                                parentNodeId: matteSilverValueId,
+                                kind: ItemVariationNodeKind.property,
+                                name: 'Lock Type',
+                                displayName: '',
+                                position: 0,
+                                isArchived: false,
+                                createdAt: now,
+                                updatedAt: now,
+                                children: [
+                                  ItemVariationNodeDefinition(
+                                    id: leftLockValueId,
+                                    itemId: bottleShowcaseId,
+                                    parentNodeId: lockTypePropertyId,
+                                    kind: ItemVariationNodeKind.value,
+                                    name: 'Left Lock',
+                                    displayName:
+                                        'PET Frosted Clear Matte Silver Left Lock',
+                                    position: 0,
+                                    isArchived: false,
+                                    createdAt: now,
+                                    updatedAt: now,
+                                    children: const [],
+                                  ),
+                                  ItemVariationNodeDefinition(
+                                    id: rightLockValueId,
+                                    itemId: bottleShowcaseId,
+                                    parentNodeId: lockTypePropertyId,
+                                    kind: ItemVariationNodeKind.value,
+                                    name: 'Right Lock',
+                                    displayName:
+                                        'PET Frosted Clear Matte Silver Right Lock',
+                                    position: 1,
+                                    isArchived: false,
+                                    createdAt: now,
+                                    updatedAt: now,
+                                    children: const [],
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  ItemVariationNodeDefinition(
+                    id: amberValueId,
+                    itemId: bottleShowcaseId,
+                    parentNodeId: bottleColorPropertyId,
+                    kind: ItemVariationNodeKind.value,
+                    name: 'Amber',
+                    displayName: '',
+                    position: 1,
+                    isArchived: false,
+                    createdAt: now,
+                    updatedAt: now,
+                    children: [
+                      ItemVariationNodeDefinition(
+                        id: amberPumpFinishPropertyId,
+                        itemId: bottleShowcaseId,
+                        parentNodeId: amberValueId,
+                        kind: ItemVariationNodeKind.property,
+                        name: 'Pump Finish',
+                        displayName: '',
+                        position: 0,
+                        isArchived: false,
+                        createdAt: now,
+                        updatedAt: now,
+                        children: [
+                          ItemVariationNodeDefinition(
+                            id: glossGoldValueId,
+                            itemId: bottleShowcaseId,
+                            parentNodeId: amberPumpFinishPropertyId,
+                            kind: ItemVariationNodeKind.value,
+                            name: 'Gloss Gold',
+                            displayName: '',
+                            position: 0,
+                            isArchived: false,
+                            createdAt: now,
+                            updatedAt: now,
+                            children: [
+                              ItemVariationNodeDefinition(
+                                id: amberLockTypePropertyId,
+                                itemId: bottleShowcaseId,
+                                parentNodeId: glossGoldValueId,
+                                kind: ItemVariationNodeKind.property,
+                                name: 'Lock Type',
+                                displayName: '',
+                                position: 0,
+                                isArchived: false,
+                                createdAt: now,
+                                updatedAt: now,
+                                children: [
+                                  ItemVariationNodeDefinition(
+                                    id: amberLeftLockValueId,
+                                    itemId: bottleShowcaseId,
+                                    parentNodeId: amberLockTypePropertyId,
+                                    kind: ItemVariationNodeKind.value,
+                                    name: 'Left Lock',
+                                    displayName:
+                                        'PET Amber Gloss Gold Left Lock',
+                                    position: 0,
+                                    isArchived: false,
+                                    createdAt: now,
+                                    updatedAt: now,
+                                    children: const [],
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+          ItemVariationNodeDefinition(
+            id: glassValueId,
+            itemId: bottleShowcaseId,
+            parentNodeId: bottleMaterialPropertyId,
+            kind: ItemVariationNodeKind.value,
+            name: 'Glass',
+            displayName: '',
+            position: 1,
+            isArchived: false,
+            createdAt: now,
+            updatedAt: now,
+            children: [
+              ItemVariationNodeDefinition(
+                id: glassColorPropertyId,
+                itemId: bottleShowcaseId,
+                parentNodeId: glassValueId,
+                kind: ItemVariationNodeKind.property,
+                name: 'Bottle Color',
+                displayName: '',
+                position: 0,
+                isArchived: false,
+                createdAt: now,
+                updatedAt: now,
+                children: [
+                  ItemVariationNodeDefinition(
+                    id: clearValueId,
+                    itemId: bottleShowcaseId,
+                    parentNodeId: glassColorPropertyId,
+                    kind: ItemVariationNodeKind.value,
+                    name: 'Clear',
+                    displayName: '',
+                    position: 0,
+                    isArchived: false,
+                    createdAt: now,
+                    updatedAt: now,
+                    children: [
+                      ItemVariationNodeDefinition(
+                        id: glassPumpFinishPropertyId,
+                        itemId: bottleShowcaseId,
+                        parentNodeId: clearValueId,
+                        kind: ItemVariationNodeKind.property,
+                        name: 'Pump Finish',
+                        displayName: '',
+                        position: 0,
+                        isArchived: false,
+                        createdAt: now,
+                        updatedAt: now,
+                        children: [
+                          ItemVariationNodeDefinition(
+                            id: roseGoldValueId,
+                            itemId: bottleShowcaseId,
+                            parentNodeId: glassPumpFinishPropertyId,
+                            kind: ItemVariationNodeKind.value,
+                            name: 'Rose Gold',
+                            displayName: '',
+                            position: 0,
+                            isArchived: false,
+                            createdAt: now,
+                            updatedAt: now,
+                            children: [
+                              ItemVariationNodeDefinition(
+                                id: glassLockTypePropertyId,
+                                itemId: bottleShowcaseId,
+                                parentNodeId: roseGoldValueId,
+                                kind: ItemVariationNodeKind.property,
+                                name: 'Lock Type',
+                                displayName: '',
+                                position: 0,
+                                isArchived: false,
+                                createdAt: now,
+                                updatedAt: now,
+                                children: [
+                                  ItemVariationNodeDefinition(
+                                    id: glassRightLockValueId,
+                                    itemId: bottleShowcaseId,
+                                    parentNodeId: glassLockTypePropertyId,
+                                    kind: ItemVariationNodeKind.value,
+                                    name: 'Right Lock',
+                                    displayName:
+                                        'Glass Clear Rose Gold Right Lock',
+                                    position: 0,
+                                    isArchived: false,
+                                    createdAt: now,
+                                    updatedAt: now,
+                                    children: const [],
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    ];
+    _mockItems.add(
+      ItemDefinition(
+        id: bottleShowcaseId,
+        name: 'Luxury Pump Bottle',
+        alias: 'Cosmetic Pack',
+        displayName: 'Luxury Pump Bottle - 100',
+        quantity: 100,
+        groupId: 2,
+        unitId: 2,
+        isArchived: false,
+        usageCount: 1,
+        createdAt: now,
+        updatedAt: now,
+        variationTree: bottleShowcaseTree,
+      ),
+    );
+
+    final cartonShowcaseId = _mockNextItemId++;
+    final boardGsmPropertyId = _mockNextNodeId++;
+    final gsm300ValueId = _mockNextNodeId++;
+    final printFinishPropertyId = _mockNextNodeId++;
+    final matteValueId = _mockNextNodeId++;
+    final foilPropertyId = _mockNextNodeId++;
+    final goldFoilValueId = _mockNextNodeId++;
+    final windowPropertyId = _mockNextNodeId++;
+    final withWindowValueId = _mockNextNodeId++;
+    final noWindowValueId = _mockNextNodeId++;
+    final glossValueId = _mockNextNodeId++;
+    final glossFoilPropertyId = _mockNextNodeId++;
+    final noFoilValueId = _mockNextNodeId++;
+    final glossWindowPropertyId = _mockNextNodeId++;
+    final glossNoWindowValueId = _mockNextNodeId++;
+    final gsm350ValueId = _mockNextNodeId++;
+    final gsm350FinishPropertyId = _mockNextNodeId++;
+    final gsm350MatteValueId = _mockNextNodeId++;
+    final gsm350FoilPropertyId = _mockNextNodeId++;
+    final roseGoldFoilValueId = _mockNextNodeId++;
+    final gsm350WindowPropertyId = _mockNextNodeId++;
+    final gsm350WithWindowValueId = _mockNextNodeId++;
+    final cartonShowcaseTree = [
+      ItemVariationNodeDefinition(
+        id: boardGsmPropertyId,
+        itemId: cartonShowcaseId,
+        parentNodeId: null,
+        kind: ItemVariationNodeKind.property,
+        name: 'Board GSM',
+        displayName: '',
+        position: 0,
+        isArchived: false,
+        createdAt: now,
+        updatedAt: now,
+        children: [
+          ItemVariationNodeDefinition(
+            id: gsm300ValueId,
+            itemId: cartonShowcaseId,
+            parentNodeId: boardGsmPropertyId,
+            kind: ItemVariationNodeKind.value,
+            name: '300 GSM',
+            displayName: '',
+            position: 0,
+            isArchived: false,
+            createdAt: now,
+            updatedAt: now,
+            children: [
+              ItemVariationNodeDefinition(
+                id: printFinishPropertyId,
+                itemId: cartonShowcaseId,
+                parentNodeId: gsm300ValueId,
+                kind: ItemVariationNodeKind.property,
+                name: 'Print Finish',
+                displayName: '',
+                position: 0,
+                isArchived: false,
+                createdAt: now,
+                updatedAt: now,
+                children: [
+                  ItemVariationNodeDefinition(
+                    id: matteValueId,
+                    itemId: cartonShowcaseId,
+                    parentNodeId: printFinishPropertyId,
+                    kind: ItemVariationNodeKind.value,
+                    name: 'Matte',
+                    displayName: '',
+                    position: 0,
+                    isArchived: false,
+                    createdAt: now,
+                    updatedAt: now,
+                    children: [
+                      ItemVariationNodeDefinition(
+                        id: foilPropertyId,
+                        itemId: cartonShowcaseId,
+                        parentNodeId: matteValueId,
+                        kind: ItemVariationNodeKind.property,
+                        name: 'Foil',
+                        displayName: '',
+                        position: 0,
+                        isArchived: false,
+                        createdAt: now,
+                        updatedAt: now,
+                        children: [
+                          ItemVariationNodeDefinition(
+                            id: goldFoilValueId,
+                            itemId: cartonShowcaseId,
+                            parentNodeId: foilPropertyId,
+                            kind: ItemVariationNodeKind.value,
+                            name: 'Gold Foil',
+                            displayName: '',
+                            position: 0,
+                            isArchived: false,
+                            createdAt: now,
+                            updatedAt: now,
+                            children: [
+                              ItemVariationNodeDefinition(
+                                id: windowPropertyId,
+                                itemId: cartonShowcaseId,
+                                parentNodeId: goldFoilValueId,
+                                kind: ItemVariationNodeKind.property,
+                                name: 'Window',
+                                displayName: '',
+                                position: 0,
+                                isArchived: false,
+                                createdAt: now,
+                                updatedAt: now,
+                                children: [
+                                  ItemVariationNodeDefinition(
+                                    id: withWindowValueId,
+                                    itemId: cartonShowcaseId,
+                                    parentNodeId: windowPropertyId,
+                                    kind: ItemVariationNodeKind.value,
+                                    name: 'With Window',
+                                    displayName:
+                                        '300 GSM Matte Gold Foil With Window',
+                                    position: 0,
+                                    isArchived: false,
+                                    createdAt: now,
+                                    updatedAt: now,
+                                    children: const [],
+                                  ),
+                                  ItemVariationNodeDefinition(
+                                    id: noWindowValueId,
+                                    itemId: cartonShowcaseId,
+                                    parentNodeId: windowPropertyId,
+                                    kind: ItemVariationNodeKind.value,
+                                    name: 'No Window',
+                                    displayName:
+                                        '300 GSM Matte Gold Foil No Window',
+                                    position: 1,
+                                    isArchived: false,
+                                    createdAt: now,
+                                    updatedAt: now,
+                                    children: const [],
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  ItemVariationNodeDefinition(
+                    id: glossValueId,
+                    itemId: cartonShowcaseId,
+                    parentNodeId: printFinishPropertyId,
+                    kind: ItemVariationNodeKind.value,
+                    name: 'Gloss',
+                    displayName: '',
+                    position: 1,
+                    isArchived: false,
+                    createdAt: now,
+                    updatedAt: now,
+                    children: [
+                      ItemVariationNodeDefinition(
+                        id: glossFoilPropertyId,
+                        itemId: cartonShowcaseId,
+                        parentNodeId: glossValueId,
+                        kind: ItemVariationNodeKind.property,
+                        name: 'Foil',
+                        displayName: '',
+                        position: 0,
+                        isArchived: false,
+                        createdAt: now,
+                        updatedAt: now,
+                        children: [
+                          ItemVariationNodeDefinition(
+                            id: noFoilValueId,
+                            itemId: cartonShowcaseId,
+                            parentNodeId: glossFoilPropertyId,
+                            kind: ItemVariationNodeKind.value,
+                            name: 'No Foil',
+                            displayName: '',
+                            position: 0,
+                            isArchived: false,
+                            createdAt: now,
+                            updatedAt: now,
+                            children: [
+                              ItemVariationNodeDefinition(
+                                id: glossWindowPropertyId,
+                                itemId: cartonShowcaseId,
+                                parentNodeId: noFoilValueId,
+                                kind: ItemVariationNodeKind.property,
+                                name: 'Window',
+                                displayName: '',
+                                position: 0,
+                                isArchived: false,
+                                createdAt: now,
+                                updatedAt: now,
+                                children: [
+                                  ItemVariationNodeDefinition(
+                                    id: glossNoWindowValueId,
+                                    itemId: cartonShowcaseId,
+                                    parentNodeId: glossWindowPropertyId,
+                                    kind: ItemVariationNodeKind.value,
+                                    name: 'No Window',
+                                    displayName:
+                                        '300 GSM Gloss No Foil No Window',
+                                    position: 0,
+                                    isArchived: false,
+                                    createdAt: now,
+                                    updatedAt: now,
+                                    children: const [],
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+          ItemVariationNodeDefinition(
+            id: gsm350ValueId,
+            itemId: cartonShowcaseId,
+            parentNodeId: boardGsmPropertyId,
+            kind: ItemVariationNodeKind.value,
+            name: '350 GSM',
+            displayName: '',
+            position: 1,
+            isArchived: false,
+            createdAt: now,
+            updatedAt: now,
+            children: [
+              ItemVariationNodeDefinition(
+                id: gsm350FinishPropertyId,
+                itemId: cartonShowcaseId,
+                parentNodeId: gsm350ValueId,
+                kind: ItemVariationNodeKind.property,
+                name: 'Print Finish',
+                displayName: '',
+                position: 0,
+                isArchived: false,
+                createdAt: now,
+                updatedAt: now,
+                children: [
+                  ItemVariationNodeDefinition(
+                    id: gsm350MatteValueId,
+                    itemId: cartonShowcaseId,
+                    parentNodeId: gsm350FinishPropertyId,
+                    kind: ItemVariationNodeKind.value,
+                    name: 'Matte',
+                    displayName: '',
+                    position: 0,
+                    isArchived: false,
+                    createdAt: now,
+                    updatedAt: now,
+                    children: [
+                      ItemVariationNodeDefinition(
+                        id: gsm350FoilPropertyId,
+                        itemId: cartonShowcaseId,
+                        parentNodeId: gsm350MatteValueId,
+                        kind: ItemVariationNodeKind.property,
+                        name: 'Foil',
+                        displayName: '',
+                        position: 0,
+                        isArchived: false,
+                        createdAt: now,
+                        updatedAt: now,
+                        children: [
+                          ItemVariationNodeDefinition(
+                            id: roseGoldFoilValueId,
+                            itemId: cartonShowcaseId,
+                            parentNodeId: gsm350FoilPropertyId,
+                            kind: ItemVariationNodeKind.value,
+                            name: 'Rose Gold Foil',
+                            displayName: '',
+                            position: 0,
+                            isArchived: false,
+                            createdAt: now,
+                            updatedAt: now,
+                            children: [
+                              ItemVariationNodeDefinition(
+                                id: gsm350WindowPropertyId,
+                                itemId: cartonShowcaseId,
+                                parentNodeId: roseGoldFoilValueId,
+                                kind: ItemVariationNodeKind.property,
+                                name: 'Window',
+                                displayName: '',
+                                position: 0,
+                                isArchived: false,
+                                createdAt: now,
+                                updatedAt: now,
+                                children: [
+                                  ItemVariationNodeDefinition(
+                                    id: gsm350WithWindowValueId,
+                                    itemId: cartonShowcaseId,
+                                    parentNodeId: gsm350WindowPropertyId,
+                                    kind: ItemVariationNodeKind.value,
+                                    name: 'With Window',
+                                    displayName:
+                                        '350 GSM Matte Rose Gold Foil With Window',
+                                    position: 0,
+                                    isArchived: false,
+                                    createdAt: now,
+                                    updatedAt: now,
+                                    children: const [],
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    ];
+    _mockItems.add(
+      ItemDefinition(
+        id: cartonShowcaseId,
+        name: 'Premium Mono Carton',
+        alias: 'Retail Carton',
+        displayName: 'Premium Mono Carton - 500',
+        quantity: 500,
+        groupId: 2,
+        unitId: 2,
+        isArchived: false,
+        usageCount: 0,
+        createdAt: now,
+        updatedAt: now,
+        variationTree: cartonShowcaseTree,
       ),
     );
 

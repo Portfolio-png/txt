@@ -657,8 +657,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                   : selectedUnit?.id,
                               decoration: _fieldDecoration(
                                 label: 'Unit',
-                                helper:
-                                    selectedGroup == null
+                                helper: selectedGroup == null
                                     ? 'Inherited by the variation tree'
                                     : 'Only units compatible with the selected group are available',
                               ),
@@ -720,18 +719,16 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                     label: '${selectedGroup.name} (archived)',
                                   ),
                               ],
-                              onChanged: (value) => setState(
-                                () {
-                                  _selectedGroupId = value;
-                                  final group = groupsProvider.findById(value);
-                                  if (!unitsProvider.areUnitsCompatible(
-                                    group?.unitId,
-                                    _selectedUnitId,
-                                  )) {
-                                    _selectedUnitId = null;
-                                  }
-                                },
-                              ),
+                              onChanged: (value) => setState(() {
+                                _selectedGroupId = value;
+                                final group = groupsProvider.findById(value);
+                                if (!unitsProvider.areUnitsCompatible(
+                                  group?.unitId,
+                                  _selectedUnitId,
+                                )) {
+                                  _selectedUnitId = null;
+                                }
+                              }),
                               validator: (value) =>
                                   value == null ? 'Required' : null,
                             ),
@@ -1119,15 +1116,14 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       if (current.kind == ItemVariationNodeKind.value &&
           current.parent != null &&
           current.parent!.kind == ItemVariationNodeKind.property) {
-        final propertyName = current.parent!.nameController.text.trim();
         final valueName = current.nameController.text.trim();
-        if (propertyName.isNotEmpty || valueName.isNotEmpty) {
-          segments.insert(0, '$propertyName: $valueName');
+        if (valueName.isNotEmpty) {
+          segments.insert(0, valueName);
         }
       }
       current = current.parent;
     }
-    return segments.join(' | ');
+    return segments.join(' ');
   }
 
   String _duplicateMessage(ItemDuplicateWarning warning) {
