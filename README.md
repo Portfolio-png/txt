@@ -71,6 +71,8 @@ Optional security tuning:
 PAPER_LOGIN_MAX_ATTEMPTS=5
 PAPER_LOGIN_WINDOW_MINUTES=15
 PAPER_LOGIN_LOCKOUT_MINUTES=15
+PAPER_AUTH_EVENTS_RETENTION_DAYS=365
+PAPER_REVOKED_SESSIONS_RETENTION_DAYS=90
 ```
 
 Start or restart with PM2:
@@ -92,6 +94,53 @@ curl http://localhost:18080/api/auth/login \
   -H 'Content-Type: application/json' \
   --data '{"email":"<your-email>","password":"<temporary-strong-password>"}'
 ```
+
+Run smoke check (recommended):
+
+```bash
+cd /home/ubuntu/Paper/backend
+PAPER_SMOKE_EMAIL=<your-email> \
+PAPER_SMOKE_PASSWORD=<your-password> \
+npm run smoke
+```
+
+### EC2 Ops Checklist
+
+Before go-live:
+
+1. `backend/.env` contains `NODE_ENV=production`, `DB_PATH`, and all `PAPER_*` auth settings.
+2. `PAPER_JWT_SECRET` is long and unique for the environment.
+3. `PAPER_SUPER_ADMIN_PASSWORD` is rotated after first login.
+4. `PAPER_CORS_ORIGIN` is set to your trusted frontend origins.
+5. Health check and smoke script both pass.
+
+Backup and restore:
+
+```bash
+cd /home/ubuntu/Paper/backend
+npm run backup:sqlite
+npm run restore:sqlite -- /home/ubuntu/Paper/backend/backups/paper-latest.db
+```
+
+Retention cleanup (run from cron or PM2 cron):
+
+```bash
+cd /home/ubuntu/Paper/backend
+npm run cleanup:security
+```
+
+Recommended log paths:
+
+- PM2 app logs: `~/.pm2/logs/`
+- Backend runtime logs: `~/.pm2/logs/backend-*.log`
+- Backup folder: `/home/ubuntu/Paper/backend/backups`
+
+Rollback quick steps:
+
+1. Stop traffic to backend (or stop PM2 process).
+2. Restore previous SQLite snapshot with `npm run restore:sqlite -- <backup-file>`.
+3. Restart PM2 process with `--update-env`.
+4. Run smoke check before opening traffic.
 
 Point Flutter builds at the EC2 or Nginx public URL:
 

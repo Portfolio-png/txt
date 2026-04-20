@@ -7,7 +7,11 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test ./test/*.test.js",
-    "seed:demo": "node ./scripts/reseed-demo-data.js"
+    "seed:demo": "node ./scripts/reseed-demo-data.js",
+    "smoke": "node ./scripts/smoke-check.js",
+    "backup:sqlite": "node ./scripts/backup-sqlite.js",
+    "restore:sqlite": "node ./scripts/restore-sqlite.js",
+    "cleanup:security": "node ./scripts/cleanup-security-data.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
