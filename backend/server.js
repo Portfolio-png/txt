@@ -6702,7 +6702,7 @@ app.post('/api/delete-requests/:id/reject', requirePermission('delete_requests.r
   }
 });
 
-app.get('/api/materials', async (req, res) => {
+app.get('/api/materials', requirePermission('inventory.read'), async (req, res) => {
   try {
     const rows = await all(
       'SELECT * FROM materials ORDER BY kind ASC, created_at DESC, barcode ASC',
@@ -6713,7 +6713,7 @@ app.get('/api/materials', async (req, res) => {
   }
 });
 
-app.get('/api/inventory/health', async (_req, res) => {
+app.get('/api/inventory/health', requirePermission('inventory.read'), async (_req, res) => {
   try {
     const health = await getInventoryHealthSummary();
     res.json({ success: true, health, error: null });
@@ -6726,7 +6726,7 @@ app.get('/api/inventory/health', async (_req, res) => {
   }
 });
 
-app.get('/api/materials/:barcode', async (req, res) => {
+app.get('/api/materials/:barcode', requirePermission('inventory.read'), async (req, res) => {
   try {
     const row = await getMaterialRowByBarcode(req.params.barcode);
     if (!row) {
@@ -6749,7 +6749,7 @@ app.get('/api/materials/:barcode', async (req, res) => {
   }
 });
 
-app.get('/api/materials/:barcode/detail', async (req, res) => {
+app.get('/api/materials/:barcode/detail', requirePermission('inventory.read'), async (req, res) => {
   try {
     const detail = await getMaterialControlTowerDetail(req.params.barcode);
     if (!detail) {
@@ -6779,7 +6779,7 @@ app.get('/api/materials/:barcode/detail', async (req, res) => {
   }
 });
 
-app.get('/api/units', async (req, res) => {
+app.get('/api/units', requirePermission('config.read'), async (req, res) => {
   try {
     const rows = await getUnitsWithUsage();
     res.json({ success: true, units: rows.map(rowToUnitDto), error: null });
@@ -6855,7 +6855,7 @@ app.patch('/api/units/:id/restore', requirePermission('config.write'), async (re
   }
 });
 
-app.get('/api/groups', async (req, res) => {
+app.get('/api/groups', requirePermission('config.read'), async (req, res) => {
   try {
     const rows = await getGroupsWithUsage();
     res.json({ success: true, groups: rows.map(rowToGroupDto), error: null });
@@ -6864,7 +6864,7 @@ app.get('/api/groups', async (req, res) => {
   }
 });
 
-app.get('/api/clients', async (req, res) => {
+app.get('/api/clients', requirePermission('config.read'), async (req, res) => {
   try {
     const rows = await getClientsWithUsage();
     res.json({ success: true, clients: rows.map(rowToClientDto), error: null });
@@ -6873,7 +6873,7 @@ app.get('/api/clients', async (req, res) => {
   }
 });
 
-app.get('/api/orders', async (req, res) => {
+app.get('/api/orders', requirePermission('config.read'), async (req, res) => {
   try {
     const rows = await getOrders();
     res.json({ success: true, orders: rows.map(rowToOrderDto), error: null });
@@ -6978,7 +6978,7 @@ app.patch('/api/clients/:id/restore', requirePermission('config.write'), async (
   }
 });
 
-app.get('/api/items', async (req, res) => {
+app.get('/api/items', requirePermission('config.read'), async (req, res) => {
   try {
     const rows = await getItemsWithUsage();
     const items = await Promise.all(rows.map(rowToItemDto));
@@ -7327,7 +7327,7 @@ app.post('/api/inventory/movements', requirePermission('inventory.update'), asyn
   }
 });
 
-app.get('/api/materials/:barcode/activity', async (req, res) => {
+app.get('/api/materials/:barcode/activity', requirePermission('inventory.read'), async (req, res) => {
   try {
     const events = await getMaterialActivity(req.params.barcode);
     res.json({
@@ -7367,7 +7367,7 @@ app.use('/runs', (req, res, next) => {
   next();
 });
 
-app.get('/templates', async (req, res) => {
+app.get('/templates', requirePermission('config.read'), async (req, res) => {
   try {
     const rows = await all(
       'SELECT * FROM pipeline_templates ORDER BY updated_at DESC, name ASC',
@@ -7463,7 +7463,7 @@ app.put('/templates/:id', async (req, res) => {
   }
 });
 
-app.get('/templates/:id', async (req, res) => {
+app.get('/templates/:id', requirePermission('config.read'), async (req, res) => {
   try {
     const row = await get('SELECT * FROM pipeline_templates WHERE id = ?', [
       req.params.id,
@@ -7482,7 +7482,7 @@ app.get('/templates/:id', async (req, res) => {
   }
 });
 
-app.get('/runs', async (req, res) => {
+app.get('/runs', requirePermission('config.read'), async (req, res) => {
   try {
     const { template_id: templateId } = req.query;
     const rows = templateId
@@ -7527,7 +7527,7 @@ app.post('/runs', async (req, res) => {
   }
 });
 
-app.get('/runs/:id', async (req, res) => {
+app.get('/runs/:id', requirePermission('config.read'), async (req, res) => {
   try {
     const row = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
     if (!row) {
