@@ -20,6 +20,20 @@ class AuthProvider extends ChangeNotifier {
   List<AuthSession> _mySessions = const [];
   List<AuthEvent> _authEvents = const [];
   List<PermissionDescriptor> _permissionDescriptors = const [];
+  List<PermissionTemplate> _permissionTemplates = const [];
+  String _userQuery = '';
+  String _userRoleFilter = '';
+  String _deleteStatusFilter = 'pending';
+  String _eventTypeFilter = '';
+  int _usersTotal = 0;
+  int _deleteRequestsTotal = 0;
+  int _authEventsTotal = 0;
+  bool _usersHasMore = false;
+  bool _deleteRequestsHasMore = false;
+  bool _authEventsHasMore = false;
+
+  static const String passwordPolicyMessage =
+      'Use at least 10 characters with letters and numbers. Avoid names or common words.';
 
   AuthUser? get user => _user;
   String? get token => _token;
@@ -31,6 +45,17 @@ class AuthProvider extends ChangeNotifier {
   List<AuthEvent> get authEvents => _authEvents;
   List<PermissionDescriptor> get permissionDescriptors =>
       _permissionDescriptors;
+  List<PermissionTemplate> get permissionTemplates => _permissionTemplates;
+  String get userQuery => _userQuery;
+  String get userRoleFilter => _userRoleFilter;
+  String get deleteStatusFilter => _deleteStatusFilter;
+  String get eventTypeFilter => _eventTypeFilter;
+  int get usersTotal => _usersTotal;
+  int get deleteRequestsTotal => _deleteRequestsTotal;
+  int get authEventsTotal => _authEventsTotal;
+  bool get usersHasMore => _usersHasMore;
+  bool get deleteRequestsHasMore => _deleteRequestsHasMore;
+  bool get authEventsHasMore => _authEventsHasMore;
   bool get isAuthenticated => _user != null || _demoMode;
   bool get isAdmin => _demoMode || (_user?.isAdmin ?? false);
   bool get isSuperAdmin => _user?.isSuperAdmin ?? _demoMode;
@@ -91,7 +116,30 @@ class AuthProvider extends ChangeNotifier {
     _mySessions = const [];
     _authEvents = const [];
     _permissionDescriptors = const [];
+    _permissionTemplates = const [];
+    _usersTotal = 0;
+    _deleteRequestsTotal = 0;
+    _authEventsTotal = 0;
+    _usersHasMore = false;
+    _deleteRequestsHasMore = false;
+    _authEventsHasMore = false;
     notifyListeners();
+  }
+
+  void updateUserFilters({String? query, String? role}) {
+    _userQuery = query ?? _userQuery;
+    _userRoleFilter = role ?? _userRoleFilter;
+    loadManagementData();
+  }
+
+  void updateDeleteRequestFilter(String status) {
+    _deleteStatusFilter = status.trim();
+    loadManagementData();
+  }
+
+  void updateEventTypeFilter(String eventType) {
+    _eventTypeFilter = eventType.trim();
+    loadManagementData();
   }
 
   Future<void> logoutRemote() async {
@@ -112,19 +160,47 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
     try {
       if (can('users.read')) {
-        _users = await _api.getUsers();
+        final response = await _api.getUsers(
+          query: _userQuery,
+          role: _userRoleFilter,
+          limit: 50,
+          offset: 0,
+        );
+        _users = response.users;
+        _usersTotal = response.total;
+        _usersHasMore = response.hasMore;
       } else {
         _users = const [];
+        _usersTotal = 0;
+        _usersHasMore = false;
       }
       if (can('delete_requests.review')) {
-        _deleteRequests = await _api.getDeleteRequests();
+        final response = await _api.getDeleteRequests(
+          status: _deleteStatusFilter,
+          limit: 50,
+          offset: 0,
+        );
+        _deleteRequests = response.requests;
+        _deleteRequestsTotal = response.total;
+        _deleteRequestsHasMore = response.hasMore;
       } else {
         _deleteRequests = const [];
+        _deleteRequestsTotal = 0;
+        _deleteRequestsHasMore = false;
       }
       if (can('audit.read')) {
-        _authEvents = await _api.getAuthEvents();
+        final response = await _api.getAuthEvents(
+          eventType: _eventTypeFilter,
+          limit: 100,
+          offset: 0,
+        );
+        _authEvents = response.events;
+        _authEventsTotal = response.total;
+        _authEventsHasMore = response.hasMore;
       } else {
         _authEvents = const [];
+        _authEventsTotal = 0;
+        _authEventsHasMore = false;
       }
       if (can('sessions.manage')) {
         _mySessions = await _api.getMySessions();
@@ -133,8 +209,10 @@ class AuthProvider extends ChangeNotifier {
       }
       if (can('users.manage_permissions')) {
         _permissionDescriptors = await _api.getPermissionDescriptors();
+        _permissionTemplates = await _api.getPermissionTemplates();
       } else {
         _permissionDescriptors = const [];
+        _permissionTemplates = const [];
       }
     } catch (error) {
       _errorMessage = _friendly(
@@ -277,7 +355,11 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> reviewDeleteRequest(int id, {required bool approve}) async {
+  Future<bool> reviewDeleteRequest(
+    int id, {
+    required bool approve,
+    String reviewedNote = '',
+  }) async {
     if (!can('delete_requests.review')) {
       _errorMessage = 'You do not have permission to review delete requests.';
       notifyListeners();
@@ -286,7 +368,11 @@ class AuthProvider extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
     try {
-      await _api.reviewDeleteRequest(id, approve: approve);
+      await _api.reviewDeleteRequest(
+        id,
+        approve: approve,
+        reviewedNote: reviewedNote,
+      );
       await loadManagementData();
       return true;
     } catch (error) {
@@ -351,6 +437,51 @@ class AuthProvider extends ChangeNotifier {
       );
       notifyListeners();
       return const [];
+    }
+  }
+
+  Future<List<int>> getUserPermissionTemplateIds(int userId) async {
+    if (!can('users.manage_permissions')) {
+      _errorMessage = 'You do not have permission to manage permissions.';
+      notifyListeners();
+      return const [];
+    }
+    try {
+      return await _api.getUserPermissionTemplateIds(userId);
+    } catch (error) {
+      _errorMessage = _friendly(
+        error,
+        fallback: 'Failed to load assigned templates.',
+      );
+      notifyListeners();
+      return const [];
+    }
+  }
+
+  Future<bool> updateUserPermissionTemplates({
+    required int userId,
+    required List<int> templateIds,
+  }) async {
+    if (!can('users.manage_permissions')) {
+      _errorMessage = 'You do not have permission to manage permissions.';
+      notifyListeners();
+      return false;
+    }
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      await _api.updateUserPermissionTemplates(
+        userId: userId,
+        templateIds: templateIds,
+      );
+      return true;
+    } catch (error) {
+      _errorMessage = _friendly(
+        error,
+        fallback: 'Failed to update assigned templates.',
+      );
+      notifyListeners();
+      return false;
     }
   }
 

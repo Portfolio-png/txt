@@ -55,6 +55,34 @@ class PermissionDescriptor {
   }
 }
 
+class PermissionTemplate {
+  const PermissionTemplate({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.permissions,
+    required this.isSystemDefault,
+  });
+
+  final int id;
+  final String name;
+  final String description;
+  final List<String> permissions;
+  final bool isSystemDefault;
+
+  factory PermissionTemplate.fromJson(Map<String, dynamic> json) {
+    return PermissionTemplate(
+      id: json['id'] as int? ?? 0,
+      name: json['name'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+      permissions: (json['permissions'] as List<dynamic>? ?? const [])
+          .whereType<String>()
+          .toList(growable: false),
+      isSystemDefault: json['isSystemDefault'] as bool? ?? false,
+    );
+  }
+}
+
 class UserPermissionState {
   const UserPermissionState({
     required this.key,
@@ -84,6 +112,9 @@ class DeleteRequest {
     required this.reason,
     required this.status,
     required this.requestedByName,
+    required this.reviewedByName,
+    required this.reviewedNote,
+    required this.reviewedAt,
     required this.createdAt,
   });
 
@@ -94,6 +125,9 @@ class DeleteRequest {
   final String reason;
   final String status;
   final String requestedByName;
+  final String reviewedByName;
+  final String reviewedNote;
+  final DateTime? reviewedAt;
   final DateTime createdAt;
 
   factory DeleteRequest.fromJson(Map<String, dynamic> json) {
@@ -105,6 +139,9 @@ class DeleteRequest {
       reason: json['reason'] as String? ?? '',
       status: json['status'] as String? ?? 'pending',
       requestedByName: json['requestedByName'] as String? ?? '',
+      reviewedByName: json['reviewedByName'] as String? ?? '',
+      reviewedNote: json['reviewedNote'] as String? ?? '',
+      reviewedAt: DateTime.tryParse(json['reviewedAt'] as String? ?? ''),
       createdAt:
           DateTime.tryParse(json['createdAt'] as String? ?? '') ??
           DateTime.now(),

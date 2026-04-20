@@ -4,6 +4,39 @@ import 'package:provider/provider.dart';
 import '../../domain/auth_user.dart';
 import '../providers/auth_provider.dart';
 
+String? _passwordPolicyValidator(String? value, {String email = ''}) {
+  final password = (value ?? '').trim();
+  if (password.length < 10) {
+    return AuthProvider.passwordPolicyMessage;
+  }
+  if (!RegExp(r'[A-Za-z]').hasMatch(password) ||
+      !RegExp(r'[0-9]').hasMatch(password)) {
+    return AuthProvider.passwordPolicyMessage;
+  }
+  final prefix = email.trim().toLowerCase().split('@').first;
+  if (prefix.length >= 3 && password.toLowerCase().contains(prefix)) {
+    return AuthProvider.passwordPolicyMessage;
+  }
+  final weak = <String>{
+    'password',
+    'password123',
+    '123456',
+    '12345678',
+    '123456789',
+    'qwerty',
+    'qwerty123',
+    'admin',
+    'admin123',
+    'paper',
+    'paper123',
+    'letmein',
+  };
+  if (weak.contains(password.toLowerCase())) {
+    return AuthProvider.passwordPolicyMessage;
+  }
+  return null;
+}
+
 class UserManagementScreen extends StatefulWidget {
   const UserManagementScreen({super.key});
 
@@ -70,9 +103,86 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
           _InlineError(message: auth.errorMessage!),
         ],
         const SizedBox(height: 20),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            SizedBox(
+              width: 280,
+              child: TextField(
+                decoration: const InputDecoration(
+                  labelText: 'Search users',
+                  prefixIcon: Icon(Icons.search),
+                ),
+                onChanged: (value) => context
+                    .read<AuthProvider>()
+                    .updateUserFilters(query: value),
+              ),
+            ),
+            SizedBox(
+              width: 180,
+              child: DropdownButtonFormField<String>(
+                initialValue: auth.userRoleFilter.isEmpty
+                    ? ''
+                    : auth.userRoleFilter,
+                decoration: const InputDecoration(labelText: 'Role'),
+                items: const [
+                  DropdownMenuItem(value: '', child: Text('All Roles')),
+                  DropdownMenuItem(
+                    value: 'super_admin',
+                    child: Text('Super Admin'),
+                  ),
+                  DropdownMenuItem(value: 'admin', child: Text('Admin')),
+                  DropdownMenuItem(value: 'user', child: Text('User')),
+                ],
+                onChanged: (value) => context
+                    .read<AuthProvider>()
+                    .updateUserFilters(role: value ?? ''),
+              ),
+            ),
+            if (auth.can('delete_requests.review'))
+              SizedBox(
+                width: 220,
+                child: DropdownButtonFormField<String>(
+                  initialValue: auth.deleteStatusFilter,
+                  decoration: const InputDecoration(
+                    labelText: 'Delete Requests',
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'pending', child: Text('Pending')),
+                    DropdownMenuItem(
+                      value: 'approved',
+                      child: Text('Approved'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'rejected',
+                      child: Text('Rejected'),
+                    ),
+                  ],
+                  onChanged: (value) => context
+                      .read<AuthProvider>()
+                      .updateDeleteRequestFilter(value ?? 'pending'),
+                ),
+              ),
+            if (auth.can('audit.read'))
+              SizedBox(
+                width: 240,
+                child: TextField(
+                  decoration: const InputDecoration(
+                    labelText: 'Security Event Type',
+                    hintText: 'login_success, password_reset...',
+                  ),
+                  onChanged: (value) =>
+                      context.read<AuthProvider>().updateEventTypeFilter(value),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 20),
         if (auth.can('users.read')) ...[
           _Section(
-            title: 'Accounts',
+            title:
+                'Accounts (${auth.users.length}/${auth.usersTotal}${auth.usersHasMore ? '+' : ''})',
             child: auth.users.isEmpty
                 ? const _EmptyBlock('No users loaded yet.')
                 : Column(
@@ -85,9 +195,10 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
         ],
         if (auth.can('delete_requests.review')) ...[
           _Section(
-            title: 'Pending Delete Requests',
+            title:
+                'Delete Requests (${auth.deleteRequests.length}/${auth.deleteRequestsTotal}${auth.deleteRequestsHasMore ? '+' : ''})',
             child: auth.deleteRequests.isEmpty
-                ? const _EmptyBlock('No pending delete requests.')
+                ? const _EmptyBlock('No delete requests for this filter.')
                 : Column(
                     children: auth.deleteRequests
                         .map((request) => _DeleteRequestRow(request: request))
@@ -98,7 +209,8 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
         ],
         if (auth.can('audit.read'))
           _Section(
-            title: 'Security Activity',
+            title:
+                'Security Activity (${auth.authEvents.length}/${auth.authEventsTotal}${auth.authEventsHasMore ? '+' : ''})',
             child: auth.authEvents.isEmpty
                 ? const _EmptyBlock('No security events yet.')
                 : Column(
@@ -170,9 +282,10 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                   controller: passwordController,
                   decoration: const InputDecoration(labelText: 'Password'),
                   obscureText: true,
-                  validator: (value) => value == null || value.length < 8
-                      ? 'Use at least 8 characters.'
-                      : null,
+                  validator: (value) => _passwordPolicyValidator(
+                    value,
+                    email: emailController.text,
+                  ),
                 ),
               ],
             ),
@@ -288,9 +401,8 @@ class _UserRow extends StatelessWidget {
             controller: controller,
             decoration: const InputDecoration(labelText: 'New password'),
             obscureText: true,
-            validator: (value) => value == null || value.length < 8
-                ? 'Use at least 8 characters.'
-                : null,
+            validator: (value) =>
+                _passwordPolicyValidator(value, email: user.email),
           ),
         ),
         actions: [
@@ -384,10 +496,14 @@ class _UserRow extends StatelessWidget {
   Future<void> _openPermissions(BuildContext context, AuthUser user) async {
     final auth = context.read<AuthProvider>();
     final states = await auth.getUserPermissions(user.id);
+    final selectedTemplateIds = await auth.getUserPermissionTemplateIds(
+      user.id,
+    );
     if (!context.mounted) {
       return;
     }
     final catalog = auth.permissionDescriptors;
+    final templates = auth.permissionTemplates;
     if (catalog.isEmpty || states.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -402,6 +518,7 @@ class _UserRow extends StatelessWidget {
     final toggles = <String, bool>{
       for (final state in sortedStates) state.key: state.allowed,
     };
+    final assignedTemplates = <int>{...selectedTemplateIds};
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -411,28 +528,60 @@ class _UserRow extends StatelessWidget {
             width: 600,
             child: ListView(
               shrinkWrap: true,
-              children: sortedStates
-                  .map((state) {
-                    PermissionDescriptor? descriptor;
-                    for (final item in catalog) {
-                      if (item.key == state.key) {
-                        descriptor = item;
-                        break;
-                      }
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(4, 4, 4, 10),
+                  child: Text(
+                    'Permission Templates',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                ...templates.map((template) {
+                  return CheckboxListTile(
+                    value: assignedTemplates.contains(template.id),
+                    onChanged: (value) {
+                      setStateDialog(() {
+                        if (value == true) {
+                          assignedTemplates.add(template.id);
+                        } else {
+                          assignedTemplates.remove(template.id);
+                        }
+                      });
+                    },
+                    title: Text(template.name),
+                    subtitle: Text(template.description),
+                    controlAffinity: ListTileControlAffinity.leading,
+                  );
+                }),
+                const Divider(),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(4, 6, 4, 10),
+                  child: Text(
+                    'Advanced Permission Overrides',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                ...sortedStates.map((state) {
+                  PermissionDescriptor? descriptor;
+                  for (final item in catalog) {
+                    if (item.key == state.key) {
+                      descriptor = item;
+                      break;
                     }
-                    return CheckboxListTile(
-                      value: toggles[state.key] ?? false,
-                      onChanged: (value) {
-                        setStateDialog(() {
-                          toggles[state.key] = value == true;
-                        });
-                      },
-                      title: Text(descriptor?.label ?? state.key),
-                      subtitle: Text(descriptor?.description ?? state.key),
-                      controlAffinity: ListTileControlAffinity.leading,
-                    );
-                  })
-                  .toList(growable: false),
+                  }
+                  return CheckboxListTile(
+                    value: toggles[state.key] ?? false,
+                    onChanged: (value) {
+                      setStateDialog(() {
+                        toggles[state.key] = value == true;
+                      });
+                    },
+                    title: Text(descriptor?.label ?? state.key),
+                    subtitle: Text(descriptor?.description ?? state.key),
+                    controlAffinity: ListTileControlAffinity.leading,
+                  );
+                }),
+              ],
             ),
           ),
           actions: [
@@ -442,6 +591,13 @@ class _UserRow extends StatelessWidget {
             ),
             FilledButton(
               onPressed: () async {
+                final templatesSaved = await auth.updateUserPermissionTemplates(
+                  userId: user.id,
+                  templateIds: assignedTemplates.toList(growable: false),
+                );
+                if (!templatesSaved) {
+                  return;
+                }
                 final nextStates = sortedStates
                     .map(
                       (state) => UserPermissionState(
@@ -476,6 +632,7 @@ class _DeleteRequestRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final auth = context.read<AuthProvider>();
+    final isPending = request.status == 'pending';
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       leading: const CircleAvatar(child: Icon(Icons.delete_outline)),
@@ -483,24 +640,71 @@ class _DeleteRequestRow extends StatelessWidget {
         request.entityLabel.isEmpty ? request.entityId : request.entityLabel,
       ),
       subtitle: Text(
-        'Requested by ${request.requestedByName.ifEmpty('Unknown')} • ${request.reason.ifEmpty('No reason provided')}',
+        isPending
+            ? 'Requested by ${request.requestedByName.ifEmpty('Unknown')} • ${request.reason.ifEmpty('No reason provided')}'
+            : 'Requested by ${request.requestedByName.ifEmpty('Unknown')} • ${request.status} by ${request.reviewedByName.ifEmpty('Unknown')} • ${request.reviewedNote.ifEmpty('No note')}',
       ),
       trailing: Wrap(
         spacing: 8,
         children: [
-          OutlinedButton(
-            onPressed: () =>
-                auth.reviewDeleteRequest(request.id, approve: false),
-            child: const Text('Reject'),
+          if (isPending) ...[
+            OutlinedButton(
+              onPressed: () => _review(context, auth, approve: false),
+              child: const Text('Reject'),
+            ),
+            FilledButton(
+              onPressed: () => _review(context, auth, approve: true),
+              child: const Text('Approve'),
+            ),
+          ] else
+            Chip(label: Text(request.status.toUpperCase())),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _review(
+    BuildContext context,
+    AuthProvider auth, {
+    required bool approve,
+  }) async {
+    final controller = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          approve ? 'Approve delete request' : 'Reject delete request',
+        ),
+        content: TextField(
+          controller: controller,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            labelText: 'Reviewer note',
+            hintText: 'Optional note for audit history.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () =>
-                auth.reviewDeleteRequest(request.id, approve: true),
-            child: const Text('Approve'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(approve ? 'Approve' : 'Reject'),
           ),
         ],
       ),
     );
+    if (ok != true) {
+      controller.dispose();
+      return;
+    }
+    await auth.reviewDeleteRequest(
+      request.id,
+      approve: approve,
+      reviewedNote: controller.text,
+    );
+    controller.dispose();
   }
 }
 

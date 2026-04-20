@@ -53,11 +53,23 @@ class AuthApi {
     return AuthUser.fromJson(payload['user'] as Map<String, dynamic>);
   }
 
-  Future<List<AuthUser>> getUsers() async {
-    final response = await _client.get(
-      Uri.parse('$baseUrl/api/users'),
-      headers: _authHeaders,
+  Future<({List<AuthUser> users, int total, bool hasMore})> getUsers({
+    String query = '',
+    String role = '',
+    bool? isActive,
+    int limit = 25,
+    int offset = 0,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/users').replace(
+      queryParameters: {
+        if (query.trim().isNotEmpty) 'query': query.trim(),
+        if (role.trim().isNotEmpty) 'role': role.trim(),
+        if (isActive != null) 'isActive': isActive.toString(),
+        'limit': '$limit',
+        'offset': '$offset',
+      },
     );
+    final response = await _client.get(uri, headers: _authHeaders);
     final payload = _decode(response.body);
     if (response.statusCode < 200 ||
         response.statusCode >= 300 ||
@@ -66,10 +78,17 @@ class AuthApi {
         payload['error'] as String? ?? 'Failed to load users.',
       );
     }
-    return (payload['users'] as List<dynamic>? ?? const [])
+    final users = (payload['users'] as List<dynamic>? ?? const [])
         .whereType<Map<String, dynamic>>()
         .map(AuthUser.fromJson)
         .toList(growable: false);
+    final pagination =
+        payload['pagination'] as Map<String, dynamic>? ?? const {};
+    return (
+      users: users,
+      total: pagination['total'] as int? ?? users.length,
+      hasMore: pagination['hasMore'] as bool? ?? false,
+    );
   }
 
   Future<AuthUser> createUser({
@@ -181,11 +200,27 @@ class AuthApi {
     }
   }
 
-  Future<List<DeleteRequest>> getDeleteRequests() async {
-    final response = await _client.get(
-      Uri.parse('$baseUrl/api/delete-requests?status=pending'),
-      headers: _authHeaders,
+  Future<({List<DeleteRequest> requests, int total, bool hasMore})>
+  getDeleteRequests({
+    String status = '',
+    int? requestedByUserId,
+    DateTime? from,
+    DateTime? to,
+    int limit = 25,
+    int offset = 0,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/delete-requests').replace(
+      queryParameters: {
+        if (status.trim().isNotEmpty) 'status': status.trim(),
+        if (requestedByUserId != null)
+          'requestedByUserId': '$requestedByUserId',
+        if (from != null) 'from': from.toUtc().toIso8601String(),
+        if (to != null) 'to': to.toUtc().toIso8601String(),
+        'limit': '$limit',
+        'offset': '$offset',
+      },
     );
+    final response = await _client.get(uri, headers: _authHeaders);
     final payload = _decode(response.body);
     if (response.statusCode < 200 ||
         response.statusCode >= 300 ||
@@ -194,17 +229,29 @@ class AuthApi {
         payload['error'] as String? ?? 'Failed to load delete requests.',
       );
     }
-    return (payload['requests'] as List<dynamic>? ?? const [])
+    final requests = (payload['requests'] as List<dynamic>? ?? const [])
         .whereType<Map<String, dynamic>>()
         .map(DeleteRequest.fromJson)
         .toList(growable: false);
+    final pagination =
+        payload['pagination'] as Map<String, dynamic>? ?? const {};
+    return (
+      requests: requests,
+      total: pagination['total'] as int? ?? requests.length,
+      hasMore: pagination['hasMore'] as bool? ?? false,
+    );
   }
 
-  Future<void> reviewDeleteRequest(int id, {required bool approve}) async {
+  Future<void> reviewDeleteRequest(
+    int id, {
+    required bool approve,
+    String reviewedNote = '',
+  }) async {
     final action = approve ? 'approve' : 'reject';
     final response = await _client.post(
       Uri.parse('$baseUrl/api/delete-requests/$id/$action'),
-      headers: _authHeaders,
+      headers: _jsonHeaders,
+      body: jsonEncode({'reviewedNote': reviewedNote}),
     );
     final payload = _decode(response.body);
     if (response.statusCode < 200 ||
@@ -300,11 +347,27 @@ class AuthApi {
     }
   }
 
-  Future<List<AuthEvent>> getAuthEvents({int limit = 100}) async {
-    final response = await _client.get(
-      Uri.parse('$baseUrl/api/auth/events?limit=$limit'),
-      headers: _authHeaders,
+  Future<({List<AuthEvent> events, int total, bool hasMore})> getAuthEvents({
+    String eventType = '',
+    int? actorUserId,
+    int? targetUserId,
+    DateTime? from,
+    DateTime? to,
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/auth/events').replace(
+      queryParameters: {
+        if (eventType.trim().isNotEmpty) 'eventType': eventType.trim(),
+        if (actorUserId != null) 'actorUserId': '$actorUserId',
+        if (targetUserId != null) 'targetUserId': '$targetUserId',
+        if (from != null) 'from': from.toUtc().toIso8601String(),
+        if (to != null) 'to': to.toUtc().toIso8601String(),
+        'limit': '$limit',
+        'offset': '$offset',
+      },
     );
+    final response = await _client.get(uri, headers: _authHeaders);
     final payload = _decode(response.body);
     if (response.statusCode < 200 ||
         response.statusCode >= 300 ||
@@ -313,10 +376,17 @@ class AuthApi {
         payload['error'] as String? ?? 'Failed to load auth events.',
       );
     }
-    return (payload['events'] as List<dynamic>? ?? const [])
+    final events = (payload['events'] as List<dynamic>? ?? const [])
         .whereType<Map<String, dynamic>>()
         .map(AuthEvent.fromJson)
         .toList(growable: false);
+    final pagination =
+        payload['pagination'] as Map<String, dynamic>? ?? const {};
+    return (
+      events: events,
+      total: pagination['total'] as int? ?? events.length,
+      hasMore: pagination['hasMore'] as bool? ?? false,
+    );
   }
 
   Future<List<PermissionDescriptor>> getPermissionDescriptors() async {
@@ -338,6 +408,27 @@ class AuthApi {
         .toList(growable: false);
   }
 
+  Future<List<PermissionTemplate>> getPermissionTemplates({
+    String query = '',
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/permission-templates').replace(
+      queryParameters: {if (query.trim().isNotEmpty) 'query': query.trim()},
+    );
+    final response = await _client.get(uri, headers: _authHeaders);
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to load permission templates.',
+      );
+    }
+    return (payload['templates'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(PermissionTemplate.fromJson)
+        .toList(growable: false);
+  }
+
   Future<List<UserPermissionState>> getUserPermissions(int userId) async {
     final response = await _client.get(
       Uri.parse('$baseUrl/api/users/$userId/permissions'),
@@ -355,6 +446,46 @@ class AuthApi {
         .whereType<Map<String, dynamic>>()
         .map(UserPermissionState.fromJson)
         .toList(growable: false);
+  }
+
+  Future<List<int>> getUserPermissionTemplateIds(int userId) async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/users/$userId/permission-templates'),
+      headers: _authHeaders,
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ??
+            'Failed to load assigned permission templates.',
+      );
+    }
+    return (payload['assignedTemplateIds'] as List<dynamic>? ?? const [])
+        .whereType<num>()
+        .map((value) => value.toInt())
+        .toList(growable: false);
+  }
+
+  Future<void> updateUserPermissionTemplates({
+    required int userId,
+    required List<int> templateIds,
+  }) async {
+    final response = await _client.patch(
+      Uri.parse('$baseUrl/api/users/$userId/permission-templates'),
+      headers: _jsonHeaders,
+      body: jsonEncode({'templateIds': templateIds}),
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ??
+            'Failed to update assigned permission templates.',
+      );
+    }
   }
 
   Future<void> updateUserPermissions({
