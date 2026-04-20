@@ -14,6 +14,9 @@ const JWT_TTL_SECONDS = Number(process.env.PAPER_JWT_TTL_SECONDS || 60 * 60 * 12
 const PASSWORD_ITERATIONS = 120000;
 const PASSWORD_KEY_LENGTH = 32;
 const USER_ROLES = new Set(['super_admin', 'admin', 'user']);
+const LOGIN_MAX_ATTEMPTS = Number(process.env.PAPER_LOGIN_MAX_ATTEMPTS || 5);
+const LOGIN_WINDOW_MINUTES = Number(process.env.PAPER_LOGIN_WINDOW_MINUTES || 15);
+const LOGIN_LOCKOUT_MINUTES = Number(process.env.PAPER_LOGIN_LOCKOUT_MINUTES || 15);
 let dbReady = false;
 let dbInitError = null;
 
@@ -263,6 +266,8 @@ function safeUserDto(row) {
     email: row.email || '',
     role: row.role || 'user',
     isActive: Number(row.is_active || 0) === 1,
+    failedLoginAttempts: Number(row.failed_login_attempts || 0),
+    lockoutUntil: row.lockout_until || null,
     createdByUserId: row.created_by_user_id || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -287,6 +292,250 @@ function rowToDeleteRequestDto(row) {
     reviewedAt: row.reviewed_at || null,
     createdAt: row.created_at,
   };
+}
+
+function rowToAuthSessionDto(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: row.id,
+    userId: row.user_id,
+    createdAt: row.created_at,
+    lastUsedAt: row.last_used_at,
+    expiresAt: row.expires_at,
+    revokedAt: row.revoked_at || null,
+    revokedReason: row.revoked_reason || '',
+    ipAddress: row.ip_address || '',
+    userAgent: row.user_agent || '',
+  };
+}
+
+function rowToAuthEventDto(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: row.id,
+    eventType: row.event_type,
+    actorUserId: row.actor_user_id || null,
+    actorUserName: row.actor_user_name || '',
+    targetUserId: row.target_user_id || null,
+    targetUserName: row.target_user_name || '',
+    ipAddress: row.ip_address || '',
+    userAgent: row.user_agent || '',
+    metadata: parseJson(row.metadata_json, {}),
+    createdAt: row.created_at,
+  };
+}
+
+function getRequestIp(req) {
+  return String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '')
+    .split(',')[0]
+    .trim();
+}
+
+function getRequestUserAgent(req) {
+  return String(req.headers['user-agent'] || '').trim();
+}
+
+function hashToken(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function minutesFromNow(minutes) {
+  return new Date(Date.now() + minutes * 60 * 1000).toISOString();
+}
+
+function secondsFromNow(seconds) {
+  return new Date(Date.now() + seconds * 1000).toISOString();
+}
+
+function isTimestampInFuture(timestamp) {
+  if (!timestamp) {
+    return false;
+  }
+  const parsed = Date.parse(String(timestamp));
+  if (Number.isNaN(parsed)) {
+    return false;
+  }
+  return parsed > Date.now();
+}
+
+async function logAuthEvent({
+  eventType,
+  actorUserId = null,
+  targetUserId = null,
+  ipAddress = '',
+  userAgent = '',
+  metadata = {},
+}) {
+  await run(
+    `
+    INSERT INTO auth_events (
+      event_type, actor_user_id, target_user_id, ip_address, user_agent, metadata_json, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `,
+    [
+      String(eventType || '').trim(),
+      actorUserId,
+      targetUserId,
+      String(ipAddress || '').trim(),
+      String(userAgent || '').trim(),
+      JSON.stringify(metadata || {}),
+      nowIso(),
+    ],
+  );
+}
+
+async function createAuthSession({ user, req }) {
+  const sessionId = `sess-${crypto.randomUUID()}`;
+  const token = signJwt({ sub: user.id, role: user.role, sid: sessionId });
+  const tokenHash = hashToken(token);
+  const now = nowIso();
+  await run(
+    `
+    INSERT INTO auth_sessions (
+      id, user_id, token_hash, created_at, last_used_at, expires_at, revoked_at, revoked_reason, ip_address, user_agent
+    ) VALUES (?, ?, ?, ?, ?, ?, NULL, '', ?, ?)
+    `,
+    [
+      sessionId,
+      user.id,
+      tokenHash,
+      now,
+      now,
+      secondsFromNow(JWT_TTL_SECONDS),
+      getRequestIp(req),
+      getRequestUserAgent(req),
+    ],
+  );
+  await run(
+    `
+    UPDATE users
+    SET failed_login_attempts = 0, first_failed_login_at = NULL, lockout_until = NULL, last_login_at = ?, last_login_ip = ?, updated_at = ?
+    WHERE id = ?
+    `,
+    [now, getRequestIp(req), now, user.id],
+  );
+  await logAuthEvent({
+    eventType: 'login_success',
+    actorUserId: user.id,
+    targetUserId: user.id,
+    ipAddress: getRequestIp(req),
+    userAgent: getRequestUserAgent(req),
+    metadata: { sessionId },
+  });
+  return { token, sessionId };
+}
+
+async function getActiveSession(sessionId, tokenHashValue) {
+  return get(
+    `
+    SELECT *
+    FROM auth_sessions
+    WHERE id = ? AND token_hash = ? AND revoked_at IS NULL
+      AND datetime(expires_at) > datetime('now')
+    `,
+    [sessionId, tokenHashValue],
+  );
+}
+
+async function touchSession(sessionId) {
+  await run('UPDATE auth_sessions SET last_used_at = ? WHERE id = ?', [nowIso(), sessionId]);
+}
+
+async function revokeSession(sessionId, reason) {
+  await run(
+    `
+    UPDATE auth_sessions
+    SET revoked_at = COALESCE(revoked_at, ?), revoked_reason = CASE WHEN revoked_reason = '' THEN ? ELSE revoked_reason END
+    WHERE id = ?
+    `,
+    [nowIso(), String(reason || ''), sessionId],
+  );
+}
+
+async function revokeSessionsForUser(userId, { exceptSessionId = null, reason = '' } = {}) {
+  if (exceptSessionId) {
+    await run(
+      `
+      UPDATE auth_sessions
+      SET revoked_at = COALESCE(revoked_at, ?), revoked_reason = CASE WHEN revoked_reason = '' THEN ? ELSE revoked_reason END
+      WHERE user_id = ? AND id != ? AND revoked_at IS NULL
+      `,
+      [nowIso(), String(reason || ''), userId, exceptSessionId],
+    );
+    return;
+  }
+  await run(
+    `
+    UPDATE auth_sessions
+    SET revoked_at = COALESCE(revoked_at, ?), revoked_reason = CASE WHEN revoked_reason = '' THEN ? ELSE revoked_reason END
+    WHERE user_id = ? AND revoked_at IS NULL
+    `,
+    [nowIso(), String(reason || ''), userId],
+  );
+}
+
+async function registerLoginFailure({ user, email, req }) {
+  const ipAddress = getRequestIp(req);
+  const userAgent = getRequestUserAgent(req);
+  if (!user) {
+    await logAuthEvent({
+      eventType: 'login_failure_unknown_user',
+      ipAddress,
+      userAgent,
+      metadata: { email: normalizeEmail(email) },
+    });
+    return;
+  }
+
+  const now = nowIso();
+  const firstFailedAt = user.first_failed_login_at;
+  const withinWindow = isTimestampInFuture(
+    firstFailedAt ? new Date(Date.parse(firstFailedAt) + LOGIN_WINDOW_MINUTES * 60 * 1000).toISOString() : null,
+  );
+  const nextAttempts = withinWindow ? Number(user.failed_login_attempts || 0) + 1 : 1;
+  let lockoutUntil = null;
+  if (nextAttempts >= LOGIN_MAX_ATTEMPTS) {
+    lockoutUntil = minutesFromNow(LOGIN_LOCKOUT_MINUTES);
+  }
+  await run(
+    `
+    UPDATE users
+    SET failed_login_attempts = ?, first_failed_login_at = ?, lockout_until = ?, updated_at = ?
+    WHERE id = ?
+    `,
+    [
+      nextAttempts,
+      withinWindow ? firstFailedAt : now,
+      lockoutUntil,
+      now,
+      user.id,
+    ],
+  );
+  await logAuthEvent({
+    eventType: 'login_failure',
+    targetUserId: user.id,
+    ipAddress,
+    userAgent,
+    metadata: { attempts: nextAttempts, lockoutUntil },
+  });
+}
+
+function canManageUser(actorRole, targetRole) {
+  if (actorRole === 'super_admin') {
+    return true;
+  }
+  if (actorRole === 'admin') {
+    return targetRole === 'user';
+  }
+  return false;
 }
 
 async function createUserAccount({
@@ -397,9 +646,15 @@ async function requireAuth(req, res, next) {
     res.status(401).json({ success: false, error: 'Authentication required.' });
     return;
   }
-  const payload = verifyJwt(match[1]);
-  if (!payload?.sub) {
+  const token = match[1];
+  const payload = verifyJwt(token);
+  if (!payload?.sub || !payload?.sid) {
     res.status(401).json({ success: false, error: 'Invalid or expired token.' });
+    return;
+  }
+  const session = await getActiveSession(String(payload.sid), hashToken(token));
+  if (!session) {
+    res.status(401).json({ success: false, error: 'Session is expired or revoked.' });
     return;
   }
   const user = await findActiveUserById(Number(payload.sub));
@@ -407,7 +662,9 @@ async function requireAuth(req, res, next) {
     res.status(401).json({ success: false, error: 'User is inactive or no longer exists.' });
     return;
   }
+  await touchSession(session.id);
   req.user = safeUserDto(user);
+  req.authSession = rowToAuthSessionDto(session);
   next();
 }
 
@@ -432,7 +689,9 @@ function requireApiWritePermission(req, res, next) {
   }
   const allowedForAnyAuthenticatedUser =
     req.path === '/me/password' ||
-    (req.path === '/delete-requests' && req.method === 'POST');
+    req.path === '/auth/logout' ||
+    (req.path === '/delete-requests' && req.method === 'POST') ||
+    (req.path.startsWith('/auth/sessions/') && req.method === 'DELETE');
   if (allowedForAnyAuthenticatedUser) {
     next();
     return;
@@ -992,11 +1251,34 @@ async function initDb() {
       password_hash TEXT NOT NULL,
       role TEXT NOT NULL,
       is_active INTEGER NOT NULL DEFAULT 1,
+      failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+      first_failed_login_at TEXT,
+      lockout_until TEXT,
+      last_login_at TEXT,
+      last_login_ip TEXT DEFAULT '',
       created_by_user_id INTEGER REFERENCES users(id),
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
   `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      token_hash TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      last_used_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      revoked_reason TEXT DEFAULT '',
+      ip_address TEXT DEFAULT '',
+      user_agent TEXT DEFAULT ''
+    )
+  `);
+
+  await run('CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_auth_sessions_revoked ON auth_sessions(revoked_at)');
 
   await run(`
     CREATE TABLE IF NOT EXISTS delete_requests (
@@ -1012,6 +1294,21 @@ async function initDb() {
       created_at TEXT NOT NULL
     )
   `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS auth_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_type TEXT NOT NULL,
+      actor_user_id INTEGER REFERENCES users(id),
+      target_user_id INTEGER REFERENCES users(id),
+      ip_address TEXT DEFAULT '',
+      user_agent TEXT DEFAULT '',
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL
+    )
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_auth_events_created ON auth_events(created_at)');
+  await run('CREATE INDEX IF NOT EXISTS idx_auth_events_target ON auth_events(target_user_id)');
 
   await run(`
     CREATE TABLE IF NOT EXISTS material_group_item_links (
@@ -1309,6 +1606,14 @@ async function initDb() {
     'resolution_source',
     'TEXT',
   );
+  await ensureColumnExists('users', 'failed_login_attempts', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumnExists('users', 'first_failed_login_at', 'TEXT');
+  await ensureColumnExists('users', 'lockout_until', 'TEXT');
+  await ensureColumnExists('users', 'last_login_at', 'TEXT');
+  await ensureColumnExists('users', 'last_login_ip', "TEXT DEFAULT ''");
+  await ensureColumnExists('auth_sessions', 'ip_address', "TEXT DEFAULT ''");
+  await ensureColumnExists('auth_sessions', 'user_agent', "TEXT DEFAULT ''");
+  await ensureColumnExists('auth_sessions', 'revoked_reason', "TEXT DEFAULT ''");
   await run("UPDATE materials SET updated_at = created_at WHERE updated_at IS NULL");
 
   await run(`
@@ -5496,12 +5801,24 @@ app.post('/api/auth/login', async (req, res) => {
     const email = normalizeEmail(req.body?.email);
     const password = String(req.body?.password || '');
     const user = await get('SELECT * FROM users WHERE email = ?', [email]);
+    if (user && isTimestampInFuture(user.lockout_until)) {
+      await logAuthEvent({
+        eventType: 'login_blocked_lockout',
+        targetUserId: user.id,
+        ipAddress: getRequestIp(req),
+        userAgent: getRequestUserAgent(req),
+        metadata: { lockoutUntil: user.lockout_until },
+      });
+      res.status(423).json({ success: false, user: null, token: null, error: 'Account is temporarily locked. Try again later.' });
+      return;
+    }
     if (!user || Number(user.is_active || 0) !== 1 || !verifyPassword(password, user.password_hash)) {
+      await registerLoginFailure({ user, email, req });
       res.status(401).json({ success: false, user: null, token: null, error: 'Invalid email or password.' });
       return;
     }
     const safeUser = safeUserDto(user);
-    const token = signJwt({ sub: user.id, role: user.role });
+    const { token } = await createAuthSession({ user, req });
     res.json({ success: true, user: safeUser, token, error: null });
   } catch (error) {
     res.status(500).json({ success: false, user: null, token: null, error: error.message });
@@ -5513,6 +5830,170 @@ app.use('/api', requireApiWritePermission);
 
 app.get('/api/auth/me', async (req, res) => {
   res.json({ success: true, user: req.user, error: null });
+});
+
+app.post('/api/auth/logout', async (req, res) => {
+  try {
+    await revokeSession(req.authSession.id, 'logout');
+    await logAuthEvent({
+      eventType: 'logout',
+      actorUserId: req.user.id,
+      targetUserId: req.user.id,
+      ipAddress: getRequestIp(req),
+      userAgent: getRequestUserAgent(req),
+      metadata: { sessionId: req.authSession.id },
+    });
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/auth/sessions', async (req, res) => {
+  try {
+    const rows = await all(
+      `
+      SELECT *
+      FROM auth_sessions
+      WHERE user_id = ?
+      ORDER BY datetime(created_at) DESC
+      LIMIT 50
+      `,
+      [req.user.id],
+    );
+    res.json({ success: true, sessions: rows.map(rowToAuthSessionDto), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, sessions: [], error: error.message });
+  }
+});
+
+app.delete('/api/auth/sessions/:id', async (req, res) => {
+  try {
+    const sessionId = String(req.params.id || '').trim();
+    const existing = await get('SELECT * FROM auth_sessions WHERE id = ? AND user_id = ?', [
+      sessionId,
+      req.user.id,
+    ]);
+    if (!existing) {
+      res.status(404).json({ success: false, error: 'Session not found.' });
+      return;
+    }
+    await revokeSession(sessionId, 'user_revoked');
+    await logAuthEvent({
+      eventType: 'session_revoked',
+      actorUserId: req.user.id,
+      targetUserId: req.user.id,
+      ipAddress: getRequestIp(req),
+      userAgent: getRequestUserAgent(req),
+      metadata: { sessionId },
+    });
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/users/:id/sessions', requireRoles('super_admin', 'admin'), async (req, res) => {
+  try {
+    const targetId = Number(req.params.id);
+    const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
+    if (!target) {
+      res.status(404).json({ success: false, sessions: [], error: 'User not found.' });
+      return;
+    }
+    if (!canManageUser(req.user.role, target.role) && targetId !== req.user.id) {
+      res.status(403).json({ success: false, sessions: [], error: 'You do not have permission to view this user sessions.' });
+      return;
+    }
+    const rows = await all(
+      `
+      SELECT *
+      FROM auth_sessions
+      WHERE user_id = ?
+      ORDER BY datetime(created_at) DESC
+      LIMIT 100
+      `,
+      [targetId],
+    );
+    res.json({ success: true, sessions: rows.map(rowToAuthSessionDto), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, sessions: [], error: error.message });
+  }
+});
+
+app.post('/api/users/:id/sessions/revoke', requireRoles('super_admin', 'admin'), async (req, res) => {
+  try {
+    const targetId = Number(req.params.id);
+    const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
+    if (!target) {
+      res.status(404).json({ success: false, error: 'User not found.' });
+      return;
+    }
+    if (!canManageUser(req.user.role, target.role) && targetId !== req.user.id) {
+      res.status(403).json({ success: false, error: 'You do not have permission to revoke this user sessions.' });
+      return;
+    }
+    await revokeSessionsForUser(targetId, {
+      exceptSessionId: targetId === req.user.id ? req.authSession.id : null,
+      reason: 'admin_revoked',
+    });
+    await logAuthEvent({
+      eventType: 'user_sessions_revoked',
+      actorUserId: req.user.id,
+      targetUserId: targetId,
+      ipAddress: getRequestIp(req),
+      userAgent: getRequestUserAgent(req),
+    });
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/auth/events', requireRoles('super_admin', 'admin'), async (req, res) => {
+  try {
+    const params = [];
+    const whereClauses = [];
+    const eventType = String(req.query.eventType || '').trim();
+    const targetUserId = Number(req.query.targetUserId || 0);
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit || 100)));
+    if (eventType) {
+      whereClauses.push('ae.event_type = ?');
+      params.push(eventType);
+    }
+    if (targetUserId > 0) {
+      whereClauses.push('ae.target_user_id = ?');
+      params.push(targetUserId);
+    }
+    if (req.user.role === 'admin') {
+      whereClauses.push(`(
+        ae.actor_user_id = ? OR ae.target_user_id = ?
+        OR actor.role = 'user' OR target.role = 'user'
+      )`);
+      params.push(req.user.id, req.user.id);
+    }
+    const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+    const rows = await all(
+      `
+      SELECT
+        ae.*,
+        actor.name AS actor_user_name,
+        actor.role AS actor_role,
+        target.name AS target_user_name,
+        target.role AS target_role
+      FROM auth_events ae
+      LEFT JOIN users actor ON actor.id = ae.actor_user_id
+      LEFT JOIN users target ON target.id = ae.target_user_id
+      ${whereSql}
+      ORDER BY datetime(ae.created_at) DESC
+      LIMIT ${limit}
+      `,
+      params,
+    );
+    res.json({ success: true, events: rows.map(rowToAuthEventDto), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, events: [], error: error.message });
+  }
 });
 
 app.patch('/api/me/password', async (req, res) => {
@@ -5533,6 +6014,17 @@ app.patch('/api/me/password', async (req, res) => {
       new Date().toISOString(),
       req.user.id,
     ]);
+    await revokeSessionsForUser(req.user.id, {
+      exceptSessionId: req.authSession.id,
+      reason: 'password_changed',
+    });
+    await logAuthEvent({
+      eventType: 'password_changed',
+      actorUserId: req.user.id,
+      targetUserId: req.user.id,
+      ipAddress: getRequestIp(req),
+      userAgent: getRequestUserAgent(req),
+    });
     res.json({ success: true, error: null });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -5560,6 +6052,14 @@ app.post('/api/admins', requireRoles('super_admin'), async (req, res) => {
       role: 'admin',
       createdByUserId: req.user.id,
     });
+    await logAuthEvent({
+      eventType: 'user_created',
+      actorUserId: req.user.id,
+      targetUserId: user.id,
+      ipAddress: getRequestIp(req),
+      userAgent: getRequestUserAgent(req),
+      metadata: { role: 'admin' },
+    });
     res.status(201).json({ success: true, user: safeUserDto(user), error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({ success: false, user: null, error: error.message });
@@ -5574,6 +6074,14 @@ app.post('/api/users', requireRoles('super_admin', 'admin'), async (req, res) =>
       password: req.body?.password,
       role: 'user',
       createdByUserId: req.user.id,
+    });
+    await logAuthEvent({
+      eventType: 'user_created',
+      actorUserId: req.user.id,
+      targetUserId: user.id,
+      ipAddress: getRequestIp(req),
+      userAgent: getRequestUserAgent(req),
+      metadata: { role: 'user' },
     });
     res.status(201).json({ success: true, user: safeUserDto(user), error: null });
   } catch (error) {
@@ -5603,6 +6111,14 @@ app.patch('/api/users/:id/password', requireRoles('super_admin', 'admin'), async
       new Date().toISOString(),
       targetId,
     ]);
+    await revokeSessionsForUser(targetId, { reason: 'password_reset' });
+    await logAuthEvent({
+      eventType: 'password_reset',
+      actorUserId: req.user.id,
+      targetUserId: targetId,
+      ipAddress: getRequestIp(req),
+      userAgent: getRequestUserAgent(req),
+    });
     res.json({ success: true, user: safeUserDto(await get('SELECT * FROM users WHERE id = ?', [targetId])), error: null });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -5630,6 +6146,17 @@ app.patch('/api/users/:id/status', requireRoles('super_admin', 'admin'), async (
       new Date().toISOString(),
       targetId,
     ]);
+    const isActive = req.body?.isActive === false ? false : true;
+    if (!isActive) {
+      await revokeSessionsForUser(targetId, { reason: 'user_deactivated' });
+    }
+    await logAuthEvent({
+      eventType: isActive ? 'user_activated' : 'user_deactivated',
+      actorUserId: req.user.id,
+      targetUserId: targetId,
+      ipAddress: getRequestIp(req),
+      userAgent: getRequestUserAgent(req),
+    });
     res.json({ success: true, user: safeUserDto(await get('SELECT * FROM users WHERE id = ?', [targetId])), error: null });
   } catch (error) {
     res.status(500).json({ success: false, user: null, error: error.message });
@@ -5660,6 +6187,14 @@ app.post('/api/delete-requests', async (req, res) => {
       [entityType, entityId, entityLabel, reason, req.user.id, now],
     );
     const row = await getDeleteRequestById(result.lastID);
+    await logAuthEvent({
+      eventType: 'delete_request_created',
+      actorUserId: req.user.id,
+      targetUserId: req.user.id,
+      ipAddress: getRequestIp(req),
+      userAgent: getRequestUserAgent(req),
+      metadata: { entityType, entityId },
+    });
     res.status(201).json({ success: true, request: rowToDeleteRequestDto(row), error: null });
   } catch (error) {
     res.status(500).json({ success: false, request: null, error: error.message });
@@ -5718,6 +6253,14 @@ app.post('/api/delete-requests/:id/approve', requireRoles('super_admin', 'admin'
       request.id,
     ]);
     const updated = await getDeleteRequestById(request.id);
+    await logAuthEvent({
+      eventType: 'delete_request_approved',
+      actorUserId: req.user.id,
+      targetUserId: request.requested_by_user_id || null,
+      ipAddress: getRequestIp(req),
+      userAgent: getRequestUserAgent(req),
+      metadata: { requestId: request.id, entityType: request.entity_type, entityId: request.entity_id },
+    });
     res.json({ success: true, request: rowToDeleteRequestDto(updated), error: null });
   } catch (error) {
     res.status(500).json({ success: false, request: null, error: error.message });
@@ -5742,6 +6285,14 @@ app.post('/api/delete-requests/:id/reject', requireRoles('super_admin', 'admin')
       request.id,
     ]);
     const updated = await getDeleteRequestById(request.id);
+    await logAuthEvent({
+      eventType: 'delete_request_rejected',
+      actorUserId: req.user.id,
+      targetUserId: request.requested_by_user_id || null,
+      ipAddress: getRequestIp(req),
+      userAgent: getRequestUserAgent(req),
+      metadata: { requestId: request.id, entityType: request.entity_type, entityId: request.entity_id },
+    });
     res.json({ success: true, request: rowToDeleteRequestDto(updated), error: null });
   } catch (error) {
     res.status(500).json({ success: false, request: null, error: error.message });
