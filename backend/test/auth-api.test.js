@@ -54,6 +54,30 @@ test('auth roles and delete approval workflow', async () => {
 
     const admin = await login(baseUrl, 'admin@paper.local', 'AdminPass123');
     assert.equal(admin.user.role, 'admin');
+    const adminPermissionCatalogDenied = await getJson(
+      baseUrl,
+      '/api/permissions',
+      admin.token,
+    );
+    assert.equal(adminPermissionCatalogDenied.status, 403);
+
+    const grantAdminPermissionMgmt = await patchJson(
+      baseUrl,
+      `/api/users/${admin.user.id}/permissions`,
+      owner.token,
+      {
+        overrides: [{ key: 'users.manage_permissions', allowed: true }],
+      },
+    );
+    assert.equal(grantAdminPermissionMgmt.status, 200);
+
+    const adminPermissionCatalogAllowed = await getJson(
+      baseUrl,
+      '/api/permissions',
+      admin.token,
+    );
+    assert.equal(adminPermissionCatalogAllowed.status, 200);
+    assert.ok(adminPermissionCatalogAllowed.body.permissions.length >= 1);
 
     const adminCannotCreateAdmin = await postJson(
       baseUrl,
@@ -84,6 +108,26 @@ test('auth roles and delete approval workflow', async () => {
     const userSessions = await getJson(baseUrl, '/api/auth/sessions', user.token);
     assert.equal(userSessions.status, 200);
     assert.ok(userSessions.body.sessions.length >= 1);
+
+    const adminEscalationAttempt = await patchJson(
+      baseUrl,
+      `/api/users/${user.user.id}/permissions`,
+      admin.token,
+      {
+        overrides: [{ key: 'users.create_admin', allowed: true }],
+      },
+    );
+    assert.equal(adminEscalationAttempt.status, 403);
+
+    const ownerRevokesAdminDelete = await patchJson(
+      baseUrl,
+      `/api/users/${admin.user.id}/permissions`,
+      owner.token,
+      {
+        overrides: [{ key: 'inventory.delete', allowed: false }],
+      },
+    );
+    assert.equal(ownerRevokesAdminDelete.status, 200);
 
     const resetUserPassword = await fetch(
       `${baseUrl}/api/users/${user.user.id}/password`,
@@ -151,6 +195,15 @@ test('auth roles and delete approval workflow', async () => {
     );
     assert.equal(directDelete.status, 403);
 
+    const adminDirectDeleteWithoutPermission = await fetch(
+      `${baseUrl}/api/materials/${material.barcode}`,
+      {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${admin.token}` },
+      },
+    );
+    assert.equal(adminDirectDeleteWithoutPermission.status, 403);
+
     const requestDelete = await postJson(
       baseUrl,
       '/api/delete-requests',
@@ -215,6 +268,18 @@ async function login(baseUrl, email, password) {
 async function postJson(baseUrl, pathName, token, body) {
   const response = await fetch(`${baseUrl}${pathName}`, {
     method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+  return { status: response.status, body: await response.json() };
+}
+
+async function patchJson(baseUrl, pathName, token, body) {
+  const response = await fetch(`${baseUrl}${pathName}`, {
+    method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),

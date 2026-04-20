@@ -14,6 +14,129 @@ const JWT_TTL_SECONDS = Number(process.env.PAPER_JWT_TTL_SECONDS || 60 * 60 * 12
 const PASSWORD_ITERATIONS = 120000;
 const PASSWORD_KEY_LENGTH = 32;
 const USER_ROLES = new Set(['super_admin', 'admin', 'user']);
+const PERMISSION_KEYS = [
+  'inventory.read',
+  'inventory.create',
+  'inventory.update',
+  'inventory.delete',
+  'inventory.request_delete',
+  'delete_requests.review',
+  'users.read',
+  'users.create_user',
+  'users.create_admin',
+  'users.update_status',
+  'users.reset_password',
+  'users.manage_permissions',
+  'sessions.manage',
+  'audit.read',
+  'config.read',
+  'config.write',
+];
+const PERMISSION_DESCRIPTORS = {
+  'inventory.read': {
+    label: 'View inventory',
+    description: 'Read inventory records and detail pages.',
+  },
+  'inventory.create': {
+    label: 'Create inventory',
+    description: 'Create parent or child inventory records.',
+  },
+  'inventory.update': {
+    label: 'Update inventory',
+    description: 'Edit inventory records, links, scans, and movements.',
+  },
+  'inventory.delete': {
+    label: 'Delete inventory',
+    description: 'Delete inventory records directly.',
+  },
+  'inventory.request_delete': {
+    label: 'Request inventory deletion',
+    description: 'Create delete requests for inventory records.',
+  },
+  'delete_requests.review': {
+    label: 'Review delete requests',
+    description: 'Approve or reject pending delete requests.',
+  },
+  'users.read': {
+    label: 'View users',
+    description: 'Read user directory and account summaries.',
+  },
+  'users.create_user': {
+    label: 'Create users',
+    description: 'Register user accounts.',
+  },
+  'users.create_admin': {
+    label: 'Create admins',
+    description: 'Register admin accounts.',
+  },
+  'users.update_status': {
+    label: 'Update user status',
+    description: 'Activate or deactivate user accounts.',
+  },
+  'users.reset_password': {
+    label: 'Reset passwords',
+    description: 'Reset passwords for managed accounts.',
+  },
+  'users.manage_permissions': {
+    label: 'Manage permissions',
+    description: 'Edit per-user permission overrides.',
+  },
+  'sessions.manage': {
+    label: 'Manage sessions',
+    description: 'View and revoke user sessions.',
+  },
+  'audit.read': {
+    label: 'View security activity',
+    description: 'Read authentication and security events.',
+  },
+  'config.read': {
+    label: 'View configuration',
+    description: 'Read units, clients, groups, items, orders, templates, and runs.',
+  },
+  'config.write': {
+    label: 'Edit configuration',
+    description: 'Create and edit units, clients, groups, items, orders, templates, and runs.',
+  },
+};
+const DEFAULT_ROLE_PERMISSIONS = {
+  super_admin: Object.fromEntries(PERMISSION_KEYS.map((key) => [key, true])),
+  admin: {
+    'inventory.read': true,
+    'inventory.create': true,
+    'inventory.update': true,
+    'inventory.delete': true,
+    'inventory.request_delete': true,
+    'delete_requests.review': true,
+    'users.read': true,
+    'users.create_user': true,
+    'users.create_admin': false,
+    'users.update_status': true,
+    'users.reset_password': true,
+    'users.manage_permissions': false,
+    'sessions.manage': true,
+    'audit.read': true,
+    'config.read': true,
+    'config.write': true,
+  },
+  user: {
+    'inventory.read': true,
+    'inventory.create': false,
+    'inventory.update': false,
+    'inventory.delete': false,
+    'inventory.request_delete': true,
+    'delete_requests.review': false,
+    'users.read': false,
+    'users.create_user': false,
+    'users.create_admin': false,
+    'users.update_status': false,
+    'users.reset_password': false,
+    'users.manage_permissions': false,
+    'sessions.manage': false,
+    'audit.read': false,
+    'config.read': true,
+    'config.write': false,
+  },
+};
 const LOGIN_MAX_ATTEMPTS = Number(process.env.PAPER_LOGIN_MAX_ATTEMPTS || 5);
 const LOGIN_WINDOW_MINUTES = Number(process.env.PAPER_LOGIN_WINDOW_MINUTES || 15);
 const LOGIN_LOCKOUT_MINUTES = Number(process.env.PAPER_LOGIN_LOCKOUT_MINUTES || 15);
@@ -256,15 +379,119 @@ function normalizeEmail(value = '') {
   return String(value).trim().toLowerCase();
 }
 
-function safeUserDto(row) {
+function normalizePermissionKey(value = '') {
+  return String(value || '').trim();
+}
+
+function isKnownPermissionKey(value = '') {
+  return PERMISSION_KEYS.includes(normalizePermissionKey(value));
+}
+
+function createEmptyPermissionMap() {
+  return Object.fromEntries(PERMISSION_KEYS.map((key) => [key, false]));
+}
+
+function permissionMapToList(permissionMap = {}) {
+  return PERMISSION_KEYS.filter((key) => permissionMap[key] === true);
+}
+
+function parseBooleanFlag(value) {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (value == null) {
+    return false;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'yes';
+}
+
+function permissionDescriptors() {
+  return PERMISSION_KEYS.map((key) => ({
+    key,
+    label: PERMISSION_DESCRIPTORS[key]?.label || key,
+    description: PERMISSION_DESCRIPTORS[key]?.description || '',
+  }));
+}
+
+async function getRolePermissionMap(role) {
+  if (role === 'super_admin') {
+    return Object.fromEntries(PERMISSION_KEYS.map((key) => [key, true]));
+  }
+  const rows = await all(
+    'SELECT permission_key, is_allowed FROM role_permissions WHERE role = ?',
+    [role],
+  );
+  const defaults = createEmptyPermissionMap();
+  for (const row of rows) {
+    const key = normalizePermissionKey(row.permission_key);
+    if (!isKnownPermissionKey(key)) {
+      continue;
+    }
+    defaults[key] = Number(row.is_allowed || 0) === 1;
+  }
+  return defaults;
+}
+
+async function getEffectivePermissionMap(userId, role) {
+  if (role === 'super_admin') {
+    return Object.fromEntries(PERMISSION_KEYS.map((key) => [key, true]));
+  }
+  const permissionMap = await getRolePermissionMap(role);
+  const overrideRows = await all(
+    'SELECT permission_key, is_allowed FROM user_permission_overrides WHERE user_id = ?',
+    [userId],
+  );
+  for (const row of overrideRows) {
+    const key = normalizePermissionKey(row.permission_key);
+    if (!isKnownPermissionKey(key)) {
+      continue;
+    }
+    permissionMap[key] = Number(row.is_allowed || 0) === 1;
+  }
+  return permissionMap;
+}
+
+async function getUserPermissionSnapshot(user) {
+  const roleDefaults = await getRolePermissionMap(user.role);
+  const overrideRows = await all(
+    'SELECT permission_key, is_allowed FROM user_permission_overrides WHERE user_id = ?',
+    [user.id],
+  );
+  const overrideMap = {};
+  for (const row of overrideRows) {
+    const key = normalizePermissionKey(row.permission_key);
+    if (!isKnownPermissionKey(key)) {
+      continue;
+    }
+    overrideMap[key] = Number(row.is_allowed || 0) === 1;
+  }
+  const effective = user.role === 'super_admin'
+    ? Object.fromEntries(PERMISSION_KEYS.map((key) => [key, true]))
+    : { ...roleDefaults, ...overrideMap };
+  return PERMISSION_KEYS.map((key) => {
+    if (user.role === 'super_admin') {
+      return { key, allowed: true, source: 'super_admin' };
+    }
+    return {
+      key,
+      allowed: effective[key] === true,
+      source: Object.prototype.hasOwnProperty.call(overrideMap, key) ? 'override' : 'role',
+    };
+  });
+}
+
+function safeUserDto(row, permissionMap = null) {
   if (!row) {
     return null;
   }
+  const effectivePermissions = permissionMap || createEmptyPermissionMap();
   return {
     id: row.id,
     name: row.name || '',
     email: row.email || '',
     role: row.role || 'user',
+    permissions: permissionMapToList(effectivePermissions),
     isActive: Number(row.is_active || 0) === 1,
     failedLoginAttempts: Number(row.failed_login_attempts || 0),
     lockoutUntil: row.lockout_until || null,
@@ -635,6 +862,23 @@ async function bootstrapSuperAdminIfNeeded() {
   }
 }
 
+async function seedRolePermissions() {
+  const now = nowIso();
+  for (const role of Object.keys(DEFAULT_ROLE_PERMISSIONS)) {
+    const defaults = DEFAULT_ROLE_PERMISSIONS[role] || {};
+    for (const key of PERMISSION_KEYS) {
+      const isAllowed = defaults[key] === true ? 1 : 0;
+      await run(
+        `
+        INSERT OR IGNORE INTO role_permissions (role, permission_key, is_allowed, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        `,
+        [role, key, isAllowed, now, now],
+      );
+    }
+  }
+}
+
 function currentActor(req) {
   return req.user?.name || 'Demo Admin';
 }
@@ -662,8 +906,10 @@ async function requireAuth(req, res, next) {
     res.status(401).json({ success: false, error: 'User is inactive or no longer exists.' });
     return;
   }
+  const permissionMap = await getEffectivePermissionMap(user.id, user.role);
   await touchSession(session.id);
-  req.user = safeUserDto(user);
+  req.user = safeUserDto(user, permissionMap);
+  req.userPermissions = permissionMap;
   req.authSession = rowToAuthSessionDto(session);
   next();
 }
@@ -675,6 +921,33 @@ function requireRoles(...roles) {
       return;
     }
     if (!roles.includes(req.user.role)) {
+      res.status(403).json({ success: false, error: 'You do not have permission for this action.' });
+      return;
+    }
+    next();
+  };
+}
+
+function hasPermission(req, permissionKey) {
+  if (req.user?.role === 'super_admin') {
+    return true;
+  }
+  const key = normalizePermissionKey(permissionKey);
+  return req.userPermissions?.[key] === true;
+}
+
+function requirePermission(permissionKey) {
+  const key = normalizePermissionKey(permissionKey);
+  return (req, res, next) => {
+    if (!req.user) {
+      res.status(401).json({ success: false, error: 'Authentication required.' });
+      return;
+    }
+    if (!isKnownPermissionKey(key)) {
+      res.status(500).json({ success: false, error: `Unknown permission key: ${key}` });
+      return;
+    }
+    if (!hasPermission(req, key)) {
       res.status(403).json({ success: false, error: 'You do not have permission for this action.' });
       return;
     }
@@ -700,7 +973,14 @@ function requireApiWritePermission(req, res, next) {
     next();
     return;
   }
-  res.status(403).json({ success: false, error: 'Users can request deletion, but cannot modify records directly.' });
+  if (hasPermission(req, 'config.write') || hasPermission(req, 'inventory.update')) {
+    next();
+    return;
+  }
+  res.status(403).json({
+    success: false,
+    error: 'Users can request deletion, but cannot modify records directly.',
+  });
 }
 
 function closeDb() {
@@ -1309,6 +1589,27 @@ async function initDb() {
   `);
   await run('CREATE INDEX IF NOT EXISTS idx_auth_events_created ON auth_events(created_at)');
   await run('CREATE INDEX IF NOT EXISTS idx_auth_events_target ON auth_events(target_user_id)');
+  await run(`
+    CREATE TABLE IF NOT EXISTS role_permissions (
+      role TEXT NOT NULL,
+      permission_key TEXT NOT NULL,
+      is_allowed INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY(role, permission_key)
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS user_permission_overrides (
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      permission_key TEXT NOT NULL,
+      is_allowed INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY(user_id, permission_key)
+    )
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_user_permission_overrides_user ON user_permission_overrides(user_id)');
 
   await run(`
     CREATE TABLE IF NOT EXISTS material_group_item_links (
@@ -1615,6 +1916,7 @@ async function initDb() {
   await ensureColumnExists('auth_sessions', 'user_agent', "TEXT DEFAULT ''");
   await ensureColumnExists('auth_sessions', 'revoked_reason', "TEXT DEFAULT ''");
   await run("UPDATE materials SET updated_at = created_at WHERE updated_at IS NULL");
+  await seedRolePermissions();
 
   await run(`
     CREATE TABLE IF NOT EXISTS pipeline_templates (
@@ -5817,7 +6119,8 @@ app.post('/api/auth/login', async (req, res) => {
       res.status(401).json({ success: false, user: null, token: null, error: 'Invalid email or password.' });
       return;
     }
-    const safeUser = safeUserDto(user);
+    const permissionMap = await getEffectivePermissionMap(user.id, user.role);
+    const safeUser = safeUserDto(user, permissionMap);
     const { token } = await createAuthSession({ user, req });
     res.json({ success: true, user: safeUser, token, error: null });
   } catch (error) {
@@ -5893,7 +6196,7 @@ app.delete('/api/auth/sessions/:id', async (req, res) => {
   }
 });
 
-app.get('/api/users/:id/sessions', requireRoles('super_admin', 'admin'), async (req, res) => {
+app.get('/api/users/:id/sessions', requirePermission('sessions.manage'), async (req, res) => {
   try {
     const targetId = Number(req.params.id);
     const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
@@ -5921,7 +6224,7 @@ app.get('/api/users/:id/sessions', requireRoles('super_admin', 'admin'), async (
   }
 });
 
-app.post('/api/users/:id/sessions/revoke', requireRoles('super_admin', 'admin'), async (req, res) => {
+app.post('/api/users/:id/sessions/revoke', requirePermission('sessions.manage'), async (req, res) => {
   try {
     const targetId = Number(req.params.id);
     const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
@@ -5950,7 +6253,7 @@ app.post('/api/users/:id/sessions/revoke', requireRoles('super_admin', 'admin'),
   }
 });
 
-app.get('/api/auth/events', requireRoles('super_admin', 'admin'), async (req, res) => {
+app.get('/api/auth/events', requirePermission('audit.read'), async (req, res) => {
   try {
     const params = [];
     const whereClauses = [];
@@ -6031,7 +6334,7 @@ app.patch('/api/me/password', async (req, res) => {
   }
 });
 
-app.get('/api/users', requireRoles('super_admin', 'admin'), async (req, res) => {
+app.get('/api/users', requirePermission('users.read'), async (req, res) => {
   try {
     const rows = await all('SELECT * FROM users ORDER BY role ASC, name ASC');
     const users = rows
@@ -6043,7 +6346,107 @@ app.get('/api/users', requireRoles('super_admin', 'admin'), async (req, res) => 
   }
 });
 
-app.post('/api/admins', requireRoles('super_admin'), async (req, res) => {
+app.get('/api/permissions', requirePermission('users.manage_permissions'), async (_req, res) => {
+  res.json({
+    success: true,
+    permissions: permissionDescriptors(),
+    error: null,
+  });
+});
+
+app.get('/api/users/:id/permissions', requirePermission('users.manage_permissions'), async (req, res) => {
+  try {
+    const targetId = Number(req.params.id);
+    const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
+    if (!target) {
+      res.status(404).json({ success: false, permissions: [], error: 'User not found.' });
+      return;
+    }
+    if (!canManageUser(req.user.role, target.role)) {
+      res.status(403).json({ success: false, permissions: [], error: 'You do not have permission to manage this user.' });
+      return;
+    }
+    const permissions = await getUserPermissionSnapshot(target);
+    res.json({ success: true, permissions, role: target.role, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, permissions: [], error: error.message });
+  }
+});
+
+app.patch('/api/users/:id/permissions', requirePermission('users.manage_permissions'), async (req, res) => {
+  try {
+    const targetId = Number(req.params.id);
+    const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
+    if (!target) {
+      res.status(404).json({ success: false, permissions: [], error: 'User not found.' });
+      return;
+    }
+    if (!canManageUser(req.user.role, target.role)) {
+      res.status(403).json({ success: false, permissions: [], error: 'You do not have permission to manage this user.' });
+      return;
+    }
+    if (target.role === 'super_admin') {
+      res.status(403).json({ success: false, permissions: [], error: 'Super admin permissions cannot be edited.' });
+      return;
+    }
+
+    const patchItems = Array.isArray(req.body?.overrides) ? req.body.overrides : null;
+    if (!patchItems) {
+      res.status(400).json({ success: false, permissions: [], error: 'overrides array is required.' });
+      return;
+    }
+
+    const actorCanGrant = req.userPermissions || createEmptyPermissionMap();
+    const targetRoleDefaults = await getRolePermissionMap(target.role);
+    const now = nowIso();
+    for (const item of patchItems) {
+      const key = normalizePermissionKey(item?.key);
+      if (!isKnownPermissionKey(key)) {
+        res.status(400).json({ success: false, permissions: [], error: `Unknown permission key: ${key}` });
+        return;
+      }
+      const allowed = parseBooleanFlag(item?.allowed);
+      if (req.user.role !== 'super_admin' && allowed && actorCanGrant[key] !== true) {
+        res.status(403).json({ success: false, permissions: [], error: `You cannot grant permission you do not have: ${key}` });
+        return;
+      }
+      const roleDefault = targetRoleDefaults[key] === true;
+      if (allowed === roleDefault) {
+        await run(
+          'DELETE FROM user_permission_overrides WHERE user_id = ? AND permission_key = ?',
+          [targetId, key],
+        );
+      } else {
+        await run(
+          `
+          INSERT INTO user_permission_overrides (user_id, permission_key, is_allowed, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(user_id, permission_key)
+          DO UPDATE SET is_allowed = excluded.is_allowed, updated_at = excluded.updated_at
+          `,
+          [targetId, key, allowed ? 1 : 0, now, now],
+        );
+      }
+    }
+
+    await logAuthEvent({
+      eventType: 'permissions_updated',
+      actorUserId: req.user.id,
+      targetUserId: targetId,
+      ipAddress: getRequestIp(req),
+      userAgent: getRequestUserAgent(req),
+      metadata: { updatedKeys: patchItems.map((item) => normalizePermissionKey(item?.key)).filter(Boolean) },
+    });
+
+    const refreshedTarget = await get('SELECT * FROM users WHERE id = ?', [targetId]);
+    const permissions = await getUserPermissionSnapshot(refreshedTarget);
+    res.json({ success: true, permissions, role: refreshedTarget.role, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, permissions: [], error: error.message });
+  }
+});
+
+app.post('/api/admins', requireRoles('super_admin'), requirePermission('users.create_admin'), async (req, res) => {
   try {
     const user = await createUserAccount({
       name: req.body?.name,
@@ -6066,7 +6469,7 @@ app.post('/api/admins', requireRoles('super_admin'), async (req, res) => {
   }
 });
 
-app.post('/api/users', requireRoles('super_admin', 'admin'), async (req, res) => {
+app.post('/api/users', requireRoles('super_admin', 'admin'), requirePermission('users.create_user'), async (req, res) => {
   try {
     const user = await createUserAccount({
       name: req.body?.name,
@@ -6089,7 +6492,7 @@ app.post('/api/users', requireRoles('super_admin', 'admin'), async (req, res) =>
   }
 });
 
-app.patch('/api/users/:id/password', requireRoles('super_admin', 'admin'), async (req, res) => {
+app.patch('/api/users/:id/password', requirePermission('users.reset_password'), async (req, res) => {
   try {
     const targetId = Number(req.params.id);
     const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
@@ -6125,7 +6528,7 @@ app.patch('/api/users/:id/password', requireRoles('super_admin', 'admin'), async
   }
 });
 
-app.patch('/api/users/:id/status', requireRoles('super_admin', 'admin'), async (req, res) => {
+app.patch('/api/users/:id/status', requirePermission('users.update_status'), async (req, res) => {
   try {
     const targetId = Number(req.params.id);
     const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
@@ -6163,7 +6566,7 @@ app.patch('/api/users/:id/status', requireRoles('super_admin', 'admin'), async (
   }
 });
 
-app.post('/api/delete-requests', async (req, res) => {
+app.post('/api/delete-requests', requirePermission('inventory.request_delete'), async (req, res) => {
   try {
     const entityType = String(req.body?.entityType || '').trim();
     const entityId = String(req.body?.entityId || '').trim();
@@ -6201,7 +6604,7 @@ app.post('/api/delete-requests', async (req, res) => {
   }
 });
 
-app.get('/api/delete-requests', requireRoles('super_admin', 'admin'), async (req, res) => {
+app.get('/api/delete-requests', requirePermission('delete_requests.review'), async (req, res) => {
   try {
     const status = String(req.query.status || '').trim();
     const params = [];
@@ -6230,7 +6633,7 @@ app.get('/api/delete-requests', requireRoles('super_admin', 'admin'), async (req
   }
 });
 
-app.post('/api/delete-requests/:id/approve', requireRoles('super_admin', 'admin'), async (req, res) => {
+app.post('/api/delete-requests/:id/approve', requirePermission('delete_requests.review'), async (req, res) => {
   try {
     const request = await getDeleteRequestById(Number(req.params.id));
     if (!request) {
@@ -6267,7 +6670,7 @@ app.post('/api/delete-requests/:id/approve', requireRoles('super_admin', 'admin'
   }
 });
 
-app.post('/api/delete-requests/:id/reject', requireRoles('super_admin', 'admin'), async (req, res) => {
+app.post('/api/delete-requests/:id/reject', requirePermission('delete_requests.review'), async (req, res) => {
   try {
     const request = await getDeleteRequestById(Number(req.params.id));
     if (!request) {
@@ -6385,7 +6788,7 @@ app.get('/api/units', async (req, res) => {
   }
 });
 
-app.post('/api/units', async (req, res) => {
+app.post('/api/units', requirePermission('config.write'), async (req, res) => {
   try {
     const unit = await saveUnit(req.body || {});
     res.status(201).json({ success: true, unit: rowToUnitDto(unit), error: null });
@@ -6398,7 +6801,7 @@ app.post('/api/units', async (req, res) => {
   }
 });
 
-app.patch('/api/units/:id', async (req, res) => {
+app.patch('/api/units/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const unit = await saveUnit({
       ...(req.body || {}),
@@ -6414,7 +6817,7 @@ app.patch('/api/units/:id', async (req, res) => {
   }
 });
 
-app.patch('/api/units/:id/archive', async (req, res) => {
+app.patch('/api/units/:id/archive', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const existing = await getUnitRowById(id);
@@ -6433,7 +6836,7 @@ app.patch('/api/units/:id/archive', async (req, res) => {
   }
 });
 
-app.patch('/api/units/:id/restore', async (req, res) => {
+app.patch('/api/units/:id/restore', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const existing = await getUnitRowById(id);
@@ -6479,7 +6882,7 @@ app.get('/api/orders', async (req, res) => {
   }
 });
 
-app.post('/api/orders', async (req, res) => {
+app.post('/api/orders', requirePermission('config.write'), async (req, res) => {
   try {
     const order = await saveOrder(req.body || {});
     res.status(201).json({ success: true, order: rowToOrderDto(order), error: null });
@@ -6492,7 +6895,7 @@ app.post('/api/orders', async (req, res) => {
   }
 });
 
-app.patch('/api/orders/:id/lifecycle', async (req, res) => {
+app.patch('/api/orders/:id/lifecycle', requirePermission('config.write'), async (req, res) => {
   try {
     const order = await updateOrderLifecycle({
       ...(req.body || {}),
@@ -6508,7 +6911,7 @@ app.patch('/api/orders/:id/lifecycle', async (req, res) => {
   }
 });
 
-app.post('/api/clients', async (req, res) => {
+app.post('/api/clients', requirePermission('config.write'), async (req, res) => {
   try {
     const client = await saveClient(req.body || {});
     res.status(201).json({ success: true, client: rowToClientDto(client), error: null });
@@ -6521,7 +6924,7 @@ app.post('/api/clients', async (req, res) => {
   }
 });
 
-app.patch('/api/clients/:id', async (req, res) => {
+app.patch('/api/clients/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const client = await saveClient({
       ...(req.body || {}),
@@ -6537,7 +6940,7 @@ app.patch('/api/clients/:id', async (req, res) => {
   }
 });
 
-app.patch('/api/clients/:id/archive', async (req, res) => {
+app.patch('/api/clients/:id/archive', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const existing = await getClientRowById(id);
@@ -6556,7 +6959,7 @@ app.patch('/api/clients/:id/archive', async (req, res) => {
   }
 });
 
-app.patch('/api/clients/:id/restore', async (req, res) => {
+app.patch('/api/clients/:id/restore', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const existing = await getClientRowById(id);
@@ -6585,7 +6988,7 @@ app.get('/api/items', async (req, res) => {
   }
 });
 
-app.post('/api/items', async (req, res) => {
+app.post('/api/items', requirePermission('config.write'), async (req, res) => {
   try {
     const item = await saveItem(req.body || {});
     res.status(201).json({ success: true, item: await rowToItemDto(item), error: null });
@@ -6598,7 +7001,7 @@ app.post('/api/items', async (req, res) => {
   }
 });
 
-app.patch('/api/items/:id', async (req, res) => {
+app.patch('/api/items/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const item = await saveItem({
       ...(req.body || {}),
@@ -6614,7 +7017,7 @@ app.patch('/api/items/:id', async (req, res) => {
   }
 });
 
-app.patch('/api/items/:id/archive', async (req, res) => {
+app.patch('/api/items/:id/archive', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const existing = await getItemRowById(id);
@@ -6632,7 +7035,7 @@ app.patch('/api/items/:id/archive', async (req, res) => {
   }
 });
 
-app.patch('/api/items/:id/restore', async (req, res) => {
+app.patch('/api/items/:id/restore', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const existing = await getItemRowById(id);
@@ -6650,7 +7053,7 @@ app.patch('/api/items/:id/restore', async (req, res) => {
   }
 });
 
-app.post('/api/groups', async (req, res) => {
+app.post('/api/groups', requirePermission('config.write'), async (req, res) => {
   try {
     const group = await saveGroup(req.body || {});
     res.status(201).json({ success: true, group: rowToGroupDto(group), error: null });
@@ -6663,7 +7066,7 @@ app.post('/api/groups', async (req, res) => {
   }
 });
 
-app.patch('/api/groups/:id', async (req, res) => {
+app.patch('/api/groups/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const group = await saveGroup({
       ...(req.body || {}),
@@ -6679,7 +7082,7 @@ app.patch('/api/groups/:id', async (req, res) => {
   }
 });
 
-app.patch('/api/groups/:id/archive', async (req, res) => {
+app.patch('/api/groups/:id/archive', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const existing = await getGroupRowById(id);
@@ -6707,7 +7110,7 @@ app.patch('/api/groups/:id/archive', async (req, res) => {
   }
 });
 
-app.patch('/api/groups/:id/restore', async (req, res) => {
+app.patch('/api/groups/:id/restore', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const existing = await getGroupRowById(id);
@@ -6726,7 +7129,7 @@ app.patch('/api/groups/:id/restore', async (req, res) => {
   }
 });
 
-app.post('/api/materials/parent', async (req, res) => {
+app.post('/api/materials/parent', requirePermission('inventory.create'), async (req, res) => {
   try {
     const payload = { ...(req.body || {}), actor: currentActor(req) };
     if (!payload.name || !payload.type || payload.numberOfChildren == null) {
@@ -6749,7 +7152,7 @@ app.post('/api/materials/parent', async (req, res) => {
   }
 });
 
-app.post('/api/materials/:barcode/child', async (req, res) => {
+app.post('/api/materials/:barcode/child', requirePermission('inventory.create'), async (req, res) => {
   try {
     const payload = { ...(req.body || {}), actor: currentActor(req) };
     if (!String(payload.name || '').trim()) {
@@ -6767,7 +7170,7 @@ app.post('/api/materials/:barcode/child', async (req, res) => {
   }
 });
 
-app.patch('/api/materials/:barcode', async (req, res) => {
+app.patch('/api/materials/:barcode', requirePermission('inventory.update'), async (req, res) => {
   try {
     const payload = { ...(req.body || {}), actor: currentActor(req) };
     if (!payload.name || !payload.type) {
@@ -6791,7 +7194,7 @@ app.patch('/api/materials/:barcode', async (req, res) => {
   }
 });
 
-app.patch('/api/materials/:barcode/group-config', async (req, res) => {
+app.patch('/api/materials/:barcode/group-config', requirePermission('inventory.update'), async (req, res) => {
   try {
     const payload = req.body || {};
     const material = await updateMaterialGroupConfiguration(req.params.barcode, payload);
@@ -6807,7 +7210,7 @@ app.patch('/api/materials/:barcode/group-config', async (req, res) => {
   }
 });
 
-app.delete('/api/materials/:barcode', async (req, res) => {
+app.delete('/api/materials/:barcode', requirePermission('inventory.delete'), async (req, res) => {
   try {
     await deleteMaterialRecord(req.params.barcode);
     res.json({ success: true, material: null, error: null });
@@ -6816,7 +7219,7 @@ app.delete('/api/materials/:barcode', async (req, res) => {
   }
 });
 
-app.patch('/api/materials/:barcode/link-group', async (req, res) => {
+app.patch('/api/materials/:barcode/link-group', requirePermission('inventory.update'), async (req, res) => {
   try {
     const material = await linkMaterialRecordToGroup(
       req.params.barcode,
@@ -6828,7 +7231,7 @@ app.patch('/api/materials/:barcode/link-group', async (req, res) => {
   }
 });
 
-app.patch('/api/materials/:barcode/link-item', async (req, res) => {
+app.patch('/api/materials/:barcode/link-item', requirePermission('inventory.update'), async (req, res) => {
   try {
     const material = await linkMaterialRecordToItem(
       req.params.barcode,
@@ -6840,7 +7243,7 @@ app.patch('/api/materials/:barcode/link-item', async (req, res) => {
   }
 });
 
-app.patch('/api/materials/:barcode/unlink', async (req, res) => {
+app.patch('/api/materials/:barcode/unlink', requirePermission('inventory.update'), async (req, res) => {
   try {
     const material = await unlinkMaterialRecord(req.params.barcode);
     res.json({ success: true, material: rowToMaterialDto(material), error: null });
@@ -6849,7 +7252,7 @@ app.patch('/api/materials/:barcode/unlink', async (req, res) => {
   }
 });
 
-app.patch('/api/materials/:barcode/scan', async (req, res) => {
+app.patch('/api/materials/:barcode/scan', requirePermission('inventory.update'), async (req, res) => {
   try {
     const materialRow = await incrementMaterialScanCount(req.params.barcode);
     if (!materialRow) {
@@ -6870,7 +7273,7 @@ app.patch('/api/materials/:barcode/scan', async (req, res) => {
   }
 });
 
-app.patch('/api/materials/:barcode/scan/reset', async (req, res) => {
+app.patch('/api/materials/:barcode/scan/reset', requirePermission('inventory.update'), async (req, res) => {
   try {
     const row = await getMaterialRowByBarcode(req.params.barcode);
     if (!row) {
@@ -6904,7 +7307,7 @@ app.patch('/api/materials/:barcode/scan/reset', async (req, res) => {
   }
 });
 
-app.post('/api/inventory/movements', async (req, res) => {
+app.post('/api/inventory/movements', requirePermission('inventory.update'), async (req, res) => {
   try {
     const detail = await applyInventoryMovement({
       ...(req.body || {}),
@@ -6941,6 +7344,28 @@ app.use('/templates', requireAuth);
 app.use('/templates', requireApiWritePermission);
 app.use('/runs', requireAuth);
 app.use('/runs', requireApiWritePermission);
+app.use('/templates', (req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+    next();
+    return;
+  }
+  if (!hasPermission(req, 'config.write')) {
+    res.status(403).json({ success: false, error: 'You do not have permission for this action.' });
+    return;
+  }
+  next();
+});
+app.use('/runs', (req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+    next();
+    return;
+  }
+  if (!hasPermission(req, 'config.write')) {
+    res.status(403).json({ success: false, error: 'You do not have permission for this action.' });
+    return;
+  }
+  next();
+});
 
 app.get('/templates', async (req, res) => {
   try {
