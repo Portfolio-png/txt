@@ -3,7 +3,7 @@ module.exports = {
     {
       name: 'paper-backend',
       script: 'server.js',
-      cwd: '/home/ubuntu/Paper/backend',
+      cwd: '/home/ubuntu/txt/backend',
       instances: 1,
       exec_mode: 'fork',
       autorestart: true,
@@ -12,7 +12,7 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 18080,
-        DB_PATH: '/home/ubuntu/Paper/backend/data/paper.db',
+        DB_PATH: '/home/ubuntu/txt/backend/data/paper.db',
       },
     },
   ],
