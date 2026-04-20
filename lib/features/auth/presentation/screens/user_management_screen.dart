@@ -23,7 +23,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    if (!auth.isAdmin) {
+    if (!auth.canAccessUserManagement) {
       return const Center(child: Text('You do not have access to this area.'));
     }
 
@@ -49,11 +49,13 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
             ),
             const SizedBox(width: 12),
             FilledButton.icon(
-              onPressed: () => _openCreateUserDialog(context, admin: false),
+              onPressed: auth.can('users.create_user')
+                  ? () => _openCreateUserDialog(context, admin: false)
+                  : null,
               icon: const Icon(Icons.person_add_alt_1),
               label: const Text('New User'),
             ),
-            if (auth.isSuperAdmin) ...[
+            if (auth.can('users.create_admin')) ...[
               const SizedBox(width: 12),
               FilledButton.tonalIcon(
                 onPressed: () => _openCreateUserDialog(context, admin: true),
@@ -68,35 +70,41 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
           _InlineError(message: auth.errorMessage!),
         ],
         const SizedBox(height: 20),
-        _Section(
-          title: 'Accounts',
-          child: auth.users.isEmpty
-              ? const _EmptyBlock('No users loaded yet.')
-              : Column(
-                  children: auth.users
-                      .map((user) => _UserRow(user: user))
-                      .toList(growable: false),
-                ),
-        ),
-        const SizedBox(height: 20),
-        _Section(
-          title: 'Pending Delete Requests',
-          child: auth.deleteRequests.isEmpty
-              ? const _EmptyBlock('No pending delete requests.')
-              : Column(
-                  children: auth.deleteRequests
-                      .map((request) => _DeleteRequestRow(request: request))
-                      .toList(growable: false),
-                ),
-        ),
-        const SizedBox(height: 20),
-        _Section(
-          title: 'Security Activity',
-          child: auth.authEvents.isEmpty
-              ? const _EmptyBlock('No security events yet.')
-              : Column(
-                  children: auth.authEvents
-                      .map((event) => ListTile(
+        if (auth.can('users.read')) ...[
+          _Section(
+            title: 'Accounts',
+            child: auth.users.isEmpty
+                ? const _EmptyBlock('No users loaded yet.')
+                : Column(
+                    children: auth.users
+                        .map((user) => _UserRow(user: user))
+                        .toList(growable: false),
+                  ),
+          ),
+          const SizedBox(height: 20),
+        ],
+        if (auth.can('delete_requests.review')) ...[
+          _Section(
+            title: 'Pending Delete Requests',
+            child: auth.deleteRequests.isEmpty
+                ? const _EmptyBlock('No pending delete requests.')
+                : Column(
+                    children: auth.deleteRequests
+                        .map((request) => _DeleteRequestRow(request: request))
+                        .toList(growable: false),
+                  ),
+          ),
+          const SizedBox(height: 20),
+        ],
+        if (auth.can('audit.read'))
+          _Section(
+            title: 'Security Activity',
+            child: auth.authEvents.isEmpty
+                ? const _EmptyBlock('No security events yet.')
+                : Column(
+                    children: auth.authEvents
+                        .map(
+                          (event) => ListTile(
                             dense: true,
                             title: Text(event.eventType.replaceAll('_', ' ')),
                             subtitle: Text(
@@ -109,10 +117,11 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                                 color: Color(0xFF6B7280),
                               ),
                             ),
-                          ))
-                      .toList(growable: false),
-                ),
-        ),
+                          ),
+                        )
+                        .toList(growable: false),
+                  ),
+          ),
       ],
     );
   }
@@ -146,16 +155,14 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                 TextFormField(
                   controller: nameController,
                   decoration: const InputDecoration(labelText: 'Name'),
-                  validator: (value) =>
-                      value == null || value.trim().isEmpty
+                  validator: (value) => value == null || value.trim().isEmpty
                       ? 'Enter a name.'
                       : null,
                 ),
                 TextFormField(
                   controller: emailController,
                   decoration: const InputDecoration(labelText: 'Email'),
-                  validator: (value) =>
-                      value == null || value.trim().isEmpty
+                  validator: (value) => value == null || value.trim().isEmpty
                       ? 'Enter an email.'
                       : null,
                 ),
@@ -210,8 +217,16 @@ class _UserRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final canManage = user.id != auth.user?.id &&
-        (auth.isSuperAdmin || user.role == 'user');
+    final canManageTarget =
+        user.id != auth.user?.id && (auth.isSuperAdmin || user.role == 'user');
+    final canResetPassword =
+        canManageTarget && auth.can('users.reset_password');
+    final canToggleStatus = canManageTarget && auth.can('users.update_status');
+    final canSeeSessions = canManageTarget && auth.can('sessions.manage');
+    final canEditPermissions =
+        canManageTarget &&
+        auth.can('users.manage_permissions') &&
+        user.role != 'super_admin';
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       leading: CircleAvatar(
@@ -229,15 +244,25 @@ class _UserRow extends StatelessWidget {
                 : const Color(0xFFFEECEC),
           ),
           OutlinedButton(
-            onPressed: canManage ? () => _resetPassword(context, user) : null,
+            onPressed: canResetPassword
+                ? () => _resetPassword(context, user)
+                : null,
             child: const Text('Reset password'),
           ),
           OutlinedButton(
-            onPressed: canManage ? () => _openSessions(context, user) : null,
+            onPressed: canSeeSessions
+                ? () => _openSessions(context, user)
+                : null,
             child: const Text('Sessions'),
           ),
           OutlinedButton(
-            onPressed: canManage
+            onPressed: canEditPermissions
+                ? () => _openPermissions(context, user)
+                : null,
+            child: const Text('Permissions'),
+          ),
+          OutlinedButton(
+            onPressed: canToggleStatus
                 ? () => auth.setUserActive(
                     userId: user.id,
                     active: !user.isActive,
@@ -295,7 +320,9 @@ class _UserRow extends StatelessWidget {
   }
 
   Future<void> _openSessions(BuildContext context, AuthUser user) async {
-    final sessions = await context.read<AuthProvider>().getUserSessions(user.id);
+    final sessions = await context.read<AuthProvider>().getUserSessions(
+      user.id,
+    );
     if (!context.mounted) {
       return;
     }
@@ -318,7 +345,11 @@ class _UserRow extends StatelessWidget {
                             '${session.ipAddress.ifEmpty('Unknown IP')} • ${session.userAgent.ifEmpty('Unknown agent')}',
                           ),
                           trailing: Text(
-                            session.createdAt.toLocal().toString().split('.').first,
+                            session.createdAt
+                                .toLocal()
+                                .toString()
+                                .split('.')
+                                .first,
                             style: const TextStyle(
                               fontSize: 11,
                               color: Color(0xFF6B7280),
@@ -336,9 +367,9 @@ class _UserRow extends StatelessWidget {
           ),
           FilledButton.tonal(
             onPressed: () async {
-              final ok = await context.read<AuthProvider>().revokeAllUserSessions(
-                    user.id,
-                  );
+              final ok = await context
+                  .read<AuthProvider>()
+                  .revokeAllUserSessions(user.id);
               if (ok && dialogContext.mounted) {
                 Navigator.of(dialogContext).pop();
               }
@@ -346,6 +377,92 @@ class _UserRow extends StatelessWidget {
             child: const Text('Revoke all'),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _openPermissions(BuildContext context, AuthUser user) async {
+    final auth = context.read<AuthProvider>();
+    final states = await auth.getUserPermissions(user.id);
+    if (!context.mounted) {
+      return;
+    }
+    final catalog = auth.permissionDescriptors;
+    if (catalog.isEmpty || states.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            auth.errorMessage ?? 'No editable permissions were returned.',
+          ),
+        ),
+      );
+      return;
+    }
+    final sortedStates = [...states]..sort((a, b) => a.key.compareTo(b.key));
+    final toggles = <String, bool>{
+      for (final state in sortedStates) state.key: state.allowed,
+    };
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setStateDialog) => AlertDialog(
+          title: Text('Permissions for ${user.name}'),
+          content: SizedBox(
+            width: 600,
+            child: ListView(
+              shrinkWrap: true,
+              children: sortedStates
+                  .map((state) {
+                    PermissionDescriptor? descriptor;
+                    for (final item in catalog) {
+                      if (item.key == state.key) {
+                        descriptor = item;
+                        break;
+                      }
+                    }
+                    return CheckboxListTile(
+                      value: toggles[state.key] ?? false,
+                      onChanged: (value) {
+                        setStateDialog(() {
+                          toggles[state.key] = value == true;
+                        });
+                      },
+                      title: Text(descriptor?.label ?? state.key),
+                      subtitle: Text(descriptor?.description ?? state.key),
+                      controlAffinity: ListTileControlAffinity.leading,
+                    );
+                  })
+                  .toList(growable: false),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final nextStates = sortedStates
+                    .map(
+                      (state) => UserPermissionState(
+                        key: state.key,
+                        allowed: toggles[state.key] ?? state.allowed,
+                        source: state.source,
+                      ),
+                    )
+                    .toList(growable: false);
+                final ok = await auth.updateUserPermissions(
+                  userId: user.id,
+                  states: nextStates,
+                );
+                if (ok && dialogContext.mounted) {
+                  Navigator.of(dialogContext).pop();
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -362,9 +479,9 @@ class _DeleteRequestRow extends StatelessWidget {
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       leading: const CircleAvatar(child: Icon(Icons.delete_outline)),
-      title: Text(request.entityLabel.isEmpty
-          ? request.entityId
-          : request.entityLabel),
+      title: Text(
+        request.entityLabel.isEmpty ? request.entityId : request.entityLabel,
+      ),
       subtitle: Text(
         'Requested by ${request.requestedByName.ifEmpty('Unknown')} • ${request.reason.ifEmpty('No reason provided')}',
       ),
@@ -408,9 +525,9 @@ class _Section extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             child: Text(
               title,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
             ),
           ),
           const Divider(height: 1),

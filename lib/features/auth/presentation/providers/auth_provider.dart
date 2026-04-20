@@ -4,11 +4,9 @@ import '../../data/auth_api.dart';
 import '../../domain/auth_user.dart';
 
 class AuthProvider extends ChangeNotifier {
-  AuthProvider({
-    required String baseUrl,
-    bool demoMode = false,
-  }) : _demoMode = demoMode,
-       _api = AuthApi(baseUrl: baseUrl);
+  AuthProvider({required String baseUrl, bool demoMode = false})
+    : _demoMode = demoMode,
+      _api = AuthApi(baseUrl: baseUrl);
 
   final AuthApi _api;
   final bool _demoMode;
@@ -21,6 +19,7 @@ class AuthProvider extends ChangeNotifier {
   List<DeleteRequest> _deleteRequests = const [];
   List<AuthSession> _mySessions = const [];
   List<AuthEvent> _authEvents = const [];
+  List<PermissionDescriptor> _permissionDescriptors = const [];
 
   AuthUser? get user => _user;
   String? get token => _token;
@@ -30,10 +29,25 @@ class AuthProvider extends ChangeNotifier {
   List<DeleteRequest> get deleteRequests => _deleteRequests;
   List<AuthSession> get mySessions => _mySessions;
   List<AuthEvent> get authEvents => _authEvents;
+  List<PermissionDescriptor> get permissionDescriptors =>
+      _permissionDescriptors;
   bool get isAuthenticated => _user != null || _demoMode;
   bool get isAdmin => _demoMode || (_user?.isAdmin ?? false);
   bool get isSuperAdmin => _user?.isSuperAdmin ?? _demoMode;
   bool get isRegularUser => !_demoMode && (_user?.isRegularUser ?? false);
+  bool get canAccessUserManagement =>
+      can('users.read') ||
+      can('delete_requests.review') ||
+      can('audit.read') ||
+      can('sessions.manage') ||
+      can('users.manage_permissions');
+
+  bool can(String permissionKey) {
+    if (_demoMode) {
+      return true;
+    }
+    return _user?.can(permissionKey) ?? false;
+  }
 
   Future<void> initialize() async {
     if (_demoMode) {
@@ -42,6 +56,7 @@ class AuthProvider extends ChangeNotifier {
         name: 'Demo Admin',
         email: 'demo@paper.local',
         role: 'super_admin',
+        permissions: <String>[],
         isActive: true,
       );
       notifyListeners();
@@ -75,6 +90,7 @@ class AuthProvider extends ChangeNotifier {
     _deleteRequests = const [];
     _mySessions = const [];
     _authEvents = const [];
+    _permissionDescriptors = const [];
     notifyListeners();
   }
 
@@ -88,17 +104,38 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> loadManagementData() async {
-    if (!isAdmin || _demoMode) {
+    if (!canAccessUserManagement || _demoMode) {
       return;
     }
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
     try {
-      _users = await _api.getUsers();
-      _deleteRequests = await _api.getDeleteRequests();
-      _authEvents = await _api.getAuthEvents();
-      _mySessions = await _api.getMySessions();
+      if (can('users.read')) {
+        _users = await _api.getUsers();
+      } else {
+        _users = const [];
+      }
+      if (can('delete_requests.review')) {
+        _deleteRequests = await _api.getDeleteRequests();
+      } else {
+        _deleteRequests = const [];
+      }
+      if (can('audit.read')) {
+        _authEvents = await _api.getAuthEvents();
+      } else {
+        _authEvents = const [];
+      }
+      if (can('sessions.manage')) {
+        _mySessions = await _api.getMySessions();
+      } else {
+        _mySessions = const [];
+      }
+      if (can('users.manage_permissions')) {
+        _permissionDescriptors = await _api.getPermissionDescriptors();
+      } else {
+        _permissionDescriptors = const [];
+      }
     } catch (error) {
       _errorMessage = _friendly(
         error,
@@ -116,6 +153,16 @@ class AuthProvider extends ChangeNotifier {
     required String password,
     required bool admin,
   }) async {
+    if (admin && !can('users.create_admin')) {
+      _errorMessage = 'You do not have permission to create admins.';
+      notifyListeners();
+      return false;
+    }
+    if (!admin && !can('users.create_user')) {
+      _errorMessage = 'You do not have permission to create users.';
+      notifyListeners();
+      return false;
+    }
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
@@ -141,6 +188,11 @@ class AuthProvider extends ChangeNotifier {
     required int userId,
     required String password,
   }) async {
+    if (!can('users.reset_password')) {
+      _errorMessage = 'You do not have permission to reset passwords.';
+      notifyListeners();
+      return false;
+    }
     _errorMessage = null;
     notifyListeners();
     try {
@@ -157,6 +209,11 @@ class AuthProvider extends ChangeNotifier {
     required int userId,
     required bool active,
   }) async {
+    if (!can('users.update_status')) {
+      _errorMessage = 'You do not have permission to update user status.';
+      notifyListeners();
+      return false;
+    }
     _errorMessage = null;
     notifyListeners();
     try {
@@ -198,6 +255,11 @@ class AuthProvider extends ChangeNotifier {
     required String entityLabel,
     required String reason,
   }) async {
+    if (!can('inventory.request_delete')) {
+      _errorMessage = 'You do not have permission to request deletion.';
+      notifyListeners();
+      return false;
+    }
     _errorMessage = null;
     notifyListeners();
     try {
@@ -216,6 +278,11 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<bool> reviewDeleteRequest(int id, {required bool approve}) async {
+    if (!can('delete_requests.review')) {
+      _errorMessage = 'You do not have permission to review delete requests.';
+      notifyListeners();
+      return false;
+    }
     _errorMessage = null;
     notifyListeners();
     try {
@@ -233,6 +300,11 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<List<AuthSession>> getUserSessions(int userId) async {
+    if (!can('sessions.manage')) {
+      _errorMessage = 'You do not have permission to view sessions.';
+      notifyListeners();
+      return const [];
+    }
     try {
       return await _api.getUserSessions(userId);
     } catch (error) {
@@ -243,6 +315,11 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<bool> revokeAllUserSessions(int userId) async {
+    if (!can('sessions.manage')) {
+      _errorMessage = 'You do not have permission to revoke sessions.';
+      notifyListeners();
+      return false;
+    }
     _errorMessage = null;
     notifyListeners();
     try {
@@ -253,6 +330,48 @@ class AuthProvider extends ChangeNotifier {
       _errorMessage = _friendly(
         error,
         fallback: 'Failed to revoke user sessions.',
+      );
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<List<UserPermissionState>> getUserPermissions(int userId) async {
+    if (!can('users.manage_permissions')) {
+      _errorMessage = 'You do not have permission to manage permissions.';
+      notifyListeners();
+      return const [];
+    }
+    try {
+      return await _api.getUserPermissions(userId);
+    } catch (error) {
+      _errorMessage = _friendly(
+        error,
+        fallback: 'Failed to load user permissions.',
+      );
+      notifyListeners();
+      return const [];
+    }
+  }
+
+  Future<bool> updateUserPermissions({
+    required int userId,
+    required List<UserPermissionState> states,
+  }) async {
+    if (!can('users.manage_permissions')) {
+      _errorMessage = 'You do not have permission to manage permissions.';
+      notifyListeners();
+      return false;
+    }
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      await _api.updateUserPermissions(userId: userId, states: states);
+      return true;
+    } catch (error) {
+      _errorMessage = _friendly(
+        error,
+        fallback: 'Failed to update user permissions.',
       );
       notifyListeners();
       return false;

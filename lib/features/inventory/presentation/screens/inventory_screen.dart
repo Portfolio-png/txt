@@ -129,7 +129,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
   @override
   Widget build(BuildContext context) {
     final isRequestDelete = context.select<AuthProvider, bool>(
-      (auth) => auth.isRegularUser,
+      (auth) =>
+          !auth.can('inventory.delete') && auth.can('inventory.request_delete'),
     );
     return Consumer3<InventoryProvider, GroupsProvider, ItemsProvider>(
       builder: (context, inventory, groups, items, _) {
@@ -220,12 +221,15 @@ class _InventoryScreenState extends State<InventoryScreen> {
                         onNewGroup: _openCreateGroupEditor,
                         onAddStock: () =>
                             InventoryScreen.openAddStockForm(context),
-                        onReceiveStock: () =>
-                            _openMovementComposer(movementType: InventoryMovementType.receive),
-                        onTransferStock: () =>
-                            _openMovementComposer(movementType: InventoryMovementType.transfer),
-                        onAdjustStock: () =>
-                            _openMovementComposer(movementType: InventoryMovementType.adjust),
+                        onReceiveStock: () => _openMovementComposer(
+                          movementType: InventoryMovementType.receive,
+                        ),
+                        onTransferStock: () => _openMovementComposer(
+                          movementType: InventoryMovementType.transfer,
+                        ),
+                        onAdjustStock: () => _openMovementComposer(
+                          movementType: InventoryMovementType.adjust,
+                        ),
                       ),
                       const SizedBox(height: 14),
                       _InventoryControlsRow(
@@ -731,8 +735,16 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   Future<void> _confirmDelete(MaterialRecord record) async {
     final auth = context.read<AuthProvider>();
-    if (auth.isRegularUser) {
+    if (!auth.can('inventory.delete') && auth.can('inventory.request_delete')) {
       await _requestDelete(record);
+      return;
+    }
+    if (!auth.can('inventory.delete')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You do not have permission to delete records.'),
+        ),
+      );
       return;
     }
     final confirmed = await showDialog<bool>(
@@ -767,7 +779,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
     final requested = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(record.isParent ? 'Request group deletion' : 'Request item deletion'),
+        title: Text(
+          record.isParent ? 'Request group deletion' : 'Request item deletion',
+        ),
         content: TextField(
           controller: controller,
           decoration: const InputDecoration(
@@ -807,7 +821,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
         content: Text(
           ok
               ? 'Delete request sent to admins.'
-              : context.read<AuthProvider>().errorMessage ?? 'Failed to request deletion.',
+              : context.read<AuthProvider>().errorMessage ??
+                    'Failed to request deletion.',
         ),
       ),
     );
@@ -891,9 +906,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
     if (detail == null) {
       messenger.showSnackBar(
         SnackBar(
-          content: Text(
-            inventory.errorMessage ?? 'Failed to post movement.',
-          ),
+          content: Text(inventory.errorMessage ?? 'Failed to post movement.'),
         ),
       );
       return;
@@ -1011,8 +1024,17 @@ class _InventoryScreenState extends State<InventoryScreen> {
     if (_isBulkRunning || records.isEmpty) {
       return;
     }
-    if (context.read<AuthProvider>().isRegularUser) {
+    final auth = context.read<AuthProvider>();
+    if (!auth.can('inventory.delete') && auth.can('inventory.request_delete')) {
       await _bulkRequestDelete(records);
+      return;
+    }
+    if (!auth.can('inventory.delete')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You do not have permission to delete records.'),
+        ),
+      );
       return;
     }
     final count = records.length;
@@ -1137,7 +1159,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Sent $success delete request${success == 1 ? '' : 's'}.')),
+      SnackBar(
+        content: Text(
+          'Sent $success delete request${success == 1 ? '' : 's'}.',
+        ),
+      ),
     );
   }
 
@@ -1406,8 +1432,8 @@ class _InventoryMovementComposerDialogState
                 Text(
                   '${_movementTypeLabel(widget.movementType)} Stock',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
@@ -3449,9 +3475,7 @@ class _InventoryDetailSheet extends StatelessWidget {
                   ? null
                   : context
                         .read<InventoryProvider>()
-                        .loadMaterialControlTowerDetail(
-                      record.barcode,
-                    ),
+                        .loadMaterialControlTowerDetail(record.barcode),
               initialData: cachedDetail,
               builder: (context, snapshot) {
                 final detail = snapshot.data;
@@ -3499,7 +3523,9 @@ class _InventoryDetailSheet extends StatelessWidget {
                       ),
                       AppInfoRow(
                         label: 'Traceability',
-                        value: _traceabilityModeLabel(material.traceabilityMode),
+                        value: _traceabilityModeLabel(
+                          material.traceabilityMode,
+                        ),
                       ),
                       AppInfoRow(
                         label: 'Location',
@@ -3594,8 +3620,8 @@ class _InventoryDetailSheet extends StatelessWidget {
                                   spacing: 8,
                                   runSpacing: 8,
                                   children: material.linkedChildBarcodes
-                                .map((barcode) => _Badge(label: barcode))
-                                .toList(growable: false),
+                                      .map((barcode) => _Badge(label: barcode))
+                                      .toList(growable: false),
                                 ),
                         ),
                       AppInfoRow(
@@ -3710,7 +3736,10 @@ class _InventoryDetailSheet extends StatelessWidget {
 }
 
 class _StockPositionList extends StatelessWidget {
-  const _StockPositionList({required this.positions, required this.fallbackUnit});
+  const _StockPositionList({
+    required this.positions,
+    required this.fallbackUnit,
+  });
 
   final List<StockPosition> positions;
   final String fallbackUnit;
@@ -3851,7 +3880,9 @@ class _InventoryAlertList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final openAlerts = alerts.where((alert) => alert.isOpen).toList(growable: false);
+    final openAlerts = alerts
+        .where((alert) => alert.isOpen)
+        .toList(growable: false);
     if (openAlerts.isEmpty) {
       return const Text(
         'No open alerts.',
@@ -3929,59 +3960,62 @@ class _InventoryMovementTimeline extends StatelessWidget {
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
     return Column(
-      children: sorted.take(8).map((movement) {
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 8,
-                height: 8,
-                margin: const EdgeInsets.only(top: 5),
-                decoration: BoxDecoration(
-                  color: _movementColor(movement.movementType),
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _movementTitle(movement.movementType),
-                      style: const TextStyle(
-                        color: Color(0xFF2F2F2F),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
+      children: sorted
+          .take(8)
+          .map((movement) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    margin: const EdgeInsets.only(top: 5),
+                    decoration: BoxDecoration(
+                      color: _movementColor(movement.movementType),
+                      shape: BoxShape.circle,
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${_formatQty(movement.qty)} ${fallbackUnit.ifEmpty('Units')} • ${movement.reasonCode?.ifEmpty('No reason') ?? 'No reason'}',
-                      style: const TextStyle(
-                        color: Color(0xFF717B8C),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w400,
-                      ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _movementTitle(movement.movementType),
+                          style: const TextStyle(
+                            color: Color(0xFF2F2F2F),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${_formatQty(movement.qty)} ${fallbackUnit.ifEmpty('Units')} • ${movement.reasonCode?.ifEmpty('No reason') ?? 'No reason'}',
+                          style: const TextStyle(
+                            color: Color(0xFF717B8C),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    _formatTimelineDate(movement.createdAt),
+                    style: const TextStyle(
+                      color: Color(0xFF8C93A1),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 12),
-              Text(
-                _formatTimelineDate(movement.createdAt),
-                style: const TextStyle(
-                  color: Color(0xFF8C93A1),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        );
-      }).toList(growable: false),
+            );
+          })
+          .toList(growable: false),
     );
   }
 }
@@ -6711,7 +6745,8 @@ class _InventoryCreateGroupEditorState
               duration: const Duration(milliseconds: 280),
               switchInCurve: Curves.easeOut,
               switchOutCurve: Curves.easeIn,
-              child: (_inheritPropertiesFromItems &&
+              child:
+                  (_inheritPropertiesFromItems &&
                       relinkableInheritedProperties.isNotEmpty)
                   ? Column(
                       key: const ValueKey('relink-section-visible'),
@@ -6996,11 +7031,7 @@ class _InventoryCreateGroupEditorState
                   );
                 }
                 return Row(
-                  children: [
-                    titleCluster,
-                    const Spacer(),
-                    actionsCluster,
-                  ],
+                  children: [titleCluster, const Spacer(), actionsCluster],
                 );
               },
             ),
@@ -7076,7 +7107,8 @@ class _InventoryCreateGroupEditorState
                         ],
                       ),
                     ),
-                    if (hasBlockingReview && blockingReviewReasons.isNotEmpty) ...[
+                    if (hasBlockingReview &&
+                        blockingReviewReasons.isNotEmpty) ...[
                       const SizedBox(height: 8),
                       Text(
                         'Before create: ${blockingReviewReasons.join(' • ')}',
@@ -9040,7 +9072,7 @@ class _Badge extends StatelessWidget {
       _BadgeTone.success => (const Color(0xFFECFDF3), const Color(0xFF047857)),
       _BadgeTone.warning => (const Color(0xFFFFF7ED), const Color(0xFFB45309)),
     };
-    
+
     backgroundColor = color ?? backgroundColor;
     tColor = textColor ?? tColor;
 

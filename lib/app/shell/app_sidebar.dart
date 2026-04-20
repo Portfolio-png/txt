@@ -76,7 +76,7 @@ class _AppSidebarState extends State<AppSidebar> {
       ..._moduleItems.map((item) => item.key),
       'configurator',
       if (isConfiguratorExpanded) ..._configuratorItems.map((item) => item.key),
-      if (auth.isAdmin) ..._adminItems.map((item) => item.key),
+      if (auth.canAccessUserManagement) ..._adminItems.map((item) => item.key),
     ];
   }
 
@@ -190,7 +190,7 @@ class _AppSidebarState extends State<AppSidebar> {
       (navigation) => navigation.selectedKey,
     );
     final canManageUsers = context.select<AuthProvider, bool>(
-      (auth) => auth.isAdmin,
+      (auth) => auth.canAccessUserManagement,
     );
     final isConfiguratorSelected =
         selectedKey == 'configurator' ||

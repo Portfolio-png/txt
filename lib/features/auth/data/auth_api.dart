@@ -136,7 +136,10 @@ class AuthApi {
     }
   }
 
-  Future<void> setUserActive({required int userId, required bool active}) async {
+  Future<void> setUserActive({
+    required int userId,
+    required bool active,
+  }) async {
     final response = await _client.patch(
       Uri.parse('$baseUrl/api/users/$userId/status'),
       headers: _jsonHeaders,
@@ -222,7 +225,9 @@ class AuthApi {
     if (response.statusCode < 200 ||
         response.statusCode >= 300 ||
         payload['success'] != true) {
-      throw AuthApiException(payload['error'] as String? ?? 'Failed to logout.');
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to logout.',
+      );
     }
   }
 
@@ -314,6 +319,67 @@ class AuthApi {
         .toList(growable: false);
   }
 
+  Future<List<PermissionDescriptor>> getPermissionDescriptors() async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/permissions'),
+      headers: _authHeaders,
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to load permission catalog.',
+      );
+    }
+    return (payload['permissions'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(PermissionDescriptor.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<List<UserPermissionState>> getUserPermissions(int userId) async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/users/$userId/permissions'),
+      headers: _authHeaders,
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to load user permissions.',
+      );
+    }
+    return (payload['permissions'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(UserPermissionState.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<void> updateUserPermissions({
+    required int userId,
+    required List<UserPermissionState> states,
+  }) async {
+    final response = await _client.patch(
+      Uri.parse('$baseUrl/api/users/$userId/permissions'),
+      headers: _jsonHeaders,
+      body: jsonEncode({
+        'overrides': states
+            .map((state) => {'key': state.key, 'allowed': state.allowed})
+            .toList(growable: false),
+      }),
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to update user permissions.',
+      );
+    }
+  }
+
   Map<String, dynamic> _decode(String body) {
     final trimmed = body.trimLeft();
     if (trimmed.startsWith('<')) {
@@ -339,10 +405,7 @@ class AuthApi {
   }
 
   Map<String, String> get _jsonHeaders {
-    return {
-      'Content-Type': 'application/json',
-      ..._authHeaders,
-    };
+    return {'Content-Type': 'application/json', ..._authHeaders};
   }
 }
 

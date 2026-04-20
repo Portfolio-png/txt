@@ -4,6 +4,7 @@ class AuthUser {
     required this.name,
     required this.email,
     required this.role,
+    required this.permissions,
     required this.isActive,
   });
 
@@ -11,11 +12,14 @@ class AuthUser {
   final String name;
   final String email;
   final String role;
+  final List<String> permissions;
   final bool isActive;
 
   bool get isSuperAdmin => role == 'super_admin';
   bool get isAdmin => role == 'admin' || role == 'super_admin';
   bool get isRegularUser => role == 'user';
+  bool can(String permissionKey) =>
+      isSuperAdmin || permissions.contains(permissionKey);
 
   factory AuthUser.fromJson(Map<String, dynamic> json) {
     return AuthUser(
@@ -23,7 +27,50 @@ class AuthUser {
       name: json['name'] as String? ?? '',
       email: json['email'] as String? ?? '',
       role: json['role'] as String? ?? 'user',
+      permissions: (json['permissions'] as List<dynamic>? ?? const [])
+          .whereType<String>()
+          .toList(growable: false),
       isActive: json['isActive'] as bool? ?? false,
+    );
+  }
+}
+
+class PermissionDescriptor {
+  const PermissionDescriptor({
+    required this.key,
+    required this.label,
+    required this.description,
+  });
+
+  final String key;
+  final String label;
+  final String description;
+
+  factory PermissionDescriptor.fromJson(Map<String, dynamic> json) {
+    return PermissionDescriptor(
+      key: json['key'] as String? ?? '',
+      label: json['label'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+    );
+  }
+}
+
+class UserPermissionState {
+  const UserPermissionState({
+    required this.key,
+    required this.allowed,
+    required this.source,
+  });
+
+  final String key;
+  final bool allowed;
+  final String source;
+
+  factory UserPermissionState.fromJson(Map<String, dynamic> json) {
+    return UserPermissionState(
+      key: json['key'] as String? ?? '',
+      allowed: json['allowed'] as bool? ?? false,
+      source: json['source'] as String? ?? 'role',
     );
   }
 }
