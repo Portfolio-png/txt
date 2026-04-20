@@ -26,6 +26,9 @@ test('auth roles and delete approval workflow', async () => {
 
     const owner = await login(baseUrl, 'owner@paper.local', 'OwnerPass123');
     assert.equal(owner.user.role, 'super_admin');
+    const ownerSessions = await getJson(baseUrl, '/api/auth/sessions', owner.token);
+    assert.equal(ownerSessions.status, 200);
+    assert.ok(ownerSessions.body.sessions.length >= 1);
 
     const badLogin = await fetch(`${baseUrl}/api/auth/login`, {
       method: 'POST',
@@ -78,6 +81,9 @@ test('auth roles and delete approval workflow', async () => {
 
     const user = await login(baseUrl, 'user@paper.local', 'UserPass123');
     assert.equal(user.user.role, 'user');
+    const userSessions = await getJson(baseUrl, '/api/auth/sessions', user.token);
+    assert.equal(userSessions.status, 200);
+    assert.ok(userSessions.body.sessions.length >= 1);
 
     const resetUserPassword = await fetch(
       `${baseUrl}/api/users/${user.user.id}/password`,
@@ -91,6 +97,9 @@ test('auth roles and delete approval workflow', async () => {
       },
     );
     assert.equal(resetUserPassword.status, 200);
+    const oldUserTokenAfterReset = await getJson(baseUrl, '/api/materials', user.token);
+    assert.equal(oldUserTokenAfterReset.status, 401);
+    const userAfterReset = await login(baseUrl, 'user@paper.local', 'UserPass456');
 
     const resetAdminPassword = await fetch(
       `${baseUrl}/api/users/${admin.user.id}/password`,
@@ -105,7 +114,31 @@ test('auth roles and delete approval workflow', async () => {
     );
     assert.equal(resetAdminPassword.status, 403);
 
-    const materials = await getJson(baseUrl, '/api/materials', user.token);
+    const lockoutTarget = await postJson(
+      baseUrl,
+      '/api/users',
+      admin.token,
+      {
+        name: 'Lockout User',
+        email: 'lockout@paper.local',
+        password: 'LockoutPass123',
+      },
+    );
+    assert.equal(lockoutTarget.status, 201);
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const failed = await postJson(baseUrl, '/api/auth/login', null, {
+        email: 'lockout@paper.local',
+        password: 'wrong-password',
+      });
+      assert.equal(failed.status, 401);
+    }
+    const lockedLogin = await postJson(baseUrl, '/api/auth/login', null, {
+      email: 'lockout@paper.local',
+      password: 'LockoutPass123',
+    });
+    assert.equal(lockedLogin.status, 423);
+
+    const materials = await getJson(baseUrl, '/api/materials', userAfterReset.token);
     const material = materials.body.materials[0];
     assert.ok(material?.barcode, 'expected seeded material');
 
@@ -113,7 +146,7 @@ test('auth roles and delete approval workflow', async () => {
       `${baseUrl}/api/materials/${material.barcode}`,
       {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${user.token}` },
+        headers: { Authorization: `Bearer ${userAfterReset.token}` },
       },
     );
     assert.equal(directDelete.status, 403);
@@ -121,7 +154,7 @@ test('auth roles and delete approval workflow', async () => {
     const requestDelete = await postJson(
       baseUrl,
       '/api/delete-requests',
-      user.token,
+      userAfterReset.token,
       {
         entityType: 'material',
         entityId: material.barcode,
@@ -130,6 +163,16 @@ test('auth roles and delete approval workflow', async () => {
       },
     );
     assert.equal(requestDelete.status, 201);
+
+    const logoutResponse = await postJson(
+      baseUrl,
+      '/api/auth/logout',
+      userAfterReset.token,
+      {},
+    );
+    assert.equal(logoutResponse.status, 200);
+    const revokedByLogout = await getJson(baseUrl, '/api/materials', userAfterReset.token);
+    assert.equal(revokedByLogout.status, 401);
 
     const pending = await getJson(
       baseUrl,
