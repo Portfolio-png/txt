@@ -5,6 +5,7 @@ import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_info_panel.dart';
 import '../../../../core/widgets/app_section_title.dart';
 import '../barcode/material_barcode_toolkit.dart';
+import '../prototype/pm_erp_prototype_section.dart';
 
 class PMScreen extends StatefulWidget {
   const PMScreen({super.key});
@@ -55,6 +56,8 @@ class _PMScreenState extends State<PMScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const _PMHero(),
+            const SizedBox(height: 24),
+            const PMErpPrototypeSection(),
             const SizedBox(height: 24),
             _FigmaSegmentSection(
               selectedValue: _selectedSegment,

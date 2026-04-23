@@ -25,6 +25,8 @@ import 'package:paper/features/orders/data/repositories/order_repository.dart';
 import 'package:paper/features/orders/domain/order_entry.dart';
 import 'package:paper/features/orders/domain/order_inputs.dart';
 import 'package:paper/features/orders/presentation/screens/orders_screen.dart';
+import 'package:paper/features/procurement/data/repositories/procurement_repository.dart';
+import 'package:paper/features/procurement/domain/procurement_models.dart';
 import 'package:paper/features/units/data/repositories/unit_repository.dart';
 import 'package:paper/features/units/domain/unit_definition.dart';
 import 'package:paper/features/units/domain/unit_inputs.dart';
@@ -1926,31 +1928,37 @@ class FakeOrderRepository extends OrderRepository {
         variationPathNodeIds: List<int>.from(input.variationPathNodeIds),
         quantity: current.quantity + input.quantity,
         status: current.status,
+        priority: current.priority,
         createdAt: current.createdAt,
+        hasMaterialShortage: current.hasMaterialShortage,
+        procurementPending: current.procurementPending,
+        materialReadiness: current.materialReadiness,
         startDate: current.startDate,
         endDate: current.endDate,
       );
       _orders[index] = updated;
       final now = DateTime.now();
-      _activityByOrderId.putIfAbsent(current.id, () => <OrderActivityEntry>[]).insert(
-        0,
-        OrderActivityEntry(
-          id: _nextActivityId++,
-          orderId: current.id,
-          eventType: 'field_updated',
-          title: 'Quantity updated',
-          description:
-              'Quantity changed from ${current.quantity} to ${updated.quantity}.',
-          actorUserId: null,
-          actorName: 'System',
-          actorRole: 'system',
-          oldValue: '${current.quantity}',
-          newValue: '${updated.quantity}',
-          metadata: const <String, dynamic>{'field': 'quantity'},
-          source: 'ui',
-          createdAt: now,
-        ),
-      );
+      _activityByOrderId
+          .putIfAbsent(current.id, () => <OrderActivityEntry>[])
+          .insert(
+            0,
+            OrderActivityEntry(
+              id: _nextActivityId++,
+              orderId: current.id,
+              eventType: 'field_updated',
+              title: 'Quantity updated',
+              description:
+                  'Quantity changed from ${current.quantity} to ${updated.quantity}.',
+              actorUserId: null,
+              actorName: 'System',
+              actorRole: 'system',
+              oldValue: '${current.quantity}',
+              newValue: '${updated.quantity}',
+              metadata: const <String, dynamic>{'field': 'quantity'},
+              source: 'ui',
+              createdAt: now,
+            ),
+          );
       return updated;
     }
 
@@ -1968,7 +1976,11 @@ class FakeOrderRepository extends OrderRepository {
       variationPathNodeIds: List<int>.from(input.variationPathNodeIds),
       quantity: input.quantity,
       status: input.status,
+      priority: input.priority,
       createdAt: DateTime.now(),
+      hasMaterialShortage: false,
+      procurementPending: false,
+      materialReadiness: 'none',
       startDate: input.startDate,
       endDate: input.endDate,
     );
@@ -2029,7 +2041,11 @@ class FakeOrderRepository extends OrderRepository {
       variationPathNodeIds: current.variationPathNodeIds,
       quantity: current.quantity,
       status: input.toStatus,
+      priority: current.priority,
       createdAt: current.createdAt,
+      hasMaterialShortage: current.hasMaterialShortage,
+      procurementPending: current.procurementPending,
+      materialReadiness: current.materialReadiness,
       startDate: input.startDate,
       endDate: input.endDate,
       previousStatus: input.toStatus == OrderStatus.onHold
@@ -2042,40 +2058,44 @@ class FakeOrderRepository extends OrderRepository {
     );
     _orders[index] = updated;
     final now = DateTime.now();
-    _historyByOrderId.putIfAbsent(current.id, () => <OrderStatusHistoryEntry>[]).insert(
-      0,
-      OrderStatusHistoryEntry(
-        id: _nextHistoryId++,
-        orderId: current.id,
-        fromStatus: current.status,
-        toStatus: input.toStatus,
-        reason: input.reason,
-        changedByUserId: null,
-        changedByName: 'System',
-        changedByRole: 'system',
-        source: 'ui',
-        changedAt: now,
-      ),
-    );
-    _activityByOrderId.putIfAbsent(current.id, () => <OrderActivityEntry>[]).insert(
-      0,
-      OrderActivityEntry(
-        id: _nextActivityId++,
-        orderId: current.id,
-        eventType: 'status_changed',
-        title: 'Status changed',
-        description:
-            'Status changed from ${current.status.name} to ${input.toStatus.name}.',
-        actorUserId: null,
-        actorName: 'System',
-        actorRole: 'system',
-        oldValue: current.status.name,
-        newValue: input.toStatus.name,
-        metadata: <String, dynamic>{'reason': input.reason},
-        source: 'ui',
-        createdAt: now,
-      ),
-    );
+    _historyByOrderId
+        .putIfAbsent(current.id, () => <OrderStatusHistoryEntry>[])
+        .insert(
+          0,
+          OrderStatusHistoryEntry(
+            id: _nextHistoryId++,
+            orderId: current.id,
+            fromStatus: current.status,
+            toStatus: input.toStatus,
+            reason: input.reason,
+            changedByUserId: null,
+            changedByName: 'System',
+            changedByRole: 'system',
+            source: 'ui',
+            changedAt: now,
+          ),
+        );
+    _activityByOrderId
+        .putIfAbsent(current.id, () => <OrderActivityEntry>[])
+        .insert(
+          0,
+          OrderActivityEntry(
+            id: _nextActivityId++,
+            orderId: current.id,
+            eventType: 'status_changed',
+            title: 'Status changed',
+            description:
+                'Status changed from ${current.status.name} to ${input.toStatus.name}.',
+            actorUserId: null,
+            actorName: 'System',
+            actorRole: 'system',
+            oldValue: current.status.name,
+            newValue: input.toStatus.name,
+            metadata: <String, dynamic>{'reason': input.reason},
+            source: 'ui',
+            createdAt: now,
+          ),
+        );
     return updated;
   }
 
@@ -2103,6 +2123,42 @@ class FakeOrderRepository extends OrderRepository {
   }
 
   @override
+  Future<OrderEntry> updateOrderPriority({
+    required int orderId,
+    required OrderPriority priority,
+  }) async {
+    final index = _orders.indexWhere((order) => order.id == orderId);
+    final current = _orders[index];
+    final updated = OrderEntry(
+      id: current.id,
+      orderNo: current.orderNo,
+      clientId: current.clientId,
+      clientName: current.clientName,
+      poNumber: current.poNumber,
+      clientCode: current.clientCode,
+      itemId: current.itemId,
+      itemName: current.itemName,
+      variationLeafNodeId: current.variationLeafNodeId,
+      variationPathLabel: current.variationPathLabel,
+      variationPathNodeIds: current.variationPathNodeIds,
+      quantity: current.quantity,
+      status: current.status,
+      priority: priority,
+      createdAt: current.createdAt,
+      hasMaterialShortage: current.hasMaterialShortage,
+      procurementPending: current.procurementPending,
+      materialReadiness: current.materialReadiness,
+      startDate: current.startDate,
+      endDate: current.endDate,
+      previousStatus: current.previousStatus,
+      holdReason: current.holdReason,
+      cancelReason: current.cancelReason,
+    );
+    _orders[index] = updated;
+    return updated;
+  }
+
+  @override
   Future<List<OrderActivityEntry>> getOrderActivity(int orderId) async {
     return List<OrderActivityEntry>.from(
       _activityByOrderId[orderId] ?? const <OrderActivityEntry>[],
@@ -2110,14 +2166,18 @@ class FakeOrderRepository extends OrderRepository {
   }
 
   @override
-  Future<List<OrderStatusHistoryEntry>> getOrderStatusHistory(int orderId) async {
+  Future<List<OrderStatusHistoryEntry>> getOrderStatusHistory(
+    int orderId,
+  ) async {
     return List<OrderStatusHistoryEntry>.from(
       _historyByOrderId[orderId] ?? const <OrderStatusHistoryEntry>[],
     );
   }
 
   @override
-  Future<List<OrderTransitionOption>> getOrderTransitionOptions(int orderId) async {
+  Future<List<OrderTransitionOption>> getOrderTransitionOptions(
+    int orderId,
+  ) async {
     final order = _orders.where((entry) => entry.id == orderId).firstOrNull;
     if (order == null) {
       return const <OrderTransitionOption>[];
@@ -2142,21 +2202,30 @@ class FakeOrderRepository extends OrderRepository {
       source: 'ui',
       createdAt: DateTime.now(),
     );
-    _activityByOrderId.putIfAbsent(input.orderId, () => <OrderActivityEntry>[]).insert(0, event);
+    _activityByOrderId
+        .putIfAbsent(input.orderId, () => <OrderActivityEntry>[])
+        .insert(0, event);
     return event;
   }
 
   @override
-  Future<OrderMaterialSnapshot> getOrderMaterialRequirements(int orderId) async {
+  Future<OrderMaterialSnapshot> getOrderMaterialRequirements(
+    int orderId,
+  ) async {
     final order = _orders.where((entry) => entry.id == orderId).firstOrNull;
     if (order == null) {
       throw Exception('Order not found.');
     }
-    return _materialsByOrderId.putIfAbsent(orderId, () => _buildMaterialSnapshot(order));
+    return _materialsByOrderId.putIfAbsent(
+      orderId,
+      () => _buildMaterialSnapshot(order),
+    );
   }
 
   @override
-  Future<OrderMaterialSnapshot> checkOrderMaterialAvailability(int orderId) async {
+  Future<OrderMaterialSnapshot> checkOrderMaterialAvailability(
+    int orderId,
+  ) async {
     return getOrderMaterialRequirements(orderId);
   }
 
@@ -2174,11 +2243,19 @@ class FakeOrderRepository extends OrderRepository {
             requiredQty: entry.requiredQty,
             allocatedQty: entry.requiredQty,
             consumedQty: entry.consumedQty,
-            availableQty: (entry.availableQty - entry.requiredQty).clamp(0, double.infinity),
+            availableQty: (entry.availableQty - entry.requiredQty).clamp(
+              0,
+              double.infinity,
+            ),
             shortageQty: 0,
             unitId: entry.unitId,
             unitSymbol: entry.unitSymbol,
             status: 'allocated',
+            procurementRequestNumber: entry.procurementRequestNumber,
+            procurementRequestStatus: entry.procurementRequestStatus,
+            procurementRequestedQty: entry.procurementRequestedQty,
+            procurementReceivedQty: entry.procurementReceivedQty,
+            procurementPendingQty: entry.procurementPendingQty,
             updatedAt: DateTime.now(),
           ),
         )
@@ -2207,6 +2284,11 @@ class FakeOrderRepository extends OrderRepository {
             unitId: entry.unitId,
             unitSymbol: entry.unitSymbol,
             status: 'short',
+            procurementRequestNumber: entry.procurementRequestNumber,
+            procurementRequestStatus: entry.procurementRequestStatus,
+            procurementRequestedQty: entry.procurementRequestedQty,
+            procurementReceivedQty: entry.procurementReceivedQty,
+            procurementPendingQty: entry.procurementPendingQty,
             updatedAt: DateTime.now(),
           ),
         )
@@ -2230,11 +2312,19 @@ class FakeOrderRepository extends OrderRepository {
             requiredQty: entry.requiredQty,
             allocatedQty: 0,
             consumedQty: entry.requiredQty,
-            availableQty: (entry.availableQty - entry.requiredQty).clamp(0, double.infinity),
+            availableQty: (entry.availableQty - entry.requiredQty).clamp(
+              0,
+              double.infinity,
+            ),
             shortageQty: 0,
             unitId: entry.unitId,
             unitSymbol: entry.unitSymbol,
             status: 'consumed',
+            procurementRequestNumber: entry.procurementRequestNumber,
+            procurementRequestStatus: entry.procurementRequestStatus,
+            procurementRequestedQty: entry.procurementRequestedQty,
+            procurementReceivedQty: entry.procurementReceivedQty,
+            procurementPendingQty: entry.procurementPendingQty,
             updatedAt: DateTime.now(),
           ),
         )
@@ -2257,7 +2347,8 @@ class FakeOrderRepository extends OrderRepository {
   }
 
   @override
-  Future<List<OrderProcurementSuggestionEntry>> getAllProcurementSuggestions() async {
+  Future<List<OrderProcurementSuggestionEntry>>
+  getAllProcurementSuggestions() async {
     final suggestions = <OrderProcurementSuggestionEntry>[];
     for (final order in _orders) {
       final snapshot = await getOrderMaterialRequirements(order.id);
@@ -2267,9 +2358,8 @@ class FakeOrderRepository extends OrderRepository {
   }
 
   @override
-  Future<List<OrderProcurementSuggestionEntry>> refreshOrderProcurementSuggestions(
-    int orderId,
-  ) async {
+  Future<List<OrderProcurementSuggestionEntry>>
+  refreshOrderProcurementSuggestions(int orderId) async {
     return getOrderProcurementSuggestions(orderId);
   }
 
@@ -2290,6 +2380,11 @@ class FakeOrderRepository extends OrderRepository {
         unitId: null,
         unitSymbol: 'Kg',
         status: 'short',
+        procurementRequestNumber: null,
+        procurementRequestStatus: null,
+        procurementRequestedQty: requiredQty,
+        procurementReceivedQty: 0,
+        procurementPendingQty: requiredQty,
         updatedAt: DateTime.now(),
       ),
     ];
@@ -2438,6 +2533,260 @@ class FakeOrderRepository extends OrderRepository {
   }
 }
 
+class FakeProcurementRepository extends ProcurementRepository {
+  final List<ProcurementQueueRow> _queueRows = <ProcurementQueueRow>[
+    const ProcurementQueueRow(
+      supplierName: 'Seed Supplier',
+      materialBarcode: 'TST-MAT-1',
+      materialName: 'Compound',
+      totalShortageQty: 120,
+      openRequestedQty: 0,
+      uncoveredQty: 120,
+      affectedOrderCount: 2,
+      procurementStatus: 'unrequested',
+      orderIds: <int>[1, 2],
+      sourceRequirementIds: <int>[10, 11],
+      unitSymbol: 'Kg',
+    ),
+  ];
+  final List<ProcurementRequestSummary> _requests =
+      <ProcurementRequestSummary>[];
+  final Map<int, ProcurementRequestDetail> _details =
+      <int, ProcurementRequestDetail>{};
+  int _nextRequestId = 1;
+  int _nextLineId = 1;
+
+  @override
+  Future<void> init() async {}
+
+  @override
+  Future<List<ProcurementQueueRow>> getQueueRows() async {
+    return List<ProcurementQueueRow>.from(_queueRows);
+  }
+
+  @override
+  Future<List<ProcurementQueueRow>> refreshQueueRows() async {
+    return getQueueRows();
+  }
+
+  @override
+  Future<List<ProcurementRequestSummary>> getRequests() async {
+    return List<ProcurementRequestSummary>.from(_requests);
+  }
+
+  @override
+  Future<List<ProcurementRequestSummary>> createDraftRequests({
+    required List<ProcurementQueueRow> rows,
+  }) async {
+    if (rows.isEmpty) {
+      return const <ProcurementRequestSummary>[];
+    }
+    final created = <ProcurementRequestSummary>[];
+    for (final row in rows) {
+      final requestId = _nextRequestId++;
+      final summary = ProcurementRequestSummary(
+        id: requestId,
+        requestNumber: 'PR-${requestId.toString().padLeft(4, '0')}',
+        supplierName: row.supplierName,
+        status: 'draft',
+        lineCount: 1,
+        totalRequestedQty: row.uncoveredQty,
+        totalReceivedQty: 0,
+        totalPendingQty: row.uncoveredQty,
+      );
+      final line = ProcurementRequestLine(
+        id: _nextLineId++,
+        procurementRequestId: requestId,
+        materialBarcode: row.materialBarcode,
+        materialName: row.materialName,
+        requestedQty: row.uncoveredQty,
+        receivedQty: 0,
+        pendingQty: row.uncoveredQty,
+        unitId: row.unitId,
+        unitSymbol: row.unitSymbol,
+        status: 'draft',
+        linkedOrderCount: row.affectedOrderCount,
+        linkedRequirementCount: row.sourceRequirementIds.length,
+        linkedOrderIds: row.orderIds,
+      );
+      _requests.insert(0, summary);
+      _details[requestId] = ProcurementRequestDetail(
+        request: summary,
+        lines: <ProcurementRequestLine>[line],
+        activity: const <ProcurementActivityEvent>[],
+      );
+      created.add(summary);
+    }
+    _queueRows.clear();
+    return created;
+  }
+
+  @override
+  Future<ProcurementRequestDetail> getRequestDetail(int requestId) async {
+    final detail = _details[requestId];
+    if (detail == null) {
+      throw Exception('Request not found');
+    }
+    return detail;
+  }
+
+  @override
+  Future<ProcurementRequestSummary> updateRequest({
+    required int requestId,
+    String? expectedDate,
+    String? notes,
+  }) async {
+    final idx = _requests.indexWhere((entry) => entry.id == requestId);
+    if (idx == -1) {
+      throw Exception('Request not found');
+    }
+    final current = _requests[idx];
+    final updated = ProcurementRequestSummary(
+      id: current.id,
+      requestNumber: current.requestNumber,
+      supplierName: current.supplierName,
+      status: current.status,
+      lineCount: current.lineCount,
+      totalRequestedQty: current.totalRequestedQty,
+      totalReceivedQty: current.totalReceivedQty,
+      totalPendingQty: current.totalPendingQty,
+      expectedDate: expectedDate ?? current.expectedDate,
+      notes: notes ?? current.notes,
+    );
+    _requests[idx] = updated;
+    final detail = _details[requestId];
+    if (detail != null) {
+      _details[requestId] = ProcurementRequestDetail(
+        request: updated,
+        lines: detail.lines,
+        activity: detail.activity,
+      );
+    }
+    return updated;
+  }
+
+  @override
+  Future<ProcurementRequestSummary> raiseRequest(int requestId) async {
+    return _setStatus(requestId, 'raised');
+  }
+
+  @override
+  Future<ProcurementRequestSummary> cancelRequest({
+    required int requestId,
+    required String reason,
+  }) async {
+    return _setStatus(requestId, 'cancelled');
+  }
+
+  @override
+  Future<ProcurementRequestSummary> closeRequest(int requestId) async {
+    return _setStatus(requestId, 'closed');
+  }
+
+  @override
+  Future<ProcurementRequestDetail> receiveRequestLines({
+    required int requestId,
+    required List<ProcurementReceiveLineInput> lines,
+  }) async {
+    final detail = _details[requestId];
+    if (detail == null) {
+      throw Exception('Request not found');
+    }
+    final updatedLines = detail.lines
+        .map((line) {
+          final input = lines
+              .where((entry) => entry.requestLineId == line.id)
+              .firstOrNull;
+          if (input == null) {
+            return line;
+          }
+          final nextReceived = line.receivedQty + input.receivedQty;
+          final nextPending = (line.requestedQty - nextReceived)
+              .clamp(0, double.infinity)
+              .toDouble();
+          return ProcurementRequestLine(
+            id: line.id,
+            procurementRequestId: line.procurementRequestId,
+            materialBarcode: line.materialBarcode,
+            materialName: line.materialName,
+            requestedQty: line.requestedQty,
+            receivedQty: nextReceived,
+            pendingQty: nextPending,
+            unitId: line.unitId,
+            unitSymbol: line.unitSymbol,
+            status: nextPending <= 0 ? 'closed' : 'partially_received',
+            linkedOrderCount: line.linkedOrderCount,
+            linkedRequirementCount: line.linkedRequirementCount,
+            linkedOrderIds: line.linkedOrderIds,
+          );
+        })
+        .toList(growable: false);
+    final totalReceived = updatedLines.fold<double>(
+      0,
+      (sum, line) => sum + line.receivedQty,
+    );
+    final totalPending = updatedLines.fold<double>(
+      0,
+      (sum, line) => sum + line.pendingQty,
+    );
+    final summary = ProcurementRequestSummary(
+      id: detail.request.id,
+      requestNumber: detail.request.requestNumber,
+      supplierName: detail.request.supplierName,
+      status: totalPending <= 0 ? 'closed' : 'partially_received',
+      lineCount: updatedLines.length,
+      totalRequestedQty: detail.request.totalRequestedQty,
+      totalReceivedQty: totalReceived,
+      totalPendingQty: totalPending,
+      expectedDate: detail.request.expectedDate,
+      notes: detail.request.notes,
+    );
+    _details[requestId] = ProcurementRequestDetail(
+      request: summary,
+      lines: updatedLines,
+      activity: detail.activity,
+    );
+    final idx = _requests.indexWhere((entry) => entry.id == requestId);
+    if (idx != -1) {
+      _requests[idx] = summary;
+    }
+    return _details[requestId]!;
+  }
+
+  Future<ProcurementRequestSummary> _setStatus(
+    int requestId,
+    String status,
+  ) async {
+    final idx = _requests.indexWhere((entry) => entry.id == requestId);
+    if (idx == -1) {
+      throw Exception('Request not found');
+    }
+    final current = _requests[idx];
+    final updated = ProcurementRequestSummary(
+      id: current.id,
+      requestNumber: current.requestNumber,
+      supplierName: current.supplierName,
+      status: status,
+      lineCount: current.lineCount,
+      totalRequestedQty: current.totalRequestedQty,
+      totalReceivedQty: current.totalReceivedQty,
+      totalPendingQty: current.totalPendingQty,
+      expectedDate: current.expectedDate,
+      notes: current.notes,
+    );
+    _requests[idx] = updated;
+    final detail = _details[requestId];
+    if (detail != null) {
+      _details[requestId] = ProcurementRequestDetail(
+        request: updated,
+        lines: detail.lines,
+        activity: detail.activity,
+      );
+    }
+    return updated;
+  }
+}
+
 ItemVariationNodeDefinition _node({
   required int id,
   required int itemId,
@@ -2472,6 +2821,7 @@ void main() {
     FakeClientRepository? clientRepository,
     FakeItemRepository? itemRepository,
     FakeOrderRepository? orderRepository,
+    FakeProcurementRepository? procurementRepository,
   }) async {
     tester.view.physicalSize = const Size(1728, 1000);
     tester.view.devicePixelRatio = 1.0;
@@ -2486,13 +2836,17 @@ void main() {
         clientRepository: clientRepository ?? FakeClientRepository(),
         itemRepository: itemRepository ?? FakeItemRepository(),
         orderRepository: orderRepository ?? FakeOrderRepository(),
+        procurementRepository:
+            procurementRepository ?? FakeProcurementRepository(),
       ),
     );
     await tester.pumpAndSettle();
   }
 
   Future<void> openOrdersModule(WidgetTester tester) async {
-    final sidebarOrders = find.byKey(const ValueKey<String>('sidebar_tile_orders'));
+    final sidebarOrders = find.byKey(
+      const ValueKey<String>('sidebar_tile_orders'),
+    );
     if (sidebarOrders.evaluate().isNotEmpty) {
       await tester.tap(sidebarOrders.first);
       await tester.pumpAndSettle();
@@ -2522,8 +2876,10 @@ void main() {
     if (inPageButton.evaluate().isNotEmpty) {
       await tester.tap(inPageButton.first);
       await tester.pumpAndSettle();
-      if (
-          find.byKey(const ValueKey<String>('orders-editor-order-no-field')).evaluate().isNotEmpty) {
+      if (find
+          .byKey(const ValueKey<String>('orders-editor-order-no-field'))
+          .evaluate()
+          .isNotEmpty) {
         return;
       }
     }
@@ -2534,8 +2890,10 @@ void main() {
     if (topStripButton.evaluate().isNotEmpty) {
       await tester.tap(topStripButton.first);
       await tester.pumpAndSettle();
-      if (
-          find.byKey(const ValueKey<String>('orders-editor-order-no-field')).evaluate().isNotEmpty) {
+      if (find
+          .byKey(const ValueKey<String>('orders-editor-order-no-field'))
+          .evaluate()
+          .isNotEmpty) {
         return;
       }
     }
@@ -2544,8 +2902,10 @@ void main() {
     if (genericButton.evaluate().isNotEmpty) {
       await tester.tap(genericButton.first);
       await tester.pumpAndSettle();
-      if (
-          find.byKey(const ValueKey<String>('orders-editor-order-no-field')).evaluate().isNotEmpty) {
+      if (find
+          .byKey(const ValueKey<String>('orders-editor-order-no-field'))
+          .evaluate()
+          .isNotEmpty) {
         return;
       }
     }
@@ -2624,11 +2984,49 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pumpAndSettle();
 
-    expect(
-      find.text('Search groups, items, barcode, supplier, or notes'),
-      findsOneWidget,
-    );
+    expect(find.text('Procurement'), findsWidgets);
   });
+
+  testWidgets('procurement module appears in sidebar and can open', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('sidebar_tile_procurement')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Procurement'), findsWidgets);
+    expect(find.text('Create Draft Request'), findsOneWidget);
+  });
+
+  testWidgets(
+    'procurement queue selection creates draft and can raise request',
+    (tester) async {
+      final procurementRepository = FakeProcurementRepository();
+      await pumpApp(tester, procurementRepository: procurementRepository);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('sidebar_tile_procurement')),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(Checkbox).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Create Draft Request'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Requests'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('PR-0001').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Raise'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('raised'), findsWidgets);
+    },
+  );
 
   testWidgets('tab focus stays looped inside sidebar items', (tester) async {
     await pumpApp(tester);
@@ -3031,7 +3429,8 @@ void main() {
         poNumber: 'PO-88',
         clientCode: 'Acme',
         itemId: 1,
-        itemName: 'Switch Action Dolly - 1 · 5 Amp 11+1 Brass 1 Way Dolly Without Plating',
+        itemName:
+            'Switch Action Dolly - 1 · 5 Amp 11+1 Brass 1 Way Dolly Without Plating',
         variationLeafNodeId: 1,
         variationPathLabel: '5 Amp 11+1 Brass 1 Way Dolly Without Plating',
         variationPathNodeIds: const [1],
@@ -3039,16 +3438,28 @@ void main() {
       ),
     );
     final confirmed = await orderRepository.updateOrderLifecycle(
-      UpdateOrderLifecycleInput(id: created.id, toStatus: OrderStatus.confirmed),
+      UpdateOrderLifecycleInput(
+        id: created.id,
+        toStatus: OrderStatus.confirmed,
+      ),
     );
     final allocated = await orderRepository.updateOrderLifecycle(
-      UpdateOrderLifecycleInput(id: created.id, toStatus: OrderStatus.allocated),
+      UpdateOrderLifecycleInput(
+        id: created.id,
+        toStatus: OrderStatus.allocated,
+      ),
     );
     final inProduction = await orderRepository.updateOrderLifecycle(
-      UpdateOrderLifecycleInput(id: created.id, toStatus: OrderStatus.inProduction),
+      UpdateOrderLifecycleInput(
+        id: created.id,
+        toStatus: OrderStatus.inProduction,
+      ),
     );
     final completed = await orderRepository.updateOrderLifecycle(
-      UpdateOrderLifecycleInput(id: created.id, toStatus: OrderStatus.completed),
+      UpdateOrderLifecycleInput(
+        id: created.id,
+        toStatus: OrderStatus.completed,
+      ),
     );
 
     expect(confirmed.status, OrderStatus.confirmed);
@@ -3058,7 +3469,10 @@ void main() {
 
     final activity = await orderRepository.getOrderActivity(created.id);
     final history = await orderRepository.getOrderStatusHistory(created.id);
-    expect(activity.where((entry) => entry.eventType == 'status_changed').length, 4);
+    expect(
+      activity.where((entry) => entry.eventType == 'status_changed').length,
+      4,
+    );
     expect(history.length, 5);
   });
 

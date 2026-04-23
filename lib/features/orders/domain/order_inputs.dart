@@ -14,6 +14,7 @@ class CreateOrderInput {
     required this.variationPathNodeIds,
     required this.quantity,
     this.status = OrderStatus.draft,
+    this.priority = OrderPriority.normal,
     this.startDate,
     this.endDate,
   });
@@ -30,6 +31,7 @@ class CreateOrderInput {
   final List<int> variationPathNodeIds;
   final int quantity;
   final OrderStatus status;
+  final OrderPriority priority;
   final DateTime? startDate;
   final DateTime? endDate;
 }

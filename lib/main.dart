@@ -21,6 +21,9 @@ import 'features/items/presentation/providers/items_provider.dart';
 import 'features/orders/data/repositories/api_order_repository.dart';
 import 'features/orders/data/repositories/order_repository.dart';
 import 'features/orders/presentation/providers/orders_provider.dart';
+import 'features/procurement/data/repositories/api_procurement_repository.dart';
+import 'features/procurement/data/repositories/procurement_repository.dart';
+import 'features/procurement/presentation/providers/procurement_provider.dart';
 import 'features/production_pipelines/data/repositories/mock_pipeline_run_repository.dart';
 import 'features/production_pipelines/data/repositories/pipeline_run_repository.dart';
 import 'features/units/data/repositories/api_unit_repository.dart';
@@ -57,6 +60,7 @@ class MyApp extends StatelessWidget {
     this.clientRepository,
     this.itemRepository,
     this.orderRepository,
+    this.procurementRepository,
     this.pipelineRunRepository,
   });
 
@@ -66,6 +70,7 @@ class MyApp extends StatelessWidget {
   final ClientRepository? clientRepository;
   final ItemRepository? itemRepository;
   final OrderRepository? orderRepository;
+  final ProcurementRepository? procurementRepository;
   final PipelineRunRepository? pipelineRunRepository;
 
   @override
@@ -86,10 +91,9 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider<AuthProvider>(
-          create: (_) => AuthProvider(
-            baseUrl: _apiBaseUrl,
-            demoMode: _isDemoMode,
-          )..initialize(),
+          create: (_) =>
+              AuthProvider(baseUrl: _apiBaseUrl, demoMode: _isDemoMode)
+                ..initialize(),
         ),
         Provider<InventoryRepository>(
           create: (context) =>
@@ -98,23 +102,33 @@ class MyApp extends StatelessWidget {
         ),
         Provider<UnitRepository>(
           create: (context) =>
-              unitRepository ?? _buildUnitRepository(context.read<AuthProvider>()),
+              unitRepository ??
+              _buildUnitRepository(context.read<AuthProvider>()),
         ),
         Provider<GroupRepository>(
           create: (context) =>
-              groupRepository ?? _buildGroupRepository(context.read<AuthProvider>()),
+              groupRepository ??
+              _buildGroupRepository(context.read<AuthProvider>()),
         ),
         Provider<ClientRepository>(
           create: (context) =>
-              clientRepository ?? _buildClientRepository(context.read<AuthProvider>()),
+              clientRepository ??
+              _buildClientRepository(context.read<AuthProvider>()),
         ),
         Provider<ItemRepository>(
           create: (context) =>
-              itemRepository ?? _buildItemRepository(context.read<AuthProvider>()),
+              itemRepository ??
+              _buildItemRepository(context.read<AuthProvider>()),
         ),
         Provider<OrderRepository>(
           create: (context) =>
-              orderRepository ?? _buildOrderRepository(context.read<AuthProvider>()),
+              orderRepository ??
+              _buildOrderRepository(context.read<AuthProvider>()),
+        ),
+        Provider<ProcurementRepository>(
+          create: (context) =>
+              procurementRepository ??
+              _buildProcurementRepository(context.read<AuthProvider>()),
         ),
         Provider<PipelineRunRepository>(
           create: (context) =>
@@ -128,6 +142,14 @@ class MyApp extends StatelessWidget {
                 ..initialize(),
           update: (context, repository, previous) =>
               previous ?? OrdersProvider(repository: repository)
+                ..initialize(),
+        ),
+        ChangeNotifierProxyProvider<ProcurementRepository, ProcurementProvider>(
+          create: (context) => ProcurementProvider(
+            repository: context.read<ProcurementRepository>(),
+          )..initialize(),
+          update: (context, repository, previous) =>
+              previous ?? ProcurementProvider(repository: repository)
                 ..initialize(),
         ),
         ChangeNotifierProxyProvider<InventoryRepository, InventoryProvider>(
@@ -231,6 +253,14 @@ class MyApp extends StatelessWidget {
 
   OrderRepository _buildOrderRepository(AuthProvider auth) {
     return ApiOrderRepository(
+      client: _authClient(auth),
+      baseUrl: _apiBaseUrl,
+      useMockResponses: _isDemoMode,
+    );
+  }
+
+  ProcurementRepository _buildProcurementRepository(AuthProvider auth) {
+    return ApiProcurementRepository(
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
       useMockResponses: _isDemoMode,

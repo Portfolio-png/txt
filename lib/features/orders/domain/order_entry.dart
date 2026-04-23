@@ -10,6 +10,8 @@ enum OrderStatus {
   cancelled,
 }
 
+enum OrderPriority { low, normal, high, urgent }
+
 class OrderEntry {
   const OrderEntry({
     required this.id,
@@ -25,7 +27,11 @@ class OrderEntry {
     required this.variationPathNodeIds,
     required this.quantity,
     required this.status,
+    this.priority = OrderPriority.normal,
     required this.createdAt,
+    this.hasMaterialShortage = false,
+    this.procurementPending = false,
+    this.materialReadiness = 'none',
     this.startDate,
     this.endDate,
     this.previousStatus,
@@ -53,7 +59,11 @@ class OrderEntry {
   final List<int> variationPathNodeIds;
   final int quantity;
   final OrderStatus status;
+  final OrderPriority priority;
   final DateTime createdAt;
+  final bool hasMaterialShortage;
+  final bool procurementPending;
+  final String materialReadiness;
   final DateTime? startDate;
   final DateTime? endDate;
   final OrderStatus? previousStatus;
@@ -156,7 +166,12 @@ class OrderMaterialRequirementEntry {
     required this.shortageQty,
     required this.unitSymbol,
     required this.status,
+    required this.procurementRequestedQty,
+    required this.procurementReceivedQty,
+    required this.procurementPendingQty,
     this.unitId,
+    this.procurementRequestNumber,
+    this.procurementRequestStatus,
     this.updatedAt,
   });
 
@@ -173,6 +188,11 @@ class OrderMaterialRequirementEntry {
   final int? unitId;
   final String unitSymbol;
   final String status;
+  final String? procurementRequestNumber;
+  final String? procurementRequestStatus;
+  final double procurementRequestedQty;
+  final double procurementReceivedQty;
+  final double procurementPendingQty;
   final DateTime? updatedAt;
 }
 

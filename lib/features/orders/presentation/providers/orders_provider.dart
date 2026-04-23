@@ -16,12 +16,16 @@ class OrdersProvider extends ChangeNotifier {
   bool _isSaving = false;
   String? _errorMessage;
   bool _initialized = false;
+  int? _focusedOrderId;
+  bool _openFocusedOrderDetails = false;
 
   List<OrderEntry> get orders => List<OrderEntry>.unmodifiable(_orders);
   String get searchQuery => _searchQuery;
   bool get isLoading => _isLoading;
   bool get isSaving => _isSaving;
   String? get errorMessage => _errorMessage;
+  int? get focusedOrderId => _focusedOrderId;
+  bool get openFocusedOrderDetails => _openFocusedOrderDetails;
 
   List<OrderEntry> get filteredOrders {
     final query = _normalize(_searchQuery);
@@ -48,6 +52,24 @@ class OrdersProvider extends ChangeNotifier {
   void setSearchQuery(String value) {
     _searchQuery = value;
     notifyListeners();
+  }
+
+  void focusOrderFromExternal({
+    required int orderId,
+    String? query,
+    bool openDetails = true,
+  }) {
+    if (query != null) {
+      _searchQuery = query;
+    }
+    _focusedOrderId = orderId;
+    _openFocusedOrderDetails = openDetails;
+    notifyListeners();
+  }
+
+  void clearExternalOrderFocus() {
+    _focusedOrderId = null;
+    _openFocusedOrderDetails = false;
   }
 
   Future<void> initialize() async {
@@ -101,6 +123,16 @@ class OrdersProvider extends ChangeNotifier {
     );
   }
 
+  Future<OrderEntry?> updateOrderPriority({
+    required int orderId,
+    required OrderPriority priority,
+  }) async {
+    return _save(
+      () =>
+          _repository.updateOrderPriority(orderId: orderId, priority: priority),
+    );
+  }
+
   Future<List<OrderActivityEntry>> getOrderActivity(int orderId) async {
     try {
       return await _repository.getOrderActivity(orderId);
@@ -111,7 +143,9 @@ class OrdersProvider extends ChangeNotifier {
     }
   }
 
-  Future<List<OrderStatusHistoryEntry>> getOrderStatusHistory(int orderId) async {
+  Future<List<OrderStatusHistoryEntry>> getOrderStatusHistory(
+    int orderId,
+  ) async {
     try {
       return await _repository.getOrderStatusHistory(orderId);
     } catch (error) {
@@ -121,7 +155,9 @@ class OrdersProvider extends ChangeNotifier {
     }
   }
 
-  Future<List<OrderTransitionOption>> getOrderTransitionOptions(int orderId) async {
+  Future<List<OrderTransitionOption>> getOrderTransitionOptions(
+    int orderId,
+  ) async {
     try {
       return await _repository.getOrderTransitionOptions(orderId);
     } catch (error) {
@@ -142,7 +178,9 @@ class OrdersProvider extends ChangeNotifier {
     }
   }
 
-  Future<OrderMaterialSnapshot?> getOrderMaterialRequirements(int orderId) async {
+  Future<OrderMaterialSnapshot?> getOrderMaterialRequirements(
+    int orderId,
+  ) async {
     try {
       return await _repository.getOrderMaterialRequirements(orderId);
     } catch (error) {
@@ -152,7 +190,9 @@ class OrdersProvider extends ChangeNotifier {
     }
   }
 
-  Future<OrderMaterialSnapshot?> checkOrderMaterialAvailability(int orderId) async {
+  Future<OrderMaterialSnapshot?> checkOrderMaterialAvailability(
+    int orderId,
+  ) async {
     try {
       return await _repository.checkOrderMaterialAvailability(orderId);
     } catch (error) {
@@ -204,9 +244,8 @@ class OrdersProvider extends ChangeNotifier {
     }
   }
 
-  Future<List<OrderProcurementSuggestionEntry>> refreshOrderProcurementSuggestions(
-    int orderId,
-  ) async {
+  Future<List<OrderProcurementSuggestionEntry>>
+  refreshOrderProcurementSuggestions(int orderId) async {
     try {
       return await _repository.refreshOrderProcurementSuggestions(orderId);
     } catch (error) {
@@ -216,7 +255,8 @@ class OrdersProvider extends ChangeNotifier {
     }
   }
 
-  Future<List<OrderProcurementSuggestionEntry>> getAllProcurementSuggestions() async {
+  Future<List<OrderProcurementSuggestionEntry>>
+  getAllProcurementSuggestions() async {
     try {
       return await _repository.getAllProcurementSuggestions();
     } catch (error) {

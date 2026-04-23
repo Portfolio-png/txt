@@ -8,6 +8,13 @@ OrderStatus _statusFromJson(String value) {
       OrderStatus.draft;
 }
 
+OrderPriority _priorityFromJson(String value) {
+  return OrderPriority.values
+          .where((priority) => priority.name == value)
+          .firstOrNull ??
+      OrderPriority.normal;
+}
+
 class OrderDto {
   const OrderDto({
     required this.id,
@@ -23,7 +30,11 @@ class OrderDto {
     required this.variationPathNodeIds,
     required this.quantity,
     required this.status,
+    required this.priority,
     required this.createdAt,
+    required this.hasMaterialShortage,
+    required this.procurementPending,
+    required this.materialReadiness,
     required this.startDate,
     required this.endDate,
     required this.previousStatus,
@@ -51,7 +62,11 @@ class OrderDto {
   final List<int> variationPathNodeIds;
   final int quantity;
   final OrderStatus status;
+  final OrderPriority priority;
   final DateTime createdAt;
+  final bool hasMaterialShortage;
+  final bool procurementPending;
+  final String materialReadiness;
   final DateTime? startDate;
   final DateTime? endDate;
   final OrderStatus? previousStatus;
@@ -83,9 +98,13 @@ class OrderDto {
               .toList(growable: false),
       quantity: json['quantity'] as int? ?? 0,
       status: _statusFromJson(json['status'] as String? ?? ''),
+      priority: _priorityFromJson(json['priority'] as String? ?? ''),
       createdAt:
           DateTime.tryParse(json['createdAt'] as String? ?? '') ??
           DateTime.now(),
+      hasMaterialShortage: json['hasMaterialShortage'] as bool? ?? false,
+      procurementPending: json['procurementPending'] as bool? ?? false,
+      materialReadiness: json['materialReadiness'] as String? ?? 'none',
       startDate: DateTime.tryParse(json['startDate'] as String? ?? ''),
       endDate: DateTime.tryParse(json['endDate'] as String? ?? ''),
       previousStatus: (json['previousStatus'] as String?) == null
@@ -120,7 +139,11 @@ class OrderDto {
       variationPathNodeIds: variationPathNodeIds,
       quantity: quantity,
       status: status,
+      priority: priority,
       createdAt: createdAt,
+      hasMaterialShortage: hasMaterialShortage,
+      procurementPending: procurementPending,
+      materialReadiness: materialReadiness,
       startDate: startDate,
       endDate: endDate,
       previousStatus: previousStatus,
@@ -185,6 +208,7 @@ class CreateOrderRequest {
     required this.variationPathNodeIds,
     required this.quantity,
     required this.status,
+    required this.priority,
     this.startDate,
     this.endDate,
   });
@@ -201,6 +225,7 @@ class CreateOrderRequest {
   final List<int> variationPathNodeIds;
   final int quantity;
   final OrderStatus status;
+  final OrderPriority priority;
   final DateTime? startDate;
   final DateTime? endDate;
 
@@ -218,6 +243,7 @@ class CreateOrderRequest {
       variationPathNodeIds: input.variationPathNodeIds,
       quantity: input.quantity,
       status: input.status,
+      priority: input.priority,
       startDate: input.startDate,
       endDate: input.endDate,
     );
@@ -237,6 +263,7 @@ class CreateOrderRequest {
       'variationPathNodeIds': variationPathNodeIds,
       'quantity': quantity,
       'status': status.name,
+      'priority': priority.name,
       'startDate': startDate?.toIso8601String(),
       'endDate': endDate?.toIso8601String(),
     };
@@ -427,7 +454,9 @@ class OrderTransitionOptionDto {
       action: json['action'] as String? ?? '',
       label: json['label'] as String? ?? '',
       toStatus: _statusFromJson(json['toStatus'] as String? ?? ''),
-      transitionStatus: _statusFromJson(json['transitionStatus'] as String? ?? ''),
+      transitionStatus: _statusFromJson(
+        json['transitionStatus'] as String? ?? '',
+      ),
       needsReason: json['needsReason'] as bool? ?? false,
     );
   }
@@ -458,7 +487,10 @@ class OrderStatusHistoryListResponse {
     return OrderStatusHistoryListResponse(
       success: json['success'] as bool? ?? false,
       history: (json['history'] as List<dynamic>? ?? const [])
-          .map((item) => OrderStatusHistoryDto.fromJson(item as Map<String, dynamic>))
+          .map(
+            (item) =>
+                OrderStatusHistoryDto.fromJson(item as Map<String, dynamic>),
+          )
           .toList(growable: false),
       error: json['error'] as String?,
     );
@@ -480,7 +512,9 @@ class OrderActivityListResponse {
     return OrderActivityListResponse(
       success: json['success'] as bool? ?? false,
       events: (json['events'] as List<dynamic>? ?? const [])
-          .map((item) => OrderActivityDto.fromJson(item as Map<String, dynamic>))
+          .map(
+            (item) => OrderActivityDto.fromJson(item as Map<String, dynamic>),
+          )
           .toList(growable: false),
       error: json['error'] as String?,
     );
@@ -502,7 +536,10 @@ class OrderTransitionOptionsResponse {
     return OrderTransitionOptionsResponse(
       success: json['success'] as bool? ?? false,
       options: (json['options'] as List<dynamic>? ?? const [])
-          .map((item) => OrderTransitionOptionDto.fromJson(item as Map<String, dynamic>))
+          .map(
+            (item) =>
+                OrderTransitionOptionDto.fromJson(item as Map<String, dynamic>),
+          )
           .toList(growable: false),
       error: json['error'] as String?,
     );
@@ -560,6 +597,11 @@ class OrderMaterialRequirementDto {
     required this.unitId,
     required this.unitSymbol,
     required this.status,
+    required this.procurementRequestNumber,
+    required this.procurementRequestStatus,
+    required this.procurementRequestedQty,
+    required this.procurementReceivedQty,
+    required this.procurementPendingQty,
     required this.updatedAt,
   });
 
@@ -576,6 +618,11 @@ class OrderMaterialRequirementDto {
   final int? unitId;
   final String unitSymbol;
   final String status;
+  final String? procurementRequestNumber;
+  final String? procurementRequestStatus;
+  final double procurementRequestedQty;
+  final double procurementReceivedQty;
+  final double procurementPendingQty;
   final DateTime? updatedAt;
 
   factory OrderMaterialRequirementDto.fromJson(Map<String, dynamic> json) {
@@ -593,6 +640,14 @@ class OrderMaterialRequirementDto {
       unitId: json['unitId'] as int?,
       unitSymbol: json['unitSymbol'] as String? ?? '',
       status: json['status'] as String? ?? 'pending',
+      procurementRequestNumber: json['procurementRequestNumber'] as String?,
+      procurementRequestStatus: json['procurementRequestStatus'] as String?,
+      procurementRequestedQty: (json['procurementRequestedQty'] as num? ?? 0)
+          .toDouble(),
+      procurementReceivedQty: (json['procurementReceivedQty'] as num? ?? 0)
+          .toDouble(),
+      procurementPendingQty: (json['procurementPendingQty'] as num? ?? 0)
+          .toDouble(),
       updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
     );
   }
@@ -612,6 +667,11 @@ class OrderMaterialRequirementDto {
       unitId: unitId,
       unitSymbol: unitSymbol,
       status: status,
+      procurementRequestNumber: procurementRequestNumber,
+      procurementRequestStatus: procurementRequestStatus,
+      procurementRequestedQty: procurementRequestedQty,
+      procurementReceivedQty: procurementReceivedQty,
+      procurementPendingQty: procurementPendingQty,
       updatedAt: updatedAt,
     );
   }
@@ -682,7 +742,11 @@ class OrderMaterialSnapshotResponse {
     return OrderMaterialSnapshotResponse(
       success: json['success'] as bool? ?? false,
       requirements: (json['requirements'] as List<dynamic>? ?? const [])
-          .map((item) => OrderMaterialRequirementDto.fromJson(item as Map<String, dynamic>))
+          .map(
+            (item) => OrderMaterialRequirementDto.fromJson(
+              item as Map<String, dynamic>,
+            ),
+          )
           .toList(growable: false),
       summary: OrderMaterialSummaryDto.fromJson(
         (json['summary'] as Map<String, dynamic>?) ?? const {},

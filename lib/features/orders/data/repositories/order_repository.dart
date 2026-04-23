@@ -13,6 +13,10 @@ abstract class OrderRepository {
     DateTime? startDate,
     DateTime? endDate,
   });
+  Future<OrderEntry> updateOrderPriority({
+    required int orderId,
+    required OrderPriority priority,
+  });
   Future<List<OrderActivityEntry>> getOrderActivity(int orderId);
   Future<List<OrderStatusHistoryEntry>> getOrderStatusHistory(int orderId);
   Future<List<OrderTransitionOption>> getOrderTransitionOptions(int orderId);
@@ -26,7 +30,6 @@ abstract class OrderRepository {
     int orderId,
   );
   Future<List<OrderProcurementSuggestionEntry>> getAllProcurementSuggestions();
-  Future<List<OrderProcurementSuggestionEntry>> refreshOrderProcurementSuggestions(
-    int orderId,
-  );
+  Future<List<OrderProcurementSuggestionEntry>>
+  refreshOrderProcurementSuggestions(int orderId);
 }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 const List<String> kSidebarNavigationOrder = <String>[
   'dashboard',
   'orders',
+  'procurement',
   'inventory',
   'production_pipelines',
   'pm',

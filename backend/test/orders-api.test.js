@@ -4,12 +4,18 @@ const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
+function loadBackend() {
+  const backendPath = require.resolve('../server.js');
+  delete require.cache[backendPath];
+  return require('../server.js');
+}
+
 test('orders persistence functions create, list, and transition lifecycle', async () => {
   const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-orders-api-'));
   const dbPath = path.join(tempDir, 'paper.db');
   process.env.DB_PATH = dbPath;
 
-  const backend = require('../server.js');
+  const backend = loadBackend();
 
   try {
     await backend.initDb();
@@ -50,6 +56,7 @@ test('orders persistence functions create, list, and transition lifecycle', asyn
       variationPathNodeIds: leaf.path,
       quantity: 12,
       status: 'confirmed',
+      priority: 'high',
       startDate: '2026-04-04T00:00:00.000Z',
       endDate: '2026-04-10T00:00:00.000Z',
     });
@@ -59,6 +66,7 @@ test('orders persistence functions create, list, and transition lifecycle', asyn
         : created;
     assert.equal(createdDto.orderNo, 'ORD-DB-001');
     assert.equal(createdDto.status, 'confirmed');
+    assert.equal(createdDto.priority, 'high');
     assert.equal(createdDto.quantity, 12);
 
     const listedRows = await backend.getOrders();
@@ -81,6 +89,16 @@ test('orders persistence functions create, list, and transition lifecycle', asyn
     assert.equal(updatedDto.status, 'allocated');
     assert.equal(updatedDto.endDate, '2026-04-12T00:00:00.000Z');
 
+    const reprioritized = await backend.updateOrderPriority({
+      id: created.id,
+      priority: 'urgent',
+      source: 'test',
+    });
+    const reprioritizedDto = backend.rowToOrderDto
+      ? backend.rowToOrderDto(reprioritized)
+      : reprioritized;
+    assert.equal(reprioritizedDto.priority, 'urgent');
+
     const invalidTransitionPromise = backend.updateOrderLifecycle({
       id: created.id,
       toStatus: 'closed',
@@ -94,8 +112,15 @@ test('orders persistence functions create, list, and transition lifecycle', asyn
 
     const activityRows = await backend.getOrderActivity(created.id);
     assert.ok(activityRows.length >= 2, 'expected activity rows');
-    assert.equal(activityRows[0].event_type, 'status_changed');
-    assert.equal(activityRows[1].event_type, 'order_created');
+    assert.equal(activityRows[0].event_type, 'field_updated');
+    assert.ok(
+      activityRows.some((entry) => entry.event_type === 'status_changed'),
+      'expected status_changed activity row',
+    );
+    assert.ok(
+      activityRows.some((entry) => entry.event_type === 'order_created'),
+      'expected order_created activity row',
+    );
 
     const materialRow = await backend.get(
       'SELECT * FROM materials WHERE kind = ? ORDER BY id ASC LIMIT 1',
@@ -187,7 +212,10 @@ test('orders persistence functions create, list, and transition lifecycle', asyn
     );
     assert.equal(suggestionsAfterConsume.length, 0);
     const allSuggestions = await backend.getAllOrderProcurementSuggestions();
-    assert.equal(allSuggestions.length, 0);
+    assert.equal(
+      allSuggestions.some((entry) => Number(entry.order_id || entry.orderId) === created.id),
+      false,
+    );
 
     const draft = await backend.saveOrder({
       orderNo: 'ORD-DB-TRANS-001',
@@ -220,7 +248,266 @@ test('orders persistence functions create, list, and transition lifecycle', asyn
     assert.ok(confirmedOptions.includes('allocate'));
     assert.ok(confirmedOptions.includes('hold'));
   } finally {
-    await backend.closeDb();
+    try {
+      await backend.closeDb();
+    } catch (_) {
+      // ignore already-closed db handles when test runner reuses module cache
+    }
+  }
+});
+
+test('procurement request workflow groups shortages, raises, receives, and recomputes readiness', async () => {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-procurement-api-'));
+  const dbPath = path.join(tempDir, 'paper.db');
+  process.env.DB_PATH = dbPath;
+  const backend = loadBackend();
+
+  try {
+    await backend.initDb();
+
+    const clientRow = (await backend.getClientsWithUsage()).find(
+      (entry) => !entry.is_archived,
+    );
+    assert.ok(clientRow, 'expected active client');
+    const itemRow = (await backend.getItemsWithUsage()).find(
+      (entry) => !entry.is_archived,
+    );
+    assert.ok(itemRow, 'expected active item');
+    const item = await backend.rowToItemDto(itemRow);
+    const leaf = findFirstLeafVariation(item.variationTree || []);
+    assert.ok(leaf, 'expected leaf variation');
+
+    const unitRow = (await backend.getUnitsWithUsage())[0];
+    assert.ok(unitRow, 'expected seeded unit');
+    const materialBarcode = `PAR-PROC-${Date.now()}`;
+    const now = new Date().toISOString();
+    await backend.run(
+      `
+      INSERT INTO materials (
+        barcode, name, type, grade, thickness, supplier, location, unit_id, unit, notes,
+        created_at, kind, parent_barcode, number_of_children, linked_child_barcodes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'parent', NULL, 0, '[]')
+      `,
+      [
+        materialBarcode,
+        'Procurement Test Material',
+        'Raw Material',
+        'A',
+        '1.0 mm',
+        'Procurement Test Supplier',
+        'MAIN',
+        unitRow.id,
+        unitRow.symbol || unitRow.name,
+        'phase-5 test',
+        now,
+      ],
+    );
+    const materialRow = await backend.getMaterialRowByBarcode(materialBarcode);
+    assert.ok(materialRow, 'expected inserted material');
+
+    await backend.replaceItemBomLines({
+      itemId: item.id,
+      lines: [
+        {
+          materialBarcode: materialRow.barcode,
+          materialName: materialRow.name,
+          quantityPerUnit: 2,
+          wastagePercent: 0,
+          unitId: materialRow.unit_id || null,
+          unitSymbol: materialRow.unit || '',
+        },
+      ],
+    });
+
+    await backend.run('DELETE FROM inventory_stock_positions WHERE material_barcode = ?', [
+      materialRow.barcode,
+    ]);
+
+    const createdOne = await backend.saveOrder({
+      orderNo: 'ORD-PROC-001',
+      clientId: clientRow.id,
+      clientName: clientRow.name,
+      poNumber: 'PO-PROC-001',
+      clientCode: clientRow.alias,
+      itemId: item.id,
+      itemName: item.displayName,
+      variationLeafNodeId: leaf.id,
+      variationPathLabel: leaf.displayName,
+      variationPathNodeIds: leaf.path,
+      quantity: 10,
+      status: 'confirmed',
+      endDate: '2026-05-10T00:00:00.000Z',
+    });
+    const createdTwo = await backend.saveOrder({
+      orderNo: 'ORD-PROC-002',
+      clientId: clientRow.id,
+      clientName: clientRow.name,
+      poNumber: 'PO-PROC-002',
+      clientCode: clientRow.alias,
+      itemId: item.id,
+      itemName: item.displayName,
+      variationLeafNodeId: leaf.id,
+      variationPathLabel: leaf.displayName,
+      variationPathNodeIds: leaf.path,
+      quantity: 5,
+      status: 'confirmed',
+      endDate: '2026-05-08T00:00:00.000Z',
+    });
+
+    await backend.syncOrderMaterialRequirements({ orderId: createdOne.id, source: 'test' });
+    await backend.syncOrderMaterialRequirements({ orderId: createdTwo.id, source: 'test' });
+
+    const queueRows = await backend.getProcurementQueueRows({ source: 'test' });
+    const queueRow = queueRows.find(
+      (row) => String(row.material_barcode || '') === String(materialRow.barcode),
+    );
+    assert.ok(queueRow, 'expected grouped queue row for shortage material');
+    assert.equal(Number(queueRow.total_shortage_qty) >= 30, true);
+    assert.equal(Number(queueRow.affected_order_count) >= 2, true);
+    assert.equal(Number(queueRow.uncovered_qty) >= 30, true);
+
+    const createdRequests = await backend.createProcurementRequestsFromQueue({
+      selections: [
+        {
+          supplierName: queueRow.supplier_name,
+          materialBarcode: queueRow.material_barcode,
+          requestedQty: Number(queueRow.uncovered_qty || 0),
+        },
+      ],
+      actor: { userId: 1, name: 'Tester', role: 'super_admin' },
+      source: 'test',
+    });
+    assert.equal(createdRequests.length, 1);
+    const requestId = Number(createdRequests[0].id);
+    assert.ok(requestId > 0, 'expected created request id');
+
+    const createdLines = await backend.getProcurementRequestLines(requestId);
+    assert.equal(createdLines.length, 1);
+    assert.equal(
+      Number(createdLines[0].requested_qty),
+      Number(queueRow.uncovered_qty || 0),
+    );
+    assert.equal(
+      Number(createdLines[0].pending_qty),
+      Number(queueRow.uncovered_qty || 0),
+    );
+
+    const sourceLinks = await backend.all(
+      `
+      SELECT *
+      FROM procurement_request_line_sources
+      WHERE procurement_request_id = ?
+      ORDER BY id ASC
+      `,
+      [requestId],
+    );
+    assert.equal(sourceLinks.length > 0, true);
+    assert.equal(
+      sourceLinks.reduce((sum, row) => sum + Number(row.linked_qty || 0), 0),
+      Number(queueRow.uncovered_qty || 0),
+    );
+
+    const queueAfterCreate = await backend.getProcurementQueueRows({ source: 'test' });
+    assert.equal(
+      queueAfterCreate.some(
+        (row) => String(row.material_barcode || '') === String(materialRow.barcode),
+      ),
+      false,
+    );
+
+    const duplicateCreatePromise = backend.createProcurementRequestsFromQueue({
+      selections: [
+        {
+          supplierName: queueRow.supplier_name,
+          materialBarcode: queueRow.material_barcode,
+        },
+      ],
+      actor: { userId: 1, name: 'Tester', role: 'super_admin' },
+      source: 'test',
+    });
+    await assert.rejects(duplicateCreatePromise);
+
+    const raisedRequest = await backend.raiseProcurementRequest({
+      id: requestId,
+      actor: { userId: 1, name: 'Tester', role: 'super_admin' },
+      source: 'test',
+    });
+    assert.equal(String(raisedRequest.status), 'raised');
+    const updatedRaisedRequest = await backend.updateProcurementRequest({
+      id: requestId,
+      expectedDate: '2026-05-14',
+      notes: 'Raised request metadata edit test',
+      actor: { userId: 1, name: 'Tester', role: 'super_admin' },
+      source: 'test',
+    });
+    assert.equal(String(updatedRaisedRequest.expected_date || ''), '2026-05-14');
+    assert.equal(
+      String(updatedRaisedRequest.notes || ''),
+      'Raised request metadata edit test',
+    );
+
+    const partial = await backend.receiveProcurementRequest({
+      id: requestId,
+      lines: [
+        {
+          requestLineId: createdLines[0].id,
+          receivedQty: 12,
+          note: 'Partial inward',
+        },
+      ],
+      actor: { userId: 1, name: 'Store', role: 'admin' },
+      source: 'test',
+    });
+    assert.equal(String(partial.status), 'partially_received');
+    const lineAfterPartial = (await backend.getProcurementRequestLines(requestId))[0];
+    assert.equal(Number(lineAfterPartial.received_qty), 12);
+    assert.equal(
+      Number(lineAfterPartial.pending_qty),
+      Number(queueRow.uncovered_qty || 0) - 12,
+    );
+
+    const materialAfterReceive = await backend.getMaterialRowByBarcode(materialRow.barcode);
+    assert.equal(Number(materialAfterReceive.on_hand_qty), 12);
+
+    const orderOneRequirements = await backend.getOrderMaterialRequirements(createdOne.id);
+    assert.equal(
+      Number(orderOneRequirements[0].procurement_requested_qty || 0) > 0,
+      true,
+    );
+    assert.equal(
+      Number(orderOneRequirements[0].procurement_received_qty || 0) > 0,
+      true,
+    );
+    assert.equal(
+      String(orderOneRequirements[0].procurement_request_number || '').startsWith('PR-'),
+      true,
+    );
+
+    const badCancelPromise = backend.cancelProcurementRequest({
+      id: requestId,
+      reason: '',
+      actor: { userId: 1, name: 'Tester', role: 'super_admin' },
+      source: 'test',
+    });
+    await assert.rejects(badCancelPromise);
+    await backend.cancelProcurementRequest({
+      id: requestId,
+      reason: 'Supplier dropped commitment',
+      actor: { userId: 1, name: 'Tester', role: 'super_admin' },
+      source: 'test',
+    });
+    const queueAfterCancel = await backend.getProcurementQueueRows({ source: 'test' });
+    const queueAfterCancelRow = queueAfterCancel.find(
+      (row) => String(row.material_barcode || '') === String(materialRow.barcode),
+    );
+    assert.ok(queueAfterCancelRow, 'expected shortage to return to queue after cancel');
+    assert.equal(Number(queueAfterCancelRow.uncovered_qty) > 0, true);
+  } finally {
+    try {
+      await backend.closeDb();
+    } catch (_) {
+      // ignore already-closed db handles when test runner reuses module cache
+    }
   }
 });
 

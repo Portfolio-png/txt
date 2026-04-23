@@ -1416,6 +1416,7 @@ function rowToOrderDto(row) {
     variationPathNodeIds: parseJson(row.variation_path_node_ids_json, []),
     quantity: Number(row.quantity || 0),
     status: row.status || 'draft',
+    priority: normalizeOrderPriority(row.priority),
     createdAt: row.created_at,
     startDate: row.start_date,
     endDate: row.end_date,
@@ -1429,6 +1430,23 @@ function rowToOrderDto(row) {
     dispatchedAt: row.dispatched_at || null,
     closedAt: row.closed_at || null,
     updatedBy: row.updated_by || null,
+    hasMaterialShortage: Boolean(
+      Number(
+        row.has_material_shortage != null
+          ? row.has_material_shortage
+          : row.hasMaterialShortage || 0,
+      ),
+    ),
+    procurementPending: Boolean(
+      Number(
+        row.procurement_pending != null
+          ? row.procurement_pending
+          : row.procurementPending || 0,
+      ),
+    ),
+    materialReadiness:
+      String(row.material_readiness || row.materialReadiness || '').trim() ||
+      'none',
   };
 }
 
@@ -1489,6 +1507,23 @@ function rowToOrderMaterialRequirementDto(row) {
     unitId: row.unit_id || null,
     unitSymbol: row.unit_symbol || '',
     status: row.status || 'pending',
+    procurementRequestNumber:
+      row.procurement_request_number ||
+      row.procurementRequestNumber ||
+      null,
+    procurementRequestStatus:
+      row.procurement_request_status ||
+      row.procurementRequestStatus ||
+      null,
+    procurementRequestedQty: Number(
+      row.procurement_requested_qty || row.procurementRequestedQty || 0,
+    ),
+    procurementReceivedQty: Number(
+      row.procurement_received_qty || row.procurementReceivedQty || 0,
+    ),
+    procurementPendingQty: Number(
+      row.procurement_pending_qty || row.procurementPendingQty || 0,
+    ),
     updatedAt: row.updated_at || row.created_at || null,
   };
 }
@@ -1530,6 +1565,102 @@ function rowToItemBomLineDto(row) {
     unitSymbol: row.unit_symbol || '',
     sortOrder: Number(row.sort_order || 0),
     updatedAt: row.updated_at || row.created_at || null,
+  };
+}
+
+function rowToProcurementQueueRowDto(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    supplierName: row.supplier_name || row.supplierName || 'Unassigned',
+    materialBarcode: row.material_barcode || row.materialBarcode || '',
+    materialName: row.material_name || row.materialName || '',
+    unitId: row.unit_id || row.unitId || null,
+    unitSymbol: row.unit_symbol || row.unitSymbol || '',
+    totalShortageQty: Number(row.total_shortage_qty || row.totalShortageQty || 0),
+    openRequestedQty: Number(row.open_requested_qty || row.openRequestedQty || 0),
+    uncoveredQty: Number(row.uncovered_qty || row.uncoveredQty || 0),
+    affectedOrderCount: Number(
+      row.affected_order_count || row.affectedOrderCount || 0,
+    ),
+    earliestOrderEndDate:
+      row.earliest_order_end_date || row.earliestOrderEndDate || null,
+    procurementStatus: row.procurement_status || row.procurementStatus || 'unrequested',
+    linkedRequestCount: Number(row.linked_request_count || row.linkedRequestCount || 0),
+    orderIds: parseJson(row.order_ids_json || row.orderIdsJson, []),
+    sourceRequirementIds: parseJson(
+      row.source_requirement_ids_json || row.sourceRequirementIdsJson,
+      [],
+    ),
+  };
+}
+
+function rowToProcurementRequestLineDto(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: Number(row.id || 0),
+    procurementRequestId: Number(row.procurement_request_id || row.procurementRequestId || 0),
+    materialBarcode: row.material_barcode || row.materialBarcode || '',
+    materialName: row.material_name || row.materialName || '',
+    requestedQty: Number(row.requested_qty || row.requestedQty || 0),
+    receivedQty: Number(row.received_qty || row.receivedQty || 0),
+    pendingQty: Number(row.pending_qty || row.pendingQty || 0),
+    unitId: row.unit_id || row.unitId || null,
+    unitSymbol: row.unit_symbol || row.unitSymbol || '',
+    status: row.status || 'draft',
+    linkedOrderCount: Number(row.linked_order_count || row.linkedOrderCount || 0),
+    linkedRequirementCount: Number(
+      row.linked_requirement_count || row.linkedRequirementCount || 0,
+    ),
+    linkedOrderIds: parseJson(row.linked_order_ids_json || row.linkedOrderIdsJson, []),
+    updatedAt: row.updated_at || row.updatedAt || null,
+  };
+}
+
+function rowToProcurementRequestDto(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: Number(row.id || 0),
+    requestNumber: row.request_number || row.requestNumber || '',
+    supplierName: row.supplier_name || row.supplierName || '',
+    status: row.status || 'draft',
+    expectedDate: row.expected_date || row.expectedDate || null,
+    notes: row.notes || '',
+    cancelReason: row.cancel_reason || row.cancelReason || null,
+    lineCount: Number(row.line_count || row.lineCount || 0),
+    totalRequestedQty: Number(row.total_requested_qty || row.totalRequestedQty || 0),
+    totalReceivedQty: Number(row.total_received_qty || row.totalReceivedQty || 0),
+    totalPendingQty: Number(row.total_pending_qty || row.totalPendingQty || 0),
+    createdAt: row.created_at || row.createdAt || null,
+    updatedAt: row.updated_at || row.updatedAt || null,
+    raisedAt: row.raised_at || row.raisedAt || null,
+    closedAt: row.closed_at || row.closedAt || null,
+    cancelledAt: row.cancelled_at || row.cancelledAt || null,
+  };
+}
+
+function rowToProcurementActivityDto(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: Number(row.id || 0),
+    procurementRequestId: Number(row.procurement_request_id || row.procurementRequestId || 0),
+    procurementRequestLineId: row.procurement_request_line_id || row.procurementRequestLineId || null,
+    eventType: row.event_type || row.eventType || '',
+    title: row.title || '',
+    description: row.description || '',
+    actorUserId: row.actor_user_id || row.actorUserId || null,
+    actorName: row.actor_name || row.actorName || 'System',
+    actorRole: row.actor_role || row.actorRole || null,
+    metadata: parseJson(row.metadata_json, {}),
+    source: row.source || 'api',
+    createdAt: row.created_at || row.createdAt || null,
   };
 }
 
@@ -2185,6 +2316,7 @@ async function initDb() {
       variation_path_node_ids_json TEXT NOT NULL DEFAULT '[]',
       quantity INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'draft',
+      priority TEXT NOT NULL DEFAULT 'normal',
       created_at TEXT NOT NULL,
       start_date TEXT,
       end_date TEXT,
@@ -2289,6 +2421,84 @@ async function initDb() {
   `);
 
   await run(`
+    CREATE TABLE IF NOT EXISTS procurement_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_number TEXT NOT NULL UNIQUE,
+      supplier_name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft',
+      expected_date TEXT,
+      notes TEXT DEFAULT '',
+      cancel_reason TEXT,
+      created_by_user_id INTEGER REFERENCES users(id),
+      created_by_name TEXT DEFAULT '',
+      created_by_role TEXT DEFAULT '',
+      raised_by_user_id INTEGER REFERENCES users(id),
+      raised_by_name TEXT DEFAULT '',
+      raised_by_role TEXT DEFAULT '',
+      cancelled_by_user_id INTEGER REFERENCES users(id),
+      cancelled_by_name TEXT DEFAULT '',
+      cancelled_by_role TEXT DEFAULT '',
+      closed_by_user_id INTEGER REFERENCES users(id),
+      closed_by_name TEXT DEFAULT '',
+      closed_by_role TEXT DEFAULT '',
+      raised_at TEXT,
+      cancelled_at TEXT,
+      closed_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS procurement_request_lines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      procurement_request_id INTEGER NOT NULL REFERENCES procurement_requests(id) ON DELETE CASCADE,
+      material_barcode TEXT NOT NULL,
+      material_name TEXT DEFAULT '',
+      requested_qty REAL NOT NULL DEFAULT 0,
+      received_qty REAL NOT NULL DEFAULT 0,
+      pending_qty REAL NOT NULL DEFAULT 0,
+      unit_id INTEGER REFERENCES units(id),
+      unit_symbol TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'draft',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(procurement_request_id, material_barcode)
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS procurement_request_line_sources (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      procurement_request_id INTEGER NOT NULL REFERENCES procurement_requests(id) ON DELETE CASCADE,
+      procurement_request_line_id INTEGER NOT NULL REFERENCES procurement_request_lines(id) ON DELETE CASCADE,
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      requirement_id INTEGER NOT NULL REFERENCES order_material_requirements(id) ON DELETE CASCADE,
+      material_barcode TEXT NOT NULL,
+      linked_qty REAL NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      UNIQUE(procurement_request_line_id, requirement_id)
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS procurement_activity_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      procurement_request_id INTEGER NOT NULL REFERENCES procurement_requests(id) ON DELETE CASCADE,
+      procurement_request_line_id INTEGER REFERENCES procurement_request_lines(id) ON DELETE CASCADE,
+      event_type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      actor_user_id INTEGER REFERENCES users(id),
+      actor_name TEXT DEFAULT '',
+      actor_role TEXT DEFAULT '',
+      metadata_json TEXT DEFAULT '{}',
+      source TEXT DEFAULT 'api',
+      created_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
     CREATE TABLE IF NOT EXISTS item_variations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -2380,6 +2590,21 @@ async function initDb() {
   await run(
     'CREATE INDEX IF NOT EXISTS idx_order_material_allocations_order_id ON order_material_allocations(order_id, id ASC)',
   );
+  await run(
+    'CREATE INDEX IF NOT EXISTS idx_procurement_requests_status ON procurement_requests(status, updated_at DESC)',
+  );
+  await run(
+    'CREATE INDEX IF NOT EXISTS idx_procurement_request_lines_request_id ON procurement_request_lines(procurement_request_id, id ASC)',
+  );
+  await run(
+    'CREATE INDEX IF NOT EXISTS idx_procurement_line_sources_requirement_id ON procurement_request_line_sources(requirement_id, id ASC)',
+  );
+  await run(
+    'CREATE INDEX IF NOT EXISTS idx_procurement_line_sources_request_id ON procurement_request_line_sources(procurement_request_id, id ASC)',
+  );
+  await run(
+    'CREATE INDEX IF NOT EXISTS idx_procurement_activity_request_id ON procurement_activity_log(procurement_request_id, created_at DESC)',
+  );
 
   await ensureColumnExists('materials', 'unit_id', 'INTEGER');
   await ensureColumnExists('units', 'unit_group_id', 'INTEGER');
@@ -2434,6 +2659,7 @@ async function initDb() {
   await ensureColumnExists('auth_sessions', 'user_agent', "TEXT DEFAULT ''");
   await ensureColumnExists('auth_sessions', 'revoked_reason', "TEXT DEFAULT ''");
   await ensureColumnExists('delete_requests', 'reviewed_note', "TEXT DEFAULT ''");
+  await ensureColumnExists('orders', 'priority', "TEXT NOT NULL DEFAULT 'normal'");
   await run("UPDATE materials SET updated_at = created_at WHERE updated_at IS NULL");
   await migrateLegacyOrderStatuses();
   await seedRolePermissions();
@@ -2506,6 +2732,7 @@ async function ensureDemoDataset() {
   await ensureDemoMaterialsPresent();
   await backfillInventoryLedgerForMaterials();
   await backfillMaterialUnitIds();
+  await ensureDemoProcurementScenarios();
   await ensureDemoPipelineRunsPresent();
 }
 
@@ -3336,6 +3563,13 @@ const ORDER_STATUS = Object.freeze({
 });
 
 const ACTIVE_ORDER_STATUSES = new Set(Object.values(ORDER_STATUS));
+const ORDER_PRIORITY = Object.freeze({
+  low: 'low',
+  normal: 'normal',
+  high: 'high',
+  urgent: 'urgent',
+});
+const ACTIVE_ORDER_PRIORITIES = new Set(Object.values(ORDER_PRIORITY));
 
 const ORDER_TRANSITIONS = Object.freeze({
   [ORDER_STATUS.draft]: new Set([ORDER_STATUS.confirmed, ORDER_STATUS.cancelled]),
@@ -3433,6 +3667,14 @@ function normalizeOrderStatus(status) {
   return ORDER_STATUS.draft;
 }
 
+function normalizeOrderPriority(priority) {
+  const normalized = String(priority || '').trim();
+  if (ACTIVE_ORDER_PRIORITIES.has(normalized)) {
+    return normalized;
+  }
+  return ORDER_PRIORITY.normal;
+}
+
 function requiresReasonForTransition(targetStatus) {
   return targetStatus === ORDER_STATUS.onHold || targetStatus === ORDER_STATUS.cancelled;
 }
@@ -3450,7 +3692,44 @@ function assertValidOrderTransition({ fromStatus, toStatus }) {
 }
 
 async function getOrders() {
-  return all('SELECT * FROM orders ORDER BY datetime(created_at) DESC, id DESC');
+  return all(
+    `
+    SELECT
+      ord.*,
+      CASE WHEN EXISTS (
+        SELECT 1
+        FROM order_material_requirements req
+        WHERE req.order_id = ord.id
+          AND req.shortage_qty > 0.0001
+      ) THEN 1 ELSE 0 END AS has_material_shortage,
+      CASE WHEN EXISTS (
+        SELECT 1
+        FROM order_material_requirements req
+        LEFT JOIN procurement_request_line_sources src
+          ON src.requirement_id = req.id
+        LEFT JOIN procurement_request_lines line
+          ON line.id = src.procurement_request_line_id
+        LEFT JOIN procurement_requests request
+          ON request.id = line.procurement_request_id
+        WHERE req.order_id = ord.id
+          AND req.shortage_qty > 0.0001
+          AND request.status IN ('draft', 'raised', 'partially_received')
+      ) THEN 1 ELSE 0 END AS procurement_pending,
+      (
+        SELECT CASE
+          WHEN COUNT(1) = 0 THEN 'none'
+          WHEN SUM(CASE WHEN req.shortage_qty > 0.0001 THEN 1 ELSE 0 END) > 0 THEN 'blocked'
+          WHEN SUM(CASE WHEN req.allocated_qty + 0.0001 >= req.required_qty THEN 1 ELSE 0 END) = COUNT(1)
+            THEN 'ready'
+          ELSE 'partial'
+        END
+        FROM order_material_requirements req
+        WHERE req.order_id = ord.id
+      ) AS material_readiness
+    FROM orders ord
+    ORDER BY datetime(ord.created_at) DESC, ord.id DESC
+    `,
+  );
 }
 
 function normalizeOrderActor(actor, fallback = 'system') {
@@ -3625,6 +3904,1041 @@ function calculateRequirementSummary(requirements) {
   };
 }
 
+const PROCUREMENT_REQUEST_STATUS = Object.freeze({
+  draft: 'draft',
+  raised: 'raised',
+  partiallyReceived: 'partially_received',
+  closed: 'closed',
+  cancelled: 'cancelled',
+});
+
+const PROCUREMENT_OPEN_STATUSES = new Set([
+  PROCUREMENT_REQUEST_STATUS.draft,
+  PROCUREMENT_REQUEST_STATUS.raised,
+  PROCUREMENT_REQUEST_STATUS.partiallyReceived,
+]);
+
+function normalizeProcurementStatus(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (
+    normalized === PROCUREMENT_REQUEST_STATUS.draft ||
+    normalized === PROCUREMENT_REQUEST_STATUS.raised ||
+    normalized === PROCUREMENT_REQUEST_STATUS.partiallyReceived ||
+    normalized === PROCUREMENT_REQUEST_STATUS.closed ||
+    normalized === PROCUREMENT_REQUEST_STATUS.cancelled
+  ) {
+    return normalized;
+  }
+  return PROCUREMENT_REQUEST_STATUS.draft;
+}
+
+async function logProcurementActivity({
+  procurementRequestId,
+  procurementRequestLineId = null,
+  eventType,
+  title,
+  description = '',
+  actor = null,
+  metadata = null,
+  source = 'api',
+  createdAt = null,
+}) {
+  const normalizedActor = normalizeOrderActor(actor, 'System');
+  await run(
+    `
+    INSERT INTO procurement_activity_log (
+      procurement_request_id, procurement_request_line_id, event_type, title, description,
+      actor_user_id, actor_name, actor_role, metadata_json, source, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    [
+      Number(procurementRequestId),
+      procurementRequestLineId == null ? null : Number(procurementRequestLineId),
+      String(eventType || '').trim(),
+      String(title || '').trim(),
+      String(description || '').trim(),
+      normalizedActor.userId,
+      normalizedActor.name,
+      normalizedActor.role,
+      JSON.stringify(metadata || {}),
+      String(source || 'api'),
+      createdAt || new Date().toISOString(),
+    ],
+  );
+}
+
+async function getProcurementActivity(procurementRequestId) {
+  return all(
+    `
+    SELECT *
+    FROM procurement_activity_log
+    WHERE procurement_request_id = ?
+    ORDER BY datetime(created_at) DESC, id DESC
+    `,
+    [Number(procurementRequestId)],
+  );
+}
+
+async function getNextProcurementRequestNumber() {
+  const row = await get(
+    `
+    SELECT request_number
+    FROM procurement_requests
+    ORDER BY id DESC
+    LIMIT 1
+    `,
+  );
+  const lastNumber = Number(String(row?.request_number || '').replace(/\D/g, ''));
+  const nextNumber = Number.isFinite(lastNumber) && lastNumber > 0 ? lastNumber + 1 : 1;
+  return `PR-${String(nextNumber).padStart(4, '0')}`;
+}
+
+function normalizeSupplierName(value) {
+  const text = String(value || '').trim();
+  return text.length > 0 ? text : 'Unassigned';
+}
+
+async function ensureOrderRequirementsCurrent({ source = 'api', actor = null } = {}) {
+  const orders = await getOrders();
+  for (const order of orders) {
+    await syncOrderMaterialRequirements({
+      orderId: Number(order.id),
+      source,
+      actor,
+    });
+  }
+}
+
+async function getProcurementQueueRows({ includeCovered = false, source = 'api', actor = null } = {}) {
+  await ensureOrderRequirementsCurrent({ source, actor });
+  const shortageRows = await all(
+    `
+    SELECT
+      req.id AS requirement_id,
+      req.order_id,
+      req.material_barcode,
+      req.material_name,
+      req.shortage_qty,
+      req.unit_id,
+      req.unit_symbol,
+      ord.end_date,
+      ord.order_no,
+      COALESCE(NULLIF(TRIM(mat.supplier), ''), 'Unassigned') AS supplier_name
+    FROM order_material_requirements req
+    INNER JOIN orders ord ON ord.id = req.order_id
+    LEFT JOIN materials mat ON mat.barcode = req.material_barcode
+    WHERE req.shortage_qty > 0
+    ORDER BY supplier_name ASC, req.material_name ASC
+    `,
+  );
+  const openRequestedRows = await all(
+    `
+    SELECT
+      pr.supplier_name,
+      prl.material_barcode,
+      SUM(prl.pending_qty) AS open_requested_qty,
+      COUNT(DISTINCT pr.id) AS linked_request_count
+    FROM procurement_request_lines prl
+    INNER JOIN procurement_requests pr ON pr.id = prl.procurement_request_id
+    WHERE pr.status IN ('draft', 'raised', 'partially_received')
+      AND prl.status IN ('draft', 'raised', 'partially_received')
+    GROUP BY pr.supplier_name, prl.material_barcode
+    `,
+  );
+  const openRequestedByKey = new Map(
+    openRequestedRows.map((row) => [
+      `${normalizeSupplierName(row.supplier_name)}::${String(row.material_barcode || '').trim()}`,
+      {
+        openRequestedQty: Math.max(0, Number(row.open_requested_qty || 0)),
+        linkedRequestCount: Math.max(0, Number(row.linked_request_count || 0)),
+      },
+    ]),
+  );
+
+  const grouped = new Map();
+  for (const row of shortageRows) {
+    const materialBarcode = String(row.material_barcode || '').trim();
+    if (!materialBarcode) {
+      continue;
+    }
+    const supplierName = normalizeSupplierName(row.supplier_name);
+    const key = `${supplierName}::${materialBarcode}`;
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        supplierName,
+        materialBarcode,
+        materialName: String(row.material_name || '').trim(),
+        unitId: row.unit_id || null,
+        unitSymbol: String(row.unit_symbol || '').trim(),
+        totalShortageQty: 0,
+        affectedOrderIds: new Set(),
+        sourceRequirementIds: new Set(),
+        earliestOrderEndDate: null,
+      });
+    }
+    const entry = grouped.get(key);
+    const shortageQty = Math.max(0, Number(row.shortage_qty || 0));
+    entry.totalShortageQty += shortageQty;
+    entry.affectedOrderIds.add(Number(row.order_id));
+    entry.sourceRequirementIds.add(Number(row.requirement_id));
+    const rowEndDate = row.end_date ? String(row.end_date) : null;
+    if (!entry.earliestOrderEndDate || (rowEndDate && rowEndDate < entry.earliestOrderEndDate)) {
+      entry.earliestOrderEndDate = rowEndDate;
+    }
+  }
+
+  const rows = [];
+  for (const entry of grouped.values()) {
+    const key = `${entry.supplierName}::${entry.materialBarcode}`;
+    const requestedSummary = openRequestedByKey.get(key) || {
+      openRequestedQty: 0,
+      linkedRequestCount: 0,
+    };
+    const uncoveredQty = Math.max(0, entry.totalShortageQty - requestedSummary.openRequestedQty);
+    if (!includeCovered && uncoveredQty <= 0) {
+      continue;
+    }
+    const procurementStatus = requestedSummary.openRequestedQty <= 0
+      ? 'unrequested'
+      : uncoveredQty <= 0
+      ? 'covered'
+      : 'partial';
+    rows.push({
+      supplier_name: entry.supplierName,
+      material_barcode: entry.materialBarcode,
+      material_name: entry.materialName,
+      unit_id: entry.unitId,
+      unit_symbol: entry.unitSymbol,
+      total_shortage_qty: entry.totalShortageQty,
+      open_requested_qty: requestedSummary.openRequestedQty,
+      uncovered_qty: uncoveredQty,
+      affected_order_count: entry.affectedOrderIds.size,
+      earliest_order_end_date: entry.earliestOrderEndDate,
+      procurement_status: procurementStatus,
+      linked_request_count: requestedSummary.linkedRequestCount,
+      order_ids_json: JSON.stringify(Array.from(entry.affectedOrderIds).sort((a, b) => a - b)),
+      source_requirement_ids_json: JSON.stringify(
+        Array.from(entry.sourceRequirementIds).sort((a, b) => a - b),
+      ),
+    });
+  }
+  return rows.sort((a, b) => {
+    const supplierCompare = String(a.supplier_name).localeCompare(String(b.supplier_name));
+    if (supplierCompare !== 0) {
+      return supplierCompare;
+    }
+    return String(a.material_name).localeCompare(String(b.material_name));
+  });
+}
+
+async function getProcurementRequests() {
+  return all(
+    `
+    SELECT
+      pr.*,
+      COUNT(prl.id) AS line_count,
+      COALESCE(SUM(prl.requested_qty), 0) AS total_requested_qty,
+      COALESCE(SUM(prl.received_qty), 0) AS total_received_qty,
+      COALESCE(SUM(prl.pending_qty), 0) AS total_pending_qty
+    FROM procurement_requests pr
+    LEFT JOIN procurement_request_lines prl ON prl.procurement_request_id = pr.id
+    GROUP BY pr.id
+    ORDER BY datetime(pr.updated_at) DESC, pr.id DESC
+    `,
+  );
+}
+
+async function getProcurementRequestById(procurementRequestId) {
+  return get(
+    `
+    SELECT
+      pr.*,
+      COUNT(prl.id) AS line_count,
+      COALESCE(SUM(prl.requested_qty), 0) AS total_requested_qty,
+      COALESCE(SUM(prl.received_qty), 0) AS total_received_qty,
+      COALESCE(SUM(prl.pending_qty), 0) AS total_pending_qty
+    FROM procurement_requests pr
+    LEFT JOIN procurement_request_lines prl ON prl.procurement_request_id = pr.id
+    WHERE pr.id = ?
+    GROUP BY pr.id
+    `,
+    [Number(procurementRequestId)],
+  );
+}
+
+async function getProcurementRequestLines(procurementRequestId) {
+  return all(
+    `
+    SELECT
+      prl.*,
+      COUNT(DISTINCT src.order_id) AS linked_order_count,
+      COUNT(DISTINCT src.requirement_id) AS linked_requirement_count,
+      JSON_GROUP_ARRAY(DISTINCT src.order_id) AS linked_order_ids_json
+    FROM procurement_request_lines prl
+    LEFT JOIN procurement_request_line_sources src
+      ON src.procurement_request_line_id = prl.id
+    WHERE prl.procurement_request_id = ?
+    GROUP BY prl.id
+    ORDER BY prl.id ASC
+    `,
+    [Number(procurementRequestId)],
+  );
+}
+
+async function recomputeProcurementRequestStatus({
+  procurementRequestId,
+  actor = null,
+  source = 'api',
+}) {
+  const request = await get('SELECT * FROM procurement_requests WHERE id = ?', [
+    Number(procurementRequestId),
+  ]);
+  if (!request) {
+    return null;
+  }
+  if (request.status === PROCUREMENT_REQUEST_STATUS.cancelled) {
+    return request;
+  }
+  const totals = await get(
+    `
+    SELECT
+      COALESCE(SUM(requested_qty), 0) AS requested_qty,
+      COALESCE(SUM(received_qty), 0) AS received_qty,
+      COALESCE(SUM(pending_qty), 0) AS pending_qty
+    FROM procurement_request_lines
+    WHERE procurement_request_id = ?
+    `,
+    [Number(procurementRequestId)],
+  );
+  const pendingQty = Math.max(0, Number(totals?.pending_qty || 0));
+  const receivedQty = Math.max(0, Number(totals?.received_qty || 0));
+  let nextStatus = request.status;
+  if (pendingQty <= 0 && receivedQty > 0) {
+    nextStatus = PROCUREMENT_REQUEST_STATUS.closed;
+  } else if (receivedQty > 0) {
+    nextStatus = PROCUREMENT_REQUEST_STATUS.partiallyReceived;
+  } else if (request.status === PROCUREMENT_REQUEST_STATUS.draft || request.status === PROCUREMENT_REQUEST_STATUS.raised) {
+    nextStatus = request.status;
+  }
+  if (nextStatus !== request.status) {
+    const now = new Date().toISOString();
+    await run(
+      `
+      UPDATE procurement_requests
+      SET status = ?,
+          closed_at = CASE WHEN ? = 'closed' THEN COALESCE(closed_at, ?) ELSE closed_at END,
+          closed_by_user_id = CASE WHEN ? = 'closed' THEN COALESCE(closed_by_user_id, ?) ELSE closed_by_user_id END,
+          closed_by_name = CASE WHEN ? = 'closed' THEN COALESCE(closed_by_name, ?) ELSE closed_by_name END,
+          closed_by_role = CASE WHEN ? = 'closed' THEN COALESCE(closed_by_role, ?) ELSE closed_by_role END,
+          updated_at = ?
+      WHERE id = ?
+      `,
+      [
+        nextStatus,
+        nextStatus,
+        now,
+        nextStatus,
+        normalizeOrderActor(actor, 'System').userId,
+        nextStatus,
+        normalizeOrderActor(actor, 'System').name,
+        nextStatus,
+        normalizeOrderActor(actor, 'System').role,
+        now,
+        Number(procurementRequestId),
+      ],
+    );
+    await logProcurementActivity({
+      procurementRequestId,
+      eventType: 'request_status_recomputed',
+      title: 'Request status updated',
+      description: `Procurement request moved from ${request.status} to ${nextStatus}.`,
+      actor,
+      metadata: { fromStatus: request.status, toStatus: nextStatus },
+      source,
+      createdAt: now,
+    });
+  }
+  return getProcurementRequestById(procurementRequestId);
+}
+
+async function getRequirementProcurementCoverageMap(orderId) {
+  const rows = await all(
+    `
+    SELECT
+      src.requirement_id,
+      COALESCE(SUM(src.linked_qty), 0) AS procurement_requested_qty,
+      COALESCE(SUM(
+        CASE
+          WHEN prl.requested_qty > 0
+            THEN MIN(src.linked_qty, src.linked_qty * (prl.received_qty / prl.requested_qty))
+          ELSE 0
+        END
+      ), 0) AS procurement_received_qty,
+      (
+        SELECT pr.request_number
+        FROM procurement_request_line_sources src2
+        INNER JOIN procurement_request_lines prl2
+          ON prl2.id = src2.procurement_request_line_id
+        INNER JOIN procurement_requests pr
+          ON pr.id = src2.procurement_request_id
+        WHERE src2.requirement_id = src.requirement_id
+          AND pr.status != 'cancelled'
+        ORDER BY datetime(pr.updated_at) DESC, pr.id DESC
+        LIMIT 1
+      ) AS procurement_request_number,
+      (
+        SELECT pr.status
+        FROM procurement_request_line_sources src2
+        INNER JOIN procurement_request_lines prl2
+          ON prl2.id = src2.procurement_request_line_id
+        INNER JOIN procurement_requests pr
+          ON pr.id = src2.procurement_request_id
+        WHERE src2.requirement_id = src.requirement_id
+          AND pr.status != 'cancelled'
+        ORDER BY datetime(pr.updated_at) DESC, pr.id DESC
+        LIMIT 1
+      ) AS procurement_request_status
+    FROM procurement_request_line_sources src
+    INNER JOIN procurement_request_lines prl
+      ON prl.id = src.procurement_request_line_id
+    INNER JOIN procurement_requests pr
+      ON pr.id = src.procurement_request_id
+    INNER JOIN order_material_requirements req
+      ON req.id = src.requirement_id
+    WHERE req.order_id = ?
+      AND pr.status != 'cancelled'
+    GROUP BY src.requirement_id
+    `,
+    [Number(orderId)],
+  );
+  const map = new Map();
+  for (const row of rows) {
+    const requestedQty = Math.max(0, Number(row.procurement_requested_qty || 0));
+    const receivedQty = Math.max(0, Number(row.procurement_received_qty || 0));
+    map.set(Number(row.requirement_id), {
+      procurement_request_number: row.procurement_request_number || null,
+      procurement_request_status: row.procurement_request_status || null,
+      procurement_requested_qty: requestedQty,
+      procurement_received_qty: receivedQty,
+      procurement_pending_qty: Math.max(0, requestedQty - receivedQty),
+    });
+  }
+  return map;
+}
+
+async function createProcurementRequestsFromQueue({
+  selections,
+  actor = null,
+  source = 'api',
+  expectedDate = null,
+  notes = '',
+}) {
+  const normalizedSelections = Array.isArray(selections)
+    ? selections
+      .map((entry) => ({
+        supplierName: normalizeSupplierName(entry?.supplierName || entry?.supplier_name),
+        materialBarcode: String(
+          entry?.materialBarcode || entry?.material_barcode || '',
+        ).trim(),
+        requestedQty: Number(entry?.requestedQty ?? entry?.requested_qty ?? 0),
+      }))
+      .filter((entry) => entry.materialBarcode.length > 0)
+    : [];
+  if (normalizedSelections.length === 0) {
+    const error = new Error('At least one queue row must be selected.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const queueRows = await getProcurementQueueRows({ includeCovered: false, source, actor });
+  const queueByKey = new Map(
+    queueRows.map((row) => [
+      `${normalizeSupplierName(row.supplier_name)}::${String(row.material_barcode || '').trim()}`,
+      row,
+    ]),
+  );
+
+  const consolidatedBySupplier = new Map();
+  for (const selection of normalizedSelections) {
+    const key = `${selection.supplierName}::${selection.materialBarcode}`;
+    const queueRow = queueByKey.get(key);
+    if (!queueRow) {
+      continue;
+    }
+    const uncoveredQty = Math.max(0, Number(queueRow.uncovered_qty || 0));
+    if (uncoveredQty <= 0) {
+      continue;
+    }
+    const requestedQty = Math.max(
+      0,
+      Math.min(
+        Number.isFinite(selection.requestedQty) && selection.requestedQty > 0
+          ? selection.requestedQty
+          : uncoveredQty,
+        uncoveredQty,
+      ),
+    );
+    if (requestedQty <= 0) {
+      continue;
+    }
+    if (!consolidatedBySupplier.has(selection.supplierName)) {
+      consolidatedBySupplier.set(selection.supplierName, new Map());
+    }
+    const materialMap = consolidatedBySupplier.get(selection.supplierName);
+    if (!materialMap.has(selection.materialBarcode)) {
+      materialMap.set(selection.materialBarcode, {
+        queueRow,
+        requestedQty: 0,
+      });
+    }
+    const current = materialMap.get(selection.materialBarcode);
+    current.requestedQty = Math.min(uncoveredQty, current.requestedQty + requestedQty);
+  }
+
+  if (consolidatedBySupplier.size === 0) {
+    const error = new Error('No uncovered shortage rows were selected.');
+    error.statusCode = 409;
+    throw error;
+  }
+
+  const now = new Date().toISOString();
+  const createdRequestIds = [];
+  await run('BEGIN TRANSACTION');
+  try {
+    for (const [supplierName, materialMap] of consolidatedBySupplier.entries()) {
+      const requestNumber = await getNextProcurementRequestNumber();
+      const actorInfo = normalizeOrderActor(actor, 'System');
+      const requestInsert = await run(
+        `
+        INSERT INTO procurement_requests (
+          request_number, supplier_name, status, expected_date, notes,
+          created_by_user_id, created_by_name, created_by_role,
+          created_at, updated_at
+        ) VALUES (?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)
+        `,
+        [
+          requestNumber,
+          supplierName,
+          expectedDate ? String(expectedDate) : null,
+          String(notes || '').trim(),
+          actorInfo.userId,
+          actorInfo.name,
+          actorInfo.role,
+          now,
+          now,
+        ],
+      );
+      const procurementRequestId = Number(requestInsert.lastID);
+      createdRequestIds.push(procurementRequestId);
+      await logProcurementActivity({
+        procurementRequestId,
+        eventType: 'request_created',
+        title: 'Procurement request created',
+        description: `Draft ${requestNumber} created for ${supplierName}.`,
+        actor,
+        metadata: { supplierName, requestNumber },
+        source,
+        createdAt: now,
+      });
+
+      for (const [materialBarcode, lineEntry] of materialMap.entries()) {
+        const queueRow = lineEntry.queueRow;
+        const requestedQty = Math.max(0, Number(lineEntry.requestedQty || 0));
+        if (requestedQty <= 0) {
+          continue;
+        }
+        const material = await getMaterialRowByBarcode(materialBarcode);
+        const lineInsert = await run(
+          `
+          INSERT INTO procurement_request_lines (
+            procurement_request_id, material_barcode, material_name,
+            requested_qty, received_qty, pending_qty,
+            unit_id, unit_symbol, status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, 'draft', ?, ?)
+          `,
+          [
+            procurementRequestId,
+            materialBarcode,
+            String(material?.name || queueRow.material_name || '').trim(),
+            requestedQty,
+            requestedQty,
+            material?.unit_id || queueRow.unit_id || null,
+            String(material?.unit || queueRow.unit_symbol || '').trim(),
+            now,
+            now,
+          ],
+        );
+        const procurementRequestLineId = Number(lineInsert.lastID);
+
+        let remainingQty = requestedQty;
+        const sourceRequirements = await all(
+          `
+          SELECT
+            req.id,
+            req.order_id,
+            req.shortage_qty
+          FROM order_material_requirements req
+          INNER JOIN orders ord ON ord.id = req.order_id
+          LEFT JOIN materials mat ON mat.barcode = req.material_barcode
+          WHERE req.shortage_qty > 0
+            AND req.material_barcode = ?
+            AND COALESCE(NULLIF(TRIM(mat.supplier), ''), 'Unassigned') = ?
+          ORDER BY datetime(ord.end_date) ASC, req.id ASC
+          `,
+          [materialBarcode, supplierName],
+        );
+        for (const sourceRequirement of sourceRequirements) {
+          if (remainingQty <= 0) {
+            break;
+          }
+          const requirementId = Number(sourceRequirement.id);
+          const shortageQty = Math.max(0, Number(sourceRequirement.shortage_qty || 0));
+          if (shortageQty <= 0) {
+            continue;
+          }
+          const linkedQty = Math.min(shortageQty, remainingQty);
+          if (linkedQty <= 0) {
+            continue;
+          }
+          await run(
+            `
+            INSERT INTO procurement_request_line_sources (
+              procurement_request_id, procurement_request_line_id, order_id,
+              requirement_id, material_barcode, linked_qty, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            `,
+            [
+              procurementRequestId,
+              procurementRequestLineId,
+              Number(sourceRequirement.order_id),
+              requirementId,
+              materialBarcode,
+              linkedQty,
+              now,
+            ],
+          );
+          remainingQty -= linkedQty;
+        }
+      }
+    }
+    await run('COMMIT');
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
+
+  const createdRequests = [];
+  for (const id of createdRequestIds) {
+    const requestRow = await getProcurementRequestById(id);
+    if (requestRow) {
+      createdRequests.push(requestRow);
+    }
+  }
+  return createdRequests;
+}
+
+async function updateProcurementRequest({
+  id,
+  expectedDate = undefined,
+  notes = undefined,
+  actor = null,
+  source = 'api',
+}) {
+  const requestId = Number(id);
+  const request = await get('SELECT * FROM procurement_requests WHERE id = ?', [requestId]);
+  if (!request) {
+    const error = new Error('Procurement request not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  if (
+    request.status !== PROCUREMENT_REQUEST_STATUS.draft &&
+    request.status !== PROCUREMENT_REQUEST_STATUS.raised &&
+    request.status !== PROCUREMENT_REQUEST_STATUS.partiallyReceived
+  ) {
+    const error = new Error('Only draft, raised, or partially received requests can be edited.');
+    error.statusCode = 409;
+    throw error;
+  }
+  const now = new Date().toISOString();
+  await run(
+    `
+    UPDATE procurement_requests
+    SET expected_date = COALESCE(?, expected_date),
+        notes = COALESCE(?, notes),
+        updated_at = ?
+    WHERE id = ?
+    `,
+    [
+      expectedDate === undefined ? null : expectedDate,
+      notes === undefined ? null : String(notes),
+      now,
+      requestId,
+    ],
+  );
+  await logProcurementActivity({
+    procurementRequestId: requestId,
+    eventType: 'request_updated',
+    title: 'Request updated',
+    description: 'Draft request metadata was updated.',
+    actor,
+    metadata: {
+      expectedDate: expectedDate === undefined ? request.expected_date : expectedDate,
+      notes: notes === undefined ? request.notes : notes,
+    },
+    source,
+    createdAt: now,
+  });
+  return getProcurementRequestById(requestId);
+}
+
+async function raiseProcurementRequest({ id, actor = null, source = 'api' }) {
+  const requestId = Number(id);
+  const request = await get('SELECT * FROM procurement_requests WHERE id = ?', [requestId]);
+  if (!request) {
+    const error = new Error('Procurement request not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  if (request.status !== PROCUREMENT_REQUEST_STATUS.draft) {
+    const error = new Error('Only draft requests can be raised.');
+    error.statusCode = 409;
+    throw error;
+  }
+  const lineCountRow = await get(
+    'SELECT COUNT(*) AS count FROM procurement_request_lines WHERE procurement_request_id = ?',
+    [requestId],
+  );
+  if (Number(lineCountRow?.count || 0) <= 0) {
+    const error = new Error('Cannot raise an empty procurement request.');
+    error.statusCode = 409;
+    throw error;
+  }
+  const actorInfo = normalizeOrderActor(actor, 'System');
+  const now = new Date().toISOString();
+  await run(
+    `
+    UPDATE procurement_requests
+    SET status = 'raised',
+        raised_at = ?,
+        raised_by_user_id = ?,
+        raised_by_name = ?,
+        raised_by_role = ?,
+        updated_at = ?
+    WHERE id = ?
+    `,
+    [now, actorInfo.userId, actorInfo.name, actorInfo.role, now, requestId],
+  );
+  await run(
+    `
+    UPDATE procurement_request_lines
+    SET status = 'raised',
+        updated_at = ?
+    WHERE procurement_request_id = ?
+      AND status = 'draft'
+    `,
+    [now, requestId],
+  );
+  await logProcurementActivity({
+    procurementRequestId: requestId,
+    eventType: 'request_raised',
+    title: 'Request raised',
+    description: `${request.request_number} was raised.`,
+    actor,
+    metadata: { requestNumber: request.request_number },
+    source,
+    createdAt: now,
+  });
+  return getProcurementRequestById(requestId);
+}
+
+async function cancelProcurementRequest({
+  id,
+  reason,
+  actor = null,
+  source = 'api',
+}) {
+  const requestId = Number(id);
+  const request = await get('SELECT * FROM procurement_requests WHERE id = ?', [requestId]);
+  if (!request) {
+    const error = new Error('Procurement request not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  const trimmedReason = String(reason || '').trim();
+  if (!trimmedReason) {
+    const error = new Error('Cancellation reason is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (
+    request.status === PROCUREMENT_REQUEST_STATUS.cancelled ||
+    request.status === PROCUREMENT_REQUEST_STATUS.closed
+  ) {
+    const error = new Error(`Request is already ${request.status}.`);
+    error.statusCode = 409;
+    throw error;
+  }
+  const actorInfo = normalizeOrderActor(actor, 'System');
+  const now = new Date().toISOString();
+  await run(
+    `
+    UPDATE procurement_requests
+    SET status = 'cancelled',
+        cancel_reason = ?,
+        cancelled_at = ?,
+        cancelled_by_user_id = ?,
+        cancelled_by_name = ?,
+        cancelled_by_role = ?,
+        updated_at = ?
+    WHERE id = ?
+    `,
+    [trimmedReason, now, actorInfo.userId, actorInfo.name, actorInfo.role, now, requestId],
+  );
+  await run(
+    `
+    UPDATE procurement_request_lines
+    SET status = 'cancelled',
+        updated_at = ?
+    WHERE procurement_request_id = ?
+      AND status != 'closed'
+    `,
+    [now, requestId],
+  );
+  await logProcurementActivity({
+    procurementRequestId: requestId,
+    eventType: 'request_cancelled',
+    title: 'Request cancelled',
+    description: trimmedReason,
+    actor,
+    metadata: { reason: trimmedReason },
+    source,
+    createdAt: now,
+  });
+  return getProcurementRequestById(requestId);
+}
+
+async function closeProcurementRequest({ id, actor = null, source = 'api' }) {
+  const requestId = Number(id);
+  const request = await get('SELECT * FROM procurement_requests WHERE id = ?', [requestId]);
+  if (!request) {
+    const error = new Error('Procurement request not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  if (request.status === PROCUREMENT_REQUEST_STATUS.cancelled) {
+    const error = new Error('Cancelled requests cannot be closed.');
+    error.statusCode = 409;
+    throw error;
+  }
+  const totals = await get(
+    `
+    SELECT
+      COALESCE(SUM(pending_qty), 0) AS pending_qty
+    FROM procurement_request_lines
+    WHERE procurement_request_id = ?
+    `,
+    [requestId],
+  );
+  if (Math.max(0, Number(totals?.pending_qty || 0)) > 0) {
+    const error = new Error('All line quantities must be received before closing.');
+    error.statusCode = 409;
+    throw error;
+  }
+  const actorInfo = normalizeOrderActor(actor, 'System');
+  const now = new Date().toISOString();
+  await run(
+    `
+    UPDATE procurement_requests
+    SET status = 'closed',
+        closed_at = COALESCE(closed_at, ?),
+        closed_by_user_id = COALESCE(closed_by_user_id, ?),
+        closed_by_name = COALESCE(closed_by_name, ?),
+        closed_by_role = COALESCE(closed_by_role, ?),
+        updated_at = ?
+    WHERE id = ?
+    `,
+    [now, actorInfo.userId, actorInfo.name, actorInfo.role, now, requestId],
+  );
+  await logProcurementActivity({
+    procurementRequestId: requestId,
+    eventType: 'request_closed',
+    title: 'Request closed',
+    description: `${request.request_number} was closed.`,
+    actor,
+    metadata: { requestNumber: request.request_number },
+    source,
+    createdAt: now,
+  });
+  return getProcurementRequestById(requestId);
+}
+
+async function receiveProcurementRequest({
+  id,
+  lines,
+  actor = null,
+  source = 'api',
+}) {
+  const requestId = Number(id);
+  const request = await get('SELECT * FROM procurement_requests WHERE id = ?', [requestId]);
+  if (!request) {
+    const error = new Error('Procurement request not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  if (
+    request.status !== PROCUREMENT_REQUEST_STATUS.raised &&
+    request.status !== PROCUREMENT_REQUEST_STATUS.partiallyReceived
+  ) {
+    const error = new Error('Only raised or partially received requests can receive material.');
+    error.statusCode = 409;
+    throw error;
+  }
+  const receiveEntries = Array.isArray(lines)
+    ? lines
+      .map((entry) => ({
+        requestLineId: Number(entry?.requestLineId ?? entry?.request_line_id ?? 0),
+        receivedQty: Number(entry?.receivedQty ?? entry?.received_qty ?? 0),
+        note: String(entry?.note || '').trim(),
+      }))
+      .filter(
+        (entry) =>
+          Number.isInteger(entry.requestLineId) &&
+          entry.requestLineId > 0 &&
+          Number.isFinite(entry.receivedQty) &&
+          entry.receivedQty > 0,
+      )
+    : [];
+  if (receiveEntries.length === 0) {
+    const error = new Error('At least one receive line is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const now = new Date().toISOString();
+  const touchedOrderIds = new Set();
+  await run('BEGIN TRANSACTION');
+  try {
+    for (const entry of receiveEntries) {
+      const line = await get(
+        `
+        SELECT *
+        FROM procurement_request_lines
+        WHERE id = ?
+          AND procurement_request_id = ?
+        `,
+        [entry.requestLineId, requestId],
+      );
+      if (!line) {
+        const error = new Error(`Request line ${entry.requestLineId} not found.`);
+        error.statusCode = 404;
+        throw error;
+      }
+      const pendingQty = Math.max(0, Number(line.pending_qty || 0));
+      if (entry.receivedQty <= 0 || entry.receivedQty > pendingQty) {
+        const error = new Error(
+          `Received quantity for line ${entry.requestLineId} must be between 0 and pending quantity.`,
+        );
+        error.statusCode = 409;
+        throw error;
+      }
+      const material = await getMaterialRowByBarcode(String(line.material_barcode || '').trim());
+      await upsertInventoryStockPosition({
+        materialBarcode: String(line.material_barcode || '').trim(),
+        locationId: material?.location || 'MAIN',
+        lotCode: '',
+        unitId: material?.unit_id || line.unit_id || null,
+        onHandDelta: entry.receivedQty,
+        now,
+      });
+      await run(
+        `
+        INSERT INTO inventory_movements (
+          id, material_barcode, movement_type, qty, from_location_id, to_location_id,
+          reason_code, reference_type, reference_id, actor, lot_code, created_at
+        ) VALUES (?, ?, 'inbound', ?, NULL, ?, 'procurement_receive', 'procurement_request', ?, ?, '', ?)
+        `,
+        [
+          crypto.randomUUID(),
+          String(line.material_barcode || '').trim(),
+          entry.receivedQty,
+          material?.location || 'MAIN',
+          String(requestId),
+          normalizeOrderActor(actor, 'System').name,
+          now,
+        ],
+      );
+      const nextReceivedQty = Math.max(0, Number(line.received_qty || 0) + entry.receivedQty);
+      const nextPendingQty = Math.max(0, Number(line.requested_qty || 0) - nextReceivedQty);
+      const nextLineStatus = nextPendingQty <= 0 ? 'closed' : 'partially_received';
+      await run(
+        `
+        UPDATE procurement_request_lines
+        SET received_qty = ?,
+            pending_qty = ?,
+            status = ?,
+            updated_at = ?
+        WHERE id = ?
+        `,
+        [nextReceivedQty, nextPendingQty, nextLineStatus, now, entry.requestLineId],
+      );
+      await logProcurementActivity({
+        procurementRequestId: requestId,
+        procurementRequestLineId: entry.requestLineId,
+        eventType: 'line_received',
+        title: 'Material received',
+        description: entry.note.length > 0
+          ? entry.note
+          : `Received ${entry.receivedQty} ${line.unit_symbol || ''}`.trim(),
+        actor,
+        metadata: {
+          requestLineId: entry.requestLineId,
+          receivedQty: entry.receivedQty,
+          note: entry.note,
+        },
+        source,
+        createdAt: now,
+      });
+      await recomputeMaterialInventorySummary(String(line.material_barcode || '').trim(), now);
+      const linkedRows = await all(
+        `
+        SELECT DISTINCT order_id
+        FROM procurement_request_line_sources
+        WHERE procurement_request_line_id = ?
+        `,
+        [entry.requestLineId],
+      );
+      for (const linkedRow of linkedRows) {
+        touchedOrderIds.add(Number(linkedRow.order_id));
+      }
+    }
+    await run('COMMIT');
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
+  for (const orderId of touchedOrderIds) {
+    await syncOrderMaterialRequirements({
+      orderId,
+      now,
+      actor,
+      source,
+    });
+    await logOrderActivity({
+      orderId,
+      eventType: 'procurement_received',
+      title: 'Procurement receipt recorded',
+      description: `Incoming material was received against procurement request ${request.request_number}.`,
+      actor,
+      metadata: { procurementRequestId: requestId, procurementRequestNumber: request.request_number },
+      source,
+      createdAt: now,
+    });
+  }
+  await recomputeProcurementRequestStatus({ procurementRequestId: requestId, actor, source });
+  return getProcurementRequestById(requestId);
+}
+
 async function getItemBomLines(itemId) {
   const normalizedItemId = Number(itemId);
   if (!Number.isInteger(normalizedItemId) || normalizedItemId <= 0) {
@@ -3756,7 +5070,7 @@ async function replaceItemBomLines({
 }
 
 async function getOrderMaterialRequirements(orderId) {
-  return all(
+  const baseRows = await all(
     `
     SELECT *
     FROM order_material_requirements
@@ -3765,6 +5079,20 @@ async function getOrderMaterialRequirements(orderId) {
     `,
     [orderId],
   );
+  if (baseRows.length === 0) {
+    return baseRows;
+  }
+  const coverageMap = await getRequirementProcurementCoverageMap(orderId);
+  return baseRows.map((row) => {
+    const coverage = coverageMap.get(Number(row.id));
+    if (!coverage) {
+      return row;
+    }
+    return {
+      ...row,
+      ...coverage,
+    };
+  });
 }
 
 async function getOrderProcurementSuggestions(orderId) {
@@ -4409,6 +5737,7 @@ async function saveOrder({
   variationPathNodeIds = [],
   quantity,
   status = 'draft',
+  priority = 'normal',
   startDate = null,
   endDate = null,
   actor = null,
@@ -4425,6 +5754,7 @@ async function saveOrder({
   const trimmedItemName = String(itemName || '').trim();
   const trimmedVariationPathLabel = String(variationPathLabel || '').trim();
   const normalizedStatus = normalizeOrderStatus(status);
+  const normalizedPriority = normalizeOrderPriority(priority);
   const normalizedActor = normalizeOrderActor(actor, 'system');
 
   if (!trimmedOrderNo) {
@@ -4512,9 +5842,9 @@ async function saveOrder({
       INSERT INTO orders (
         order_no, client_id, client_name, po_number, client_code, item_id, item_name,
         variation_leaf_node_id, variation_path_label, variation_path_node_ids_json,
-        quantity, status, created_at, start_date, end_date, updated_by
+        quantity, status, priority, created_at, start_date, end_date, updated_by
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         trimmedOrderNo,
@@ -4529,6 +5859,7 @@ async function saveOrder({
         JSON.stringify(Array.isArray(variationPathNodeIds) ? variationPathNodeIds : []),
         Math.round(normalizedQuantity),
         normalizedStatus,
+        normalizedPriority,
         now,
         startDate || null,
         endDate || null,
@@ -4565,6 +5896,7 @@ async function saveOrder({
             : [],
           quantity: Math.round(normalizedQuantity),
           status: normalizedStatus,
+          priority: normalizedPriority,
           startDate: startDate || null,
           endDate: endDate || null,
         },
@@ -4762,6 +6094,53 @@ async function updateOrderLifecycle({
     await run('ROLLBACK');
     throw error;
   }
+}
+
+async function updateOrderPriority({
+  id,
+  priority,
+  actor = null,
+  source = 'api',
+}) {
+  const existing = await getOrderRowById(id);
+  if (!existing) {
+    const error = new Error('Order not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  const normalizedPriority = normalizeOrderPriority(priority);
+  const currentPriority = normalizeOrderPriority(existing.priority);
+  if (currentPriority === normalizedPriority) {
+    return existing;
+  }
+  const normalizedActor = normalizeOrderActor(actor, 'system');
+  const now = new Date().toISOString();
+  await run(
+    `
+    UPDATE orders
+    SET priority = ?,
+        updated_by = ?
+    WHERE id = ?
+    `,
+    [normalizedPriority, normalizedActor.name, id],
+  );
+  await logOrderActivity({
+    orderId: id,
+    eventType: 'field_updated',
+    title: 'Priority updated',
+    description: `Priority changed from ${currentPriority} to ${normalizedPriority}.`,
+    actor: normalizedActor,
+    oldValue: currentPriority,
+    newValue: normalizedPriority,
+    metadata: {
+      field: 'priority',
+      previousPriority: currentPriority,
+      priority: normalizedPriority,
+    },
+    source,
+    createdAt: now,
+  });
+  return getOrderRowById(id);
 }
 
 function resolveTransitionTarget(action) {
@@ -6294,6 +7673,71 @@ async function ensureDemoOrdersPresent() {
       startDate: order.startDate,
       endDate: order.endDate,
     });
+  }
+}
+
+async function ensureDemoProcurementScenarios() {
+  const existingCount = await get('SELECT COUNT(*) AS count FROM procurement_requests');
+  if (Number(existingCount?.count || 0) > 0) {
+    return;
+  }
+  const queueRows = await getProcurementQueueRows({ includeCovered: false, source: 'seed' });
+  if (queueRows.length === 0) {
+    return;
+  }
+  const firstRow = queueRows[0];
+  if (firstRow) {
+    await createProcurementRequestsFromQueue({
+      selections: [{
+        supplierName: firstRow.supplier_name,
+        materialBarcode: firstRow.material_barcode,
+        requestedQty: Number(firstRow.uncovered_qty || 0),
+      }],
+      actor: { name: 'Demo Seeder', role: 'system' },
+      source: 'seed',
+      notes: 'Auto-created draft request for demo queue walkthrough.',
+    });
+  }
+  const refreshedQueue = await getProcurementQueueRows({ includeCovered: false, source: 'seed' });
+  const secondRow = refreshedQueue[0];
+  if (secondRow) {
+    const created = await createProcurementRequestsFromQueue({
+      selections: [{
+        supplierName: secondRow.supplier_name,
+        materialBarcode: secondRow.material_barcode,
+        requestedQty: Number(secondRow.uncovered_qty || 0),
+      }],
+      actor: { name: 'Demo Seeder', role: 'system' },
+      source: 'seed',
+      notes: 'Auto-created raised request for demo lifecycle walkthrough.',
+    });
+    if (created.length > 0) {
+      const requestId = Number(created[0].id);
+      await raiseProcurementRequest({
+        id: requestId,
+        actor: { name: 'Demo Seeder', role: 'system' },
+        source: 'seed',
+      });
+      const lines = await getProcurementRequestLines(requestId);
+      if (lines.length > 0) {
+        const line = lines[0];
+        const pendingQty = Math.max(0, Number(line.pending_qty || 0));
+        if (pendingQty > 0) {
+          await receiveProcurementRequest({
+            id: requestId,
+            lines: [
+              {
+                requestLineId: Number(line.id),
+                receivedQty: pendingQty >= 1 ? Math.floor(pendingQty / 2) || 1 : pendingQty,
+                note: 'Demo partial receipt',
+              },
+            ],
+            actor: { name: 'Demo Seeder', role: 'system' },
+            source: 'seed',
+          });
+        }
+      }
+    }
   }
 }
 
@@ -9248,6 +10692,275 @@ app.get('/api/orders/procurement-suggestions', requirePermission('config.read'),
   }
 });
 
+app.get('/api/procurement-queue', requirePermission('config.read'), async (req, res) => {
+  try {
+    const rows = await getProcurementQueueRows({
+      includeCovered: false,
+      source: 'ui',
+      actor: req.user
+        ? { userId: req.user.id, name: req.user.name, role: req.user.role }
+        : null,
+    });
+    res.json({
+      success: true,
+      rows: rows.map(rowToProcurementQueueRowDto),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      rows: [],
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/procurement-queue/refresh', requirePermission('config.read'), async (req, res) => {
+  try {
+    const rows = await getProcurementQueueRows({
+      includeCovered: false,
+      source: 'ui',
+      actor: req.user
+        ? { userId: req.user.id, name: req.user.name, role: req.user.role }
+        : null,
+    });
+    res.json({
+      success: true,
+      rows: rows.map(rowToProcurementQueueRowDto),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      rows: [],
+      error: error.message,
+    });
+  }
+});
+
+app.get('/api/procurement-requests', requirePermission('config.read'), async (req, res) => {
+  try {
+    const rows = await getProcurementRequests();
+    res.json({
+      success: true,
+      requests: rows.map(rowToProcurementRequestDto),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      requests: [],
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/procurement-requests', requirePermission('config.write'), async (req, res) => {
+  try {
+    const created = await createProcurementRequestsFromQueue({
+      selections: req.body?.selections || req.body?.rows || [],
+      expectedDate: req.body?.expectedDate || null,
+      notes: req.body?.notes || '',
+      actor: req.user
+        ? { userId: req.user.id, name: req.user.name, role: req.user.role }
+        : null,
+      source: 'ui',
+    });
+    res.status(201).json({
+      success: true,
+      requests: created.map(rowToProcurementRequestDto),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      requests: [],
+      error: error.message,
+    });
+  }
+});
+
+app.get('/api/procurement-requests/:id', requirePermission('config.read'), async (req, res) => {
+  try {
+    const request = await getProcurementRequestById(Number(req.params.id));
+    if (!request) {
+      res.status(404).json({
+        success: false,
+        request: null,
+        lines: [],
+        activity: [],
+        error: 'Procurement request not found.',
+      });
+      return;
+    }
+    const lines = await getProcurementRequestLines(Number(req.params.id));
+    const activity = await getProcurementActivity(Number(req.params.id));
+    res.json({
+      success: true,
+      request: rowToProcurementRequestDto(request),
+      lines: lines.map(rowToProcurementRequestLineDto),
+      activity: activity.map(rowToProcurementActivityDto),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      request: null,
+      lines: [],
+      activity: [],
+      error: error.message,
+    });
+  }
+});
+
+app.patch('/api/procurement-requests/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    const request = await updateProcurementRequest({
+      id: Number(req.params.id),
+      expectedDate: req.body?.expectedDate,
+      notes: req.body?.notes,
+      actor: req.user
+        ? { userId: req.user.id, name: req.user.name, role: req.user.role }
+        : null,
+      source: 'ui',
+    });
+    res.json({
+      success: true,
+      request: rowToProcurementRequestDto(request),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      request: null,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/procurement-requests/:id/raise', requirePermission('config.write'), async (req, res) => {
+  try {
+    const request = await raiseProcurementRequest({
+      id: Number(req.params.id),
+      actor: req.user
+        ? { userId: req.user.id, name: req.user.name, role: req.user.role }
+        : null,
+      source: 'ui',
+    });
+    res.json({
+      success: true,
+      request: rowToProcurementRequestDto(request),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      request: null,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/procurement-requests/:id/cancel', requirePermission('config.write'), async (req, res) => {
+  try {
+    const request = await cancelProcurementRequest({
+      id: Number(req.params.id),
+      reason: req.body?.reason,
+      actor: req.user
+        ? { userId: req.user.id, name: req.user.name, role: req.user.role }
+        : null,
+      source: 'ui',
+    });
+    res.json({
+      success: true,
+      request: rowToProcurementRequestDto(request),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      request: null,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/procurement-requests/:id/close', requirePermission('config.write'), async (req, res) => {
+  try {
+    const request = await closeProcurementRequest({
+      id: Number(req.params.id),
+      actor: req.user
+        ? { userId: req.user.id, name: req.user.name, role: req.user.role }
+        : null,
+      source: 'ui',
+    });
+    res.json({
+      success: true,
+      request: rowToProcurementRequestDto(request),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      request: null,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/procurement-requests/:id/receive', requirePermission('config.write'), async (req, res) => {
+  try {
+    const request = await receiveProcurementRequest({
+      id: Number(req.params.id),
+      lines: req.body?.lines || [],
+      actor: req.user
+        ? { userId: req.user.id, name: req.user.name, role: req.user.role }
+        : null,
+      source: 'ui',
+    });
+    const lines = await getProcurementRequestLines(Number(req.params.id));
+    res.json({
+      success: true,
+      request: rowToProcurementRequestDto(request),
+      lines: lines.map(rowToProcurementRequestLineDto),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      request: null,
+      lines: [],
+      error: error.message,
+    });
+  }
+});
+
+app.get('/api/procurement-requests/:id/activity', requirePermission('config.read'), async (req, res) => {
+  try {
+    const request = await getProcurementRequestById(Number(req.params.id));
+    if (!request) {
+      res.status(404).json({
+        success: false,
+        activity: [],
+        error: 'Procurement request not found.',
+      });
+      return;
+    }
+    const rows = await getProcurementActivity(Number(req.params.id));
+    res.json({
+      success: true,
+      activity: rows.map(rowToProcurementActivityDto),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      activity: [],
+      error: error.message,
+    });
+  }
+});
+
 app.get('/api/orders/:id/material-requirements', requirePermission('config.read'), async (req, res) => {
   try {
     const orderId = Number(req.params.id);
@@ -9500,6 +11213,26 @@ app.post('/api/orders', requirePermission('config.write'), async (req, res) => {
       source: 'ui',
     });
     res.status(201).json({ success: true, order: rowToOrderDto(order), error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      order: null,
+      error: error.message,
+    });
+  }
+});
+
+app.patch('/api/orders/:id/priority', requirePermission('config.write'), async (req, res) => {
+  try {
+    const updated = await updateOrderPriority({
+      id: Number(req.params.id),
+      priority: req.body?.priority,
+      actor: req.user
+        ? { userId: req.user.id, name: req.user.name, role: req.user.role }
+        : null,
+      source: 'ui',
+    });
+    res.json({ success: true, order: rowToOrderDto(updated), error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({
       success: false,
@@ -10493,6 +12226,10 @@ async function resetAndSeedDemoData() {
   await run('DELETE FROM order_activity_log');
   await run('DELETE FROM order_material_allocations');
   await run('DELETE FROM order_material_requirements');
+  await run('DELETE FROM procurement_activity_log');
+  await run('DELETE FROM procurement_request_line_sources');
+  await run('DELETE FROM procurement_request_lines');
+  await run('DELETE FROM procurement_requests');
   await run('DELETE FROM item_bom_lines');
   await run('DELETE FROM item_variation_values');
   await run('DELETE FROM item_variations');
@@ -10568,6 +12305,7 @@ module.exports = {
   ensureDemoDataset,
   resetAndSeedDemoData,
   updateOrderLifecycle,
+  updateOrderPriority,
   transitionOrderByAction,
   getOrderTransitionOptions,
   getItemBomLines,
@@ -10576,6 +12314,17 @@ module.exports = {
   getOrderProcurementSuggestions,
   getAllOrderProcurementSuggestions,
   refreshOrderProcurementSuggestions,
+  getProcurementQueueRows,
+  getProcurementRequests,
+  getProcurementRequestById,
+  getProcurementRequestLines,
+  getProcurementActivity,
+  createProcurementRequestsFromQueue,
+  updateProcurementRequest,
+  raiseProcurementRequest,
+  cancelProcurementRequest,
+  closeProcurementRequest,
+  receiveProcurementRequest,
   syncOrderMaterialRequirements,
   allocateOrderMaterials,
   releaseOrderMaterials,
@@ -10596,6 +12345,10 @@ module.exports = {
   rowToOrderDto,
   rowToOrderMaterialRequirementDto,
   rowToOrderProcurementSuggestionDto,
+  rowToProcurementQueueRowDto,
+  rowToProcurementRequestDto,
+  rowToProcurementRequestLineDto,
+  rowToProcurementActivityDto,
   rowToItemBomLineDto,
   rowToOrderStatusHistoryDto,
   rowToOrderActivityDto,

@@ -25,6 +25,11 @@ class _AppSidebarState extends State<AppSidebar> {
   static const List<_SidebarItemData> _moduleItems = <_SidebarItemData>[
     _SidebarItemData('dashboard', 'Dashboard', Icons.dashboard_outlined),
     _SidebarItemData('orders', 'Orders', Icons.receipt_long_outlined),
+    _SidebarItemData(
+      'procurement',
+      'Procurement',
+      Icons.shopping_cart_outlined,
+    ),
     _SidebarItemData('inventory', 'Inventory', Icons.inventory_2_outlined),
     _SidebarItemData(
       'production_pipelines',

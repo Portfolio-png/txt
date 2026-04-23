@@ -54,6 +54,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
   int? _partyFilterClientId;
   int? _itemFilterId;
   OrderStatus? _statusFilter;
+  OrderStatus? _timelineStatusFilter;
+  _OrdersView _activeView = _OrdersView.table;
 
   @override
   Widget build(BuildContext context) {
@@ -71,6 +73,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final orders = ordersProvider.orders;
     final visibleOrders = _applyFilters(ordersProvider.filteredOrders);
     final summary = _OrderSummary.fromOrders(orders);
+    _handleExternalOrderFocus(
+      provider: ordersProvider,
+      allOrders: orders,
+      visibleOrders: visibleOrders,
+    );
 
     _selectedOrderIds.removeWhere(
       (id) => !orders.any((order) => order.id == id),
@@ -162,9 +169,24 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       },
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: _contentHorizontalPadding,
+                    ),
+                    child: _OrdersViewSwitcher(
+                      selectedView: _activeView,
+                      onViewChanged: (value) {
+                        setState(() {
+                          _activeView = value;
+                        });
+                      },
+                    ),
+                  ),
                   const SizedBox(height: 16),
                   Expanded(
-                    child: _OrdersTableCard(
+                    child: _OrdersViewContent(
+                      activeView: _activeView,
                       orders: visibleOrders,
                       selectedOrderIds: _selectedOrderIds,
                       onToggleSelection: (orderId, selected) {
@@ -177,6 +199,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         });
                       },
                       onRowTap: (order) => _openLifecycleEditor(context, order),
+                      onBoardMove: (order, toStatus) =>
+                          _moveOrderFromBoard(order, toStatus),
+                      timelineStatusFilter: _timelineStatusFilter,
+                      onTimelineStatusFilterChanged: (value) {
+                        setState(() {
+                          _timelineStatusFilter = value;
+                        });
+                      },
                     ),
                   ),
                 ],
@@ -186,6 +216,45 @@ class _OrdersScreenState extends State<OrdersScreen> {
         ],
       ),
     );
+  }
+
+  void _handleExternalOrderFocus({
+    required OrdersProvider provider,
+    required List<OrderEntry> allOrders,
+    required List<OrderEntry> visibleOrders,
+  }) {
+    final focusedOrderId = provider.focusedOrderId;
+    if (focusedOrderId == null) {
+      return;
+    }
+    final shouldOpenDetails = provider.openFocusedOrderDetails;
+    provider.clearExternalOrderFocus();
+    OrderEntry? target;
+    for (final order in allOrders) {
+      if (order.id == focusedOrderId) {
+        target = order;
+        break;
+      }
+    }
+    if (target == null || !mounted) {
+      return;
+    }
+    final isVisible = visibleOrders.any((order) => order.id == focusedOrderId);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      if (isVisible) {
+        setState(() {
+          _selectedOrderIds
+            ..clear()
+            ..add(focusedOrderId);
+        });
+      }
+      if (shouldOpenDetails) {
+        _openLifecycleEditor(context, target!);
+      }
+    });
   }
 
   List<OrderEntry> _applyFilters(List<OrderEntry> orders) {
@@ -204,6 +273,35 @@ class _OrdersScreenState extends State<OrdersScreen> {
           return true;
         })
         .toList(growable: false);
+  }
+
+  Future<void> _moveOrderFromBoard(
+    OrderEntry order,
+    OrderStatus toStatus,
+  ) async {
+    final action = _actionForBoardMove(from: order.status, to: toStatus);
+    if (action == null) {
+      return;
+    }
+    final result = await context.read<OrdersProvider>().transitionOrderByAction(
+      orderId: order.id,
+      action: action,
+    );
+    if (!mounted) {
+      return;
+    }
+    if (result == null) {
+      final message =
+          context.read<OrdersProvider>().errorMessage ??
+          'Unable to move order right now.';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Order moved to ${toStatus.label}.')),
+    );
   }
 
   Future<void> _openLifecycleEditor(BuildContext context, OrderEntry order) {
@@ -807,6 +905,725 @@ class _SummaryCard extends StatelessWidget {
   }
 }
 
+enum _OrdersView { priority, board, timeline, table }
+
+class _OrdersViewSwitcher extends StatelessWidget {
+  const _OrdersViewSwitcher({
+    required this.selectedView,
+    required this.onViewChanged,
+  });
+
+  final _OrdersView selectedView;
+  final ValueChanged<_OrdersView> onViewChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SegmentedButton<_OrdersView>(
+      showSelectedIcon: false,
+      segments: const <ButtonSegment<_OrdersView>>[
+        ButtonSegment<_OrdersView>(
+          value: _OrdersView.priority,
+          label: Text('Priority'),
+          icon: Icon(Icons.priority_high_rounded, size: 16),
+        ),
+        ButtonSegment<_OrdersView>(
+          value: _OrdersView.board,
+          label: Text('Board'),
+          icon: Icon(Icons.view_kanban_outlined, size: 16),
+        ),
+        ButtonSegment<_OrdersView>(
+          value: _OrdersView.timeline,
+          label: Text('Timeline'),
+          icon: Icon(Icons.schedule_outlined, size: 16),
+        ),
+        ButtonSegment<_OrdersView>(
+          value: _OrdersView.table,
+          label: Text('Table'),
+          icon: Icon(Icons.table_rows_outlined, size: 16),
+        ),
+      ],
+      selected: <_OrdersView>{selectedView},
+      onSelectionChanged: (selected) {
+        if (selected.isNotEmpty) {
+          onViewChanged(selected.first);
+        }
+      },
+    );
+  }
+}
+
+class _OrdersViewContent extends StatelessWidget {
+  const _OrdersViewContent({
+    required this.activeView,
+    required this.orders,
+    required this.selectedOrderIds,
+    required this.onToggleSelection,
+    required this.onRowTap,
+    required this.onBoardMove,
+    required this.timelineStatusFilter,
+    required this.onTimelineStatusFilterChanged,
+  });
+
+  final _OrdersView activeView;
+  final List<OrderEntry> orders;
+  final Set<int> selectedOrderIds;
+  final void Function(int orderId, bool selected) onToggleSelection;
+  final ValueChanged<OrderEntry> onRowTap;
+  final Future<void> Function(OrderEntry order, OrderStatus toStatus)
+  onBoardMove;
+  final OrderStatus? timelineStatusFilter;
+  final ValueChanged<OrderStatus?> onTimelineStatusFilterChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return switch (activeView) {
+      _OrdersView.table => _OrdersTableCard(
+        orders: orders,
+        selectedOrderIds: selectedOrderIds,
+        onToggleSelection: onToggleSelection,
+        onRowTap: onRowTap,
+      ),
+      _OrdersView.priority => _OrdersPriorityView(
+        orders: orders,
+        onTapOrder: onRowTap,
+      ),
+      _OrdersView.timeline => _OrdersTimelineView(
+        orders: orders,
+        onTapOrder: onRowTap,
+        activeStatus: timelineStatusFilter,
+        onStatusSelected: onTimelineStatusFilterChanged,
+      ),
+      _OrdersView.board => _OrdersBoardView(
+        orders: orders,
+        onTapOrder: onRowTap,
+        onMoveOrder: onBoardMove,
+      ),
+    };
+  }
+}
+
+class _OrdersPriorityView extends StatelessWidget {
+  const _OrdersPriorityView({required this.orders, required this.onTapOrder});
+
+  final List<OrderEntry> orders;
+  final ValueChanged<OrderEntry> onTapOrder;
+
+  @override
+  Widget build(BuildContext context) {
+    if (orders.isEmpty) {
+      return const AppEmptyState(
+        title: 'No orders found',
+        message: 'No orders match the current filters.',
+        icon: Icons.list_alt_rounded,
+      );
+    }
+    final sorted = List<OrderEntry>.from(orders)
+      ..sort((a, b) => _priorityScore(b).compareTo(_priorityScore(a)));
+    return ListView.separated(
+      itemCount: sorted.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final order = sorted[index];
+        return _OrderOperationalCard(
+          order: order,
+          subtitle:
+              '${order.clientName} • ${order.itemName} • due ${_formatDate(order.endDate)}',
+          trailing: Text(
+            'Score ${_priorityScore(order)}',
+            style: const TextStyle(
+              color: Color(0xFF5F6780),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          onTap: () => onTapOrder(order),
+        );
+      },
+    );
+  }
+}
+
+class _OrdersTimelineView extends StatelessWidget {
+  const _OrdersTimelineView({
+    required this.orders,
+    required this.onTapOrder,
+    required this.activeStatus,
+    required this.onStatusSelected,
+  });
+
+  final List<OrderEntry> orders;
+  final ValueChanged<OrderEntry> onTapOrder;
+  final OrderStatus? activeStatus;
+  final ValueChanged<OrderStatus?> onStatusSelected;
+
+  static const List<OrderStatus> _timelineStatuses = <OrderStatus>[
+    OrderStatus.draft,
+    OrderStatus.confirmed,
+    OrderStatus.allocated,
+    OrderStatus.inProduction,
+    OrderStatus.completed,
+    OrderStatus.dispatched,
+    OrderStatus.cancelled,
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    if (orders.isEmpty) {
+      return const AppEmptyState(
+        title: 'No timeline entries',
+        message: 'No orders available for schedule view.',
+        icon: Icons.schedule_outlined,
+      );
+    }
+    final filteredOrders = activeStatus == null
+        ? orders
+        : orders.where((order) => order.status == activeStatus).toList(
+            growable: false,
+          );
+    final buckets = _buildTimelineBuckets(filteredOrders);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              _TimelineStatusChip(
+                label: 'All',
+                selected: activeStatus == null,
+                onTap: () => onStatusSelected(null),
+              ),
+              const SizedBox(width: 8),
+              ..._timelineStatuses
+                  .map(
+                    (status) => Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: _TimelineStatusChip(
+                        label: status.label,
+                        selected: activeStatus == status,
+                        onTap: () => onStatusSelected(status),
+                      ),
+                    ),
+                  ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: buckets.isEmpty
+              ? const AppEmptyState(
+                  title: 'No timeline entries',
+                  message: 'No orders found for this status filter.',
+                  icon: Icons.schedule_outlined,
+                )
+              : ListView.separated(
+                  itemCount: buckets.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 12),
+                  itemBuilder: (context, index) {
+                    final bucket = buckets[index];
+                    return Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFBFCFF),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFE6E9F2)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${bucket.label} (${bucket.orders.length})',
+                            style: const TextStyle(
+                              color: Color(0xFF323A4E),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          ...bucket.orders.map(
+                            (order) => Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: _OrderOperationalCard(
+                                order: order,
+                                subtitle:
+                                    '${order.clientName} • ${order.itemName} • ${order.status.label}',
+                                trailing: Text(
+                                  _formatDate(order.endDate),
+                                  style: const TextStyle(
+                                    color: Color(0xFF5F6780),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                onTap: () => onTapOrder(order),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TimelineStatusChip extends StatelessWidget {
+  const _TimelineStatusChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFEEF2FF) : Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected
+                ? const Color(0xFF6C63FF)
+                : const Color(0xFFD5DAE5),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? const Color(0xFF4338CA) : const Color(0xFF4B5563),
+            fontWeight: FontWeight.w700,
+            fontSize: 12,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OrdersBoardView extends StatelessWidget {
+  const _OrdersBoardView({
+    required this.orders,
+    required this.onTapOrder,
+    required this.onMoveOrder,
+  });
+
+  final List<OrderEntry> orders;
+  final ValueChanged<OrderEntry> onTapOrder;
+  final Future<void> Function(OrderEntry order, OrderStatus toStatus)
+  onMoveOrder;
+
+  static const List<OrderStatus> _boardStatuses = <OrderStatus>[
+    OrderStatus.draft,
+    OrderStatus.confirmed,
+    OrderStatus.allocated,
+    OrderStatus.inProduction,
+    OrderStatus.completed,
+    OrderStatus.dispatched,
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    if (orders.isEmpty) {
+      return const AppEmptyState(
+        title: 'No orders found',
+        message: 'No orders match the current filters.',
+        icon: Icons.view_kanban_outlined,
+      );
+    }
+    final grouped = <OrderStatus, List<OrderEntry>>{
+      for (final status in _boardStatuses) status: <OrderEntry>[],
+    };
+    for (final order in orders) {
+      if (grouped.containsKey(order.status)) {
+        grouped[order.status]!.add(order);
+      }
+    }
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: _boardStatuses
+            .map((status) {
+              final entries = grouped[status] ?? const <OrderEntry>[];
+              return Container(
+                width: 280,
+                margin: const EdgeInsets.only(right: 10),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFBFCFF),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFE6E9F2)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            status.label,
+                            style: const TextStyle(
+                              color: Color(0xFF323A4E),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        _MetricBadge(value: '${entries.length}'),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    DragTarget<OrderEntry>(
+                      onWillAcceptWithDetails: (details) =>
+                          _actionForBoardMove(
+                            from: details.data.status,
+                            to: status,
+                          ) !=
+                          null,
+                      onAcceptWithDetails: (details) {
+                        onMoveOrder(details.data, status);
+                      },
+                      builder: (context, candidateData, rejectedData) {
+                        final isHovering = candidateData.isNotEmpty;
+                        return AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          constraints: const BoxConstraints(minHeight: 280),
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: isHovering
+                                ? const Color(0xFFF3EEFF)
+                                : const Color(0xFFF9FAFE),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isHovering
+                                  ? const Color(0xFF7D64FF)
+                                  : const Color(0xFFE4E7F0),
+                            ),
+                          ),
+                          child: entries.isEmpty
+                              ? const SizedBox(
+                                  height: 52,
+                                  child: Center(
+                                    child: Text(
+                                      'Drop valid orders here',
+                                      style: TextStyle(
+                                        color: Color(0xFF9097A8),
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : Column(
+                                  children: entries
+                                      .map(
+                                        (order) => Padding(
+                                          padding: const EdgeInsets.only(
+                                            bottom: 8,
+                                          ),
+                                          child: LongPressDraggable<OrderEntry>(
+                                            data: order,
+                                            feedback: Material(
+                                              color: Colors.transparent,
+                                              child: SizedBox(
+                                                width: 240,
+                                                child: _OrderOperationalCard(
+                                                  order: order,
+                                                  subtitle:
+                                                      '${order.clientName} • ${order.quantity} pcs',
+                                                  trailing: const Icon(
+                                                    Icons
+                                                        .drag_indicator_rounded,
+                                                    size: 16,
+                                                    color: Color(0xFF6D7486),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                            child: _OrderOperationalCard(
+                                              order: order,
+                                              subtitle:
+                                                  '${order.clientName} • ${order.quantity} pcs • due ${_formatDate(order.endDate)}',
+                                              trailing: _BoardCardActions(
+                                                order: order,
+                                                onTapOrder: () =>
+                                                    onTapOrder(order),
+                                                onMoveNext: () {
+                                                  final nextAction =
+                                                      _defaultActionForStatus(
+                                                        order.status,
+                                                      );
+                                                  final nextStatus =
+                                                      _targetStatusForAction(
+                                                        nextAction,
+                                                      );
+                                                  if (nextStatus != null) {
+                                                    onMoveOrder(
+                                                      order,
+                                                      nextStatus,
+                                                    );
+                                                  }
+                                                },
+                                              ),
+                                              onTap: () => onTapOrder(order),
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                      .toList(growable: false),
+                                ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              );
+            })
+            .toList(growable: false),
+      ),
+    );
+  }
+}
+
+class _BoardCardActions extends StatelessWidget {
+  const _BoardCardActions({
+    required this.order,
+    required this.onTapOrder,
+    required this.onMoveNext,
+  });
+
+  final OrderEntry order;
+  final VoidCallback onTapOrder;
+  final VoidCallback onMoveNext;
+
+  @override
+  Widget build(BuildContext context) {
+    final action = _defaultActionForStatus(order.status);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          onPressed: onTapOrder,
+          icon: const Icon(Icons.open_in_new_rounded, size: 16),
+          visualDensity: VisualDensity.compact,
+          tooltip: 'Open details',
+        ),
+        if (action != null)
+          TextButton(onPressed: onMoveNext, child: Text(_actionLabel(action))),
+      ],
+    );
+  }
+}
+
+class _OrderOperationalCard extends StatelessWidget {
+  const _OrderOperationalCard({
+    required this.order,
+    required this.subtitle,
+    required this.trailing,
+    this.onTap,
+  });
+
+  final OrderEntry order;
+  final String subtitle;
+  final Widget trailing;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0xFFE3E6EF)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    order.orderNo,
+                    style: const TextStyle(
+                      color: Color(0xFF2F3241),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF656C7D),
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      _PriorityBadge(priority: order.priority),
+                      if (order.hasMaterialShortage)
+                        const _FlagBadge(
+                          label: 'Shortage',
+                          color: Color(0xFFB42318),
+                          bg: Color(0xFFFFF4F2),
+                          border: Color(0xFFFFD2CC),
+                        ),
+                      if (order.procurementPending)
+                        const _FlagBadge(
+                          label: 'Procurement',
+                          color: Color(0xFF6941C6),
+                          bg: Color(0xFFF5F3FF),
+                          border: Color(0xFFE3D9FF),
+                        ),
+                      if (_isDelayed(order))
+                        const _FlagBadge(
+                          label: 'Delayed',
+                          color: Color(0xFFB42318),
+                          bg: Color(0xFFFFF4F2),
+                          border: Color(0xFFFFD2CC),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            trailing,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PriorityBadge extends StatelessWidget {
+  const _PriorityBadge({required this.priority});
+
+  final OrderPriority priority;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = switch (priority) {
+      OrderPriority.low => (
+        bg: const Color(0xFFF2F4F7),
+        border: const Color(0xFFE4E7EC),
+        text: const Color(0xFF475467),
+      ),
+      OrderPriority.normal => (
+        bg: const Color(0xFFEFF8FF),
+        border: const Color(0xFFB2DDFF),
+        text: const Color(0xFF175CD3),
+      ),
+      OrderPriority.high => (
+        bg: const Color(0xFFFFF6ED),
+        border: const Color(0xFFFDDCAB),
+        text: const Color(0xFFB54708),
+      ),
+      OrderPriority.urgent => (
+        bg: const Color(0xFFFEF3F2),
+        border: const Color(0xFFFDA29B),
+        text: const Color(0xFFB42318),
+      ),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: scheme.bg,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: scheme.border),
+      ),
+      child: Text(
+        priority.label,
+        style: TextStyle(
+          color: scheme.text,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _FlagBadge extends StatelessWidget {
+  const _FlagBadge({
+    required this.label,
+    required this.color,
+    required this.bg,
+    required this.border,
+  });
+
+  final String label;
+  final Color color;
+  final Color bg;
+  final Color border;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: border),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _MetricBadge extends StatelessWidget {
+  const _MetricBadge({required this.value});
+
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF2F4F8),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        value,
+        style: const TextStyle(
+          color: Color(0xFF475467),
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
 class _OrdersTableCard extends StatelessWidget {
   const _OrdersTableCard({
     required this.orders,
@@ -1235,6 +2052,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
   final Map<String, int> _selectionState = <String, int>{};
   DateTime? _startDate;
   DateTime? _endDate;
+  OrderPriority _selectedPriority = OrderPriority.normal;
   late List<_CompletionShortcutPreset> _completionShortcuts;
 
   String? get _clientCodeError {
@@ -1490,6 +2308,34 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                             SizedBox(
                               width: fieldWidth,
                               child: _OrderEditorField(
+                                label: 'Priority',
+                                child: DropdownButtonFormField<OrderPriority>(
+                                  key: ValueKey<OrderPriority>(_selectedPriority),
+                                  initialValue: _selectedPriority,
+                                  decoration: _inputDecoration(),
+                                  items: OrderPriority.values
+                                      .map(
+                                        (priority) =>
+                                            DropdownMenuItem<OrderPriority>(
+                                              value: priority,
+                                              child: Text(priority.label),
+                                            ),
+                                      )
+                                      .toList(growable: false),
+                                  onChanged: (value) {
+                                    if (value == null) {
+                                      return;
+                                    }
+                                    setState(() {
+                                      _selectedPriority = value;
+                                    });
+                                  },
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: fieldWidth,
+                              child: _OrderEditorField(
                                 label: 'Status',
                                 child: TextFormField(
                                   initialValue: OrderStatus.draft.label,
@@ -1657,6 +2503,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
         variationPathNodeIds: _selectedPathNodeIds(selectedLeaf),
         quantity: int.parse(_quantityController.text.trim()),
         status: OrderStatus.draft,
+        priority: _selectedPriority,
         startDate: _startDate,
         endDate: _endDate,
       ),
@@ -2267,7 +3114,9 @@ class _OrderLifecycleEditorSheetState
     if (!mounted) {
       return;
     }
-    final result = await this.context.read<OrdersProvider>().transitionOrderByAction(
+    final result = await this.context
+        .read<OrdersProvider>()
+        .transitionOrderByAction(
           orderId: _currentOrder.id,
           action: action,
           reason: reason,
@@ -2283,8 +3132,7 @@ class _OrderLifecycleEditorSheetState
       );
       setState(() {
         _currentOrder = result;
-        _transitionOptionsFuture = this
-            .context
+        _transitionOptionsFuture = this.context
             .read<OrdersProvider>()
             .getOrderTransitionOptions(_currentOrder.id);
       });
@@ -2371,41 +3219,38 @@ class _OrderDetailsSheet extends StatefulWidget {
 }
 
 class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
+  late OrderEntry _order;
   late Future<List<OrderActivityEntry>> _activityFuture;
   late Future<List<OrderStatusHistoryEntry>> _historyFuture;
   late Future<OrderMaterialSnapshot?> _materialsFuture;
   late Future<List<OrderProcurementSuggestionEntry>> _procurementFuture;
+  bool _isUpdatingPriority = false;
 
   @override
   void initState() {
     super.initState();
+    _order = widget.order;
     _reloadTrails();
   }
 
   void _reloadTrails() {
     final provider = context.read<OrdersProvider>();
-    _activityFuture = provider.getOrderActivity(widget.order.id);
-    _historyFuture = provider.getOrderStatusHistory(widget.order.id);
-    _materialsFuture = provider.getOrderMaterialRequirements(widget.order.id);
-    _procurementFuture = provider.getOrderProcurementSuggestions(widget.order.id);
+    _activityFuture = provider.getOrderActivity(_order.id);
+    _historyFuture = provider.getOrderStatusHistory(_order.id);
+    _materialsFuture = provider.getOrderMaterialRequirements(_order.id);
+    _procurementFuture = provider.getOrderProcurementSuggestions(_order.id);
   }
 
   @override
   Widget build(BuildContext context) {
     final detailRows = <({String label, String value})>[
-      (label: 'Order Code', value: widget.order.orderNo),
-      (
-        label: 'Purchase order no.',
-        value: _emptyFallback(widget.order.poNumber),
-      ),
-      (label: 'Item', value: widget.order.itemName),
+      (label: 'Order Code', value: _order.orderNo),
+      (label: 'Purchase order no.', value: _emptyFallback(_order.poNumber)),
+      (label: 'Item', value: _order.itemName),
       (label: 'Purchase order item Code', value: '—'),
-      (label: 'Quantity / Unit', value: '${widget.order.quantity} Pieces'),
-      (label: 'Start Date', value: _formatDate(widget.order.startDate)),
-      (
-        label: 'Estimated completion date',
-        value: _formatDate(widget.order.endDate),
-      ),
+      (label: 'Quantity / Unit', value: '${_order.quantity} Pieces'),
+      (label: 'Start Date', value: _formatDate(_order.startDate)),
+      (label: 'Estimated completion date', value: _formatDate(_order.endDate)),
     ];
 
     return Material(
@@ -2481,7 +3326,9 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
                               children: detailRows
                                   .map(
                                     (entry) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 18),
+                                      padding: const EdgeInsets.only(
+                                        bottom: 18,
+                                      ),
                                       child: SizedBox(
                                         width: 360,
                                         child: Row(
@@ -2534,7 +3381,63 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
                                 Flexible(
                                   child: Align(
                                     alignment: Alignment.centerLeft,
-                                    child: _StatusPill(status: widget.order.status),
+                                    child: _StatusPill(status: _order.status),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: 360,
+                            child: Row(
+                              children: [
+                                const SizedBox(
+                                  width: 220,
+                                  child: Text(
+                                    'Priority',
+                                    style: TextStyle(
+                                      color: Color(0xFF888888),
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: _isUpdatingPriority
+                                        ? const SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : DropdownButtonHideUnderline(
+                                            child:
+                                                DropdownButton<OrderPriority>(
+                                                  value: _order.priority,
+                                                  items: OrderPriority.values
+                                                      .map(
+                                                        (priority) =>
+                                                            DropdownMenuItem<
+                                                              OrderPriority
+                                                            >(
+                                                              value: priority,
+                                                              child: Text(
+                                                                priority.label,
+                                                              ),
+                                                            ),
+                                                      )
+                                                      .toList(growable: false),
+                                                  onChanged: (value) {
+                                                    if (value == null) {
+                                                      return;
+                                                    }
+                                                    _updatePriority(value);
+                                                  },
+                                                ),
+                                          ),
                                   ),
                                 ),
                               ],
@@ -2545,11 +3448,16 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
                       FutureBuilder<OrderMaterialSnapshot?>(
                         future: _materialsFuture,
                         builder: (context, snapshot) {
-                          if (snapshot.connectionState == ConnectionState.waiting) {
-                            return const Center(child: CircularProgressIndicator());
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return const Center(
+                              child: CircularProgressIndicator(),
+                            );
                           }
                           final data = snapshot.data;
-                          final requirements = data?.requirements ?? const <OrderMaterialRequirementEntry>[];
+                          final requirements =
+                              data?.requirements ??
+                              const <OrderMaterialRequirementEntry>[];
                           final summary = data?.summary;
                           if (summary == null || requirements.isEmpty) {
                             return const Center(
@@ -2605,7 +3513,9 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
                                     FilledButton(
                                       onPressed: _allocateMaterials,
                                       style: FilledButton.styleFrom(
-                                        backgroundColor: const Color(0xFF6049E3),
+                                        backgroundColor: const Color(
+                                          0xFF6049E3,
+                                        ),
                                       ),
                                       child: const Text('Allocate'),
                                     ),
@@ -2631,7 +3541,9 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
                                   decoration: BoxDecoration(
                                     color: const Color(0xFFFAFAFC),
                                     borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: const Color(0xFFE7E7ED)),
+                                    border: Border.all(
+                                      color: const Color(0xFFE7E7ED),
+                                    ),
                                   ),
                                   child: ListView.separated(
                                     itemCount: requirements.length,
@@ -2659,22 +3571,48 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
                                                   Text(
                                                     requirement.materialName,
                                                     maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
                                                     style: const TextStyle(
                                                       color: Color(0xFF313131),
-                                                      fontWeight: FontWeight.w600,
+                                                      fontWeight:
+                                                          FontWeight.w600,
                                                     ),
                                                   ),
                                                   const SizedBox(height: 2),
                                                   Text(
                                                     requirement.materialBarcode,
                                                     maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
                                                     style: const TextStyle(
                                                       color: Color(0xFF8A8A8A),
                                                       fontSize: 12,
                                                     ),
                                                   ),
+                                                  if ((requirement.procurementRequestNumber ??
+                                                              '')
+                                                          .trim()
+                                                          .isNotEmpty ||
+                                                      requirement
+                                                              .procurementRequestedQty >
+                                                          0) ...[
+                                                    const SizedBox(height: 4),
+                                                    Text(
+                                                      'Req ${requirement.procurementRequestNumber ?? 'Unlinked'} • ${_procurementStateLabel(requirement.procurementRequestStatus ?? 'not_ordered')} • Rcv ${_formatQty(requirement.procurementReceivedQty)} / Pend ${_formatQty(requirement.procurementPendingQty)}',
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: const TextStyle(
+                                                        color: Color(
+                                                          0xFF7A5A28,
+                                                        ),
+                                                        fontSize: 11,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ],
                                               ),
                                             ),
@@ -2701,7 +3639,8 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
                                               value: _formatQty(
                                                 requirement.shortageQty,
                                               ),
-                                              danger: requirement.shortageQty > 0,
+                                              danger:
+                                                  requirement.shortageQty > 0,
                                             ),
                                           ],
                                         ),
@@ -2711,7 +3650,9 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
                                 ),
                               ),
                               const SizedBox(height: 10),
-                              FutureBuilder<List<OrderProcurementSuggestionEntry>>(
+                              FutureBuilder<
+                                List<OrderProcurementSuggestionEntry>
+                              >(
                                 future: _procurementFuture,
                                 builder: (context, procurementSnapshot) {
                                   if (procurementSnapshot.connectionState ==
@@ -2770,20 +3711,26 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
                                           ),
                                         ),
                                         const SizedBox(height: 6),
-                                        ...suggestions.take(3).map((suggestion) {
+                                        ...suggestions.take(3).map((
+                                          suggestion,
+                                        ) {
                                           return Padding(
-                                            padding: const EdgeInsets.only(bottom: 6),
+                                            padding: const EdgeInsets.only(
+                                              bottom: 6,
+                                            ),
                                             child: Row(
                                               children: [
                                                 Expanded(
                                                   child: Text(
                                                     '${suggestion.materialName} • ${_emptyFallback(suggestion.supplier)}',
                                                     maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
                                                     style: const TextStyle(
                                                       color: Color(0xFF5D3A00),
                                                       fontSize: 12,
-                                                      fontWeight: FontWeight.w600,
+                                                      fontWeight:
+                                                          FontWeight.w600,
                                                     ),
                                                   ),
                                                 ),
@@ -2822,7 +3769,8 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
                       FutureBuilder<List<OrderActivityEntry>>(
                         future: _activityFuture,
                         builder: (context, snapshot) {
-                          final entries = snapshot.data ?? const <OrderActivityEntry>[];
+                          final entries =
+                              snapshot.data ?? const <OrderActivityEntry>[];
                           return Column(
                             children: [
                               Align(
@@ -2834,8 +3782,12 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
                               ),
                               const SizedBox(height: 10),
                               Expanded(
-                                child: snapshot.connectionState == ConnectionState.waiting
-                                    ? const Center(child: CircularProgressIndicator())
+                                child:
+                                    snapshot.connectionState ==
+                                        ConnectionState.waiting
+                                    ? const Center(
+                                        child: CircularProgressIndicator(),
+                                      )
                                     : entries.isEmpty
                                     ? const Center(
                                         child: Text(
@@ -2856,7 +3808,8 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
                                             padding: const EdgeInsets.all(12),
                                             decoration: BoxDecoration(
                                               color: const Color(0xFFFAFAFC),
-                                              borderRadius: BorderRadius.circular(10),
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
                                               border: Border.all(
                                                 color: const Color(0xFFE7E7ED),
                                               ),
@@ -2872,7 +3825,9 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
                                                     fontWeight: FontWeight.w600,
                                                   ),
                                                 ),
-                                                if (entry.description.trim().isNotEmpty) ...[
+                                                if (entry.description
+                                                    .trim()
+                                                    .isNotEmpty) ...[
                                                   const SizedBox(height: 4),
                                                   Text(
                                                     entry.description,
@@ -2904,8 +3859,10 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
                         future: _historyFuture,
                         builder: (context, snapshot) {
                           final entries =
-                              snapshot.data ?? const <OrderStatusHistoryEntry>[];
-                          return snapshot.connectionState == ConnectionState.waiting
+                              snapshot.data ??
+                              const <OrderStatusHistoryEntry>[];
+                          return snapshot.connectionState ==
+                                  ConnectionState.waiting
                               ? const Center(child: CircularProgressIndicator())
                               : entries.isEmpty
                               ? const Center(
@@ -2923,7 +3880,8 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
                                       const SizedBox(height: 8),
                                   itemBuilder: (context, index) {
                                     final entry = entries[index];
-                                    final fromLabel = entry.fromStatus?.label ?? '—';
+                                    final fromLabel =
+                                        entry.fromStatus?.label ?? '—';
                                     final toLabel = entry.toStatus.label;
                                     return Container(
                                       padding: const EdgeInsets.all(12),
@@ -2935,7 +3893,8 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
                                         ),
                                       ),
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           Text(
                                             '$fromLabel -> $toLabel',
@@ -2952,7 +3911,9 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
                                               fontSize: 12,
                                             ),
                                           ),
-                                          if ((entry.reason ?? '').trim().isNotEmpty) ...[
+                                          if ((entry.reason ?? '')
+                                              .trim()
+                                              .isNotEmpty) ...[
                                             const SizedBox(height: 4),
                                             Text(
                                               'Reason: ${entry.reason}',
@@ -3040,7 +4001,7 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
       return;
     }
     final result = await context.read<OrdersProvider>().addOrderNote(
-      AddOrderNoteInput(orderId: widget.order.id, note: note),
+      AddOrderNoteInput(orderId: _order.id, note: note),
     );
     if (!mounted) {
       return;
@@ -3058,9 +4019,9 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
   }
 
   Future<void> _checkAvailability() async {
-    final result = await context.read<OrdersProvider>().checkOrderMaterialAvailability(
-      widget.order.id,
-    );
+    final result = await context
+        .read<OrdersProvider>()
+        .checkOrderMaterialAvailability(_order.id);
     if (!mounted) {
       return;
     }
@@ -3073,7 +4034,7 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
 
   Future<void> _allocateMaterials() async {
     final result = await context.read<OrdersProvider>().allocateOrderMaterials(
-      widget.order.id,
+      _order.id,
     );
     if (!mounted) {
       return;
@@ -3087,7 +4048,7 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
 
   Future<void> _releaseMaterials() async {
     final result = await context.read<OrdersProvider>().releaseOrderMaterials(
-      widget.order.id,
+      _order.id,
     );
     if (!mounted) {
       return;
@@ -3101,7 +4062,7 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
 
   Future<void> _consumeMaterials() async {
     final result = await context.read<OrdersProvider>().consumeOrderMaterials(
-      widget.order.id,
+      _order.id,
     );
     if (!mounted) {
       return;
@@ -3115,11 +4076,9 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
 
   Future<void> _refreshProcurementSuggestions() async {
     final provider = context.read<OrdersProvider>();
-    await provider.checkOrderMaterialAvailability(
-      widget.order.id,
-    );
+    await provider.checkOrderMaterialAvailability(_order.id);
     final suggestions = await provider.refreshOrderProcurementSuggestions(
-      widget.order.id,
+      _order.id,
     );
     if (!mounted) {
       return;
@@ -3133,11 +4092,48 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
     setState(_reloadTrails);
   }
 
+  Future<void> _updatePriority(OrderPriority priority) async {
+    if (_isUpdatingPriority || priority == _order.priority) {
+      return;
+    }
+    setState(() {
+      _isUpdatingPriority = true;
+    });
+    final result = await context.read<OrdersProvider>().updateOrderPriority(
+      orderId: _order.id,
+      priority: priority,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isUpdatingPriority = false;
+      if (result != null) {
+        _order = result;
+      }
+      _reloadTrails();
+    });
+    if (result == null) {
+      final message =
+          context.read<OrdersProvider>().errorMessage ??
+          'Unable to update priority right now.';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Priority changed to ${priority.label}.')),
+    );
+  }
+
   void _showErrorToast() {
     final message =
         context.read<OrdersProvider>().errorMessage ??
         'Unable to update material state. Please try again.';
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   String _formatDateTime(DateTime value) {
@@ -3258,10 +4254,7 @@ class _MaterialCell extends StatelessWidget {
         children: [
           Text(
             label,
-            style: const TextStyle(
-              color: Color(0xFF8A8A8A),
-              fontSize: 11,
-            ),
+            style: const TextStyle(color: Color(0xFF8A8A8A), fontSize: 11),
           ),
           const SizedBox(height: 2),
           Text(
@@ -3863,6 +4856,193 @@ class _OrderSelectionStep {
   final bool required;
 }
 
+class _TimelineBucket {
+  const _TimelineBucket({required this.label, required this.orders});
+
+  final String label;
+  final List<OrderEntry> orders;
+}
+
+List<_TimelineBucket> _buildTimelineBuckets(List<OrderEntry> orders) {
+  final now = DateUtils.dateOnly(DateTime.now());
+  final tomorrow = now.add(const Duration(days: 1));
+  final weekEnd = now.add(const Duration(days: 7));
+  final groups = <String, List<OrderEntry>>{
+    'Overdue': <OrderEntry>[],
+    'Today': <OrderEntry>[],
+    'Tomorrow': <OrderEntry>[],
+    'This Week': <OrderEntry>[],
+    'Later': <OrderEntry>[],
+    'No Due Date': <OrderEntry>[],
+  };
+  for (final order in orders) {
+    final due = order.endDate == null
+        ? null
+        : DateUtils.dateOnly(order.endDate!);
+    if (due == null) {
+      groups['No Due Date']!.add(order);
+    } else if (due.isBefore(now)) {
+      groups['Overdue']!.add(order);
+    } else if (due == now) {
+      groups['Today']!.add(order);
+    } else if (due == tomorrow) {
+      groups['Tomorrow']!.add(order);
+    } else if (!due.isAfter(weekEnd)) {
+      groups['This Week']!.add(order);
+    } else {
+      groups['Later']!.add(order);
+    }
+  }
+  for (final entries in groups.values) {
+    entries.sort((a, b) => _compareOrderUrgency(a, b));
+  }
+  return groups.entries
+      .where((entry) => entry.value.isNotEmpty)
+      .map((entry) => _TimelineBucket(label: entry.key, orders: entry.value))
+      .toList(growable: false);
+}
+
+String _formatDate(DateTime? value) {
+  if (value == null) {
+    return '—';
+  }
+  final day = value.day.toString().padLeft(2, '0');
+  final month = value.month.toString().padLeft(2, '0');
+  return '$day-$month-${value.year}';
+}
+
+bool _isDelayed(OrderEntry order) {
+  final due = order.endDate == null ? null : DateUtils.dateOnly(order.endDate!);
+  if (due == null) {
+    return false;
+  }
+  final today = DateUtils.dateOnly(DateTime.now());
+  if (!due.isBefore(today)) {
+    return false;
+  }
+  return order.status != OrderStatus.closed &&
+      order.status != OrderStatus.cancelled &&
+      order.status != OrderStatus.dispatched;
+}
+
+int _priorityScore(OrderEntry order) {
+  var score = 0;
+  final today = DateUtils.dateOnly(DateTime.now());
+  final due = order.endDate == null ? null : DateUtils.dateOnly(order.endDate!);
+  if (due != null && due.isBefore(today)) {
+    score += 100;
+  } else if (due != null && due == today) {
+    score += 80;
+  } else if (due != null && !due.isAfter(today.add(const Duration(days: 7)))) {
+    score += 45;
+  }
+  score += switch (order.priority) {
+    OrderPriority.low => 0,
+    OrderPriority.normal => 20,
+    OrderPriority.high => 50,
+    OrderPriority.urgent => 70,
+  };
+  if (order.hasMaterialShortage) {
+    score += 30;
+  }
+  if (order.procurementPending) {
+    score += 15;
+  }
+  score += switch (order.status) {
+    OrderStatus.draft => 0,
+    OrderStatus.confirmed => 30,
+    OrderStatus.allocated => 35,
+    OrderStatus.inProduction => 25,
+    OrderStatus.completed => 10,
+    OrderStatus.onHold => 40,
+    OrderStatus.dispatched => 0,
+    OrderStatus.closed => 0,
+    OrderStatus.cancelled => 0,
+  };
+  return score;
+}
+
+int _compareOrderUrgency(OrderEntry a, OrderEntry b) {
+  final scoreDiff = _priorityScore(b).compareTo(_priorityScore(a));
+  if (scoreDiff != 0) {
+    return scoreDiff;
+  }
+  final aDue = a.endDate;
+  final bDue = b.endDate;
+  if (aDue == null && bDue == null) {
+    return b.createdAt.compareTo(a.createdAt);
+  }
+  if (aDue == null) {
+    return 1;
+  }
+  if (bDue == null) {
+    return -1;
+  }
+  final dueDiff = aDue.compareTo(bDue);
+  if (dueDiff != 0) {
+    return dueDiff;
+  }
+  return b.createdAt.compareTo(a.createdAt);
+}
+
+String? _defaultActionForStatus(OrderStatus status) {
+  return switch (status) {
+    OrderStatus.draft => 'confirm',
+    OrderStatus.confirmed => 'allocate',
+    OrderStatus.allocated => 'start-production',
+    OrderStatus.inProduction => 'complete',
+    OrderStatus.completed => 'dispatch',
+    OrderStatus.dispatched => 'close',
+    OrderStatus.closed => null,
+    OrderStatus.onHold => 'resume',
+    OrderStatus.cancelled => null,
+  };
+}
+
+String _actionLabel(String action) {
+  return switch (action) {
+    'confirm' => 'Confirm',
+    'allocate' => 'Allocate',
+    'start-production' => 'Start',
+    'complete' => 'Complete',
+    'dispatch' => 'Dispatch',
+    'close' => 'Close',
+    'resume' => 'Resume',
+    _ => 'Move',
+  };
+}
+
+OrderStatus? _targetStatusForAction(String? action) {
+  return switch (action) {
+    'confirm' => OrderStatus.confirmed,
+    'allocate' => OrderStatus.allocated,
+    'start-production' => OrderStatus.inProduction,
+    'complete' => OrderStatus.completed,
+    'dispatch' => OrderStatus.dispatched,
+    'close' => OrderStatus.closed,
+    'resume' => OrderStatus.confirmed,
+    _ => null,
+  };
+}
+
+String? _actionForBoardMove({
+  required OrderStatus from,
+  required OrderStatus to,
+}) {
+  if (from == to) {
+    return null;
+  }
+  return switch ((from, to)) {
+    (OrderStatus.draft, OrderStatus.confirmed) => 'confirm',
+    (OrderStatus.confirmed, OrderStatus.allocated) => 'allocate',
+    (OrderStatus.allocated, OrderStatus.inProduction) => 'start-production',
+    (OrderStatus.inProduction, OrderStatus.completed) => 'complete',
+    (OrderStatus.completed, OrderStatus.dispatched) => 'dispatch',
+    (OrderStatus.dispatched, OrderStatus.closed) => 'close',
+    _ => null,
+  };
+}
+
 class _OrderSummary {
   const _OrderSummary({
     required this.total,
@@ -3936,6 +5116,17 @@ extension on OrderStatus {
       OrderStatus.closed => 'Closed',
       OrderStatus.onHold => 'On Hold',
       OrderStatus.cancelled => 'Cancelled',
+    };
+  }
+}
+
+extension on OrderPriority {
+  String get label {
+    return switch (this) {
+      OrderPriority.low => 'Low',
+      OrderPriority.normal => 'Normal',
+      OrderPriority.high => 'High',
+      OrderPriority.urgent => 'Urgent',
     };
   }
 }

@@ -12,6 +12,7 @@ import '../../features/inventory/presentation/screens/material_scan_screen.dart'
 import '../../features/items/presentation/screens/items_screen.dart';
 import '../../features/clients/presentation/screens/clients_screen.dart';
 import '../../features/orders/presentation/screens/orders_screen.dart';
+import '../../features/procurement/presentation/screens/procurement_screen.dart';
 import '../../features/pm/presentation/screens/pm_screen.dart';
 import '../../features/production_pipelines/presentation/screens/production_pipelines_screen.dart';
 import '../../features/units/presentation/screens/units_screen.dart';
@@ -168,6 +169,7 @@ class _ShellContentSwitcher extends StatelessWidget {
               'production_pipelines' => const ProductionPipelinesScreen(),
               'pm' => const PMScreen(),
               'orders' => const OrdersScreen(),
+              'procurement' => const ProcurementScreen(),
               'configurator' => const _ModulePlaceholder(
                 title: 'Configurator',
                 description:

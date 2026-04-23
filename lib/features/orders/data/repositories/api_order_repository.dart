@@ -83,7 +83,11 @@ class ApiOrderRepository implements OrderRepository {
           variationPathNodeIds: List<int>.from(input.variationPathNodeIds),
           quantity: existing.quantity + input.quantity,
           status: existing.status,
+          priority: existing.priority,
           createdAt: existing.createdAt,
+          hasMaterialShortage: existing.hasMaterialShortage,
+          procurementPending: existing.procurementPending,
+          materialReadiness: existing.materialReadiness,
           startDate: existing.startDate,
           endDate: existing.endDate,
           previousStatus: existing.previousStatus,
@@ -115,7 +119,11 @@ class ApiOrderRepository implements OrderRepository {
         variationPathNodeIds: List<int>.from(input.variationPathNodeIds),
         quantity: input.quantity,
         status: input.status,
+        priority: input.priority,
         createdAt: DateTime.now(),
+        hasMaterialShortage: false,
+        procurementPending: false,
+        materialReadiness: 'none',
         startDate: input.startDate,
         endDate: input.endDate,
         previousStatus: null,
@@ -208,7 +216,11 @@ class ApiOrderRepository implements OrderRepository {
         variationPathNodeIds: List<int>.from(current.variationPathNodeIds),
         quantity: current.quantity,
         status: input.toStatus,
+        priority: current.priority,
         createdAt: current.createdAt,
+        hasMaterialShortage: current.hasMaterialShortage,
+        procurementPending: current.procurementPending,
+        materialReadiness: current.materialReadiness,
         startDate: input.startDate,
         endDate: input.endDate,
         previousStatus: input.toStatus == OrderStatus.onHold
@@ -336,9 +348,76 @@ class ApiOrderRepository implements OrderRepository {
   }
 
   @override
+  Future<OrderEntry> updateOrderPriority({
+    required int orderId,
+    required OrderPriority priority,
+  }) async {
+    if (useMockResponses) {
+      final index = _mockOrders.indexWhere((order) => order.id == orderId);
+      if (index == -1) {
+        throw const OrderApiException('Order not found.');
+      }
+      final current = _mockOrders[index];
+      final updated = OrderEntry(
+        id: current.id,
+        orderNo: current.orderNo,
+        clientId: current.clientId,
+        clientName: current.clientName,
+        poNumber: current.poNumber,
+        clientCode: current.clientCode,
+        itemId: current.itemId,
+        itemName: current.itemName,
+        variationLeafNodeId: current.variationLeafNodeId,
+        variationPathLabel: current.variationPathLabel,
+        variationPathNodeIds: List<int>.from(current.variationPathNodeIds),
+        quantity: current.quantity,
+        status: current.status,
+        priority: priority,
+        createdAt: current.createdAt,
+        hasMaterialShortage: current.hasMaterialShortage,
+        procurementPending: current.procurementPending,
+        materialReadiness: current.materialReadiness,
+        startDate: current.startDate,
+        endDate: current.endDate,
+        previousStatus: current.previousStatus,
+        holdReason: current.holdReason,
+        cancelReason: current.cancelReason,
+        confirmedAt: current.confirmedAt,
+        allocatedAt: current.allocatedAt,
+        productionStartedAt: current.productionStartedAt,
+        completedAt: current.completedAt,
+        dispatchedAt: current.dispatchedAt,
+        closedAt: current.closedAt,
+        updatedBy: current.updatedBy,
+      );
+      _mockOrders[index] = updated;
+      return updated;
+    }
+    final uri = Uri.parse('$baseUrl/api/orders/$orderId/priority');
+    final response = await _client.patch(
+      uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode(<String, dynamic>{'priority': priority.name}),
+    );
+    final payload = _decodeJsonObject(response.body);
+    final parsed = OrderResponse.fromJson(payload);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !parsed.success ||
+        parsed.order == null) {
+      throw OrderApiException(
+        parsed.error ?? 'Failed to update order priority.',
+      );
+    }
+    return parsed.order!.toDomain();
+  }
+
+  @override
   Future<List<OrderActivityEntry>> getOrderActivity(int orderId) async {
     if (useMockResponses) {
-      return List<OrderActivityEntry>.from(_mockActivities[orderId] ?? const []);
+      return List<OrderActivityEntry>.from(
+        _mockActivities[orderId] ?? const [],
+      );
     }
     final uri = Uri.parse('$baseUrl/api/orders/$orderId/activity');
     final response = await _client.get(uri);
@@ -347,13 +426,19 @@ class ApiOrderRepository implements OrderRepository {
     if (response.statusCode < 200 ||
         response.statusCode >= 300 ||
         !parsed.success) {
-      throw OrderApiException(parsed.error ?? 'Failed to fetch order activity.');
+      throw OrderApiException(
+        parsed.error ?? 'Failed to fetch order activity.',
+      );
     }
-    return parsed.events.map((event) => event.toDomain()).toList(growable: false);
+    return parsed.events
+        .map((event) => event.toDomain())
+        .toList(growable: false);
   }
 
   @override
-  Future<List<OrderStatusHistoryEntry>> getOrderStatusHistory(int orderId) async {
+  Future<List<OrderStatusHistoryEntry>> getOrderStatusHistory(
+    int orderId,
+  ) async {
     if (useMockResponses) {
       return List<OrderStatusHistoryEntry>.from(
         _mockStatusHistory[orderId] ?? const [],
@@ -376,9 +461,13 @@ class ApiOrderRepository implements OrderRepository {
   }
 
   @override
-  Future<List<OrderTransitionOption>> getOrderTransitionOptions(int orderId) async {
+  Future<List<OrderTransitionOption>> getOrderTransitionOptions(
+    int orderId,
+  ) async {
     if (useMockResponses) {
-      final order = _mockOrders.where((entry) => entry.id == orderId).firstOrNull;
+      final order = _mockOrders
+          .where((entry) => entry.id == orderId)
+          .firstOrNull;
       if (order == null) {
         return const <OrderTransitionOption>[];
       }
@@ -418,7 +507,9 @@ class ApiOrderRepository implements OrderRepository {
         source: 'ui',
         createdAt: DateTime.now(),
       );
-      _mockActivities.putIfAbsent(input.orderId, () => <OrderActivityEntry>[]).insert(0, event);
+      _mockActivities
+          .putIfAbsent(input.orderId, () => <OrderActivityEntry>[])
+          .insert(0, event);
       return event;
     }
     final uri = Uri.parse('$baseUrl/api/orders/${input.orderId}/notes');
@@ -440,9 +531,13 @@ class ApiOrderRepository implements OrderRepository {
   }
 
   @override
-  Future<OrderMaterialSnapshot> getOrderMaterialRequirements(int orderId) async {
+  Future<OrderMaterialSnapshot> getOrderMaterialRequirements(
+    int orderId,
+  ) async {
     if (useMockResponses) {
-      final order = _mockOrders.where((entry) => entry.id == orderId).firstOrNull;
+      final order = _mockOrders
+          .where((entry) => entry.id == orderId)
+          .firstOrNull;
       if (order == null) {
         throw const OrderApiException('Order not found.');
       }
@@ -455,7 +550,9 @@ class ApiOrderRepository implements OrderRepository {
     final response = await _client.get(uri);
     final payload = _decodeJsonObject(response.body);
     final parsed = OrderMaterialSnapshotResponse.fromJson(payload);
-    if (response.statusCode < 200 || response.statusCode >= 300 || !parsed.success) {
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !parsed.success) {
       throw OrderApiException(
         parsed.error ?? 'Failed to fetch order material requirements.',
       );
@@ -464,7 +561,9 @@ class ApiOrderRepository implements OrderRepository {
   }
 
   @override
-  Future<OrderMaterialSnapshot> checkOrderMaterialAvailability(int orderId) async {
+  Future<OrderMaterialSnapshot> checkOrderMaterialAvailability(
+    int orderId,
+  ) async {
     if (useMockResponses) {
       return getOrderMaterialRequirements(orderId);
     }
@@ -475,8 +574,12 @@ class ApiOrderRepository implements OrderRepository {
     );
     final payload = _decodeJsonObject(response.body);
     final parsed = OrderMaterialSnapshotResponse.fromJson(payload);
-    if (response.statusCode < 200 || response.statusCode >= 300 || !parsed.success) {
-      throw OrderApiException(parsed.error ?? 'Failed to check material availability.');
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !parsed.success) {
+      throw OrderApiException(
+        parsed.error ?? 'Failed to check material availability.',
+      );
     }
     return parsed.toDomain();
   }
@@ -501,6 +604,11 @@ class ApiOrderRepository implements OrderRepository {
               unitId: entry.unitId,
               unitSymbol: entry.unitSymbol,
               status: 'allocated',
+              procurementRequestNumber: entry.procurementRequestNumber,
+              procurementRequestStatus: entry.procurementRequestStatus,
+              procurementRequestedQty: entry.procurementRequestedQty,
+              procurementReceivedQty: entry.procurementReceivedQty,
+              procurementPendingQty: entry.procurementPendingQty,
               updatedAt: DateTime.now(),
             ),
           )
@@ -520,7 +628,9 @@ class ApiOrderRepository implements OrderRepository {
     );
     final payload = _decodeJsonObject(response.body);
     final parsed = OrderMaterialSnapshotResponse.fromJson(payload);
-    if (response.statusCode < 200 || response.statusCode >= 300 || !parsed.success) {
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !parsed.success) {
       throw OrderApiException(parsed.error ?? 'Failed to allocate materials.');
     }
     return parsed.toDomain();
@@ -546,6 +656,11 @@ class ApiOrderRepository implements OrderRepository {
               unitId: entry.unitId,
               unitSymbol: entry.unitSymbol,
               status: 'short',
+              procurementRequestNumber: entry.procurementRequestNumber,
+              procurementRequestStatus: entry.procurementRequestStatus,
+              procurementRequestedQty: entry.procurementRequestedQty,
+              procurementReceivedQty: entry.procurementReceivedQty,
+              procurementPendingQty: entry.procurementPendingQty,
               updatedAt: DateTime.now(),
             ),
           )
@@ -565,7 +680,9 @@ class ApiOrderRepository implements OrderRepository {
     );
     final payload = _decodeJsonObject(response.body);
     final parsed = OrderMaterialSnapshotResponse.fromJson(payload);
-    if (response.statusCode < 200 || response.statusCode >= 300 || !parsed.success) {
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !parsed.success) {
       throw OrderApiException(parsed.error ?? 'Failed to release materials.');
     }
     return parsed.toDomain();
@@ -594,6 +711,11 @@ class ApiOrderRepository implements OrderRepository {
               unitId: entry.unitId,
               unitSymbol: entry.unitSymbol,
               status: 'consumed',
+              procurementRequestNumber: entry.procurementRequestNumber,
+              procurementRequestStatus: entry.procurementRequestStatus,
+              procurementRequestedQty: entry.procurementRequestedQty,
+              procurementReceivedQty: entry.procurementReceivedQty,
+              procurementPendingQty: entry.procurementPendingQty,
               updatedAt: DateTime.now(),
             ),
           )
@@ -613,7 +735,9 @@ class ApiOrderRepository implements OrderRepository {
     );
     final payload = _decodeJsonObject(response.body);
     final parsed = OrderMaterialSnapshotResponse.fromJson(payload);
-    if (response.statusCode < 200 || response.statusCode >= 300 || !parsed.success) {
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !parsed.success) {
       throw OrderApiException(parsed.error ?? 'Failed to consume materials.');
     }
     return parsed.toDomain();
@@ -625,17 +749,23 @@ class ApiOrderRepository implements OrderRepository {
   ) async {
     if (useMockResponses) {
       final snapshot = await getOrderMaterialRequirements(orderId);
-      final order = _mockOrders.where((entry) => entry.id == orderId).firstOrNull;
+      final order = _mockOrders
+          .where((entry) => entry.id == orderId)
+          .firstOrNull;
       if (order == null) {
         return const <OrderProcurementSuggestionEntry>[];
       }
       return _buildMockProcurementSuggestions(order, snapshot);
     }
-    final uri = Uri.parse('$baseUrl/api/orders/$orderId/procurement-suggestions');
+    final uri = Uri.parse(
+      '$baseUrl/api/orders/$orderId/procurement-suggestions',
+    );
     final response = await _client.get(uri);
     final payload = _decodeJsonObject(response.body);
     final parsed = OrderProcurementSuggestionsResponse.fromJson(payload);
-    if (response.statusCode < 200 || response.statusCode >= 300 || !parsed.success) {
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !parsed.success) {
       throw OrderApiException(
         parsed.error ?? 'Failed to fetch procurement suggestions.',
       );
@@ -646,7 +776,8 @@ class ApiOrderRepository implements OrderRepository {
   }
 
   @override
-  Future<List<OrderProcurementSuggestionEntry>> getAllProcurementSuggestions() async {
+  Future<List<OrderProcurementSuggestionEntry>>
+  getAllProcurementSuggestions() async {
     if (useMockResponses) {
       final suggestions = <OrderProcurementSuggestionEntry>[];
       for (final order in _mockOrders) {
@@ -659,7 +790,9 @@ class ApiOrderRepository implements OrderRepository {
     final response = await _client.get(uri);
     final payload = _decodeJsonObject(response.body);
     final parsed = OrderProcurementSuggestionsResponse.fromJson(payload);
-    if (response.statusCode < 200 || response.statusCode >= 300 || !parsed.success) {
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !parsed.success) {
       throw OrderApiException(
         parsed.error ?? 'Failed to fetch procurement suggestions.',
       );
@@ -670,9 +803,8 @@ class ApiOrderRepository implements OrderRepository {
   }
 
   @override
-  Future<List<OrderProcurementSuggestionEntry>> refreshOrderProcurementSuggestions(
-    int orderId,
-  ) async {
+  Future<List<OrderProcurementSuggestionEntry>>
+  refreshOrderProcurementSuggestions(int orderId) async {
     if (useMockResponses) {
       return getOrderProcurementSuggestions(orderId);
     }
@@ -685,7 +817,9 @@ class ApiOrderRepository implements OrderRepository {
     );
     final payload = _decodeJsonObject(response.body);
     final parsed = OrderProcurementSuggestionsResponse.fromJson(payload);
-    if (response.statusCode < 200 || response.statusCode >= 300 || !parsed.success) {
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !parsed.success) {
       throw OrderApiException(
         parsed.error ?? 'Failed to refresh procurement suggestions.',
       );
@@ -796,7 +930,9 @@ class ApiOrderRepository implements OrderRepository {
     return null;
   }
 
-  static List<OrderTransitionOption> _mockTransitionOptions(OrderStatus status) {
+  static List<OrderTransitionOption> _mockTransitionOptions(
+    OrderStatus status,
+  ) {
     if (status == OrderStatus.draft) {
       return const <OrderTransitionOption>[
         OrderTransitionOption(
@@ -925,6 +1061,11 @@ class ApiOrderRepository implements OrderRepository {
       unitId: null,
       unitSymbol: 'Kg',
       status: 'short',
+      procurementRequestNumber: null,
+      procurementRequestStatus: null,
+      procurementRequestedQty: required,
+      procurementReceivedQty: 0,
+      procurementPendingQty: required,
       updatedAt: DateTime.now(),
     );
     final requirements = <OrderMaterialRequirementEntry>[requirement];

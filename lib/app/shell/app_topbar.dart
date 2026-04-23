@@ -141,6 +141,8 @@ ShellTopStripConfig resolveTopStrip(String selectedKey, BuildContext context) {
       return const ShellTopStripConfig(title: 'Material Scan');
     case 'production_pipelines':
       return const ShellTopStripConfig(title: 'Production Pipelines');
+    case 'procurement':
+      return const ShellTopStripConfig(title: 'Procurement');
     case 'configurator':
       return const ShellTopStripConfig(title: 'Configurator');
     case 'configurator_vendors':

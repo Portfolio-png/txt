@@ -11,6 +11,9 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  static const _testEmail = 'super@paper.local';
+  static const _testPassword = 'Paper@12345';
+
   final _emailController = TextEditingController(text: 'super@paper.local');
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
@@ -31,6 +34,13 @@ class _LoginScreenState extends State<LoginScreen> {
       email: _emailController.text,
       password: _passwordController.text,
     );
+  }
+
+  Future<void> _quickTestLogin() async {
+    final auth = context.read<AuthProvider>();
+    _emailController.text = _testEmail;
+    _passwordController.text = _testPassword;
+    await auth.login(email: _testEmail, password: _testPassword);
   }
 
   @override
@@ -105,6 +115,37 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Text('Sign in'),
+                  ),
+                  const SizedBox(height: 12),
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: auth.isLoading ? null : _quickTestLogin,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF5F7FB),
+                          border: Border.all(color: const Color(0xFFD7DEE8)),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.flash_on_outlined, size: 18),
+                            SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Quick Test Login',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 12),
                   const Text(
