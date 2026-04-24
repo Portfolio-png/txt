@@ -120,6 +120,17 @@ class _InventoryScreenState extends State<InventoryScreen> {
   MaterialRecord? _groupEditorInitialRecord;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      context.read<InventoryProvider>().loadInventoryHealth();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final isRequestDelete = context.select<AuthProvider, bool>(
       (auth) =>
@@ -1688,6 +1699,7 @@ class _InventoryWorkspaceHeader extends StatelessWidget {
         return Row(
           children: [
             SizedBox(width: 320, child: segmented),
+            const Spacer(),
             const SizedBox(width: 16),
             Expanded(
               child: Align(alignment: Alignment.centerRight, child: actions),
