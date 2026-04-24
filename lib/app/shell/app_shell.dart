@@ -62,12 +62,16 @@ class _AppShellState extends State<AppShell> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final isMobile = constraints.maxWidth < 900;
-          const sidebarWidth = 272.0;
+          final sidebarWidth = constraints.maxWidth < 1280
+              ? 304.0
+              : constraints.maxWidth < 1600
+              ? 326.0
+              : 344.0;
 
           return Scaffold(
-            backgroundColor: SoftErpTheme.canvas,
+            backgroundColor: Colors.transparent,
             drawer: isMobile
-                ? Drawer(width: 260, child: _ShellDrawerContent())
+                ? Drawer(width: 236, child: _ShellDrawerContent())
                 : null,
             appBar: isMobile
                 ? AppBar(
@@ -78,25 +82,34 @@ class _AppShellState extends State<AppShell> {
                 : null,
             body: SafeArea(
               top: !isMobile,
-              child: Row(
-                children: [
-                  if (!isMobile)
-                    SizedBox(
-                      width: sidebarWidth,
-                      child: const AppSidebar(compact: false),
-                    ),
-                  Expanded(
-                    child: _DesktopContentFrame(
-                      enabled: _isDesktopPlatform,
-                      child: Column(
-                        children: [
-                          if (!isMobile) const AppTopBar(),
-                          const Expanded(child: _ShellContentSwitcher()),
-                        ],
+              child: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFFC5CEF4), Color(0xFFF0F2FA)],
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    if (!isMobile)
+                      SizedBox(
+                        width: sidebarWidth,
+                        child: const AppSidebar(compact: false),
+                      ),
+                    Expanded(
+                      child: _DesktopContentFrame(
+                        enabled: _isDesktopPlatform,
+                        child: Column(
+                          children: [
+                            if (!isMobile) const AppTopBar(),
+                            const Expanded(child: _ShellContentSwitcher()),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           );

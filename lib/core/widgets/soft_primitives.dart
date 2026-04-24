@@ -15,6 +15,7 @@ class SoftSurface extends StatelessWidget {
     this.radius = SoftErpTheme.radiusMd,
     this.elevated = true,
     this.strongBorder = false,
+    this.showBorder = true,
     this.clipContent = false,
   });
 
@@ -28,6 +29,7 @@ class SoftSurface extends StatelessWidget {
   final double radius;
   final bool elevated;
   final bool strongBorder;
+  final bool showBorder;
   final bool clipContent;
 
   @override
@@ -47,6 +49,7 @@ class SoftSurface extends StatelessWidget {
         radius: radius,
         elevated: elevated,
         strongBorder: strongBorder,
+        showBorder: showBorder,
       ),
       child: resolvedChild,
     );

@@ -8,8 +8,10 @@ import '../../../../core/widgets/searchable_select.dart';
 import '../../../../core/widgets/soft_primitives.dart';
 import '../../../clients/domain/client_definition.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
+import '../../../groups/presentation/screens/groups_screen.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/providers/items_provider.dart';
+import '../../../items/presentation/screens/items_screen.dart';
 import '../../domain/order_entry.dart';
 import '../../domain/order_inputs.dart';
 import '../providers/orders_provider.dart';
@@ -59,12 +61,17 @@ class OrdersScreen extends StatefulWidget {
   State<OrdersScreen> createState() => _OrdersScreenState();
 }
 
+enum _OrdersCreateMode { group, item }
+
+enum _OrdersQuickCreateAction { group, item }
+
 class _OrdersScreenState extends State<OrdersScreen> {
-  static const double _contentHorizontalPadding = 28;
+  static const double _contentHorizontalPadding = 18;
   final Set<int> _selectedOrderIds = <int>{};
   int? _partyFilterClientId;
   int? _itemFilterId;
   OrderStatus? _statusFilter;
+  _OrdersCreateMode _createMode = _OrdersCreateMode.item;
 
   @override
   Widget build(BuildContext context) {
@@ -88,16 +95,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
 
     return Container(
-      color: SoftErpTheme.canvas,
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+      color: Colors.transparent,
+      padding: const EdgeInsets.fromLTRB(6, 14, 8, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: SoftSurface(
-              color: SoftErpTheme.shellSurface,
-              radius: 36,
-              padding: const EdgeInsets.fromLTRB(0, 20, 0, 22),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(4, 10, 4, 6),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -109,7 +114,18 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       20,
                     ),
                     child: _OrdersHeader(
-                      onNewOrder: () => OrdersScreen.openEditor(context),
+                      createMode: _createMode,
+                      onCreateModeChanged: (value) {
+                        setState(() {
+                          _createMode = value;
+                        });
+                      },
+                      onPrimaryCreate: () {
+                        _handlePrimaryCreate();
+                      },
+                      onQuickCreateSelected: (action) {
+                        _handleQuickCreate(action);
+                      },
                     ),
                   ),
                   Padding(
@@ -143,7 +159,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       },
                     ),
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 20),
                   if (ordersProvider.errorMessage != null) ...[
                     Padding(
                       padding: const EdgeInsets.symmetric(
@@ -169,7 +185,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       },
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 22),
                   Expanded(
                     child: _OrdersTableCard(
                       orders: visibleOrders,
@@ -251,6 +267,24 @@ class _OrdersScreenState extends State<OrdersScreen> {
     return filtered;
   }
 
+  Future<void> _handlePrimaryCreate() async {
+    switch (_createMode) {
+      case _OrdersCreateMode.group:
+        await GroupsScreen.openEditor(context);
+      case _OrdersCreateMode.item:
+        await OrdersScreen.openEditor(context);
+    }
+  }
+
+  Future<void> _handleQuickCreate(_OrdersQuickCreateAction action) async {
+    switch (action) {
+      case _OrdersQuickCreateAction.group:
+        await GroupsScreen.openEditor(context);
+      case _OrdersQuickCreateAction.item:
+        await ItemsScreen.openEditor(context);
+    }
+  }
+
   Future<void> _openLifecycleEditor(BuildContext context, OrderEntry order) {
     return showGeneralDialog<void>(
       context: context,
@@ -316,65 +350,209 @@ class _OrdersScreenState extends State<OrdersScreen> {
 }
 
 class _OrdersHeader extends StatelessWidget {
-  const _OrdersHeader({required this.onNewOrder});
+  const _OrdersHeader({
+    required this.createMode,
+    required this.onCreateModeChanged,
+    required this.onPrimaryCreate,
+    required this.onQuickCreateSelected,
+  });
 
-  final VoidCallback onNewOrder;
+  final _OrdersCreateMode createMode;
+  final ValueChanged<_OrdersCreateMode> onCreateModeChanged;
+  final VoidCallback onPrimaryCreate;
+  final ValueChanged<_OrdersQuickCreateAction> onQuickCreateSelected;
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final title = Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Order Book',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontSize: 28,
-                fontWeight: FontWeight.w700,
-                color: SoftErpTheme.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Soft operational dashboard for orders, progress, and fulfillment.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: SoftErpTheme.textSecondary,
-              ),
-            ),
-          ],
-        );
         final button = _OrdersPrimaryButton(
           key: const Key('orders-new-order-button'),
-          label: 'New Order',
-          onPressed: onNewOrder,
+          label: createMode == _OrdersCreateMode.group
+              ? 'New Group'
+              : 'New Order',
+          onPressed: onPrimaryCreate,
+        );
+        final createButton = _OrdersCreateMenuButton(
+          onSelected: onQuickCreateSelected,
+        );
+        final segmented = _OrdersBodySegmentedControl(
+          selectedMode: createMode,
+          onModeChanged: onCreateModeChanged,
+        );
+        final actions = Wrap(
+          spacing: 12,
+          runSpacing: 10,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [createButton, button],
         );
 
         final content = constraints.maxWidth < 900
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  title,
-                  const SizedBox(height: 16),
-                  Align(alignment: Alignment.centerRight, child: button),
+                  segmented,
+                  const SizedBox(height: 14),
+                  Align(alignment: Alignment.centerRight, child: actions),
                 ],
               )
             : Row(
                 children: [
-                  Expanded(child: title),
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: segmented,
+                    ),
+                  ),
                   const SizedBox(width: 16),
-                  button,
+                  actions,
                 ],
               );
 
-        return SoftSurface(
-          radius: 32,
-          padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
-          color: SoftErpTheme.cardSurface,
-          elevated: true,
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
           child: content,
         );
       },
+    );
+  }
+}
+
+class _OrdersBodySegmentedControl extends StatelessWidget {
+  const _OrdersBodySegmentedControl({
+    required this.selectedMode,
+    required this.onModeChanged,
+  });
+
+  final _OrdersCreateMode selectedMode;
+  final ValueChanged<_OrdersCreateMode> onModeChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftSurface(
+      radius: 22,
+      padding: const EdgeInsets.all(4),
+      color: SoftErpTheme.sectionSurface,
+      elevated: true,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _OrdersSegmentChip(
+            label: 'Group',
+            selected: selectedMode == _OrdersCreateMode.group,
+            onTap: () => onModeChanged(_OrdersCreateMode.group),
+          ),
+          const SizedBox(width: 6),
+          _OrdersSegmentChip(
+            label: 'Item',
+            selected: selectedMode == _OrdersCreateMode.item,
+            onTap: () => onModeChanged(_OrdersCreateMode.item),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OrdersSegmentChip extends StatelessWidget {
+  const _OrdersSegmentChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(22),
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        padding: const EdgeInsets.symmetric(horizontal: 44, vertical: 12),
+        decoration: BoxDecoration(
+          gradient: selected ? SoftErpTheme.accentGradient : null,
+          color: selected ? null : SoftErpTheme.cardSurfaceAlt,
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: selected
+              ? const [
+                  BoxShadow(
+                    color: Color(0x306366F1),
+                    blurRadius: 12,
+                    offset: Offset(0, 6),
+                  ),
+                ]
+              : const [],
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.white : SoftErpTheme.textPrimary,
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OrdersCreateMenuButton extends StatelessWidget {
+  const _OrdersCreateMenuButton({required this.onSelected});
+
+  final ValueChanged<_OrdersQuickCreateAction> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 52,
+      child: PopupMenuButton<_OrdersQuickCreateAction>(
+        tooltip: 'Create',
+        onSelected: onSelected,
+        color: SoftErpTheme.cardSurface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        itemBuilder: (context) => const [
+          PopupMenuItem<_OrdersQuickCreateAction>(
+            value: _OrdersQuickCreateAction.group,
+            child: Text('Create Group'),
+          ),
+          PopupMenuItem<_OrdersQuickCreateAction>(
+            value: _OrdersQuickCreateAction.item,
+            child: Text('Create Item'),
+          ),
+        ],
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+          decoration: BoxDecoration(
+            color: SoftErpTheme.cardSurface,
+            border: Border.all(color: SoftErpTheme.border),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Create',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: SoftErpTheme.accentDark,
+                ),
+              ),
+              SizedBox(width: 8),
+              Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 20,
+                color: SoftErpTheme.textSecondary,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -601,9 +779,9 @@ class _OrdersControlRow extends StatelessWidget {
               );
 
         return SoftSurface(
-          radius: 26,
-          color: SoftErpTheme.cardSurface,
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+          radius: 24,
+          color: SoftErpTheme.sectionSurface,
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
           elevated: true,
           child: strip,
         );
@@ -655,13 +833,12 @@ class _FilterChipButton<T> extends StatelessWidget {
         }
       },
       child: Container(
-        height: 40,
+        height: 42,
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
-          color: SoftErpTheme.cardSurfaceAlt,
-          border: Border.all(color: SoftErpTheme.border),
+          color: SoftErpTheme.cardSurface,
+          border: Border.all(color: const Color(0xFFD4DBEE)),
           borderRadius: radius,
-          boxShadow: SoftErpTheme.insetShadow,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -719,7 +896,7 @@ class _ActionChip extends StatelessWidget {
       background: SoftErpTheme.cardSurfaceAlt,
       borderColor: SoftErpTheme.border,
       foreground: SoftErpTheme.textPrimary,
-      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 9),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
     );
   }
 }
@@ -737,9 +914,9 @@ class _OrdersSummaryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const cardWidth = 320.0;
+    const cardWidth = 250.0;
     return SizedBox(
-      height: 100,
+      height: 92,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
@@ -747,66 +924,89 @@ class _OrdersSummaryRow extends StatelessWidget {
             SizedBox(
               width: cardWidth,
               child: _SummaryCard(
+                icon: Icons.layers_rounded,
+                iconColor: const Color(0xFF5B7BE8),
                 label: 'All',
-                subLabel: 'total orders',
+                subLabel: 'Total Orders',
                 value: summary.total,
                 isActive: activeStatus == null,
                 onTap: () => onStatusSelected(null),
               ),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 16),
             SizedBox(
               width: cardWidth,
               child: _SummaryCard(
+                icon: Icons.edit_note_rounded,
+                iconColor: const Color(0xFF8B6FF0),
                 label: 'Draft',
-                subLabel: 'needs setup',
+                subLabel: 'Needs Setup',
                 value: summary.draft,
                 isActive: activeStatus == OrderStatus.draft,
                 onTap: () => onStatusSelected(OrderStatus.draft),
               ),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 16),
             SizedBox(
               width: cardWidth,
               child: _SummaryCard(
+                icon: Icons.hourglass_top_rounded,
+                iconColor: const Color(0xFFE08B42),
                 label: 'Not Started',
-                subLabel: 'ready to begin',
+                subLabel: 'Ready to Begin',
                 value: summary.notStarted,
                 isActive: activeStatus == OrderStatus.notStarted,
                 onTap: () => onStatusSelected(OrderStatus.notStarted),
               ),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 16),
             SizedBox(
               width: cardWidth,
               child: _SummaryCard(
+                icon: Icons.timelapse_rounded,
+                iconColor: const Color(0xFF4F7BE8),
                 label: 'In Progress',
-                subLabel: 'active work',
+                subLabel: 'Active Work',
                 value: summary.inProgress,
                 isActive: activeStatus == OrderStatus.inProgress,
                 onTap: () => onStatusSelected(OrderStatus.inProgress),
               ),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 16),
             SizedBox(
               width: cardWidth,
               child: _SummaryCard(
+                icon: Icons.check_circle_rounded,
+                iconColor: const Color(0xFF2EBE6C),
                 label: 'Completed',
-                subLabel: 'done',
+                subLabel: 'Done',
                 value: summary.completed,
                 isActive: activeStatus == OrderStatus.completed,
                 onTap: () => onStatusSelected(OrderStatus.completed),
               ),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 16),
             SizedBox(
               width: cardWidth,
               child: _SummaryCard(
+                icon: Icons.warning_amber_rounded,
+                iconColor: const Color(0xFFE36A58),
                 label: 'Delayed',
-                subLabel: 'needs attention',
+                subLabel: 'Needs Attention',
                 value: summary.delayed,
                 isActive: activeStatus == OrderStatus.delayed,
                 onTap: () => onStatusSelected(OrderStatus.delayed),
+              ),
+            ),
+            const SizedBox(width: 16),
+            SizedBox(
+              width: cardWidth,
+              child: SoftSurface(
+                radius: 22,
+                color: SoftErpTheme.cardSurface,
+                elevated: true,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: const SizedBox.expand(),
               ),
             ),
           ],
@@ -818,6 +1018,8 @@ class _OrdersSummaryRow extends StatelessWidget {
 
 class _SummaryCard extends StatelessWidget {
   const _SummaryCard({
+    required this.icon,
+    required this.iconColor,
     required this.label,
     required this.subLabel,
     required this.value,
@@ -825,6 +1027,8 @@ class _SummaryCard extends StatelessWidget {
     required this.onTap,
   });
 
+  final IconData icon;
+  final Color iconColor;
   final String label;
   final String subLabel;
   final int value;
@@ -833,12 +1037,53 @@ class _SummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SoftMetricCard(
-      label: label,
-      subLabel: subLabel,
-      value: value,
-      isActive: isActive,
+    return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(22),
+      child: SoftSurface(
+        radius: 22,
+        color: isActive ? const Color(0xFFF1EEFF) : SoftErpTheme.cardSurface,
+        strongBorder: isActive,
+        elevated: true,
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: iconColor.withAlpha(28),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 22, color: iconColor),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                subLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: SoftErpTheme.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              '$value',
+              style: TextStyle(
+                color: isActive
+                    ? SoftErpTheme.accentDark
+                    : SoftErpTheme.textSecondary,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -879,7 +1124,9 @@ class _OrdersTableCard extends StatelessWidget {
 
       return SoftSurface(
         radius: 28,
-        color: SoftErpTheme.cardSurface,
+        color: Colors.transparent,
+        elevated: false,
+        showBorder: false,
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 26),
         child: Center(
           child: ConstrainedBox(
@@ -926,10 +1173,8 @@ class _OrdersTableCard extends StatelessWidget {
       );
     }
 
-    return SoftSurface(
-      radius: 30,
-      padding: const EdgeInsets.fromLTRB(22, 18, 22, 14),
-      color: SoftErpTheme.cardSurface,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final layout = _OrdersTableLayout.fromContainerWidth(
@@ -975,7 +1220,7 @@ class _OrdersTableCard extends StatelessWidget {
               const SizedBox(height: 10),
               Expanded(
                 child: ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(0, 2, 0, 18),
+                  padding: const EdgeInsets.fromLTRB(0, 4, 0, 22),
                   itemCount: orders.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 10),
                   itemBuilder: (context, index) {
@@ -1007,14 +1252,14 @@ class _TableHeaderRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 44,
+      height: 46,
       padding: const EdgeInsets.only(
         left: _OrdersTableMetrics.leftPadding,
         right: _OrdersTableMetrics.rightPadding,
       ),
       decoration: BoxDecoration(
         color: SoftErpTheme.sectionSurface,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
         children: [
@@ -1109,7 +1354,7 @@ class _OrderDataRowState extends State<_OrderDataRow> {
             hoverColor: hoverColor,
             selectedColor: selectedColor,
             child: SizedBox(
-              height: 76,
+              height: 74,
               child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
                 onLongPress: () =>
@@ -1120,14 +1365,14 @@ class _OrderDataRowState extends State<_OrderDataRow> {
                       child: Align(
                         alignment: Alignment.centerRight,
                         child: Container(
-                          width: 168,
+                          width: 150,
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               begin: Alignment.centerLeft,
                               end: Alignment.centerRight,
                               colors: [
                                 edgeTint.withAlpha(0),
-                                edgeTint.withAlpha(16),
+                                edgeTint.withAlpha(12),
                               ],
                             ),
                             borderRadius: const BorderRadius.horizontal(
@@ -1254,7 +1499,8 @@ class _OrderDataRowState extends State<_OrderDataRow> {
   }
 
   Future<void> _performQuickAction(_QuickRowAction action) async {
-    if (action.kind == _QuickRowActionKind.view) {
+    if (action.kind == _QuickRowActionKind.view ||
+        action.kind == _QuickRowActionKind.edit) {
       widget.onTap();
       return;
     }
@@ -1321,6 +1567,12 @@ class _OrderDataRowState extends State<_OrderDataRow> {
         label: 'View',
       );
     }
+    if (order.status == OrderStatus.draft) {
+      return const _QuickRowAction(
+        kind: _QuickRowActionKind.edit,
+        label: 'Edit',
+      );
+    }
     if (order.status == OrderStatus.inProgress) {
       return const _QuickRowAction(
         kind: _QuickRowActionKind.complete,
@@ -1329,7 +1581,6 @@ class _OrderDataRowState extends State<_OrderDataRow> {
       );
     }
     if (order.status == OrderStatus.notStarted ||
-        order.status == OrderStatus.draft ||
         order.status == OrderStatus.delayed ||
         urgency == _OrderUrgency.overdue) {
       return const _QuickRowAction(
@@ -1351,7 +1602,7 @@ class _OrderDataRowState extends State<_OrderDataRow> {
   }
 }
 
-enum _QuickRowActionKind { start, complete, view }
+enum _QuickRowActionKind { start, complete, view, edit }
 
 class _QuickRowAction {
   const _QuickRowAction({
@@ -1702,9 +1953,9 @@ class _StatusPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = switch (status) {
       OrderStatus.draft => (
-        bg: const Color(0xFFECE9FA),
+        bg: const Color(0xFFF1EEF8),
         border: const Color(0x00FFFFFF),
-        text: const Color(0xFF4F4680),
+        text: const Color(0xFF6D5E8C),
       ),
       OrderStatus.notStarted => (
         bg: const Color(0xFFFDF1E3),
@@ -1752,13 +2003,13 @@ class _OrdersTableMetrics {
   static const double rightPadding = 20;
   static const double prioritySlotWidth = 14;
   static const double orderDateGroupWidth = 232;
-  static const double partyItemGroupWidth = 344;
-  static const double poWidth = 198;
-  static const double quantityWidth = 142;
-  static const double startDateWidth = 130;
-  static const double endDateWidth = 130;
-  static const double statusWidth = 136;
-  static const double actionsWidth = 204;
+  static const double partyItemGroupWidth = 352;
+  static const double poWidth = 204;
+  static const double quantityWidth = 146;
+  static const double startDateWidth = 136;
+  static const double endDateWidth = 136;
+  static const double statusWidth = 140;
+  static const double actionsWidth = 188;
 
   static const double totalWidth =
       leftPadding +

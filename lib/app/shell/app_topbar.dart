@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme/soft_erp_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/soft_primitives.dart';
+import '../../features/auth/domain/auth_user.dart';
 import '../../features/auth/presentation/providers/auth_provider.dart';
 import '../../features/clients/presentation/providers/clients_provider.dart';
 import '../../features/groups/presentation/providers/groups_provider.dart';
@@ -163,87 +164,64 @@ class AppTopBar extends StatelessWidget {
       (navigation) => navigation.selectedKey,
     );
     final config = resolveTopStrip(selectedKey, context);
-    final hasLeading = config.leadingBuilder != null || config.title != null;
+    final currentUser = context.select<AuthProvider, AuthUser?>(
+      (auth) => auth.user,
+    );
+    final searchConfig = config.search == null
+        ? const ShellTopStripSearchConfig(
+            placeholder: 'Search',
+            initialValue: '',
+            onChanged: _noopSearch,
+          )
+        : ShellTopStripSearchConfig(
+            placeholder: 'Search',
+            initialValue: config.search!.initialValue,
+            onChanged: config.search!.onChanged,
+            layoutMode: ShellTopStripSearchLayoutMode.centered,
+            maxWidth: config.search!.maxWidth,
+          );
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(24, 14, 24, 16),
-      decoration: const BoxDecoration(
-        color: SoftErpTheme.shellSurface,
-        border: Border(bottom: BorderSide(color: SoftErpTheme.border)),
-      ),
-      child: SoftSurface(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        radius: 20,
-        color: SoftErpTheme.cardSurface,
-        child: Row(
-          children: [
-            if (hasLeading) Expanded(child: _TopStripLeading(config: config)),
-            if (!hasLeading &&
-                config.search == null &&
-                config.actions.isNotEmpty)
-              const Spacer(),
-            if (config.search != null) ...[
+      height: 78,
+      padding: const EdgeInsets.fromLTRB(24, 10, 24, 10),
+      decoration: const BoxDecoration(color: Colors.transparent),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth;
+          final compact = width < 1240;
+          final profileWidth = compact ? 66.0 : 230.0;
+          final searchMaxWidth = compact ? 520.0 : 760.0;
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SizedBox(width: compact ? 8 : 16),
+              Expanded(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: searchMaxWidth),
+                    child: _ShellTopStripSearchField(search: searchConfig),
+                  ),
+                ),
+              ),
+              if (config.actions.isNotEmpty) ...[
+                const SizedBox(width: 10),
+                _TopStripActions(actions: config.actions),
+              ],
               const SizedBox(width: 16),
-              _TopStripSearchSlot(search: config.search!),
+              SizedBox(
+                width: profileWidth,
+                child: _TopStripProfileCard(user: currentUser),
+              ),
             ],
-            if (config.actions.isNotEmpty) ...[
-              const SizedBox(width: 16),
-              _TopStripActions(actions: config.actions),
-            ],
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 }
 
-class _TopStripLeading extends StatelessWidget {
-  const _TopStripLeading({required this.config});
-
-  final ShellTopStripConfig config;
-
-  @override
-  Widget build(BuildContext context) {
-    if (config.leadingBuilder != null) {
-      return config.leadingBuilder!(context);
-    }
-    if (config.title == null) {
-      return const SizedBox.shrink();
-    }
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Text(
-        config.title!,
-        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-          fontWeight: FontWeight.w700,
-          color: SoftErpTheme.textPrimary,
-        ),
-      ),
-    );
-  }
-}
-
-class _TopStripSearchSlot extends StatelessWidget {
-  const _TopStripSearchSlot({required this.search});
-
-  final ShellTopStripSearchConfig search;
-
-  @override
-  Widget build(BuildContext context) {
-    final searchField = ConstrainedBox(
-      constraints: BoxConstraints(maxWidth: search.maxWidth),
-      child: _ShellTopStripSearchField(search: search),
-    );
-
-    return switch (search.layoutMode) {
-      ShellTopStripSearchLayoutMode.leading => searchField,
-      ShellTopStripSearchLayoutMode.expanded => Expanded(child: searchField),
-      ShellTopStripSearchLayoutMode.centered => Expanded(
-        child: Align(alignment: Alignment.center, child: searchField),
-      ),
-    };
-  }
-}
+void _noopSearch(String _) {}
 
 class _ShellTopStripSearchField extends StatefulWidget {
   const _ShellTopStripSearchField({required this.search});
@@ -317,23 +295,27 @@ class _ShellTopStripSearchFieldState extends State<_ShellTopStripSearchField> {
       onChanged: widget.search.onChanged,
       decoration: InputDecoration(
         hintText: widget.search.placeholder,
-        prefixIcon: const Icon(Icons.search_rounded, size: 18),
+        prefixIcon: const Icon(
+          Icons.search_rounded,
+          size: 18,
+          color: SoftErpTheme.textSecondary,
+        ),
         filled: true,
-        fillColor: SoftErpTheme.cardSurfaceAlt,
+        fillColor: const Color(0xFFF8F9FD),
         contentPadding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 10,
+          horizontal: 18,
+          vertical: 12,
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(999),
           borderSide: const BorderSide(color: SoftErpTheme.border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(999),
           borderSide: const BorderSide(color: SoftErpTheme.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(999),
           borderSide: const BorderSide(color: SoftErpTheme.accent),
         ),
       ),
@@ -398,5 +380,111 @@ class _TopStripChipAction extends StatelessWidget {
           ? null
           : Icon(action.icon, size: 16, color: SoftErpTheme.textSecondary),
     );
+  }
+}
+
+class _TopStripProfileCard extends StatelessWidget {
+  const _TopStripProfileCard({required this.user});
+
+  final AuthUser? user;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = user?.name.trim().isNotEmpty == true
+        ? user!.name.trim()
+        : 'Your Name';
+    final role = user == null ? 'Senior Manager' : _roleLabel(user!.role);
+    final initials = name
+        .split(RegExp(r'\s+'))
+        .where((segment) => segment.isNotEmpty)
+        .take(2)
+        .map((segment) => segment[0].toUpperCase())
+        .join();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 190;
+        return Align(
+          alignment: Alignment.centerRight,
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: compact ? 8 : 10,
+              vertical: compact ? 5 : 6,
+            ),
+            decoration: BoxDecoration(
+              color: SoftErpTheme.cardSurfaceAlt,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: SoftErpTheme.border),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircleAvatar(
+                  radius: compact ? 14 : 16,
+                  backgroundColor: const Color(0xFFD9DCEC),
+                  child: Text(
+                    initials.isEmpty ? 'U' : initials,
+                    style: TextStyle(
+                      color: SoftErpTheme.textPrimary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: compact ? 11 : 12,
+                    ),
+                  ),
+                ),
+                if (!compact) ...[
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: SoftErpTheme.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          role,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: SoftErpTheme.textSecondary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  String _roleLabel(String role) {
+    if (role.trim().isEmpty) {
+      return 'Senior Manager';
+    }
+    final normalized = role.trim().toLowerCase();
+    if (normalized == 'super_admin' || normalized == 'admin') {
+      return 'Senior Manager';
+    }
+    return role
+        .split('_')
+        .where((segment) => segment.isNotEmpty)
+        .map(
+          (segment) =>
+              '${segment[0].toUpperCase()}${segment.substring(1).toLowerCase()}',
+        )
+        .join(' ');
   }
 }

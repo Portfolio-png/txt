@@ -67,11 +67,14 @@ class SoftErpTheme {
     double radius = radiusMd,
     bool elevated = true,
     bool strongBorder = false,
+    bool showBorder = true,
   }) {
     return BoxDecoration(
       color: color,
       borderRadius: BorderRadius.circular(radius),
-      border: Border.all(color: strongBorder ? borderStrong : border),
+      border: showBorder
+          ? Border.all(color: strongBorder ? borderStrong : border)
+          : null,
       boxShadow: elevated ? raisedShadow : subtleShadow,
     );
   }

@@ -173,7 +173,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
         );
 
         final workspaceContent = Container(
-          color: SoftErpTheme.canvas,
+          color: Colors.transparent,
           padding: const EdgeInsets.fromLTRB(22, 14, 22, 22),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -194,11 +194,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 const SizedBox(height: 14),
               ],
               Expanded(
-                child: SoftSurface(
-                  radius: SoftErpTheme.radiusLg,
-                  color: SoftErpTheme.cardSurface,
-                  strongBorder: true,
-                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 10, 4, 6),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1633,15 +1630,18 @@ class _InventoryWorkspaceHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final segmented = PMFigmaSegmentedControl(
-      value: viewMode == _InventoryViewMode.groups ? 'group' : 'item',
-      onChanged: (value) {
-        onViewModeChanged(
-          value == 'group'
-              ? _InventoryViewMode.groups
-              : _InventoryViewMode.items,
-        );
-      },
+    final segmented = SizedBox(
+      width: 280,
+      child: PMFigmaSegmentedControl(
+        value: viewMode == _InventoryViewMode.groups ? 'group' : 'item',
+        onChanged: (value) {
+          onViewModeChanged(
+            value == 'group'
+                ? _InventoryViewMode.groups
+                : _InventoryViewMode.items,
+          );
+        },
+      ),
     );
 
     final actions = Wrap(
@@ -1678,7 +1678,7 @@ class _InventoryWorkspaceHeader extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth < 980) {
+        if (!constraints.hasBoundedWidth || constraints.maxWidth < 980) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [segmented, const SizedBox(height: 12), actions],
@@ -1689,7 +1689,7 @@ class _InventoryWorkspaceHeader extends StatelessWidget {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(width: 320, child: segmented),
+              segmented,
               const SizedBox(height: 12),
               Align(alignment: Alignment.centerLeft, child: actions),
             ],
@@ -1697,11 +1697,11 @@ class _InventoryWorkspaceHeader extends StatelessWidget {
         }
 
         return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(width: 320, child: segmented),
-            const Spacer(),
-            const SizedBox(width: 16),
-            Expanded(
+            segmented,
+            const SizedBox(width: 18),
+            Flexible(
               child: Align(alignment: Alignment.centerRight, child: actions),
             ),
           ],
@@ -1724,12 +1724,60 @@ class _InventoryToolbarButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppButton(
-      label: label,
-      onPressed: onTap,
-      variant: isPrimary
-          ? AppButtonVariant.primary
-          : AppButtonVariant.secondary,
+    final minWidth = switch (label) {
+      '+ New Group' => 184.0,
+      '+ Add Stock' => 176.0,
+      'Receive' => 132.0,
+      'Transfer' => 136.0,
+      'Adjust' => 124.0,
+      _ => 132.0,
+    };
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        hoverColor: _inventoryHoverColor,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOutCubic,
+          height: 56,
+          constraints: BoxConstraints(minWidth: minWidth),
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          decoration: BoxDecoration(
+            gradient: isPrimary ? SoftErpTheme.accentGradient : null,
+            color: isPrimary ? null : SoftErpTheme.cardSurface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isPrimary ? SoftErpTheme.accentDark : SoftErpTheme.border,
+            ),
+            boxShadow: isPrimary
+                ? const [
+                    BoxShadow(
+                      color: Color(0x266366F1),
+                      blurRadius: 14,
+                      offset: Offset(0, 8),
+                    ),
+                  ]
+                : SoftErpTheme.subtleShadow,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: isPrimary ? Colors.white : SoftErpTheme.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1932,7 +1980,7 @@ class _InventoryFilterChipButton<T> extends StatelessWidget {
         }
       },
       child: Container(
-        height: 40,
+        height: 46,
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
           color: SoftErpTheme.cardSurfaceAlt,
@@ -1958,7 +2006,7 @@ class _InventoryFilterChipButton<T> extends StatelessWidget {
               '$label: ',
               style: const TextStyle(
                 color: SoftErpTheme.textSecondary,
-                fontSize: 12,
+                fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -1968,7 +2016,7 @@ class _InventoryFilterChipButton<T> extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: SoftErpTheme.textPrimary,
-                  fontSize: 12,
+                  fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -2006,7 +2054,7 @@ class _ActionChip extends StatelessWidget {
       background: SoftErpTheme.cardSurfaceAlt,
       borderColor: SoftErpTheme.border,
       foreground: SoftErpTheme.textPrimary,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
     );
   }
 }
