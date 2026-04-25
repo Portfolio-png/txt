@@ -18,6 +18,12 @@ echo "==> Installing dependencies"
 rm -rf node_modules
 npm install
 
+if ! command -v make >/dev/null 2>&1; then
+  echo "==> Installing build tools (required for sqlite3 native build)"
+  sudo apt update
+  sudo apt install -y build-essential make g++ python3
+fi
+
 echo "==> Rebuilding sqlite3 native module for this machine"
 npm rebuild sqlite3 --build-from-source
 

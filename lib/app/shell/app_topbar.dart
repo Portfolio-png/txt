@@ -183,19 +183,21 @@ class AppTopBar extends StatelessWidget {
 
     return Container(
       height: 78,
-      padding: const EdgeInsets.fromLTRB(24, 10, 24, 10),
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
       decoration: const BoxDecoration(color: Colors.transparent),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final width = constraints.maxWidth;
           final compact = width < 1240;
-          final profileWidth = compact ? 66.0 : 230.0;
-          final searchMaxWidth = compact ? 520.0 : 760.0;
+          final brandWidth = compact ? 250.0 : 300.0;
+          final profileWidth = compact ? 66.0 : 206.0;
+          final searchMaxWidth = compact ? 500.0 : 715.0;
 
           return Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              SizedBox(width: compact ? 8 : 16),
+              SizedBox(width: brandWidth, child: const _TopStripCompanyBrand()),
+              const SizedBox(width: 18),
               Expanded(
                 child: Center(
                   child: ConstrainedBox(
@@ -208,7 +210,7 @@ class AppTopBar extends StatelessWidget {
                 const SizedBox(width: 10),
                 _TopStripActions(actions: config.actions),
               ],
-              const SizedBox(width: 16),
+              const SizedBox(width: 14),
               SizedBox(
                 width: profileWidth,
                 child: _TopStripProfileCard(user: currentUser),
@@ -217,6 +219,50 @@ class AppTopBar extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+
+class _TopStripCompanyBrand extends StatelessWidget {
+  const _TopStripCompanyBrand();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 48,
+          height: 48,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: SoftErpTheme.accentGradient,
+          ),
+          child: Center(
+            child: Container(
+              width: 20,
+              height: 20,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Color(0xFFF3F5FE),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            'Shree Ganesh Metal Works',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: SoftErpTheme.textPrimary,
+              fontWeight: FontWeight.w500,
+              fontSize: 16,
+              height: 1.1,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -301,7 +347,7 @@ class _ShellTopStripSearchFieldState extends State<_ShellTopStripSearchField> {
           color: SoftErpTheme.textSecondary,
         ),
         filled: true,
-        fillColor: const Color(0xFFF8F9FD),
+        fillColor: const Color(0xCCFFFFFF),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 18,
           vertical: 12,
@@ -412,9 +458,9 @@ class _TopStripProfileCard extends StatelessWidget {
               vertical: compact ? 5 : 6,
             ),
             decoration: BoxDecoration(
-              color: SoftErpTheme.cardSurfaceAlt,
+              color: const Color(0x6EFFFFFF),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: SoftErpTheme.border),
+              border: Border.all(color: const Color(0x40FFFFFF)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,

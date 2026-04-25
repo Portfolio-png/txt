@@ -315,15 +315,7 @@ class _SoftMetricCardState extends State<SoftMetricCard> {
                         ? const Color(0xFFDDD5FF)
                         : SoftErpTheme.cardSurfaceAlt,
                     borderRadius: BorderRadius.circular(16),
-                    boxShadow: isActive
-                        ? const [
-                            BoxShadow(
-                              color: Color(0x1E6366F1),
-                              blurRadius: 12,
-                              offset: Offset(0, 6),
-                            ),
-                          ]
-                        : null,
+                    boxShadow: isActive ? SoftErpTheme.subtleShadow : null,
                   ),
                   child: Text(
                     '${widget.value}',
@@ -381,16 +373,7 @@ class _SoftRowCardState extends State<SoftRowCard> {
     final lift = _pressed ? 0.9 : (_hovered ? -1.7 : 0.0);
     final selected = widget.isSelected;
     final defaultHoverShadow = const [
-      BoxShadow(
-        color: Color(0x24909CC3),
-        blurRadius: 18,
-        offset: Offset(0, 12),
-      ),
-      BoxShadow(
-        color: Color(0xBFFFFFFF),
-        blurRadius: 8,
-        offset: Offset(-1.5, -1.5),
-      ),
+      BoxShadow(color: Color(0x14000000), blurRadius: 12, offset: Offset(0, 7)),
     ];
     final shadow = _hovered
         ? (widget.hoverShadow ?? defaultHoverShadow)

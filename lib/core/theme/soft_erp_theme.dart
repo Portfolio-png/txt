@@ -1,21 +1,21 @@
 import 'package:flutter/material.dart';
 
 class SoftErpTheme {
-  static const Color canvas = Color(0xFFF1F2F8);
-  static const Color canvasAlt = Color(0xFFEDEFF8);
-  static const Color shellSurface = Color(0xFFF7F8FC);
-  static const Color cardSurface = Color(0xFFFAFBFF);
-  static const Color cardSurfaceAlt = Color(0xFFF3F5FD);
-  static const Color sectionSurface = Color(0xFFF6F7FD);
-  static const Color border = Color(0xFFDCE1F0);
-  static const Color borderStrong = Color(0xFFCCD4EA);
+  static const Color canvas = Color(0xFFE8E8F0);
+  static const Color canvasAlt = Color(0xFFA7B9F9);
+  static const Color shellSurface = Color(0xFFF8F9FD);
+  static const Color cardSurface = Color(0xFFFFFFFF);
+  static const Color cardSurfaceAlt = Color(0xFFF7F7FB);
+  static const Color sectionSurface = Color(0xFFF6F7FB);
+  static const Color border = Color(0xFFE6E8F4);
+  static const Color borderStrong = Color(0xFFDDE0F0);
   static const Color textPrimary = Color(0xFF303646);
   static const Color textSecondary = Color(0xFF6C7386);
-  static const Color accent = Color(0xFF6366F1);
-  static const Color accentDark = Color(0xFF4F56D9);
-  static const Color accentDeeper = Color(0xFF4149C8);
+  static const Color accent = Color(0xFF5E49E6);
+  static const Color accentDark = Color(0xFF4F43E8);
+  static const Color accentDeeper = Color(0xFF4740B7);
   static const Color accentSoft = Color(0xFFECEBFF);
-  static const Color accentSurface = Color(0xFFF4F1FF);
+  static const Color accentSurface = Color(0xFFF1EEFF);
   static const Color successBg = Color(0xFFEAF8EE);
   static const Color successText = Color(0xFF0F8B45);
   static const Color warningBg = Color(0xFFFFF6E9);
@@ -37,29 +37,21 @@ class SoftErpTheme {
 
   static const LinearGradient accentGradient = LinearGradient(
     colors: [accent, accentDark],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
   );
 
-  // Soft "pressed" alternative for controls where true inset shadow
-  // support may vary across Flutter versions.
+  // Clean, neutral elevation system: soft surfaces without glow haze.
   static const List<BoxShadow> insetShadow = <BoxShadow>[
-    BoxShadow(color: Color(0x66FFFFFF), blurRadius: 4, offset: Offset(-1, -1)),
-    BoxShadow(color: Color(0x12909DC3), blurRadius: 6, offset: Offset(1, 1)),
+    BoxShadow(color: Color(0x0C000000), blurRadius: 6, offset: Offset(0, 2)),
   ];
 
   static const List<BoxShadow> raisedShadow = <BoxShadow>[
-    BoxShadow(color: Color(0x1A919CC5), blurRadius: 20, offset: Offset(0, 10)),
-    BoxShadow(color: Color(0xAAFFFFFF), blurRadius: 8, offset: Offset(-2, -2)),
+    BoxShadow(color: Color(0x0E7480C3), blurRadius: 22, offset: Offset(0, 10)),
   ];
 
   static const List<BoxShadow> subtleShadow = <BoxShadow>[
-    BoxShadow(color: Color(0x12909DC3), blurRadius: 12, offset: Offset(0, 6)),
-    BoxShadow(
-      color: Color(0xCCFFFFFF),
-      blurRadius: 6,
-      offset: Offset(-1.5, -1.5),
-    ),
+    BoxShadow(color: Color(0x0A818CD1), blurRadius: 16, offset: Offset(0, 6)),
   ];
 
   static BoxDecoration surfaceDecoration({

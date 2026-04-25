@@ -359,9 +359,9 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     return FocusTraversalGroup(
       child: Material(
-        elevation: 18,
+        elevation: 4,
         color: Colors.white,
-        shadowColor: const Color(0x24101828),
+        shadowColor: const Color(0x14000000),
         surfaceTintColor: Colors.white,
         borderRadius: BorderRadius.circular(14),
         child: Container(

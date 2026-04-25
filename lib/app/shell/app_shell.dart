@@ -62,11 +62,7 @@ class _AppShellState extends State<AppShell> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final isMobile = constraints.maxWidth < 900;
-          final sidebarWidth = constraints.maxWidth < 1280
-              ? 304.0
-              : constraints.maxWidth < 1600
-              ? 326.0
-              : 344.0;
+          final sidebarWidth = constraints.maxWidth < 1280 ? 270.0 : 286.0;
 
           return Scaffold(
             backgroundColor: Colors.transparent,
@@ -85,27 +81,32 @@ class _AppShellState extends State<AppShell> {
               child: Container(
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color(0xFFC5CEF4), Color(0xFFF0F2FA)],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0xFFE8E8F0), Color(0xFFA7B9F9)],
                   ),
                 ),
-                child: Row(
+                child: Column(
                   children: [
-                    if (!isMobile)
-                      SizedBox(
-                        width: sidebarWidth,
-                        child: const AppSidebar(compact: false),
-                      ),
+                    if (!isMobile) const AppTopBar(),
                     Expanded(
-                      child: _DesktopContentFrame(
-                        enabled: _isDesktopPlatform,
-                        child: Column(
-                          children: [
-                            if (!isMobile) const AppTopBar(),
-                            const Expanded(child: _ShellContentSwitcher()),
-                          ],
-                        ),
+                      child: Row(
+                        children: [
+                          if (!isMobile)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(30, 10, 10, 22),
+                              child: SizedBox(
+                                width: sidebarWidth,
+                                child: const AppSidebar(compact: false),
+                              ),
+                            ),
+                          Expanded(
+                            child: _DesktopContentFrame(
+                              enabled: _isDesktopPlatform,
+                              child: const _ShellContentSwitcher(),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],

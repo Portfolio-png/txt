@@ -71,7 +71,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
   int? _partyFilterClientId;
   int? _itemFilterId;
   OrderStatus? _statusFilter;
-  _OrdersCreateMode _createMode = _OrdersCreateMode.item;
 
   @override
   Widget build(BuildContext context) {
@@ -96,81 +95,25 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
     return Container(
       color: Colors.transparent,
-      padding: const EdgeInsets.fromLTRB(6, 14, 8, 10),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(4, 10, 4, 6),
+              padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      _contentHorizontalPadding,
-                      0,
-                      _contentHorizontalPadding,
-                      20,
-                    ),
-                    child: _OrdersHeader(
-                      createMode: _createMode,
-                      onCreateModeChanged: (value) {
-                        setState(() {
-                          _createMode = value;
-                        });
-                      },
-                      onPrimaryCreate: () {
-                        _handlePrimaryCreate();
-                      },
-                      onQuickCreateSelected: (action) {
-                        _handleQuickCreate(action);
-                      },
-                    ),
+                  _OrdersHeader(
+                    onPrimaryCreate: () {
+                      _handlePrimaryCreate();
+                    },
+                    onQuickCreateSelected: (action) {
+                      _handleQuickCreate(action);
+                    },
                   ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: _contentHorizontalPadding,
-                    ),
-                    child: _OrdersControlRow(
-                      partyFilterClientId: _partyFilterClientId,
-                      itemFilterId: _itemFilterId,
-                      statusFilter: _statusFilter,
-                      clients: clients,
-                      items: items,
-                      selectedCount: _selectedOrderIds.length,
-                      onPartySelected: (value) {
-                        setState(() {
-                          _partyFilterClientId = value;
-                        });
-                      },
-                      onItemSelected: (value) {
-                        setState(() {
-                          _itemFilterId = value;
-                        });
-                      },
-                      onStatusSelected: (value) {
-                        setState(() {
-                          _statusFilter = value;
-                        });
-                      },
-                      onClearSelection: () {
-                        setState(_selectedOrderIds.clear);
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  if (ordersProvider.errorMessage != null) ...[
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: _contentHorizontalPadding,
-                      ),
-                      child: _OrdersMessageBanner(
-                        message: ordersProvider.errorMessage!,
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                  ],
+                  const SizedBox(height: 18),
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: _contentHorizontalPadding,
@@ -185,7 +128,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       },
                     ),
                   ),
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 16),
                   Expanded(
                     child: _OrdersTableCard(
                       orders: visibleOrders,
@@ -268,12 +211,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   Future<void> _handlePrimaryCreate() async {
-    switch (_createMode) {
-      case _OrdersCreateMode.group:
-        await GroupsScreen.openEditor(context);
-      case _OrdersCreateMode.item:
-        await OrdersScreen.openEditor(context);
-    }
+    await OrdersScreen.openEditor(context);
   }
 
   Future<void> _handleQuickCreate(_OrdersQuickCreateAction action) async {
@@ -351,14 +289,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
 class _OrdersHeader extends StatelessWidget {
   const _OrdersHeader({
-    required this.createMode,
-    required this.onCreateModeChanged,
     required this.onPrimaryCreate,
     required this.onQuickCreateSelected,
   });
 
-  final _OrdersCreateMode createMode;
-  final ValueChanged<_OrdersCreateMode> onCreateModeChanged;
   final VoidCallback onPrimaryCreate;
   final ValueChanged<_OrdersQuickCreateAction> onQuickCreateSelected;
 
@@ -368,135 +302,89 @@ class _OrdersHeader extends StatelessWidget {
       builder: (context, constraints) {
         final button = _OrdersPrimaryButton(
           key: const Key('orders-new-order-button'),
-          label: createMode == _OrdersCreateMode.group
-              ? 'New Group'
-              : 'New Order',
+          label: 'New Order',
           onPressed: onPrimaryCreate,
         );
         final createButton = _OrdersCreateMenuButton(
           onSelected: onQuickCreateSelected,
         );
-        final segmented = _OrdersBodySegmentedControl(
-          selectedMode: createMode,
-          onModeChanged: onCreateModeChanged,
+        final title = Padding(
+          padding: const EdgeInsets.only(left: 4),
+          child: Text(
+            'Order Book',
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: SoftErpTheme.textPrimary,
+                  letterSpacing: -0.5,
+                ),
+          ),
+        );
+        final filtersButton = Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+          decoration: BoxDecoration(
+            color: SoftErpTheme.cardSurface,
+            border: Border.all(color: SoftErpTheme.accentDark.withAlpha(50)),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.filter_list_rounded,
+                size: 18,
+                color: SoftErpTheme.accentDark,
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Filters',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontFamily: 'Segoe UI',
+                  fontWeight: FontWeight.w600,
+                  color: SoftErpTheme.accentDark,
+                ),
+              ),
+            ],
+          ),
         );
         final actions = Wrap(
           spacing: 12,
           runSpacing: 10,
           crossAxisAlignment: WrapCrossAlignment.center,
-          children: [createButton, button],
+          children: [filtersButton, createButton, button],
         );
 
-        final content = constraints.maxWidth < 900
+        final content =
+            !constraints.hasBoundedWidth || constraints.maxWidth < 980
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [title, const SizedBox(height: 16), actions],
+              )
+            : constraints.maxWidth < 1320
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  segmented,
-                  const SizedBox(height: 14),
-                  Align(alignment: Alignment.centerRight, child: actions),
+                  title,
+                  const SizedBox(height: 16),
+                  Align(alignment: Alignment.centerLeft, child: actions),
                 ],
               )
             : Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Expanded(
+                  title,
+                  const SizedBox(width: 14),
+                  Flexible(
                     child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: segmented,
+                      alignment: Alignment.centerRight,
+                      child: actions,
                     ),
                   ),
-                  const SizedBox(width: 16),
-                  actions,
                 ],
               );
 
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2),
-          child: content,
-        );
+        return content;
       },
-    );
-  }
-}
-
-class _OrdersBodySegmentedControl extends StatelessWidget {
-  const _OrdersBodySegmentedControl({
-    required this.selectedMode,
-    required this.onModeChanged,
-  });
-
-  final _OrdersCreateMode selectedMode;
-  final ValueChanged<_OrdersCreateMode> onModeChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return SoftSurface(
-      radius: 22,
-      padding: const EdgeInsets.all(4),
-      color: SoftErpTheme.sectionSurface,
-      elevated: true,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _OrdersSegmentChip(
-            label: 'Group',
-            selected: selectedMode == _OrdersCreateMode.group,
-            onTap: () => onModeChanged(_OrdersCreateMode.group),
-          ),
-          const SizedBox(width: 6),
-          _OrdersSegmentChip(
-            label: 'Item',
-            selected: selectedMode == _OrdersCreateMode.item,
-            onTap: () => onModeChanged(_OrdersCreateMode.item),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _OrdersSegmentChip extends StatelessWidget {
-  const _OrdersSegmentChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(22),
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
-        padding: const EdgeInsets.symmetric(horizontal: 44, vertical: 12),
-        decoration: BoxDecoration(
-          gradient: selected ? SoftErpTheme.accentGradient : null,
-          color: selected ? null : SoftErpTheme.cardSurfaceAlt,
-          borderRadius: BorderRadius.circular(22),
-          boxShadow: selected
-              ? const [
-                  BoxShadow(
-                    color: Color(0x306366F1),
-                    blurRadius: 12,
-                    offset: Offset(0, 6),
-                  ),
-                ]
-              : const [],
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected ? Colors.white : SoftErpTheme.textPrimary,
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
     );
   }
 }
@@ -509,7 +397,7 @@ class _OrdersCreateMenuButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 52,
+      height: 42,
       child: PopupMenuButton<_OrdersQuickCreateAction>(
         tooltip: 'Create',
         onSelected: onSelected,
@@ -526,11 +414,11 @@ class _OrdersCreateMenuButton extends StatelessWidget {
           ),
         ],
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
           decoration: BoxDecoration(
             color: SoftErpTheme.cardSurface,
-            border: Border.all(color: SoftErpTheme.border),
-            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: SoftErpTheme.accentDark.withAlpha(50)),
+            borderRadius: BorderRadius.circular(999),
           ),
           child: const Row(
             mainAxisSize: MainAxisSize.min,
@@ -538,16 +426,17 @@ class _OrdersCreateMenuButton extends StatelessWidget {
               Text(
                 'Create',
                 style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                  fontFamily: 'Segoe UI',
+                  fontWeight: FontWeight.w600,
                   color: SoftErpTheme.accentDark,
                 ),
               ),
               SizedBox(width: 8),
               Icon(
                 Icons.keyboard_arrow_down_rounded,
-                size: 20,
-                color: SoftErpTheme.textSecondary,
+                size: 18,
+                color: SoftErpTheme.accentDark,
               ),
             ],
           ),
@@ -575,18 +464,7 @@ class _OrdersPrimaryButton extends StatelessWidget {
         gradient: const LinearGradient(
           colors: [Color(0xFF6A66F2), Color(0xFF5C6BF2)],
         ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x346366F1),
-            blurRadius: 18,
-            offset: Offset(0, 10),
-          ),
-          BoxShadow(
-            color: Color(0x7AFFFFFF),
-            blurRadius: 4,
-            offset: Offset(-1, -1),
-          ),
-        ],
+        boxShadow: SoftErpTheme.subtleShadow,
       ),
       child: SizedBox(
         height: 52,
@@ -759,7 +637,7 @@ class _OrdersControlRow extends StatelessWidget {
           ],
         );
 
-        final strip = constraints.maxWidth < 1140
+        final strip = constraints.maxWidth < 980
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -914,103 +792,55 @@ class _OrdersSummaryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const cardWidth = 250.0;
     return SizedBox(
-      height: 92,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            SizedBox(
-              width: cardWidth,
-              child: _SummaryCard(
-                icon: Icons.layers_rounded,
-                iconColor: const Color(0xFF5B7BE8),
-                label: 'All',
-                subLabel: 'Total Orders',
-                value: summary.total,
-                isActive: activeStatus == null,
-                onTap: () => onStatusSelected(null),
-              ),
+      height: 90,
+      child: Row(
+        children: [
+          Expanded(
+            child: _SummaryCard(
+              label: 'All',
+              value: summary.total,
+              isActive: activeStatus == null,
+              onTap: () => onStatusSelected(null),
             ),
-            const SizedBox(width: 16),
-            SizedBox(
-              width: cardWidth,
-              child: _SummaryCard(
-                icon: Icons.edit_note_rounded,
-                iconColor: const Color(0xFF8B6FF0),
-                label: 'Draft',
-                subLabel: 'Needs Setup',
-                value: summary.draft,
-                isActive: activeStatus == OrderStatus.draft,
-                onTap: () => onStatusSelected(OrderStatus.draft),
-              ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: _SummaryCard(
+              label: 'Not Started',
+              value: summary.notStarted,
+              isActive: activeStatus == OrderStatus.notStarted,
+              onTap: () => onStatusSelected(OrderStatus.notStarted),
             ),
-            const SizedBox(width: 16),
-            SizedBox(
-              width: cardWidth,
-              child: _SummaryCard(
-                icon: Icons.hourglass_top_rounded,
-                iconColor: const Color(0xFFE08B42),
-                label: 'Not Started',
-                subLabel: 'Ready to Begin',
-                value: summary.notStarted,
-                isActive: activeStatus == OrderStatus.notStarted,
-                onTap: () => onStatusSelected(OrderStatus.notStarted),
-              ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: _SummaryCard(
+              label: 'In Progress',
+              value: summary.inProgress,
+              isActive: activeStatus == OrderStatus.inProgress,
+              onTap: () => onStatusSelected(OrderStatus.inProgress),
             ),
-            const SizedBox(width: 16),
-            SizedBox(
-              width: cardWidth,
-              child: _SummaryCard(
-                icon: Icons.timelapse_rounded,
-                iconColor: const Color(0xFF4F7BE8),
-                label: 'In Progress',
-                subLabel: 'Active Work',
-                value: summary.inProgress,
-                isActive: activeStatus == OrderStatus.inProgress,
-                onTap: () => onStatusSelected(OrderStatus.inProgress),
-              ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: _SummaryCard(
+              label: 'Completed',
+              value: summary.completed,
+              isActive: activeStatus == OrderStatus.completed,
+              onTap: () => onStatusSelected(OrderStatus.completed),
             ),
-            const SizedBox(width: 16),
-            SizedBox(
-              width: cardWidth,
-              child: _SummaryCard(
-                icon: Icons.check_circle_rounded,
-                iconColor: const Color(0xFF2EBE6C),
-                label: 'Completed',
-                subLabel: 'Done',
-                value: summary.completed,
-                isActive: activeStatus == OrderStatus.completed,
-                onTap: () => onStatusSelected(OrderStatus.completed),
-              ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: _SummaryCard(
+              label: 'Delayed',
+              value: summary.delayed,
+              isActive: activeStatus == OrderStatus.delayed,
+              onTap: () => onStatusSelected(OrderStatus.delayed),
             ),
-            const SizedBox(width: 16),
-            SizedBox(
-              width: cardWidth,
-              child: _SummaryCard(
-                icon: Icons.warning_amber_rounded,
-                iconColor: const Color(0xFFE36A58),
-                label: 'Delayed',
-                subLabel: 'Needs Attention',
-                value: summary.delayed,
-                isActive: activeStatus == OrderStatus.delayed,
-                onTap: () => onStatusSelected(OrderStatus.delayed),
-              ),
-            ),
-            const SizedBox(width: 16),
-            SizedBox(
-              width: cardWidth,
-              child: SoftSurface(
-                radius: 22,
-                color: SoftErpTheme.cardSurface,
-                elevated: true,
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: const SizedBox.expand(),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1018,19 +848,13 @@ class _OrdersSummaryRow extends StatelessWidget {
 
 class _SummaryCard extends StatelessWidget {
   const _SummaryCard({
-    required this.icon,
-    required this.iconColor,
     required this.label,
-    required this.subLabel,
     required this.value,
     required this.isActive,
     required this.onTap,
   });
 
-  final IconData icon;
-  final Color iconColor;
   final String label;
-  final String subLabel;
   final int value;
   final bool isActive;
   final VoidCallback onTap;
@@ -1042,43 +866,30 @@ class _SummaryCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(22),
       child: SoftSurface(
         radius: 22,
-        color: isActive ? const Color(0xFFF1EEFF) : SoftErpTheme.cardSurface,
+        color: isActive ? const Color(0xFFF7F8FC) : SoftErpTheme.cardSurface,
         strongBorder: isActive,
         elevated: true,
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: iconColor.withAlpha(28),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, size: 22, color: iconColor),
-            ),
-            const SizedBox(width: 14),
             Expanded(
               child: Text(
-                subLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                label,
                 style: const TextStyle(
                   color: SoftErpTheme.textPrimary,
                   fontSize: 16,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w400,
                 ),
               ),
             ),
-            const SizedBox(width: 10),
             Text(
               '$value',
-              style: TextStyle(
-                color: isActive
-                    ? SoftErpTheme.accentDark
-                    : SoftErpTheme.textSecondary,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
+              style: const TextStyle(
+                color: SoftErpTheme.textPrimary,
+                fontSize: 32,
+                fontFamily: 'Segoe UI',
               ),
             ),
           ],
@@ -1924,9 +1735,9 @@ class _RowActionButtonState extends State<_RowActionButton> {
             boxShadow: _hovered
                 ? const [
                     BoxShadow(
-                      color: Color(0x22909CC3),
-                      blurRadius: 14,
-                      offset: Offset(0, 6),
+                      color: Color(0x12000000),
+                      blurRadius: 10,
+                      offset: Offset(0, 4),
                     ),
                   ]
                 : null,
@@ -2051,7 +1862,7 @@ class _OrdersTableLayout {
         (containerWidth -
                 _OrdersTableMetrics.leftPadding -
                 _OrdersTableMetrics.rightPadding -
-                8)
+                16)
             .clamp(0.0, double.infinity);
     final baseContentWidth =
         _OrdersTableMetrics.totalWidth -
@@ -3373,10 +3184,10 @@ class _OrderDetailActionButton extends StatelessWidget {
       child: FilledButton(
         onPressed: onPressed,
         style: FilledButton.styleFrom(
-          elevation: 3,
+          elevation: 1.5,
           backgroundColor: SoftErpTheme.accent,
           foregroundColor: Colors.white,
-          shadowColor: const Color(0x2A6366F1),
+          shadowColor: const Color(0x14000000),
           padding: const EdgeInsets.symmetric(horizontal: 24),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),

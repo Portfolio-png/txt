@@ -37,6 +37,8 @@ enum _InventorySummaryFilter { all, awaitingScan, linked }
 
 const _inventoryHoverColor = SoftErpTheme.accentSurface;
 
+enum _InventoryStockAction { receive, transfer, adjust }
+
 class _SelectAllFilteredIntent extends Intent {
   const _SelectAllFilteredIntent();
 }
@@ -153,17 +155,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
         final selectedRecords = records
             .where((record) => _selectedBarcodes.contains(record.barcode))
             .toList(growable: false);
-        final linkedCount = filteredRecords
-            .where((record) => record.hasInheritanceLink)
-            .length;
-        final scannedCount = filteredRecords
-            .where((record) => record.hasBeenScanned)
-            .length;
-        final awaitingScanCount = filteredRecords.length - scannedCount;
-        final totalScanEvents = filteredRecords.fold<int>(
-          0,
-          (sum, record) => sum + record.scanCount,
-        );
 
         _selectedBarcodes.removeWhere(
           (barcode) => !records.any((record) => record.barcode == barcode),
@@ -174,7 +165,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
         final workspaceContent = Container(
           color: Colors.transparent,
-          padding: const EdgeInsets.fromLTRB(22, 14, 22, 22),
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -195,22 +186,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
               ],
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 10, 4, 6),
+                  padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(0, 6, 0, 18),
-                        child: Text(
-                          'Inventory',
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w700,
-                                color: SoftErpTheme.textPrimary,
-                              ),
-                        ),
-                      ),
                       _InventoryWorkspaceHeader(
                         viewMode: _viewMode,
                         onViewModeChanged: (value) {
@@ -231,7 +210,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                           movementType: InventoryMovementType.adjust,
                         ),
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 12),
                       _InventoryControlsRow(
                         supplierFilter: _supplierFilter,
                         typeFilter: _typeFilter,
@@ -278,15 +257,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
                             _sortNewestFirst = !_sortNewestFirst;
                           });
                         },
-                      ),
-                      const SizedBox(height: 10),
-                      _InventoryDemoShowcaseStrip(
-                        totalRecords: filteredRecords.length,
-                        linkedRecords: linkedCount,
-                        scannedRecords: scannedCount,
-                        awaitingScanRecords: awaitingScanCount,
-                        totalScanEvents: totalScanEvents,
-                        health: inventory.healthSnapshot,
                       ),
                       if (selectedRecords.isNotEmpty) ...[
                         const SizedBox(height: 12),
@@ -1630,48 +1600,35 @@ class _InventoryWorkspaceHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final segmented = SizedBox(
-      width: 280,
-      child: PMFigmaSegmentedControl(
-        value: viewMode == _InventoryViewMode.groups ? 'group' : 'item',
-        onChanged: (value) {
-          onViewModeChanged(
-            value == 'group'
-                ? _InventoryViewMode.groups
-                : _InventoryViewMode.items,
-          );
-        },
-      ),
+    final segmented = PMFigmaSegmentedControl(
+      value: viewMode == _InventoryViewMode.groups ? 'group' : 'item',
+      onChanged: (value) {
+        onViewModeChanged(
+          value == 'group'
+              ? _InventoryViewMode.groups
+              : _InventoryViewMode.items,
+        );
+      },
     );
 
     final actions = Wrap(
-      spacing: 10,
-      runSpacing: 10,
+      spacing: 14,
+      runSpacing: 8,
       children: [
         _InventoryToolbarButton(
           label: '+ New Group',
           onTap: onNewGroup,
           isPrimary: false,
         ),
+        _InventoryStockActionsButton(
+          onReceiveStock: onReceiveStock,
+          onTransferStock: onTransferStock,
+          onAdjustStock: onAdjustStock,
+        ),
         _InventoryToolbarButton(
           label: '+ Add Stock',
           onTap: onAddStock,
           isPrimary: true,
-        ),
-        _InventoryToolbarButton(
-          label: 'Receive',
-          onTap: onReceiveStock,
-          isPrimary: false,
-        ),
-        _InventoryToolbarButton(
-          label: 'Transfer',
-          onTap: onTransferStock,
-          isPrimary: false,
-        ),
-        _InventoryToolbarButton(
-          label: 'Adjust',
-          onTap: onAdjustStock,
-          isPrimary: false,
         ),
       ],
     );
@@ -1697,10 +1654,10 @@ class _InventoryWorkspaceHeader extends StatelessWidget {
         }
 
         return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             segmented,
-            const SizedBox(width: 18),
+            const SizedBox(width: 14),
             Flexible(
               child: Align(alignment: Alignment.centerRight, child: actions),
             ),
@@ -1725,11 +1682,8 @@ class _InventoryToolbarButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final minWidth = switch (label) {
-      '+ New Group' => 184.0,
-      '+ Add Stock' => 176.0,
-      'Receive' => 132.0,
-      'Transfer' => 136.0,
-      'Adjust' => 124.0,
+      '+ New Group' => 172.0,
+      '+ Add Stock' => 182.0,
       _ => 132.0,
     };
 
@@ -1742,24 +1696,20 @@ class _InventoryToolbarButton extends StatelessWidget {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 160),
           curve: Curves.easeOutCubic,
-          height: 56,
+          height: 44,
           constraints: BoxConstraints(minWidth: minWidth),
-          padding: const EdgeInsets.symmetric(horizontal: 20),
+          padding: const EdgeInsets.symmetric(horizontal: 18),
           decoration: BoxDecoration(
             gradient: isPrimary ? SoftErpTheme.accentGradient : null,
-            color: isPrimary ? null : SoftErpTheme.cardSurface,
+            color: isPrimary ? null : const Color(0xFFFDFDFF),
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: isPrimary ? SoftErpTheme.accentDark : SoftErpTheme.border,
+              color: isPrimary
+                  ? SoftErpTheme.accentDark
+                  : const Color(0xFFE7E8F2),
             ),
             boxShadow: isPrimary
-                ? const [
-                    BoxShadow(
-                      color: Color(0x266366F1),
-                      blurRadius: 14,
-                      offset: Offset(0, 8),
-                    ),
-                  ]
+                ? SoftErpTheme.raisedShadow
                 : SoftErpTheme.subtleShadow,
           ),
           child: Row(
@@ -1769,10 +1719,127 @@ class _InventoryToolbarButton extends StatelessWidget {
                 label,
                 style: TextStyle(
                   color: isPrimary ? Colors.white : SoftErpTheme.textPrimary,
-                  fontSize: 13,
+                  fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  letterSpacing: 0.2,
+                  letterSpacing: 0.1,
                 ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InventoryStockActionsButton extends StatelessWidget {
+  const _InventoryStockActionsButton({
+    required this.onReceiveStock,
+    required this.onTransferStock,
+    required this.onAdjustStock,
+  });
+
+  final VoidCallback onReceiveStock;
+  final VoidCallback onTransferStock;
+  final VoidCallback onAdjustStock;
+
+  Future<void> _showActionsMenu(BuildContext context) async {
+    final buttonRenderBox = context.findRenderObject() as RenderBox?;
+    final overlayRenderBox =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (buttonRenderBox == null || overlayRenderBox == null) {
+      return;
+    }
+
+    final topLeft = buttonRenderBox.localToGlobal(
+      Offset.zero,
+      ancestor: overlayRenderBox,
+    );
+    final bottomRight = buttonRenderBox.localToGlobal(
+      buttonRenderBox.size.bottomRight(Offset.zero),
+      ancestor: overlayRenderBox,
+    );
+
+    final selected = await showMenu<_InventoryStockAction>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromPoints(topLeft, bottomRight),
+        Offset.zero & overlayRenderBox.size,
+      ),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: SoftErpTheme.border),
+      ),
+      color: SoftErpTheme.cardSurface,
+      items: const [
+        PopupMenuItem<_InventoryStockAction>(
+          value: _InventoryStockAction.receive,
+          height: 42,
+          child: Text('Receive'),
+        ),
+        PopupMenuItem<_InventoryStockAction>(
+          value: _InventoryStockAction.transfer,
+          height: 42,
+          child: Text('Transfer'),
+        ),
+        PopupMenuItem<_InventoryStockAction>(
+          value: _InventoryStockAction.adjust,
+          height: 42,
+          child: Text('Adjust'),
+        ),
+      ],
+    );
+
+    if (selected == null) {
+      return;
+    }
+    switch (selected) {
+      case _InventoryStockAction.receive:
+        onReceiveStock();
+      case _InventoryStockAction.transfer:
+        onTransferStock();
+      case _InventoryStockAction.adjust:
+        onAdjustStock();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _showActionsMenu(context),
+        borderRadius: BorderRadius.circular(14),
+        hoverColor: _inventoryHoverColor,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOutCubic,
+          height: 44,
+          constraints: const BoxConstraints(minWidth: 164),
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFDFDFF),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFE7E8F2)),
+            boxShadow: SoftErpTheme.subtleShadow,
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Create',
+                style: TextStyle(
+                  color: SoftErpTheme.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.1,
+                ),
+              ),
+              SizedBox(width: 6),
+              Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 18,
+                color: SoftErpTheme.textSecondary,
               ),
             ],
           ),
@@ -1824,7 +1891,7 @@ class _InventoryControlsRow extends StatelessWidget {
       runSpacing: 8,
       children: [
         _InventoryFilterChipButton<String?>(
-          label: 'Supplier',
+          label: 'Party',
           valueLabel: supplierFilter ?? 'All',
           isFirst: true,
           values: [
@@ -1836,8 +1903,8 @@ class _InventoryControlsRow extends StatelessWidget {
           onSelected: onSupplierSelected,
         ),
         _InventoryFilterChipButton<String?>(
-          label: 'Type',
-          valueLabel: typeFilter ?? 'Any',
+          label: 'Item',
+          valueLabel: typeFilter ?? 'Anytime',
           values: [
             const _MenuValue<String?>(value: null, label: 'Any'),
             ...types.map(
@@ -1847,7 +1914,7 @@ class _InventoryControlsRow extends StatelessWidget {
           onSelected: onTypeSelected,
         ),
         _InventoryFilterChipButton<String?>(
-          label: 'Kind',
+          label: 'Status',
           valueLabel: switch (kindFilter) {
             'parent' => 'Groups',
             'child' => 'Items',
@@ -1866,7 +1933,7 @@ class _InventoryControlsRow extends StatelessWidget {
 
     final trailing = Wrap(
       spacing: 10,
-      runSpacing: 8,
+      runSpacing: 6,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         if (selectedCount > 0) ...[
@@ -1874,7 +1941,7 @@ class _InventoryControlsRow extends StatelessWidget {
             '$selectedCount Selected',
             style: const TextStyle(
               color: Color(0xFF5E6572),
-              fontSize: 12,
+              fontSize: 13,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -1886,7 +1953,7 @@ class _InventoryControlsRow extends StatelessWidget {
               width: 26,
               height: 26,
               decoration: BoxDecoration(
-                color: const Color(0xFFF4F4F7),
+                color: const Color(0xFFF7F7FB),
                 borderRadius: BorderRadius.circular(13),
               ),
               child: const Icon(
@@ -1956,11 +2023,12 @@ class _InventoryFilterChipButton<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final borderRadius = BorderRadius.horizontal(
+      left: Radius.circular(isFirst ? 8 : 0),
+      right: Radius.circular(isLast ? 8 : 0),
+    );
     return InkWell(
-      borderRadius: BorderRadius.horizontal(
-        left: Radius.circular(isFirst ? 16 : 0),
-        right: Radius.circular(isLast ? 16 : 0),
-      ),
+      borderRadius: borderRadius,
       onTap: () async {
         final selected = await showSearchableSelectDialog<T>(
           context: context,
@@ -1980,15 +2048,12 @@ class _InventoryFilterChipButton<T> extends StatelessWidget {
         }
       },
       child: Container(
-        height: 46,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        height: 34,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
-          color: SoftErpTheme.cardSurfaceAlt,
-          border: Border.all(color: SoftErpTheme.borderStrong),
-          borderRadius: BorderRadius.horizontal(
-            left: Radius.circular(isFirst ? 16 : 0),
-            right: Radius.circular(isLast ? 16 : 0),
-          ),
+          color: const Color(0xF7FFFFFF),
+          border: Border.all(color: const Color(0xFFE4E7F3)),
+          borderRadius: borderRadius,
           boxShadow: SoftErpTheme.insetShadow,
         ),
         child: Row(
@@ -1997,17 +2062,17 @@ class _InventoryFilterChipButton<T> extends StatelessWidget {
             if (isFirst) ...[
               const Icon(
                 Icons.tune_rounded,
-                size: 15,
+                size: 14,
                 color: SoftErpTheme.textSecondary,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
             ],
             Text(
               '$label: ',
               style: const TextStyle(
                 color: SoftErpTheme.textSecondary,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
               ),
             ),
             Flexible(
@@ -2016,15 +2081,15 @@ class _InventoryFilterChipButton<T> extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: SoftErpTheme.textPrimary,
-                  fontSize: 13,
+                  fontSize: 14,
                   fontWeight: FontWeight.w500,
                 ),
               ),
             ),
-            const SizedBox(width: 3),
+            const SizedBox(width: 2),
             const Icon(
               Icons.keyboard_arrow_down_rounded,
-              size: 17,
+              size: 15,
               color: SoftErpTheme.textSecondary,
             ),
           ],
@@ -2047,14 +2112,37 @@ class _ActionChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SoftPill(
-      label: label,
-      leading: Icon(icon, size: 16, color: SoftErpTheme.textSecondary),
-      onTap: onTap,
-      background: SoftErpTheme.cardSurfaceAlt,
-      borderColor: SoftErpTheme.border,
-      foreground: SoftErpTheme.textPrimary,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        hoverColor: _inventoryHoverColor,
+        child: Container(
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF7F7FB),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFE4E7F2)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: const Color(0xFF60677A)),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Color(0xFF484848),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -2238,258 +2326,6 @@ class _InventoryBulkActionButton extends StatelessWidget {
   }
 }
 
-class _InventoryDemoShowcaseStrip extends StatelessWidget {
-  const _InventoryDemoShowcaseStrip({
-    required this.totalRecords,
-    required this.linkedRecords,
-    required this.scannedRecords,
-    required this.awaitingScanRecords,
-    required this.totalScanEvents,
-    required this.health,
-  });
-
-  final int totalRecords;
-  final int linkedRecords;
-  final int scannedRecords;
-  final int awaitingScanRecords;
-  final int totalScanEvents;
-  final InventoryHealthSnapshot health;
-
-  @override
-  Widget build(BuildContext context) {
-    return SoftSurface(
-      color: SoftErpTheme.sectionSurface,
-      radius: SoftErpTheme.radiusMd,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      strongBorder: false,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 1080;
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      gradient: SoftErpTheme.accentGradient,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: const Text(
-                      'Control Tower',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    'Operational Health',
-                    style: const TextStyle(
-                      color: SoftErpTheme.textPrimary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Text(
-                    'Raw-material-first live signals and keyboard controls',
-                    style: const TextStyle(
-                      color: SoftErpTheme.textSecondary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _DemoMetricChip(
-                    label: 'Low Stock',
-                    value: '${health.lowStockCount}',
-                    color: const Color(0xFFB45309),
-                  ),
-                  _DemoMetricChip(
-                    label: 'Reserved Risk',
-                    value: '${health.reservedRiskCount}',
-                    color: const Color(0xFFB91C1C),
-                  ),
-                  _DemoMetricChip(
-                    label: 'Incoming Today',
-                    value: '${health.incomingTodayCount}',
-                    color: const Color(0xFF1D4ED8),
-                  ),
-                  _DemoMetricChip(
-                    label: 'Quality Hold',
-                    value: '${health.qualityHoldCount}',
-                    color: const Color(0xFF7C3AED),
-                  ),
-                  _DemoMetricChip(
-                    label: 'Pending Recon',
-                    value: '${health.pendingReconciliationCount}',
-                    color: const Color(0xFF334155),
-                  ),
-                  _DemoMetricChip(
-                    label: 'Records',
-                    value: '$totalRecords',
-                    color: const Color(0xFF5B5F6E),
-                  ),
-                  _DemoMetricChip(
-                    label: 'Linked',
-                    value: '$linkedRecords',
-                    color: const Color(0xFF5B45D7),
-                  ),
-                  _DemoMetricChip(
-                    label: 'Scanned',
-                    value: '$scannedRecords',
-                    color: const Color(0xFF1D8A4B),
-                  ),
-                  _DemoMetricChip(
-                    label: 'Awaiting Scan',
-                    value: '$awaitingScanRecords',
-                    color: const Color(0xFFB06A00),
-                  ),
-                  _DemoMetricChip(
-                    label: 'Scan Events',
-                    value: '$totalScanEvents',
-                    color: const Color(0xFF2768D8),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _DemoShortcutHint(
-                    label: compact ? 'Select all' : 'Select all filtered',
-                    keys: kIsWeb || Platform.isMacOS ? 'Cmd + A' : 'Ctrl + A',
-                  ),
-                  _DemoShortcutHint(
-                    label: 'Clear selection',
-                    keys: kIsWeb || Platform.isMacOS
-                        ? 'Cmd + Shift + A'
-                        : 'Ctrl + Shift + A',
-                  ),
-                  const _DemoShortcutHint(
-                    label: 'Delete selected',
-                    keys: 'Delete',
-                  ),
-                  const _DemoShortcutHint(
-                    label: 'Cancel selection',
-                    keys: 'Esc',
-                  ),
-                ],
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _DemoMetricChip extends StatelessWidget {
-  const _DemoMetricChip({
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  final String label;
-  final String value;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return SoftSurface(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      radius: 999,
-      color: SoftErpTheme.cardSurface,
-      elevated: true,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              color: SoftErpTheme.textSecondary,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(width: 8),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 180),
-            transitionBuilder: (child, animation) => FadeTransition(
-              opacity: animation,
-              child: ScaleTransition(scale: animation, child: child),
-            ),
-            child: Text(
-              value,
-              key: ValueKey(value),
-              style: TextStyle(
-                color: color,
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DemoShortcutHint extends StatelessWidget {
-  const _DemoShortcutHint({required this.label, required this.keys});
-
-  final String label;
-  final String keys;
-
-  @override
-  Widget build(BuildContext context) {
-    return SoftSurface(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      radius: SoftErpTheme.radiusSm,
-      color: SoftErpTheme.cardSurface,
-      elevated: false,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            keys,
-            style: const TextStyle(
-              color: SoftErpTheme.textPrimary,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: const TextStyle(
-              color: SoftErpTheme.textSecondary,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _InventorySummaryRow extends StatelessWidget {
   const _InventorySummaryRow({
     required this.summary,
@@ -2505,48 +2341,59 @@ class _InventorySummaryRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final cardWidth = constraints.maxWidth >= 1160
-            ? 308.0
+        final cardWidth = constraints.maxWidth >= 1260
+            ? 306.0
             : constraints.maxWidth >= 980
-            ? 280.0
-            : constraints.maxWidth >= 760
-            ? 240.0
+            ? 268.0
             : constraints.maxWidth;
-        return Align(
-          alignment: Alignment.centerLeft,
-          child: Wrap(
-            spacing: 22,
-            runSpacing: 12,
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
             children: [
               SizedBox(
                 width: cardWidth,
                 child: _SummaryCard(
-                  label: 'All Records',
+                  label: 'All Groups',
                   value: summary.total,
+                  icon: Icons.inventory_2_outlined,
+                  iconColor: const Color(0xFF4D6DE6),
+                  iconBg: const Color(0xFFDEE9FF),
                   isActive: activeFilter == _InventorySummaryFilter.all,
                   onTap: () => onSelectFilter(_InventorySummaryFilter.all),
                 ),
               ),
+              const SizedBox(width: 10),
               SizedBox(
                 width: cardWidth,
                 child: _SummaryCard(
                   label: 'Awaiting Scan',
                   value: summary.awaitingScan,
+                  icon: Icons.cancel_outlined,
+                  iconColor: const Color(0xFFF24E4E),
+                  iconBg: const Color(0xFFFFE5E5),
                   isActive:
                       activeFilter == _InventorySummaryFilter.awaitingScan,
                   onTap: () =>
                       onSelectFilter(_InventorySummaryFilter.awaitingScan),
                 ),
               ),
+              const SizedBox(width: 10),
               SizedBox(
                 width: cardWidth,
                 child: _SummaryCard(
                   label: 'Linked Records',
                   value: summary.linked,
+                  icon: Icons.verified_rounded,
+                  iconColor: const Color(0xFF10B981),
+                  iconBg: const Color(0xFFDDF8EA),
                   isActive: activeFilter == _InventorySummaryFilter.linked,
                   onTap: () => onSelectFilter(_InventorySummaryFilter.linked),
                 ),
               ),
+              if (constraints.maxWidth >= 1260) ...[
+                const SizedBox(width: 10),
+                SizedBox(width: cardWidth, child: const _SummaryGhostCard()),
+              ],
             ],
           ),
         );
@@ -2559,22 +2406,85 @@ class _SummaryCard extends StatelessWidget {
   const _SummaryCard({
     required this.label,
     required this.value,
+    required this.icon,
+    required this.iconColor,
+    required this.iconBg,
     required this.isActive,
     required this.onTap,
   });
 
   final String label;
   final int value;
+  final IconData icon;
+  final Color iconColor;
+  final Color iconBg;
   final bool isActive;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return SoftMetricCard(
-      label: label,
-      value: value,
-      isActive: isActive,
+    return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: SoftSurface(
+        height: 76,
+        radius: 20,
+        color: isActive ? const Color(0xFFFDFEFF) : const Color(0xCCFFFFFF),
+        strongBorder: isActive,
+        elevated: true,
+        padding: const EdgeInsets.symmetric(horizontal: 18),
+        child: Row(
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: iconBg,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Icon(icon, color: iconColor, size: 24),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF2F3342),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              '$value',
+              style: const TextStyle(
+                color: Color(0xFF2B3344),
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SummaryGhostCard extends StatelessWidget {
+  const _SummaryGhostCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftSurface(
+      height: 76,
+      radius: 20,
+      color: const Color(0xBFFFFFFF),
+      strongBorder: false,
+      elevated: true,
+      child: const SizedBox.expand(),
     );
   }
 }
@@ -2622,61 +2532,25 @@ class _InventoryTable extends StatefulWidget {
 
 class _InventoryTableState extends State<_InventoryTable> {
   final ScrollController _horizontalController = ScrollController();
-  final ScrollController _leftVerticalController = ScrollController();
-  final ScrollController _rightVerticalController = ScrollController();
-  bool _syncingLeft = false;
-  bool _syncingRight = false;
+  final ScrollController _verticalController = ScrollController();
   bool _isScrolled = false;
 
   @override
   void initState() {
     super.initState();
-    _leftVerticalController.addListener(_syncFromLeft);
-    _rightVerticalController.addListener(_syncFromRight);
+    _verticalController.addListener(_onVerticalScroll);
   }
 
   @override
   void dispose() {
-    _leftVerticalController.removeListener(_syncFromLeft);
-    _rightVerticalController.removeListener(_syncFromRight);
+    _verticalController.removeListener(_onVerticalScroll);
     _horizontalController.dispose();
-    _leftVerticalController.dispose();
-    _rightVerticalController.dispose();
+    _verticalController.dispose();
     super.dispose();
   }
 
-  void _syncFromLeft() {
-    if (_syncingRight || !_rightVerticalController.hasClients) {
-      _setScrolledState(_leftVerticalController.offset > 2);
-      return;
-    }
-    _syncingLeft = true;
-    final offset = _leftVerticalController.offset.clamp(
-      0.0,
-      _rightVerticalController.position.maxScrollExtent,
-    );
-    if ((_rightVerticalController.offset - offset).abs() > 0.5) {
-      _rightVerticalController.jumpTo(offset);
-    }
-    _syncingLeft = false;
-    _setScrolledState(offset > 2);
-  }
-
-  void _syncFromRight() {
-    if (_syncingLeft || !_leftVerticalController.hasClients) {
-      _setScrolledState(_rightVerticalController.offset > 2);
-      return;
-    }
-    _syncingRight = true;
-    final offset = _rightVerticalController.offset.clamp(
-      0.0,
-      _leftVerticalController.position.maxScrollExtent,
-    );
-    if ((_leftVerticalController.offset - offset).abs() > 0.5) {
-      _leftVerticalController.jumpTo(offset);
-    }
-    _syncingRight = false;
-    _setScrolledState(offset > 2);
+  void _onVerticalScroll() {
+    _setScrolledState(_verticalController.offset > 2);
   }
 
   void _setScrolledState(bool value) {
@@ -2702,100 +2576,50 @@ class _InventoryTableState extends State<_InventoryTable> {
         final metrics = _InventoryTableMetrics.fromViewportWidth(
           constraints.maxWidth,
         );
-        final leftPaneWidth = math.max(
-          0.0,
-          constraints.maxWidth - metrics.actionsWidth - 6,
+        final minViewportWidth = constraints.maxWidth;
+        final totalTableWidth = math.max(
+          metrics.dataWidth + metrics.actionsWidth,
+          minViewportWidth,
         );
-        final dataTableWidth = math.max(metrics.dataWidth, leftPaneWidth);
-        return Row(
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SingleChildScrollView(
-                    controller: _horizontalController,
-                    scrollDirection: Axis.horizontal,
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(minWidth: leftPaneWidth),
-                      child: SizedBox(
-                        width: dataTableWidth,
-                        child: _InventoryTableHeader(
-                          viewMode: widget.viewMode,
-                          metrics: metrics,
-                          includeActions: false,
-                          showShadow: _isScrolled,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      controller: _horizontalController,
-                      scrollDirection: Axis.horizontal,
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(minWidth: leftPaneWidth),
-                        child: SizedBox(
-                          width: dataTableWidth,
-                          child: ListView.separated(
-                            controller: _leftVerticalController,
-                            itemCount: widget.rows.length,
-                            separatorBuilder: (_, _) =>
-                                SizedBox(height: metrics.rowGap),
-                            itemBuilder: (context, index) {
-                              final entry = widget.rows[index];
-                              final record = entry.record;
-                              return _InventoryMainDataRow(
-                                record: record,
-                                entry: entry,
-                                metrics: metrics,
-                                isSelected: widget.selectedBarcodes.contains(
-                                  record.barcode,
-                                ),
-                                isStriped: index.isOdd,
-                                onTap: () => widget.onOpenDetails(record),
-                                onLongPress: () =>
-                                    widget.onToggleSelection(record.barcode),
-                                onExpandToggle: entry.canExpand
-                                    ? () => widget.onToggleExpanded(
-                                        record.barcode,
-                                      )
-                                    : null,
-                              );
-                            },
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            SoftSurface(
-              width: metrics.actionsWidth,
-              margin: const EdgeInsets.only(left: 6),
-              radius: 12,
-              color: SoftErpTheme.cardSurface,
-              strongBorder: true,
-              child: Column(
-                children: [
-                  _InventoryActionsHeader(
+            SingleChildScrollView(
+              controller: _horizontalController,
+              scrollDirection: Axis.horizontal,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minWidth: minViewportWidth),
+                child: SizedBox(
+                  width: totalTableWidth,
+                  child: _InventoryTableHeader(
+                    viewMode: widget.viewMode,
                     metrics: metrics,
+                    includeActions: true,
                     showShadow: _isScrolled,
                   ),
-                  SizedBox(height: math.max(8, metrics.rowGap)),
-                  Expanded(
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: SingleChildScrollView(
+                controller: _horizontalController,
+                scrollDirection: Axis.horizontal,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minWidth: minViewportWidth),
+                  child: SizedBox(
+                    width: totalTableWidth,
                     child: ListView.separated(
-                      controller: _rightVerticalController,
+                      controller: _verticalController,
                       itemCount: widget.rows.length,
                       separatorBuilder: (_, _) =>
                           SizedBox(height: metrics.rowGap),
                       itemBuilder: (context, index) {
                         final entry = widget.rows[index];
                         final record = entry.record;
-                        return _InventoryActionsCell(
+                        return _InventoryMainDataRow(
                           record: record,
+                          entry: entry,
                           metrics: metrics,
                           isSelected: widget.selectedBarcodes.contains(
                             record.barcode,
@@ -2803,6 +2627,11 @@ class _InventoryTableState extends State<_InventoryTable> {
                           isStriped: index.isOdd,
                           isRequestDelete: widget.isRequestDelete,
                           onTap: () => widget.onOpenDetails(record),
+                          onLongPress: () =>
+                              widget.onToggleSelection(record.barcode),
+                          onExpandToggle: entry.canExpand
+                              ? () => widget.onToggleExpanded(record.barcode)
+                              : null,
                           onAddSubGroup: () => widget.onAddSubGroup(record),
                           onEdit: () => widget.onEdit(record),
                           onDelete: () => widget.onDelete(record),
@@ -2813,7 +2642,7 @@ class _InventoryTableState extends State<_InventoryTable> {
                       },
                     ),
                   ),
-                ],
+                ),
               ),
             ),
           ],
@@ -2841,8 +2670,8 @@ class _InventoryTableHeader extends StatelessWidget {
     return SoftSurface(
       height: metrics.headerHeight,
       padding: EdgeInsets.symmetric(horizontal: metrics.horizontalPadding),
-      color: SoftErpTheme.accentSurface,
-      radius: 14,
+      color: const Color(0xFFEEF0F9),
+      radius: 22,
       elevated: showShadow,
       strongBorder: false,
       child: Row(
@@ -2881,35 +2710,6 @@ class _InventoryTableHeader extends StatelessWidget {
   }
 }
 
-class _InventoryActionsHeader extends StatelessWidget {
-  const _InventoryActionsHeader({
-    required this.metrics,
-    this.showShadow = false,
-  });
-
-  final _InventoryTableMetrics metrics;
-  final bool showShadow;
-
-  @override
-  Widget build(BuildContext context) {
-    return SoftSurface(
-      height: metrics.headerHeight,
-      radius: 12,
-      color: SoftErpTheme.accentSurface,
-      elevated: showShadow,
-      alignment: Alignment.center,
-      child: Text(
-        'Actions',
-        style: TextStyle(
-          color: SoftErpTheme.textPrimary,
-          fontSize: metrics.headerFontSize,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-}
-
 class _HeaderCell extends StatelessWidget {
   const _HeaderCell(this.label, {required this.width, required this.metrics});
 
@@ -2940,8 +2740,15 @@ class _InventoryMainDataRow extends StatelessWidget {
     required this.metrics,
     required this.isSelected,
     required this.isStriped,
+    required this.isRequestDelete,
     required this.onTap,
     required this.onLongPress,
+    required this.onAddSubGroup,
+    required this.onEdit,
+    required this.onDelete,
+    required this.onLinkGroup,
+    required this.onLinkItem,
+    required this.onUnlink,
     this.onExpandToggle,
   });
 
@@ -2950,8 +2757,15 @@ class _InventoryMainDataRow extends StatelessWidget {
   final _InventoryTableMetrics metrics;
   final bool isSelected;
   final bool isStriped;
+  final bool isRequestDelete;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
+  final VoidCallback onAddSubGroup;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final VoidCallback onLinkGroup;
+  final VoidCallback onLinkItem;
+  final VoidCallback onUnlink;
   final VoidCallback? onExpandToggle;
 
   @override
@@ -3024,6 +2838,23 @@ class _InventoryMainDataRow extends StatelessWidget {
                         ),
                       ),
                     ),
+                    SizedBox(
+                      width: metrics.actionsWidth,
+                      child: _InventoryActionsCell(
+                        record: record,
+                        metrics: metrics,
+                        isSelected: isSelected,
+                        isStriped: isStriped,
+                        isRequestDelete: isRequestDelete,
+                        onTap: onTap,
+                        onAddSubGroup: onAddSubGroup,
+                        onEdit: onEdit,
+                        onDelete: onDelete,
+                        onLinkGroup: onLinkGroup,
+                        onLinkItem: onLinkItem,
+                        onUnlink: onUnlink,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -3090,26 +2921,20 @@ class _InventoryActionsCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final backgroundColor = isSelected
-        ? _inventoryHoverColor
-        : isStriped
-        ? const Color(0xFFF7F8FB)
-        : Colors.white;
-
-    return SoftSurface(
-      height: metrics.rowHeight,
-      radius: metrics.rowRadius,
-      color: backgroundColor,
-      elevated: false,
-      alignment: Alignment.center,
-      child: _InventoryActionsOverlayAnchor(
-        triggerSize: metrics.actionButtonSize,
-        canAddSubGroup:
-            record.numberOfChildren > 0 || (record.parentBarcode ?? '').isEmpty,
-        isRequestDelete: isRequestDelete,
-        onAddSubGroup: onAddSubGroup,
-        onEdit: onEdit,
-        onDelete: onDelete,
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: _InventoryActionsOverlayAnchor(
+          triggerSize: metrics.actionButtonSize,
+          canAddSubGroup:
+              record.numberOfChildren > 0 ||
+              (record.parentBarcode ?? '').isEmpty,
+          isRequestDelete: isRequestDelete,
+          onAddSubGroup: onAddSubGroup,
+          onEdit: onEdit,
+          onDelete: onDelete,
+        ),
       ),
     );
   }
@@ -3285,14 +3110,22 @@ class _InventoryStatusBadge extends StatelessWidget {
       ),
     };
 
-    return FittedBox(
-      fit: BoxFit.scaleDown,
-      alignment: Alignment.centerLeft,
-      child: SoftStatusPill(
-        label: scheme.label,
-        background: scheme.bg,
-        borderColor: scheme.border,
-        textColor: scheme.text,
+    return Container(
+      height: 26,
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 5),
+      decoration: BoxDecoration(
+        color: scheme.bg,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: scheme.border),
+      ),
+      child: Text(
+        scheme.label,
+        style: TextStyle(
+          color: scheme.text,
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+          height: 1.1,
+        ),
       ),
     );
   }
@@ -4072,116 +3905,81 @@ class _InventoryTableMetrics {
   });
 
   factory _InventoryTableMetrics.fromViewportWidth(double width) {
-    if (width < 1100) {
+    if (width < 1120) {
       return const _InventoryTableMetrics(
-        horizontalPadding: 16,
-        nameWidth: 220,
-        barcodeWidth: 110,
-        stockWidth: 128,
-        dateWidth: 132,
-        createdByWidth: 126,
-        statusWidth: 120,
-        actionsWidth: 64,
-        headerHeight: 42,
-        rowHeight: 64,
+        horizontalPadding: 18,
+        nameWidth: 228,
+        barcodeWidth: 132,
+        stockWidth: 144,
+        dateWidth: 148,
+        createdByWidth: 138,
+        statusWidth: 136,
+        actionsWidth: 56,
+        headerHeight: 46,
+        rowHeight: 70,
         headerFontSize: 12,
-        bodyFontSize: 13,
+        bodyFontSize: 14,
         statusFontSize: 11,
-        treeIndent: 18,
+        treeIndent: 20,
         chevronSize: 20,
         nameGap: 8,
-        rowRadius: 10,
-        statusRadius: 6,
+        rowRadius: 18,
+        statusRadius: 4,
         statusHorizontalPadding: 8,
         statusVerticalPadding: 4,
-        actionButtonSize: 26,
-        rowGap: 6,
+        actionButtonSize: 24,
+        rowGap: 5,
       );
     }
-    if (width < 1440) {
+    if (width < 1500) {
       return const _InventoryTableMetrics(
-        horizontalPadding: 20,
-        nameWidth: 270,
-        barcodeWidth: 126,
-        stockWidth: 150,
-        dateWidth: 146,
-        createdByWidth: 142,
-        statusWidth: 138,
-        actionsWidth: 72,
-        headerHeight: 44,
-        rowHeight: 68,
-        headerFontSize: 13,
+        horizontalPadding: 24,
+        nameWidth: 274,
+        barcodeWidth: 158,
+        stockWidth: 162,
+        dateWidth: 170,
+        createdByWidth: 166,
+        statusWidth: 172,
+        actionsWidth: 58,
+        headerHeight: 48,
+        rowHeight: 72,
+        headerFontSize: 14,
         bodyFontSize: 15,
         statusFontSize: 12,
         treeIndent: 22,
-        chevronSize: 21,
+        chevronSize: 22,
         nameGap: 9,
-        rowRadius: 11,
-        statusRadius: 6,
-        statusHorizontalPadding: 9,
+        rowRadius: 20,
+        statusRadius: 4,
+        statusHorizontalPadding: 10,
         statusVerticalPadding: 5,
-        actionButtonSize: 27,
-        rowGap: 7,
+        actionButtonSize: 24,
+        rowGap: 5,
       );
     }
-    const base = _InventoryTableMetrics(
-      horizontalPadding: 24,
-      nameWidth: 320,
-      barcodeWidth: 140,
-      stockWidth: 170,
-      dateWidth: 160,
-      createdByWidth: 160,
-      statusWidth: 156,
-      actionsWidth: 78,
-      headerHeight: 46,
-      rowHeight: 72,
+    return const _InventoryTableMetrics(
+      horizontalPadding: 32,
+      nameWidth: 298,
+      barcodeWidth: 174,
+      stockWidth: 176,
+      dateWidth: 184,
+      createdByWidth: 182,
+      statusWidth: 194,
+      actionsWidth: 60,
+      headerHeight: 50,
+      rowHeight: 74,
       headerFontSize: 14,
       bodyFontSize: 16,
       statusFontSize: 12,
       treeIndent: 24,
-      chevronSize: 22,
+      chevronSize: 24,
       nameGap: 10,
-      rowRadius: 12,
-      statusRadius: 6,
+      rowRadius: 22,
+      statusRadius: 4,
       statusHorizontalPadding: 10,
       statusVerticalPadding: 5,
-      actionButtonSize: 28,
-      rowGap: 8,
-    );
-
-    final availableDataWidth = width - base.actionsWidth - 12;
-    final extraWidth = availableDataWidth - base.dataWidth;
-    final viewportScale = ((width - 1440.0) / 1200.0).clamp(0.0, 1.0);
-    if (extraWidth <= 24 && viewportScale == 0) {
-      return base;
-    }
-
-    final distributedExtra = math.max(0.0, extraWidth.toDouble());
-    final densityBoost = viewportScale * 8;
-    return _InventoryTableMetrics(
-      horizontalPadding:
-          base.horizontalPadding + (distributedExtra * 0.01) + (viewportScale),
-      nameWidth: base.nameWidth + (distributedExtra * 0.32),
-      barcodeWidth: base.barcodeWidth + (distributedExtra * 0.10),
-      stockWidth: base.stockWidth + (distributedExtra * 0.14),
-      dateWidth: base.dateWidth + (distributedExtra * 0.16),
-      createdByWidth: base.createdByWidth + (distributedExtra * 0.13),
-      statusWidth: base.statusWidth + (distributedExtra * 0.13),
-      actionsWidth: base.actionsWidth,
-      headerHeight: base.headerHeight + (viewportScale * 4),
-      rowHeight: base.rowHeight + densityBoost,
-      headerFontSize: base.headerFontSize + (viewportScale * 1.2),
-      bodyFontSize: base.bodyFontSize + (viewportScale * 1.4),
-      statusFontSize: base.statusFontSize + (viewportScale * 1.1),
-      treeIndent: base.treeIndent + (viewportScale * 2),
-      chevronSize: base.chevronSize + (viewportScale * 1.5),
-      nameGap: base.nameGap + (viewportScale * 1.2),
-      rowRadius: base.rowRadius,
-      statusRadius: base.statusRadius,
-      statusHorizontalPadding: base.statusHorizontalPadding + viewportScale,
-      statusVerticalPadding: base.statusVerticalPadding + (viewportScale * 0.8),
-      actionButtonSize: base.actionButtonSize + (viewportScale * 2),
-      rowGap: base.rowGap + (viewportScale * 2),
+      actionButtonSize: 24,
+      rowGap: 4,
     );
   }
 
@@ -4433,9 +4231,9 @@ class _InventoryActionsOverlayAnchorState
                       borderRadius: BorderRadius.circular(18),
                       boxShadow: const [
                         BoxShadow(
-                          color: Color(0x22000000),
-                          blurRadius: 18,
-                          offset: Offset(0, 10),
+                          color: Color(0x14000000),
+                          blurRadius: 12,
+                          offset: Offset(0, 6),
                         ),
                       ],
                     ),

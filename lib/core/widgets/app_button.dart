@@ -24,9 +24,9 @@ class AppButton extends StatelessWidget {
     final foregroundColor = isPrimary ? Colors.white : SoftErpTheme.textPrimary;
     final backgroundColor = isPrimary
         ? SoftErpTheme.accent
-        : SoftErpTheme.cardSurface;
+        : const Color(0xFFFDFDFF);
     final side = BorderSide(
-      color: isPrimary ? SoftErpTheme.accent : SoftErpTheme.borderStrong,
+      color: isPrimary ? SoftErpTheme.accentDark : const Color(0xFFE7E8F2),
     );
 
     return SizedBox(
@@ -34,19 +34,17 @@ class AppButton extends StatelessWidget {
       child: ElevatedButton(
         onPressed: isLoading ? null : onPressed,
         style: ElevatedButton.styleFrom(
-          elevation: isPrimary ? 4 : 1,
-          shadowColor: isPrimary
-              ? const Color(0x3A6366F1)
-              : const Color(0x14909DC3),
+          elevation: isPrimary ? 1.5 : 0,
+          shadowColor: const Color(0x146A74B8),
           backgroundColor: backgroundColor,
           foregroundColor: foregroundColor,
           disabledBackgroundColor: backgroundColor.withValues(alpha: 0.7),
           disabledForegroundColor: foregroundColor.withValues(alpha: 0.7),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(16),
             side: side,
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 2),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,

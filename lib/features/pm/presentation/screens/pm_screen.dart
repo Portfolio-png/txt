@@ -2399,29 +2399,73 @@ class PMFigmaSegmentedControl extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const segmentWidth = 108.0;
+    const segmentHeight = 42.0;
+    const shellPadding = 4.0;
+    const gradient = LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [Color(0xFF5E5BF9), Color(0xFF413F9C)],
+      stops: [0, 1],
+    );
+    final usesGradient = variant == PMFigmaSegmentedControlVariant.gradient;
+
     return Semantics(
       container: true,
       label: 'PM group and item segmented control',
       child: Container(
-        padding: const EdgeInsets.all(2),
+        width: (segmentWidth * 2) + (shellPadding * 2),
+        height: segmentHeight + (shellPadding * 2),
+        padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
           color: const Color(0xFFF5F7F9),
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(999),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
+        child: Stack(
           children: [
-            _PMFigmaSegmentChip(
-              label: 'Group',
-              isSelected: value == 'group',
-              onTap: () => onChanged('group'),
-              variant: variant,
+            AnimatedAlign(
+              duration: const Duration(milliseconds: 320),
+              curve: Curves.easeInOutCubicEmphasized,
+              alignment: value == 'group'
+                  ? Alignment.centerLeft
+                  : Alignment.centerRight,
+              child: Container(
+                width: segmentWidth,
+                height: segmentHeight,
+                decoration: BoxDecoration(
+                  color: usesGradient ? null : Colors.white,
+                  gradient: usesGradient ? gradient : null,
+                  borderRadius: BorderRadius.circular(999),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x24000000),
+                      blurRadius: 8,
+                      offset: Offset(0, 3),
+                    ),
+                  ],
+                ),
+              ),
             ),
-            _PMFigmaSegmentChip(
-              label: 'Item',
-              isSelected: value == 'item',
-              onTap: () => onChanged('item'),
-              variant: variant,
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _PMFigmaSegmentChip(
+                  width: segmentWidth,
+                  height: segmentHeight,
+                  label: 'Groups',
+                  isSelected: value == 'group',
+                  onTap: () => onChanged('group'),
+                  variant: variant,
+                ),
+                _PMFigmaSegmentChip(
+                  width: segmentWidth,
+                  height: segmentHeight,
+                  label: 'Items',
+                  isSelected: value == 'item',
+                  onTap: () => onChanged('item'),
+                  variant: variant,
+                ),
+              ],
             ),
           ],
         ),
@@ -2432,12 +2476,16 @@ class PMFigmaSegmentedControl extends StatelessWidget {
 
 class _PMFigmaSegmentChip extends StatelessWidget {
   const _PMFigmaSegmentChip({
+    required this.width,
+    required this.height,
     required this.label,
     required this.isSelected,
     required this.onTap,
     required this.variant,
   });
 
+  final double width;
+  final double height;
   final String label;
   final bool isSelected;
   final VoidCallback onTap;
@@ -2445,54 +2493,31 @@ class _PMFigmaSegmentChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final gradient = const LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
-      colors: [Color(0xFF5E5BF9), Color(0xFF413F9C)],
-      stops: [0, 1],
-    );
     final usesGradient = variant == PMFigmaSegmentedControlVariant.gradient;
     final activeTextColor = usesGradient
         ? Colors.white
         : const Color(0xFF1100FF);
 
-    return Padding(
-      padding: EdgeInsets.only(right: label == 'Item' ? 0 : 4),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(isSelected ? 20 : 22),
-          onTap: onTap,
-          child: Ink(
-            height: 30,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? (usesGradient ? null : Colors.white)
-                  : const Color(0xFFF5F7F9),
-              gradient: isSelected && usesGradient ? gradient : null,
-              borderRadius: BorderRadius.circular(isSelected ? 20 : 22),
-              boxShadow: isSelected
-                  ? const [
-                      BoxShadow(
-                        color: Color(0x33000000),
-                        blurRadius: 2,
-                        offset: Offset(0, 1),
-                      ),
-                    ]
-                  : null,
-            ),
-            child: Center(
-              child: Text(
-                label,
-                style: TextStyle(
-                  color: isSelected ? activeTextColor : const Color(0xFF1C2632),
-                  fontSize: 12,
-                  height: 1,
-                  letterSpacing: 0.24,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                ),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: SizedBox(
+          width: width,
+          height: height,
+          child: Center(
+            child: AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              style: TextStyle(
+                color: isSelected ? activeTextColor : const Color(0xFF1C2632),
+                fontSize: 16,
+                height: 1,
+                letterSpacing: 0,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
               ),
+              child: Text(label),
             ),
           ),
         ),
