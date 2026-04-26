@@ -5,6 +5,14 @@ const fs = require('fs');
 const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
 
+try {
+  // Optional local/server convenience. Production should still inject env vars.
+  // This makes EC2 redeploys reliable even if PM2 doesn't load env_file.
+  require('dotenv').config({ path: path.join(__dirname, '.env') });
+} catch (_) {
+  // dotenv is optional; ignore if not installed.
+}
+
 const app = express();
 const PORT = Number(process.env.PORT || 18080);
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'paper.db');
