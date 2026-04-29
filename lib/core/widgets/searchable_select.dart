@@ -17,6 +17,12 @@ class SearchableSelectOption<T> {
   String get normalizedSearchText => (searchText ?? label).trim().toLowerCase();
 }
 
+typedef SearchableSelectCanCreateOption<T> =
+    bool Function(String query, List<SearchableSelectOption<T>> options);
+typedef SearchableSelectCreateOption<T> =
+    Future<SearchableSelectOption<T>?> Function(String query);
+typedef SearchableSelectCreateLabelBuilder = String Function(String query);
+
 Future<SearchableSelectOption<T>?> showSearchableSelectDialog<T>({
   required BuildContext context,
   required List<SearchableSelectOption<T>> options,
@@ -24,6 +30,9 @@ Future<SearchableSelectOption<T>?> showSearchableSelectDialog<T>({
   String searchHintText = 'Search',
   T? selectedValue,
   String emptyText = 'No matching options',
+  SearchableSelectCanCreateOption<T>? canCreateOption,
+  SearchableSelectCreateOption<T>? onCreateOption,
+  SearchableSelectCreateLabelBuilder? createOptionLabelBuilder,
 }) {
   final overlayState = Overlay.maybeOf(context, rootOverlay: true);
   final overlayContext = overlayState?.context ?? context;
@@ -49,6 +58,9 @@ Future<SearchableSelectOption<T>?> showSearchableSelectDialog<T>({
           options: options,
           selectedValue: selectedValue,
           anchorRect: anchorRect,
+          canCreateOption: canCreateOption,
+          onCreateOption: onCreateOption,
+          createOptionLabelBuilder: createOptionLabelBuilder,
         ),
     transitionBuilder: (dialogContext, animation, secondaryAnimation, child) {
       final curvedAnimation = CurvedAnimation(
@@ -78,6 +90,9 @@ class SearchableSelectField<T> extends FormField<T> {
     this.dialogTitle,
     this.searchHintText = 'Search',
     this.emptyText,
+    this.canCreateOption,
+    this.onCreateOption,
+    this.createOptionLabelBuilder,
     super.validator,
   }) : super(
          initialValue: value,
@@ -157,6 +172,9 @@ class SearchableSelectField<T> extends FormField<T> {
   final String? dialogTitle;
   final String searchHintText;
   final String? emptyText;
+  final SearchableSelectCanCreateOption<T>? canCreateOption;
+  final SearchableSelectCreateOption<T>? onCreateOption;
+  final SearchableSelectCreateLabelBuilder? createOptionLabelBuilder;
 
   @override
   FormFieldState<T> createState() => _SearchableSelectFieldState<T>();
@@ -191,6 +209,9 @@ class _SearchableSelectFieldState<T> extends FormFieldState<T> {
       searchHintText: widget.searchHintText,
       selectedValue: value,
       emptyText: widget.emptyText ?? 'No matching options',
+      canCreateOption: widget.canCreateOption,
+      onCreateOption: widget.onCreateOption,
+      createOptionLabelBuilder: widget.createOptionLabelBuilder,
     );
     if (selected == null) {
       return;
@@ -207,6 +228,9 @@ class _SearchableSelectDialog<T> extends StatefulWidget {
     required this.emptyText,
     required this.selectedValue,
     required this.anchorRect,
+    required this.canCreateOption,
+    required this.onCreateOption,
+    required this.createOptionLabelBuilder,
     this.title,
   });
 
@@ -216,6 +240,9 @@ class _SearchableSelectDialog<T> extends StatefulWidget {
   final String emptyText;
   final T? selectedValue;
   final Rect? anchorRect;
+  final SearchableSelectCanCreateOption<T>? canCreateOption;
+  final SearchableSelectCreateOption<T>? onCreateOption;
+  final SearchableSelectCreateLabelBuilder? createOptionLabelBuilder;
 
   @override
   State<_SearchableSelectDialog<T>> createState() =>
@@ -258,9 +285,13 @@ class _SearchableSelectDialogState<T>
             emptyText: widget.emptyText,
             selectedValue: widget.selectedValue,
             options: visibleOptions,
+            allOptions: widget.options,
             onQueryChanged: (_) => setState(() {}),
             searchController: _searchController,
             maxHeight: layout.maxHeight,
+            canCreateOption: widget.canCreateOption,
+            onCreateOption: widget.onCreateOption,
+            createOptionLabelBuilder: widget.createOptionLabelBuilder,
           );
 
           if (layout.centered) {
@@ -338,25 +369,44 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
   const _SearchableSelectMenu({
     required this.options,
     required this.selectedValue,
+    required this.allOptions,
     required this.searchController,
     required this.onQueryChanged,
     required this.searchHintText,
     required this.emptyText,
     required this.maxHeight,
+    required this.canCreateOption,
+    required this.onCreateOption,
+    required this.createOptionLabelBuilder,
     this.title,
   });
 
   final List<SearchableSelectOption<T>> options;
   final T? selectedValue;
+  final List<SearchableSelectOption<T>> allOptions;
   final TextEditingController searchController;
   final ValueChanged<String> onQueryChanged;
   final String searchHintText;
   final String emptyText;
   final double maxHeight;
   final String? title;
+  final SearchableSelectCanCreateOption<T>? canCreateOption;
+  final SearchableSelectCreateOption<T>? onCreateOption;
+  final SearchableSelectCreateLabelBuilder? createOptionLabelBuilder;
 
   @override
   Widget build(BuildContext context) {
+    final query = searchController.text.trim();
+    final normalizedQuery = query.toLowerCase();
+    final exactMatchExists = allOptions.any(
+      (option) => option.normalizedSearchText == normalizedQuery,
+    );
+    final showCreateOption =
+        onCreateOption != null &&
+        query.isNotEmpty &&
+        !exactMatchExists &&
+        (canCreateOption?.call(query, allOptions) ?? true);
+
     return FocusTraversalGroup(
       child: Material(
         elevation: 4,
@@ -433,7 +483,7 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
                 ),
               ),
               Flexible(
-                child: options.isEmpty
+                child: options.isEmpty && !showCreateOption
                     ? Center(
                         child: Padding(
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
@@ -448,11 +498,22 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
                     : ListView.separated(
                         shrinkWrap: true,
                         padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                        itemCount: options.length,
+                        itemCount: options.length + (showCreateOption ? 1 : 0),
                         separatorBuilder: (context, index) =>
                             const SizedBox(height: 2),
                         itemBuilder: (context, index) {
-                          final option = options[index];
+                          if (showCreateOption && index == 0) {
+                            return _SearchableSelectCreateTile<T>(
+                              query: query,
+                              label:
+                                  createOptionLabelBuilder?.call(query) ??
+                                  'Create "$query"',
+                              onCreateOption: onCreateOption!,
+                            );
+                          }
+                          final optionIndex =
+                              index - (showCreateOption ? 1 : 0);
+                          final option = options[optionIndex];
                           return _SearchableSelectOptionTile<T>(
                             option: option,
                             isSelected: option.value == selectedValue,
@@ -549,6 +610,113 @@ class _SearchableSelectOptionTileState<T>
                     Icons.check_rounded,
                     size: 18,
                     color: Color(0xFF6C63FF),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SearchableSelectCreateTile<T> extends StatefulWidget {
+  const _SearchableSelectCreateTile({
+    required this.query,
+    required this.label,
+    required this.onCreateOption,
+  });
+
+  final String query;
+  final String label;
+  final SearchableSelectCreateOption<T> onCreateOption;
+
+  @override
+  State<_SearchableSelectCreateTile<T>> createState() =>
+      _SearchableSelectCreateTileState<T>();
+}
+
+class _SearchableSelectCreateTileState<T>
+    extends State<_SearchableSelectCreateTile<T>> {
+  bool _isCreating = false;
+  bool _isFocused = false;
+
+  Future<void> _create() async {
+    if (_isCreating) {
+      return;
+    }
+    setState(() {
+      _isCreating = true;
+    });
+    try {
+      final created = await widget.onCreateOption(widget.query);
+      if (!mounted || created == null) {
+        return;
+      }
+      Navigator.of(context).pop(created);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCreating = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final backgroundColor = _isFocused
+        ? const Color(0xFFEDE9FF)
+        : const Color(0xFFF8FAFF);
+
+    return FocusableActionDetector(
+      shortcuts: const <ShortcutActivator, Intent>{
+        SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+        SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+      },
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (intent) {
+            _create();
+            return null;
+          },
+        ),
+      },
+      onShowFocusHighlight: (focused) {
+        setState(() {
+          _isFocused = focused;
+        });
+      },
+      child: Material(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          onTap: _isCreating ? null : _create,
+          borderRadius: BorderRadius.circular(10),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            child: Row(
+              children: [
+                _isCreating
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(
+                        Icons.add_circle_outline_rounded,
+                        size: 18,
+                        color: Color(0xFF7C6BFF),
+                      ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    widget.label,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: const Color(0xFF5E49E6),
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],

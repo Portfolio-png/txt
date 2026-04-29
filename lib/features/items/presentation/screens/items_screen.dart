@@ -6,7 +6,9 @@ import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_section_title.dart';
 import '../../../../core/widgets/searchable_select.dart';
+import '../../../groups/presentation/screens/groups_screen.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
+import '../../../units/presentation/screens/units_screen.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../domain/item_definition.dart';
 import '../../domain/item_inputs.dart';
@@ -74,9 +76,10 @@ class ItemsScreen extends StatelessWidget {
   static Future<ItemDefinition?> openEditor(
     BuildContext context, {
     ItemDefinition? item,
+    String initialName = '',
   }) {
-    final isNarrow = MediaQuery.of(context).size.width < 1100;
-    final body = _ItemEditorSheet(item: item);
+    final isNarrow = MediaQuery.of(context).size.width < 980;
+    final body = _ItemEditorSheet(item: item, initialName: initialName);
     if (isNarrow) {
       return showModalBottomSheet<ItemDefinition?>(
         context: context,
@@ -96,7 +99,7 @@ class ItemsScreen extends StatelessWidget {
       builder: (context) => Dialog(
         insetPadding: const EdgeInsets.all(32),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1040),
+          constraints: const BoxConstraints(maxWidth: 1380),
           child: body,
         ),
       ),
@@ -106,8 +109,9 @@ class ItemsScreen extends StatelessWidget {
   static Future<ItemDefinition?> _openItemEditor(
     BuildContext context, {
     ItemDefinition? item,
+    String initialName = '',
   }) {
-    return openEditor(context, item: item);
+    return openEditor(context, item: item, initialName: initialName);
   }
 }
 
@@ -128,7 +132,7 @@ class _ItemsToolbar extends StatelessWidget {
             child: TextField(
               onChanged: provider.setSearchQuery,
               decoration: InputDecoration(
-                hintText: 'Search items, properties, values, or leaf paths',
+                hintText: 'Search items, properties, values, or leaf nodes',
                 prefixIcon: const Icon(Icons.search),
                 filled: true,
                 fillColor: Colors.white,
@@ -248,7 +252,7 @@ class _ItemRow extends StatelessWidget {
         : item.topLevelProperties.map((node) => node.name).join(', ');
     final leafSummary = item.leafVariationNodes.isEmpty
         ? 'No orderable leaves'
-        : '${item.leafVariationNodes.length} orderable path${item.leafVariationNodes.length == 1 ? '' : 's'}';
+        : '${item.leafVariationNodes.length} orderable leaf${item.leafVariationNodes.length == 1 ? '' : 's'}';
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
@@ -339,6 +343,8 @@ class _NodeDraft {
     required this.parent,
     String name = '',
     String displayName = '',
+    this.detailsExpanded = false,
+    this.isNameEditing = false,
     this.displayNameTouched = false,
     List<_NodeDraft>? children,
   }) : nameController = TextEditingController(text: name),
@@ -350,6 +356,8 @@ class _NodeDraft {
   _NodeDraft? parent;
   final TextEditingController nameController;
   final TextEditingController displayNameController;
+  bool detailsExpanded;
+  bool isNameEditing;
   bool displayNameTouched;
   final List<_NodeDraft> children;
 
@@ -366,9 +374,10 @@ class _NodeDraft {
 }
 
 class _ItemEditorSheet extends StatefulWidget {
-  const _ItemEditorSheet({this.item});
+  const _ItemEditorSheet({this.item, this.initialName = ''});
 
   final ItemDefinition? item;
+  final String initialName;
 
   @override
   State<_ItemEditorSheet> createState() => _ItemEditorSheetState();
@@ -381,6 +390,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   late final TextEditingController _displayNameController;
   late final TextEditingController _quantityController;
   final List<_NodeDraft> _rootNodes = [];
+  final ScrollController _variationTreeScrollController = ScrollController();
   int? _selectedGroupId;
   int? _selectedUnitId;
   bool _displayNameTouched = false;
@@ -392,7 +402,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.item?.name ?? '');
+    _nameController = TextEditingController(
+      text: widget.item?.name ?? widget.initialName,
+    );
     _aliasController = TextEditingController(text: widget.item?.alias ?? '');
     _displayNameController = TextEditingController(
       text: widget.item?.displayName ?? '',
@@ -435,6 +447,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       parent: parent,
       name: node.name,
       displayName: node.displayName,
+      detailsExpanded: false,
+      isNameEditing: false,
       displayNameTouched: node.displayName.trim().isNotEmpty,
     );
     draft.nameController.addListener(() {
@@ -455,7 +469,12 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   }
 
   _NodeDraft _newDraft(ItemVariationNodeKind kind, _NodeDraft? parent) {
-    final draft = _NodeDraft(kind: kind, parent: parent);
+    final draft = _NodeDraft(
+      kind: kind,
+      parent: parent,
+      detailsExpanded: false,
+      isNameEditing: false,
+    );
     draft.nameController.addListener(() {
       _syncLeafDisplayNames();
       _handleChange();
@@ -486,9 +505,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       return;
     }
     final quantity = double.tryParse(_quantityController.text.trim());
-    if (quantity == null || quantity <= 0) {
-      return;
-    }
     final generated = _generateItemDisplayName(
       _nameController.text,
       _aliasController.text,
@@ -533,6 +549,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     _aliasController.dispose();
     _displayNameController.dispose();
     _quantityController.dispose();
+    _variationTreeScrollController.dispose();
     for (final node in _rootNodes) {
       node.dispose();
     }
@@ -559,7 +576,279 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     final selectedUnit = unitsProvider.units
         .where((unit) => unit.id == _selectedUnitId)
         .firstOrNull;
-
+    final detailsSection = _SectionCard(
+      title: 'Item Details',
+      child: Column(
+        children: [
+          _formRow(
+            children: [
+              _buildTextField(
+                controller: _nameController,
+                label: 'Name',
+                helper: 'Base commercial item name',
+                readOnly: _isReadOnly,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _formRow(
+            children: [
+              _buildTextField(
+                controller: _aliasController,
+                label: 'Alias',
+                helper: 'Optional alternate label',
+                readOnly: _isReadOnly,
+                required: false,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _formRow(
+            children: [
+              _buildTextField(
+                controller: _displayNameController,
+                label: 'Display Name',
+                helper: 'Editable generated label',
+                readOnly: _isReadOnly,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _formRow(
+            children: [
+              _buildTextField(
+                controller: _quantityController,
+                label: 'Quantity',
+                helper: 'Optional. Leave blank if not needed.',
+                readOnly: _isReadOnly,
+                required: false,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _formRow(
+            children: [
+              SearchableSelectField<int>(
+                tapTargetKey: const ValueKey<String>('items-group-field'),
+                value:
+                    availableGroups.any((group) => group.id == _selectedGroupId)
+                    ? _selectedGroupId
+                    : selectedGroup?.id,
+                decoration: _fieldDecoration(
+                  label: 'Group',
+                  helper: 'Choose the group first. Unit options depend on it.',
+                ),
+                dialogTitle: 'Group',
+                searchHintText: 'Search group',
+                fieldEnabled: !_isReadOnly,
+                onCreateOption: (query) async {
+                  final created = await GroupsScreen.openEditor(
+                    context,
+                    initialName: query,
+                  );
+                  if (!mounted || created == null) {
+                    return null;
+                  }
+                  return SearchableSelectOption<int>(
+                    value: created.id,
+                    label: created.name,
+                  );
+                },
+                createOptionLabelBuilder: (query) => 'Create group "$query"',
+                options: [
+                  ...availableGroups.map(
+                    (group) => SearchableSelectOption<int>(
+                      value: group.id,
+                      label: group.name,
+                    ),
+                  ),
+                  if (selectedGroup != null &&
+                      availableGroups.every(
+                        (group) => group.id != selectedGroup.id,
+                      ))
+                    SearchableSelectOption<int>(
+                      value: selectedGroup.id,
+                      label: '${selectedGroup.name} (archived)',
+                    ),
+                ],
+                onChanged: (value) => setState(() {
+                  _selectedGroupId = value;
+                  final group = groupsProvider.findById(value);
+                  if (group == null) {
+                    _selectedUnitId = null;
+                    return;
+                  }
+                  if (!unitsProvider.areUnitsCompatible(
+                    group.unitId,
+                    _selectedUnitId,
+                  )) {
+                    _selectedUnitId = group.unitId;
+                  }
+                }),
+                validator: (value) => value == null ? 'Required' : null,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _formRow(
+            children: [
+              SearchableSelectField<int>(
+                tapTargetKey: const ValueKey<String>('items-unit-field'),
+                value: availableUnits.any((unit) => unit.id == _selectedUnitId)
+                    ? _selectedUnitId
+                    : selectedUnit?.id,
+                decoration: _fieldDecoration(
+                  label: 'Unit',
+                  helper: selectedGroup == null
+                      ? 'Select a group first. Units are filtered by that group.'
+                      : 'Only units compatible with the selected group are available.',
+                ),
+                dialogTitle: 'Unit',
+                searchHintText: 'Search unit',
+                fieldEnabled: !_isReadOnly && selectedGroup != null,
+                onCreateOption: selectedGroup == null
+                    ? null
+                    : (query) async {
+                        final groupBaseUnit = unitsProvider.findById(
+                          selectedGroup.unitId,
+                        );
+                        final created = await UnitsScreen.openEditor(
+                          context,
+                          initialName: query,
+                          initialGroupName:
+                              groupBaseUnit?.unitGroupName ??
+                              groupBaseUnit?.name ??
+                              '',
+                        );
+                        if (!mounted || created == null) {
+                          return null;
+                        }
+                        if (!unitsProvider.areUnitsCompatible(
+                          selectedGroup.unitId,
+                          created.id,
+                        )) {
+                          setState(() {
+                            _localError =
+                                'The created unit is not compatible with the selected group.';
+                          });
+                          return null;
+                        }
+                        setState(() {
+                          _localError = null;
+                        });
+                        return SearchableSelectOption<int>(
+                          value: created.id,
+                          label: created.displayLabel,
+                        );
+                      },
+                createOptionLabelBuilder: (query) => 'Create unit "$query"',
+                options: [
+                  ...availableUnits.map(
+                    (unit) => SearchableSelectOption<int>(
+                      value: unit.id,
+                      label: unit.displayLabel,
+                    ),
+                  ),
+                  if (selectedUnit != null &&
+                      availableUnits.every(
+                        (unit) => unit.id != selectedUnit.id,
+                      ))
+                    SearchableSelectOption<int>(
+                      value: selectedUnit.id,
+                      label: '${selectedUnit.displayLabel} (archived)',
+                    ),
+                ],
+                onChanged: (value) => setState(() {
+                  _localError = null;
+                  _selectedUnitId = value;
+                }),
+                validator: (value) => value == null ? 'Required' : null,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _PreviewCard(
+            displayName: _displayNameController.text.trim(),
+            quantity: double.tryParse(_quantityController.text.trim()),
+            unitLabel: selectedUnit?.displayLabel,
+            propertyCount: _rootNodes.length,
+            leafCount: _leafDrafts.length,
+          ),
+          const SizedBox(height: 12),
+          _WarningText(warning: duplicate.warning),
+        ],
+      ),
+    );
+    final variationTreeSection = _SectionCard(
+      title: 'Variation Tree',
+      action: _isReadOnly
+          ? null
+          : AppButton(
+              label: 'Add Top-Level Property',
+              icon: Icons.add,
+              variant: AppButtonVariant.secondary,
+              onPressed: _addTopLevelProperty,
+            ),
+      child: _rootNodes.isEmpty
+          ? const _ItemsMessageBanner(
+              message:
+                  'Start your variation tree with a property like Color, Size, or Material.',
+              isError: false,
+            )
+          : Container(
+              constraints: const BoxConstraints(maxHeight: 460),
+              decoration: BoxDecoration(
+                border: Border.all(color: const Color(0xFFDCE2F0)),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Scrollbar(
+                controller: _variationTreeScrollController,
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  controller: _variationTreeScrollController,
+                  padding: const EdgeInsets.all(10),
+                  child: Column(
+                    children: [
+                      for (
+                        var index = 0;
+                        index < _rootNodes.length;
+                        index++
+                      ) ...[
+                        _TreeNodeEditor(
+                          draft: _rootNodes[index],
+                          depth: 0,
+                          readOnly: _isReadOnly,
+                          summaryLabel: _summaryLabelForNode(_rootNodes[index]),
+                          onToggleBranch: () =>
+                              _toggleNodeDetails(_rootNodes[index]),
+                          onEnableNameEditing: () =>
+                              _setNodeNameEditing(_rootNodes[index], true),
+                          onFinishNameEditing: () =>
+                              _setNodeNameEditing(_rootNodes[index], false),
+                          onAddProperty: () =>
+                              _addChildProperty(_rootNodes[index]),
+                          onAddValue: () => _addChildValue(_rootNodes[index]),
+                          onMoveUp: index == 0
+                              ? null
+                              : () => _moveNode(_rootNodes, index, index - 1),
+                          onMoveDown: index == _rootNodes.length - 1
+                              ? null
+                              : () => _moveNode(_rootNodes, index, index + 1),
+                          onRemove: () => _removeNode(_rootNodes, index),
+                          buildChildEditor: _buildChildEditor,
+                        ),
+                        if (index != _rootNodes.length - 1)
+                          const SizedBox(height: 4),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+    );
     return Material(
       color: Colors.white,
       borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
@@ -605,208 +894,28 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                     ),
                   ],
                   const SizedBox(height: 16),
-                  _SectionCard(
-                    title: 'Item Details',
-                    child: Column(
-                      children: [
-                        _formRow(
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final wideComposer = constraints.maxWidth >= 1140;
+                      if (wideComposer) {
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _buildTextField(
-                              controller: _nameController,
-                              label: 'Name',
-                              helper: 'Base commercial item name',
-                              readOnly: _isReadOnly,
-                            ),
-                            _buildTextField(
-                              controller: _aliasController,
-                              label: 'Alias',
-                              helper: 'Optional alternate label',
-                              readOnly: _isReadOnly,
-                              required: false,
-                            ),
-                            _buildTextField(
-                              controller: _displayNameController,
-                              label: 'Display Name',
-                              helper: 'Editable generated label',
-                              readOnly: _isReadOnly,
-                            ),
+                            Expanded(flex: 5, child: detailsSection),
+                            const SizedBox(width: 18),
+                            Expanded(flex: 6, child: variationTreeSection),
                           ],
-                        ),
-                        const SizedBox(height: 12),
-                        _formRow(
-                          children: [
-                            _buildTextField(
-                              controller: _quantityController,
-                              label: 'Quantity',
-                              helper: 'Stored on the item',
-                              readOnly: _isReadOnly,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                            ),
-                            SearchableSelectField<int>(
-                              tapTargetKey: const ValueKey<String>(
-                                'items-unit-field',
-                              ),
-                              value:
-                                  availableUnits.any(
-                                    (unit) => unit.id == _selectedUnitId,
-                                  )
-                                  ? _selectedUnitId
-                                  : selectedUnit?.id,
-                              decoration: _fieldDecoration(
-                                label: 'Unit',
-                                helper: selectedGroup == null
-                                    ? 'Inherited by the variation tree'
-                                    : 'Only units compatible with the selected group are available',
-                              ),
-                              dialogTitle: 'Unit',
-                              searchHintText: 'Search unit',
-                              fieldEnabled: !_isReadOnly,
-                              options: [
-                                ...availableUnits.map(
-                                  (unit) => SearchableSelectOption<int>(
-                                    value: unit.id,
-                                    label: unit.displayLabel,
-                                  ),
-                                ),
-                                if (selectedUnit != null &&
-                                    availableUnits.every(
-                                      (unit) => unit.id != selectedUnit.id,
-                                    ))
-                                  SearchableSelectOption<int>(
-                                    value: selectedUnit.id,
-                                    label:
-                                        '${selectedUnit.displayLabel} (archived)',
-                                  ),
-                              ],
-                              onChanged: (value) =>
-                                  setState(() => _selectedUnitId = value),
-                              validator: (value) =>
-                                  value == null ? 'Required' : null,
-                            ),
-                            SearchableSelectField<int>(
-                              tapTargetKey: const ValueKey<String>(
-                                'items-group-field',
-                              ),
-                              value:
-                                  availableGroups.any(
-                                    (group) => group.id == _selectedGroupId,
-                                  )
-                                  ? _selectedGroupId
-                                  : selectedGroup?.id,
-                              decoration: _fieldDecoration(
-                                label: 'Group',
-                                helper: 'Required catalog group',
-                              ),
-                              dialogTitle: 'Group',
-                              searchHintText: 'Search group',
-                              fieldEnabled: !_isReadOnly,
-                              options: [
-                                ...availableGroups.map(
-                                  (group) => SearchableSelectOption<int>(
-                                    value: group.id,
-                                    label: group.name,
-                                  ),
-                                ),
-                                if (selectedGroup != null &&
-                                    availableGroups.every(
-                                      (group) => group.id != selectedGroup.id,
-                                    ))
-                                  SearchableSelectOption<int>(
-                                    value: selectedGroup.id,
-                                    label: '${selectedGroup.name} (archived)',
-                                  ),
-                              ],
-                              onChanged: (value) => setState(() {
-                                _selectedGroupId = value;
-                                final group = groupsProvider.findById(value);
-                                if (!unitsProvider.areUnitsCompatible(
-                                  group?.unitId,
-                                  _selectedUnitId,
-                                )) {
-                                  _selectedUnitId = null;
-                                }
-                              }),
-                              validator: (value) =>
-                                  value == null ? 'Required' : null,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        _PreviewCard(
-                          displayName: _displayNameController.text.trim(),
-                          quantity: double.tryParse(
-                            _quantityController.text.trim(),
-                          ),
-                          unitLabel: selectedUnit?.displayLabel,
-                          propertyCount: _rootNodes.length,
-                          leafCount: _leafDrafts.length,
-                        ),
-                        const SizedBox(height: 12),
-                        _WarningText(warning: duplicate.warning),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  _SectionCard(
-                    title: 'Variation Tree',
-                    action: _isReadOnly
-                        ? null
-                        : AppButton(
-                            label: 'Add Top-Level Property',
-                            icon: Icons.add,
-                            variant: AppButtonVariant.secondary,
-                            onPressed: _addTopLevelProperty,
-                          ),
-                    child: _rootNodes.isEmpty
-                        ? const _ItemsMessageBanner(
-                            message:
-                                'Start with a property node like Color, Size, or Material.',
-                            isError: false,
-                          )
-                        : Column(
-                            children: [
-                              for (
-                                var index = 0;
-                                index < _rootNodes.length;
-                                index++
-                              ) ...[
-                                _TreeNodeEditor(
-                                  draft: _rootNodes[index],
-                                  depth: 0,
-                                  index: index,
-                                  siblingCount: _rootNodes.length,
-                                  readOnly: _isReadOnly,
-                                  onAddProperty: () =>
-                                      _addChildProperty(_rootNodes[index]),
-                                  onAddValue: () =>
-                                      _addChildValue(_rootNodes[index]),
-                                  onMoveUp: index == 0
-                                      ? null
-                                      : () => _moveNode(
-                                          _rootNodes,
-                                          index,
-                                          index - 1,
-                                        ),
-                                  onMoveDown: index == _rootNodes.length - 1
-                                      ? null
-                                      : () => _moveNode(
-                                          _rootNodes,
-                                          index,
-                                          index + 1,
-                                        ),
-                                  onRemove: () =>
-                                      _removeNode(_rootNodes, index),
-                                  fieldDecoration: _fieldDecoration,
-                                  buildChildEditor: _buildChildEditor,
-                                ),
-                                if (index != _rootNodes.length - 1)
-                                  const SizedBox(height: 12),
-                              ],
-                            ],
-                          ),
+                        );
+                      }
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          detailsSection,
+                          const SizedBox(height: 16),
+                          variationTreeSection,
+                        ],
+                      );
+                    },
                   ),
                   const SizedBox(height: 20),
                   Wrap(
@@ -861,9 +970,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     return _TreeNodeEditor(
       draft: child,
       depth: depth,
-      index: index,
-      siblingCount: siblings.length,
       readOnly: _isReadOnly,
+      summaryLabel: _summaryLabelForNode(child),
+      onToggleBranch: () => _toggleNodeDetails(child),
+      onEnableNameEditing: () => _setNodeNameEditing(child, true),
+      onFinishNameEditing: () => _setNodeNameEditing(child, false),
       onAddProperty: child.kind == ItemVariationNodeKind.value
           ? () => _addChildProperty(child)
           : null,
@@ -875,7 +986,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           ? null
           : () => _moveNode(siblings, index, index + 1),
       onRemove: () => _removeNode(siblings, index),
-      fieldDecoration: _fieldDecoration,
       buildChildEditor: _buildChildEditor,
     );
   }
@@ -915,6 +1025,35 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     );
   }
 
+  String _summaryLabelForNode(_NodeDraft node) {
+    if (node.isLeafValue) {
+      final leafLabel = node.displayNameController.text.trim();
+      return leafLabel.isEmpty ? _generateLeafDisplayName(node) : leafLabel;
+    }
+    final name = node.nameController.text.trim();
+    if (name.isNotEmpty) {
+      return name;
+    }
+    return node.kind == ItemVariationNodeKind.property
+        ? 'Unnamed Property'
+        : 'Unnamed Value';
+  }
+
+  void _toggleNodeDetails(_NodeDraft node) {
+    setState(() {
+      node.detailsExpanded = !node.detailsExpanded;
+    });
+  }
+
+  void _setNodeNameEditing(_NodeDraft node, bool editing) {
+    setState(() {
+      node.isNameEditing = editing;
+      if (editing) {
+        node.detailsExpanded = true;
+      }
+    });
+  }
+
   void _addTopLevelProperty() {
     setState(() {
       _rootNodes.add(_newDraft(ItemVariationNodeKind.property, null));
@@ -925,6 +1064,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   void _addChildProperty(_NodeDraft parent) {
     setState(() {
       final child = _newDraft(ItemVariationNodeKind.property, parent);
+      parent.detailsExpanded = true;
       parent.children.add(child);
       _syncLeafDisplayNames();
     });
@@ -933,6 +1073,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   void _addChildValue(_NodeDraft parent) {
     setState(() {
       final child = _newDraft(ItemVariationNodeKind.value, parent);
+      parent.detailsExpanded = true;
       parent.children.add(child);
       _syncLeafDisplayNames();
     });
@@ -962,10 +1103,13 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       return;
     }
 
-    final quantity = double.tryParse(_quantityController.text.trim());
-    if (quantity == null || quantity <= 0) {
+    final quantityText = _quantityController.text.trim();
+    final parsedQuantity = quantityText.isEmpty
+        ? 0.0
+        : double.tryParse(quantityText);
+    if (parsedQuantity == null || parsedQuantity < 0) {
       setState(() {
-        _localError = 'Enter a valid decimal quantity greater than zero.';
+        _localError = 'Enter a valid decimal quantity or leave it blank.';
       });
       return;
     }
@@ -979,7 +1123,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     final itemsProvider = context.read<ItemsProvider>();
     final duplicate = itemsProvider.checkDuplicate(
       name: _nameController.text,
-      quantity: quantity,
+      quantity: parsedQuantity,
       groupId: _selectedGroupId,
       variationTree: _variationTreeInputs,
       excludeId: widget.item?.id,
@@ -1001,7 +1145,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               name: _nameController.text.trim(),
               alias: _aliasController.text.trim(),
               displayName: _displayNameController.text.trim(),
-              quantity: quantity,
+              quantity: parsedQuantity,
               groupId: _selectedGroupId!,
               unitId: _selectedUnitId!,
               variationTree: _variationTreeInputs,
@@ -1013,7 +1157,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               name: _nameController.text.trim(),
               alias: _aliasController.text.trim(),
               displayName: _displayNameController.text.trim(),
-              quantity: quantity,
+              quantity: parsedQuantity,
               groupId: _selectedGroupId!,
               unitId: _selectedUnitId!,
               variationTree: _variationTreeInputs,
@@ -1051,28 +1195,13 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   }
 
   Widget _formRow({required List<Widget> children}) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth < 760) {
-          return Column(
-            children: [
-              for (var index = 0; index < children.length; index++) ...[
-                children[index],
-                if (index != children.length - 1) const SizedBox(height: 12),
-              ],
-            ],
-          );
-        }
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (var index = 0; index < children.length; index++) ...[
-              Expanded(child: children[index]),
-              if (index != children.length - 1) const SizedBox(width: 12),
-            ],
-          ],
-        );
-      },
+    return Column(
+      children: [
+        for (var index = 0; index < children.length; index++) ...[
+          children[index],
+          if (index != children.length - 1) const SizedBox(height: 12),
+        ],
+      ],
     );
   }
 
@@ -1098,13 +1227,16 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     );
   }
 
-  String _generateItemDisplayName(String name, String alias, double quantity) {
+  String _generateItemDisplayName(String name, String alias, double? quantity) {
     final base = [
       name.trim(),
       alias.trim(),
     ].where((entry) => entry.isNotEmpty).join(' / ');
     if (base.isEmpty) {
-      return _formatQuantity(quantity);
+      return quantity == null || quantity <= 0 ? '' : _formatQuantity(quantity);
+    }
+    if (quantity == null || quantity <= 0) {
+      return base;
     }
     return '$base - ${_formatQuantity(quantity)}';
   }
@@ -1145,13 +1277,14 @@ class _TreeNodeEditor extends StatelessWidget {
   const _TreeNodeEditor({
     required this.draft,
     required this.depth,
-    required this.index,
-    required this.siblingCount,
     required this.readOnly,
+    required this.summaryLabel,
+    required this.onToggleBranch,
+    required this.onEnableNameEditing,
+    required this.onFinishNameEditing,
     required this.onMoveUp,
     required this.onMoveDown,
     required this.onRemove,
-    required this.fieldDecoration,
     required this.buildChildEditor,
     this.onAddProperty,
     this.onAddValue,
@@ -1159,141 +1292,225 @@ class _TreeNodeEditor extends StatelessWidget {
 
   final _NodeDraft draft;
   final int depth;
-  final int index;
-  final int siblingCount;
   final bool readOnly;
+  final String summaryLabel;
+  final VoidCallback onToggleBranch;
+  final VoidCallback onEnableNameEditing;
+  final VoidCallback onFinishNameEditing;
   final VoidCallback? onAddProperty;
   final VoidCallback? onAddValue;
   final VoidCallback? onMoveUp;
   final VoidCallback? onMoveDown;
   final VoidCallback onRemove;
-  final InputDecoration Function({
-    required String label,
-    required String helper,
-  })
-  fieldDecoration;
   final Widget Function(_NodeDraft child, int depth, List<_NodeDraft> siblings)
   buildChildEditor;
 
   @override
   Widget build(BuildContext context) {
-    final title = draft.kind == ItemVariationNodeKind.property
-        ? 'Property'
-        : 'Value';
-    return Container(
-      margin: EdgeInsets.only(left: depth * 20),
-      child: AppCard(
-        backgroundColor: depth.isEven ? const Color(0xFFFBFCFF) : Colors.white,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '$title ${index + 1}',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
+    final theme = Theme.of(context);
+    final isProperty = draft.kind == ItemVariationNodeKind.property;
+    final hasChildren = draft.children.isNotEmpty;
+    final canExpand = hasChildren;
+    final nodeType = isProperty ? 'Property' : 'Value';
+    final icon = isProperty ? Icons.tune : Icons.circle;
+    final iconSize = isProperty ? 18.0 : 10.0;
+    final branchColor = theme.dividerColor.withValues(alpha: 0.55);
+    final rowHighlight = draft.detailsExpanded
+        ? theme.colorScheme.primary.withValues(alpha: 0.08)
+        : Colors.transparent;
+    final textColor = draft.nameController.text.trim().isEmpty
+        ? theme.colorScheme.error
+        : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: EdgeInsets.only(left: depth * 20.0),
+          child: Material(
+            color: rowHighlight,
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: canExpand ? onToggleBranch : null,
+              onDoubleTap: readOnly ? null : onEnableNameEditing,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 20,
+                      child: canExpand
+                          ? Icon(
+                              draft.detailsExpanded
+                                  ? Icons.expand_more
+                                  : Icons.chevron_right,
+                              size: 18,
+                            )
+                          : const SizedBox.shrink(),
                     ),
-                  ),
-                ),
-                if (!readOnly) ...[
-                  IconButton(
-                    onPressed: onMoveUp,
-                    icon: const Icon(Icons.arrow_upward),
-                  ),
-                  IconButton(
-                    onPressed: onMoveDown,
-                    icon: const Icon(Icons.arrow_downward),
-                  ),
-                  IconButton(
-                    onPressed: onRemove,
-                    icon: const Icon(Icons.delete_outline),
-                  ),
-                ],
-              ],
-            ),
-            TextFormField(
-              controller: draft.nameController,
-              readOnly: readOnly,
-              decoration: fieldDecoration(
-                label: draft.kind == ItemVariationNodeKind.property
-                    ? 'Property Name'
-                    : 'Value Name',
-                helper: draft.kind == ItemVariationNodeKind.property
-                    ? 'Example: Color, Finish, Material'
-                    : 'Example: Black, Matte, PET',
-              ),
-              validator: (value) {
-                if ((value ?? '').trim().isEmpty) {
-                  return 'Required';
-                }
-                return null;
-              },
-            ),
-            if (draft.isLeafValue) ...[
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: draft.displayNameController,
-                readOnly: readOnly,
-                decoration: fieldDecoration(
-                  label: 'Leaf Display Name',
-                  helper: 'Auto-generated from the full path, but editable',
-                ),
-                validator: (value) {
-                  if ((value ?? '').trim().isEmpty) {
-                    return 'Required';
-                  }
-                  return null;
-                },
-              ),
-            ],
-            if (!readOnly) ...[
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  if (onAddValue != null)
-                    AppButton(
-                      label: 'Add Value',
-                      icon: Icons.add,
-                      variant: AppButtonVariant.secondary,
-                      onPressed: onAddValue,
-                    ),
-                  if (onAddProperty != null)
-                    AppButton(
-                      label: 'Add Property',
-                      icon: Icons.account_tree_outlined,
-                      variant: AppButtonVariant.secondary,
-                      onPressed: onAddProperty,
-                    ),
-                ],
-              ),
-            ],
-            if (draft.children.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Column(
-                children: [
-                  for (
-                    var childIndex = 0;
-                    childIndex < draft.children.length;
-                    childIndex++
-                  ) ...[
-                    buildChildEditor(
-                      draft.children[childIndex],
-                      depth + 1,
-                      draft.children,
-                    ),
-                    if (childIndex != draft.children.length - 1)
-                      const SizedBox(height: 12),
+                    Icon(icon, size: iconSize),
+                    const SizedBox(width: 8),
+                    if (draft.isNameEditing && !readOnly)
+                      SizedBox(
+                        width: 240,
+                        child: TextField(
+                          controller: draft.nameController,
+                          autofocus: true,
+                          onEditingComplete: onFinishNameEditing,
+                          onSubmitted: (_) => onFinishNameEditing(),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            hintText: isProperty
+                                ? 'Property name'
+                                : 'Value name',
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 8,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 320),
+                        child: Text(
+                          summaryLabel,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: textColor,
+                            fontWeight: isProperty
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(width: 8),
+                    _NodeTypePill(label: nodeType),
+                    if (!readOnly) ...[
+                      const SizedBox(width: 4),
+                      if (onAddValue != null)
+                        _TreeActionButton(
+                          tooltip: 'Add value',
+                          icon: Icons.add,
+                          onPressed: onAddValue,
+                        ),
+                      if (onAddProperty != null)
+                        _TreeActionButton(
+                          tooltip: 'Add property',
+                          icon: Icons.account_tree_outlined,
+                          onPressed: onAddProperty,
+                        ),
+                      _TreeActionButton(
+                        tooltip: 'Edit name',
+                        icon: Icons.edit_outlined,
+                        onPressed: onEnableNameEditing,
+                      ),
+                      _TreeActionButton(
+                        tooltip: 'Move up',
+                        icon: Icons.arrow_upward,
+                        onPressed: onMoveUp,
+                      ),
+                      _TreeActionButton(
+                        tooltip: 'Move down',
+                        icon: Icons.arrow_downward,
+                        onPressed: onMoveDown,
+                      ),
+                      _TreeActionButton(
+                        tooltip: 'Remove',
+                        icon: Icons.delete_outline,
+                        onPressed: onRemove,
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ],
-          ],
+            ),
+          ),
+        ),
+        if (hasChildren && draft.detailsExpanded)
+          Padding(
+            padding: EdgeInsets.only(left: depth * 20.0 + 10),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border(left: BorderSide(color: branchColor, width: 1)),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.only(left: 10, top: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (
+                      var childIndex = 0;
+                      childIndex < draft.children.length;
+                      childIndex++
+                    ) ...[
+                      buildChildEditor(
+                        draft.children[childIndex],
+                        depth + 1,
+                        draft.children,
+                      ),
+                      if (childIndex != draft.children.length - 1)
+                        const SizedBox(height: 2),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _NodeTypePill extends StatelessWidget {
+  const _NodeTypePill({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.6)),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.72),
         ),
       ),
+    );
+  }
+}
+
+class _TreeActionButton extends StatelessWidget {
+  const _TreeActionButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: tooltip,
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+      onPressed: onPressed,
+      icon: Icon(icon, size: 17),
     );
   }
 }
@@ -1368,7 +1585,7 @@ class _PreviewCard extends StatelessWidget {
             label: unitLabel == null ? 'Unit pending' : 'Unit: $unitLabel',
           ),
           _PreviewChip(label: 'Top properties: $propertyCount'),
-          _PreviewChip(label: 'Leaf paths: $leafCount'),
+          _PreviewChip(label: 'Leaf nodes: $leafCount'),
         ],
       ),
     );

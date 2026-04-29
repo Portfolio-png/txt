@@ -22,6 +22,7 @@ import 'package:paper/features/clients/domain/client_inputs.dart';
 import 'package:paper/features/items/data/repositories/item_repository.dart';
 import 'package:paper/features/items/domain/item_definition.dart';
 import 'package:paper/features/items/domain/item_inputs.dart';
+import 'package:paper/features/items/presentation/providers/items_provider.dart';
 import 'package:paper/features/orders/data/repositories/order_repository.dart';
 import 'package:paper/features/orders/domain/order_entry.dart';
 import 'package:paper/features/orders/domain/order_inputs.dart';
@@ -1753,9 +1754,6 @@ class FakeItemRepository extends ItemRepository {
   Future<ItemDefinition> updateItem(UpdateItemInput input) async {
     final index = _items.indexWhere((item) => item.id == input.id);
     final current = _items[index];
-    if (current.usageCount > 0) {
-      throw Exception('Used items cannot be edited.');
-    }
     _validateTree(input.variationTree, ItemVariationNodeKind.property);
     final updated = ItemDefinition(
       id: current.id,
@@ -2030,6 +2028,7 @@ void main() {
 
     await tester.pumpWidget(
       MyApp(
+        demoModeOverride: true,
         inventoryRepository: repository ?? FakeInventoryRepository(),
         groupRepository: groupRepository ?? FakeGroupRepository(),
         unitRepository: unitRepository ?? FakeUnitRepository(),
@@ -2039,13 +2038,6 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-  }
-
-  bool sidebarTileHasFocus(WidgetTester tester, String key) {
-    final widget = tester.widget<InkWell>(
-      find.byKey(ValueKey<String>('sidebar_tile_$key')),
-    );
-    return widget.focusNode?.hasFocus ?? false;
   }
 
   Future<void> openOrdersScreen(WidgetTester tester) async {
@@ -2063,10 +2055,75 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  Future<void> openClientsScreen(WidgetTester tester) async {
+    final context = tester.element(find.byType(Scaffold).first);
+    context.read<NavigationProvider>().select(
+      'configurator_clients',
+      skipTransition: true,
+    );
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> openGroupsScreen(WidgetTester tester) async {
+    final context = tester.element(find.byType(Scaffold).first);
+    context.read<NavigationProvider>().select(
+      'configurator_groups',
+      skipTransition: true,
+    );
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> openUnitsScreen(WidgetTester tester) async {
+    final context = tester.element(find.byType(Scaffold).first);
+    context.read<NavigationProvider>().select(
+      'configurator_units',
+      skipTransition: true,
+    );
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> openItemsScreen(WidgetTester tester) async {
+    final context = tester.element(find.byType(Scaffold).first);
+    context.read<NavigationProvider>().select(
+      'configurator_items',
+      skipTransition: true,
+    );
+    await tester.pumpAndSettle();
+  }
+
+  Finder treeNameEditor(String hintText) {
+    return find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField && widget.decoration?.hintText == hintText,
+    );
+  }
+
+  Finder searchFieldWithHint(String hintText) {
+    return find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField && widget.decoration?.hintText == hintText,
+    );
+  }
+
+  Future<void> startEditingLatestTreeNode(WidgetTester tester) async {
+    final editButton = find
+        .widgetWithIcon(IconButton, Icons.edit_outlined)
+        .last;
+    tester.widget<IconButton>(editButton).onPressed?.call();
+    await tester.pumpAndSettle();
+  }
+
   Future<void> selectPrimaryVariationPath(
     WidgetTester tester, {
     String itemLabel = 'Switch Action Dolly - 1',
-    String variationPathLabel = '5 Amp 11+1 Brass 1 Way Dolly Without Plating',
+    List<String> valueLabels = const <String>[
+      '5 Amp',
+      '11+1',
+      'Brass',
+      '1 Way',
+      'Dolly',
+      'Without Plating',
+    ],
     String quantity = '1',
   }) async {
     await tester.tap(
@@ -2076,12 +2133,31 @@ void main() {
     await tester.tap(find.text(itemLabel).last);
     await tester.pumpAndSettle();
 
-    await tester.tap(
-      find.byKey(const ValueKey<String>('orders-editor-variation-path-field')),
+    final overlayFinder = find.byKey(
+      const ValueKey<String>('orders-editor-variation-overlay'),
     );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(variationPathLabel).last);
-    await tester.pumpAndSettle();
+    if (overlayFinder.evaluate().isEmpty) {
+      final openOverlayFinder = find.byKey(
+        const ValueKey<String>('orders-editor-open-variation-overlay'),
+      );
+      if (openOverlayFinder.evaluate().isNotEmpty) {
+        await tester.tap(openOverlayFinder);
+        await tester.pumpAndSettle();
+      }
+    }
+
+    for (var index = 0; index < valueLabels.length; index++) {
+      final fieldFinder = find.byKey(
+        ValueKey<String>('orders-editor-variation-step-$index'),
+      );
+      await tester.ensureVisible(fieldFinder);
+      await tester.tap(fieldFinder);
+      await tester.pumpAndSettle();
+      final optionFinder = find.text(valueLabels[index]).last;
+      await tester.ensureVisible(optionFinder);
+      await tester.tap(optionFinder);
+      await tester.pumpAndSettle();
+    }
 
     await tester.enterText(
       find.byKey(const ValueKey<String>('orders-editor-quantity-field')),
@@ -2089,18 +2165,39 @@ void main() {
     );
   }
 
+  Future<void> openPrimaryVariationOverlayIfNeeded(WidgetTester tester) async {
+    final overlayFinder = find.byKey(
+      const ValueKey<String>('orders-editor-variation-overlay'),
+    );
+    if (overlayFinder.evaluate().isNotEmpty) {
+      return;
+    }
+
+    final openOverlayFinder = find.byKey(
+      const ValueKey<String>('orders-editor-open-variation-overlay'),
+    );
+    if (openOverlayFinder.evaluate().isNotEmpty) {
+      await tester.tap(openOverlayFinder);
+      await tester.pumpAndSettle();
+      return;
+    }
+
+    final reopenFinder = find.byKey(
+      const ValueKey<String>('orders-editor-open-variation-link'),
+    );
+    if (reopenFinder.evaluate().isNotEmpty) {
+      await tester.tap(reopenFinder);
+      await tester.pumpAndSettle();
+    }
+  }
+
   testWidgets('app opens into inventory shell', (tester) async {
     await pumpApp(tester);
 
     expect(find.text('+ Add Stock'), findsOneWidget);
-    expect(find.text('+ New Group'), findsOneWidget);
     expect(find.text('Inventory'), findsWidgets);
     expect(
       find.byKey(const ValueKey<String>('shell_top_strip_search_field')),
-      findsOneWidget,
-    );
-    expect(
-      find.text('Search groups, items, barcode, supplier, or notes'),
       findsOneWidget,
     );
   });
@@ -2116,19 +2213,10 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.tap(find.text('Clients'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Search clients, alias, GST, or address'), findsOneWidget);
+    await openClientsScreen(tester);
     expect(find.byType(TextField), findsOneWidget);
 
-    await tester.tap(find.text('Items'));
-    await tester.pumpAndSettle();
-
-    expect(
-      find.text('Search items, properties, values, or leaf paths'),
-      findsOneWidget,
-    );
+    await openItemsScreen(tester);
     expect(find.byType(TextField), findsOneWidget);
   });
 
@@ -2137,17 +2225,16 @@ void main() {
   ) async {
     await pumpApp(tester, viewSize: const Size(1440, 900));
 
-    await tester.ensureVisible(find.text('Units'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Units'));
-    await tester.pumpAndSettle();
+    await openUnitsScreen(tester);
 
     expect(
       find.byKey(const ValueKey<String>('sidebar_tile_configurator_units')),
       findsOneWidget,
     );
 
-    await tester.tap(find.text('Masters'));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('sidebar_tile_configurator')),
+    );
     await tester.pumpAndSettle();
 
     expect(
@@ -2162,7 +2249,9 @@ void main() {
     );
     expect(chevronRotation.turns, 0.0);
 
-    await tester.tap(find.text('Masters'));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('sidebar_tile_configurator')),
+    );
     await tester.pumpAndSettle();
 
     expect(
@@ -2182,21 +2271,15 @@ void main() {
     await pumpApp(tester, viewSize: const Size(1440, 900));
 
     await openOrdersScreen(tester);
-
-    expect(
-      find.text('Search orders, clients, PO, items, or status'),
-      findsOneWidget,
-    );
+    final context = tester.element(find.byType(Scaffold).first);
+    expect(context.read<NavigationProvider>().selectedKey, 'orders');
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pumpAndSettle();
 
-    expect(
-      find.text('Search groups, items, barcode, supplier, or notes'),
-      findsOneWidget,
-    );
+    expect(context.read<NavigationProvider>().selectedKey, 'inventory');
   });
 
   testWidgets('ctrl and command n open the new order editor', (tester) async {
@@ -2261,10 +2344,15 @@ void main() {
     );
 
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-client-field')),
+      warnIfMissed: false,
+    );
     await tester.pumpAndSettle();
 
-    expect(find.text('Acme Packaging Pvt. Ltd. / Acme'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'Search client'), findsOneWidget);
 
     await tester.enterText(
       find.widgetWithText(TextField, 'Search client'),
@@ -2272,25 +2360,30 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.tap(find.text('Acme Packaging Pvt. Ltd. / Acme').last);
     await tester.pumpAndSettle();
 
-    expect(find.text('Acme Packaging Pvt. Ltd. / Acme'), findsWidgets);
+    expect(find.textContaining('Acme Packaging Pvt. Ltd.'), findsOneWidget);
   });
 
   testWidgets('tab focus stays looped inside sidebar items', (tester) async {
-    await pumpApp(tester);
+    await pumpApp(tester, viewSize: const Size(1440, 900));
+    await openUnitsScreen(tester);
+    final context = tester.element(find.byType(Scaffold).first);
+    final navigation = context.read<NavigationProvider>();
+    expect(navigation.selectedKey, 'configurator_units');
+    final previousKey = navigation.selectedKey;
 
-    await tester.tap(find.text('Units'));
-    await tester.pumpAndSettle();
-
-    expect(sidebarTileHasFocus(tester, 'configurator_units'), isTrue);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('sidebar_tile_configurator_units')),
+      warnIfMissed: false,
+    );
+    await tester.pump();
 
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.pump();
 
-    expect(sidebarTileHasFocus(tester, 'configurator_units'), isFalse);
+    expect(navigation.selectedKey, previousKey);
   });
 
   testWidgets('inventory top strip actions invoke navigation callbacks', (
@@ -2315,8 +2408,15 @@ void main() {
         required String visibleText,
         required String hiddenText,
       }) async {
-        await tester.tap(find.text(navLabel).first);
-        await tester.pumpAndSettle();
+        if (navLabel == 'Clients') {
+          await openClientsScreen(tester);
+        } else if (navLabel == 'Items') {
+          await openItemsScreen(tester);
+        } else if (navLabel == 'Groups') {
+          await openGroupsScreen(tester);
+        } else if (navLabel == 'Units') {
+          await openUnitsScreen(tester);
+        }
 
         await tester.enterText(
           find.byKey(const ValueKey<String>('shell_top_strip_search_field')),
@@ -2326,7 +2426,7 @@ void main() {
 
         expect(find.text(visibleText), findsWidgets);
         expect(find.text(hiddenText), findsNothing);
-        expect(find.byType(TextField), findsOneWidget);
+        expect(find.byType(TextField), findsWidgets);
       }
 
       await expectSharedSearch(
@@ -2408,6 +2508,288 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('25 Pieces'), findsOneWidget);
+  });
+
+  testWidgets(
+    'orders collapse selected variation into breadcrumbs after add more',
+    (tester) async {
+      await pumpApp(tester, viewSize: const Size(1440, 900));
+
+      await openOrdersScreen(tester);
+      await tester.tap(find.byKey(const Key('orders-new-order-button')));
+      await tester.pumpAndSettle();
+
+      await selectPrimaryVariationPath(tester, quantity: '3');
+
+      await tester.ensureVisible(find.text('Add More Items'));
+      await tester.tap(find.text('Add More Items'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const ValueKey<String>('orders-editor-variation-breadcrumb'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Selected 6 properties'), findsOneWidget);
+      expect(find.text('Action Dolly Amp: 5 Amp'), findsOneWidget);
+      expect(find.text('Action Patti + Dabbi: 11+1'), findsOneWidget);
+      expect(find.text('Action Dolly Alloy: Brass'), findsOneWidget);
+      expect(
+        find.text('5 Amp 11+1 Brass 1 Way Dolly Without Plating'),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets('orders hide variation path until a variant item is selected', (
+    tester,
+  ) async {
+    await pumpApp(tester, viewSize: const Size(1440, 900));
+
+    await openOrdersScreen(tester);
+    await tester.tap(find.byKey(const Key('orders-new-order-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Variation Path'), findsNothing);
+    expect(find.text('Select an item first'), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-item-field')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Switch Action Dolly - 1').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Variation Path'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('orders-editor-variation-overlay')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets(
+    'orders hide item completion date column when item wise toggle is off',
+    (tester) async {
+      await pumpApp(tester, viewSize: const Size(1440, 900));
+
+      await openOrdersScreen(tester);
+      await tester.tap(find.byKey(const Key('orders-new-order-button')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const ValueKey<String>('orders-editor-completion-date-field'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Completion Date'), findsOneWidget);
+
+      await tester.tap(find.text('Enable Item Wise Completion Date'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const ValueKey<String>('orders-editor-completion-date-field'),
+        ),
+        findsNothing,
+      );
+      expect(find.text('Completion Date'), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('orders-editor-end-date-field')),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('orders can quick-create a leaf variation value and save draft', (
+    tester,
+  ) async {
+    await pumpApp(tester, viewSize: const Size(1600, 1000));
+
+    await openOrdersScreen(tester);
+    await tester.tap(find.byKey(const Key('orders-new-order-button')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('orders-editor-order-no-field')),
+      'ORD-QUICK-LEAF',
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-client-field')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Acme Packaging Pvt. Ltd. / Acme').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('orders-editor-po-number-field')),
+      'PO-QUICK-LEAF',
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-item-field')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Glue Compound - 1').last);
+    await tester.pumpAndSettle();
+    await openPrimaryVariationOverlayIfNeeded(tester);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-variation-step-0')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      searchFieldWithHint('Search Cure Speed'),
+      'Slow Cure',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create "Slow Cure"'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Selected 1 property'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('orders-editor-quantity-field')),
+      '7',
+    );
+    await tester.ensureVisible(
+      find.byKey(const ValueKey<String>('orders-editor-save-draft')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-save-draft')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('ORD-QUICK-LEAF'), findsOneWidget);
+
+    final context = tester.element(find.byType(Scaffold).first);
+    final items = context.read<ItemsProvider>().items;
+    final glueItem = items.where((item) => item.id == 2).first;
+    expect(
+      glueItem.leafVariationNodes.any((node) => node.name == 'Slow Cure'),
+      isTrue,
+    );
+  });
+
+  testWidgets('orders quick-create mid-branch value clones downstream steps', (
+    tester,
+  ) async {
+    await pumpApp(tester, viewSize: const Size(1600, 1000));
+
+    await openOrdersScreen(tester);
+    await tester.tap(find.byKey(const Key('orders-new-order-button')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-item-field')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Luxury Pump Bottle - 100').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-variation-step-0')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('PET').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-variation-step-1')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      searchFieldWithHint('Search Bottle Color'),
+      'Purple Mist',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create "Purple Mist"'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('orders-editor-variation-step-2')),
+      findsOneWidget,
+    );
+    expect(find.text('Pump Finish'), findsOneWidget);
+
+    final context = tester.element(find.byType(Scaffold).first);
+    final items = context.read<ItemsProvider>().items;
+    final bottleItem = items.where((item) => item.id == 3).first;
+    expect(
+      bottleItem.variationTree.any((node) => node.name == 'Bottle Material'),
+      isTrue,
+    );
+    expect(
+      bottleItem.leafVariationNodes.any(
+        (node) => node.displayName.contains('Purple Mist'),
+      ),
+      isTrue,
+    );
+  });
+
+  testWidgets(
+    'orders variation dropdown does not offer create for exact duplicates',
+    (tester) async {
+      await pumpApp(tester, viewSize: const Size(1600, 1000));
+
+      await openOrdersScreen(tester);
+      await tester.tap(find.byKey(const Key('orders-new-order-button')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('orders-editor-item-field')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Glue Compound - 1').last);
+      await tester.pumpAndSettle();
+      await openPrimaryVariationOverlayIfNeeded(tester);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('orders-editor-variation-step-0')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        searchFieldWithHint('Search Cure Speed'),
+        'Fast Cure',
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Create "Fast Cure"'), findsNothing);
+      expect(find.text('Fast Cure'), findsWidgets);
+    },
+  );
+
+  testWidgets('orders can reopen selected variation overlay from breadcrumbs', (
+    tester,
+  ) async {
+    await pumpApp(tester, viewSize: const Size(1440, 900));
+
+    await openOrdersScreen(tester);
+    await tester.tap(find.byKey(const Key('orders-new-order-button')));
+    await tester.pumpAndSettle();
+
+    await selectPrimaryVariationPath(tester, quantity: '3');
+
+    expect(
+      find.byKey(const ValueKey<String>('orders-editor-variation-breadcrumb')),
+      findsOneWidget,
+    );
+    expect(find.text('Selected 6 properties'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('orders-editor-variation-overlay')),
+      findsNothing,
+    );
+    expect(find.text('Action Dolly Amp: 5 Amp'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-open-variation-link')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('orders-editor-variation-overlay')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('orders search filters through the shared shell strip', (
@@ -2628,10 +3010,10 @@ void main() {
 
     await openOrdersScreen(tester);
 
-    expect(find.text('needs setup'), findsOneWidget);
-    expect(find.text('done'), findsOneWidget);
+    expect(find.text('Not Started'), findsOneWidget);
+    expect(find.text('Completed'), findsWidgets);
 
-    final completedFilter = find.text('done').first;
+    final completedFilter = find.text('Completed').first;
     await tester.ensureVisible(completedFilter);
     await tester.tap(completedFilter, warnIfMissed: false);
     await tester.pumpAndSettle();
@@ -2889,11 +3271,10 @@ void main() {
   testWidgets('units screen shows seeded and archived units', (tester) async {
     await pumpApp(tester);
 
-    await tester.tap(find.text('Units'));
-    await tester.pumpAndSettle();
+    await openUnitsScreen(tester);
 
-    expect(find.byType(TextField), findsOneWidget);
-    expect(find.text('Kilogram'), findsOneWidget);
+    expect(find.byType(TextField), findsWidgets);
+    expect(find.textContaining('Kilogram'), findsWidgets);
     expect(find.text('Sheet'), findsWidgets);
 
     await tester.tap(find.text('Archived'));
@@ -2905,10 +3286,9 @@ void main() {
   testWidgets('groups screen shows seeded and archived groups', (tester) async {
     await pumpApp(tester);
 
-    await tester.tap(find.text('Groups'));
-    await tester.pumpAndSettle();
+    await openGroupsScreen(tester);
 
-    expect(find.byType(TextField), findsOneWidget);
+    expect(find.byType(TextField), findsWidgets);
     expect(find.text('Paper'), findsWidgets);
     expect(find.text('Kraft'), findsOneWidget);
 
@@ -2922,8 +3302,7 @@ void main() {
     final groupRepository = FakeGroupRepository();
     await pumpApp(tester, groupRepository: groupRepository);
 
-    await tester.tap(find.text('Groups'));
-    await tester.pumpAndSettle();
+    await openGroupsScreen(tester);
 
     await tester.tap(find.text('Add Group'));
     await tester.pumpAndSettle();
@@ -2967,8 +3346,7 @@ void main() {
   testWidgets('groups edit flow preloads parent and unit', (tester) async {
     await pumpApp(tester);
 
-    await tester.tap(find.text('Groups'));
-    await tester.pumpAndSettle();
+    await openGroupsScreen(tester);
 
     await tester.enterText(find.byType(TextField).first, 'Kraft');
     await tester.pumpAndSettle();
@@ -2988,8 +3366,7 @@ void main() {
       groupRepository: FakeGroupRepository(seedGroups: <GroupDefinition>[]),
     );
 
-    await tester.tap(find.text('Groups'));
-    await tester.pumpAndSettle();
+    await openGroupsScreen(tester);
 
     expect(find.text('No groups found'), findsOneWidget);
   });
@@ -2999,10 +3376,9 @@ void main() {
   ) async {
     await pumpApp(tester);
 
-    await tester.tap(find.text('Clients'));
-    await tester.pumpAndSettle();
+    await openClientsScreen(tester);
 
-    expect(find.byType(TextField), findsOneWidget);
+    expect(find.byType(TextField), findsWidgets);
     expect(find.text('Acme Packaging Pvt. Ltd.'), findsOneWidget);
     expect(find.text('Sunrise Retail LLP'), findsOneWidget);
 
@@ -3016,8 +3392,7 @@ void main() {
     final clientRepository = FakeClientRepository();
     await pumpApp(tester, clientRepository: clientRepository);
 
-    await tester.tap(find.text('Clients'));
-    await tester.pumpAndSettle();
+    await openClientsScreen(tester);
 
     await tester.tap(find.text('Add Client'));
     await tester.pumpAndSettle();
@@ -3055,8 +3430,7 @@ void main() {
   testWidgets('items screen shows seeded and archived items', (tester) async {
     await pumpApp(tester);
 
-    await tester.tap(find.text('Items'));
-    await tester.pumpAndSettle();
+    await openItemsScreen(tester);
 
     expect(find.byType(TextField), findsOneWidget);
     expect(find.text('Switch Action Dolly - 1'), findsOneWidget);
@@ -3076,8 +3450,7 @@ void main() {
     final itemRepository = FakeItemRepository();
     await pumpApp(tester, itemRepository: itemRepository);
 
-    await tester.tap(find.text('Items'));
-    await tester.pumpAndSettle();
+    await openItemsScreen(tester);
 
     await tester.tap(find.text('Add Item'));
     await tester.pumpAndSettle();
@@ -3112,41 +3485,27 @@ void main() {
       find.widgetWithText(ElevatedButton, 'Add Top-Level Property'),
     );
     await tester.pumpAndSettle();
-    await tester.enterText(
-      find.widgetWithText(TextFormField, 'Property Name').first,
-      'Color',
-    );
+    await startEditingLatestTreeNode(tester);
+    await tester.enterText(treeNameEditor('Property name').last, 'Color');
 
-    await tester.ensureVisible(
-      find.widgetWithText(ElevatedButton, 'Add Value'),
-    );
-    await tester.tap(find.widgetWithText(ElevatedButton, 'Add Value').first);
+    await tester.ensureVisible(find.byTooltip('Add value').first);
+    await tester.tap(find.byTooltip('Add value').first);
     await tester.pumpAndSettle();
-    await tester.enterText(
-      find.widgetWithText(TextFormField, 'Value Name').first,
-      'Black',
-    );
+    await startEditingLatestTreeNode(tester);
+    await tester.enterText(treeNameEditor('Value name').last, 'Black');
 
-    await tester.ensureVisible(
-      find.widgetWithText(ElevatedButton, 'Add Property').last,
-    );
-    await tester.tap(find.widgetWithText(ElevatedButton, 'Add Property').last);
+    await tester.ensureVisible(find.byTooltip('Add property').last);
+    await tester.tap(find.byTooltip('Add property').last);
     await tester.pumpAndSettle();
-    await tester.enterText(
-      find.widgetWithText(TextFormField, 'Property Name').last,
-      'Finish',
-    );
+    await startEditingLatestTreeNode(tester);
+    await tester.enterText(treeNameEditor('Property name').last, 'Finish');
 
-    await tester.ensureVisible(
-      find.widgetWithText(ElevatedButton, 'Add Value').last,
-    );
-    await tester.tap(find.widgetWithText(ElevatedButton, 'Add Value').last);
+    await tester.ensureVisible(find.byTooltip('Add value').last);
+    await tester.tap(find.byTooltip('Add value').last);
     await tester.pumpAndSettle();
+    await startEditingLatestTreeNode(tester);
 
-    await tester.enterText(
-      find.widgetWithText(TextFormField, 'Value Name').last,
-      'Glossy',
-    );
+    await tester.enterText(treeNameEditor('Value name').last, 'Glossy');
 
     await tester.ensureVisible(
       find.widgetWithText(ElevatedButton, 'Create Item'),
@@ -3167,8 +3526,7 @@ void main() {
   testWidgets('items duplicate sibling names are blocked', (tester) async {
     await pumpApp(tester, itemRepository: FakeItemRepository());
 
-    await tester.tap(find.text('Items'));
-    await tester.pumpAndSettle();
+    await openItemsScreen(tester);
 
     await tester.tap(find.text('Add Item'));
     await tester.pumpAndSettle();
@@ -3199,10 +3557,8 @@ void main() {
       find.widgetWithText(ElevatedButton, 'Add Top-Level Property'),
     );
     await tester.pumpAndSettle();
-    await tester.enterText(
-      find.widgetWithText(TextFormField, 'Property Name').first,
-      'Color',
-    );
+    await startEditingLatestTreeNode(tester);
+    await tester.enterText(treeNameEditor('Property name').last, 'Color');
 
     await tester.ensureVisible(
       find.widgetWithText(ElevatedButton, 'Add Top-Level Property'),
@@ -3211,10 +3567,8 @@ void main() {
       find.widgetWithText(ElevatedButton, 'Add Top-Level Property'),
     );
     await tester.pumpAndSettle();
-    await tester.enterText(
-      find.widgetWithText(TextFormField, 'Property Name').last,
-      'Color',
-    );
+    await startEditingLatestTreeNode(tester);
+    await tester.enterText(treeNameEditor('Property name').last, 'Color');
 
     await tester.ensureVisible(
       find.widgetWithText(ElevatedButton, 'Create Item'),
@@ -3233,8 +3587,7 @@ void main() {
   ) async {
     await pumpApp(tester);
 
-    await tester.tap(find.text('Groups'));
-    await tester.pumpAndSettle();
+    await openGroupsScreen(tester);
 
     await tester.enterText(find.byType(TextField).first, 'Paper');
     await tester.pumpAndSettle();

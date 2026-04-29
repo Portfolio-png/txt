@@ -14,6 +14,7 @@ import '../../../../core/widgets/app_section_title.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../../core/widgets/page_container.dart';
 import '../../../../core/widgets/soft_primitives.dart';
+import '../../../groups/domain/group_definition.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../items/domain/item_definition.dart';
@@ -152,13 +153,39 @@ class _InventoryScreenState extends State<InventoryScreen> {
         }
 
         final records = inventory.materials;
+        final groupNameById = <int, String>{
+          for (final group in groups.groups) group.id: group.name,
+        };
+        final groupsById = <int, GroupDefinition>{
+          for (final group in groups.groups) group.id: group,
+        };
+        final itemById = <int, ItemDefinition>{
+          for (final item in items.items) item.id: item,
+        };
         final suppliers = _distinctValues(
           records.map((record) => record.supplier),
         );
         final types = _distinctValues(records.map((record) => record.type));
-        final filteredRecords = _applyFilters(records, inventory.searchQuery);
-        final summary = _InventorySummary.fromRecords(filteredRecords);
-        final rows = _buildRows(filteredRecords);
+        final filteredRecords = _applyFilters(
+          records,
+          inventory.searchQuery,
+          groupNameById: groupNameById,
+          itemById: itemById,
+        );
+        final rows = _buildRows(
+          filteredRecords,
+          groupNameById: groupNameById,
+          groupsById: groupsById,
+          itemById: itemById,
+          expandedParents: _expandedParents,
+        );
+        final summary = _viewMode == _InventoryViewMode.groups
+            ? _InventorySummary.fromRecords(
+                filteredRecords
+                    .where((record) => record.linkedGroupId != null)
+                    .toList(growable: false),
+              )
+            : _InventorySummary.fromRows(rows);
         final selectedRecords = records
             .where((record) => _selectedBarcodes.contains(record.barcode))
             .toList(growable: false);
@@ -202,6 +229,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                             _viewMode = value;
                           });
                         },
+                        onPrimaryCreateTap: _handlePrimaryCreateTap,
                         onQuickCreateSelected: _handleQuickCreate,
                         onAddStock: () =>
                             InventoryScreen.openAddStockForm(context),
@@ -286,6 +314,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                       const SizedBox(height: 18),
                       _InventorySummaryRow(
                         summary: summary,
+                        viewMode: _viewMode,
                         activeFilter: _summaryFilter,
                         onSelectFilter: (value) {
                           setState(() {
@@ -483,6 +512,15 @@ class _InventoryScreenState extends State<InventoryScreen> {
     }
   }
 
+  Future<void> _handlePrimaryCreateTap() async {
+    switch (_viewMode) {
+      case _InventoryViewMode.groups:
+        await _openCreateGroupEditor();
+      case _InventoryViewMode.items:
+        await ItemsScreen.openEditor(context);
+    }
+  }
+
   List<String> _distinctValues(Iterable<String> values) {
     final distinct =
         values
@@ -496,8 +534,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   List<MaterialRecord> _applyFilters(
     List<MaterialRecord> records,
-    String query,
-  ) {
+    String query, {
+    required Map<int, String> groupNameById,
+    required Map<int, ItemDefinition> itemById,
+  }) {
     final normalizedQuery = _normalize(query);
     final scoped = records
         .where((record) {
@@ -528,6 +568,17 @@ class _InventoryScreenState extends State<InventoryScreen> {
             return true;
           }
 
+          final linkedItem = record.linkedItemId == null
+              ? null
+              : itemById[record.linkedItemId];
+          final linkedItemLabel = linkedItem == null
+              ? ''
+              : linkedItem.displayName.trim().isEmpty
+              ? linkedItem.name
+              : linkedItem.displayName;
+          final linkedGroupLabel = record.linkedGroupId == null
+              ? ''
+              : groupNameById[record.linkedGroupId] ?? '';
           final haystack = <String>[
             record.name,
             record.barcode,
@@ -542,6 +593,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
             record.displayStock,
             record.createdBy,
             record.workflowStatus,
+            linkedGroupLabel,
+            linkedItemLabel,
+            linkedItem?.alias ?? '',
           ].map(_normalize).join(' ');
           return haystack.contains(normalizedQuery);
         })
@@ -557,72 +611,184 @@ class _InventoryScreenState extends State<InventoryScreen> {
     return scoped;
   }
 
-  List<_InventoryRowEntry> _buildRows(List<MaterialRecord> scopedRecords) {
+  List<_InventoryRowEntry> _buildRows(
+    List<MaterialRecord> scopedRecords, {
+    required Map<int, String> groupNameById,
+    required Map<int, GroupDefinition> groupsById,
+    required Map<int, ItemDefinition> itemById,
+    required Set<String> expandedParents,
+  }) {
     if (_viewMode == _InventoryViewMode.items) {
       return scopedRecords
-          .where(
-            (record) =>
-                (record.parentBarcode ?? '').isNotEmpty &&
-                record.numberOfChildren == 0,
-          )
-          .map((record) => _InventoryRowEntry(record: record))
+          .where((record) => record.linkedItemId != null)
+          .map((record) {
+            final linkedItem = record.linkedItemId == null
+                ? null
+                : itemById[record.linkedItemId];
+            final linkedGroupName = linkedItem == null
+                ? null
+                : groupNameById[linkedItem.groupId];
+            return _InventoryRowEntry(
+              record: record,
+              displayName: linkedItem == null
+                  ? record.name
+                  : linkedItem.displayName.trim().isEmpty
+                  ? linkedItem.name
+                  : linkedItem.displayName,
+              displayId: record.linkedItemId?.toString() ?? record.barcode,
+              displayMetadata: _itemMetadataText(record, linkedGroupName),
+            );
+          })
           .toList(growable: false);
     }
 
-    final rows = <_InventoryRowEntry>[];
-    final childrenByParent = <String, List<MaterialRecord>>{};
-    for (final record in scopedRecords) {
-      final parentBarcode = record.parentBarcode;
-      if (parentBarcode == null || parentBarcode.isEmpty) {
+    final itemRecordsByGroupId = <int, List<MaterialRecord>>{};
+    for (final record in scopedRecords.where(
+      (record) => record.linkedItemId != null,
+    )) {
+      final linkedItem = itemById[record.linkedItemId];
+      if (linkedItem == null) {
         continue;
       }
-      childrenByParent
-          .putIfAbsent(parentBarcode, () => <MaterialRecord>[])
+      itemRecordsByGroupId
+          .putIfAbsent(linkedItem.groupId, () => <MaterialRecord>[])
           .add(record);
     }
 
-    final rootRecords = scopedRecords
-        .where((record) => (record.parentBarcode ?? '').isEmpty)
-        .toList(growable: false);
-    for (final root in rootRecords) {
-      rows.addAll(
-        _buildTreeRows(root, depth: 0, childrenByParent: childrenByParent),
-      );
+    final groupRecordsByGroupId = <int, MaterialRecord>{
+      for (final record in scopedRecords.where(
+        (record) => record.linkedGroupId != null,
+      ))
+        record.linkedGroupId!: record,
+    };
+    final childGroupIdsByParentId = <int, List<int>>{};
+    for (final group in groupsById.values) {
+      final parentId = group.parentGroupId;
+      if (parentId == null) {
+        continue;
+      }
+      if (!groupRecordsByGroupId.containsKey(group.id) ||
+          !groupRecordsByGroupId.containsKey(parentId)) {
+        continue;
+      }
+      childGroupIdsByParentId
+          .putIfAbsent(parentId, () => <int>[])
+          .add(group.id);
+    }
+    for (final childIds in childGroupIdsByParentId.values) {
+      childIds.sort((a, b) {
+        final nameA = groupNameById[a] ?? '';
+        final nameB = groupNameById[b] ?? '';
+        return nameA.toLowerCase().compareTo(nameB.toLowerCase());
+      });
     }
 
-    return rows;
-  }
-
-  List<_InventoryRowEntry> _buildTreeRows(
-    MaterialRecord record, {
-    required int depth,
-    required Map<String, List<MaterialRecord>> childrenByParent,
-  }) {
-    final children =
-        childrenByParent[record.barcode]?.toList(growable: false) ?? const [];
-    final isExpanded = _expandedParents.contains(record.barcode);
-    final rows = <_InventoryRowEntry>[
-      _InventoryRowEntry(
-        record: record,
-        depth: depth,
-        canExpand: children.isNotEmpty,
-        isExpanded: isExpanded,
-      ),
-    ];
-
-    if (isExpanded) {
-      for (final child in children) {
-        rows.addAll(
-          _buildTreeRows(
-            child,
+    void appendGroupRows(
+      int groupId,
+      int depth,
+      List<_InventoryRowEntry> rows,
+    ) {
+      final groupRecord = groupRecordsByGroupId[groupId];
+      if (groupRecord == null) {
+        return;
+      }
+      final linkedGroupName = groupNameById[groupId];
+      final childGroupIds = childGroupIdsByParentId[groupId] ?? const <int>[];
+      final childRecords =
+          itemRecordsByGroupId[groupId] ?? const <MaterialRecord>[];
+      final hasChildren = childGroupIds.isNotEmpty || childRecords.isNotEmpty;
+      final isExpanded = expandedParents.contains(groupRecord.barcode);
+      rows.add(
+        _InventoryRowEntry(
+          record: groupRecord,
+          displayName: linkedGroupName ?? groupRecord.name,
+          displayId: groupId.toString(),
+          displayMetadata: _groupMetadataText(
+            groupRecord,
+            groupCount: childGroupIds.length,
+            itemCount: childRecords.length,
+          ),
+          depth: depth,
+          canExpand: hasChildren,
+          isExpanded: isExpanded,
+          opensDetails: false,
+        ),
+      );
+      if (!isExpanded) {
+        return;
+      }
+      for (final childGroupId in childGroupIds) {
+        appendGroupRows(childGroupId, depth + 1, rows);
+      }
+      for (final childRecord in childRecords) {
+        final linkedItem = itemById[childRecord.linkedItemId];
+        final childName = linkedItem == null
+            ? childRecord.name
+            : linkedItem.displayName.trim().isEmpty
+            ? linkedItem.name
+            : linkedItem.displayName;
+        rows.add(
+          _InventoryRowEntry(
+            record: childRecord,
+            displayName: childName,
+            displayId:
+                childRecord.linkedItemId?.toString() ?? childRecord.barcode,
+            displayMetadata: _itemMetadataText(childRecord, linkedGroupName),
             depth: depth + 1,
-            childrenByParent: childrenByParent,
           ),
         );
       }
     }
 
+    final rootGroupIds =
+        groupRecordsByGroupId.keys
+            .where((groupId) {
+              final parentId = groupsById[groupId]?.parentGroupId;
+              return parentId == null ||
+                  !groupRecordsByGroupId.containsKey(parentId);
+            })
+            .toList(growable: false)
+          ..sort((a, b) {
+            final nameA = groupNameById[a] ?? '';
+            final nameB = groupNameById[b] ?? '';
+            return nameA.toLowerCase().compareTo(nameB.toLowerCase());
+          });
+
+    final rows = <_InventoryRowEntry>[];
+    for (final groupId in rootGroupIds) {
+      appendGroupRows(groupId, 0, rows);
+    }
     return rows;
+  }
+
+  String _groupMetadataText(
+    MaterialRecord record, {
+    required int groupCount,
+    required int itemCount,
+  }) {
+    final parts = <String>[
+      if (groupCount > 0) '$groupCount ${groupCount == 1 ? 'group' : 'groups'}',
+      '$itemCount ${itemCount == 1 ? 'item' : 'items'}',
+      if (record.supplier.trim().isNotEmpty) record.supplier.trim(),
+      if (record.location.trim().isNotEmpty) record.location.trim(),
+      record.hasBeenScanned
+          ? 'Scanned ${record.scanCount}x'
+          : 'Awaiting first scan',
+    ];
+    return parts.join('  •  ');
+  }
+
+  String _itemMetadataText(MaterialRecord record, String? linkedGroupName) {
+    final parts = <String>[
+      if (linkedGroupName != null && linkedGroupName.trim().isNotEmpty)
+        linkedGroupName.trim(),
+      if (record.supplier.trim().isNotEmpty) record.supplier.trim(),
+      if (record.location.trim().isNotEmpty) record.location.trim(),
+      record.hasBeenScanned
+          ? 'Scanned ${record.scanCount}x'
+          : 'Awaiting first scan',
+    ];
+    return parts.join('  •  ');
   }
 
   Future<void> _openDetails(MaterialRecord record) async {
@@ -1621,6 +1787,7 @@ class _InventoryWorkspaceHeader extends StatelessWidget {
   const _InventoryWorkspaceHeader({
     required this.viewMode,
     required this.onViewModeChanged,
+    required this.onPrimaryCreateTap,
     required this.onQuickCreateSelected,
     required this.onAddStock,
     required this.onReceiveStock,
@@ -1630,6 +1797,7 @@ class _InventoryWorkspaceHeader extends StatelessWidget {
 
   final _InventoryViewMode viewMode;
   final ValueChanged<_InventoryViewMode> onViewModeChanged;
+  final VoidCallback onPrimaryCreateTap;
   final ValueChanged<_InventoryQuickCreateAction> onQuickCreateSelected;
   final VoidCallback onAddStock;
   final VoidCallback onReceiveStock;
@@ -1655,7 +1823,11 @@ class _InventoryWorkspaceHeader extends StatelessWidget {
       spacing: 10,
       runSpacing: 8,
       children: [
-        _InventoryQuickCreateMenuButton(onSelected: onQuickCreateSelected),
+        _InventoryQuickCreateMenuButton(
+          label: 'Create',
+          onPrimaryTap: onPrimaryCreateTap,
+          onSelected: onQuickCreateSelected,
+        ),
         _InventoryStockActionsButton(
           onReceiveStock: onReceiveStock,
           onTransferStock: onTransferStock,
@@ -1886,58 +2058,84 @@ class _InventoryStockActionsButton extends StatelessWidget {
 }
 
 class _InventoryQuickCreateMenuButton extends StatelessWidget {
-  const _InventoryQuickCreateMenuButton({required this.onSelected});
+  const _InventoryQuickCreateMenuButton({
+    required this.label,
+    required this.onPrimaryTap,
+    required this.onSelected,
+  });
 
+  final String label;
+  final VoidCallback onPrimaryTap;
   final ValueChanged<_InventoryQuickCreateAction> onSelected;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    return Container(
       height: 44,
-      child: PopupMenuButton<_InventoryQuickCreateAction>(
-        tooltip: 'Create',
-        onSelected: onSelected,
-        color: SoftErpTheme.cardSurface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-          side: const BorderSide(color: SoftErpTheme.border),
-        ),
-        itemBuilder: (context) => const [
-          PopupMenuItem<_InventoryQuickCreateAction>(
-            value: _InventoryQuickCreateAction.group,
-            height: 42,
-            child: Text('Create Group'),
-          ),
-          PopupMenuItem<_InventoryQuickCreateAction>(
-            value: _InventoryQuickCreateAction.item,
-            height: 42,
-            child: Text('Create Item'),
-          ),
-        ],
-        child: Container(
-          constraints: const BoxConstraints(minWidth: 100),
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: SoftErpTheme.border),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'Create ▾',
-                style: TextStyle(
-                  color: SoftErpTheme.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.1,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onPrimaryTap,
+              borderRadius: const BorderRadius.horizontal(
+                left: Radius.circular(14),
+              ),
+              hoverColor: _inventoryHoverColor,
+              child: Container(
+                constraints: const BoxConstraints(minWidth: 100),
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                alignment: Alignment.center,
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: SoftErpTheme.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.1,
+                  ),
                 ),
               ),
-            ],
+            ),
           ),
-        ),
+          Container(width: 1, color: SoftErpTheme.border),
+          PopupMenuButton<_InventoryQuickCreateAction>(
+            tooltip: 'Create options',
+            onSelected: onSelected,
+            color: SoftErpTheme.cardSurface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: const BorderSide(color: SoftErpTheme.border),
+            ),
+            itemBuilder: (context) => const [
+              PopupMenuItem<_InventoryQuickCreateAction>(
+                value: _InventoryQuickCreateAction.group,
+                height: 42,
+                child: Text('Create Group'),
+              ),
+              PopupMenuItem<_InventoryQuickCreateAction>(
+                value: _InventoryQuickCreateAction.item,
+                height: 42,
+                child: Text('Create Item'),
+              ),
+            ],
+            child: Container(
+              width: 42,
+              alignment: Alignment.center,
+              child: const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 20,
+                color: SoftErpTheme.textSecondary,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2423,11 +2621,13 @@ class _InventoryBulkActionButton extends StatelessWidget {
 class _InventorySummaryRow extends StatelessWidget {
   const _InventorySummaryRow({
     required this.summary,
+    required this.viewMode,
     required this.activeFilter,
     required this.onSelectFilter,
   });
 
   final _InventorySummary summary;
+  final _InventoryViewMode viewMode;
   final _InventorySummaryFilter activeFilter;
   final ValueChanged<_InventorySummaryFilter> onSelectFilter;
 
@@ -2447,7 +2647,9 @@ class _InventorySummaryRow extends StatelessWidget {
               SizedBox(
                 width: cardWidth,
                 child: _SummaryCard(
-                  label: 'All Groups',
+                  label: viewMode == _InventoryViewMode.groups
+                      ? 'All Groups'
+                      : 'All Items',
                   value: summary.total,
                   icon: Icons.inventory_2_outlined,
                   iconColor: const Color(0xFF4D6DE6),
@@ -2713,6 +2915,12 @@ class _InventoryTableState extends State<_InventoryTable> {
                       itemBuilder: (context, index) {
                         final entry = widget.rows[index];
                         final record = entry.record;
+                        final rowTap = !entry.opensDetails
+                            ? (entry.canExpand
+                                  ? () =>
+                                        widget.onToggleExpanded(record.barcode)
+                                  : () {})
+                            : () => widget.onOpenDetails(record);
                         return _InventoryMainDataRow(
                           record: record,
                           entry: entry,
@@ -2722,13 +2930,14 @@ class _InventoryTableState extends State<_InventoryTable> {
                           ),
                           isStriped: index.isOdd,
                           isRequestDelete: widget.isRequestDelete,
-                          onTap: () => widget.onOpenDetails(record),
+                          onTap: rowTap,
                           onLongPress: () =>
                               widget.onToggleSelection(record.barcode),
                           onExpandToggle: entry.canExpand
                               ? () => widget.onToggleExpanded(record.barcode)
                               : null,
                           onReceive: () => widget.onReceive(record),
+                          showOpenAction: entry.opensDetails,
                           onAddSubGroup: () => widget.onAddSubGroup(record),
                           onEdit: () => widget.onEdit(record),
                           onDelete: () => widget.onDelete(record),
@@ -2779,7 +2988,7 @@ class _InventoryTableHeader extends StatelessWidget {
             metrics: metrics,
           ),
           _HeaderCell(
-            'Group ID',
+            viewMode == _InventoryViewMode.groups ? 'Group ID' : 'Item ID',
             width: metrics.barcodeWidth,
             metrics: metrics,
           ),
@@ -2841,6 +3050,7 @@ class _InventoryMainDataRow extends StatefulWidget {
     required this.onTap,
     required this.onLongPress,
     required this.onReceive,
+    required this.showOpenAction,
     required this.onAddSubGroup,
     required this.onEdit,
     required this.onDelete,
@@ -2859,6 +3069,7 @@ class _InventoryMainDataRow extends StatefulWidget {
   final VoidCallback onTap;
   final VoidCallback onLongPress;
   final VoidCallback onReceive;
+  final bool showOpenAction;
   final VoidCallback onAddSubGroup;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
@@ -2906,70 +3117,68 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
                   color: surfaceColor,
                   borderRadius: BorderRadius.circular(widget.metrics.rowRadius),
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: widget.metrics.nameWidth,
-                        child: _InventoryNameCell(
-                          record: widget.record,
-                          entry: widget.entry,
-                          metrics: widget.metrics,
-                          onExpandToggle: widget.onExpandToggle,
-                        ),
-                      ),
-                      _DataCell(
-                        _displayGroupId(widget.record),
-                        width: widget.metrics.barcodeWidth,
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: widget.metrics.nameWidth,
+                      child: _InventoryNameCell(
+                        record: widget.record,
+                        entry: widget.entry,
                         metrics: widget.metrics,
+                        onExpandToggle: widget.onExpandToggle,
                       ),
-                      _DataCell(
-                        _displayStock(widget.record),
-                        width: widget.metrics.stockWidth,
-                        metrics: widget.metrics,
-                      ),
-                      _DataCell(
-                        _activityDate(widget.record),
-                        width: widget.metrics.dateWidth,
-                        metrics: widget.metrics,
-                      ),
-                      _DataCell(
-                        widget.record.createdBy.ifEmpty('Demo Admin'),
-                        width: widget.metrics.createdByWidth,
-                        metrics: widget.metrics,
-                      ),
-                      SizedBox(
-                        width: widget.metrics.statusWidth,
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: _InventoryStatusBadge(
-                            record: widget.record,
-                            metrics: widget.metrics,
-                          ),
-                        ),
-                      ),
-                      SizedBox(
-                        width: widget.metrics.actionsWidth,
-                        child: _InventoryActionsCell(
+                    ),
+                    _DataCell(
+                      _displayPrimaryId(widget.entry),
+                      width: widget.metrics.barcodeWidth,
+                      metrics: widget.metrics,
+                    ),
+                    _DataCell(
+                      _displayStock(widget.record),
+                      width: widget.metrics.stockWidth,
+                      metrics: widget.metrics,
+                    ),
+                    _DataCell(
+                      _activityDate(widget.record),
+                      width: widget.metrics.dateWidth,
+                      metrics: widget.metrics,
+                    ),
+                    _DataCell(
+                      widget.record.createdBy.ifEmpty('Demo Admin'),
+                      width: widget.metrics.createdByWidth,
+                      metrics: widget.metrics,
+                    ),
+                    SizedBox(
+                      width: widget.metrics.statusWidth,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: _InventoryStatusBadge(
                           record: widget.record,
                           metrics: widget.metrics,
-                          hovered: _hovered,
-                          isSelected: widget.isSelected,
-                          isStriped: widget.isStriped,
-                          isRequestDelete: widget.isRequestDelete,
-                          onTap: widget.onTap,
-                          onReceive: widget.onReceive,
-                          onAddSubGroup: widget.onAddSubGroup,
-                          onEdit: widget.onEdit,
-                          onDelete: widget.onDelete,
-                          onLinkGroup: widget.onLinkGroup,
-                          onLinkItem: widget.onLinkItem,
-                          onUnlink: widget.onUnlink,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                    SizedBox(
+                      width: widget.metrics.actionsWidth,
+                      child: _InventoryActionsCell(
+                        record: widget.record,
+                        metrics: widget.metrics,
+                        hovered: _hovered,
+                        isSelected: widget.isSelected,
+                        isStriped: widget.isStriped,
+                        isRequestDelete: widget.isRequestDelete,
+                        onTap: widget.onTap,
+                        onReceive: widget.onReceive,
+                        showOpenAction: widget.showOpenAction,
+                        onAddSubGroup: widget.onAddSubGroup,
+                        onEdit: widget.onEdit,
+                        onDelete: widget.onDelete,
+                        onLinkGroup: widget.onLinkGroup,
+                        onLinkItem: widget.onLinkItem,
+                        onUnlink: widget.onUnlink,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -2989,11 +3198,8 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
     return _formatDate(value.lastScannedAt ?? value.updatedAt);
   }
 
-  String _displayGroupId(MaterialRecord value) {
-    if (value.barcode.startsWith('GRP-')) {
-      return '123456';
-    }
-    return value.barcode;
+  String _displayPrimaryId(_InventoryRowEntry entry) {
+    return entry.displayId ?? entry.record.barcode;
   }
 
   String _displayStock(MaterialRecord value) {
@@ -3014,6 +3220,7 @@ class _InventoryActionsCell extends StatelessWidget {
     required this.isRequestDelete,
     required this.onTap,
     required this.onReceive,
+    required this.showOpenAction,
     required this.onAddSubGroup,
     required this.onEdit,
     required this.onDelete,
@@ -3030,6 +3237,7 @@ class _InventoryActionsCell extends StatelessWidget {
   final bool isRequestDelete;
   final VoidCallback onTap;
   final VoidCallback onReceive;
+  final bool showOpenAction;
   final VoidCallback onAddSubGroup;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
@@ -3043,7 +3251,7 @@ class _InventoryActionsCell extends StatelessWidget {
       alignment: Alignment.centerRight,
       child: _InventoryInlineRowActions(
         hovered: hovered,
-        onOpen: onTap,
+        onOpen: showOpenAction ? onTap : null,
         onReceive: onReceive,
         menuAnchor: _InventoryActionsOverlayAnchor(
           triggerSize: metrics.actionButtonSize,
@@ -3115,7 +3323,7 @@ class _InventoryInlineRowActions extends StatelessWidget {
   });
 
   final bool hovered;
-  final VoidCallback onOpen;
+  final VoidCallback? onOpen;
   final VoidCallback onReceive;
   final Widget menuAnchor;
 
@@ -3129,7 +3337,7 @@ class _InventoryInlineRowActions extends StatelessWidget {
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (showQuick)
+            if (showQuick && onOpen != null)
               IgnorePointer(
                 ignoring: !hovered,
                 child: AnimatedOpacity(
@@ -3141,7 +3349,7 @@ class _InventoryInlineRowActions extends StatelessWidget {
                       _InventoryQuickHintButton(
                         label: 'Open',
                         emphasized: true,
-                        onTap: onOpen,
+                        onTap: onOpen!,
                       ),
                       if (showBothQuick) ...[
                         const SizedBox(width: 6),
@@ -3178,7 +3386,8 @@ class _InventoryNameCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final metadata = _metadataText(record);
+    final title = entry.displayName ?? record.name;
+    final metadata = entry.displayMetadata ?? _metadataText(record);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -3208,10 +3417,10 @@ class _InventoryNameCell extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Tooltip(
-                message: record.name,
+                message: title,
                 waitDuration: const Duration(milliseconds: 500),
                 child: Text(
-                  record.name,
+                  title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: _inventoryManropeStyle(
@@ -3382,6 +3591,12 @@ class _InventoryDetailSheet extends StatelessWidget {
     final linkedItem = items.items
         .where((item) => item.id == record.linkedItemId)
         .firstOrNull;
+    final linkedItemTitle = linkedItem == null
+        ? null
+        : linkedItem.displayName.trim().isEmpty
+        ? linkedItem.name
+        : linkedItem.displayName;
+    final title = linkedItemTitle ?? linkedGroup?.name ?? record.name;
     final cachedDetail = inventory.detailFor(record.barcode);
 
     return Material(
@@ -3398,7 +3613,7 @@ class _InventoryDetailSheet extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    record.name,
+                    title,
                     style: const TextStyle(
                       color: Color(0xFF3F3F3F),
                       fontSize: 16,
@@ -4085,20 +4300,34 @@ class _InventorySummary {
       linked: records.where((record) => record.hasInheritanceLink).length,
     );
   }
+
+  factory _InventorySummary.fromRows(List<_InventoryRowEntry> rows) {
+    return _InventorySummary.fromRecords(
+      rows.map((row) => row.record).toList(growable: false),
+    );
+  }
 }
 
 class _InventoryRowEntry {
   const _InventoryRowEntry({
     required this.record,
+    this.displayName,
+    this.displayId,
+    this.displayMetadata,
     this.depth = 0,
     this.canExpand = false,
     this.isExpanded = false,
+    this.opensDetails = true,
   });
 
   final MaterialRecord record;
+  final String? displayName;
+  final String? displayId;
+  final String? displayMetadata;
   final int depth;
   final bool canExpand;
   final bool isExpanded;
+  final bool opensDetails;
 }
 
 class _InventoryTableMetrics {

@@ -1,0 +1,136 @@
+name: Build Desktop (Windows + macOS)
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: "Backend base URL (e.g. https://api.example.com). Leave empty to build demo mode."
+        required: false
+        type: string
+      demo_mode:
+        description: "Build with PAPER_DEMO_MODE=true (ignores backend)"
+        required: false
+        default: true
+        type: boolean
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: windows
+            os: windows-latest
+          - target: macos
+            os: macos-latest
+
+    env:
+      # If you want CI builds to always point at a backend, set this repository secret:
+      #   PAPER_API_BASE_URL
+      # Otherwise workflow_dispatch defaults to demo mode.
+      INPUT_API_BASE_URL: ${{ inputs.api_base_url }}
+      INPUT_DEMO_MODE: ${{ inputs.demo_mode }}
+      SECRET_API_BASE_URL: ${{ secrets.PAPER_API_BASE_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Decide build flags
+        id: flags
+        shell: bash
+        run: |
+          set -euo pipefail
+          API_URL="${INPUT_API_BASE_URL:-}"
+          if [[ -z "${API_URL}" ]]; then
+            API_URL="${SECRET_API_BASE_URL:-}"
+          fi
+
+          DEMO="${INPUT_DEMO_MODE:-}"
+          if [[ -z "${DEMO}" ]]; then
+            DEMO="true"
+          fi
+
+          if [[ "${DEMO}" == "true" ]]; then
+            echo "dart_defines=--dart-define=PAPER_DEMO_MODE=true" >> "$GITHUB_OUTPUT"
+            echo "label=demo" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ -z "${API_URL}" ]]; then
+            echo "No API base URL provided. Falling back to demo mode."
+            echo "dart_defines=--dart-define=PAPER_DEMO_MODE=true" >> "$GITHUB_OUTPUT"
+            echo "label=demo" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "dart_defines=--dart-define=PAPER_API_BASE_URL=${API_URL}" >> "$GITHUB_OUTPUT"
+          echo "label=api" >> "$GITHUB_OUTPUT"
+
+      - name: Build (Windows)
+        if: matrix.target == 'windows'
+        run: flutter build windows --release ${{ steps.flags.outputs.dart_defines }}
+
+      - name: Package (Windows)
+        if: matrix.target == 'windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $outDir = "dist"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+
+          $src = "build/windows/x64/runner/Release"
+          if (!(Test-Path $src)) { throw "Expected build output at $src" }
+
+          $zipPath = Join-Path $outDir ("paper-windows-${{ steps.flags.outputs.label }}.zip")
+          if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+          Compress-Archive -Path (Join-Path $src "*") -DestinationPath $zipPath
+
+      - name: Upload (Windows)
+        if: matrix.target == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper-windows-${{ steps.flags.outputs.label }}
+          path: dist/*.zip
+
+      - name: Build (macOS)
+        if: matrix.target == 'macos'
+        run: flutter build macos --release ${{ steps.flags.outputs.dart_defines }}
+
+      - name: Package (macOS DMG)
+        if: matrix.target == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH="build/macos/Build/Products/Release/paper.app"
+          if [[ ! -d "${APP_PATH}" ]]; then
+            echo "Expected app bundle at ${APP_PATH}"
+            ls -la "build/macos/Build/Products/Release" || true
+            exit 1
+          fi
+
+          mkdir -p dist
+          DMG_PATH="dist/paper-macos-${{ steps.flags.outputs.label }}.dmg"
+
+          # Create a simple unsigned DMG (good for demos/internal distribution).
+          hdiutil create -volname "Paper" -srcfolder "${APP_PATH}" -ov -format UDZO "${DMG_PATH}"
+
+      - name: Upload (macOS)
+        if: matrix.target == 'macos'
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper-macos-${{ steps.flags.outputs.label }}
+          path: dist/*.dmg
+

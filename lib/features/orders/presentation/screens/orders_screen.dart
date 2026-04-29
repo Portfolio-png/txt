@@ -11,6 +11,7 @@ import '../../../../core/widgets/soft_primitives.dart';
 import '../../../clients/domain/client_definition.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
 import '../../../items/domain/item_definition.dart';
+import '../../../items/presentation/screens/items_screen.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../domain/order_entry.dart';
 import '../../domain/order_inputs.dart';
@@ -1821,6 +1822,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
   DateTime? _startDate;
   DateTime? _endDate;
   String? _orderCompletionError;
+  bool _showUploadPanel = false;
 
   @override
   void initState() {
@@ -1879,14 +1881,47 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
             children: [
               SizedBox(
                 height: 64,
-                child: Center(
-                  child: Text(
-                    'Create New Order',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: SoftErpTheme.textPrimary,
-                    ),
-                  ),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final compactActions = constraints.maxWidth < 1080;
+                    return Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Center(
+                          child: Text(
+                            'Create New Order',
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: SoftErpTheme.textPrimary,
+                                ),
+                          ),
+                        ),
+                        Positioned(
+                          right: 24,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _OrderHeaderActionButton(
+                                icon: Icons.print_outlined,
+                                label: 'Print',
+                                compact: compactActions,
+                                onTap: _handlePrintOrder,
+                              ),
+                              const SizedBox(width: 8),
+                              _OrderHeaderActionButton(
+                                icon: Icons.upload_file_outlined,
+                                label: 'Upload PO',
+                                compact: compactActions,
+                                isActive: _showUploadPanel,
+                                onTap: _toggleUploadPanel,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
               const Divider(height: 1, color: SoftErpTheme.border),
@@ -1910,13 +1945,59 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                               items,
                               isCompact: isCompact,
                             );
+                            final canShowUploadColumn =
+                                _showUploadPanel && constraints.maxWidth >= 980;
+                            final showStackedUploadPanel =
+                                _showUploadPanel &&
+                                !isCompact &&
+                                !canShowUploadColumn;
                             if (isCompact) {
                               return Column(
                                 children: [
                                   detailsPanel,
                                   const SizedBox(height: 10),
                                   itemsPanel,
+                                  if (_showUploadPanel) ...[
+                                    const SizedBox(height: 10),
+                                    _OrderUploadPanel(
+                                      onClose: _toggleUploadPanel,
+                                      onAddDocument: _handleAddDocument,
+                                    ),
+                                  ],
                                 ],
+                              );
+                            }
+                            if (showStackedUploadPanel) {
+                              return SizedBox(
+                                height: 860,
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    Expanded(
+                                      child: Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: [
+                                          Expanded(
+                                            flex: 4,
+                                            child: detailsPanel,
+                                          ),
+                                          const SizedBox(width: 14),
+                                          Expanded(flex: 9, child: itemsPanel),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 14),
+                                    SizedBox(
+                                      height: 220,
+                                      child: _OrderUploadPanel(
+                                        onClose: _toggleUploadPanel,
+                                        onAddDocument: _handleAddDocument,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               );
                             }
                             return SizedBox(
@@ -1924,9 +2005,25 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  SizedBox(width: 435, child: detailsPanel),
+                                  Expanded(
+                                    flex: canShowUploadColumn ? 3 : 4,
+                                    child: detailsPanel,
+                                  ),
                                   const SizedBox(width: 14),
-                                  Expanded(child: itemsPanel),
+                                  Expanded(
+                                    flex: canShowUploadColumn ? 6 : 9,
+                                    child: itemsPanel,
+                                  ),
+                                  if (canShowUploadColumn) ...[
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      flex: 3,
+                                      child: _OrderUploadPanel(
+                                        onClose: _toggleUploadPanel,
+                                        onAddDocument: _handleAddDocument,
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             );
@@ -1976,6 +2073,24 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
           ),
         ),
       ),
+    );
+  }
+
+  void _toggleUploadPanel() {
+    setState(() {
+      _showUploadPanel = !_showUploadPanel;
+    });
+  }
+
+  void _handlePrintOrder() {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Print order coming soon')));
+  }
+
+  void _handleAddDocument() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Document upload coming soon')),
     );
   }
 
@@ -2148,7 +2263,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
               ),
               const SizedBox(height: 10),
               if (!isCompact) ...[
-                _OrderItemsHeader(),
+                _OrderItemsHeader(showCompletionDate: _itemWiseCompletionDate),
                 const SizedBox(height: 20),
               ],
               if (hasBoundedHeight && !isCompact)
@@ -2205,13 +2320,13 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
         ),
         const SizedBox(height: 10),
         _OrderEditorField(label: 'Unit', child: _buildUnitField()),
-        const SizedBox(height: 10),
-        _OrderEditorField(
-          label: 'Completion Date',
-          child: _buildCompletionDateFieldForLine(context, index),
-        ),
-        const SizedBox(height: 10),
-        ..._buildVariationSelectorsForLine(items, index, double.infinity),
+        if (_itemWiseCompletionDate) ...[
+          const SizedBox(height: 10),
+          _OrderEditorField(
+            label: 'Completion Date',
+            child: _buildCompletionDateFieldForLine(context, index),
+          ),
+        ],
         if (index > 0) ...[
           const SizedBox(height: 10),
           Align(
@@ -2242,11 +2357,11 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
           itemField: _buildItemSelectForLine(items, index),
           quantityField: _buildQuantityFieldForLine(index),
           unitField: _buildUnitField(),
-          completionDateField: _buildCompletionDateFieldForLine(context, index),
+          completionDateField: _itemWiseCompletionDate
+              ? _buildCompletionDateFieldForLine(context, index)
+              : null,
           onDelete: index == 0 ? null : () => _removeLine(index),
         ),
-        const SizedBox(height: 10),
-        _buildLineVariationSelectors(items, index),
       ],
     );
   }
@@ -2256,35 +2371,134 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     final fieldKey = index == 0
         ? const ValueKey<String>('orders-editor-item-field')
         : ValueKey<String>('orders-editor-item-field-${line.id}');
-    return SearchableSelectField<int>(
-      key: fieldKey,
-      tapTargetKey: fieldKey,
-      value: line.selectedItemId,
-      decoration: _inputDecoration(hintText: 'Dolly'),
-      dialogTitle: 'Item',
-      searchHintText: 'Search item',
-      options: items
-          .map(
-            (item) => SearchableSelectOption<int>(
-              value: item.id,
-              label: item.displayName,
+    final item = _selectedItemForLine(items, line.selectedItemId);
+    final selectedLeaf = _selectedLeafForLine(
+      item,
+      line.selectedVariationLeafId,
+    );
+    final hasVariations = item != null && item.leafVariationNodes.isNotEmpty;
+    final showBreadcrumb = item != null && selectedLeaf != null;
+
+    void openOverlay() {
+      _openVariationSelectorOverlay(context, index);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SearchableSelectField<int>(
+          key: fieldKey,
+          tapTargetKey: fieldKey,
+          value: line.selectedItemId,
+          decoration: _inputDecoration(hintText: 'Dolly'),
+          dialogTitle: 'Item',
+          searchHintText: 'Search item',
+          options: items
+              .map(
+                (item) => SearchableSelectOption<int>(
+                  value: item.id,
+                  label: item.displayName,
+                ),
+              )
+              .toList(growable: false),
+          onCreateOption: (query) =>
+              _quickCreateItemForLine(context, lineIndex: index, name: query),
+          createOptionLabelBuilder: (query) => 'Create item "$query"',
+          onChanged: (value) {
+            setState(() {
+              line.selectedItemId = value;
+              final latestItems = context.read<ItemsProvider>().items;
+              final item = _selectedItemForLine(latestItems, value);
+              final defaultLeafId = _defaultLeafIdForItem(item);
+              line.selectedVariationLeafId = defaultLeafId;
+              final defaultLeaf = _selectedLeafForLine(item, defaultLeafId);
+              line.selectedVariationStepNodeIds = defaultLeaf == null
+                  ? <int>[]
+                  : _valueNodeIdsForLeaf(item!, defaultLeaf);
+              line.isVariationTreeExpanded = false;
+              line.variationPathError = null;
+            });
+            final latestItems = context.read<ItemsProvider>().items;
+            final selectedItem = _selectedItemForLine(latestItems, value);
+            final shouldOpenOverlay =
+                selectedItem != null &&
+                selectedItem.leafVariationNodes.isNotEmpty &&
+                _defaultLeafIdForItem(selectedItem) == null;
+            if (shouldOpenOverlay) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted || !context.mounted) {
+                  return;
+                }
+                _openVariationSelectorOverlay(context, index);
+              });
+            }
+          },
+          validator: (value) {
+            if (value == null) {
+              return 'Select an item.';
+            }
+            return null;
+          },
+        ),
+        if (hasVariations && selectedLeaf == null) ...[
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              key: index == 0
+                  ? const ValueKey<String>(
+                      'orders-editor-open-variation-overlay',
+                    )
+                  : ValueKey<String>(
+                      'orders-editor-line-${line.id}-open-variation-overlay',
+                    ),
+              onPressed: openOverlay,
+              style: TextButton.styleFrom(
+                foregroundColor: SoftErpTheme.accent,
+                padding: EdgeInsets.zero,
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+              child: Text(
+                'Select variation path',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: SoftErpTheme.accent,
+                  fontWeight: FontWeight.w600,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
             ),
-          )
-          .toList(growable: false),
-      onChanged: (value) {
-        setState(() {
-          line.selectedItemId = value;
-          final item = _selectedItemForLine(items, value);
-          line.selectedVariationLeafId = _defaultLeafIdForItem(item);
-          line.variationPathError = null;
-        });
-      },
-      validator: (value) {
-        if (value == null) {
-          return 'Select an item.';
-        }
-        return null;
-      },
+          ),
+        ],
+        if (showBreadcrumb) ...[
+          const SizedBox(height: 6),
+          _VariationBreadcrumb(
+            key: index == 0
+                ? const ValueKey<String>('orders-editor-variation-breadcrumb')
+                : ValueKey<String>(
+                    'orders-editor-line-${line.id}-variation-breadcrumb',
+                  ),
+            segments: _variationBreadcrumbSegments(item, selectedLeaf),
+            propertyCount: _variationPropertyDepth(item, selectedLeaf),
+            linkKey: index == 0
+                ? const ValueKey<String>('orders-editor-open-variation-link')
+                : ValueKey<String>(
+                    'orders-editor-line-${line.id}-open-variation-link',
+                  ),
+            onOpenTree: openOverlay,
+          ),
+        ],
+        if (line.variationPathError != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            line.variationPathError!,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.error,
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -2358,105 +2572,350 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     );
   }
 
-  List<Widget> _buildVariationSelectorsForLine(
-    List<ItemDefinition> items,
-    int index,
-    double fieldWidth,
-  ) {
-    final line = _lines[index];
-    final item = _selectedItemForLine(items, line.selectedItemId);
-    if (item == null) {
-      final variationKey = index == 0
-          ? const ValueKey<String>('orders-editor-variation-path-field')
-          : ValueKey<String>('orders-editor-line-${line.id}-variation');
-      return [
-        SizedBox(
-          width: fieldWidth,
-          child: _OrderEditorField(
-            label: 'Variation Path',
-            child: SearchableSelectField<int>(
-              key: variationKey,
-              tapTargetKey: variationKey,
-              value: null,
-              decoration: _inputDecoration(hintText: 'Select item first'),
-              fieldEnabled: false,
-              options: const <SearchableSelectOption<int>>[],
-              onChanged: (_) {},
-              validator: (_) => 'Select an item first.',
+  Future<void> _openVariationSelectorOverlay(
+    BuildContext context,
+    int lineIndex,
+  ) async {
+    final line = _lines[lineIndex];
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 32,
+            vertical: 28,
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1040),
+            child: StatefulBuilder(
+              builder: (context, setDialogState) {
+                return Consumer<ItemsProvider>(
+                  builder: (context, itemsProvider, _) {
+                    final items = itemsProvider.items;
+                    final item = _selectedItemForLine(
+                      items,
+                      line.selectedItemId,
+                    );
+                    if (item == null || item.leafVariationNodes.isEmpty) {
+                      return const SizedBox.shrink();
+                    }
+                    final selectedLeaf = _selectedLeafForLine(
+                      item,
+                      line.selectedVariationLeafId,
+                    );
+                    final selectedValueNodeIds = _effectiveVariationStepNodeIds(
+                      item,
+                      line,
+                    );
+                    final variationSteps = _variationDropdownSteps(
+                      item,
+                      selectedValueNodeIds,
+                    );
+                    final selectedSegments = selectedLeaf == null
+                        ? const <String>[]
+                        : _variationBreadcrumbSegments(item, selectedLeaf);
+
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Variation Path',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .headlineSmall
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                        color: SoftErpTheme.textPrimary,
+                                      ),
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: () =>
+                                    Navigator.of(dialogContext).pop(),
+                                icon: const Icon(Icons.close_rounded),
+                                tooltip: 'Close',
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            item.displayName,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: SoftErpTheme.textSecondary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                          const SizedBox(height: 16),
+                          Container(
+                            key: lineIndex == 0
+                                ? const ValueKey<String>(
+                                    'orders-editor-variation-overlay',
+                                  )
+                                : ValueKey<String>(
+                                    'orders-editor-line-${line.id}-variation-overlay',
+                                  ),
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: SoftErpTheme.cardSurfaceAlt,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: SoftErpTheme.border),
+                            ),
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  for (
+                                    var stepIndex = 0;
+                                    stepIndex < variationSteps.length;
+                                    stepIndex++
+                                  ) ...[
+                                    _VariationDropdownStepField(
+                                      fieldKey: lineIndex == 0
+                                          ? ValueKey<String>(
+                                              'orders-editor-variation-step-$stepIndex',
+                                            )
+                                          : ValueKey<String>(
+                                              'orders-editor-line-${line.id}-variation-step-$stepIndex',
+                                            ),
+                                      propertyName: variationSteps[stepIndex]
+                                          .property
+                                          .name,
+                                      hintText:
+                                          'Select ${variationSteps[stepIndex].property.name}',
+                                      value: variationSteps[stepIndex]
+                                          .selectedValue
+                                          ?.id,
+                                      options: variationSteps[stepIndex].options
+                                          .map(
+                                            (option) =>
+                                                SearchableSelectOption<int>(
+                                                  value: option.id,
+                                                  label: option.name,
+                                                ),
+                                          )
+                                          .toList(growable: false),
+                                      onChanged: (value) {
+                                        final selectedLeafNow =
+                                            _selectVariationStep(
+                                              context,
+                                              lineIndex: lineIndex,
+                                              stepIndex: stepIndex,
+                                              valueId: value,
+                                            );
+                                        if (!mounted) {
+                                          return;
+                                        }
+                                        if (selectedLeafNow) {
+                                          Navigator.of(dialogContext).pop();
+                                          return;
+                                        }
+                                        setDialogState(() {});
+                                      },
+                                      onCreateOption: (query) =>
+                                          _quickCreateVariationValueForLine(
+                                            context,
+                                            items,
+                                            lineIndex: lineIndex,
+                                            step: variationSteps[stepIndex],
+                                            valueName: query,
+                                          ),
+                                      createOptionLabelBuilder: (query) =>
+                                          'Create "$query"',
+                                    ),
+                                    if (stepIndex != variationSteps.length - 1)
+                                      const Padding(
+                                        padding: EdgeInsets.fromLTRB(
+                                          10,
+                                          34,
+                                          10,
+                                          0,
+                                        ),
+                                        child: Icon(
+                                          Icons.chevron_right_rounded,
+                                          size: 18,
+                                          color: SoftErpTheme.textSecondary,
+                                        ),
+                                      ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                          if (selectedSegments.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: selectedSegments
+                                  .map(
+                                    (segment) => Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
+                                        border: Border.all(
+                                          color: SoftErpTheme.border,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        segment,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: SoftErpTheme.textPrimary,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(growable: false),
+                            ),
+                          ],
+                          if (line.variationPathError != null) ...[
+                            const SizedBox(height: 12),
+                            Text(
+                              line.variationPathError!,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
+                            ),
+                          ],
+                          const SizedBox(height: 18),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: () =>
+                                  Navigator.of(dialogContext).pop(),
+                              child: const Text('Close'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
             ),
           ),
-        ),
-      ];
-    }
-    final leaves = item.leafVariationNodes;
-    if (leaves.isEmpty) {
-      return [
-        SizedBox(
-          width: fieldWidth,
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFF7ED),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFF4C98B)),
-            ),
-            child: const Text(
-              'This item has no active orderable variation path.',
-            ),
-          ),
-        ),
-      ];
-    }
-    final variationKey = index == 0
-        ? const ValueKey<String>('orders-editor-variation-path-field')
-        : ValueKey<String>('orders-editor-line-${line.id}-variation');
-    return [
-      SizedBox(
-        width: fieldWidth,
-        child: _OrderEditorField(
-          label: 'Variation Path',
-          child: SearchableSelectField<int>(
-            key: variationKey,
-            tapTargetKey: variationKey,
-            value: line.selectedVariationLeafId,
-            decoration: _inputDecoration(hintText: 'Select'),
-            dialogTitle: 'Variation Path',
-            searchHintText: 'Search variation path',
-            options: leaves
-                .map(
-                  (leaf) => SearchableSelectOption<int>(
-                    value: leaf.id,
-                    label: leaf.displayName,
-                  ),
-                )
-                .toList(growable: false),
-            onChanged: (value) {
-              setState(() {
-                line.selectedVariationLeafId = value;
-                line.variationPathError = null;
-              });
-            },
-            validator: (value) {
-              if (value == null) {
-                return 'Select a variation path.';
-              }
-              return null;
-            },
-          ),
-        ),
-      ),
-    ];
+        );
+      },
+    );
   }
 
-  Widget _buildLineVariationSelectors(List<ItemDefinition> items, int index) {
-    final selectors = _buildVariationSelectorsForLine(items, index, 180);
-    if (selectors.isEmpty) {
-      return const SizedBox.shrink();
+  bool _selectVariationStep(
+    BuildContext context, {
+    required int lineIndex,
+    required int stepIndex,
+    required int? valueId,
+  }) {
+    if (valueId == null) {
+      return false;
     }
-    return Padding(
-      padding: const EdgeInsets.only(left: 4, right: 56),
-      child: Wrap(spacing: 10, runSpacing: 10, children: selectors),
+    final line = _lines[lineIndex];
+    final items = context.read<ItemsProvider>().items;
+    final item = _selectedItemForLine(items, line.selectedItemId);
+    if (item == null) {
+      return false;
+    }
+    final currentIds = _effectiveVariationStepNodeIds(item, line);
+    final nextIds = <int>[...currentIds.take(stepIndex), valueId];
+    final selectedValue = _findVariationNodeById(item, valueId);
+    final isLeafValue = selectedValue != null && selectedValue.isLeafValue;
+    setState(() {
+      line.selectedVariationStepNodeIds = nextIds;
+      line.selectedVariationLeafId = isLeafValue ? selectedValue.id : null;
+      line.variationPathError = null;
+      line.isVariationTreeExpanded = false;
+    });
+    return isLeafValue;
+  }
+
+  Future<SearchableSelectOption<int>?> _quickCreateVariationValueForLine(
+    BuildContext context,
+    List<ItemDefinition> items, {
+    required int lineIndex,
+    required _VariationDropdownStep step,
+    required String valueName,
+  }) async {
+    final line = _lines[lineIndex];
+    final item = _selectedItemForLine(items, line.selectedItemId);
+    if (item == null) {
+      setState(() {
+        line.variationPathError = 'Select an item first.';
+      });
+      return null;
+    }
+
+    final result = await context.read<ItemsProvider>().appendVariationValue(
+      itemId: item.id,
+      propertyNodeId: step.property.id,
+      valueName: valueName,
+    );
+    if (!mounted) {
+      return null;
+    }
+    if (result == null) {
+      setState(() {
+        line.variationPathError =
+            context.read<ItemsProvider>().errorMessage ??
+            'Unable to create the variation value.';
+      });
+      return null;
+    }
+
+    final refreshedItem = result.item;
+    final createdNode = result.createdValueNode;
+    setState(() {
+      line.selectedItemId = refreshedItem.id;
+      line.selectedVariationStepNodeIds = result.selectedValueNodeIds;
+      line.selectedVariationLeafId = createdNode.isLeafValue
+          ? createdNode.id
+          : null;
+      line.variationPathError = null;
+      line.isVariationTreeExpanded = false;
+    });
+
+    return SearchableSelectOption<int>(
+      value: createdNode.id,
+      label: createdNode.name,
+    );
+  }
+
+  Future<SearchableSelectOption<int>?> _quickCreateItemForLine(
+    BuildContext context, {
+    required int lineIndex,
+    required String name,
+  }) async {
+    final created = await ItemsScreen.openEditor(
+      context,
+      initialName: name.trim(),
+    );
+    if (!mounted || created == null) {
+      return null;
+    }
+    setState(() {
+      _lines[lineIndex].variationPathError = null;
+    });
+    return SearchableSelectOption<int>(
+      value: created.id,
+      label: created.displayName,
     );
   }
 
@@ -2533,7 +2992,13 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       final line = _lines[index];
       final item = _selectedItemForLine(items, line.selectedItemId);
       final leaf = _selectedLeafForLine(item, line.selectedVariationLeafId);
-      if (item == null || leaf == null) {
+      final requiresVariation = item?.leafVariationNodes.isNotEmpty == true;
+      if (item == null || (requiresVariation && leaf == null)) {
+        setState(() {
+          line.variationPathError = item == null
+              ? 'Select an item first.'
+              : 'Select a variation path.';
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -2554,9 +3019,11 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
           clientCode: clientCode,
           itemId: item.id,
           itemName: item.displayName,
-          variationLeafNodeId: leaf.id,
-          variationPathLabel: leaf.displayName,
-          variationPathNodeIds: _pathNodeIdsForLeaf(item, leaf),
+          variationLeafNodeId: leaf?.id ?? 0,
+          variationPathLabel: leaf == null ? '' : leaf.displayName,
+          variationPathNodeIds: leaf == null
+              ? const <int>[]
+              : _pathNodeIdsForLeaf(item, leaf),
           quantity: int.parse(line.quantityController.text.trim()),
           status: statusOverride ?? OrderStatus.notStarted,
           startDate: _startDate,
@@ -2781,14 +3248,162 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     return null;
   }
 
+  ItemVariationNodeDefinition? _findVariationNodeById(
+    ItemDefinition item,
+    int nodeId,
+  ) {
+    ItemVariationNodeDefinition? match;
+
+    void visit(ItemVariationNodeDefinition node) {
+      if (match != null) {
+        return;
+      }
+      if (node.id == nodeId) {
+        match = node;
+        return;
+      }
+      for (final child in node.activeChildren) {
+        visit(child);
+      }
+    }
+
+    for (final root in item.activeVariationTree) {
+      visit(root);
+    }
+    return match;
+  }
+
   List<int> _pathNodeIdsForLeaf(
     ItemDefinition item,
     ItemVariationNodeDefinition leaf,
   ) {
-    final path = <int>[];
+    return _pathNodesForLeaf(item, leaf).map((node) => node.id).toList();
+  }
 
-    void visit(ItemVariationNodeDefinition node, List<int> current) {
-      final next = [...current, node.id];
+  List<int> _valueNodeIdsForLeaf(
+    ItemDefinition item,
+    ItemVariationNodeDefinition leaf,
+  ) {
+    return _pathNodesForLeaf(item, leaf)
+        .where((node) => node.kind == ItemVariationNodeKind.value)
+        .map((node) => node.id)
+        .toList(growable: false);
+  }
+
+  List<int> _effectiveVariationStepNodeIds(
+    ItemDefinition item,
+    _OrderLineDraft line,
+  ) {
+    if (line.selectedVariationStepNodeIds.isNotEmpty) {
+      return List<int>.from(line.selectedVariationStepNodeIds);
+    }
+    final selectedLeaf = _selectedLeafForLine(
+      item,
+      line.selectedVariationLeafId,
+    );
+    if (selectedLeaf == null) {
+      return const <int>[];
+    }
+    return _valueNodeIdsForLeaf(item, selectedLeaf);
+  }
+
+  List<_VariationDropdownStep> _variationDropdownSteps(
+    ItemDefinition item,
+    List<int> selectedValueNodeIds,
+  ) {
+    final rootProperty = item.topLevelProperties.firstOrNull;
+    if (rootProperty == null) {
+      return const <_VariationDropdownStep>[];
+    }
+
+    final steps = <_VariationDropdownStep>[];
+    ItemVariationNodeDefinition? currentProperty = rootProperty;
+    var stepIndex = 0;
+
+    while (currentProperty != null) {
+      final options = currentProperty.activeChildren
+          .where((node) => node.kind == ItemVariationNodeKind.value)
+          .toList(growable: false);
+      final selectedValueId = stepIndex < selectedValueNodeIds.length
+          ? selectedValueNodeIds[stepIndex]
+          : null;
+      final selectedValue = selectedValueId == null
+          ? null
+          : options.where((node) => node.id == selectedValueId).firstOrNull;
+      steps.add(
+        _VariationDropdownStep(
+          property: currentProperty,
+          options: options,
+          selectedValue: selectedValue,
+        ),
+      );
+      currentProperty = selectedValue?.activeChildren
+          .where((node) => node.kind == ItemVariationNodeKind.property)
+          .firstOrNull;
+      stepIndex += 1;
+    }
+
+    return steps;
+  }
+
+  List<String> _variationBreadcrumbSegments(
+    ItemDefinition item,
+    ItemVariationNodeDefinition leaf,
+  ) {
+    final pathNodes = _pathNodesForLeaf(
+      item,
+      leaf,
+    ).where((node) => node.name.trim().isNotEmpty).toList(growable: false);
+    final segments = <String>[];
+
+    for (var index = 0; index < pathNodes.length; index++) {
+      final node = pathNodes[index];
+      if (node.kind != ItemVariationNodeKind.property) {
+        continue;
+      }
+
+      final propertyName = node.name.trim();
+      final nextNode = index + 1 < pathNodes.length
+          ? pathNodes[index + 1]
+          : null;
+      if (nextNode != null && nextNode.kind == ItemVariationNodeKind.value) {
+        final valueName = nextNode.name.trim();
+        segments.add(
+          valueName.isEmpty ? propertyName : '$propertyName: $valueName',
+        );
+        index += 1;
+        continue;
+      }
+      segments.add(propertyName);
+    }
+
+    if (segments.isNotEmpty) {
+      return segments;
+    }
+    final fallback = leaf.displayName.trim().isNotEmpty
+        ? leaf.displayName.trim()
+        : leaf.name.trim();
+    return fallback.isEmpty ? const <String>[] : <String>[fallback];
+  }
+
+  int _variationPropertyDepth(
+    ItemDefinition item,
+    ItemVariationNodeDefinition leaf,
+  ) {
+    return _variationBreadcrumbSegments(item, leaf).length;
+  }
+
+  List<ItemVariationNodeDefinition> _pathNodesForLeaf(
+    ItemDefinition item,
+    ItemVariationNodeDefinition leaf,
+  ) {
+    final path = <ItemVariationNodeDefinition>[];
+
+    void visit(
+      ItemVariationNodeDefinition node,
+      List<ItemVariationNodeDefinition> current,
+    ) {
+      final next = [...current, node];
       if (node.id == leaf.id) {
         path
           ..clear()
@@ -3342,6 +3957,8 @@ class _OrderLineDraft {
   final int id;
   int? selectedItemId;
   int? selectedVariationLeafId;
+  List<int> selectedVariationStepNodeIds = <int>[];
+  bool isVariationTreeExpanded = true;
   DateTime? completionDate;
   String? completionDateError;
   String? variationPathError;
@@ -3366,6 +3983,197 @@ class _CompletionDateResolution {
   final String? error;
 }
 
+class _VariationDropdownStep {
+  const _VariationDropdownStep({
+    required this.property,
+    required this.options,
+    required this.selectedValue,
+  });
+
+  final ItemVariationNodeDefinition property;
+  final List<ItemVariationNodeDefinition> options;
+  final ItemVariationNodeDefinition? selectedValue;
+}
+
+class _VariationDropdownStepField extends StatelessWidget {
+  const _VariationDropdownStepField({
+    required this.fieldKey,
+    required this.propertyName,
+    required this.hintText,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+    this.onCreateOption,
+    this.createOptionLabelBuilder,
+  });
+
+  final Key fieldKey;
+  final String propertyName;
+  final String hintText;
+  final int? value;
+  final List<SearchableSelectOption<int>> options;
+  final ValueChanged<int?> onChanged;
+  final SearchableSelectCreateOption<int>? onCreateOption;
+  final SearchableSelectCreateLabelBuilder? createOptionLabelBuilder;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 220,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            propertyName,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: SoftErpTheme.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 6),
+          SearchableSelectField<int>(
+            key: fieldKey,
+            tapTargetKey: fieldKey,
+            value: value,
+            decoration: InputDecoration(
+              hintText: hintText,
+              hintStyle: const TextStyle(
+                color: SoftErpTheme.textSecondary,
+                fontSize: 14,
+              ),
+              filled: true,
+              fillColor: Colors.white,
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 13,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: SoftErpTheme.border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: SoftErpTheme.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: SoftErpTheme.accent),
+              ),
+            ),
+            dialogTitle: propertyName,
+            searchHintText: 'Search $propertyName',
+            options: options,
+            onChanged: onChanged,
+            onCreateOption: onCreateOption,
+            createOptionLabelBuilder: createOptionLabelBuilder,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VariationBreadcrumb extends StatelessWidget {
+  const _VariationBreadcrumb({
+    super.key,
+    required this.segments,
+    required this.propertyCount,
+    required this.linkKey,
+    required this.onOpenTree,
+  });
+
+  final List<String> segments;
+  final int propertyCount;
+  final Key linkKey;
+  final VoidCallback onOpenTree;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final visibleSegments = segments
+        .map((segment) => segment.trim())
+        .where((segment) => segment.isNotEmpty)
+        .toList(growable: false);
+    if (visibleSegments.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      constraints: const BoxConstraints(minHeight: 34),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 0,
+                  runSpacing: 4,
+                  children: [
+                    for (
+                      var index = 0;
+                      index < visibleSegments.length;
+                      index++
+                    ) ...[
+                      Text(
+                        visibleSegments[index],
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: SoftErpTheme.textPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (index != visibleSegments.length - 1)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 5),
+                          child: Icon(
+                            Icons.chevron_right_rounded,
+                            size: 14,
+                            color: SoftErpTheme.textSecondary,
+                          ),
+                        ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 4),
+                TextButton(
+                  key: linkKey,
+                  onPressed: onOpenTree,
+                  style: TextButton.styleFrom(
+                    foregroundColor: SoftErpTheme.accent,
+                    padding: EdgeInsets.zero,
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  child: Text(
+                    'Selected $propertyCount ${propertyCount == 1 ? 'property' : 'properties'}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: SoftErpTheme.accent,
+                      fontWeight: FontWeight.w600,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _OrderEditorPanel extends StatelessWidget {
   const _OrderEditorPanel({required this.child});
 
@@ -3385,9 +4193,183 @@ class _OrderEditorPanel extends StatelessWidget {
   }
 }
 
+class _OrderHeaderActionButton extends StatelessWidget {
+  const _OrderHeaderActionButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.isActive = false,
+    this.compact = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool isActive;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final foregroundColor = isActive
+        ? SoftErpTheme.accentDark
+        : SoftErpTheme.textPrimary;
+    final backgroundColor = isActive
+        ? const Color(0xFFF1EDFF)
+        : const Color(0xFFFDFDFF);
+    final borderColor = isActive
+        ? const Color(0xFFD7CCFF)
+        : SoftErpTheme.border;
+    final child = compact
+        ? Tooltip(
+            message: label,
+            child: Icon(icon, size: 18, color: foregroundColor),
+          )
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 18, color: foregroundColor),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  color: foregroundColor,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          );
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          height: 40,
+          padding: EdgeInsets.symmetric(horizontal: compact ? 11 : 14),
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: borderColor),
+          ),
+          child: Center(child: child),
+        ),
+      ),
+    );
+  }
+}
+
+class _OrderUploadPanel extends StatelessWidget {
+  const _OrderUploadPanel({required this.onClose, required this.onAddDocument});
+
+  final VoidCallback onClose;
+  final VoidCallback onAddDocument;
+
+  @override
+  Widget build(BuildContext context) {
+    final emptyStateCard = Container(
+      width: double.infinity,
+      constraints: const BoxConstraints(minHeight: 180),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.cloud_upload_outlined,
+            size: 48,
+            color: SoftErpTheme.textSecondary,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'No documents uploaded yet',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: SoftErpTheme.textPrimary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Document upload will be added later',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: SoftErpTheme.textSecondary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+    return _OrderEditorPanel(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final hasBoundedHeight = constraints.maxHeight.isFinite;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Uploaded Documents',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: SoftErpTheme.textPrimary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: onClose,
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                    color: SoftErpTheme.textSecondary,
+                    tooltip: 'Close',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (hasBoundedHeight)
+                Expanded(child: emptyStateCard)
+              else
+                emptyStateCard,
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: onAddDocument,
+                  icon: const Icon(Icons.upload_file_outlined, size: 18),
+                  label: const Text('Add Document'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(42),
+                    foregroundColor: SoftErpTheme.textPrimary,
+                    side: const BorderSide(color: SoftErpTheme.borderStrong),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
 class _OrderItemsHeader extends StatelessWidget {
+  const _OrderItemsHeader({required this.showCompletionDate});
+
   static const double _columnGap = 14;
   static const double _actionSlotWidth = 50;
+  final bool showCompletionDate;
 
   @override
   Widget build(BuildContext context) {
@@ -3403,16 +4385,21 @@ class _OrderItemsHeader extends StatelessWidget {
         color: const Color(0xFFF3EFFD),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          Expanded(flex: 32, child: Text('Item', style: style)),
-          SizedBox(width: _OrderItemsHeader._columnGap),
-          Expanded(flex: 20, child: Text('Order Quantity', style: style)),
-          SizedBox(width: _OrderItemsHeader._columnGap),
-          Expanded(flex: 18, child: Text('Unit', style: style)),
-          SizedBox(width: _OrderItemsHeader._columnGap),
-          Expanded(flex: 24, child: Text('Completion Date', style: style)),
-          SizedBox(width: _OrderItemsHeader._actionSlotWidth),
+          const Expanded(flex: 32, child: Text('Item', style: style)),
+          const SizedBox(width: _OrderItemsHeader._columnGap),
+          const Expanded(flex: 20, child: Text('Order Quantity', style: style)),
+          const SizedBox(width: _OrderItemsHeader._columnGap),
+          const Expanded(flex: 18, child: Text('Unit', style: style)),
+          if (showCompletionDate) ...[
+            const SizedBox(width: _OrderItemsHeader._columnGap),
+            const Expanded(
+              flex: 24,
+              child: Text('Completion Date', style: style),
+            ),
+          ],
+          const SizedBox(width: _OrderItemsHeader._actionSlotWidth),
         ],
       ),
     );
@@ -3424,14 +4411,14 @@ class _OrderItemsRow extends StatelessWidget {
     required this.itemField,
     required this.quantityField,
     required this.unitField,
-    required this.completionDateField,
+    this.completionDateField,
     this.onDelete,
   });
 
   final Widget itemField;
   final Widget quantityField;
   final Widget unitField;
-  final Widget completionDateField;
+  final Widget? completionDateField;
   final VoidCallback? onDelete;
 
   @override
@@ -3451,8 +4438,10 @@ class _OrderItemsRow extends StatelessWidget {
           Expanded(flex: 20, child: quantityField),
           const SizedBox(width: _OrderItemsHeader._columnGap),
           Expanded(flex: 18, child: unitField),
-          const SizedBox(width: _OrderItemsHeader._columnGap),
-          Expanded(flex: 24, child: completionDateField),
+          if (completionDateField != null) ...[
+            const SizedBox(width: _OrderItemsHeader._columnGap),
+            Expanded(flex: 24, child: completionDateField!),
+          ],
           const SizedBox(width: 12),
           SizedBox(
             width: 36,
@@ -3527,17 +4516,23 @@ class _AddOrderItemButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return OutlinedButton.icon(
-      onPressed: onPressed,
-      icon: const Icon(Icons.add_rounded, size: 16),
-      label: const Text('Add More Items'),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: SoftErpTheme.accent,
-        backgroundColor: Colors.white,
-        side: const BorderSide(color: Color(0xFFD4CEFA)),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        icon: const Icon(Icons.add_rounded, size: 16),
+        label: const Text('Add More Items'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: SoftErpTheme.accent,
+          backgroundColor: const Color(0xFFFDFCFF),
+          side: const BorderSide(color: Color(0xFFD4CEFA)),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          alignment: Alignment.centerLeft,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+        ),
       ),
     );
   }

@@ -67,9 +67,14 @@ class UnitsScreen extends StatelessWidget {
     BuildContext context, {
     UnitDefinition? unit,
     String initialName = '',
+    String initialGroupName = '',
   }) {
     final isNarrow = MediaQuery.of(context).size.width < 900;
-    final body = _UnitEditorSheet(unit: unit, initialName: initialName);
+    final body = _UnitEditorSheet(
+      unit: unit,
+      initialName: initialName,
+      initialGroupName: initialGroupName,
+    );
     if (isNarrow) {
       return showModalBottomSheet<UnitDefinition?>(
         context: context,
@@ -89,7 +94,7 @@ class UnitsScreen extends StatelessWidget {
       builder: (context) => Dialog(
         insetPadding: const EdgeInsets.all(32),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
+          constraints: BoxConstraints(maxWidth: unit == null ? 460 : 520),
           child: body,
         ),
       ),
@@ -100,8 +105,14 @@ class UnitsScreen extends StatelessWidget {
     BuildContext context, {
     UnitDefinition? unit,
     String initialName = '',
+    String initialGroupName = '',
   }) {
-    return openEditor(context, unit: unit, initialName: initialName);
+    return openEditor(
+      context,
+      unit: unit,
+      initialName: initialName,
+      initialGroupName: initialGroupName,
+    );
   }
 }
 
@@ -272,9 +283,7 @@ class _UnitRow extends StatelessWidget {
             flex: 1,
             child: Text(
               unit.isGrouped
-                  ? (unit.isBaseUnit
-                        ? 'Base'
-                        : '${unit.conversionFactor}x')
+                  ? (unit.isBaseUnit ? 'Base' : '${unit.conversionFactor}x')
                   : '-',
             ),
           ),
@@ -374,10 +383,15 @@ class _ActionLink extends StatelessWidget {
 }
 
 class _UnitEditorSheet extends StatefulWidget {
-  const _UnitEditorSheet({this.unit, this.initialName = ''});
+  const _UnitEditorSheet({
+    this.unit,
+    this.initialName = '',
+    this.initialGroupName = '',
+  });
 
   final UnitDefinition? unit;
   final String initialName;
+  final String initialGroupName;
 
   @override
   State<_UnitEditorSheet> createState() => _UnitEditorSheetState();
@@ -405,7 +419,7 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
     _symbolController = TextEditingController(text: widget.unit?.symbol ?? '');
     _notesController = TextEditingController(text: widget.unit?.notes ?? '');
     _groupController = TextEditingController(
-      text: widget.unit?.unitGroupName ?? '',
+      text: widget.unit?.unitGroupName ?? widget.initialGroupName,
     );
     _conversionController = TextEditingController(
       text: widget.unit?.conversionFactor.toString() ?? '1',
@@ -418,6 +432,9 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
   }
 
   _UnitGroupingMode _initialGroupingMode() {
+    if (widget.unit == null && widget.initialGroupName.trim().isNotEmpty) {
+      return _UnitGroupingMode.existingFamily;
+    }
     if (_groupController.text.trim().isEmpty) {
       return _UnitGroupingMode.individual;
     }
@@ -451,6 +468,7 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
   Widget build(BuildContext context) {
     final provider = context.watch<UnitsProvider>();
     final isNarrow = MediaQuery.of(context).size.width < 900;
+    final isCreateMode = widget.unit == null;
     final groupName = _resolvedGroupName();
     final baseUnit = provider.findBaseUnitForGroupName(
       groupName,
@@ -477,131 +495,93 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  padding: const EdgeInsets.fromLTRB(28, 28, 20, 24),
+                  padding: EdgeInsets.fromLTRB(
+                    28,
+                    24,
+                    20,
+                    isCreateMode ? 18 : 24,
+                  ),
                   decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Color(0xFFF8FAFF), Color(0xFFF5F3FF)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
                     border: Border(
                       bottom: BorderSide(color: Color(0xFFE6EAF4)),
                     ),
                   ),
-                  child: Column(
+                  child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  width: 52,
-                                  height: 52,
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(18),
-                                    gradient: const LinearGradient(
-                                      colors: [
-                                        Color(0xFF6C63FF),
-                                        Color(0xFF8B5CF6),
-                                      ],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                    ),
-                                    boxShadow: const [
-                                      BoxShadow(
-                                        color: Color(0x336C63FF),
-                                        blurRadius: 20,
-                                        offset: Offset(0, 10),
-                                      ),
-                                    ],
-                                  ),
-                                  child: const Icon(
-                                    Icons.straighten_rounded,
-                                    color: Colors.white,
-                                    size: 26,
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      _DialogEyebrow(
-                                        icon: widget.unit == null
-                                            ? Icons.auto_awesome_rounded
-                                            : Icons.tune_rounded,
-                                        label: _isDetailsLocked
-                                            ? 'Used unit'
-                                            : 'Reusable unit',
-                                      ),
-                                      const SizedBox(height: 12),
-                                      Text(
-                                        title,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .headlineSmall
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.w800,
-                                              color: const Color(0xFF1E293B),
-                                            ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        _isDetailsLocked
-                                            ? 'This unit is already used in materials. Core details stay locked, but you can still reorganize its family and compatibility.'
-                                            : 'Shape how this unit appears in forms, where it belongs, and how it converts inside a broader unit family.',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .titleMedium
-                                            ?.copyWith(
-                                              color: const Color(0xFF667085),
-                                              height: 1.5,
-                                            ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
+                      if (!isCreateMode) ...[
+                        Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(18),
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF6C63FF), Color(0xFF8B5CF6)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
                             ),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x336C63FF),
+                                blurRadius: 20,
+                                offset: Offset(0, 10),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 12),
-                          IconButton(
-                            onPressed: () => Navigator.of(context).maybePop(),
-                            style: IconButton.styleFrom(
-                              backgroundColor: Colors.white.withValues(
-                                alpha: 0.82,
+                          child: const Icon(
+                            Icons.straighten_rounded,
+                            color: Colors.white,
+                            size: 26,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                      ],
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (!isCreateMode) ...[
+                              _DialogEyebrow(
+                                icon: Icons.tune_rounded,
+                                label: _isDetailsLocked
+                                    ? 'Used unit'
+                                    : 'Reusable unit',
                               ),
-                              foregroundColor: const Color(0xFF334155),
-                              side: const BorderSide(
-                                color: Color(0xFFD9E2F2),
-                              ),
+                              const SizedBox(height: 12),
+                            ],
+                            Text(
+                              title,
+                              style: Theme.of(context).textTheme.headlineSmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    color: const Color(0xFF1E293B),
+                                  ),
                             ),
-                            icon: const Icon(Icons.close_rounded),
-                          ),
-                        ],
+                            const SizedBox(height: 8),
+                            Text(
+                              isCreateMode
+                                  ? 'Create the unit you need now. You can refine the rest later in Masters.'
+                                  : _isDetailsLocked
+                                  ? 'This unit is already used in materials. Core details stay locked, but you can still reorganize its family and compatibility.'
+                                  : 'Shape how this unit appears in forms, where it belongs, and how it converts inside a broader unit family.',
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(
+                                    color: const Color(0xFF667085),
+                                    height: 1.45,
+                                  ),
+                            ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 18),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: [
-                          const _DialogInfoPill(
-                            icon: Icons.inventory_2_outlined,
-                            label: 'Shows up across inventory and configurator',
-                          ),
-                          _DialogInfoPill(
-                            icon: Icons.rule_folder_outlined,
-                            label: _groupingMode ==
-                                    _UnitGroupingMode.individual
-                                ? 'Currently standalone'
-                                : 'Family-aware and compatibility-ready',
-                          ),
-                        ],
+                      const SizedBox(width: 12),
+                      IconButton(
+                        onPressed: () => Navigator.of(context).maybePop(),
+                        style: IconButton.styleFrom(
+                          backgroundColor: const Color(0xFFF8FAFC),
+                          foregroundColor: const Color(0xFF334155),
+                          side: const BorderSide(color: Color(0xFFD9E2F2)),
+                        ),
+                        icon: const Icon(Icons.close_rounded),
                       ),
                     ],
                   ),
@@ -629,8 +609,9 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                       _EditorSectionCard(
                         icon: Icons.edit_note_rounded,
                         title: 'Unit basics',
-                        subtitle:
-                            'Give the unit a clear label and symbol your team will recognize at a glance.',
+                        subtitle: isCreateMode
+                            ? 'Only the essentials needed to use this unit immediately.'
+                            : 'Give the unit a clear label and symbol your team will recognize at a glance.',
                         child: Column(
                           children: [
                             _UnitTextField(
@@ -647,16 +628,18 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                                   'Shown beside quantities and on material records',
                               readOnly: _isDetailsLocked,
                             ),
-                            const SizedBox(height: 14),
-                            _UnitTextField(
-                              controller: _notesController,
-                              label: 'Notes',
-                              helper: 'Optional context for operators',
-                              readOnly: _isDetailsLocked,
-                              maxLines: 3,
-                              required: false,
-                            ),
                             if (!_isDetailsLocked) ...[
+                              if (!isCreateMode) ...[
+                                const SizedBox(height: 14),
+                                _UnitTextField(
+                                  controller: _notesController,
+                                  label: 'Notes',
+                                  helper: 'Optional context for operators',
+                                  readOnly: _isDetailsLocked,
+                                  maxLines: 3,
+                                  required: false,
+                                ),
+                              ],
                               const SizedBox(height: 14),
                               _WarningText(
                                 warning: provider
@@ -675,8 +658,9 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                       _EditorSectionCard(
                         icon: Icons.account_tree_outlined,
                         title: 'Usage and family',
-                        subtitle:
-                            'Decide whether this unit stays independent or belongs to a group with shared compatibility.',
+                        subtitle: isCreateMode
+                            ? 'Choose whether the unit stays standalone or belongs to a family.'
+                            : 'Decide whether this unit stays independent or belongs to a group with shared compatibility.',
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -691,8 +675,8 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                                   } else if (mode ==
                                           _UnitGroupingMode.newFamily &&
                                       _groupController.text.trim().isEmpty) {
-                                    _groupController.text =
-                                        _nameController.text.trim();
+                                    _groupController.text = _nameController.text
+                                        .trim();
                                     _conversionController.text = '1';
                                   }
                                 });
@@ -700,6 +684,7 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                               controller: _groupController,
                               suggestions: provider.availableGroupNames,
                               currentUnitName: _nameController.text.trim(),
+                              compact: isCreateMode,
                             ),
                             if (_groupingMode !=
                                 _UnitGroupingMode.individual) ...[
@@ -716,9 +701,7 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                                 _groupingMode == _UnitGroupingMode.newFamily
                                     ? 'This creates a new unit family with this unit as the reference point.'
                                     : 'Units in the same family can be used interchangeably anywhere that family is allowed.',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
+                                style: Theme.of(context).textTheme.bodySmall
                                     ?.copyWith(
                                       color: const Color(0xFF475569),
                                       fontWeight: FontWeight.w600,
@@ -728,24 +711,26 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 18),
-                      _EditorSectionCard(
-                        icon: Icons.visibility_outlined,
-                        title: 'Live preview',
-                        subtitle:
-                            'A quick glance at how this unit will read inside forms and records.',
-                        child: _PreviewCard(
-                          name: _nameController.text.trim(),
-                          symbol: _symbolController.text.trim(),
-                          groupName: groupName,
-                          conversionText:
-                              _groupingMode == _UnitGroupingMode.individual
-                              ? null
-                              : (baseUnit == null
-                                    ? 'Base unit (1x)'
-                                    : '${_conversionController.text.trim().isEmpty ? '1' : _conversionController.text.trim()}x of ${baseUnit.symbol}'),
+                      if (!isCreateMode) ...[
+                        const SizedBox(height: 18),
+                        _EditorSectionCard(
+                          icon: Icons.visibility_outlined,
+                          title: 'Live preview',
+                          subtitle:
+                              'A quick glance at how this unit will read inside forms and records.',
+                          child: _PreviewCard(
+                            name: _nameController.text.trim(),
+                            symbol: _symbolController.text.trim(),
+                            groupName: groupName,
+                            conversionText:
+                                _groupingMode == _UnitGroupingMode.individual
+                                ? null
+                                : (baseUnit == null
+                                      ? 'Base unit (1x)'
+                                      : '${_conversionController.text.trim().isEmpty ? '1' : _conversionController.text.trim()}x of ${baseUnit.symbol}'),
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
@@ -754,9 +739,7 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                   padding: const EdgeInsets.fromLTRB(28, 18, 28, 28),
                   decoration: const BoxDecoration(
                     color: Color(0xFFFCFCFF),
-                    border: Border(
-                      top: BorderSide(color: Color(0xFFE7EAF3)),
-                    ),
+                    border: Border(top: BorderSide(color: Color(0xFFE7EAF3))),
                   ),
                   child: Wrap(
                     alignment: WrapAlignment.spaceBetween,
@@ -767,7 +750,7 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                     children: [
                       Text(
                         widget.unit == null
-                            ? 'New units become available immediately in pickers.'
+                            ? 'This unit will be available immediately after save.'
                             : _isDetailsLocked
                             ? 'Core details are locked because this unit is already in use.'
                             : 'Changes apply anywhere this unit is available.',
@@ -789,8 +772,12 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                               isLoading: provider.isSaving,
                               onPressed: () async {
                                 final result = widget.unit!.isArchived
-                                    ? await provider.restoreUnit(widget.unit!.id)
-                                    : await provider.archiveUnit(widget.unit!.id);
+                                    ? await provider.restoreUnit(
+                                        widget.unit!.id,
+                                      )
+                                    : await provider.archiveUnit(
+                                        widget.unit!.id,
+                                      );
                                 if (context.mounted && result != null) {
                                   Navigator.of(context).pop(result);
                                 }
@@ -1152,7 +1139,10 @@ class _UnitGroupField extends StatelessWidget {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: Color(0xFF6C63FF), width: 1.4),
+              borderSide: const BorderSide(
+                color: Color(0xFF6C63FF),
+                width: 1.4,
+              ),
             ),
           ),
         ),
@@ -1202,6 +1192,7 @@ class _UnitGroupingSection extends StatelessWidget {
     required this.controller,
     required this.suggestions,
     required this.currentUnitName,
+    this.compact = false,
   });
 
   final _UnitGroupingMode mode;
@@ -1209,6 +1200,7 @@ class _UnitGroupingSection extends StatelessWidget {
   final TextEditingController controller;
   final List<String> suggestions;
   final String currentUnitName;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -1224,7 +1216,9 @@ class _UnitGroupingSection extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          'Pick the simplest behavior first. You can keep it standalone, join an existing family, or start a new one.',
+          compact
+              ? 'Keep it standalone, join an existing family, or start a new one.'
+              : 'Pick the simplest behavior first. You can keep it standalone, join an existing family, or start a new one.',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: const Color(0xFF667085),
             height: 1.45,
@@ -1236,22 +1230,24 @@ class _UnitGroupingSection extends StatelessWidget {
           runSpacing: 8,
           children: [
             _ModeChip(
-              label: 'Keep individual',
-              subtitle: 'Use it as a standalone unit',
+              label: compact ? 'Individual' : 'Keep individual',
+              subtitle: compact ? 'Standalone' : 'Use it as a standalone unit',
               icon: Icons.looks_one_outlined,
               selected: mode == _UnitGroupingMode.individual,
               onTap: () => onModeChanged(_UnitGroupingMode.individual),
             ),
             _ModeChip(
-              label: 'Use existing family',
-              subtitle: 'Join a family already in use',
+              label: compact ? 'Existing family' : 'Use existing family',
+              subtitle: compact ? 'Join one' : 'Join a family already in use',
               icon: Icons.merge_type_rounded,
               selected: mode == _UnitGroupingMode.existingFamily,
               onTap: () => onModeChanged(_UnitGroupingMode.existingFamily),
             ),
             _ModeChip(
-              label: 'Start new family',
-              subtitle: 'Create a new compatibility set',
+              label: compact ? 'New family' : 'Start new family',
+              subtitle: compact
+                  ? 'Create one'
+                  : 'Create a new compatibility set',
               icon: Icons.add_chart_rounded,
               selected: mode == _UnitGroupingMode.newFamily,
               onTap: () => onModeChanged(_UnitGroupingMode.newFamily),
@@ -1265,7 +1261,8 @@ class _UnitGroupingSection extends StatelessWidget {
             readOnly: false,
             suggestions: suggestions,
             label: 'Existing family',
-            helper: 'Pick an existing family name. This unit will inherit compatibility with that family.',
+            helper:
+                'Pick an existing family name. This unit will inherit compatibility with that family.',
           ),
         if (mode == _UnitGroupingMode.newFamily)
           _UnitGroupField(
@@ -1468,39 +1465,6 @@ class _DialogEyebrow extends StatelessWidget {
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: const Color(0xFF4F46E5),
               fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DialogInfoPill extends StatelessWidget {
-  const _DialogInfoPill({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.8),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFD9E2F2)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 15, color: const Color(0xFF64748B)),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: const Color(0xFF475569),
-              fontWeight: FontWeight.w700,
             ),
           ),
         ],

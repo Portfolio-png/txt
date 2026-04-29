@@ -120,9 +120,6 @@ class ApiItemRepository implements ItemRepository {
         throw ItemApiException('Item not found.');
       }
       final current = _mockItems[index];
-      if (current.isUsed) {
-        throw ItemApiException('Used items cannot be edited.');
-      }
       _validateCreateOrUpdate(
         id: input.id,
         name: input.name,
@@ -749,12 +746,12 @@ class ApiItemRepository implements ItemRepository {
     _mockItems.add(
       ItemDefinition(
         id: bottleId,
-        name: 'Switch Action Dolly',
-        alias: 'Finish Goods Variant',
-        displayName: 'Switch Action Dolly - 1',
-        quantity: 1,
+        name: 'Epoxy Resin Base',
+        alias: 'Binder',
+        displayName: 'Epoxy Resin Base - 25',
+        quantity: 25,
         groupId: 2,
-        unitId: 2,
+        unitId: 1,
         isArchived: false,
         usageCount: 2,
         createdAt: now,
@@ -798,11 +795,11 @@ class ApiItemRepository implements ItemRepository {
     _mockItems.add(
       ItemDefinition(
         id: glueId,
-        name: 'Glue Compound',
-        alias: 'Adhesive',
-        displayName: 'Glue Compound - 1',
-        quantity: 1,
-        groupId: 3,
+        name: 'Hardener Compound',
+        alias: 'Catalyst',
+        displayName: 'Hardener Compound - 5',
+        quantity: 5,
+        groupId: 2,
         unitId: 1,
         isArchived: false,
         usageCount: 0,
@@ -1133,12 +1130,12 @@ class ApiItemRepository implements ItemRepository {
     _mockItems.add(
       ItemDefinition(
         id: bottleShowcaseId,
-        name: 'Luxury Pump Bottle',
-        alias: 'Cosmetic Pack',
-        displayName: 'Luxury Pump Bottle - 100',
-        quantity: 100,
-        groupId: 2,
-        unitId: 2,
+        name: 'Isopropyl Cleaner',
+        alias: 'Solvent',
+        displayName: 'Isopropyl Cleaner - 20',
+        quantity: 20,
+        groupId: 3,
+        unitId: 1,
         isArchived: false,
         usageCount: 1,
         createdAt: now,
@@ -1468,12 +1465,12 @@ class ApiItemRepository implements ItemRepository {
     _mockItems.add(
       ItemDefinition(
         id: cartonShowcaseId,
-        name: 'Premium Mono Carton',
-        alias: 'Retail Carton',
-        displayName: 'Premium Mono Carton - 500',
-        quantity: 500,
-        groupId: 2,
-        unitId: 2,
+        name: 'Cyan Flexo Ink',
+        alias: 'Pigment',
+        displayName: 'Cyan Flexo Ink - 15',
+        quantity: 15,
+        groupId: 4,
+        unitId: 1,
         isArchived: false,
         usageCount: 0,
         createdAt: now,
@@ -1490,7 +1487,7 @@ class ApiItemRepository implements ItemRepository {
         alias: '',
         displayName: 'Legacy Stock - 5',
         quantity: 5,
-        groupId: 4,
+        groupId: 5,
         unitId: 1,
         isArchived: true,
         usageCount: 0,

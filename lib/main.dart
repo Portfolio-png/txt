@@ -59,6 +59,7 @@ class MyApp extends StatelessWidget {
     this.itemRepository,
     this.orderRepository,
     this.pipelineRunRepository,
+    this.demoModeOverride,
   });
 
   final InventoryRepository? inventoryRepository;
@@ -68,6 +69,9 @@ class MyApp extends StatelessWidget {
   final ItemRepository? itemRepository;
   final OrderRepository? orderRepository;
   final PipelineRunRepository? pipelineRunRepository;
+  final bool? demoModeOverride;
+
+  bool get _effectiveDemoMode => demoModeOverride ?? _isDemoMode;
 
   @override
   Widget build(BuildContext context) {
@@ -88,7 +92,7 @@ class MyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider<AuthProvider>(
           create: (_) =>
-              AuthProvider(baseUrl: _apiBaseUrl, demoMode: _isDemoMode)
+              AuthProvider(baseUrl: _apiBaseUrl, demoMode: _effectiveDemoMode)
                 ..initialize(),
         ),
         Provider<InventoryRepository>(
@@ -198,7 +202,7 @@ class MyApp extends StatelessWidget {
     return ApiInventoryRepository(
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
-      useMockResponses: _isDemoMode,
+      useMockResponses: _effectiveDemoMode,
     );
   }
 
@@ -206,7 +210,7 @@ class MyApp extends StatelessWidget {
     return ApiUnitRepository(
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
-      useMockResponses: _isDemoMode,
+      useMockResponses: _effectiveDemoMode,
     );
   }
 
@@ -214,7 +218,7 @@ class MyApp extends StatelessWidget {
     return ApiGroupRepository(
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
-      useMockResponses: _isDemoMode,
+      useMockResponses: _effectiveDemoMode,
     );
   }
 
@@ -222,7 +226,7 @@ class MyApp extends StatelessWidget {
     return ApiClientRepository(
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
-      useMockResponses: _isDemoMode,
+      useMockResponses: _effectiveDemoMode,
     );
   }
 
@@ -230,7 +234,7 @@ class MyApp extends StatelessWidget {
     return ApiItemRepository(
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
-      useMockResponses: _isDemoMode,
+      useMockResponses: _effectiveDemoMode,
     );
   }
 
@@ -238,12 +242,12 @@ class MyApp extends StatelessWidget {
     return ApiOrderRepository(
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
-      useMockResponses: _isDemoMode,
+      useMockResponses: _effectiveDemoMode,
     );
   }
 
   PipelineRunRepository _buildPipelineRunRepository(AuthProvider auth) {
-    if (_isDemoMode) {
+    if (_effectiveDemoMode) {
       final injectedInventoryRepository = inventoryRepository;
       final resolvedInventoryRepository =
           injectedInventoryRepository ?? _buildInventoryRepository(auth);

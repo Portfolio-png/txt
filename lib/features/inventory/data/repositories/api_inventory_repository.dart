@@ -842,8 +842,12 @@ class ApiInventoryRepository implements InventoryRepository {
     final response = await _client.get(uri);
     final payload = _decodeJson(response.body) as Map<String, dynamic>? ?? {};
     final parsed = InventoryHealthResponse.fromJson(payload);
-    if (response.statusCode < 200 || response.statusCode >= 300 || !parsed.success) {
-      throw InventoryApiException(parsed.error ?? 'Failed to load inventory health.');
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !parsed.success) {
+      throw InventoryApiException(
+        parsed.error ?? 'Failed to load inventory health.',
+      );
     }
     return parsed.health;
   }
@@ -893,8 +897,12 @@ class ApiInventoryRepository implements InventoryRepository {
     if (response.statusCode == 404 || parsed.material == null) {
       return null;
     }
-    if (response.statusCode < 200 || response.statusCode >= 300 || !parsed.success) {
-      throw InventoryApiException(parsed.error ?? 'Failed to load material detail.');
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !parsed.success) {
+      throw InventoryApiException(
+        parsed.error ?? 'Failed to load material detail.',
+      );
     }
     return parsed.toDomain();
   }
@@ -904,7 +912,9 @@ class ApiInventoryRepository implements InventoryRepository {
     CreateInventoryMovementInput input,
   ) async {
     if (useMockResponses) {
-      final material = await getMaterialControlTowerDetail(input.materialBarcode);
+      final material = await getMaterialControlTowerDetail(
+        input.materialBarcode,
+      );
       if (material == null) {
         throw const InventoryApiException('Material not found.');
       }
@@ -920,8 +930,12 @@ class ApiInventoryRepository implements InventoryRepository {
     );
     final payload = _decodeJson(response.body) as Map<String, dynamic>? ?? {};
     final parsed = MaterialControlTowerDetailResponse.fromJson(payload);
-    if (response.statusCode < 200 || response.statusCode >= 300 || !parsed.success) {
-      throw InventoryApiException(parsed.error ?? 'Failed to apply inventory movement.');
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !parsed.success) {
+      throw InventoryApiException(
+        parsed.error ?? 'Failed to apply inventory movement.',
+      );
     }
     return parsed.toDomain();
   }
@@ -1025,29 +1039,142 @@ class ApiInventoryRepository implements InventoryRepository {
     _mockGroupConfigs.clear();
     _mockNextId = 1;
 
-    _saveParentMock(
+    final chemicals = _saveParentMock(
       const CreateParentMaterialInput(
-        name: 'Copper Master Roll',
+        name: 'Chemicals',
         type: 'Raw Material',
-        grade: 'A1',
-        thickness: '1.2 mm',
-        supplier: 'Shree Metals',
+        grade: 'Industrial',
+        thickness: 'Mixed',
+        supplier: 'Central Chemical Supply',
         unit: 'Kg',
         notes: 'Shared API seed',
-        numberOfChildren: 3,
+        numberOfChildren: 0,
       ),
     );
-    _saveParentMock(
+    final adhesives = _saveParentMock(
       const CreateParentMaterialInput(
-        name: 'Steel Sheet Batch',
+        name: 'Adhesives',
         type: 'Raw Material',
-        grade: 'B2',
-        thickness: '2.0 mm',
-        supplier: 'Metro Steels',
-        unit: 'Sheet',
+        grade: 'Reactive',
+        thickness: 'Mixed',
+        supplier: 'BondChem Industries',
+        unit: 'Kg',
         notes: 'Shared API seed',
         numberOfChildren: 2,
       ),
+    );
+    final solvents = _saveParentMock(
+      const CreateParentMaterialInput(
+        name: 'Solvents',
+        type: 'Raw Material',
+        grade: 'Purified',
+        thickness: 'Mixed',
+        supplier: 'PureChem Logistics',
+        unit: 'Litre',
+        notes: 'Shared API seed',
+        numberOfChildren: 1,
+      ),
+    );
+    final inks = _saveParentMock(
+      const CreateParentMaterialInput(
+        name: 'Inks',
+        type: 'Raw Material',
+        grade: 'Flexo',
+        thickness: 'Mixed',
+        supplier: 'ColorBond Inks',
+        unit: 'Kg',
+        notes: 'Shared API seed',
+        numberOfChildren: 1,
+      ),
+    );
+
+    _applyMockSeedLinks(
+      parentBarcode: chemicals.material!.barcode,
+      linkedGroupId: 1,
+      childItemIds: const [],
+    );
+    _applyMockSeedLinks(
+      parentBarcode: adhesives.material!.barcode,
+      linkedGroupId: 2,
+      childItemIds: const [1, 2],
+    );
+    _applyMockSeedLinks(
+      parentBarcode: solvents.material!.barcode,
+      linkedGroupId: 3,
+      childItemIds: const [3],
+    );
+    _applyMockSeedLinks(
+      parentBarcode: inks.material!.barcode,
+      linkedGroupId: 4,
+      childItemIds: const [4],
+    );
+  }
+
+  void _applyMockSeedLinks({
+    required String parentBarcode,
+    required int linkedGroupId,
+    required List<int> childItemIds,
+  }) {
+    _setMockInheritanceLink(
+      parentBarcode,
+      linkedGroupId: linkedGroupId,
+      linkedItemId: null,
+    );
+    final children = _mockMaterials
+        .where((material) => material.parentBarcode == parentBarcode)
+        .toList(growable: false);
+    for (
+      var index = 0;
+      index < children.length && index < childItemIds.length;
+      index++
+    ) {
+      _setMockInheritanceLink(
+        children[index].barcode,
+        linkedGroupId: null,
+        linkedItemId: childItemIds[index],
+      );
+    }
+  }
+
+  void _setMockInheritanceLink(
+    String barcode, {
+    required int? linkedGroupId,
+    required int? linkedItemId,
+  }) {
+    final index = _mockMaterials.indexWhere(
+      (item) => _normalizeBarcode(item.barcode) == _normalizeBarcode(barcode),
+    );
+    if (index == -1) {
+      return;
+    }
+    final current = _mockMaterials[index];
+    _mockMaterials[index] = MaterialDto(
+      id: current.id,
+      barcode: current.barcode,
+      name: current.name,
+      type: current.type,
+      grade: current.grade,
+      thickness: current.thickness,
+      supplier: current.supplier,
+      location: current.location,
+      unitId: current.unitId,
+      unit: current.unit,
+      notes: current.notes,
+      groupMode: current.groupMode,
+      inheritanceEnabled: current.inheritanceEnabled,
+      isParent: current.isParent,
+      parentBarcode: current.parentBarcode,
+      numberOfChildren: current.numberOfChildren,
+      linkedChildBarcodes: current.linkedChildBarcodes,
+      scanCount: current.scanCount,
+      createdAt: current.createdAt,
+      linkedGroupId: linkedGroupId,
+      linkedItemId: linkedItemId,
+      displayStock: current.displayStock,
+      createdBy: current.createdBy,
+      workflowStatus: current.workflowStatus,
+      updatedAt: DateTime.now(),
+      lastScannedAt: current.lastScannedAt,
     );
   }
 

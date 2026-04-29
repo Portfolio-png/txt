@@ -324,39 +324,74 @@ class LocalInventoryRepository implements InventoryRepository {
       return;
     }
 
-    await saveParentWithChildren(
+    final chemicals = await saveParentWithChildren(
       const CreateParentMaterialInput(
-        name: 'Copper Master Roll',
+        name: 'Chemicals',
         type: 'Raw Material',
-        grade: 'A1',
-        thickness: '1.2 mm',
-        supplier: 'Shree Metals',
+        grade: 'Industrial',
+        thickness: 'Mixed',
+        supplier: 'Central Chemical Supply',
         unitId: null,
-        numberOfChildren: 3,
+        unit: 'Kg',
+        numberOfChildren: 0,
       ),
     );
-    await saveParentWithChildren(
+    final adhesives = await saveParentWithChildren(
       const CreateParentMaterialInput(
-        name: 'Steel Sheet Batch',
+        name: 'Adhesives',
         type: 'Raw Material',
-        grade: 'B2',
-        thickness: '2.0 mm',
-        supplier: 'Metro Steels',
+        grade: 'Reactive',
+        thickness: 'Mixed',
+        supplier: 'BondChem Industries',
         unitId: null,
+        unit: 'Kg',
         numberOfChildren: 2,
       ),
     );
-    await saveParentWithChildren(
+    final solvents = await saveParentWithChildren(
       const CreateParentMaterialInput(
-        name: 'Aluminium Coil',
+        name: 'Solvents',
         type: 'Raw Material',
-        grade: 'AA',
-        thickness: '0.8 mm',
-        supplier: 'Skyline Supplies',
+        grade: 'Purified',
+        thickness: 'Mixed',
+        supplier: 'PureChem Logistics',
         unitId: null,
-        numberOfChildren: 4,
+        unit: 'Litre',
+        numberOfChildren: 1,
       ),
     );
+    final inks = await saveParentWithChildren(
+      const CreateParentMaterialInput(
+        name: 'Inks',
+        type: 'Raw Material',
+        grade: 'Flexo',
+        thickness: 'Mixed',
+        supplier: 'ColorBond Inks',
+        unitId: null,
+        unit: 'Kg',
+        numberOfChildren: 1,
+      ),
+    );
+
+    await linkMaterialToGroup(chemicals.parentBarcode, 1);
+
+    await linkMaterialToGroup(adhesives.parentBarcode, 2);
+    if (adhesives.childBarcodes.isNotEmpty) {
+      await linkMaterialToItem(adhesives.childBarcodes[0], 1);
+    }
+    if (adhesives.childBarcodes.length > 1) {
+      await linkMaterialToItem(adhesives.childBarcodes[1], 2);
+    }
+
+    await linkMaterialToGroup(solvents.parentBarcode, 3);
+    if (solvents.childBarcodes.isNotEmpty) {
+      await linkMaterialToItem(solvents.childBarcodes[0], 3);
+    }
+
+    await linkMaterialToGroup(inks.parentBarcode, 4);
+    if (inks.childBarcodes.isNotEmpty) {
+      await linkMaterialToItem(inks.childBarcodes[0], 4);
+    }
   }
 
   @override
@@ -954,7 +989,9 @@ class LocalInventoryRepository implements InventoryRepository {
     final reservedRiskCount = materials
         .where((item) => item.reserved > item.onHand && item.reserved > 0)
         .length;
-    final incomingTodayCount = materials.where((item) => item.incoming > 0).length;
+    final incomingTodayCount = materials
+        .where((item) => item.incoming > 0)
+        .length;
     final qualityHoldCount = materials
         .where((item) => item.inventoryState == InventoryState.qualityHold)
         .length;

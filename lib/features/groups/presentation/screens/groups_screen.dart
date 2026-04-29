@@ -8,6 +8,7 @@ import '../../../../core/widgets/app_section_title.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../units/domain/unit_definition.dart';
 import '../../../units/presentation/providers/units_provider.dart';
+import '../../../units/presentation/screens/units_screen.dart';
 import '../../domain/group_definition.dart';
 import '../../domain/group_inputs.dart';
 import '../providers/groups_provider.dart';
@@ -80,9 +81,10 @@ class GroupsScreen extends StatelessWidget {
   static Future<GroupDefinition?> openEditor(
     BuildContext context, {
     GroupDefinition? group,
+    String initialName = '',
   }) {
     final isNarrow = MediaQuery.of(context).size.width < 900;
-    final body = _GroupEditorSheet(group: group);
+    final body = _GroupEditorSheet(group: group, initialName: initialName);
     if (isNarrow) {
       return showModalBottomSheet<GroupDefinition?>(
         context: context,
@@ -112,8 +114,9 @@ class GroupsScreen extends StatelessWidget {
   static Future<GroupDefinition?> _openGroupEditor(
     BuildContext context, {
     GroupDefinition? group,
+    String initialName = '',
   }) {
-    return openEditor(context, group: group);
+    return openEditor(context, group: group, initialName: initialName);
   }
 }
 
@@ -373,9 +376,10 @@ class _ActionLink extends StatelessWidget {
 }
 
 class _GroupEditorSheet extends StatefulWidget {
-  const _GroupEditorSheet({this.group});
+  const _GroupEditorSheet({this.group, this.initialName = ''});
 
   final GroupDefinition? group;
+  final String initialName;
 
   @override
   State<_GroupEditorSheet> createState() => _GroupEditorSheetState();
@@ -393,7 +397,9 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.group?.name ?? '');
+    _nameController = TextEditingController(
+      text: widget.group?.name ?? widget.initialName,
+    );
     _selectedParentId = widget.group?.parentGroupId;
     _selectedUnitId = widget.group?.unitId;
     _nameController.addListener(_handleChange);
@@ -532,6 +538,20 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
                     dialogTitle: 'Unit of group',
                     searchHintText: 'Search unit',
                     fieldEnabled: !_isReadOnly,
+                    onCreateOption: (query) async {
+                      final created = await UnitsScreen.openEditor(
+                        context,
+                        initialName: query,
+                      );
+                      if (!context.mounted || created == null) {
+                        return null;
+                      }
+                      return SearchableSelectOption<int>(
+                        value: created.id,
+                        label: created.displayLabel,
+                      );
+                    },
+                    createOptionLabelBuilder: (query) => 'Create unit "$query"',
                     options: [
                       ...availableUnits.map(
                         (unit) => SearchableSelectOption<int>(

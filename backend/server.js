@@ -2298,31 +2298,8 @@ async function ensureColumnExists(tableName, columnName, definition) {
 }
 
 async function seedMaterialsIfEmpty() {
-  const countRow = await get('SELECT COUNT(*) AS count FROM materials');
-  if ((countRow?.count || 0) > 0) {
-    return;
-  }
-
-  await createParentWithChildren({
-    name: 'Copper Master Roll',
-    type: 'Raw Material',
-    grade: 'A1',
-    thickness: '1.2 mm',
-    supplier: 'Shree Metals',
-    unit: 'Kg',
-    notes: 'Demo seed',
-    numberOfChildren: 3,
-  });
-  await createParentWithChildren({
-    name: 'Steel Sheet Batch',
-    type: 'Raw Material',
-    grade: 'B2',
-    thickness: '2.0 mm',
-    supplier: 'Metro Steels',
-    unit: 'Sheet',
-    notes: 'Demo seed',
-    numberOfChildren: 2,
-  });
+  // Intentionally left empty. The semantic demo inventory dataset is seeded
+  // later via ensureDemoMaterialsPresent() after groups/items are available.
 }
 
 async function bootstrapUnitsFromMaterials() {
@@ -3319,50 +3296,8 @@ async function saveGroup({ name, parentGroupId = null, unitId, id = null }) {
 }
 
 async function seedGroupsIfEmpty() {
-  const countRow = await get('SELECT COUNT(*) AS count FROM groups');
-  if ((countRow?.count || 0) > 0) {
-    return;
-  }
-
-  const units = await all(
-    'SELECT id, symbol FROM units WHERE is_archived = 0 ORDER BY id ASC',
-  );
-  const sheetUnit = units.find((unit) => normalizeUnitValue(unit.symbol) === 'sheet');
-  const kilogramUnit = units.find((unit) => normalizeUnitValue(unit.symbol) === 'kg');
-  const fallbackUnit = sheetUnit || kilogramUnit || units[0];
-  if (!fallbackUnit) {
-    return;
-  }
-
-  const now = new Date().toISOString();
-  const paperResult = await run(
-    `
-    INSERT INTO groups (name, parent_group_id, unit_id, is_archived, created_at, updated_at)
-    VALUES (?, NULL, ?, 0, ?, ?)
-    `,
-    ['Paper', sheetUnit?.id || fallbackUnit.id, now, now],
-  );
-  await run(
-    `
-    INSERT INTO groups (name, parent_group_id, unit_id, is_archived, created_at, updated_at)
-    VALUES (?, ?, ?, 0, ?, ?)
-    `,
-    ['Kraft', paperResult.lastID, sheetUnit?.id || fallbackUnit.id, now, now],
-  );
-  await run(
-    `
-    INSERT INTO groups (name, parent_group_id, unit_id, is_archived, created_at, updated_at)
-    VALUES (?, NULL, ?, 0, ?, ?)
-    `,
-    ['Chemical', kilogramUnit?.id || fallbackUnit.id, now, now],
-  );
-  await run(
-    `
-    INSERT INTO groups (name, parent_group_id, unit_id, is_archived, created_at, updated_at)
-    VALUES (?, NULL, ?, 1, ?, ?)
-    `,
-    ['Legacy Group', kilogramUnit?.id || fallbackUnit.id, now, now],
-  );
+  // Intentionally left empty. The richer demo hierarchy is created in
+  // ensureDemoGroupsPresent().
 }
 
 async function ensureGroupRecord({
@@ -3419,7 +3354,7 @@ async function ensureDemoGroupsPresent() {
   });
 
   const chemicals = await ensureGroupRecord({
-    name: 'Chemical',
+    name: 'Chemicals',
     unitId: kilogramUnit.id,
   });
   await ensureGroupRecord({
@@ -3428,7 +3363,12 @@ async function ensureDemoGroupsPresent() {
     unitId: kilogramUnit.id,
   });
   await ensureGroupRecord({
-    name: 'Coatings',
+    name: 'Solvents',
+    parentGroupId: chemicals.id,
+    unitId: kilogramUnit.id,
+  });
+  await ensureGroupRecord({
+    name: 'Inks',
     parentGroupId: chemicals.id,
     unitId: kilogramUnit.id,
   });
@@ -3669,466 +3609,8 @@ async function saveItem({
 }
 
 async function seedItemsIfEmpty() {
-  const countRow = await get('SELECT COUNT(*) AS count FROM items');
-  if ((countRow?.count || 0) > 0) {
-    return;
-  }
-
-  const groups = await all('SELECT * FROM groups WHERE is_archived = 0 ORDER BY id ASC');
-  const units = await all('SELECT * FROM units WHERE is_archived = 0 ORDER BY id ASC');
-  const kraftGroup = groups.find((group) => normalizeUnitValue(group.name) === 'kraft') || groups[0];
-  const chemicalGroup = groups.find((group) => normalizeUnitValue(group.name) === 'chemical') || groups[0];
-  const sheetUnit = units.find((unit) => normalizeUnitValue(unit.symbol) === 'sheet') || units[0];
-  const kilogramUnit = units.find((unit) => normalizeUnitValue(unit.symbol) === 'kg') || units[0] || sheetUnit;
-  if (!kraftGroup || !sheetUnit) {
-    return;
-  }
-
-  await saveItem({
-    name: 'Switch Action Dolly',
-    alias: 'Finish Goods Variant',
-    displayName: 'Switch Action Dolly - 1',
-    quantity: 1,
-    groupId: kraftGroup.id,
-    unitId: sheetUnit.id,
-    variationTree: [
-      {
-        kind: 'property',
-        name: 'Action Dolly Amp',
-        children: [
-          {
-            kind: 'value',
-            name: '5 Amp',
-            children: [
-              {
-                kind: 'property',
-                name: 'Action Patti + Dabbi',
-                children: [
-                  {
-                    kind: 'value',
-                    name: '11+1',
-                    children: [
-                      {
-                        kind: 'property',
-                        name: 'Action Dolly Alloy',
-                        children: [
-                          {
-                            kind: 'value',
-                            name: 'Brass',
-                            children: [
-                              {
-                                kind: 'property',
-                                name: 'Action Dolly Contact',
-                                children: [
-                                  {
-                                    kind: 'value',
-                                    name: '1 Way',
-                                    children: [
-                                      {
-                                        kind: 'property',
-                                        name: 'Action Dolly Type',
-                                        children: [
-                                          {
-                                            kind: 'value',
-                                            name: 'Dolly',
-                                            children: [
-                                              {
-                                                kind: 'property',
-                                                name: 'Action Dolly Plating',
-                                                children: [
-                                                  {
-                                                    kind: 'value',
-                                                    name: 'Without Plating',
-                                                    displayName:
-                                                      '5 Amp 11+1 Brass 1 Way Dolly Without Plating',
-                                                  },
-                                                  {
-                                                    kind: 'value',
-                                                    name: 'With Plating',
-                                                    displayName:
-                                                      '5 Amp 11+1 Brass 1 Way Dolly With Plating',
-                                                  },
-                                                ],
-                                              },
-                                            ],
-                                          },
-                                        ],
-                                      },
-                                    ],
-                                  },
-                                ],
-                              },
-                            ],
-                          },
-                        ],
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
-          },
-          {
-            kind: 'value',
-            name: '6 Amp',
-            children: [
-              {
-                kind: 'property',
-                name: 'Action Patti + Dabbi',
-                children: [
-                  {
-                    kind: 'value',
-                    name: '11+1',
-                    children: [
-                      {
-                        kind: 'property',
-                        name: 'Action Dolly Alloy',
-                        children: [
-                          {
-                            kind: 'value',
-                            name: 'Brass',
-                            children: [
-                              {
-                                kind: 'property',
-                                name: 'Action Dolly Contact',
-                                children: [
-                                  {
-                                    kind: 'value',
-                                    name: '1 Way',
-                                    children: [
-                                      {
-                                        kind: 'property',
-                                        name: 'Action Dolly Type',
-                                        children: [
-                                          {
-                                            kind: 'value',
-                                            name: 'Dolly',
-                                            children: [
-                                              {
-                                                kind: 'property',
-                                                name: 'Action Dolly Plating',
-                                                children: [
-                                                  {
-                                                    kind: 'value',
-                                                    name: 'Without Plating',
-                                                    displayName:
-                                                      '6 Amp 11+1 Brass 1 Way Dolly Without Plating',
-                                                  },
-                                                ],
-                                              },
-                                            ],
-                                          },
-                                        ],
-                                      },
-                                    ],
-                                  },
-                                ],
-                              },
-                            ],
-                          },
-                        ],
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-      },
-    ],
-  });
-  if (chemicalGroup && kilogramUnit) {
-    await saveItem({
-      name: 'Glue Compound',
-      alias: 'Adhesive',
-      displayName: 'Glue Compound - 1',
-      quantity: 1,
-      groupId: chemicalGroup.id,
-      unitId: kilogramUnit.id,
-      variationTree: [
-        {
-          kind: 'property',
-          name: 'Cure Speed',
-          children: [{ kind: 'value', name: 'Fast Cure' }],
-        },
-      ],
-    });
-
-    await saveItem({
-      name: 'Luxury Pump Bottle',
-      alias: 'Cosmetic Pack',
-      displayName: 'Luxury Pump Bottle - 100',
-      quantity: 100,
-      groupId: kraftGroup.id,
-      unitId: sheetUnit.id,
-      variationTree: [
-        {
-          kind: 'property',
-          name: 'Bottle Material',
-          children: [
-            {
-              kind: 'value',
-              name: 'PET',
-              children: [
-                {
-                  kind: 'property',
-                  name: 'Bottle Color',
-                  children: [
-                    {
-                      kind: 'value',
-                      name: 'Frosted Clear',
-                      children: [
-                        {
-                          kind: 'property',
-                          name: 'Pump Finish',
-                          children: [
-                            {
-                              kind: 'value',
-                              name: 'Matte Silver',
-                              children: [
-                                {
-                                  kind: 'property',
-                                  name: 'Lock Type',
-                                  children: [
-                                    {
-                                      kind: 'value',
-                                      name: 'Left Lock',
-                                      displayName:
-                                        'PET Frosted Clear Matte Silver Left Lock',
-                                    },
-                                    {
-                                      kind: 'value',
-                                      name: 'Right Lock',
-                                      displayName:
-                                        'PET Frosted Clear Matte Silver Right Lock',
-                                    },
-                                  ],
-                                },
-                              ],
-                            },
-                          ],
-                        },
-                      ],
-                    },
-                    {
-                      kind: 'value',
-                      name: 'Amber',
-                      children: [
-                        {
-                          kind: 'property',
-                          name: 'Pump Finish',
-                          children: [
-                            {
-                              kind: 'value',
-                              name: 'Gloss Gold',
-                              children: [
-                                {
-                                  kind: 'property',
-                                  name: 'Lock Type',
-                                  children: [
-                                    {
-                                      kind: 'value',
-                                      name: 'Left Lock',
-                                      displayName:
-                                        'PET Amber Gloss Gold Left Lock',
-                                    },
-                                  ],
-                                },
-                              ],
-                            },
-                          ],
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            },
-            {
-              kind: 'value',
-              name: 'Glass',
-              children: [
-                {
-                  kind: 'property',
-                  name: 'Bottle Color',
-                  children: [
-                    {
-                      kind: 'value',
-                      name: 'Clear',
-                      children: [
-                        {
-                          kind: 'property',
-                          name: 'Pump Finish',
-                          children: [
-                            {
-                              kind: 'value',
-                              name: 'Rose Gold',
-                              children: [
-                                {
-                                  kind: 'property',
-                                  name: 'Lock Type',
-                                  children: [
-                                    {
-                                      kind: 'value',
-                                      name: 'Right Lock',
-                                      displayName:
-                                        'Glass Clear Rose Gold Right Lock',
-                                    },
-                                  ],
-                                },
-                              ],
-                            },
-                          ],
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
-        },
-      ],
-    });
-
-    await saveItem({
-      name: 'Premium Mono Carton',
-      alias: 'Retail Carton',
-      displayName: 'Premium Mono Carton - 500',
-      quantity: 500,
-      groupId: kraftGroup.id,
-      unitId: sheetUnit.id,
-      variationTree: [
-        {
-          kind: 'property',
-          name: 'Board GSM',
-          children: [
-            {
-              kind: 'value',
-              name: '300 GSM',
-              children: [
-                {
-                  kind: 'property',
-                  name: 'Print Finish',
-                  children: [
-                    {
-                      kind: 'value',
-                      name: 'Matte',
-                      children: [
-                        {
-                          kind: 'property',
-                          name: 'Foil',
-                          children: [
-                            {
-                              kind: 'value',
-                              name: 'Gold Foil',
-                              children: [
-                                {
-                                  kind: 'property',
-                                  name: 'Window',
-                                  children: [
-                                    {
-                                      kind: 'value',
-                                      name: 'With Window',
-                                      displayName:
-                                        '300 GSM Matte Gold Foil With Window',
-                                    },
-                                    {
-                                      kind: 'value',
-                                      name: 'No Window',
-                                      displayName:
-                                        '300 GSM Matte Gold Foil No Window',
-                                    },
-                                  ],
-                                },
-                              ],
-                            },
-                          ],
-                        },
-                      ],
-                    },
-                    {
-                      kind: 'value',
-                      name: 'Gloss',
-                      children: [
-                        {
-                          kind: 'property',
-                          name: 'Foil',
-                          children: [
-                            {
-                              kind: 'value',
-                              name: 'No Foil',
-                              children: [
-                                {
-                                  kind: 'property',
-                                  name: 'Window',
-                                  children: [
-                                    {
-                                      kind: 'value',
-                                      name: 'No Window',
-                                      displayName:
-                                        '300 GSM Gloss No Foil No Window',
-                                    },
-                                  ],
-                                },
-                              ],
-                            },
-                          ],
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            },
-            {
-              kind: 'value',
-              name: '350 GSM',
-              children: [
-                {
-                  kind: 'property',
-                  name: 'Print Finish',
-                  children: [
-                    {
-                      kind: 'value',
-                      name: 'Matte',
-                      children: [
-                        {
-                          kind: 'property',
-                          name: 'Foil',
-                          children: [
-                            {
-                              kind: 'value',
-                              name: 'Rose Gold Foil',
-                              children: [
-                                {
-                                  kind: 'property',
-                                  name: 'Window',
-                                  children: [
-                                    {
-                                      kind: 'value',
-                                      name: 'With Window',
-                                      displayName:
-                                        '350 GSM Matte Rose Gold Foil With Window',
-                                    },
-                                  ],
-                                },
-                              ],
-                            },
-                          ],
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
-        },
-      ],
-    });
-  }
+  // Intentionally left empty. The complete item demo set is created later in
+  // ensureDemoItemsPresent().
 }
 
 async function findItemByDisplayName(displayName) {
@@ -4207,6 +3689,8 @@ async function ensureDemoItemsPresent() {
 
   const kraft = groupByName.get('kraft');
   const adhesives = groupByName.get('adhesives');
+  const solvents = groupByName.get('solvents');
+  const inks = groupByName.get('inks');
   const caps = groupByName.get('caps');
   const sleeves = groupByName.get('sleeves');
   const duplex = groupByName.get('duplex board') || groupByName.get('paper');
@@ -4215,7 +3699,7 @@ async function ensureDemoItemsPresent() {
   const pieceUnit = unitBySymbol.get('pc') || unitBySymbol.get('pieces');
   const meterUnit = unitBySymbol.get('mtr');
 
-  if (!kraft || !adhesives || !caps || !sleeves || !duplex) {
+  if (!kraft || !adhesives || !solvents || !inks || !caps || !sleeves || !duplex) {
     return;
   }
   if (!sheetUnit || !kilogramUnit || !pieceUnit || !meterUnit) {
@@ -4223,6 +3707,78 @@ async function ensureDemoItemsPresent() {
   }
 
   const itemSeeds = [
+    {
+      name: 'Epoxy Resin Base',
+      alias: 'Reactive Binder',
+      displayName: 'Epoxy Resin Base - 25',
+      quantity: 25,
+      groupId: adhesives.id,
+      unitId: kilogramUnit.id,
+      variationTree: [
+        {
+          kind: 'property',
+          name: 'Grade',
+          children: [
+            {
+              kind: 'value',
+              name: 'Standard',
+              children: [
+                {
+                  kind: 'property',
+                  name: 'Viscosity',
+                  children: [{ kind: 'value', name: 'Medium' }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      name: 'Hardener Compound',
+      alias: 'Catalyst',
+      displayName: 'Hardener Compound - 5',
+      quantity: 5,
+      groupId: adhesives.id,
+      unitId: kilogramUnit.id,
+      variationTree: [
+        {
+          kind: 'property',
+          name: 'Reactivity',
+          children: [{ kind: 'value', name: 'Fast Set' }],
+        },
+      ],
+    },
+    {
+      name: 'Isopropyl Cleaner',
+      alias: 'Surface Prep',
+      displayName: 'Isopropyl Cleaner - 20',
+      quantity: 20,
+      groupId: solvents.id,
+      unitId: kilogramUnit.id,
+      variationTree: [
+        {
+          kind: 'property',
+          name: 'Purity',
+          children: [{ kind: 'value', name: '99%' }],
+        },
+      ],
+    },
+    {
+      name: 'Cyan Flexo Ink',
+      alias: 'Press Ink',
+      displayName: 'Cyan Flexo Ink - 15',
+      quantity: 15,
+      groupId: inks.id,
+      unitId: kilogramUnit.id,
+      variationTree: [
+        {
+          kind: 'property',
+          name: 'Shade',
+          children: [{ kind: 'value', name: 'Process Cyan' }],
+        },
+      ],
+    },
     {
       name: 'Bottle Carton',
       alias: 'Classic Bottle',
@@ -6064,60 +5620,120 @@ async function ensureDemoMaterialsPresent() {
 
   const materials = [
     {
-      name: 'Copper Master Roll',
-      type: 'Raw Material',
-      grade: 'A1',
-      thickness: '1.2 mm',
-      supplier: 'Shree Metals',
+      name: 'Chemicals',
+      type: 'Inventory Group',
+      grade: 'Operational Root',
+      thickness: '-',
+      supplier: 'Central Store',
       unit: 'Kg',
-      notes: 'Primary copper feed for dolly and frame jobs.',
-      numberOfChildren: 3,
-      scanCount: 5,
-      childScanCounts: [3, 2, 1],
+      notes: 'Top-level inventory group for process chemicals.',
+      numberOfChildren: 0,
+      scanCount: 0,
+      childScanCounts: [],
+      createdAt: oneDayAgo(16),
+      linkGroupId: groupByName.get('chemicals')?.id || null,
+    },
+    {
+      name: 'Adhesives',
+      type: 'Inventory Group',
+      grade: 'Process Chemicals',
+      thickness: '-',
+      supplier: 'PolyBond Industries',
+      unit: 'Kg',
+      notes: 'Adhesive binders, hardeners, and bonding compounds.',
+      numberOfChildren: 0,
+      scanCount: 0,
+      childScanCounts: [],
+      createdAt: oneDayAgo(15),
+      linkGroupId: groupByName.get('adhesives')?.id || null,
+    },
+    {
+      name: 'Solvents',
+      type: 'Inventory Group',
+      grade: 'Process Chemicals',
+      thickness: '-',
+      supplier: 'CleanCore Labs',
+      unit: 'Kg',
+      notes: 'Cleaning and surface-preparation solvents.',
+      numberOfChildren: 0,
+      scanCount: 0,
+      childScanCounts: [],
       createdAt: oneDayAgo(14),
-      linkGroupId: groupByName.get('chemical')?.id || null,
+      linkGroupId: groupByName.get('solvents')?.id || null,
     },
     {
-      name: 'Steel Sheet Batch',
+      name: 'Inks',
+      type: 'Inventory Group',
+      grade: 'Process Chemicals',
+      thickness: '-',
+      supplier: 'ColorCraft Press',
+      unit: 'Kg',
+      notes: 'Press inks and color concentrates used in packaging runs.',
+      numberOfChildren: 0,
+      scanCount: 0,
+      childScanCounts: [],
+      createdAt: oneDayAgo(13),
+      linkGroupId: groupByName.get('inks')?.id || null,
+    },
+    {
+      name: 'Epoxy Resin Base Lot',
       type: 'Raw Material',
-      grade: 'B2',
-      thickness: '2.0 mm',
-      supplier: 'Metro Steels',
-      unit: 'Sheet',
-      notes: 'Sheet stock for drilled frame support panels.',
-      numberOfChildren: 2,
+      grade: 'Standard',
+      thickness: '-',
+      supplier: 'PolyBond Industries',
+      unit: 'Kg',
+      notes: 'Primary resin feed for adhesive preparation.',
+      numberOfChildren: 0,
+      scanCount: 7,
+      childScanCounts: [],
+      createdAt: oneDayAgo(10),
+      linkItemId:
+          itemByDisplayName.get(normalizeUnitValue('Epoxy Resin Base - 25'))?.id || null,
+    },
+    {
+      name: 'Hardener Compound Batch',
+      type: 'Raw Material',
+      grade: 'Fast Set',
+      thickness: '-',
+      supplier: 'PolyBond Industries',
+      unit: 'Kg',
+      notes: 'Hardener stock paired with epoxy resin jobs.',
+      numberOfChildren: 0,
       scanCount: 4,
-      childScanCounts: [2, 0],
-      createdAt: oneDayAgo(12),
-      linkItemId: itemByDisplayName.get(normalizeUnitValue('Flip-Top Cap - 500'))?.id || null,
+      childScanCounts: [],
+      createdAt: oneDayAgo(8),
+      linkItemId:
+          itemByDisplayName.get(normalizeUnitValue('Hardener Compound - 5'))?.id || null,
     },
     {
-      name: 'Kraft Paper Reel',
-      type: 'Substrate',
-      grade: 'Natural 180 GSM',
-      thickness: '180 GSM',
-      supplier: 'West Coast Paper',
-      unit: 'Roll',
-      notes: 'Used across bottle carton and mono-carton demo orders.',
-      numberOfChildren: 4,
-      scanCount: 9,
-      childScanCounts: [4, 3, 1, 1],
-      createdAt: oneDayAgo(9),
-      linkItemId: itemByDisplayName.get(normalizeUnitValue('Bottle Carton - 100'))?.id || null,
+      name: 'Isopropyl Cleaner Drum',
+      type: 'Raw Material',
+      grade: '99%',
+      thickness: '-',
+      supplier: 'CleanCore Labs',
+      unit: 'Kg',
+      notes: 'Cleaner used for cylinder, plate, and surface preparation.',
+      numberOfChildren: 0,
+      scanCount: 5,
+      childScanCounts: [],
+      createdAt: oneDayAgo(6),
+      linkItemId:
+          itemByDisplayName.get(normalizeUnitValue('Isopropyl Cleaner - 20'))?.id || null,
     },
     {
-      name: 'Shrink Film Reel',
-      type: 'Packaging Material',
-      grade: 'PET-G',
-      thickness: '40 micron',
-      supplier: 'FlexWrap Industries',
-      unit: 'Roll',
-      notes: 'Supports export sleeve jobs and barcode attachment demos.',
-      numberOfChildren: 3,
+      name: 'Cyan Flexo Ink Barrel',
+      type: 'Raw Material',
+      grade: 'Process Cyan',
+      thickness: '-',
+      supplier: 'ColorCraft Press',
+      unit: 'Kg',
+      notes: 'Press cyan ink used on flexo export sleeve and carton jobs.',
+      numberOfChildren: 0,
       scanCount: 6,
-      childScanCounts: [2, 2, 1],
-      createdAt: oneDayAgo(7),
-      linkItemId: itemByDisplayName.get(normalizeUnitValue('Printed Sleeve - 200'))?.id || null,
+      childScanCounts: [],
+      createdAt: oneDayAgo(5),
+      linkItemId:
+          itemByDisplayName.get(normalizeUnitValue('Cyan Flexo Ink - 15'))?.id || null,
     },
   ];
 
