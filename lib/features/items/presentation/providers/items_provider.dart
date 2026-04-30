@@ -231,6 +231,15 @@ class ItemsProvider extends ChangeNotifier {
       notifyListeners();
       return null;
     }
+    final propertyPathSegments = _nodePathSegmentsById(
+      current.variationTree,
+      propertyNodeId,
+    );
+    if (propertyPathSegments.isEmpty) {
+      _errorMessage = 'Variation property not found.';
+      notifyListeners();
+      return null;
+    }
 
     final mutation = _appendVariationValueToTree(
       current.variationTree.map(_toInput).toList(growable: false),
@@ -259,6 +268,7 @@ class ItemsProvider extends ChangeNotifier {
       ),
       propertyNodeId: propertyNodeId,
       valueName: trimmedValueName,
+      propertyPathSegments: propertyPathSegments,
     );
   }
 
@@ -295,6 +305,7 @@ class ItemsProvider extends ChangeNotifier {
     Future<ItemDefinition> Function() action, {
     required int propertyNodeId,
     required String valueName,
+    required List<String> propertyPathSegments,
   }) async {
     _isSaving = true;
     _errorMessage = null;
@@ -304,10 +315,12 @@ class ItemsProvider extends ChangeNotifier {
       await refresh();
       final refreshed =
           _items.where((item) => item.id == updated.id).firstOrNull ?? updated;
-      final propertyNode = _findNodeById(
-        refreshed.variationTree,
-        propertyNodeId,
-      );
+      final propertyNode =
+          _findNodeById(refreshed.variationTree, propertyNodeId) ??
+          _findNodeByPathSegments(
+            refreshed.variationTree,
+            propertyPathSegments,
+          );
       final createdValueNode = propertyNode?.activeChildren
           .where((node) => node.kind == ItemVariationNodeKind.value)
           .where((node) => _normalize(node.name) == _normalize(valueName))
@@ -485,6 +498,69 @@ class ItemsProvider extends ChangeNotifier {
       }
     }
     return null;
+  }
+
+  List<String> _nodePathSegmentsById(
+    List<ItemVariationNodeDefinition> nodes,
+    int nodeId,
+  ) {
+    final path = <ItemVariationNodeDefinition>[];
+
+    bool visit(
+      ItemVariationNodeDefinition node,
+      List<ItemVariationNodeDefinition> current,
+    ) {
+      final next = <ItemVariationNodeDefinition>[...current, node];
+      if (node.id == nodeId) {
+        path
+          ..clear()
+          ..addAll(next);
+        return true;
+      }
+      for (final child in node.children) {
+        if (visit(child, next)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    for (final node in nodes) {
+      if (visit(node, const <ItemVariationNodeDefinition>[])) {
+        break;
+      }
+    }
+
+    return path
+        .map((node) => node.name.trim())
+        .where((segment) => segment.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  ItemVariationNodeDefinition? _findNodeByPathSegments(
+    List<ItemVariationNodeDefinition> nodes,
+    List<String> pathSegments,
+  ) {
+    if (pathSegments.isEmpty) {
+      return null;
+    }
+
+    ItemVariationNodeDefinition? current;
+    Iterable<ItemVariationNodeDefinition> scope = nodes.where(
+      (node) => !node.isArchived,
+    );
+
+    for (final segment in pathSegments) {
+      current = scope
+          .where((node) => _normalize(node.name) == _normalize(segment))
+          .firstOrNull;
+      if (current == null) {
+        return null;
+      }
+      scope = current.activeChildren;
+    }
+
+    return current;
   }
 
   List<int> _valueNodePathIdsForNode(

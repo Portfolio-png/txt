@@ -266,8 +266,10 @@ class ApiItemRepository implements ItemRepository {
     required List<ItemVariationNodeInput> variationTree,
   }) {
     final normalizedName = _normalize(name);
-    if (normalizedName.isEmpty || quantity <= 0 || groupId <= 0) {
-      throw ItemApiException('Item name, quantity, and group are required.');
+    if (normalizedName.isEmpty || quantity < 0 || groupId <= 0) {
+      throw ItemApiException(
+        'Item name and group are required. Quantity cannot be negative.',
+      );
     }
     final duplicate = _mockItems.any(
       (item) =>
@@ -1512,6 +1514,9 @@ class ApiItemRepository implements ItemRepository {
       name.trim(),
       alias.trim(),
     ].where((entry) => entry.isNotEmpty).join(' / ');
+    if (quantity <= 0) {
+      return base;
+    }
     final qty = _formatQuantity(quantity);
     return base.isEmpty ? qty : '$base - $qty';
   }

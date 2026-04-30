@@ -16,6 +16,7 @@ import '../../../../core/widgets/page_container.dart';
 import '../../../../core/widgets/soft_primitives.dart';
 import '../../../groups/domain/group_definition.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
+import '../../../groups/presentation/screens/groups_screen.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/providers/items_provider.dart';
@@ -25,6 +26,7 @@ import '../../../pm/presentation/screens/pm_screen.dart';
 import '../../../units/domain/unit_definition.dart';
 import '../../../units/domain/unit_inputs.dart';
 import '../../../units/presentation/providers/units_provider.dart';
+import '../../../units/presentation/screens/units_screen.dart';
 import '../../domain/create_parent_material_input.dart';
 import '../../domain/group_property_draft.dart' as governance;
 import '../../domain/inventory_control_tower.dart';
@@ -126,8 +128,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
   bool _sortNewestFirst = true;
   bool _isBulkRunning = false;
   String? _bulkProgressLabel;
-  bool _isCreateGroupEditorVisible = false;
-  MaterialRecord? _groupEditorInitialRecord;
 
   @override
   void initState() {
@@ -391,46 +391,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
               const _DeleteSelectionIntent(),
         };
 
-        final workspaceShell = ClipRect(
-          child: Stack(
-            clipBehavior: Clip.hardEdge,
-            children: [
-              AnimatedSlide(
-                duration: const Duration(milliseconds: 520),
-                curve: const Cubic(0.22, 1.0, 0.36, 1.0),
-                offset: _isCreateGroupEditorVisible
-                    ? const Offset(-1.0, 0)
-                    : Offset.zero,
-                child: IgnorePointer(
-                  ignoring: _isCreateGroupEditorVisible,
-                  child: workspaceContent,
-                ),
-              ),
-              Positioned.fill(
-                child: IgnorePointer(
-                  ignoring: !_isCreateGroupEditorVisible,
-                  child: AnimatedSlide(
-                    duration: const Duration(milliseconds: 520),
-                    curve: const Cubic(0.22, 1.0, 0.36, 1.0),
-                    offset: _isCreateGroupEditorVisible
-                        ? Offset.zero
-                        : const Offset(1.03, 0),
-                    child: Material(
-                      color: const Color(0xFFF4F7FB),
-                      child: SafeArea(
-                        top: false,
-                        child: _InventoryCreateGroupEditor(
-                          initialRecord: _groupEditorInitialRecord,
-                          onClose: _closeCreateGroupEditor,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
+        final workspaceShell = workspaceContent;
 
         return Shortcuts(
           shortcuts: shortcuts,
@@ -480,27 +441,32 @@ class _InventoryScreenState extends State<InventoryScreen> {
     if (!mounted) {
       return;
     }
-    setState(() {
-      _groupEditorInitialRecord = initialRecord;
-      _isCreateGroupEditorVisible = true;
-    });
-  }
-
-  void _closeCreateGroupEditor() {
-    if (!mounted) {
+    if (initialRecord == null) {
+      await InventoryScreen.openCreateGroupForm(context);
       return;
     }
-    setState(() {
-      _isCreateGroupEditorVisible = false;
-    });
-    Future<void>.delayed(const Duration(milliseconds: 560), () {
-      if (!mounted || _isCreateGroupEditorVisible) {
+
+    final linkedGroupId = initialRecord.linkedGroupId;
+    if (linkedGroupId != null) {
+      final linkedGroup = context.read<GroupsProvider>().findById(
+        linkedGroupId,
+      );
+      if (linkedGroup != null) {
+        await GroupsScreen.openEditor(context, group: linkedGroup);
         return;
       }
-      setState(() {
-        _groupEditorInitialRecord = null;
-      });
-    });
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.all(32),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: _EditMaterialSheet(record: initialRecord),
+        ),
+      ),
+    );
   }
 
   Future<void> _handleQuickCreate(_InventoryQuickCreateAction action) async {
@@ -5124,6 +5090,7 @@ class _SimpleField extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _CreateGroupToggleSection extends StatelessWidget {
   const _CreateGroupToggleSection({
     required this.title,
@@ -5281,10 +5248,15 @@ class _CreateGroupDropdown extends StatelessWidget {
 }
 
 class _PropertyChip extends StatelessWidget {
-  const _PropertyChip({required this.label, required this.onRemove});
+  const _PropertyChip({
+    required this.label,
+    required this.onRemove,
+    this.removable = true,
+  });
 
   final String label;
   final VoidCallback onRemove;
+  final bool removable;
 
   @override
   Widget build(BuildContext context) {
@@ -5306,16 +5278,18 @@ class _PropertyChip extends StatelessWidget {
               weight: FontWeight.w500,
             ),
           ),
-          const SizedBox(width: 4),
-          InkWell(
-            onTap: onRemove,
-            borderRadius: BorderRadius.circular(999),
-            child: const Icon(
-              Icons.close_rounded,
-              size: 12,
-              color: Color(0xFF5A4BBA),
+          if (removable) ...[
+            const SizedBox(width: 4),
+            InkWell(
+              onTap: onRemove,
+              borderRadius: BorderRadius.circular(999),
+              child: const Icon(
+                Icons.close_rounded,
+                size: 12,
+                color: Color(0xFF5A4BBA),
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -5462,10 +5436,15 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
   final _nameController = TextEditingController();
   final _propertyController = TextEditingController();
   final FocusNode _nameFocus = FocusNode();
+  static const List<String> _groupTypes = <String>[
+    'Primary',
+    'Secondary',
+    'Material',
+    'Assembly',
+  ];
+
   String _groupType = 'Primary';
-  bool _addSubGroups = false;
-  bool _addItems = false;
-  bool _addProperties = false;
+  int? _selectedUnitId;
   String? _selectedSubGroup;
   String? _selectedItem;
   final List<String> _addedProperties = <String>[];
@@ -5482,6 +5461,7 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
   Widget build(BuildContext context) {
     final provider = context.watch<InventoryProvider>();
     final groups = context.watch<GroupsProvider>().activeGroups;
+    final units = context.watch<UnitsProvider>().activeUnits;
     final items = context
         .watch<ItemsProvider>()
         .items
@@ -5501,255 +5481,313 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
             .toSet()
             .toList(growable: false)
           ..sort();
+    final selectedUnit = units
+        .where((unit) => unit.id == _selectedUnitId)
+        .firstOrNull;
 
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(16),
       child: SizedBox(
-        width: 1023,
-        height: 620,
+        width: 1140,
+        height: 700,
         child: Form(
           key: _formKey,
           child: Column(
             children: [
               Container(
-                height: 60,
+                height: 76,
                 width: double.infinity,
-                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(horizontal: 24),
                 decoration: const BoxDecoration(
                   color: Color(0xFFFBFBFB),
+                  border: Border(bottom: BorderSide(color: Color(0xFFE7EBF0))),
                   borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
                 ),
-                child: Text(
-                  'Create New Group',
-                  style: _inventoryInterStyle(
-                    color: const Color(0xFF3F3F3F),
-                    size: 16,
-                    weight: FontWeight.w500,
-                  ),
-                ),
-              ),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: _CreateGroupField(
-                              label: 'Group Name',
-                              child: TextFormField(
-                                controller: _nameController,
-                                focusNode: _nameFocus,
-                                decoration: const InputDecoration(
-                                  hintText: 'Enter',
-                                  border: InputBorder.none,
-                                  isCollapsed: true,
-                                ),
-                                style: _inventorySegoeStyle(
-                                  color: const Color(0xFF3F3F3F),
-                                  size: 14,
-                                  weight: FontWeight.w400,
-                                ),
-                                validator: (value) =>
-                                    (value == null || value.trim().isEmpty)
-                                    ? 'Required'
-                                    : null,
-                              ),
+                          Text(
+                            'Create Group',
+                            style: _inventoryInterStyle(
+                              color: const Color(0xFF111827),
+                              size: 22,
+                              weight: FontWeight.w700,
                             ),
                           ),
-                          const SizedBox(width: 24),
-                          Expanded(
-                            child: _CreateGroupField(
-                              label: 'Group Type',
-                              child: _CreateGroupDropdown(
-                                value: _groupType,
-                                placeholder: 'Select',
-                                options: const [
-                                  'Primary',
-                                  'Secondary',
-                                  'Material',
-                                  'Assembly',
-                                ],
-                                onSelected: (value) {
-                                  if (value == null) {
-                                    return;
-                                  }
-                                  setState(() {
-                                    _groupType = value;
-                                  });
-                                },
-                              ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Define the group, assign its unit, and optionally seed it with items or properties.',
+                            style: _inventoryInterStyle(
+                              color: const Color(0xFF6B7280),
+                              size: 13,
+                              weight: FontWeight.w400,
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 20),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.only(bottom: 20),
-                        decoration: const BoxDecoration(
-                          border: Border(
-                            bottom: BorderSide(color: Color(0xFFEFEFEF)),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isCompact = constraints.maxWidth < 940;
+                    final detailsCard = _CreateGroupSurfaceCard(
+                      title: 'Group Details',
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _CreateGroupField(
+                            label: 'Group Name',
+                            child: TextFormField(
+                              controller: _nameController,
+                              focusNode: _nameFocus,
+                              decoration: const InputDecoration(
+                                hintText: 'Enter group name',
+                                border: InputBorder.none,
+                                isCollapsed: true,
+                              ),
+                              style: _inventorySegoeStyle(
+                                color: const Color(0xFF3F3F3F),
+                                size: 14,
+                                weight: FontWeight.w400,
+                              ),
+                              validator: (value) =>
+                                  (value == null || value.trim().isEmpty)
+                                  ? 'Required'
+                                  : null,
+                              onChanged: (_) => setState(() {}),
+                            ),
                           ),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: _CreateGroupToggleSection(
-                                title: 'Add Sub-Groups',
-                                value: _addSubGroups,
-                                onChanged: (value) {
-                                  setState(() {
-                                    _addSubGroups = value;
-                                    if (!value) {
-                                      _selectedSubGroup = null;
-                                    }
-                                  });
-                                },
-                                child: _CreateGroupField(
-                                  label: 'Add Sub-Groups',
-                                  child: _CreateGroupDropdown(
-                                    value: _selectedSubGroup,
-                                    placeholder: 'Select',
-                                    options: availableSubGroups,
-                                    onSelected: (value) {
-                                      setState(() {
-                                        _selectedSubGroup = value;
-                                      });
-                                    },
+                          const SizedBox(height: 16),
+                          _CreateGroupField(
+                            label: 'Group Type',
+                            child: _CreateGroupDropdown(
+                              value: _groupType,
+                              placeholder: 'Select',
+                              options: _groupTypes,
+                              onSelected: (value) {
+                                if (value == null) {
+                                  return;
+                                }
+                                setState(() {
+                                  _groupType = value;
+                                });
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          SearchableSelectField<int>(
+                            tapTargetKey: const ValueKey<String>(
+                              'inventory-create-group-unit',
+                            ),
+                            value:
+                                units.any((unit) => unit.id == _selectedUnitId)
+                                ? _selectedUnitId
+                                : selectedUnit?.id,
+                            decoration: _selectDecoration(
+                              label: 'Group Unit',
+                              helper:
+                                  'Required. If the unit is missing, create it here and continue.',
+                            ),
+                            dialogTitle: 'Group Unit',
+                            searchHintText: 'Search unit',
+                            onCreateOption: (query) async {
+                              final created = await UnitsScreen.openEditor(
+                                context,
+                                initialName: query,
+                              );
+                              if (!context.mounted || created == null) {
+                                return null;
+                              }
+                              return SearchableSelectOption<int>(
+                                value: created.id,
+                                label: created.displayLabel,
+                              );
+                            },
+                            createOptionLabelBuilder: (query) =>
+                                'Create unit "$query"',
+                            options: units
+                                .map(
+                                  (unit) => SearchableSelectOption<int>(
+                                    value: unit.id,
+                                    label: unit.displayLabel,
                                   ),
-                                ),
+                                )
+                                .toList(growable: false),
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedUnitId = value;
+                              });
+                            },
+                            validator: (value) =>
+                                value == null ? 'Required' : null,
+                          ),
+                          const SizedBox(height: 18),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: const Color(0xFFE2E8F0),
                               ),
                             ),
-                            const SizedBox(width: 24),
-                            Expanded(
-                              child: _CreateGroupToggleSection(
-                                title: 'Add Items',
-                                value: _addItems,
-                                onChanged: (value) {
-                                  setState(() {
-                                    _addItems = value;
-                                    if (!value) {
-                                      _selectedItem = null;
-                                    }
-                                  });
-                                },
-                                child: _CreateGroupField(
-                                  label: 'Items',
-                                  child: _CreateGroupDropdown(
-                                    value: _selectedItem,
-                                    placeholder: 'Select',
-                                    options: availableItems,
-                                    onSelected: (value) {
-                                      setState(() {
-                                        _selectedItem = value;
-                                      });
-                                    },
-                                  ),
+                            child: Wrap(
+                              spacing: 10,
+                              runSpacing: 10,
+                              children: [
+                                _PropertyChip(
+                                  label: _nameController.text.trim().isEmpty
+                                      ? 'Name pending'
+                                      : _nameController.text.trim(),
+                                  onRemove: () {},
+                                  removable: false,
                                 ),
-                              ),
+                                _PropertyChip(
+                                  label: 'Type: $_groupType',
+                                  onRemove: () {},
+                                  removable: false,
+                                ),
+                                _PropertyChip(
+                                  label: selectedUnit == null
+                                      ? 'Unit pending'
+                                      : 'Unit: ${selectedUnit.displayLabel}',
+                                  onRemove: () {},
+                                  removable: false,
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 20),
-                      _CreateGroupToggleSection(
-                        title: 'Add Group Properties',
-                        value: _addProperties,
-                        onChanged: (value) {
-                          setState(() {
-                            _addProperties = value;
-                            if (!value) {
-                              _propertyController.clear();
-                              _addedProperties.clear();
-                            }
-                          });
-                        },
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            SizedBox(
-                              width: 300,
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Expanded(
-                                    child: _CreateGroupField(
-                                      label: 'Group Properties',
-                                      child: TextFormField(
-                                        controller: _propertyController,
-                                        decoration: const InputDecoration(
-                                          hintText: 'Enter',
-                                          border: InputBorder.none,
-                                          isCollapsed: true,
-                                        ),
-                                        style: _inventorySegoeStyle(
-                                          color: const Color(0xFF3F3F3F),
-                                          size: 14,
-                                          weight: FontWeight.w400,
-                                        ),
-                                        onFieldSubmitted: (_) =>
-                                            _addPropertyChip(),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  SizedBox(
-                                    height: 40,
-                                    child: OutlinedButton(
-                                      onPressed: _addPropertyChip,
-                                      style: OutlinedButton.styleFrom(
-                                        side: const BorderSide(
-                                          color: Color(0xFFDDDDDD),
-                                        ),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 14,
-                                        ),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            48,
-                                          ),
-                                        ),
-                                      ),
-                                      child: Text(
-                                        '+ Add',
-                                        style: _inventoryInterStyle(
-                                          color: const Color(0xFF484848),
-                                          size: 14,
-                                          weight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
+                    );
+
+                    final compositionCard = _CreateGroupSurfaceCard(
+                      title: 'Structure & Properties',
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _CreateGroupField(
+                            label: 'Sub-Group',
+                            child: _CreateGroupDropdown(
+                              value: _selectedSubGroup,
+                              placeholder: 'Optional',
+                              options: availableSubGroups,
+                              onSelected: (value) {
+                                setState(() {
+                                  _selectedSubGroup = value;
+                                });
+                              },
                             ),
-                            Container(
-                              width: 1,
-                              height: 72,
-                              margin: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                              ),
-                              color: const Color(0xFFE3E3E3),
+                          ),
+                          const SizedBox(height: 16),
+                          _CreateGroupField(
+                            label: 'Seed Item',
+                            child: _CreateGroupDropdown(
+                              value: _selectedItem,
+                              placeholder: 'Optional',
+                              options: availableItems,
+                              onSelected: (value) {
+                                setState(() {
+                                  _selectedItem = value;
+                                });
+                              },
                             ),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Added Properties',
-                                    style: _inventoryManropeStyle(
-                                      color: const Color(0xFF717171),
+                          ),
+                          const SizedBox(height: 18),
+                          Text(
+                            'Properties',
+                            style: _inventoryInterStyle(
+                              color: const Color(0xFF334155),
+                              size: 14,
+                              weight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Expanded(
+                                child: _CreateGroupField(
+                                  label: 'Add Property',
+                                  child: TextFormField(
+                                    controller: _propertyController,
+                                    decoration: const InputDecoration(
+                                      hintText: 'e.g. Material, Size, Color',
+                                      border: InputBorder.none,
+                                      isCollapsed: true,
+                                    ),
+                                    style: _inventorySegoeStyle(
+                                      color: const Color(0xFF3F3F3F),
                                       size: 14,
                                       weight: FontWeight.w400,
                                     ),
+                                    onFieldSubmitted: (_) => _addPropertyChip(),
                                   ),
-                                  const SizedBox(height: 8),
-                                  Wrap(
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                height: 40,
+                                child: OutlinedButton(
+                                  onPressed: _addPropertyChip,
+                                  style: OutlinedButton.styleFrom(
+                                    side: const BorderSide(
+                                      color: Color(0xFFDDDDDD),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(48),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    '+ Add',
+                                    style: _inventoryInterStyle(
+                                      color: const Color(0xFF484848),
+                                      size: 14,
+                                      weight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          Container(
+                            width: double.infinity,
+                            constraints: const BoxConstraints(minHeight: 140),
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: const Color(0xFFE2E8F0),
+                              ),
+                            ),
+                            child: _addedProperties.isEmpty
+                                ? Text(
+                                    'No properties added yet.',
+                                    style: _inventoryInterStyle(
+                                      color: const Color(0xFF94A3B8),
+                                      size: 13,
+                                      weight: FontWeight.w400,
+                                    ),
+                                  )
+                                : Wrap(
                                     spacing: 8,
                                     runSpacing: 8,
                                     children: _addedProperties
@@ -5767,14 +5805,32 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
                                         )
                                         .toList(growable: false),
                                   ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    );
+
+                    return SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
+                      child: isCompact
+                          ? Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                detailsCard,
+                                const SizedBox(height: 18),
+                                compositionCard,
+                              ],
+                            )
+                          : Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(child: detailsCard),
+                                const SizedBox(width: 18),
+                                Expanded(child: compositionCard),
+                              ],
+                            ),
+                    );
+                  },
                 ),
               ),
               Container(
@@ -5857,19 +5913,30 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
       return;
     }
 
+    if (_selectedUnitId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select a group unit before saving.')),
+      );
+      return;
+    }
+
     final notes = <String>[
       'Group Type: $_groupType',
-      if (_addSubGroups && _selectedSubGroup != null)
-        'Sub-Group: $_selectedSubGroup',
-      if (_addItems && _selectedItem != null) 'Item: $_selectedItem',
-      if (_addProperties && _addedProperties.isNotEmpty)
+      if (_selectedSubGroup != null) 'Sub-Group: $_selectedSubGroup',
+      if (_selectedItem != null) 'Item: $_selectedItem',
+      if (_addedProperties.isNotEmpty)
         'Properties: ${_addedProperties.join(', ')}',
     ].join('\n');
     final childrenCount = [
-      if (_addSubGroups && _selectedSubGroup != null) _selectedSubGroup,
-      if (_addItems && _selectedItem != null) _selectedItem,
+      if (_selectedSubGroup != null) _selectedSubGroup,
+      if (_selectedItem != null) _selectedItem,
     ].length;
     final provider = context.read<InventoryProvider>();
+    final selectedUnit = context
+        .read<UnitsProvider>()
+        .units
+        .where((unit) => unit.id == _selectedUnitId)
+        .firstOrNull;
     await provider.addParentMaterial(
       CreateParentMaterialInput(
         name: _nameController.text.trim(),
@@ -5877,8 +5944,8 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
         grade: '',
         thickness: '',
         supplier: '',
-        unitId: null,
-        unit: 'Pieces',
+        unitId: _selectedUnitId,
+        unit: selectedUnit?.displayLabel ?? 'Pieces',
         notes: notes,
         numberOfChildren: childrenCount,
       ),
@@ -5901,12 +5968,83 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
       _propertyController.clear();
     });
   }
+
+  InputDecoration _selectDecoration({
+    required String label,
+    required String helper,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      helperText: helper,
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: Color(0xFFD8E0EA)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: Color(0xFFD8E0EA)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: Color(0xFF6049E3)),
+      ),
+      helperStyle: _inventoryInterStyle(
+        color: const Color(0xFF6B7280),
+        size: 12,
+        weight: FontWeight.w400,
+      ),
+    );
+  }
+}
+
+class _CreateGroupSurfaceCard extends StatelessWidget {
+  const _CreateGroupSurfaceCard({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x140F172A),
+            blurRadius: 18,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: _inventoryInterStyle(
+              color: const Color(0xFF111827),
+              size: 18,
+              weight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 16),
+          child,
+        ],
+      ),
+    );
+  }
 }
 
 class _InventoryCreateGroupEditor extends StatefulWidget {
   const _InventoryCreateGroupEditor({
     required this.onClose,
-    this.initialRecord,
+    required this.initialRecord,
   });
 
   final VoidCallback onClose;

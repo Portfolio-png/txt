@@ -3404,6 +3404,9 @@ function buildItemDisplayName(name, alias, quantity) {
   const parts = [String(name || '').trim(), String(alias || '').trim()].filter(Boolean);
   const base = parts.join(' / ');
   const qty = Number(quantity || 0);
+  if (!Number.isFinite(qty) || qty <= 0) {
+    return base;
+  }
   const qtyLabel = Number.isInteger(qty) ? String(qty) : String(qty);
   return base ? `${base} - ${qtyLabel}` : qtyLabel;
 }
@@ -3427,7 +3430,7 @@ async function saveItem({
 }) {
   const trimmedName = String(name || '').trim();
   const trimmedAlias = String(alias || '').trim();
-  const normalizedQuantity = Number(quantity);
+  const normalizedQuantity = Number(quantity ?? 0);
   const trimmedDisplayName =
     String(displayName || '').trim() || buildItemDisplayName(name, alias, normalizedQuantity);
   const normalizedGroupId = Number(groupId);
@@ -3435,12 +3438,13 @@ async function saveItem({
 
   if (
     !trimmedName ||
-    !normalizedQuantity ||
+    !Number.isFinite(normalizedQuantity) ||
+    normalizedQuantity < 0 ||
     !normalizedGroupId ||
     !normalizedUnitId ||
     !trimmedDisplayName
   ) {
-    throw new Error('name, quantity, displayName, groupId, and unitId are required.');
+    throw new Error('name, displayName, groupId, and unitId are required.');
   }
 
   const groupRow = await get('SELECT * FROM groups WHERE id = ?', [normalizedGroupId]);

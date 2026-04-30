@@ -828,9 +828,16 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                               _setNodeNameEditing(_rootNodes[index], true),
                           onFinishNameEditing: () =>
                               _setNodeNameEditing(_rootNodes[index], false),
-                          onAddProperty: () =>
-                              _addChildProperty(_rootNodes[index]),
-                          onAddValue: () => _addChildValue(_rootNodes[index]),
+                          onAddProperty:
+                              _rootNodes[index].kind ==
+                                  ItemVariationNodeKind.value
+                              ? () => _addChildProperty(_rootNodes[index])
+                              : null,
+                          onAddValue:
+                              _rootNodes[index].kind ==
+                                  ItemVariationNodeKind.property
+                              ? () => _addChildValue(_rootNodes[index])
+                              : null,
                           onMoveUp: index == 0
                               ? null
                               : () => _moveNode(_rootNodes, index, index - 1),
@@ -1054,26 +1061,78 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     });
   }
 
+  void _setTreeEditingState(
+    List<_NodeDraft> nodes, {
+    required bool detailsExpanded,
+    required bool isNameEditing,
+  }) {
+    for (final node in nodes) {
+      node.detailsExpanded = detailsExpanded;
+      node.isNameEditing = isNameEditing;
+      _setTreeEditingState(
+        node.children,
+        detailsExpanded: detailsExpanded,
+        isNameEditing: isNameEditing,
+      );
+    }
+  }
+
   void _addTopLevelProperty() {
     setState(() {
-      _rootNodes.add(_newDraft(ItemVariationNodeKind.property, null));
+      _localError = null;
+      _setTreeEditingState(
+        _rootNodes,
+        detailsExpanded: false,
+        isNameEditing: false,
+      );
+      final draft = _newDraft(ItemVariationNodeKind.property, null);
+      draft.isNameEditing = true;
+      draft.detailsExpanded = true;
+      _rootNodes.add(draft);
       _syncLeafDisplayNames();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_variationTreeScrollController.hasClients) {
+        return;
+      }
+      _variationTreeScrollController.animateTo(
+        _variationTreeScrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
     });
   }
 
   void _addChildProperty(_NodeDraft parent) {
+    if (parent.kind != ItemVariationNodeKind.value) {
+      setState(() {
+        _localError =
+            'A property can only be added under a value node. Top-level entries must start as properties.';
+      });
+      return;
+    }
     setState(() {
+      _localError = null;
       final child = _newDraft(ItemVariationNodeKind.property, parent);
       parent.detailsExpanded = true;
+      child.isNameEditing = true;
       parent.children.add(child);
       _syncLeafDisplayNames();
     });
   }
 
   void _addChildValue(_NodeDraft parent) {
+    if (parent.kind != ItemVariationNodeKind.property) {
+      setState(() {
+        _localError = 'A value can only be added under a property node.';
+      });
+      return;
+    }
     setState(() {
+      _localError = null;
       final child = _newDraft(ItemVariationNodeKind.value, parent);
       parent.detailsExpanded = true;
+      child.isNameEditing = true;
       parent.children.add(child);
       _syncLeafDisplayNames();
     });

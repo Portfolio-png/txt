@@ -22,7 +22,6 @@ import 'package:paper/features/clients/domain/client_inputs.dart';
 import 'package:paper/features/items/data/repositories/item_repository.dart';
 import 'package:paper/features/items/domain/item_definition.dart';
 import 'package:paper/features/items/domain/item_inputs.dart';
-import 'package:paper/features/items/presentation/providers/items_provider.dart';
 import 'package:paper/features/orders/data/repositories/order_repository.dart';
 import 'package:paper/features/orders/domain/order_entry.dart';
 import 'package:paper/features/orders/domain/order_inputs.dart';
@@ -2116,15 +2115,7 @@ void main() {
   Future<void> selectPrimaryVariationPath(
     WidgetTester tester, {
     String itemLabel = 'Switch Action Dolly - 1',
-    List<String> valueLabels = const <String>[
-      '5 Amp',
-      '11+1',
-      'Brass',
-      '1 Way',
-      'Dolly',
-      'Without Plating',
-    ],
-    String quantity = '1',
+    String variationPathText = 'Without Plating',
   }) async {
     await tester.tap(
       find.byKey(const ValueKey<String>('orders-editor-item-field')),
@@ -2133,62 +2124,17 @@ void main() {
     await tester.tap(find.text(itemLabel).last);
     await tester.pumpAndSettle();
 
-    final overlayFinder = find.byKey(
-      const ValueKey<String>('orders-editor-variation-overlay'),
+    final variationField = find.byKey(
+      const ValueKey<String>('orders-editor-variation-path-field'),
     );
-    if (overlayFinder.evaluate().isEmpty) {
-      final openOverlayFinder = find.byKey(
-        const ValueKey<String>('orders-editor-open-variation-overlay'),
-      );
-      if (openOverlayFinder.evaluate().isNotEmpty) {
-        await tester.tap(openOverlayFinder);
-        await tester.pumpAndSettle();
-      }
-    }
+    await tester.ensureVisible(variationField);
+    await tester.tap(variationField);
+    await tester.pumpAndSettle();
 
-    for (var index = 0; index < valueLabels.length; index++) {
-      final fieldFinder = find.byKey(
-        ValueKey<String>('orders-editor-variation-step-$index'),
-      );
-      await tester.ensureVisible(fieldFinder);
-      await tester.tap(fieldFinder);
-      await tester.pumpAndSettle();
-      final optionFinder = find.text(valueLabels[index]).last;
-      await tester.ensureVisible(optionFinder);
-      await tester.tap(optionFinder);
-      await tester.pumpAndSettle();
-    }
-
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('orders-editor-quantity-field')),
-      quantity,
-    );
-  }
-
-  Future<void> openPrimaryVariationOverlayIfNeeded(WidgetTester tester) async {
-    final overlayFinder = find.byKey(
-      const ValueKey<String>('orders-editor-variation-overlay'),
-    );
-    if (overlayFinder.evaluate().isNotEmpty) {
-      return;
-    }
-
-    final openOverlayFinder = find.byKey(
-      const ValueKey<String>('orders-editor-open-variation-overlay'),
-    );
-    if (openOverlayFinder.evaluate().isNotEmpty) {
-      await tester.tap(openOverlayFinder);
-      await tester.pumpAndSettle();
-      return;
-    }
-
-    final reopenFinder = find.byKey(
-      const ValueKey<String>('orders-editor-open-variation-link'),
-    );
-    if (reopenFinder.evaluate().isNotEmpty) {
-      await tester.tap(reopenFinder);
-      await tester.pumpAndSettle();
-    }
+    final optionFinder = find.textContaining(variationPathText).last;
+    await tester.ensureVisible(optionFinder);
+    await tester.tap(optionFinder);
+    await tester.pumpAndSettle();
   }
 
   testWidgets('app opens into inventory shell', (tester) async {
@@ -2491,7 +2437,7 @@ void main() {
       'PO-42',
     );
 
-    await selectPrimaryVariationPath(tester, quantity: '25');
+    await selectPrimaryVariationPath(tester);
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -2501,46 +2447,34 @@ void main() {
     expect(find.text('ORD-001'), findsOneWidget);
     expect(find.text('Acme Packaging Pvt. Ltd.'), findsOneWidget);
     expect(find.text('PO-42'), findsOneWidget);
-    expect(
-      find.text(
-        'Switch Action Dolly - 1 · 5 Amp 11+1 Brass 1 Way Dolly Without Plating',
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('25 Pieces'), findsOneWidget);
+    expect(find.textContaining('Without Plating'), findsOneWidget);
+    expect(find.text('1 Pieces'), findsOneWidget);
   });
 
-  testWidgets(
-    'orders collapse selected variation into breadcrumbs after add more',
-    (tester) async {
-      await pumpApp(tester, viewSize: const Size(1440, 900));
+  testWidgets('orders keep selected variation path visible after add more', (
+    tester,
+  ) async {
+    await pumpApp(tester, viewSize: const Size(1440, 900));
 
-      await openOrdersScreen(tester);
-      await tester.tap(find.byKey(const Key('orders-new-order-button')));
-      await tester.pumpAndSettle();
+    await openOrdersScreen(tester);
+    await tester.tap(find.byKey(const Key('orders-new-order-button')));
+    await tester.pumpAndSettle();
 
-      await selectPrimaryVariationPath(tester, quantity: '3');
+    await selectPrimaryVariationPath(tester);
 
-      await tester.ensureVisible(find.text('Add More Items'));
-      await tester.tap(find.text('Add More Items'));
-      await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Add More Items'));
+    await tester.tap(find.text('Add More Items'));
+    await tester.pumpAndSettle();
 
-      expect(
-        find.byKey(
-          const ValueKey<String>('orders-editor-variation-breadcrumb'),
-        ),
-        findsOneWidget,
-      );
-      expect(find.text('Selected 6 properties'), findsOneWidget);
-      expect(find.text('Action Dolly Amp: 5 Amp'), findsOneWidget);
-      expect(find.text('Action Patti + Dabbi: 11+1'), findsOneWidget);
-      expect(find.text('Action Dolly Alloy: Brass'), findsOneWidget);
-      expect(
-        find.text('5 Amp 11+1 Brass 1 Way Dolly Without Plating'),
-        findsNothing,
-      );
-    },
-  );
+    expect(
+      find.byKey(const ValueKey<String>('orders-editor-variation-path-field')),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Action Dolly Plating: Without Plating'),
+      findsWidgets,
+    );
+  });
 
   testWidgets('orders hide variation path until a variant item is selected', (
     tester,
@@ -2561,9 +2495,8 @@ void main() {
     await tester.tap(find.text('Switch Action Dolly - 1').last);
     await tester.pumpAndSettle();
 
-    expect(find.text('Variation Path'), findsOneWidget);
     expect(
-      find.byKey(const ValueKey<String>('orders-editor-variation-overlay')),
+      find.byKey(const ValueKey<String>('orders-editor-variation-path-field')),
       findsOneWidget,
     );
   });
@@ -2602,7 +2535,7 @@ void main() {
     },
   );
 
-  testWidgets('orders can quick-create a leaf variation value and save draft', (
+  testWidgets('orders can select a leaf variation value and save draft', (
     tester,
   ) async {
     await pumpApp(tester, viewSize: const Size(1600, 1000));
@@ -2632,26 +2565,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Glue Compound - 1').last);
     await tester.pumpAndSettle();
-    await openPrimaryVariationOverlayIfNeeded(tester);
-
     await tester.tap(
-      find.byKey(const ValueKey<String>('orders-editor-variation-step-0')),
+      find.byKey(const ValueKey<String>('orders-editor-variation-path-field')),
     );
     await tester.pumpAndSettle();
-    await tester.enterText(
-      searchFieldWithHint('Search Cure Speed'),
-      'Slow Cure',
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Create "Slow Cure"'));
+    await tester.tap(find.textContaining('Fast Cure').last);
     await tester.pumpAndSettle();
 
-    expect(find.text('Selected 1 property'), findsOneWidget);
-
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('orders-editor-quantity-field')),
-      '7',
-    );
     await tester.ensureVisible(
       find.byKey(const ValueKey<String>('orders-editor-save-draft')),
     );
@@ -2661,17 +2581,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('ORD-QUICK-LEAF'), findsOneWidget);
-
-    final context = tester.element(find.byType(Scaffold).first);
-    final items = context.read<ItemsProvider>().items;
-    final glueItem = items.where((item) => item.id == 2).first;
-    expect(
-      glueItem.leafVariationNodes.any((node) => node.name == 'Slow Cure'),
-      isTrue,
-    );
+    expect(find.textContaining('Fast Cure'), findsWidgets);
   });
 
-  testWidgets('orders quick-create mid-branch value clones downstream steps', (
+  testWidgets('orders variation path dropdown lists full bottle paths', (
     tester,
   ) async {
     await pumpApp(tester, viewSize: const Size(1600, 1000));
@@ -2688,47 +2601,16 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(
-      find.byKey(const ValueKey<String>('orders-editor-variation-step-0')),
+      find.byKey(const ValueKey<String>('orders-editor-variation-path-field')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('PET').last);
-    await tester.pumpAndSettle();
-
-    await tester.tap(
-      find.byKey(const ValueKey<String>('orders-editor-variation-step-1')),
-    );
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      searchFieldWithHint('Search Bottle Color'),
-      'Purple Mist',
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Create "Purple Mist"'));
-    await tester.pumpAndSettle();
-
-    expect(
-      find.byKey(const ValueKey<String>('orders-editor-variation-step-2')),
-      findsOneWidget,
-    );
-    expect(find.text('Pump Finish'), findsOneWidget);
-
-    final context = tester.element(find.byType(Scaffold).first);
-    final items = context.read<ItemsProvider>().items;
-    final bottleItem = items.where((item) => item.id == 3).first;
-    expect(
-      bottleItem.variationTree.any((node) => node.name == 'Bottle Material'),
-      isTrue,
-    );
-    expect(
-      bottleItem.leafVariationNodes.any(
-        (node) => node.displayName.contains('Purple Mist'),
-      ),
-      isTrue,
-    );
+    expect(find.textContaining('Bottle Material: PET'), findsWidgets);
+    expect(find.textContaining('Bottle Color: Amber'), findsWidgets);
+    expect(find.textContaining('Bottle Material: Glass'), findsWidgets);
   });
 
   testWidgets(
-    'orders variation dropdown does not offer create for exact duplicates',
+    'orders variation path dropdown does not offer inline create actions',
     (tester) async {
       await pumpApp(tester, viewSize: const Size(1600, 1000));
 
@@ -2742,14 +2624,15 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Glue Compound - 1').last);
       await tester.pumpAndSettle();
-      await openPrimaryVariationOverlayIfNeeded(tester);
 
       await tester.tap(
-        find.byKey(const ValueKey<String>('orders-editor-variation-step-0')),
+        find.byKey(
+          const ValueKey<String>('orders-editor-variation-path-field'),
+        ),
       );
       await tester.pumpAndSettle();
       await tester.enterText(
-        searchFieldWithHint('Search Cure Speed'),
+        searchFieldWithHint('Search variation path'),
         'Fast Cure',
       );
       await tester.pumpAndSettle();
@@ -2759,7 +2642,7 @@ void main() {
     },
   );
 
-  testWidgets('orders can reopen selected variation overlay from breadcrumbs', (
+  testWidgets('orders can change selected variation path from dropdown', (
     tester,
   ) async {
     await pumpApp(tester, viewSize: const Size(1440, 900));
@@ -2768,27 +2651,23 @@ void main() {
     await tester.tap(find.byKey(const Key('orders-new-order-button')));
     await tester.pumpAndSettle();
 
-    await selectPrimaryVariationPath(tester, quantity: '3');
+    await selectPrimaryVariationPath(tester);
 
     expect(
-      find.byKey(const ValueKey<String>('orders-editor-variation-breadcrumb')),
+      find.byKey(const ValueKey<String>('orders-editor-variation-path-field')),
       findsOneWidget,
     );
-    expect(find.text('Selected 6 properties'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey<String>('orders-editor-variation-overlay')),
-      findsNothing,
-    );
-    expect(find.text('Action Dolly Amp: 5 Amp'), findsOneWidget);
+    expect(find.textContaining('Without Plating'), findsWidgets);
 
     await tester.tap(
-      find.byKey(const ValueKey<String>('orders-editor-open-variation-link')),
+      find.byKey(const ValueKey<String>('orders-editor-variation-path-field')),
     );
     await tester.pumpAndSettle();
-
+    await tester.tap(find.textContaining('With Plating').last);
+    await tester.pumpAndSettle();
     expect(
-      find.byKey(const ValueKey<String>('orders-editor-variation-overlay')),
-      findsOneWidget,
+      find.textContaining('Action Dolly Plating: With Plating'),
+      findsWidgets,
     );
   });
 
@@ -2816,7 +2695,7 @@ void main() {
       find.byKey(const ValueKey<String>('orders-editor-po-number-field')),
       'PO-SHARED',
     );
-    await selectPrimaryVariationPath(tester, quantity: '11');
+    await selectPrimaryVariationPath(tester);
     await tester.ensureVisible(
       find.byKey(const ValueKey<String>('orders-editor-create-order')),
     );
@@ -3028,7 +2907,7 @@ void main() {
     await pumpApp(tester, viewSize: const Size(1600, 1000));
     await openOrdersScreen(tester);
 
-    Future<void> addOrder(String qty) async {
+    Future<void> addOrder() async {
       await tester.tap(find.byKey(const Key('orders-new-order-button')));
       await tester.pumpAndSettle();
 
@@ -3047,7 +2926,7 @@ void main() {
         find.byKey(const ValueKey<String>('orders-editor-po-number-field')),
         'PO-77',
       );
-      await selectPrimaryVariationPath(tester, quantity: qty);
+      await selectPrimaryVariationPath(tester);
       await tester.ensureVisible(
         find.byKey(const ValueKey<String>('orders-editor-create-order')),
       );
@@ -3057,11 +2936,11 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    await addOrder('10');
-    await addOrder('5');
+    await addOrder();
+    await addOrder();
 
     expect(find.text('ORD-002'), findsOneWidget);
-    expect(find.text('15 Pieces'), findsOneWidget);
+    expect(find.text('2 Pieces'), findsOneWidget);
   });
 
   testWidgets('orders lifecycle can be updated from table row', (tester) async {
@@ -3086,7 +2965,7 @@ void main() {
       find.byKey(const ValueKey<String>('orders-editor-po-number-field')),
       'PO-88',
     );
-    await selectPrimaryVariationPath(tester, quantity: '8');
+    await selectPrimaryVariationPath(tester);
 
     await tester.ensureVisible(
       find.byKey(const ValueKey<String>('orders-editor-create-order')),
@@ -3149,7 +3028,7 @@ void main() {
       find.byKey(const ValueKey<String>('orders-editor-po-number-field')),
       'PO-DRAFT-001',
     );
-    await selectPrimaryVariationPath(tester, quantity: '6');
+    await selectPrimaryVariationPath(tester);
 
     await tester.ensureVisible(
       find.byKey(const ValueKey<String>('orders-editor-save-draft')),
@@ -3202,7 +3081,7 @@ void main() {
     await tester.tap(find.text('No Code Client').last);
     await tester.pumpAndSettle();
 
-    await selectPrimaryVariationPath(tester, quantity: '4');
+    await selectPrimaryVariationPath(tester);
 
     await tester.ensureVisible(
       find.byKey(const ValueKey<String>('orders-editor-create-order')),
