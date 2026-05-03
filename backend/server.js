@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
 const fs = require('fs');
+const http = require('http');
+const https = require('https');
 const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
 
@@ -1430,6 +1432,58 @@ function rowToOrderDto(row) {
   };
 }
 
+function rowToPoDocumentDto(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    fileName: row.file_name || '',
+    contentType: row.content_type || '',
+    sizeBytes: Number(row.size_bytes || 0),
+    sha256: row.sha256 || '',
+    objectKey: row.object_key || '',
+    status: row.status || 'uploaded',
+    createdAt: row.created_at,
+    uploadedAt: row.uploaded_at,
+    linkedAt: row.linked_at || null,
+  };
+}
+
+function rowToOrderActivityDto(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    orderId: row.order_id || 0,
+    activityType: row.activity_type || '',
+    actorUserId: row.actor_user_id || null,
+    actorName: row.actor_name || '',
+    actorRole: row.actor_role || '',
+    source: row.source || '',
+    details: parseJson(row.details_json, null),
+    createdAt: row.created_at,
+  };
+}
+
+function rowToOrderStatusHistoryDto(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    orderId: row.order_id || 0,
+    previousStatus: row.previous_status || null,
+    newStatus: row.new_status || '',
+    changedByUserId: row.changed_by_user_id || null,
+    changedAt: row.changed_at,
+  };
+}
+
 async function rowToItemDto(row) {
   if (!row) {
     return null;
@@ -2087,6 +2141,102 @@ async function initDb() {
       end_date TEXT
     )
   `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS po_documents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      file_name TEXT NOT NULL,
+      content_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL DEFAULT 0,
+      sha256 TEXT NOT NULL UNIQUE,
+      object_key TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'uploaded',
+      created_at TEXT NOT NULL,
+      uploaded_at TEXT
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS po_upload_sessions (
+      id TEXT PRIMARY KEY,
+      file_name TEXT NOT NULL,
+      content_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL DEFAULT 0,
+      sha256 TEXT NOT NULL,
+      object_key TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      completed_at TEXT
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS order_po_documents (
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      document_id INTEGER NOT NULL REFERENCES po_documents(id) ON DELETE CASCADE,
+      linked_at TEXT NOT NULL,
+      PRIMARY KEY (order_id, document_id)
+    )
+  `);
+
+  await run(
+    'CREATE INDEX IF NOT EXISTS idx_order_po_documents_order_id ON order_po_documents(order_id)',
+  );
+  await run(
+    'CREATE INDEX IF NOT EXISTS idx_po_upload_sessions_sha256 ON po_upload_sessions(sha256)',
+  );
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS order_material_requirements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      item_id INTEGER,
+      variation_leaf_node_id INTEGER,
+      material_id INTEGER,
+      material_barcode TEXT,
+      material_name TEXT,
+      required_qty REAL NOT NULL DEFAULT 0,
+      allocated_qty REAL NOT NULL DEFAULT 0,
+      consumed_qty REAL NOT NULL DEFAULT 0,
+      shortage_qty REAL NOT NULL DEFAULT 0,
+      unit_id INTEGER,
+      unit_symbol TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS order_status_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      previous_status TEXT,
+      new_status TEXT NOT NULL,
+      changed_by_user_id INTEGER,
+      changed_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS order_activity_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      activity_type TEXT NOT NULL,
+      actor_user_id INTEGER,
+      actor_name TEXT,
+      actor_role TEXT,
+      source TEXT,
+      details_json TEXT,
+      created_at TEXT NOT NULL
+    )
+  `);
+
+  await run('CREATE INDEX IF NOT EXISTS idx_order_material_requirements_order_id ON order_material_requirements(order_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_order_material_requirements_material_barcode ON order_material_requirements(material_barcode)');
+  await run('CREATE INDEX IF NOT EXISTS idx_order_status_history_order_id_changed_at ON order_status_history(order_id, changed_at)');
+  await run('CREATE INDEX IF NOT EXISTS idx_order_activity_log_order_id_created_at ON order_activity_log(order_id, created_at)');
 
   await run(`
     CREATE TABLE IF NOT EXISTS item_variations (
@@ -3038,6 +3188,404 @@ async function getOrders() {
   return all('SELECT * FROM orders ORDER BY datetime(created_at) DESC, id DESC');
 }
 
+const ALLOWED_PO_CONTENT_TYPES = new Set([
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+]);
+
+function normalizePoFileName(fileName) {
+  const baseName = path.basename(String(fileName || '').trim());
+  return baseName
+    .replace(/[^\w.\- ()]/g, '_')
+    .replace(/_+/g, '_')
+    .slice(0, 160) || 'purchase-order';
+}
+
+function assertValidPoUploadInput({ fileName, contentType, sizeBytes, sha256 }) {
+  const normalizedContentType = String(contentType || '').toLowerCase().trim();
+  const normalizedSize = Number(sizeBytes || 0);
+  const normalizedSha = String(sha256 || '').toLowerCase().trim();
+  const normalizedName = normalizePoFileName(fileName);
+
+  if (!ALLOWED_PO_CONTENT_TYPES.has(normalizedContentType)) {
+    const error = new Error('Only PDF, PNG, JPG, and JPEG purchase order files are allowed.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!Number.isFinite(normalizedSize) || normalizedSize <= 0) {
+    const error = new Error('File size must be greater than zero.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!/^[a-f0-9]{64}$/.test(normalizedSha)) {
+    const error = new Error('A valid SHA-256 file hash is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    fileName: normalizedName,
+    contentType: normalizedContentType,
+    sizeBytes: Math.round(normalizedSize),
+    sha256: normalizedSha,
+  };
+}
+
+function getS3Config() {
+  const endpoint = String(process.env.S3_ENDPOINT || '').replace(/\/+$/, '');
+  return {
+    endpoint,
+    region: process.env.S3_REGION || 'us-east-1',
+    bucket: process.env.S3_BUCKET || '',
+    accessKeyId: process.env.S3_ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || '',
+    forcePathStyle: String(process.env.S3_FORCE_PATH_STYLE || 'true').toLowerCase() !== 'false',
+    publicBaseUrl: String(process.env.S3_PUBLIC_BASE_URL || '').replace(/\/+$/, ''),
+  };
+}
+
+function assertS3Configured() {
+  const config = getS3Config();
+  if (
+    !config.endpoint ||
+    !config.bucket ||
+    !config.accessKeyId ||
+    !config.secretAccessKey
+  ) {
+    const error = new Error('PO upload storage is not configured.');
+    error.statusCode = 503;
+    throw error;
+  }
+  return config;
+}
+
+function hmac(key, value, encoding) {
+  return crypto.createHmac('sha256', key).update(value, 'utf8').digest(encoding);
+}
+
+function sha256Hex(value) {
+  return crypto.createHash('sha256').update(value, 'utf8').digest('hex');
+}
+
+function formatAmzDate(date = new Date()) {
+  return date.toISOString().replace(/[:-]|\.\d{3}/g, '');
+}
+
+function encodeS3PathSegment(value) {
+  return encodeURIComponent(value).replace(/[!'()*]/g, (char) =>
+    `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
+function encodeS3Key(key) {
+  return String(key || '')
+    .split('/')
+    .map(encodeS3PathSegment)
+    .join('/');
+}
+
+function presignS3Url({ method, objectKey, expiresSeconds = 900 }) {
+  const config = assertS3Configured();
+  const endpointUrl = new URL(config.publicBaseUrl || config.endpoint);
+  const encodedKey = encodeS3Key(objectKey);
+  const canonicalUri = config.forcePathStyle
+    ? `/${encodeS3PathSegment(config.bucket)}/${encodedKey}`
+    : `/${encodedKey}`;
+  const host = config.forcePathStyle
+    ? endpointUrl.host
+    : `${config.bucket}.${endpointUrl.host}`;
+  const requestUrl = new URL(`${endpointUrl.protocol}//${host}${canonicalUri}`);
+  const amzDate = formatAmzDate();
+  const dateStamp = amzDate.slice(0, 8);
+  const credentialScope = `${dateStamp}/${config.region}/s3/aws4_request`;
+  const signedHeaders = 'host';
+  const queryParams = {
+    'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
+    'X-Amz-Credential': `${config.accessKeyId}/${credentialScope}`,
+    'X-Amz-Date': amzDate,
+    'X-Amz-Expires': String(expiresSeconds),
+    'X-Amz-SignedHeaders': signedHeaders,
+  };
+  const canonicalQuery = Object.entries(queryParams)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join('&');
+  const canonicalRequest = [
+    method,
+    canonicalUri,
+    canonicalQuery,
+    `host:${host}\n`,
+    signedHeaders,
+    'UNSIGNED-PAYLOAD',
+  ].join('\n');
+  const stringToSign = [
+    'AWS4-HMAC-SHA256',
+    amzDate,
+    credentialScope,
+    sha256Hex(canonicalRequest),
+  ].join('\n');
+  const signingKey = hmac(
+    hmac(
+      hmac(hmac(`AWS4${config.secretAccessKey}`, dateStamp), config.region),
+      's3',
+    ),
+    'aws4_request',
+  );
+  const signature = hmac(signingKey, stringToSign, 'hex');
+  for (const [key, value] of Object.entries(queryParams)) {
+    requestUrl.searchParams.set(key, value);
+  }
+  requestUrl.searchParams.set('X-Amz-Signature', signature);
+  return requestUrl.toString();
+}
+
+function requestHead(url) {
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(url);
+    const transport = parsedUrl.protocol === 'http:' ? http : https;
+    const request = transport.request(
+      parsedUrl,
+      { method: 'HEAD' },
+      (response) => {
+        response.resume();
+        resolve(response.statusCode || 0);
+      },
+    );
+    request.setTimeout(10000, () => {
+      request.destroy(new Error('Timed out while verifying uploaded PO object.'));
+    });
+    request.on('error', reject);
+    request.end();
+  });
+}
+
+async function assertS3ObjectExists(objectKey) {
+  if (String(process.env.S3_SKIP_OBJECT_VERIFY || '').toLowerCase() === 'true') {
+    return;
+  }
+  const statusCode = await requestHead(
+    presignS3Url({ method: 'HEAD', objectKey, expiresSeconds: 60 }),
+  );
+  if (statusCode < 200 || statusCode >= 300) {
+    const error = new Error('Uploaded PO object could not be verified.');
+    error.statusCode = 400;
+    throw error;
+  }
+}
+
+async function createPoUploadIntent(input) {
+  const normalized = assertValidPoUploadInput(input || {});
+  const existing = await get(
+    "SELECT * FROM po_documents WHERE sha256 = ? AND status = 'uploaded'",
+    [normalized.sha256],
+  );
+  if (existing) {
+    return {
+      alreadyUploaded: true,
+      document: rowToPoDocumentDto(existing),
+      upload: null,
+    };
+  }
+
+  const objectKey = `po-documents/${normalized.sha256}/${normalizePoFileName(normalized.fileName)}`;
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
+  const uploadSessionId = `po-upload-${now.getTime()}-${crypto
+    .randomBytes(8)
+    .toString('hex')}`;
+  await run(
+    `
+    INSERT INTO po_upload_sessions (
+      id, file_name, content_type, size_bytes, sha256, object_key, status, expires_at, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+    `,
+    [
+      uploadSessionId,
+      normalized.fileName,
+      normalized.contentType,
+      normalized.sizeBytes,
+      normalized.sha256,
+      objectKey,
+      expiresAt,
+      now.toISOString(),
+    ],
+  );
+
+  return {
+    alreadyUploaded: false,
+    document: null,
+    upload: {
+      uploadSessionId,
+      objectKey,
+      uploadUrl: presignS3Url({
+        method: 'PUT',
+        objectKey,
+        expiresSeconds: 900,
+      }),
+      expiresAt,
+      headers: {
+        'Content-Type': normalized.contentType,
+      },
+    },
+  };
+}
+
+async function completePoUpload({ uploadSessionId, objectKey }) {
+  const session = await get('SELECT * FROM po_upload_sessions WHERE id = ?', [
+    uploadSessionId,
+  ]);
+  if (!session || session.object_key !== objectKey) {
+    const error = new Error('Upload session not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  if (new Date(session.expires_at).getTime() < Date.now()) {
+    const error = new Error('Upload session expired.');
+    error.statusCode = 410;
+    throw error;
+  }
+  await assertS3ObjectExists(session.object_key);
+
+  const now = new Date().toISOString();
+  await run(
+    `
+    INSERT OR IGNORE INTO po_documents (
+      file_name, content_type, size_bytes, sha256, object_key, status, created_at, uploaded_at
+    )
+    VALUES (?, ?, ?, ?, ?, 'uploaded', ?, ?)
+    `,
+    [
+      session.file_name,
+      session.content_type,
+      Number(session.size_bytes || 0),
+      session.sha256,
+      session.object_key,
+      session.created_at || now,
+      now,
+    ],
+  );
+  await run(
+    "UPDATE po_upload_sessions SET status = 'completed', completed_at = ? WHERE id = ?",
+    [now, uploadSessionId],
+  );
+  const document = await get('SELECT * FROM po_documents WHERE sha256 = ?', [
+    session.sha256,
+  ]);
+  return rowToPoDocumentDto(document);
+}
+
+async function linkPoDocumentsToOrder(orderId, documentIds = []) {
+  const uniqueIds = [...new Set((Array.isArray(documentIds) ? documentIds : []).map(Number))]
+    .filter((id) => Number.isInteger(id) && id > 0);
+  if (uniqueIds.length === 0) {
+    return { linked: [], newlyLinkedIds: [] };
+  }
+  const now = new Date().toISOString();
+  const linked = [];
+  const newlyLinkedIds = [];
+  for (const documentId of uniqueIds) {
+    const document = await get(
+      "SELECT * FROM po_documents WHERE id = ? AND status = 'uploaded'",
+      [documentId],
+    );
+    if (!document) {
+      const error = new Error('One or more PO documents were not uploaded.');
+      error.statusCode = 400;
+      throw error;
+    }
+    const result = await run(
+      'INSERT OR IGNORE INTO order_po_documents (order_id, document_id, linked_at) VALUES (?, ?, ?)',
+      [orderId, documentId, now],
+    );
+    if (result.changes > 0) {
+      newlyLinkedIds.push(documentId);
+    }
+    linked.push(rowToPoDocumentDto(document));
+  }
+  return { linked, newlyLinkedIds };
+}
+
+async function assertPoDocumentsUploaded(documentIds = []) {
+  const uniqueIds = [...new Set((Array.isArray(documentIds) ? documentIds : []).map(Number))]
+    .filter((id) => Number.isInteger(id) && id > 0);
+  if (uniqueIds.length === 0) {
+    return;
+  }
+  for (const documentId of uniqueIds) {
+    const document = await get(
+      "SELECT id FROM po_documents WHERE id = ? AND status = 'uploaded'",
+      [documentId],
+    );
+    if (!document) {
+      const error = new Error('One or more PO documents were not uploaded.');
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+}
+
+async function getPoDocumentsForOrder(orderId) {
+  const rows = await all(
+    `
+    SELECT d.*, od.linked_at
+    FROM po_documents d
+    INNER JOIN order_po_documents od ON od.document_id = d.id
+    WHERE od.order_id = ?
+    ORDER BY datetime(od.linked_at) DESC, d.id DESC
+    `,
+    [orderId],
+  );
+  return rows.map(rowToPoDocumentDto);
+}
+
+async function createPoDocumentReadUrl(documentId) {
+  const document = await get(
+    "SELECT * FROM po_documents WHERE id = ? AND status = 'uploaded'",
+    [documentId],
+  );
+  if (!document) {
+    const error = new Error('PO document not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  return {
+    document: rowToPoDocumentDto(document),
+    readUrl: presignS3Url({
+      method: 'GET',
+      objectKey: document.object_key,
+      expiresSeconds: 300,
+    }),
+    expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+  };
+}
+
+function normalizeMaterialRequirementNumber(value, fieldName) {
+  if (value == null || value === '') {
+    return 0;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    const error = new Error(`Invalid material requirement ${fieldName}.`);
+    error.statusCode = 400;
+    throw error;
+  }
+  return parsed;
+}
+
+function normalizeOptionalDate(value, fieldName) {
+  if (value == null || value === '') {
+    return null;
+  }
+  if (Number.isNaN(Date.parse(value))) {
+    const error = new Error(`Invalid ${fieldName}.`);
+    error.statusCode = 400;
+    throw error;
+  }
+  return value;
+}
+
 async function saveOrder({
   orderNo,
   clientId,
@@ -3053,12 +3601,17 @@ async function saveOrder({
   status = 'notStarted',
   startDate = null,
   endDate = null,
+  poDocumentIds = [],
+  materialRequirements = [],
+  actor = null,
 }) {
   const trimmedOrderNo = String(orderNo || '').trim();
   const normalizedClientId = Number(clientId);
   const normalizedItemId = Number(itemId);
   const normalizedLeafId = Number(variationLeafNodeId || 0);
   const normalizedQuantity = Number(quantity || 0);
+  const normalizedStartDate = normalizeOptionalDate(startDate, 'start date');
+  const normalizedEndDate = normalizeOptionalDate(endDate, 'end date');
   const trimmedPoNumber = String(poNumber || '').trim();
   const trimmedClientName = String(clientName || '').trim();
   const trimmedClientCode = String(clientCode || '').trim();
@@ -3088,73 +3641,152 @@ async function saveOrder({
     error.statusCode = 400;
     throw error;
   }
+  await assertPoDocumentsUploaded(poDocumentIds);
 
   const now = new Date().toISOString();
-  const existing = await get(
-    `
-    SELECT * FROM orders
-    WHERE LOWER(TRIM(order_no)) = LOWER(TRIM(?))
-      AND client_id = ?
-      AND item_id = ?
-      AND variation_leaf_node_id = ?
-      AND LOWER(TRIM(po_number)) = LOWER(TRIM(?))
-    `,
-    [trimmedOrderNo, normalizedClientId, normalizedItemId, normalizedLeafId, trimmedPoNumber],
-  );
-
-  if (existing) {
-    await run(
+  await run('BEGIN TRANSACTION');
+  try {
+    const existing = await get(
       `
-      UPDATE orders
-      SET quantity = quantity + ?,
-          client_name = ?,
-          client_code = ?,
-          item_name = ?,
-          variation_path_label = ?,
-          variation_path_node_ids_json = ?
-      WHERE id = ?
+      SELECT * FROM orders
+      WHERE LOWER(TRIM(order_no)) = LOWER(TRIM(?))
+        AND client_id = ?
+        AND item_id = ?
+        AND variation_leaf_node_id = ?
+        AND LOWER(TRIM(po_number)) = LOWER(TRIM(?))
       `,
-      [
-        normalizedQuantity,
-        trimmedClientName,
-        trimmedClientCode,
-        trimmedItemName,
-        trimmedVariationPathLabel,
-        JSON.stringify(Array.isArray(variationPathNodeIds) ? variationPathNodeIds : []),
-        existing.id,
-      ],
+      [trimmedOrderNo, normalizedClientId, normalizedItemId, normalizedLeafId, trimmedPoNumber],
     );
-    return getOrderRowById(existing.id);
-  }
 
-  const result = await run(
-    `
-    INSERT INTO orders (
-      order_no, client_id, client_name, po_number, client_code, item_id, item_name,
-      variation_leaf_node_id, variation_path_label, variation_path_node_ids_json,
-      quantity, status, created_at, start_date, end_date
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-    [
-      trimmedOrderNo,
-      normalizedClientId,
-      trimmedClientName,
-      trimmedPoNumber,
-      trimmedClientCode,
-      normalizedItemId,
-      trimmedItemName,
-      normalizedLeafId,
-      trimmedVariationPathLabel,
-      JSON.stringify(Array.isArray(variationPathNodeIds) ? variationPathNodeIds : []),
-      Math.round(normalizedQuantity),
-      normalizedStatus,
-      now,
-      startDate || null,
-      endDate || null,
-    ],
-  );
-  return getOrderRowById(result.lastID);
+    let orderId;
+    if (existing) {
+      await run(
+        `
+        UPDATE orders
+        SET quantity = quantity + ?,
+            client_name = ?,
+            client_code = ?,
+            item_name = ?,
+            variation_path_label = ?,
+            variation_path_node_ids_json = ?
+        WHERE id = ?
+        `,
+        [
+          normalizedQuantity,
+          trimmedClientName,
+          trimmedClientCode,
+          trimmedItemName,
+          trimmedVariationPathLabel,
+          JSON.stringify(Array.isArray(variationPathNodeIds) ? variationPathNodeIds : []),
+          existing.id,
+        ],
+      );
+      orderId = existing.id;
+    } else {
+      const result = await run(
+        `
+        INSERT INTO orders (
+          order_no, client_id, client_name, po_number, client_code, item_id, item_name,
+          variation_leaf_node_id, variation_path_label, variation_path_node_ids_json,
+          quantity, status, created_at, start_date, end_date
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        [
+          trimmedOrderNo,
+          normalizedClientId,
+          trimmedClientName,
+          trimmedPoNumber,
+          trimmedClientCode,
+          normalizedItemId,
+          trimmedItemName,
+          normalizedLeafId,
+          trimmedVariationPathLabel,
+          JSON.stringify(Array.isArray(variationPathNodeIds) ? variationPathNodeIds : []),
+          Math.round(normalizedQuantity),
+          normalizedStatus,
+          now,
+          normalizedStartDate,
+          normalizedEndDate,
+        ],
+      );
+      orderId = result.lastID;
+    }
+
+    const { newlyLinkedIds } = await linkPoDocumentsToOrder(orderId, poDocumentIds);
+
+    await run('DELETE FROM order_material_requirements WHERE order_id = ?', [orderId]);
+    for (const req of (Array.isArray(materialRequirements) ? materialRequirements : [])) {
+      await run(`
+        INSERT INTO order_material_requirements (
+          order_id, item_id, variation_leaf_node_id, material_id, material_barcode,
+          material_name, required_qty, allocated_qty, consumed_qty, shortage_qty,
+          unit_id, unit_symbol, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        orderId,
+        req.itemId || null,
+        req.variationLeafNodeId || null,
+        req.materialId || null,
+        String(req.materialBarcode || '').trim(),
+        String(req.materialName || '').trim(),
+        normalizeMaterialRequirementNumber(req.requiredQty, 'required quantity'),
+        normalizeMaterialRequirementNumber(req.allocatedQty, 'allocated quantity'),
+        normalizeMaterialRequirementNumber(req.consumedQty, 'consumed quantity'),
+        normalizeMaterialRequirementNumber(req.shortageQty, 'shortage quantity'),
+        req.unitId || null,
+        String(req.unitSymbol || '').trim(),
+        req.status || 'pending',
+        now,
+        now
+      ]);
+    }
+
+    const activityType = existing ? 'order_updated' : 'order_created';
+    await run(`
+      INSERT INTO order_activity_log (
+        order_id, activity_type, actor_user_id, actor_name, actor_role, source, details_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      orderId,
+      activityType,
+      actor?.id || null,
+      actor?.name || 'System',
+      actor?.role || 'system',
+      actor?.source || 'api',
+      JSON.stringify({
+        status: normalizedStatus,
+        quantity: normalizedQuantity,
+        newlyLinkedDocs: newlyLinkedIds.length,
+        requirementsCount: Array.isArray(materialRequirements) ? materialRequirements.length : 0
+      }),
+      now
+    ]);
+
+    if (newlyLinkedIds.length > 0) {
+      await run(`
+        INSERT INTO order_activity_log (
+          order_id, activity_type, actor_user_id, actor_name, actor_role, source, details_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        orderId,
+        'po_documents_linked',
+        actor?.id || null,
+        actor?.name || 'System',
+        actor?.role || 'system',
+        actor?.source || 'api',
+        JSON.stringify({ documentIds: newlyLinkedIds }),
+        now
+      ]);
+    }
+
+    const saved = await getOrderRowById(orderId);
+    await run('COMMIT');
+    return saved;
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
 }
 
 async function updateOrderLifecycle({
@@ -3162,6 +3794,7 @@ async function updateOrderLifecycle({
   status = 'notStarted',
   startDate = null,
   endDate = null,
+  actor = null,
 }) {
   const existing = await getOrderRowById(id);
   if (!existing) {
@@ -3177,11 +3810,84 @@ async function updateOrderLifecycle({
     'delayed',
   ]);
   const normalizedStatus = allowedStatuses.has(status) ? status : 'notStarted';
-  await run(
-    'UPDATE orders SET status = ?, start_date = ?, end_date = ? WHERE id = ?',
-    [normalizedStatus, startDate || null, endDate || null, id],
+  const normalizedStartDate = normalizeOptionalDate(startDate, 'start date');
+  const normalizedEndDate = normalizeOptionalDate(endDate, 'end date');
+  const now = new Date().toISOString();
+
+  await run('BEGIN TRANSACTION');
+  try {
+    await run(
+      'UPDATE orders SET status = ?, start_date = ?, end_date = ? WHERE id = ?',
+      [normalizedStatus, normalizedStartDate, normalizedEndDate, id],
+    );
+
+    if (existing.status !== normalizedStatus) {
+      await run(`
+        INSERT INTO order_status_history (
+          order_id, previous_status, new_status, changed_by_user_id, changed_at
+        ) VALUES (?, ?, ?, ?, ?)
+      `, [
+        id,
+        existing.status,
+        normalizedStatus,
+        actor?.id || null,
+        now
+      ]);
+    }
+
+    await run(`
+      INSERT INTO order_activity_log (
+        order_id, activity_type, actor_user_id, actor_name, actor_role, source, details_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      id,
+      'lifecycle_updated',
+      actor?.id || null,
+      actor?.name || 'System',
+      actor?.role || 'system',
+      actor?.source || 'api',
+      JSON.stringify({
+        previousStatus: existing.status,
+        newStatus: normalizedStatus,
+        startDate: normalizedStartDate,
+        endDate: normalizedEndDate
+      }),
+      now
+    ]);
+
+    const updated = await getOrderRowById(id);
+    await run('COMMIT');
+    return updated;
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
+}
+
+async function getOrderActivity(orderId) {
+  const order = await getOrderRowById(orderId);
+  if (!order) {
+    const error = new Error('Order not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  return all(
+    'SELECT * FROM order_activity_log WHERE order_id = ? ORDER BY datetime(created_at) ASC, id ASC',
+    [orderId],
   );
-  return getOrderRowById(id);
+}
+
+async function getOrderStatusHistory(orderId) {
+  const order = await getOrderRowById(orderId);
+  if (!order) {
+    const error = new Error('Order not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  return all(
+    'SELECT * FROM order_status_history WHERE order_id = ? ORDER BY datetime(changed_at) ASC, id ASC',
+    [orderId],
+  );
 }
 
 async function findGroupDuplicate({ name, parentGroupId = null, excludeId = null }) {
@@ -7205,7 +7911,13 @@ app.get('/api/orders', requirePermission('config.read'), async (req, res) => {
 
 app.post('/api/orders', requirePermission('config.write'), async (req, res) => {
   try {
-    const order = await saveOrder(req.body || {});
+    const actor = {
+      id: req.user?.id || null,
+      name: req.user?.name || 'System',
+      role: req.user?.role || 'system',
+      source: 'api'
+    };
+    const order = await saveOrder({ ...(req.body || {}), actor });
     res.status(201).json({ success: true, order: rowToOrderDto(order), error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({
@@ -7216,11 +7928,156 @@ app.post('/api/orders', requirePermission('config.write'), async (req, res) => {
   }
 });
 
+app.post('/api/order-po-uploads/intent', requirePermission('config.write'), async (req, res) => {
+  try {
+    const intent = await createPoUploadIntent(req.body || {});
+    res.status(intent.alreadyUploaded ? 200 : 201).json({
+      success: true,
+      intent,
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      intent: null,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/order-po-uploads/complete', requirePermission('config.write'), async (req, res) => {
+  try {
+    const document = await completePoUpload(req.body || {});
+    res.json({ success: true, document, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      document: null,
+      error: error.message,
+    });
+  }
+});
+
+app.get('/api/orders/:id/po-documents', requirePermission('config.read'), async (req, res) => {
+  try {
+    const documents = await getPoDocumentsForOrder(Number(req.params.id));
+    res.json({ success: true, documents, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      documents: [],
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/orders/:id/po-documents', requirePermission('config.write'), async (req, res) => {
+  try {
+    const orderId = Number(req.params.id);
+    const { newlyLinkedIds } = await linkPoDocumentsToOrder(orderId, req.body?.documentIds || []);
+    if (newlyLinkedIds.length > 0) {
+      const actor = {
+        id: req.user?.id || null,
+        name: req.user?.name || 'System',
+        role: req.user?.role || 'system',
+        source: 'api'
+      };
+      await run(`
+        INSERT INTO order_activity_log (
+          order_id, activity_type, actor_user_id, actor_name, actor_role, source, details_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        orderId,
+        'po_documents_linked',
+        actor.id,
+        actor.name,
+        actor.role,
+        actor.source,
+        JSON.stringify({ documentIds: newlyLinkedIds }),
+        new Date().toISOString()
+      ]);
+    }
+    const documents = await getPoDocumentsForOrder(orderId);
+    res.json({ success: true, documents, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      documents: [],
+      error: error.message,
+    });
+  }
+});
+
+app.get('/api/orders/:id/material-requirements', requirePermission('config.read'), async (req, res) => {
+  try {
+    const requirements = await all(
+      'SELECT * FROM order_material_requirements WHERE order_id = ? ORDER BY id ASC',
+      [Number(req.params.id)]
+    );
+    res.json({ success: true, requirements, error: null });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      requirements: [],
+      error: error.message,
+    });
+  }
+});
+
+app.get('/api/orders/:id/activity', requirePermission('config.read'), async (req, res) => {
+  try {
+    const orderId = Number(req.params.id);
+    const rows = await getOrderActivity(orderId);
+    res.json({ success: true, activities: rows.map(rowToOrderActivityDto), error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      activities: [],
+      error: error.message,
+    });
+  }
+});
+
+app.get('/api/orders/:id/status-history', requirePermission('config.read'), async (req, res) => {
+  try {
+    const orderId = Number(req.params.id);
+    const rows = await getOrderStatusHistory(orderId);
+    res.json({ success: true, history: rows.map(rowToOrderStatusHistoryDto), error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      history: [],
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/order-po-documents/:id/read-url', requirePermission('config.read'), async (req, res) => {
+  try {
+    const result = await createPoDocumentReadUrl(Number(req.params.id));
+    res.json({ success: true, ...result, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      document: null,
+      readUrl: null,
+      error: error.message,
+    });
+  }
+});
+
 app.patch('/api/orders/:id/lifecycle', requirePermission('config.write'), async (req, res) => {
   try {
+    const actor = {
+      id: req.user?.id || null,
+      name: req.user?.name || 'System',
+      role: req.user?.role || 'system',
+      source: 'api'
+    };
     const order = await updateOrderLifecycle({
       ...(req.body || {}),
       id: Number(req.params.id),
+      actor
     });
     res.json({ success: true, order: rowToOrderDto(order), error: null });
   } catch (error) {
@@ -8056,10 +8913,17 @@ module.exports = {
   saveClient,
   saveItem,
   saveOrder,
+  createPoUploadIntent,
+  completePoUpload,
+  linkPoDocumentsToOrder,
+  getPoDocumentsForOrder,
+  createPoDocumentReadUrl,
   ensureMockOrdersPresent,
   ensureDemoDataset,
   resetAndSeedDemoData,
   updateOrderLifecycle,
+  getOrderActivity,
+  getOrderStatusHistory,
   getOrders,
   getUnitsWithUsage,
   getGroupsWithUsage,
@@ -8071,5 +8935,6 @@ module.exports = {
   updateMaterialGroupConfiguration,
   rowToClientDto,
   rowToOrderDto,
+  rowToPoDocumentDto,
   rowToItemDto,
 };

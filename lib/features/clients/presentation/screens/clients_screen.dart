@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/widgets/app_button.dart';
-import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_section_title.dart';
+import '../../../../core/widgets/soft_master_data.dart';
+import '../../../../core/widgets/soft_primitives.dart';
 import '../../domain/client_definition.dart';
 import '../../domain/client_inputs.dart';
 import '../providers/clients_provider.dart';
@@ -20,44 +21,32 @@ class ClientsScreen extends StatelessWidget {
           return const Center(child: CircularProgressIndicator());
         }
 
-        return Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              AppSectionTitle(
-                title: 'Clients',
-                subtitle:
-                    'Manage client master data for sales flows, billing details, and downstream transaction forms.',
-                trailing: AppButton(
-                  label: 'Add Client',
-                  icon: Icons.add,
-                  isLoading: clients.isSaving,
-                  onPressed: () => _openClientEditor(context),
-                ),
-              ),
-              const SizedBox(height: 20),
-              _ClientsToolbar(),
-              if (clients.errorMessage != null) ...[
-                const SizedBox(height: 12),
-                _ClientsMessageBanner(
-                  message: clients.errorMessage!,
-                  isError: true,
-                ),
-              ],
-              const SizedBox(height: 20),
-              Expanded(
-                child: clients.filteredClients.isEmpty
-                    ? const AppEmptyState(
-                        title: 'No clients found',
-                        message:
-                            'Add your first client to keep names, GST numbers, and addresses consistent across the system.',
-                        icon: Icons.groups_outlined,
-                      )
-                    : _ClientsTable(clients: clients.filteredClients),
-              ),
-            ],
+        return SoftMasterDataPage(
+          title: 'Clients',
+          subtitle:
+              'Manage client master data for sales flows, billing details, and downstream transaction forms.',
+          action: AppButton(
+            label: 'Add Client',
+            icon: Icons.add,
+            isLoading: clients.isSaving,
+            onPressed: () => _openClientEditor(context),
           ),
+          toolbar: const _ClientsToolbar(),
+          messages: [
+            if (clients.errorMessage != null)
+              _ClientsMessageBanner(
+                message: clients.errorMessage!,
+                isError: true,
+              ),
+          ],
+          body: clients.filteredClients.isEmpty
+              ? const AppEmptyState(
+                  title: 'No clients found',
+                  message:
+                      'Add your first client to keep names, GST numbers, and addresses consistent across the system.',
+                  icon: Icons.groups_outlined,
+                )
+              : _ClientsTable(clients: clients.filteredClients),
         );
       },
     );
@@ -104,55 +93,36 @@ class ClientsScreen extends StatelessWidget {
 }
 
 class _ClientsToolbar extends StatelessWidget {
+  const _ClientsToolbar();
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<ClientsProvider>();
     final isDesktop = MediaQuery.of(context).size.width >= 900;
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      crossAxisAlignment: WrapCrossAlignment.center,
+    return SoftMasterToolbar(
       children: [
         if (!isDesktop)
-          SizedBox(
-            width: 320,
-            child: TextField(
-              onChanged: provider.setSearchQuery,
-              decoration: InputDecoration(
-                hintText: 'Search clients, alias, GST, or address',
-                prefixIcon: const Icon(Icons.search),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
-                ),
-              ),
-            ),
+          SoftMasterSearchField(
+            hintText: 'Search clients, alias, GST, or address',
+            onChanged: provider.setSearchQuery,
           ),
-        SegmentedButton<ClientStatusFilter>(
-          segments: const [
-            ButtonSegment<ClientStatusFilter>(
+        SoftSegmentedFilter<ClientStatusFilter>(
+          selected: provider.statusFilter,
+          onChanged: provider.setStatusFilter,
+          options: const [
+            SoftSegmentOption<ClientStatusFilter>(
               value: ClientStatusFilter.active,
-              label: Text('Active'),
+              label: 'Active',
             ),
-            ButtonSegment<ClientStatusFilter>(
+            SoftSegmentOption<ClientStatusFilter>(
               value: ClientStatusFilter.archived,
-              label: Text('Archived'),
+              label: 'Archived',
             ),
-            ButtonSegment<ClientStatusFilter>(
+            SoftSegmentOption<ClientStatusFilter>(
               value: ClientStatusFilter.all,
-              label: Text('All'),
+              label: 'All',
             ),
           ],
-          selected: {provider.statusFilter},
-          onSelectionChanged: (selection) {
-            provider.setStatusFilter(selection.first);
-          },
         ),
       ],
     );
@@ -166,54 +136,18 @@ class _ClientsTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
-      padding: EdgeInsets.zero,
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: Color(0xFFE5E7F0))),
-            ),
-            child: const Row(
-              children: [
-                Expanded(flex: 2, child: _HeaderText('Name')),
-                Expanded(flex: 2, child: _HeaderText('Alias')),
-                Expanded(flex: 2, child: _HeaderText('GST No.')),
-                Expanded(flex: 3, child: _HeaderText('Address')),
-                Expanded(flex: 1, child: _HeaderText('Status')),
-                Expanded(flex: 2, child: _HeaderText('Actions')),
-              ],
-            ),
-          ),
-          Expanded(
-            child: ListView.separated(
-              itemCount: clients.length,
-              separatorBuilder: (context, index) =>
-                  const Divider(height: 1, color: Color(0xFFF1F2F7)),
-              itemBuilder: (context, index) =>
-                  _ClientRow(client: clients[index]),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HeaderText extends StatelessWidget {
-  const _HeaderText(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      label,
-      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-        color: const Color(0xFF6B7280),
-        fontWeight: FontWeight.w700,
-      ),
+    return SoftMasterTable(
+      minWidth: 1080,
+      columns: const [
+        SoftTableColumn('Name', flex: 2),
+        SoftTableColumn('Alias', flex: 2),
+        SoftTableColumn('GST No.', flex: 2),
+        SoftTableColumn('Address', flex: 3),
+        SoftTableColumn('Status', flex: 1),
+        SoftTableColumn('Actions', flex: 2),
+      ],
+      itemCount: clients.length,
+      rowBuilder: (context, index) => _ClientRow(client: clients[index]),
     );
   }
 }
@@ -226,126 +160,70 @@ class _ClientRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<ClientsProvider>();
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 2,
-            child: Text(
-              client.name,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Text(client.alias.isEmpty ? '—' : client.alias),
-          ),
-          Expanded(
-            flex: 2,
-            child: Text(client.gstNumber.isEmpty ? '—' : client.gstNumber),
-          ),
-          Expanded(
-            flex: 3,
-            child: Text(
-              client.address.isEmpty ? '—' : client.address,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          Expanded(
-            flex: 1,
-            child: _StatusChip(
-              label: client.isArchived ? 'Archived' : 'Active',
-              color: client.isArchived
-                  ? const Color(0xFF9CA3AF)
-                  : const Color(0xFF0F766E),
-              background: client.isArchived
-                  ? const Color(0xFFF3F4F6)
-                  : const Color(0xFFECFDF5),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _ActionLink(
-                  label: 'Edit',
-                  onTap: () =>
-                      ClientsScreen.openEditor(context, client: client),
-                ),
-                _ActionLink(
-                  label: client.isArchived ? 'Restore' : 'Archive',
-                  onTap: provider.isSaving
-                      ? null
-                      : () {
-                          if (client.isArchived) {
-                            provider.restoreClient(client.id);
-                          } else {
-                            provider.archiveClient(client.id);
-                          }
-                        },
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({
-    required this.label,
-    required this.color,
-    required this.background,
-  });
-
-  final String label;
-  final Color color;
-  final Color background;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: color,
-          fontWeight: FontWeight.w700,
+    return SoftMasterRow(
+      children: [
+        Expanded(
+          flex: 2,
+          child: SoftInlineText(client.name, weight: FontWeight.w700),
         ),
-      ),
-    );
-  }
-}
-
-class _ActionLink extends StatelessWidget {
-  const _ActionLink({required this.label, this.onTap});
-
-  final String label;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextButton(
-      onPressed: onTap,
-      style: TextButton.styleFrom(
-        foregroundColor: const Color(0xFF6C63FF),
-        padding: EdgeInsets.zero,
-        minimumSize: Size.zero,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
-      child: Text(label),
+        Expanded(
+          flex: 2,
+          child: SoftInlineText(client.alias.isEmpty ? '—' : client.alias),
+        ),
+        Expanded(
+          flex: 2,
+          child: SoftInlineText(
+            client.gstNumber.isEmpty ? '—' : client.gstNumber,
+          ),
+        ),
+        Expanded(
+          flex: 3,
+          child: SoftInlineText(
+            client.address.isEmpty ? '—' : client.address,
+            maxLines: 2,
+          ),
+        ),
+        Expanded(
+          flex: 1,
+          child: SoftStatusPill(
+            label: client.isArchived ? 'Archived' : 'Active',
+            background: client.isArchived
+                ? const Color(0xFFF3F4F6)
+                : const Color(0xFFECFDF5),
+            textColor: client.isArchived
+                ? const Color(0xFF6B7280)
+                : const Color(0xFF0F766E),
+            borderColor: client.isArchived
+                ? const Color(0xFFE5E7EB)
+                : const Color(0xFFBFEAD8),
+          ),
+        ),
+        Expanded(
+          flex: 2,
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              SoftActionLink(
+                label: 'Edit',
+                onTap: () => ClientsScreen.openEditor(context, client: client),
+              ),
+              SoftActionLink(
+                label: client.isArchived ? 'Restore' : 'Archive',
+                onTap: provider.isSaving
+                    ? null
+                    : () {
+                        if (client.isArchived) {
+                          provider.restoreClient(client.id);
+                        } else {
+                          provider.archiveClient(client.id);
+                        }
+                      },
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

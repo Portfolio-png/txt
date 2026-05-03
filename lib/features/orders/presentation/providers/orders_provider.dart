@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../domain/order_entry.dart';
+import '../../domain/order_history.dart';
 import '../../domain/order_inputs.dart';
+import '../../domain/po_document.dart';
 import '../../data/repositories/order_repository.dart';
 
 class OrdersProvider extends ChangeNotifier {
@@ -81,6 +83,34 @@ class OrdersProvider extends ChangeNotifier {
     UpdateOrderLifecycleInput input,
   ) async {
     return _save(() => _repository.updateOrderLifecycle(input));
+  }
+
+  Future<PoUploadIntent> createPoUploadIntent(PoUploadIntentInput input) async {
+    return _repository.createPoUploadIntent(input);
+  }
+
+  Future<PoDocumentEntry> completePoUpload(CompletePoUploadInput input) async {
+    return _repository.completePoUpload(input);
+  }
+
+  Future<List<PoDocumentEntry>> getPoDocuments(int orderId) {
+    return _repository.getPoDocuments(orderId);
+  }
+
+  Future<List<OrderActivityEntry>> getOrderActivity(int orderId) {
+    return _repository.getOrderActivity(orderId);
+  }
+
+  Future<List<OrderStatusHistoryEntry>> getOrderStatusHistory(int orderId) {
+    return _repository.getOrderStatusHistory(orderId);
+  }
+
+  Future<void> linkPoDocuments(int orderId, List<int> documentIds) {
+    return _repository.linkPoDocuments(orderId, documentIds);
+  }
+
+  Future<Uri> createPoDocumentReadUrl(int documentId) {
+    return _repository.createPoDocumentReadUrl(documentId);
   }
 
   Future<OrderEntry?> _save(Future<OrderEntry> Function() action) async {

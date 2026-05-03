@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_selector/file_selector.dart';
+import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:math' as math;
 
 import '../../../../core/theme/soft_erp_theme.dart';
@@ -10,11 +13,15 @@ import '../../../../core/widgets/page_container.dart';
 import '../../../../core/widgets/soft_primitives.dart';
 import '../../../clients/domain/client_definition.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
+import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/screens/items_screen.dart';
 import '../../../items/presentation/providers/items_provider.dart';
+import '../../data/po_document_cache.dart';
 import '../../domain/order_entry.dart';
+import '../../domain/order_history.dart';
 import '../../domain/order_inputs.dart';
+import '../../domain/po_document.dart';
 import '../providers/orders_provider.dart';
 
 Map<ShortcutActivator, VoidCallback> _submitShortcutBindings(
@@ -24,6 +31,16 @@ Map<ShortcutActivator, VoidCallback> _submitShortcutBindings(
     const SingleActivator(LogicalKeyboardKey.enter, control: true): onSubmit,
     const SingleActivator(LogicalKeyboardKey.enter, meta: true): onSubmit,
   };
+}
+
+String _formatFileSize(int bytes) {
+  if (bytes < 1024) {
+    return '$bytes B';
+  }
+  if (bytes < 1024 * 1024) {
+    return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  }
+  return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
 }
 
 class OrdersScreen extends StatefulWidget {
@@ -213,39 +230,39 @@ class _OrdersScreenState extends State<OrdersScreen> {
       barrierColor: const Color(0x7D100D1F),
       pageBuilder: (context, animation, secondaryAnimation) {
         return SafeArea(
-          child: Align(
-            alignment: Alignment.centerRight,
+          child: Center(
             child: Padding(
-              padding: const EdgeInsets.only(top: 12, right: 12, bottom: 12),
-              child: SizedBox(
-                height: double.infinity,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    maxWidth: 757,
-                    minWidth: 520,
-                  ),
-                  child: _OrderDetailsSheet(
-                    order: order,
-                    onEdit: () {
-                      Navigator.of(context).pop();
-                      Future<void>.microtask(() {
-                        if (!mounted) {
-                          return;
-                        }
-                        showDialog<void>(
-                          context: this.context,
-                          builder: (context) => Dialog(
-                            insetPadding: const EdgeInsets.all(32),
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 520),
-                              child: _OrderLifecycleEditorSheet(order: order),
+              padding: const EdgeInsets.all(24),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return SizedBox(
+                    width: math.min(1440, constraints.maxWidth),
+                    height: math.min(620, constraints.maxHeight),
+                    child: _OrderDetailsModal(
+                      order: order,
+                      onEdit: () {
+                        Navigator.of(context).pop();
+                        Future<void>.microtask(() {
+                          if (!mounted) {
+                            return;
+                          }
+                          showDialog<void>(
+                            context: this.context,
+                            builder: (context) => Dialog(
+                              insetPadding: const EdgeInsets.all(32),
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 520,
+                                ),
+                                child: _OrderLifecycleEditorSheet(order: order),
+                              ),
                             ),
-                          ),
-                        );
-                      });
-                    },
-                  ),
-                ),
+                          );
+                        });
+                      },
+                    ),
+                  );
+                },
               ),
             ),
           ),
@@ -257,11 +274,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
           parent: animation,
           curve: Curves.easeOutCubic,
         );
-        return SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0.08, 0),
-            end: Offset.zero,
-          ).animate(curved),
+        return ScaleTransition(
+          scale: Tween<double>(begin: 0.98, end: 1).animate(curved),
           child: FadeTransition(opacity: curved, child: child),
         );
       },
@@ -322,11 +336,10 @@ class _OrdersHeader extends StatelessWidget {
             ],
           ),
         );
-        final actions = Wrap(
-          spacing: 12,
-          runSpacing: 10,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [filtersButton, button],
+        final actions = Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [filtersButton, const SizedBox(width: 12), button],
         );
 
         final content =
@@ -337,11 +350,18 @@ class _OrdersHeader extends StatelessWidget {
               )
             : constraints.maxWidth < 1320
             ? Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   title,
                   const SizedBox(height: 16),
-                  Align(alignment: Alignment.centerLeft, child: actions),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: actions,
+                    ),
+                  ),
                 ],
               )
             : Row(
@@ -352,7 +372,11 @@ class _OrdersHeader extends StatelessWidget {
                   Flexible(
                     child: Align(
                       alignment: Alignment.centerRight,
-                      child: actions,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerRight,
+                        child: actions,
+                      ),
                     ),
                   ),
                 ],
@@ -509,60 +533,72 @@ class _OrdersControlRow extends StatelessWidget {
           ),
         ];
 
-        final trailing = Wrap(
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: 10,
-          runSpacing: 8,
+        final trailingActions = <Widget>[
+          if (selectedCount > 0) ...[
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Text(
+                '$selectedCount Selected',
+                style: const TextStyle(
+                  color: SoftErpTheme.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            InkWell(
+              onTap: onClearSelection,
+              borderRadius: BorderRadius.circular(15),
+              child: Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: SoftErpTheme.cardSurfaceAlt,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: SoftErpTheme.border),
+                ),
+                child: const Icon(
+                  Icons.close_rounded,
+                  size: 16,
+                  color: SoftErpTheme.textSecondary,
+                ),
+              ),
+            ),
+          ],
+          const _ActionChip(
+            label: 'Newest',
+            icon: Icons.keyboard_arrow_down_rounded,
+          ),
+          const _ActionChip(label: 'Filters', icon: Icons.filter_list_rounded),
+        ];
+        final trailing = Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            if (selectedCount > 0) ...[
-              Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Text(
-                  '$selectedCount Selected',
-                  style: const TextStyle(
-                    color: SoftErpTheme.textSecondary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              InkWell(
-                onTap: onClearSelection,
-                borderRadius: BorderRadius.circular(15),
-                child: Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: SoftErpTheme.cardSurfaceAlt,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: SoftErpTheme.border),
-                  ),
-                  child: const Icon(
-                    Icons.close_rounded,
-                    size: 16,
-                    color: SoftErpTheme.textSecondary,
-                  ),
-                ),
-              ),
+            for (var index = 0; index < trailingActions.length; index++) ...[
+              if (index > 0) const SizedBox(width: 10),
+              trailingActions[index],
             ],
-            const _ActionChip(
-              label: 'Newest',
-              icon: Icons.keyboard_arrow_down_rounded,
-            ),
-            const _ActionChip(
-              label: 'Filters',
-              icon: Icons.filter_list_rounded,
-            ),
           ],
         );
 
         final strip = constraints.maxWidth < 1040
             ? Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Wrap(spacing: 10, runSpacing: 10, children: filters),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Wrap(spacing: 10, runSpacing: 10, children: filters),
+                  ),
                   const SizedBox(height: 12),
-                  trailing,
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: trailing,
+                    ),
+                  ),
                 ],
               )
             : Row(
@@ -571,7 +607,16 @@ class _OrdersControlRow extends StatelessWidget {
                     child: Wrap(spacing: 10, runSpacing: 10, children: filters),
                   ),
                   const SizedBox(width: 14),
-                  trailing,
+                  Flexible(
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerRight,
+                        child: trailing,
+                      ),
+                    ),
+                  ),
                 ],
               );
 
@@ -765,7 +810,7 @@ class _OrdersSummaryRow extends StatelessWidget {
   }
 }
 
-class _SummaryCard extends StatelessWidget {
+class _SummaryCard extends StatefulWidget {
   const _SummaryCard({
     required this.label,
     required this.value,
@@ -779,39 +824,52 @@ class _SummaryCard extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_SummaryCard> createState() => _SummaryCardState();
+}
+
+class _SummaryCardState extends State<_SummaryCard> {
+  bool _isHovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(22),
-      child: SoftSurface(
-        radius: 22,
-        color: isActive ? const Color(0xFFF7F8FC) : SoftErpTheme.cardSurface,
-        strongBorder: isActive,
-        elevated: true,
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  color: SoftErpTheme.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w400,
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: InkWell(
+        onTap: widget.onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: SoftSurface(
+          radius: 22,
+          color: widget.isActive 
+              ? const Color(0xFFF7F8FC) 
+              : (_isHovered ? SoftErpTheme.cardSurface : SoftErpTheme.cardSurface.withOpacity(0.8)),
+          strongBorder: widget.isActive,
+          elevated: true,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Text(
+                  widget.label,
+                  style: const TextStyle(
+                    color: SoftErpTheme.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w400,
+                  ),
                 ),
               ),
-            ),
-            Text(
-              '$value',
-              style: const TextStyle(
-                color: SoftErpTheme.textPrimary,
-                fontSize: 32,
-                fontFamily: 'Segoe UI',
+              Text(
+                '${widget.value}',
+                style: const TextStyle(
+                  color: SoftErpTheme.textPrimary,
+                  fontSize: 32,
+                  fontFamily: 'Segoe UI',
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -988,7 +1046,7 @@ class _TableHeaderRow extends StatelessWidget {
         right: _OrdersTableMetrics.rightPadding,
       ),
       decoration: BoxDecoration(
-        color: SoftErpTheme.sectionSurface,
+        color: SoftErpTheme.sectionSurface.withOpacity(0.8),
         borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
@@ -1063,11 +1121,11 @@ class _OrderDataRowState extends State<_OrderDataRow> {
     final quickAction = _primaryQuickAction(order, urgency);
     final isCompleted = order.status == OrderStatus.completed;
     final baseColor = isCompleted
-        ? const Color(0xFFF9FBFF)
-        : SoftErpTheme.cardSurface;
+        ? const Color(0xFFF9FBFF).withOpacity(0.8)
+        : SoftErpTheme.cardSurface.withOpacity(0.8);
     final hoverColor = isCompleted
-        ? const Color(0xFFF5F7FD)
-        : const Color(0xFFFDFDFF);
+        ? const Color(0xFFFFFFFF)
+        : const Color(0xFFFFFFFF);
     final selectedColor = isCompleted
         ? const Color(0xFFF1F5FF)
         : const Color(0xFFF2EFFF);
@@ -1823,6 +1881,11 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
   DateTime? _endDate;
   String? _orderCompletionError;
   bool _showUploadPanel = false;
+  bool _renderUploadPanel = false;
+  final PoDocumentCache _poCache = PoDocumentCache();
+  final List<_PendingPoDocument> _poDocuments = <_PendingPoDocument>[];
+  List<CachedPoFile> _recentPoFiles = const <CachedPoFile>[];
+  bool _isUploadingPoDocuments = false;
 
   @override
   void initState() {
@@ -1834,6 +1897,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     _lines = <_OrderLineDraft>[
       _OrderLineDraft(id: DateTime.now().microsecondsSinceEpoch),
     ];
+    _loadRecentPoFiles();
   }
 
   @override
@@ -1861,6 +1925,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
         .where((item) => !item.isArchived)
         .toList(growable: false);
     final canSubmit = clients.isNotEmpty && items.isNotEmpty;
+    final canUseFooterActions = canSubmit && !_isUploadingPoDocuments;
 
     return CallbackShortcuts(
       bindings: _submitShortcutBindings(() {
@@ -1945,10 +2010,23 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                               items,
                               isCompact: isCompact,
                             );
+                            final uploadPanel = _AnimatedOrderUploadPanel(
+                              visible: _showUploadPanel,
+                              child: _OrderUploadPanel(
+                                onClose: _toggleUploadPanel,
+                                onAddDocument: _handleAddDocument,
+                                documents: _poDocuments,
+                                recentFiles: _recentPoFiles,
+                                onRemoveDocument: _removePoDocument,
+                                onRetryDocument: _retryPoDocument,
+                                onUseRecentFile: _addCachedPoFile,
+                              ),
+                            );
                             final canShowUploadColumn =
-                                _showUploadPanel && constraints.maxWidth >= 980;
+                                _renderUploadPanel &&
+                                constraints.maxWidth >= 980;
                             final showStackedUploadPanel =
-                                _showUploadPanel &&
+                                _renderUploadPanel &&
                                 !isCompact &&
                                 !canShowUploadColumn;
                             if (isCompact) {
@@ -1957,12 +2035,9 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                                   detailsPanel,
                                   const SizedBox(height: 10),
                                   itemsPanel,
-                                  if (_showUploadPanel) ...[
+                                  if (_renderUploadPanel) ...[
                                     const SizedBox(height: 10),
-                                    _OrderUploadPanel(
-                                      onClose: _toggleUploadPanel,
-                                      onAddDocument: _handleAddDocument,
-                                    ),
+                                    uploadPanel,
                                   ],
                                 ],
                               );
@@ -1989,13 +2064,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                                       ),
                                     ),
                                     const SizedBox(height: 14),
-                                    SizedBox(
-                                      height: 220,
-                                      child: _OrderUploadPanel(
-                                        onClose: _toggleUploadPanel,
-                                        onAddDocument: _handleAddDocument,
-                                      ),
-                                    ),
+                                    SizedBox(height: 220, child: uploadPanel),
                                   ],
                                 ),
                               );
@@ -2016,13 +2085,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                                   ),
                                   if (canShowUploadColumn) ...[
                                     const SizedBox(width: 14),
-                                    Expanded(
-                                      flex: 3,
-                                      child: _OrderUploadPanel(
-                                        onClose: _toggleUploadPanel,
-                                        onAddDocument: _handleAddDocument,
-                                      ),
-                                    ),
+                                    Expanded(flex: 3, child: uploadPanel),
                                   ],
                                 ],
                               ),
@@ -2047,7 +2110,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                     _OrderEditorFooterButton(
                       key: const ValueKey<String>('orders-editor-save-draft'),
                       label: 'Save Draft',
-                      onPressed: canSubmit
+                      onPressed: canUseFooterActions
                           ? () => _submit(
                               context,
                               clients,
@@ -2062,7 +2125,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                       key: const ValueKey<String>('orders-editor-create-order'),
                       label: 'Save',
                       isPrimary: true,
-                      onPressed: canSubmit
+                      onPressed: canUseFooterActions
                           ? () => _submit(context, clients, items)
                           : null,
                     ),
@@ -2077,8 +2140,23 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
   }
 
   void _toggleUploadPanel() {
+    if (_showUploadPanel) {
+      setState(() {
+        _showUploadPanel = false;
+      });
+      Future<void>.delayed(const Duration(milliseconds: 760), () {
+        if (!mounted || _showUploadPanel) {
+          return;
+        }
+        setState(() {
+          _renderUploadPanel = false;
+        });
+      });
+      return;
+    }
     setState(() {
-      _showUploadPanel = !_showUploadPanel;
+      _renderUploadPanel = true;
+      _showUploadPanel = true;
     });
   }
 
@@ -2088,10 +2166,156 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     ).showSnackBar(const SnackBar(content: Text('Print order coming soon')));
   }
 
-  void _handleAddDocument() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Document upload coming soon')),
-    );
+  Future<void> _loadRecentPoFiles() async {
+    final files = await _poCache.recentFiles();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _recentPoFiles = files;
+    });
+  }
+
+  Future<void> _handleAddDocument() async {
+    try {
+      final files = await openFiles(
+        acceptedTypeGroups: const <XTypeGroup>[
+          XTypeGroup(
+            label: 'Purchase order documents',
+            extensions: <String>['pdf', 'png', 'jpg', 'jpeg'],
+            mimeTypes: <String>['application/pdf', 'image/png', 'image/jpeg'],
+          ),
+        ],
+      );
+      for (final file in files) {
+        final cached = await _poCache.cachePickedFile(file);
+        _addCachedPoFile(cached);
+      }
+      await _loadRecentPoFiles();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
+  }
+
+  void _addCachedPoFile(CachedPoFile file) {
+    if (_poDocuments.any((document) => document.sha256 == file.sha256)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This PO is already selected.')),
+      );
+      return;
+    }
+    setState(() {
+      _poDocuments.add(_PendingPoDocument.fromCachedFile(file));
+      _renderUploadPanel = true;
+      _showUploadPanel = true;
+    });
+  }
+
+  void _removePoDocument(_PendingPoDocument document) {
+    setState(() {
+      _poDocuments.remove(document);
+    });
+  }
+
+  Future<void> _retryPoDocument(_PendingPoDocument document) async {
+    await _ensurePoDocumentsUploaded(only: document);
+  }
+
+  Future<List<int>?> _ensurePoDocumentsUploaded({
+    _PendingPoDocument? only,
+  }) async {
+    final provider = context.read<OrdersProvider>();
+    final targets = only == null ? _poDocuments : <_PendingPoDocument>[only];
+    final ids = <int>[];
+    setState(() {
+      _isUploadingPoDocuments = true;
+    });
+    try {
+      for (final document in targets) {
+        if (document.documentId != null) {
+          ids.add(document.documentId!);
+          continue;
+        }
+        setState(() {
+          document.status = PoUploadStatus.uploading;
+          document.errorMessage = null;
+        });
+        final intent = await provider.createPoUploadIntent(
+          PoUploadIntentInput(
+            fileName: document.fileName,
+            contentType: document.contentType,
+            sizeBytes: document.sizeBytes,
+            sha256: document.sha256,
+          ),
+        );
+        PoDocumentEntry uploadedDocument;
+        if (intent.document != null) {
+          uploadedDocument = intent.document!;
+        } else {
+          final upload = intent.upload;
+          if (upload == null) {
+            throw Exception('Upload target was not returned.');
+          }
+          if (upload.uploadUrl.host != 'mock.local') {
+            final bytes = await _poCache.readBytes(document.cachedFile);
+            final response = await http.put(
+              upload.uploadUrl,
+              headers: upload.headers,
+              body: bytes,
+            );
+            if (response.statusCode < 200 || response.statusCode >= 300) {
+              throw Exception(
+                'PO upload failed with status ${response.statusCode}.',
+              );
+            }
+          }
+          uploadedDocument = await provider.completePoUpload(
+            CompletePoUploadInput(
+              uploadSessionId: upload.uploadSessionId,
+              objectKey: upload.objectKey,
+            ),
+          );
+        }
+        setState(() {
+          document.status = PoUploadStatus.uploaded;
+          document.documentId = uploadedDocument.id;
+          document.uploadedAt = uploadedDocument.uploadedAt ?? DateTime.now();
+        });
+        ids.add(uploadedDocument.id);
+      }
+      return _poDocuments
+          .map((document) => document.documentId)
+          .whereType<int>()
+          .toSet()
+          .toList(growable: false);
+    } catch (error) {
+      setState(() {
+        for (final document in targets.where(
+          (document) => document.status == PoUploadStatus.uploading,
+        )) {
+          document.status = PoUploadStatus.failed;
+          document.errorMessage = error.toString();
+        }
+      });
+      if (!mounted) {
+        return null;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('PO upload failed: $error')));
+      return null;
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUploadingPoDocuments = false;
+        });
+      }
+    }
   }
 
   Widget _buildOrderDetailsPanel(
@@ -2254,12 +2478,19 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Orders Items',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: SoftErpTheme.textPrimary,
-                  fontWeight: FontWeight.w700,
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Order Items',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: SoftErpTheme.textPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  _OrderItemsCountBadge(count: _lines.length),
+                ],
               ),
               const SizedBox(height: 10),
               if (!isCompact) ...[
@@ -2362,6 +2593,8 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
 
   Widget _buildItemSelectForLine(List<ItemDefinition> items, int index) {
     final line = _lines[index];
+    final selectedItem = _selectedItemForLine(items, line.selectedItemId);
+    final groupsProvider = context.watch<GroupsProvider>();
     final fieldKey = index == 0
         ? const ValueKey<String>('orders-editor-item-field')
         : ValueKey<String>('orders-editor-item-field-${line.id}');
@@ -2376,23 +2609,43 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
           dialogTitle: 'Item',
           searchHintText: 'Search item',
           options: items
-              .map(
-                (item) => SearchableSelectOption<int>(
+              .map((item) {
+                final primaryGroup =
+                    groupsProvider.findById(item.groupId)?.name ??
+                    'No primary group';
+                return SearchableSelectOption<int>(
                   value: item.id,
-                  label: item.displayName,
-                ),
-              )
+                  label: '${item.displayName} • $primaryGroup',
+                  searchText: '${item.displayName} $primaryGroup',
+                );
+              })
               .toList(growable: false),
           onCreateOption: (query) =>
               _quickCreateItemForLine(context, lineIndex: index, name: query),
           createOptionLabelBuilder: (query) => 'Create item "$query"',
           onChanged: (value) {
+            var shouldOpenVariationSelector = false;
             setState(() {
               line.selectedItemId = value;
               final latestItems = context.read<ItemsProvider>().items;
               final item = _selectedItemForLine(latestItems, value);
               _syncVariationSelectionForLine(line, item);
+              shouldOpenVariationSelector =
+                  item != null && item.topLevelProperties.isNotEmpty;
             });
+            if (shouldOpenVariationSelector) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) {
+                  return;
+                }
+                final latestItems = context.read<ItemsProvider>().items;
+                _openVariationPathSelectorForLine(
+                  context,
+                  items: latestItems,
+                  lineIndex: index,
+                );
+              });
+            }
           },
           validator: (value) {
             if (value == null) {
@@ -2402,7 +2655,9 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
           },
         ),
         const SizedBox(height: 8),
-        _buildVariationPathFieldForLine(items, index),
+        if (selectedItem != null) ...[
+          _buildVariationPathFieldForLine(items, index),
+        ],
         if (line.variationPathError != null) ...[
           const SizedBox(height: 6),
           Text(
@@ -2483,78 +2738,60 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       );
     }
 
-    final selectedRootProperty = _selectedRootPropertyForLine(item, line);
     final selectedLeaf = _selectedLeafForLine(
       item,
       line.selectedVariationLeafId,
     );
     final selectedPropertyCount = line.selectedVariationValueNodeIds.length;
+    final hasSelectedPath = selectedLeaf != null || selectedPropertyCount > 0;
 
     return InkWell(
       key: ValueKey<String>(variationBaseKey),
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(12),
       onTap: () => _openVariationPathSelectorForLine(
         context,
         items: items,
         lineIndex: index,
       ),
-      child: InputDecorator(
-        decoration: _inputDecoration(
-          hintText: 'Select variation path',
-          suffixIcon: Icons.route_rounded,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: hasSelectedPath ? SoftErpTheme.accentSoft : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: hasSelectedPath
+                ? const Color(0xFFDAD4FF)
+                : SoftErpTheme.border,
+          ),
         ),
-        isEmpty: selectedLeaf == null && selectedRootProperty == null,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                Text(
-                  selectedPropertyCount == 0
-                      ? 'Select variation path'
-                      : 'Selected $selectedPropertyCount ${selectedPropertyCount == 1 ? 'property' : 'properties'}',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: selectedPropertyCount == 0
-                        ? SoftErpTheme.textSecondary
-                        : SoftErpTheme.textPrimary,
-                    fontWeight: selectedPropertyCount == 0
-                        ? FontWeight.w500
-                        : FontWeight.w600,
-                  ),
-                ),
-                if (selectedRootProperty != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF3EFFD),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: SoftErpTheme.border),
-                    ),
-                    child: Text(
-                      selectedRootProperty.name.trim().isEmpty
-                          ? 'Group selected'
-                          : selectedRootProperty.name.trim(),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: SoftErpTheme.textPrimary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-              ],
+            Icon(
+              Icons.route_rounded,
+              size: 17,
+              color: hasSelectedPath
+                  ? SoftErpTheme.accentDark
+                  : SoftErpTheme.textSecondary,
             ),
-            const SizedBox(height: 4),
-            Text(
-              selectedLeaf == null
-                  ? 'Open selector to choose properties horizontally.'
-                  : 'Tap to edit the variation path.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: SoftErpTheme.textSecondary,
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                hasSelectedPath
+                    ? 'Selected $selectedPropertyCount ${selectedPropertyCount == 1 ? 'property' : 'properties'}'
+                    : 'Select variation path',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: hasSelectedPath
+                      ? SoftErpTheme.accentDark
+                      : SoftErpTheme.textSecondary,
+                  fontWeight: FontWeight.w800,
+                  decoration: TextDecoration.underline,
+                  decorationColor: hasSelectedPath
+                      ? SoftErpTheme.accentDark
+                      : SoftErpTheme.textSecondary,
+                ),
               ),
             ),
           ],
@@ -2669,7 +2906,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       builder: (dialogContext) => Dialog(
         insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1180, maxHeight: 560),
+          constraints: const BoxConstraints(maxWidth: 680, maxHeight: 760),
           child: _VariationPathSelectorDialog(
             item: item,
             initialRootPropertyId: line.selectedRootPropertyId,
@@ -2852,12 +3089,42 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
           endDate: _itemWiseCompletionDate
               ? line.completionDate ?? _endDate
               : _endDate,
+          poDocumentIds: const <int>[],
         ),
       );
     }
 
+    final poDocumentIds = _poDocuments.isEmpty
+        ? const <int>[]
+        : await _ensurePoDocumentsUploaded();
+    if (!context.mounted || poDocumentIds == null) {
+      return;
+    }
+
+    final orderLinesWithDocuments = orderLines
+        .map(
+          (input) => CreateOrderInput(
+            orderNo: input.orderNo,
+            clientId: input.clientId,
+            clientName: input.clientName,
+            poNumber: input.poNumber,
+            clientCode: input.clientCode,
+            itemId: input.itemId,
+            itemName: input.itemName,
+            variationLeafNodeId: input.variationLeafNodeId,
+            variationPathLabel: input.variationPathLabel,
+            variationPathNodeIds: input.variationPathNodeIds,
+            quantity: input.quantity,
+            status: input.status,
+            startDate: input.startDate,
+            endDate: input.endDate,
+            poDocumentIds: poDocumentIds,
+          ),
+        )
+        .toList(growable: false);
+
     OrderEntry? result;
-    for (final input in orderLines) {
+    for (final input in orderLinesWithDocuments) {
       result = await context.read<OrdersProvider>().createOrder(input);
       if (!context.mounted) {
         return;
@@ -3111,22 +3378,6 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       return leaves.first.id;
     }
     return null;
-  }
-
-  ItemVariationNodeDefinition? _selectedRootPropertyForLine(
-    ItemDefinition item,
-    _OrderLineDraft line,
-  ) {
-    final roots = item.topLevelProperties;
-    if (roots.isEmpty) {
-      return null;
-    }
-    if (roots.length == 1) {
-      return roots.first;
-    }
-    return roots
-        .where((root) => root.id == line.selectedRootPropertyId)
-        .firstOrNull;
   }
 
   ItemVariationNodeDefinition? _rootPropertyForLeaf(
@@ -3557,166 +3808,178 @@ class _OrderLifecycleEditorSheetState
   }
 }
 
-class _OrderDetailsSheet extends StatelessWidget {
-  const _OrderDetailsSheet({required this.order, required this.onEdit});
+class _OrderDetailsModal extends StatefulWidget {
+  const _OrderDetailsModal({required this.order, required this.onEdit});
 
   final OrderEntry order;
   final VoidCallback onEdit;
 
   @override
+  State<_OrderDetailsModal> createState() => _OrderDetailsModalState();
+}
+
+class _OrderDetailsModalState extends State<_OrderDetailsModal> {
+  int _selectedTab = 0;
+
+  @override
   Widget build(BuildContext context) {
-    final detailRows = <({String label, String value})>[
-      (label: 'Order Code', value: order.orderNo),
-      (label: 'Purchase order no.', value: _emptyFallback(order.poNumber)),
-      (label: 'Item', value: order.itemName),
-      (label: 'Purchase order item Code', value: '—'),
-      (label: 'Quantity / Unit', value: '${order.quantity} Pieces'),
-      (label: 'Start Date', value: _formatDate(order.startDate)),
-      (label: 'Estimated completion date', value: _formatDate(order.endDate)),
-    ];
+    final order = widget.order;
+    final tabs = const <String>['Details', 'Timeline', 'Audit'];
+    final selectedContent = switch (_selectedTab) {
+      0 => _OrderDetailsContent(order: order),
+      1 => _OrderActivityTimeline(orderId: order.id),
+      _ => _OrderAuditContent(orderId: order.id),
+    };
 
     return Material(
       color: Colors.transparent,
       child: Container(
+        clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
-          color: SoftErpTheme.cardSurface,
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(24),
-            bottomLeft: Radius.circular(24),
-          ),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: SoftErpTheme.border),
           boxShadow: SoftErpTheme.raisedShadow,
         ),
         child: Column(
-          mainAxisSize: MainAxisSize.max,
           children: [
-            Container(
-              height: 60,
+            SizedBox(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              decoration: const BoxDecoration(
-                color: SoftErpTheme.shellSurface,
-                borderRadius: BorderRadius.only(topLeft: Radius.circular(24)),
-              ),
-              alignment: Alignment.centerLeft,
-              child: const Text(
-                'Order Details',
-                style: TextStyle(
-                  color: SoftErpTheme.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
+              height: 60,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  const Text(
+                    'Order Details',
+                    style: TextStyle(
+                      color: SoftErpTheme.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Positioned(
+                    right: 24,
+                    child: _OrderDetailActionButton(
+                      key: const ValueKey<String>('orders-details-header-edit'),
+                      label: 'Edit',
+                      onPressed: widget.onEdit,
+                    ),
+                  ),
+                ],
               ),
             ),
             Expanded(
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.only(bottom: 24),
-                        decoration: const BoxDecoration(
-                          border: Border(
-                            bottom: BorderSide(color: SoftErpTheme.border),
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: detailRows
-                              .map(
-                                (entry) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 18),
-                                  child: SizedBox(
-                                    width: 360,
-                                    child: Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        SizedBox(
-                                          width: 220,
-                                          child: Text(
-                                            entry.label,
-                                            style: const TextStyle(
-                                              color: SoftErpTheme.textSecondary,
-                                              fontSize: 14,
-                                            ),
-                                          ),
-                                        ),
-                                        Expanded(
-                                          child: Text(
-                                            entry.value,
-                                            style: const TextStyle(
-                                              color: SoftErpTheme.textPrimary,
-                                              fontSize: 16,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              )
-                              .toList(growable: false),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        width: 360,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            const SizedBox(
-                              width: 220,
-                              child: Text(
-                                'Status',
-                                style: TextStyle(
-                                  color: SoftErpTheme.textSecondary,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                            Flexible(
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: _StatusPill(status: order.status),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
+                child: Column(
+                  children: [
+                    _OrderTimelineStrip(order: order),
+                    const SizedBox(height: 12),
+                    _OrderDetailsTabs(
+                      tabs: tabs,
+                      selectedIndex: _selectedTab,
+                      onChanged: (index) {
+                        setState(() => _selectedTab = index);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(child: selectedContent),
+                  ],
                 ),
               ),
             ),
             Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(24),
+              height: 72,
+              padding: const EdgeInsets.symmetric(horizontal: 24),
               decoration: const BoxDecoration(
                 border: Border(top: BorderSide(color: SoftErpTheme.border)),
               ),
-              child: Wrap(
-                alignment: WrapAlignment.end,
-                spacing: 10,
-                runSpacing: 10,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  AppButton(
-                    label: 'Cancel',
-                    variant: AppButtonVariant.secondary,
-                    onPressed: () => Navigator.of(context).pop(),
+                  SizedBox(
+                    width: 144,
+                    height: 44,
+                    child: AppButton(
+                      key: const ValueKey<String>(
+                        'orders-details-footer-cancel',
+                      ),
+                      label: 'Cancel',
+                      variant: AppButtonVariant.secondary,
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
                   ),
-                  _OrderDetailActionButton(label: 'Edit', onPressed: onEdit),
+                  const SizedBox(width: 12),
+                  SizedBox(
+                    width: 96,
+                    height: 44,
+                    child: _OrderDetailActionButton(
+                      key: const ValueKey<String>('orders-details-footer-edit'),
+                      label: 'Edit',
+                      onPressed: widget.onEdit,
+                    ),
+                  ),
                 ],
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _OrderDetailsContent extends StatelessWidget {
+  const _OrderDetailsContent({required this.order});
+
+  final OrderEntry order;
+
+  @override
+  Widget build(BuildContext context) {
+    final detailRows = <({String label, String value})>[
+      (label: 'Order Code', value: order.orderNo),
+      (label: 'Client Name', value: _emptyFallback(order.clientName)),
+      (label: 'Purchase order no.', value: _emptyFallback(order.poNumber)),
+      (label: 'Start Date', value: _formatDate(order.startDate)),
+      (label: 'Order completion date', value: _formatDate(order.endDate)),
+    ];
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          width: 340,
+          child: _OrderDetailPanelCard(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ...detailRows.map(
+                    (entry) => Padding(
+                      padding: const EdgeInsets.only(bottom: 20),
+                      child: _OrderDetailField(
+                        label: entry.label,
+                        value: entry.value,
+                      ),
+                    ),
+                  ),
+                  _OrderDetailField(
+                    label: 'Status',
+                    valueWidget: Align(
+                      alignment: Alignment.centerLeft,
+                      child: _StatusPill(status: order.status),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  _OrderPoDocumentsSection(orderId: order.id),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(child: _OrderItemsDetailCard(order: order)),
+      ],
     );
   }
 
@@ -3730,12 +3993,790 @@ class _OrderDetailsSheet extends StatelessWidget {
     }
     final day = value.day.toString().padLeft(2, '0');
     final month = value.month.toString().padLeft(2, '0');
+    return '$day - $month - ${value.year}';
+  }
+}
+
+class _OrderTimelineStrip extends StatelessWidget {
+  const _OrderTimelineStrip({required this.order});
+
+  final OrderEntry order;
+
+  @override
+  Widget build(BuildContext context) {
+    final steps = <({String label, int index})>[
+      (label: 'Created', index: 0),
+      (label: 'Draft / Setup', index: 1),
+      (label: 'Ready to Begin', index: 2),
+      (label: 'Active Work', index: 3),
+      (label: 'Done', index: 4),
+    ];
+    final activeIndex = _activeIndex(order.status);
+
+    return Container(
+      height: 96,
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAF9FF),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text(
+                'Order Timeline :',
+                style: TextStyle(
+                  color: Color(0xFF565168),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (order.status == OrderStatus.delayed) ...[
+                const SizedBox(width: 10),
+                _SoftWarningBadge(label: 'Delayed'),
+              ],
+            ],
+          ),
+          const SizedBox(height: 16),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (var i = 0; i < steps.length; i++) ...[
+                  _TimelineStep(
+                    label: steps[i].label,
+                    isComplete: steps[i].index < activeIndex,
+                    isActive: steps[i].index == activeIndex,
+                    isWarning:
+                        order.status == OrderStatus.delayed &&
+                        steps[i].index == activeIndex,
+                  ),
+                  if (i != steps.length - 1)
+                    _TimelineConnector(isComplete: i < activeIndex),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static int _activeIndex(OrderStatus status) {
+    return switch (status) {
+      OrderStatus.draft => 1,
+      OrderStatus.notStarted => 2,
+      OrderStatus.inProgress => 3,
+      OrderStatus.completed => 4,
+      OrderStatus.delayed => 3,
+    };
+  }
+}
+
+class _TimelineStep extends StatelessWidget {
+  const _TimelineStep({
+    required this.label,
+    required this.isComplete,
+    required this.isActive,
+    required this.isWarning,
+  });
+
+  final String label;
+  final bool isComplete;
+  final bool isActive;
+  final bool isWarning;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isWarning
+        ? SoftErpTheme.dangerText
+        : isActive
+        ? SoftErpTheme.accent
+        : isComplete
+        ? const Color(0xFF48C7A4)
+        : const Color(0xFFD5D2DE);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 24,
+          height: 24,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: color, width: 2),
+            color: isComplete
+                ? color
+                : isActive || isWarning
+                ? Colors.white
+                : const Color(0xFFF7F7FA),
+          ),
+          child: isComplete
+              ? const Icon(Icons.check_rounded, size: 15, color: Colors.white)
+              : Center(
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: isActive || isWarning ? color : Colors.transparent,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: TextStyle(
+            color: const Color(0xFF565168),
+            fontSize: 14,
+            fontWeight: isActive ? FontWeight.w700 : FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TimelineConnector extends StatelessWidget {
+  const _TimelineConnector({required this.isComplete});
+
+  final bool isComplete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 48,
+      height: 2,
+      margin: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: isComplete ? const Color(0xFF48C7A4) : const Color(0xFFE2DFEA),
+        borderRadius: BorderRadius.circular(99),
+      ),
+    );
+  }
+}
+
+class _OrderDetailsTabs extends StatelessWidget {
+  const _OrderDetailsTabs({
+    required this.tabs,
+    required this.selectedIndex,
+    required this.onChanged,
+  });
+
+  final List<String> tabs;
+  final int selectedIndex;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF7F6FB),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: SoftErpTheme.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < tabs.length; i++)
+              Padding(
+                padding: EdgeInsets.only(left: i == 0 ? 0 : 4),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => onChanged(i),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 9,
+                    ),
+                    decoration: BoxDecoration(
+                      color: selectedIndex == i
+                          ? SoftErpTheme.accent
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      tabs[i],
+                      style: TextStyle(
+                        color: selectedIndex == i
+                            ? Colors.white
+                            : SoftErpTheme.textSecondary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OrderDetailPanelCard extends StatelessWidget {
+  const _OrderDetailPanelCard({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAF9FF),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _OrderDetailField extends StatelessWidget {
+  const _OrderDetailField({required this.label, this.value, this.valueWidget})
+    : assert(value != null || valueWidget != null);
+
+  final String label;
+  final String? value;
+  final Widget? valueWidget;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 155,
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF888888),
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child:
+              valueWidget ??
+              Text(
+                value!,
+                style: const TextStyle(
+                  color: Color(0xFF282828),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+        ),
+      ],
+    );
+  }
+}
+
+class _OrderItemsDetailCard extends StatelessWidget {
+  const _OrderItemsDetailCard({required this.order});
+
+  final OrderEntry order;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFCFBFF),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Orders Items',
+            style: TextStyle(
+              color: Color(0xFF565168),
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _OrderItemsGridRow(
+            isHeader: true,
+            cells: const ['Item', 'Order Quantity', 'Unit', 'Completion Date'],
+          ),
+          const SizedBox(height: 4),
+          _OrderItemsGridRow(
+            cells: [
+              _itemLabel(order),
+              '${order.quantity}',
+              'Pieces',
+              _formatDate(order.endDate),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _itemLabel(OrderEntry order) {
+    final variation = order.variationPathLabel.trim();
+    if (variation.isEmpty) {
+      return order.itemName;
+    }
+    return '${order.itemName} · $variation';
+  }
+
+  static String _formatDate(DateTime? value) {
+    if (value == null) {
+      return '—';
+    }
+    final day = value.day.toString().padLeft(2, '0');
+    final month = value.month.toString().padLeft(2, '0');
+    return '$day - $month - ${value.year}';
+  }
+}
+
+class _OrderItemsGridRow extends StatelessWidget {
+  const _OrderItemsGridRow({required this.cells, this.isHeader = false});
+
+  final List<String> cells;
+  final bool isHeader;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      decoration: BoxDecoration(
+        color: isHeader ? const Color(0xFFF3EFFD) : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          for (var i = 0; i < cells.length; i++)
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(right: i == cells.length - 1 ? 0 : 12),
+                child: Text(
+                  cells[i],
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: const Color(0xFF565168),
+                    fontSize: 14,
+                    fontWeight: isHeader ? FontWeight.w500 : FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OrderActivityTimeline extends StatelessWidget {
+  const _OrderActivityTimeline({required this.orderId});
+
+  final int orderId;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<OrderActivityEntry>>(
+      future: context.read<OrdersProvider>().getOrderActivity(orderId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final activities = snapshot.data ?? const <OrderActivityEntry>[];
+        if (activities.isEmpty) {
+          return const _OrderDetailEmptyState(
+            message: 'No timeline events yet',
+          );
+        }
+        return _OrderDetailPanelCard(
+          child: ListView.separated(
+            itemCount: activities.length,
+            separatorBuilder: (context, index) => const SizedBox(height: 10),
+            itemBuilder: (context, index) {
+              return _OrderActivityTile(activity: activities[index]);
+            },
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _OrderAuditContent extends StatelessWidget {
+  const _OrderAuditContent({required this.orderId});
+
+  final int orderId;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<OrderStatusHistoryEntry>>(
+      future: context.read<OrdersProvider>().getOrderStatusHistory(orderId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final history = snapshot.data ?? const <OrderStatusHistoryEntry>[];
+        if (history.isEmpty) {
+          return const _OrderDetailEmptyState(message: 'No audit records yet');
+        }
+        return _OrderDetailPanelCard(
+          child: ListView.separated(
+            itemCount: history.length,
+            separatorBuilder: (context, index) => const SizedBox(height: 10),
+            itemBuilder: (context, index) {
+              return _OrderAuditTile(entry: history[index]);
+            },
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _OrderActivityTile extends StatelessWidget {
+  const _OrderActivityTile({required this.activity});
+
+  final OrderActivityEntry activity;
+
+  @override
+  Widget build(BuildContext context) {
+    return _OrderHistoryTile(
+      title: _activityTitle(activity.activityType),
+      subtitle: _activitySubtitle(activity),
+      timestamp: _formatTimestamp(activity.createdAt),
+      icon: Icons.timeline_rounded,
+    );
+  }
+
+  static String _activityTitle(String type) {
+    final normalized = type.replaceAll('_', ' ').trim();
+    if (normalized.isEmpty) {
+      return 'Order activity';
+    }
+    return normalized[0].toUpperCase() + normalized.substring(1);
+  }
+
+  static String _activitySubtitle(OrderActivityEntry activity) {
+    final actor = activity.actorName?.trim();
+    final details = activity.details;
+    final status = details?['newStatus'] ?? details?['status'];
+    final parts = <String>[
+      if (actor != null && actor.isNotEmpty) 'By $actor',
+      if (status != null) 'Status: $status',
+    ];
+    return parts.isEmpty ? 'Recorded by system' : parts.join(' · ');
+  }
+}
+
+class _OrderAuditTile extends StatelessWidget {
+  const _OrderAuditTile({required this.entry});
+
+  final OrderStatusHistoryEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final previous =
+        entry.previousStatus == null || entry.previousStatus!.isEmpty
+        ? '—'
+        : orderStatusFromName(entry.previousStatus!).label;
+    final next = orderStatusFromName(entry.newStatus).label;
+    return _OrderHistoryTile(
+      title: 'Status changed',
+      subtitle: '$previous → $next',
+      timestamp: _formatTimestamp(entry.changedAt),
+      icon: Icons.verified_outlined,
+    );
+  }
+}
+
+class _OrderHistoryTile extends StatelessWidget {
+  const _OrderHistoryTile({
+    required this.title,
+    required this.subtitle,
+    required this.timestamp,
+    required this.icon,
+  });
+
+  final String title;
+  final String subtitle;
+  final String timestamp;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: const BoxDecoration(
+              color: Color(0xFFF1EEFF),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 18, color: SoftErpTheme.accent),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: SoftErpTheme.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: SoftErpTheme.textSecondary,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            timestamp,
+            style: const TextStyle(
+              color: SoftErpTheme.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OrderDetailEmptyState extends StatelessWidget {
+  const _OrderDetailEmptyState({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return _OrderDetailPanelCard(
+      child: Center(
+        child: Text(
+          message,
+          style: const TextStyle(
+            color: SoftErpTheme.textSecondary,
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SoftWarningBadge extends StatelessWidget {
+  const _SoftWarningBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFDEDEE),
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: SoftErpTheme.dangerText,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+String _formatTimestamp(DateTime value) {
+  final day = value.day.toString().padLeft(2, '0');
+  final month = value.month.toString().padLeft(2, '0');
+  final hour = value.hour.toString().padLeft(2, '0');
+  final minute = value.minute.toString().padLeft(2, '0');
+  return '$day-$month-${value.year} $hour:$minute';
+}
+
+class _OrderPoDocumentsSection extends StatelessWidget {
+  const _OrderPoDocumentsSection({required this.orderId});
+
+  final int orderId;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<PoDocumentEntry>>(
+      future: context.read<OrdersProvider>().getPoDocuments(orderId),
+      builder: (context, snapshot) {
+        final documents = snapshot.data ?? const <PoDocumentEntry>[];
+        return SizedBox(
+          width: double.infinity,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'PO Documents',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: SoftErpTheme.textPrimary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 10),
+              if (snapshot.connectionState == ConnectionState.waiting)
+                const LinearProgressIndicator(minHeight: 2)
+              else if (documents.isEmpty)
+                Text(
+                  'No PO documents attached.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: SoftErpTheme.textSecondary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                )
+              else
+                ...documents.map(
+                  (document) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _OrderPoDocumentTile(document: document),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _OrderPoDocumentTile extends StatelessWidget {
+  const _OrderPoDocumentTile({required this.document});
+
+  final PoDocumentEntry document;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F7FC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            document.contentType == 'application/pdf'
+                ? Icons.picture_as_pdf_outlined
+                : Icons.image_outlined,
+            size: 20,
+            color: SoftErpTheme.accent,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  document.fileName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: SoftErpTheme.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${_formatFileSize(document.sizeBytes)} • Uploaded ${_formatDocumentDate(document.uploadedAt)}',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: SoftErpTheme.textSecondary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: () => _openDocument(context, document.id),
+            child: const Text('Open'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openDocument(BuildContext context, int documentId) async {
+    try {
+      final url = await context.read<OrdersProvider>().createPoDocumentReadUrl(
+        documentId,
+      );
+      final opened = await launchUrl(url, mode: LaunchMode.externalApplication);
+      if (!opened && context.mounted) {
+        await Clipboard.setData(ClipboardData(text: url.toString()));
+        if (!context.mounted) {
+          return;
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Document URL copied to clipboard.')),
+        );
+      }
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to open PO document: $error')),
+      );
+    }
+  }
+
+  static String _formatDocumentDate(DateTime? value) {
+    if (value == null) {
+      return '—';
+    }
+    final day = value.day.toString().padLeft(2, '0');
+    final month = value.month.toString().padLeft(2, '0');
     return '$day-$month-${value.year}';
   }
 }
 
 class _OrderDetailActionButton extends StatelessWidget {
   const _OrderDetailActionButton({
+    super.key,
     required this.label,
     required this.onPressed,
   });
@@ -3826,6 +4867,25 @@ class _OrderLineDraft {
   }
 }
 
+class _PendingPoDocument {
+  _PendingPoDocument({required this.cachedFile});
+
+  factory _PendingPoDocument.fromCachedFile(CachedPoFile file) {
+    return _PendingPoDocument(cachedFile: file);
+  }
+
+  final CachedPoFile cachedFile;
+  PoUploadStatus status = PoUploadStatus.pending;
+  int? documentId;
+  DateTime? uploadedAt;
+  String? errorMessage;
+
+  String get fileName => cachedFile.fileName;
+  String get contentType => cachedFile.contentType;
+  int get sizeBytes => cachedFile.sizeBytes;
+  String get sha256 => cachedFile.sha256;
+}
+
 class _VariationStep {
   const _VariationStep({
     required this.propertyRoot,
@@ -3901,11 +4961,18 @@ class _VariationPathSelectorDialogState
   @override
   Widget build(BuildContext context) {
     final selectedRootProperty = _selectedRootProperty();
-    final steps = _variationSteps(selectedRootProperty);
+    final nestedSteps = selectedRootProperty == null
+        ? const <_VariationStep>[]
+        : _variationSteps(selectedRootProperty).skip(1).toList(growable: false);
     final selectedLeaf = _resolveLeafFromSelection();
+    final rootSteps = _rootPropertySteps();
+    final totalSelectableSteps = rootSteps.length + nestedSteps.length;
+    final selectedStepCount =
+        rootSteps.where((step) => step.selectedValueId != null).length +
+        nestedSteps.where((step) => step.selectedValueId != null).length;
 
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(22),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -3931,6 +4998,24 @@ class _VariationPathSelectorDialogState
                   ],
                 ),
               ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: SoftErpTheme.accentSoft,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '$selectedStepCount out of $totalSelectableSteps selected',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: SoftErpTheme.accent,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
               IconButton(
                 onPressed: () => Navigator.of(context).pop(),
                 icon: const Icon(Icons.close_rounded),
@@ -3941,50 +5026,38 @@ class _VariationPathSelectorDialogState
           Expanded(
             child: Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(18),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: SoftErpTheme.cardSurfaceAlt,
                 borderRadius: BorderRadius.circular(18),
                 border: Border.all(color: SoftErpTheme.border),
               ),
               child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (_item.topLevelProperties.length > 1) ...[
-                      _buildStepCard(
-                        title: 'Variation Group',
-                        child: _buildRootPropertyField(),
-                        width: 250,
+                    for (final step in rootSteps) ...[
+                      _buildStepRow(
+                        title: _variationStepTitle(step),
+                        child: _buildStepField(step, 0),
                       ),
-                      if (selectedRootProperty != null) _buildArrow(),
+                      const SizedBox(height: 12),
                     ],
-                    if (selectedRootProperty == null &&
-                        _item.topLevelProperties.length > 1)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 42),
-                        child: Text(
-                          'Select a variation group to continue.',
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(color: SoftErpTheme.textSecondary),
+                    for (
+                      var stepIndex = 0;
+                      stepIndex < nestedSteps.length;
+                      stepIndex++
+                    ) ...[
+                      _buildStepRow(
+                        title: _variationStepTitle(nestedSteps[stepIndex]),
+                        child: _buildStepField(
+                          nestedSteps[stepIndex],
+                          stepIndex + 1,
                         ),
-                      )
-                    else
-                      for (
-                        var stepIndex = 0;
-                        stepIndex < steps.length;
-                        stepIndex++
-                      ) ...[
-                        _buildStepCard(
-                          title: steps[stepIndex].property.name.trim().isEmpty
-                              ? 'Property ${steps[stepIndex].property.id}'
-                              : steps[stepIndex].property.name.trim(),
-                          child: _buildStepField(steps[stepIndex], stepIndex),
-                          width: 280,
-                        ),
-                        if (stepIndex != steps.length - 1) _buildArrow(),
-                      ],
+                      ),
+                      if (stepIndex != nestedSteps.length - 1)
+                        const SizedBox(height: 12),
+                    ],
                   ],
                 ),
               ),
@@ -4035,42 +5108,20 @@ class _VariationPathSelectorDialogState
     );
   }
 
-  Widget _buildRootPropertyField() {
-    return SearchableSelectField<int>(
-      value: _selectedRootPropertyId,
-      decoration: const InputDecoration(
-        hintText: 'Select variation group',
-        filled: true,
-        fillColor: Colors.white,
-      ),
-      dialogTitle: 'Variation Group',
-      searchHintText: 'Search variation group',
-      options: _item.topLevelProperties
-          .map(
-            (property) => SearchableSelectOption<int>(
-              value: property.id,
-              label: property.name.trim().isEmpty
-                  ? 'Property ${property.id}'
-                  : property.name.trim(),
-            ),
-          )
-          .toList(growable: false),
-      onChanged: (value) {
-        setState(() {
-          _selectedRootPropertyId = value;
-          _selectedValueNodeIds = const <int>[];
-        });
-      },
-    );
-  }
-
   Widget _buildStepField(_VariationStep step, int stepIndex) {
+    final fieldKey = ValueKey<String>(
+      'orders-variation-step-${step.property.id}',
+    );
     return SearchableSelectField<int>(
+      key: fieldKey,
+      tapTargetKey: fieldKey,
       value: step.selectedValueId,
       decoration: const InputDecoration(
         hintText: 'Select value',
         filled: true,
         fillColor: Colors.white,
+        isDense: true,
+        contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       ),
       dialogTitle: step.property.name.trim().isEmpty
           ? 'Variation Value'
@@ -4116,6 +5167,9 @@ class _VariationPathSelectorDialogState
           .toList(growable: false),
       onChanged: (value) {
         setState(() {
+          if (stepIndex == 0) {
+            _selectedRootPropertyId = step.propertyRoot.id;
+          }
           final nextValueIds = <int>[..._selectedValueNodeIds.take(stepIndex)];
           if (value != null) {
             nextValueIds.add(value);
@@ -4126,37 +5180,60 @@ class _VariationPathSelectorDialogState
     );
   }
 
-  Widget _buildStepCard({
-    required String title,
-    required Widget child,
-    required double width,
-  }) {
-    return SizedBox(
-      width: width,
+  List<_VariationStep> _rootPropertySteps() {
+    return _item.topLevelProperties
+        .map((rootProperty) {
+          final values = rootProperty.activeChildren
+              .where((node) => node.kind == ItemVariationNodeKind.value)
+              .toList(growable: false);
+          final selectedValueId =
+              rootProperty.id == _selectedRootPropertyId &&
+                  _selectedValueNodeIds.isNotEmpty
+              ? _selectedValueNodeIds.first
+              : null;
+          final selectedValue = values
+              .where((node) => node.id == selectedValueId)
+              .firstOrNull;
+          return _VariationStep(
+            propertyRoot: rootProperty,
+            property: rootProperty,
+            values: values,
+            selectedValueId: selectedValue?.id,
+          );
+        })
+        .toList(growable: false);
+  }
+
+  String _variationStepTitle(_VariationStep step) {
+    final name = step.property.name.trim();
+    return name.isEmpty ? 'Property ${step.property.id}' : name;
+  }
+
+  Widget _buildStepRow({required String title, required Widget child}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: SoftErpTheme.textSecondary,
-              fontWeight: FontWeight.w700,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: SoftErpTheme.textPrimary,
+              fontWeight: FontWeight.w800,
             ),
           ),
           const SizedBox(height: 8),
-          child,
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 360),
+            child: child,
+          ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildArrow() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 42, 14, 0),
-      child: Icon(
-        Icons.arrow_forward_rounded,
-        size: 20,
-        color: SoftErpTheme.textSecondary,
       ),
     );
   }
@@ -4359,6 +5436,63 @@ class _OrderEditorPanel extends StatelessWidget {
   }
 }
 
+class _OrderItemsCountBadge extends StatelessWidget {
+  const _OrderItemsCountBadge({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+      decoration: BoxDecoration(
+        color: SoftErpTheme.accentSoft,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Text(
+        '$count ${count == 1 ? 'item' : 'items'}',
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          color: SoftErpTheme.accentDark,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+class _AnimatedOrderUploadPanel extends StatelessWidget {
+  const _AnimatedOrderUploadPanel({required this.visible, required this.child});
+
+  final bool visible;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: visible ? 0 : 1, end: visible ? 1 : 0),
+      duration: const Duration(milliseconds: 720),
+      curve: Curves.easeInOutCubic,
+      child: child,
+      builder: (context, value, child) {
+        final eased = Curves.easeInOutCubic.transform(value);
+        final matrix = Matrix4.identity()
+          ..setEntry(3, 2, 0.001)
+          ..setEntry(0, 1, (1 - eased) * -0.12)
+          ..setEntry(0, 3, (1 - eased) * 92);
+        return Opacity(
+          opacity: (0.18 + (eased * 0.82)).clamp(0.0, 1.0),
+          child: Transform(
+            transform: matrix,
+            alignment: Alignment.centerRight,
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _OrderHeaderActionButton extends StatelessWidget {
   const _OrderHeaderActionButton({
     required this.icon,
@@ -4426,14 +5560,133 @@ class _OrderHeaderActionButton extends StatelessWidget {
 }
 
 class _OrderUploadPanel extends StatelessWidget {
-  const _OrderUploadPanel({required this.onClose, required this.onAddDocument});
+  const _OrderUploadPanel({
+    required this.onClose,
+    required this.onAddDocument,
+    required this.documents,
+    required this.recentFiles,
+    required this.onRemoveDocument,
+    required this.onRetryDocument,
+    required this.onUseRecentFile,
+  });
 
   final VoidCallback onClose;
   final VoidCallback onAddDocument;
+  final List<_PendingPoDocument> documents;
+  final List<CachedPoFile> recentFiles;
+  final ValueChanged<_PendingPoDocument> onRemoveDocument;
+  final ValueChanged<_PendingPoDocument> onRetryDocument;
+  final ValueChanged<CachedPoFile> onUseRecentFile;
 
   @override
   Widget build(BuildContext context) {
-    final emptyStateCard = Container(
+    return _OrderEditorPanel(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final hasBoundedHeight = constraints.maxHeight.isFinite;
+          final content = documents.isEmpty
+              ? _OrderUploadEmptyState(
+                  recentFiles: recentFiles,
+                  onUseRecentFile: onUseRecentFile,
+                )
+              : hasBoundedHeight
+              ? ListView.separated(
+                  itemCount: documents.length,
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(height: 10),
+                  itemBuilder: (context, index) {
+                    final document = documents[index];
+                    return _PendingPoDocumentTile(
+                      document: document,
+                      onRemove: () => onRemoveDocument(document),
+                      onRetry: () => onRetryDocument(document),
+                    );
+                  },
+                )
+              : Column(
+                  children: documents
+                      .map(
+                        (document) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _PendingPoDocumentTile(
+                            document: document,
+                            onRemove: () => onRemoveDocument(document),
+                            onRetry: () => onRetryDocument(document),
+                          ),
+                        ),
+                      )
+                      .toList(growable: false),
+                );
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'PO Documents',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: SoftErpTheme.textPrimary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: onClose,
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                    color: SoftErpTheme.textSecondary,
+                    tooltip: 'Close',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (hasBoundedHeight)
+                Expanded(child: content)
+              else
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 180),
+                  child: content,
+                ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: onAddDocument,
+                  icon: const Icon(Icons.upload_file_outlined, size: 18),
+                  label: const Text('Add PO Document'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(42),
+                    foregroundColor: SoftErpTheme.textPrimary,
+                    side: const BorderSide(color: SoftErpTheme.borderStrong),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _OrderUploadEmptyState extends StatelessWidget {
+  const _OrderUploadEmptyState({
+    required this.recentFiles,
+    required this.onUseRecentFile,
+  });
+
+  final List<CachedPoFile> recentFiles;
+  final ValueChanged<CachedPoFile> onUseRecentFile;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
       width: double.infinity,
       constraints: const BoxConstraints(minHeight: 180),
       padding: const EdgeInsets.all(20),
@@ -4452,7 +5705,7 @@ class _OrderUploadPanel extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            'No documents uploaded yet',
+            'No PO uploaded yet',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: SoftErpTheme.textPrimary,
@@ -4461,70 +5714,136 @@ class _OrderUploadPanel extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Document upload will be added later',
+            'Attach PDF or image purchase orders before saving.',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: SoftErpTheme.textSecondary,
               fontWeight: FontWeight.w500,
             ),
           ),
-        ],
-      ),
-    );
-    return _OrderEditorPanel(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final hasBoundedHeight = constraints.maxHeight.isFinite;
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Uploaded Documents',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: SoftErpTheme.textPrimary,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: onClose,
-                    icon: const Icon(Icons.close_rounded, size: 20),
-                    color: SoftErpTheme.textSecondary,
-                    tooltip: 'Close',
-                  ),
-                ],
+          if (recentFiles.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Recent PO files',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: SoftErpTheme.textSecondary,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
-              const SizedBox(height: 12),
-              if (hasBoundedHeight)
-                Expanded(child: emptyStateCard)
-              else
-                emptyStateCard,
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: onAddDocument,
-                  icon: const Icon(Icons.upload_file_outlined, size: 18),
-                  label: const Text('Add Document'),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(42),
-                    foregroundColor: SoftErpTheme.textPrimary,
-                    side: const BorderSide(color: SoftErpTheme.borderStrong),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    textStyle: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
+            ),
+            const SizedBox(height: 8),
+            ...recentFiles
+                .take(3)
+                .map(
+                  (file) => TextButton.icon(
+                    onPressed: () => onUseRecentFile(file),
+                    icon: const Icon(Icons.history_rounded, size: 16),
+                    label: Text(
+                      file.fileName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ),
-              ),
-            ],
-          );
-        },
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PendingPoDocumentTile extends StatelessWidget {
+  const _PendingPoDocumentTile({
+    required this.document,
+    required this.onRemove,
+    required this.onRetry,
+  });
+
+  final _PendingPoDocument document;
+  final VoidCallback onRemove;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final statusColor = switch (document.status) {
+      PoUploadStatus.pending => SoftErpTheme.textSecondary,
+      PoUploadStatus.uploading => SoftErpTheme.accent,
+      PoUploadStatus.uploaded => const Color(0xFF15803D),
+      PoUploadStatus.failed => const Color(0xFFB91C1C),
+    };
+    final statusText = switch (document.status) {
+      PoUploadStatus.pending => 'Pending',
+      PoUploadStatus.uploading => 'Uploading',
+      PoUploadStatus.uploaded => 'Uploaded',
+      PoUploadStatus.failed => 'Failed',
+    };
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F7FC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            document.contentType == 'application/pdf'
+                ? Icons.picture_as_pdf_outlined
+                : Icons.image_outlined,
+            color: SoftErpTheme.accent,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  document.fileName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: SoftErpTheme.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '${_formatFileSize(document.sizeBytes)} • $statusText',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: statusColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (document.errorMessage != null) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    document.errorMessage!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: const Color(0xFFB91C1C),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (document.status == PoUploadStatus.failed)
+            IconButton(
+              onPressed: onRetry,
+              tooltip: 'Retry upload',
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+            ),
+          IconButton(
+            onPressed: document.status == PoUploadStatus.uploading
+                ? null
+                : onRemove,
+            tooltip: 'Remove',
+            icon: const Icon(Icons.close_rounded, size: 18),
+          ),
+        ],
       ),
     );
   }

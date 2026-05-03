@@ -24,7 +24,9 @@ import 'package:paper/features/items/domain/item_definition.dart';
 import 'package:paper/features/items/domain/item_inputs.dart';
 import 'package:paper/features/orders/data/repositories/order_repository.dart';
 import 'package:paper/features/orders/domain/order_entry.dart';
+import 'package:paper/features/orders/domain/order_history.dart';
 import 'package:paper/features/orders/domain/order_inputs.dart';
+import 'package:paper/features/orders/domain/po_document.dart';
 import 'package:paper/features/units/data/repositories/unit_repository.dart';
 import 'package:paper/features/units/domain/unit_definition.dart';
 import 'package:paper/features/units/domain/unit_inputs.dart';
@@ -1889,7 +1891,16 @@ class FakeOrderRepository extends OrderRepository {
                 1;
 
   final List<OrderEntry> _orders;
+  final List<PoDocumentEntry> _documents = <PoDocumentEntry>[];
+  final Map<int, List<OrderActivityEntry>> _activities =
+      <int, List<OrderActivityEntry>>{};
+  final Map<int, List<OrderStatusHistoryEntry>> _statusHistory =
+      <int, List<OrderStatusHistoryEntry>>{};
+  final Map<int, Set<int>> _orderDocumentIds = <int, Set<int>>{};
+  final Map<String, PoUploadIntentInput> _uploadSessions =
+      <String, PoUploadIntentInput>{};
   int _nextId;
+  int _nextDocumentId = 1;
 
   @override
   Future<void> init() async {}
@@ -1930,6 +1941,8 @@ class FakeOrderRepository extends OrderRepository {
         endDate: current.endDate,
       );
       _orders[index] = updated;
+      await linkPoDocuments(updated.id, input.poDocumentIds);
+      _recordActivity(updated.id, 'order_updated');
       return updated;
     }
 
@@ -1952,7 +1965,107 @@ class FakeOrderRepository extends OrderRepository {
       endDate: input.endDate,
     );
     _orders.add(created);
+    await linkPoDocuments(created.id, input.poDocumentIds);
+    _recordActivity(created.id, 'order_created');
     return created;
+  }
+
+  @override
+  Future<PoUploadIntent> createPoUploadIntent(PoUploadIntentInput input) async {
+    final existing = _documents
+        .where((document) => document.sha256 == input.sha256)
+        .firstOrNull;
+    if (existing != null) {
+      return PoUploadIntent(alreadyUploaded: true, document: existing);
+    }
+    final sessionId = 'test-session-${_uploadSessions.length + 1}';
+    _uploadSessions[sessionId] = input;
+    return PoUploadIntent(
+      alreadyUploaded: false,
+      upload: PoUploadTarget(
+        uploadSessionId: sessionId,
+        objectKey: 'test/${input.sha256}/${input.fileName}',
+        uploadUrl: Uri.parse('https://mock.local/$sessionId'),
+        headers: const <String, String>{},
+      ),
+    );
+  }
+
+  @override
+  Future<PoDocumentEntry> completePoUpload(CompletePoUploadInput input) async {
+    final session = _uploadSessions[input.uploadSessionId];
+    if (session == null) {
+      throw Exception('Upload session not found.');
+    }
+    final existing = _documents
+        .where((document) => document.sha256 == session.sha256)
+        .firstOrNull;
+    if (existing != null) {
+      return existing;
+    }
+    final now = DateTime.now();
+    final document = PoDocumentEntry(
+      id: _nextDocumentId++,
+      fileName: session.fileName,
+      contentType: session.contentType,
+      sizeBytes: session.sizeBytes,
+      sha256: session.sha256,
+      objectKey: input.objectKey,
+      status: 'uploaded',
+      createdAt: now,
+      uploadedAt: now,
+    );
+    _documents.add(document);
+    return document;
+  }
+
+  @override
+  Future<List<PoDocumentEntry>> getPoDocuments(int orderId) async {
+    final ids = _orderDocumentIds[orderId] ?? const <int>{};
+    return _documents
+        .where((document) => ids.contains(document.id))
+        .toList(growable: false);
+  }
+
+  @override
+  Future<List<OrderActivityEntry>> getOrderActivity(int orderId) async {
+    return List<OrderActivityEntry>.from(
+      _activities[orderId] ??
+          <OrderActivityEntry>[
+            OrderActivityEntry(
+              id: 1,
+              orderId: orderId,
+              activityType: 'order_created',
+              actorName: 'Demo Admin',
+              actorRole: 'admin',
+              source: 'test',
+              createdAt: DateTime(2024),
+            ),
+          ],
+    );
+  }
+
+  @override
+  Future<List<OrderStatusHistoryEntry>> getOrderStatusHistory(
+    int orderId,
+  ) async {
+    return List<OrderStatusHistoryEntry>.from(
+      _statusHistory[orderId] ?? const <OrderStatusHistoryEntry>[],
+    );
+  }
+
+  @override
+  Future<void> linkPoDocuments(int orderId, List<int> documentIds) async {
+    if (documentIds.isEmpty) {
+      return;
+    }
+    final bucket = _orderDocumentIds.putIfAbsent(orderId, () => <int>{});
+    bucket.addAll(documentIds);
+  }
+
+  @override
+  Future<Uri> createPoDocumentReadUrl(int documentId) async {
+    return Uri.parse('https://mock.local/po-documents/$documentId');
   }
 
   @override
@@ -1980,7 +2093,38 @@ class FakeOrderRepository extends OrderRepository {
       endDate: input.endDate,
     );
     _orders[index] = updated;
+    if (current.status != updated.status) {
+      final history = _statusHistory.putIfAbsent(
+        updated.id,
+        () => <OrderStatusHistoryEntry>[],
+      );
+      history.add(
+        OrderStatusHistoryEntry(
+          id: history.length + 1,
+          orderId: updated.id,
+          previousStatus: current.status.name,
+          newStatus: updated.status.name,
+          changedAt: DateTime.now(),
+        ),
+      );
+    }
+    _recordActivity(updated.id, 'lifecycle_updated');
     return updated;
+  }
+
+  void _recordActivity(int orderId, String activityType) {
+    final rows = _activities.putIfAbsent(orderId, () => <OrderActivityEntry>[]);
+    rows.add(
+      OrderActivityEntry(
+        id: rows.length + 1,
+        orderId: orderId,
+        activityType: activityType,
+        actorName: 'Demo Admin',
+        actorRole: 'admin',
+        source: 'test',
+        createdAt: DateTime.now(),
+      ),
+    );
   }
 }
 
@@ -2112,10 +2256,51 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  Future<void> openVariationPathSelector(WidgetTester tester) async {
+    if (find.text('Select Variation Path').evaluate().isNotEmpty) {
+      return;
+    }
+    final variationField = find.byKey(
+      const ValueKey<String>('orders-editor-variation-path-field'),
+    );
+    await tester.ensureVisible(variationField);
+    await tester.tap(variationField, warnIfMissed: false);
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> selectOpenVariationPath(
+    WidgetTester tester, {
+    required List<String> variationValues,
+  }) async {
+    await openVariationPathSelector(tester);
+    for (final value in variationValues) {
+      final selectValueField = find
+          .byWidgetPredicate(
+            (widget) =>
+                widget.key is ValueKey<String> &&
+                (widget.key! as ValueKey<String>).value.startsWith(
+                  'orders-variation-step-',
+                ),
+          )
+          .last;
+      await tester.ensureVisible(selectValueField);
+      await tester.tap(selectValueField);
+      await tester.pumpAndSettle();
+
+      final optionFinder = find.text(value).last;
+      await tester.ensureVisible(optionFinder);
+      await tester.tap(optionFinder);
+      await tester.pumpAndSettle();
+    }
+    await tester.tap(find.text('Apply Path').last);
+    await tester.pumpAndSettle();
+  }
+
   Future<void> selectPrimaryVariationPath(
     WidgetTester tester, {
     String itemLabel = 'Switch Action Dolly - 1',
     String variationPathText = 'Without Plating',
+    List<String>? variationValues,
   }) async {
     await tester.tap(
       find.byKey(const ValueKey<String>('orders-editor-item-field')),
@@ -2124,16 +2309,49 @@ void main() {
     await tester.tap(find.text(itemLabel).last);
     await tester.pumpAndSettle();
 
-    final variationField = find.byKey(
-      const ValueKey<String>('orders-editor-variation-path-field'),
+    await selectOpenVariationPath(
+      tester,
+      variationValues:
+          variationValues ??
+          <String>[
+            if (itemLabel == 'Glue Compound - 1') ...[
+              variationPathText,
+            ] else ...[
+              '5 Amp',
+              '11+1',
+              'Brass',
+              '1 Way',
+              'Dolly',
+              variationPathText.contains('With Plating')
+                  ? 'With Plating'
+                  : 'Without Plating',
+            ],
+          ],
     );
-    await tester.ensureVisible(variationField);
-    await tester.tap(variationField);
+  }
+
+  Future<void> changeOpenVariationValue(
+    WidgetTester tester, {
+    required String currentValue,
+    required String newValue,
+  }) async {
+    await openVariationPathSelector(tester);
+    final currentValueField = find
+        .ancestor(
+          of: find.text(currentValue).last,
+          matching: find.byType(InkWell),
+        )
+        .last;
+    await tester.ensureVisible(currentValueField);
+    await tester.tap(currentValueField);
     await tester.pumpAndSettle();
 
-    final optionFinder = find.textContaining(variationPathText).last;
-    await tester.ensureVisible(optionFinder);
-    await tester.tap(optionFinder);
+    final newValueOption = find.text(newValue).last;
+    await tester.ensureVisible(newValueOption);
+    await tester.tap(newValueOption);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Apply Path').last);
     await tester.pumpAndSettle();
   }
 
@@ -2559,18 +2777,11 @@ void main() {
       'PO-QUICK-LEAF',
     );
 
-    await tester.tap(
-      find.byKey(const ValueKey<String>('orders-editor-item-field')),
+    await selectPrimaryVariationPath(
+      tester,
+      itemLabel: 'Glue Compound - 1',
+      variationPathText: 'Fast Cure',
     );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Glue Compound - 1').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey<String>('orders-editor-variation-path-field')),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.textContaining('Fast Cure').last);
-    await tester.pumpAndSettle();
 
     await tester.ensureVisible(
       find.byKey(const ValueKey<String>('orders-editor-save-draft')),
@@ -2584,7 +2795,7 @@ void main() {
     expect(find.textContaining('Fast Cure'), findsWidgets);
   });
 
-  testWidgets('orders variation path dropdown lists full bottle paths', (
+  testWidgets('orders variation path selector exposes bottle path values', (
     tester,
   ) async {
     await pumpApp(tester, viewSize: const Size(1600, 1000));
@@ -2600,47 +2811,76 @@ void main() {
     await tester.tap(find.text('Luxury Pump Bottle - 100').last);
     await tester.pumpAndSettle();
 
+    await openVariationPathSelector(tester);
+    expect(find.text('Bottle Material'), findsWidgets);
     await tester.tap(
-      find.byKey(const ValueKey<String>('orders-editor-variation-path-field')),
+      find
+          .byWidgetPredicate(
+            (widget) =>
+                widget.key is ValueKey<String> &&
+                (widget.key! as ValueKey<String>).value.startsWith(
+                  'orders-variation-step-',
+                ),
+          )
+          .last,
     );
     await tester.pumpAndSettle();
-    expect(find.textContaining('Bottle Material: PET'), findsWidgets);
-    expect(find.textContaining('Bottle Color: Amber'), findsWidgets);
-    expect(find.textContaining('Bottle Material: Glass'), findsWidgets);
+    expect(find.text('PET'), findsWidgets);
+    expect(find.text('Glass'), findsWidgets);
+
+    await tester.tap(find.text('PET').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Bottle Color'), findsWidgets);
+    await tester.tap(
+      find
+          .byWidgetPredicate(
+            (widget) =>
+                widget.key is ValueKey<String> &&
+                (widget.key! as ValueKey<String>).value.startsWith(
+                  'orders-variation-step-',
+                ),
+          )
+          .last,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Amber'), findsWidgets);
   });
 
-  testWidgets(
-    'orders variation path dropdown does not offer inline create actions',
-    (tester) async {
-      await pumpApp(tester, viewSize: const Size(1600, 1000));
+  testWidgets('orders variation path selector offers inline create actions', (
+    tester,
+  ) async {
+    await pumpApp(tester, viewSize: const Size(1600, 1000));
 
-      await openOrdersScreen(tester);
-      await tester.tap(find.byKey(const Key('orders-new-order-button')));
-      await tester.pumpAndSettle();
+    await openOrdersScreen(tester);
+    await tester.tap(find.byKey(const Key('orders-new-order-button')));
+    await tester.pumpAndSettle();
 
-      await tester.tap(
-        find.byKey(const ValueKey<String>('orders-editor-item-field')),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Glue Compound - 1').last);
-      await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-item-field')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Glue Compound - 1').last);
+    await tester.pumpAndSettle();
 
-      await tester.tap(
-        find.byKey(
-          const ValueKey<String>('orders-editor-variation-path-field'),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        searchFieldWithHint('Search variation path'),
-        'Fast Cure',
-      );
-      await tester.pumpAndSettle();
+    await openVariationPathSelector(tester);
+    await tester.tap(
+      find
+          .byWidgetPredicate(
+            (widget) =>
+                widget.key is ValueKey<String> &&
+                (widget.key! as ValueKey<String>).value.startsWith(
+                  'orders-variation-step-',
+                ),
+          )
+          .last,
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(searchFieldWithHint('Search value'), 'Ultra Cure');
+    await tester.pumpAndSettle();
 
-      expect(find.text('Create "Fast Cure"'), findsNothing);
-      expect(find.text('Fast Cure'), findsWidgets);
-    },
-  );
+    expect(find.text('Create value "Ultra Cure"'), findsWidgets);
+  });
 
   testWidgets('orders can change selected variation path from dropdown', (
     tester,
@@ -2659,12 +2899,11 @@ void main() {
     );
     expect(find.textContaining('Without Plating'), findsWidgets);
 
-    await tester.tap(
-      find.byKey(const ValueKey<String>('orders-editor-variation-path-field')),
+    await changeOpenVariationValue(
+      tester,
+      currentValue: 'Without Plating',
+      newValue: 'With Plating',
     );
-    await tester.pumpAndSettle();
-    await tester.tap(find.textContaining('With Plating').last);
-    await tester.pumpAndSettle();
     expect(
       find.textContaining('Action Dolly Plating: With Plating'),
       findsWidgets,
@@ -2986,7 +3225,9 @@ void main() {
     expect(find.text('Purchase order no.'), findsOneWidget);
     expect(find.text('PO-88'), findsWidgets);
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Edit'));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-details-footer-edit')),
+    );
     await tester.pumpAndSettle();
 
     final editStatusField = find.byKey(
@@ -3347,14 +3588,14 @@ void main() {
       '200',
     );
 
-    await tester.tap(find.byKey(const ValueKey<String>('items-unit-field')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Sheet (Sheet)').last);
-    await tester.pumpAndSettle();
-
     await tester.tap(find.byKey(const ValueKey<String>('items-group-field')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Paper').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey<String>('items-unit-field')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sheet (Sheet)').last);
     await tester.pumpAndSettle();
 
     await tester.ensureVisible(
@@ -3419,14 +3660,14 @@ void main() {
       '100',
     );
 
-    await tester.tap(find.byKey(const ValueKey<String>('items-unit-field')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Sheet (Sheet)').last);
-    await tester.pumpAndSettle();
-
     await tester.tap(find.byKey(const ValueKey<String>('items-group-field')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Paper').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey<String>('items-unit-field')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sheet (Sheet)').last);
     await tester.pumpAndSettle();
 
     await tester.ensureVisible(

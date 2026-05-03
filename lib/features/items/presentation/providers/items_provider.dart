@@ -36,6 +36,16 @@ class QuickCreateVariationValueResult {
   final List<int> selectedValueNodeIds;
 }
 
+class QuickCreateVariationPropertyResult {
+  const QuickCreateVariationPropertyResult({
+    required this.item,
+    required this.createdPropertyNode,
+  });
+
+  final ItemDefinition item;
+  final ItemVariationNodeDefinition createdPropertyNode;
+}
+
 class ItemsProvider extends ChangeNotifier {
   ItemsProvider({required ItemRepository repository})
     : _repository = repository;
@@ -270,6 +280,80 @@ class ItemsProvider extends ChangeNotifier {
       valueName: trimmedValueName,
       propertyPathSegments: propertyPathSegments,
     );
+  }
+
+  Future<QuickCreateVariationPropertyResult?> appendTopLevelProperty({
+    required int itemId,
+    required String propertyName,
+  }) async {
+    final current = _items.where((item) => item.id == itemId).firstOrNull;
+    final trimmedPropertyName = propertyName.trim();
+    if (current == null) {
+      _errorMessage = 'Item not found.';
+      notifyListeners();
+      return null;
+    }
+    if (trimmedPropertyName.isEmpty) {
+      _errorMessage = 'Variation property name is required.';
+      notifyListeners();
+      return null;
+    }
+    final duplicateExists = current.topLevelProperties.any(
+      (property) =>
+          _normalize(property.name) == _normalize(trimmedPropertyName),
+    );
+    if (duplicateExists) {
+      _errorMessage = 'A top-level property with this name already exists.';
+      notifyListeners();
+      return null;
+    }
+
+    _isSaving = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final updated = await _repository.updateItem(
+        UpdateItemInput(
+          id: current.id,
+          name: current.name,
+          alias: current.alias,
+          displayName: current.displayName,
+          quantity: current.quantity,
+          groupId: current.groupId,
+          unitId: current.unitId,
+          variationTree: <ItemVariationNodeInput>[
+            ...current.variationTree.map(_toInput),
+            ItemVariationNodeInput(
+              kind: ItemVariationNodeKind.property,
+              name: trimmedPropertyName,
+            ),
+          ],
+        ),
+      );
+      await refresh();
+      final refreshed =
+          _items.where((item) => item.id == updated.id).firstOrNull ?? updated;
+      final createdProperty = refreshed.topLevelProperties
+          .where(
+            (property) =>
+                _normalize(property.name) == _normalize(trimmedPropertyName),
+          )
+          .firstOrNull;
+      if (createdProperty == null) {
+        throw StateError('Created variation property was not found.');
+      }
+      return QuickCreateVariationPropertyResult(
+        item: refreshed,
+        createdPropertyNode: createdProperty,
+      );
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return null;
+    } finally {
+      _isSaving = false;
+      notifyListeners();
+    }
   }
 
   Future<ItemDefinition?> archiveItem(int id) async {

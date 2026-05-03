@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
-import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_empty_state.dart';
-import '../../../../core/widgets/app_section_title.dart';
+import '../../../../core/widgets/searchable_select.dart';
+import '../../../../core/widgets/soft_master_data.dart';
+import '../../../../core/widgets/soft_primitives.dart';
 import '../../domain/unit_definition.dart';
 import '../../domain/unit_inputs.dart';
 import '../providers/units_provider.dart';
@@ -20,44 +22,29 @@ class UnitsScreen extends StatelessWidget {
           return const Center(child: CircularProgressIndicator());
         }
 
-        return Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              AppSectionTitle(
-                title: 'Units',
-                subtitle:
-                    'Create the measurement units and symbols your team uses across materials and configurator flows.',
-                trailing: AppButton(
-                  label: 'Add Unit',
-                  icon: Icons.add,
-                  isLoading: units.isSaving,
-                  onPressed: () => _openUnitEditor(context),
-                ),
-              ),
-              const SizedBox(height: 20),
-              _UnitsToolbar(),
-              if (units.errorMessage != null) ...[
-                const SizedBox(height: 12),
-                _UnitsMessageBanner(
-                  message: units.errorMessage!,
-                  isError: true,
-                ),
-              ],
-              const SizedBox(height: 20),
-              Expanded(
-                child: units.filteredUnits.isEmpty
-                    ? const AppEmptyState(
-                        title: 'No units found',
-                        message:
-                            'Create a unit like Kilogram or Bundle to reuse it across inventory forms.',
-                        icon: Icons.straighten_outlined,
-                      )
-                    : _UnitsTable(units: units.filteredUnits),
-              ),
-            ],
+        return SoftMasterDataPage(
+          title: 'Units',
+          subtitle:
+              'Create the measurement units and symbols your team uses across materials and configurator flows.',
+          action: AppButton(
+            label: 'Add Unit',
+            icon: Icons.add,
+            isLoading: units.isSaving,
+            onPressed: () => _openUnitEditor(context),
           ),
+          toolbar: const _UnitsToolbar(),
+          messages: [
+            if (units.errorMessage != null)
+              _UnitsMessageBanner(message: units.errorMessage!, isError: true),
+          ],
+          body: units.filteredUnits.isEmpty
+              ? const AppEmptyState(
+                  title: 'No units found',
+                  message:
+                      'Create a unit like Kilogram or Bundle to reuse it across inventory forms.',
+                  icon: Icons.straighten_outlined,
+                )
+              : _UnitsTable(units: units.filteredUnits),
         );
       },
     );
@@ -68,12 +55,14 @@ class UnitsScreen extends StatelessWidget {
     UnitDefinition? unit,
     String initialName = '',
     String initialGroupName = '',
+    int? initialConversionBaseUnitId,
   }) {
     final isNarrow = MediaQuery.of(context).size.width < 900;
     final body = _UnitEditorSheet(
       unit: unit,
       initialName: initialName,
       initialGroupName: initialGroupName,
+      initialConversionBaseUnitId: initialConversionBaseUnitId,
     );
     if (isNarrow) {
       return showModalBottomSheet<UnitDefinition?>(
@@ -106,66 +95,50 @@ class UnitsScreen extends StatelessWidget {
     UnitDefinition? unit,
     String initialName = '',
     String initialGroupName = '',
+    int? initialConversionBaseUnitId,
   }) {
     return openEditor(
       context,
       unit: unit,
       initialName: initialName,
       initialGroupName: initialGroupName,
+      initialConversionBaseUnitId: initialConversionBaseUnitId,
     );
   }
 }
 
 class _UnitsToolbar extends StatelessWidget {
+  const _UnitsToolbar();
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<UnitsProvider>();
     final isDesktop = MediaQuery.of(context).size.width >= 900;
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      crossAxisAlignment: WrapCrossAlignment.center,
+    return SoftMasterToolbar(
       children: [
         if (!isDesktop)
-          SizedBox(
-            width: 280,
-            child: TextField(
-              onChanged: provider.setSearchQuery,
-              decoration: InputDecoration(
-                hintText: 'Search units or symbols',
-                prefixIcon: const Icon(Icons.search),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
-                ),
-              ),
-            ),
+          SoftMasterSearchField(
+            width: 300,
+            hintText: 'Search units or symbols',
+            onChanged: provider.setSearchQuery,
           ),
-        SegmentedButton<UnitStatusFilter>(
-          segments: const [
-            ButtonSegment<UnitStatusFilter>(
+        SoftSegmentedFilter<UnitStatusFilter>(
+          selected: provider.statusFilter,
+          onChanged: provider.setStatusFilter,
+          options: const [
+            SoftSegmentOption<UnitStatusFilter>(
               value: UnitStatusFilter.active,
-              label: Text('Active'),
+              label: 'Active',
             ),
-            ButtonSegment<UnitStatusFilter>(
+            SoftSegmentOption<UnitStatusFilter>(
               value: UnitStatusFilter.archived,
-              label: Text('Archived'),
+              label: 'Archived',
             ),
-            ButtonSegment<UnitStatusFilter>(
+            SoftSegmentOption<UnitStatusFilter>(
               value: UnitStatusFilter.all,
-              label: Text('All'),
+              label: 'All',
             ),
           ],
-          selected: {provider.statusFilter},
-          onSelectionChanged: (selection) {
-            provider.setStatusFilter(selection.first);
-          },
         ),
       ],
     );
@@ -179,54 +152,19 @@ class _UnitsTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
-      padding: EdgeInsets.zero,
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: Color(0xFFE5E7F0))),
-            ),
-            child: const Row(
-              children: [
-                Expanded(flex: 3, child: _HeaderText('Name')),
-                Expanded(flex: 2, child: _HeaderText('Symbol')),
-                Expanded(flex: 2, child: _HeaderText('Group')),
-                Expanded(flex: 1, child: _HeaderText('Conversion')),
-                Expanded(flex: 1, child: _HeaderText('Used In')),
-                Expanded(flex: 1, child: _HeaderText('Status')),
-                Expanded(flex: 2, child: _HeaderText('Actions')),
-              ],
-            ),
-          ),
-          Expanded(
-            child: ListView.separated(
-              itemCount: units.length,
-              separatorBuilder: (context, index) =>
-                  const Divider(height: 1, color: Color(0xFFF1F2F7)),
-              itemBuilder: (context, index) => _UnitRow(unit: units[index]),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HeaderText extends StatelessWidget {
-  const _HeaderText(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      label,
-      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-        color: const Color(0xFF6B7280),
-        fontWeight: FontWeight.w700,
-      ),
+    return SoftMasterTable(
+      minWidth: 1120,
+      columns: const [
+        SoftTableColumn('Name', flex: 3),
+        SoftTableColumn('Symbol', flex: 2),
+        SoftTableColumn('Group', flex: 2),
+        SoftTableColumn('Conversion', flex: 1),
+        SoftTableColumn('Used In', flex: 1),
+        SoftTableColumn('Status', flex: 1),
+        SoftTableColumn('Actions', flex: 2),
+      ],
+      itemCount: units.length,
+      rowBuilder: (context, index) => _UnitRow(unit: units[index]),
     );
   }
 }
@@ -239,145 +177,82 @@ class _UnitRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<UnitsProvider>();
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 3,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  unit.name,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                if (unit.notes.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    unit.notes,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: const Color(0xFF6B7280),
-                    ),
-                  ),
-                ],
+    return SoftMasterRow(
+      children: [
+        Expanded(
+          flex: 3,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SoftInlineText(unit.name, weight: FontWeight.w700),
+              if (unit.notes.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                SoftInlineText(unit.notes, color: SoftErpTheme.textSecondary),
               ],
-            ),
+            ],
           ),
-          Expanded(flex: 2, child: Text(unit.symbol)),
-          Expanded(
-            flex: 2,
-            child: Text(
-              unit.unitGroupName ?? 'Individual',
-              style: TextStyle(
-                color: unit.isGrouped
-                    ? const Color(0xFF111827)
-                    : const Color(0xFF6B7280),
-                fontWeight: unit.isGrouped ? FontWeight.w600 : FontWeight.w500,
-              ),
-            ),
-          ),
-          Expanded(
-            flex: 1,
-            child: Text(
-              unit.isGrouped
-                  ? (unit.isBaseUnit ? 'Base' : '${unit.conversionFactor}x')
-                  : '-',
-            ),
-          ),
-          Expanded(flex: 1, child: Text('${unit.usageCount}')),
-          Expanded(
-            flex: 1,
-            child: _StatusChip(
-              label: unit.isArchived ? 'Archived' : 'Active',
-              color: unit.isArchived
-                  ? const Color(0xFF9CA3AF)
-                  : const Color(0xFF0F766E),
-              background: unit.isArchived
-                  ? const Color(0xFFF3F4F6)
-                  : const Color(0xFFECFDF5),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _ActionLink(
-                  label: unit.isUsed ? 'View' : 'Edit',
-                  onTap: () => UnitsScreen.openEditor(context, unit: unit),
-                ),
-                _ActionLink(
-                  label: unit.isArchived ? 'Restore' : 'Archive',
-                  onTap: provider.isSaving
-                      ? null
-                      : () {
-                          if (unit.isArchived) {
-                            provider.restoreUnit(unit.id);
-                          } else {
-                            provider.archiveUnit(unit.id);
-                          }
-                        },
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({
-    required this.label,
-    required this.color,
-    required this.background,
-  });
-
-  final String label;
-  final Color color;
-  final Color background;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: color,
-          fontWeight: FontWeight.w700,
         ),
-      ),
-    );
-  }
-}
-
-class _ActionLink extends StatelessWidget {
-  const _ActionLink({required this.label, this.onTap});
-
-  final String label;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextButton(
-      onPressed: onTap,
-      style: TextButton.styleFrom(
-        foregroundColor: const Color(0xFF6C63FF),
-        padding: EdgeInsets.zero,
-        minimumSize: Size.zero,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
-      child: Text(label),
+        Expanded(flex: 2, child: SoftInlineText(unit.symbol)),
+        Expanded(
+          flex: 2,
+          child: SoftInlineText(
+            unit.unitGroupName ?? 'Individual',
+            color: unit.isGrouped
+                ? SoftErpTheme.textPrimary
+                : SoftErpTheme.textSecondary,
+            weight: unit.isGrouped ? FontWeight.w600 : FontWeight.w500,
+          ),
+        ),
+        Expanded(
+          flex: 1,
+          child: SoftInlineText(
+            unit.isGrouped
+                ? (unit.isBaseUnit ? 'Base' : '${unit.conversionFactor}x')
+                : '-',
+          ),
+        ),
+        Expanded(flex: 1, child: SoftInlineText('${unit.usageCount}')),
+        Expanded(
+          flex: 1,
+          child: SoftStatusPill(
+            label: unit.isArchived ? 'Archived' : 'Active',
+            background: unit.isArchived
+                ? const Color(0xFFF3F4F6)
+                : const Color(0xFFECFDF5),
+            textColor: unit.isArchived
+                ? const Color(0xFF6B7280)
+                : const Color(0xFF0F766E),
+            borderColor: unit.isArchived
+                ? const Color(0xFFE5E7EB)
+                : const Color(0xFFBFEAD8),
+          ),
+        ),
+        Expanded(
+          flex: 2,
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              SoftActionLink(
+                label: unit.isUsed ? 'View' : 'Edit',
+                onTap: () => UnitsScreen.openEditor(context, unit: unit),
+              ),
+              SoftActionLink(
+                label: unit.isArchived ? 'Restore' : 'Archive',
+                onTap: provider.isSaving
+                    ? null
+                    : () {
+                        if (unit.isArchived) {
+                          provider.restoreUnit(unit.id);
+                        } else {
+                          provider.archiveUnit(unit.id);
+                        }
+                      },
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -387,11 +262,13 @@ class _UnitEditorSheet extends StatefulWidget {
     this.unit,
     this.initialName = '',
     this.initialGroupName = '',
+    this.initialConversionBaseUnitId,
   });
 
   final UnitDefinition? unit;
   final String initialName;
   final String initialGroupName;
+  final int? initialConversionBaseUnitId;
 
   @override
   State<_UnitEditorSheet> createState() => _UnitEditorSheetState();
@@ -407,6 +284,7 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
   late final TextEditingController _groupController;
   late final TextEditingController _conversionController;
   String? _localError;
+  int? _selectedExistingFamilyUnitId;
   late _UnitGroupingMode _groupingMode;
 
   bool get _isDetailsLocked => widget.unit?.isUsed ?? false;
@@ -424,6 +302,7 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
     _conversionController = TextEditingController(
       text: widget.unit?.conversionFactor.toString() ?? '1',
     );
+    _selectedExistingFamilyUnitId = widget.initialConversionBaseUnitId;
     _nameController.addListener(_handleChange);
     _symbolController.addListener(_handleChange);
     _groupController.addListener(_handleChange);
@@ -432,6 +311,9 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
   }
 
   _UnitGroupingMode _initialGroupingMode() {
+    if (widget.unit == null && widget.initialConversionBaseUnitId != null) {
+      return _UnitGroupingMode.existingFamily;
+    }
     if (widget.unit == null && widget.initialGroupName.trim().isNotEmpty) {
       return _UnitGroupingMode.existingFamily;
     }
@@ -469,11 +351,21 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
     final provider = context.watch<UnitsProvider>();
     final isNarrow = MediaQuery.of(context).size.width < 900;
     final isCreateMode = widget.unit == null;
-    final groupName = _resolvedGroupName();
-    final baseUnit = provider.findBaseUnitForGroupName(
-      groupName,
-      excludeId: widget.unit?.id,
-    );
+    final groupName = _resolvedGroupName(provider);
+    final baseUnit = _resolvedBaseUnit(provider, groupName);
+    final existingFamilyBaseUnits =
+        provider.activeUnits
+            .where(
+              (unit) =>
+                  !unit.isArchived &&
+                  (widget.unit == null || unit.id != widget.unit!.id),
+            )
+            .toList(growable: false)
+          ..sort(
+            (a, b) => _existingFamilyLabel(
+              a,
+            ).toLowerCase().compareTo(_existingFamilyLabel(b).toLowerCase()),
+          );
     final requiresConversion =
         _groupingMode == _UnitGroupingMode.existingFamily && baseUnit != null;
     final title = widget.unit == null
@@ -672,17 +564,31 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                                   if (mode == _UnitGroupingMode.individual) {
                                     _groupController.text = '';
                                     _conversionController.text = '1';
+                                    _selectedExistingFamilyUnitId = null;
                                   } else if (mode ==
                                           _UnitGroupingMode.newFamily &&
                                       _groupController.text.trim().isEmpty) {
                                     _groupController.text = _nameController.text
                                         .trim();
                                     _conversionController.text = '1';
+                                    _selectedExistingFamilyUnitId = null;
                                   }
                                 });
                               },
                               controller: _groupController,
                               suggestions: provider.availableGroupNames,
+                              existingFamilyBaseUnits: existingFamilyBaseUnits,
+                              selectedExistingFamilyUnitId:
+                                  _selectedExistingFamilyUnitId ?? baseUnit?.id,
+                              onExistingFamilySelected: (unit) {
+                                setState(() {
+                                  _selectedExistingFamilyUnitId = unit.id;
+                                  _groupController.text =
+                                      (unit.unitGroupName ?? '').trim().isEmpty
+                                      ? unit.name
+                                      : unit.unitGroupName!.trim();
+                                });
+                              },
                               currentUnitName: _nameController.text.trim(),
                               compact: isCreateMode,
                             ),
@@ -811,10 +717,8 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
     }
 
     final provider = context.read<UnitsProvider>();
-    final baseUnit = provider.findBaseUnitForGroupName(
-      _resolvedGroupName(),
-      excludeId: widget.unit?.id,
-    );
+    final groupName = _resolvedGroupName(provider);
+    final baseUnit = _resolvedBaseUnit(provider, groupName);
     final conversionFactor =
         double.tryParse(_conversionController.text.trim()) ?? 0;
     if (_groupingMode == _UnitGroupingMode.existingFamily &&
@@ -849,7 +753,7 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
               name: _nameController.text.trim(),
               symbol: _symbolController.text.trim(),
               notes: _notesController.text.trim(),
-              unitGroupName: _resolvedGroupName(),
+              unitGroupName: groupName,
               conversionFactor: baseUnit == null ? 1 : conversionFactor,
             ),
           )
@@ -859,7 +763,7 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
               name: _nameController.text.trim(),
               symbol: _symbolController.text.trim(),
               notes: _notesController.text.trim(),
-              unitGroupName: _resolvedGroupName(),
+              unitGroupName: groupName,
               conversionFactor: baseUnit == null ? 1 : conversionFactor,
             ),
           );
@@ -869,10 +773,63 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
     }
   }
 
-  String _resolvedGroupName() {
-    return _groupingMode == _UnitGroupingMode.individual
-        ? ''
-        : _groupController.text.trim();
+  UnitDefinition? _resolvedBaseUnit(UnitsProvider provider, String groupName) {
+    if (_groupingMode != _UnitGroupingMode.existingFamily) {
+      return null;
+    }
+    final selectedBaseUnitId = _selectedExistingFamilyUnitId;
+    if (selectedBaseUnitId != null) {
+      final baseUnit = provider.findById(selectedBaseUnitId);
+      if (baseUnit != null) {
+        return baseUnit;
+      }
+    }
+    final initialBaseUnitId = widget.initialConversionBaseUnitId;
+    if (widget.unit == null && initialBaseUnitId != null) {
+      final baseUnit = provider.findById(initialBaseUnitId);
+      if (baseUnit != null) {
+        return baseUnit;
+      }
+    }
+    return provider.findBaseUnitForGroupName(
+      groupName,
+      excludeId: widget.unit?.id,
+    );
+  }
+
+  String _resolvedGroupName([UnitsProvider? provider]) {
+    if (_groupingMode == _UnitGroupingMode.individual) {
+      return '';
+    }
+    final explicitGroupName = _groupController.text.trim();
+    if (explicitGroupName.isNotEmpty) {
+      return explicitGroupName;
+    }
+    final selectedBaseUnitId = _selectedExistingFamilyUnitId;
+    if (provider != null && selectedBaseUnitId != null) {
+      final baseUnit = provider.findById(selectedBaseUnitId);
+      if (baseUnit != null) {
+        final unitGroupName = (baseUnit.unitGroupName ?? '').trim();
+        return unitGroupName.isNotEmpty ? unitGroupName : baseUnit.name;
+      }
+    }
+    final initialBaseUnitId = widget.initialConversionBaseUnitId;
+    if (provider != null && widget.unit == null && initialBaseUnitId != null) {
+      final baseUnit = provider.findById(initialBaseUnitId);
+      if (baseUnit != null) {
+        final unitGroupName = (baseUnit.unitGroupName ?? '').trim();
+        return unitGroupName.isNotEmpty ? unitGroupName : baseUnit.name;
+      }
+    }
+    return '';
+  }
+
+  String _existingFamilyLabel(UnitDefinition unit) {
+    final familyName = (unit.unitGroupName ?? '').trim();
+    if (familyName.isNotEmpty) {
+      return '$familyName · Base ${unit.displayLabel}';
+    }
+    return '${unit.name} · Standalone base ${unit.symbol}';
   }
 }
 
@@ -1191,6 +1148,9 @@ class _UnitGroupingSection extends StatelessWidget {
     required this.onModeChanged,
     required this.controller,
     required this.suggestions,
+    required this.existingFamilyBaseUnits,
+    required this.selectedExistingFamilyUnitId,
+    required this.onExistingFamilySelected,
     required this.currentUnitName,
     this.compact = false,
   });
@@ -1199,6 +1159,9 @@ class _UnitGroupingSection extends StatelessWidget {
   final ValueChanged<_UnitGroupingMode> onModeChanged;
   final TextEditingController controller;
   final List<String> suggestions;
+  final List<UnitDefinition> existingFamilyBaseUnits;
+  final int? selectedExistingFamilyUnitId;
+  final ValueChanged<UnitDefinition> onExistingFamilySelected;
   final String currentUnitName;
   final bool compact;
 
@@ -1256,13 +1219,40 @@ class _UnitGroupingSection extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         if (mode == _UnitGroupingMode.existingFamily)
-          _UnitGroupField(
-            controller: controller,
-            readOnly: false,
-            suggestions: suggestions,
-            label: 'Existing family',
-            helper:
-                'Pick an existing family name. This unit will inherit compatibility with that family.',
+          SearchableSelectField<int>(
+            tapTargetKey: const ValueKey<String>('unit-existing-family-field'),
+            value:
+                existingFamilyBaseUnits.any(
+                  (unit) => unit.id == selectedExistingFamilyUnitId,
+                )
+                ? selectedExistingFamilyUnitId
+                : null,
+            decoration: _unitFamilySelectDecoration(
+              label: 'Existing family',
+              helper:
+                  'Search an existing base unit/family. This unit will convert into that base.',
+            ),
+            dialogTitle: 'Existing family',
+            searchHintText: 'Search unit family',
+            emptyText: 'No unit families found',
+            options: existingFamilyBaseUnits
+                .map(
+                  (unit) => SearchableSelectOption<int>(
+                    value: unit.id,
+                    label: _existingFamilyOptionLabel(unit),
+                    searchText:
+                        '${unit.name} ${unit.symbol} ${unit.unitGroupName ?? ''}',
+                  ),
+                )
+                .toList(growable: false),
+            onChanged: (value) {
+              final selected = existingFamilyBaseUnits
+                  .where((unit) => unit.id == value)
+                  .firstOrNull;
+              if (selected != null) {
+                onExistingFamilySelected(selected);
+              }
+            },
           ),
         if (mode == _UnitGroupingMode.newFamily)
           _UnitGroupField(
@@ -1276,6 +1266,39 @@ class _UnitGroupingSection extends StatelessWidget {
           ),
       ],
     );
+  }
+
+  InputDecoration _unitFamilySelectDecoration({
+    required String label,
+    required String helper,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      helperText: helper,
+      filled: true,
+      fillColor: const Color(0xFFF9FAFB),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Color(0xFF6C63FF), width: 1.4),
+      ),
+    );
+  }
+
+  String _existingFamilyOptionLabel(UnitDefinition unit) {
+    final familyName = (unit.unitGroupName ?? '').trim();
+    if (familyName.isNotEmpty) {
+      return '$familyName · Base ${unit.displayLabel}';
+    }
+    return '${unit.name} · Standalone base ${unit.symbol}';
   }
 }
 

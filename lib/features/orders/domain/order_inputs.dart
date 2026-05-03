@@ -16,6 +16,7 @@ class CreateOrderInput {
     this.status = OrderStatus.notStarted,
     this.startDate,
     this.endDate,
+    this.poDocumentIds = const <int>[],
   });
 
   final String orderNo;
@@ -32,6 +33,7 @@ class CreateOrderInput {
   final OrderStatus status;
   final DateTime? startDate;
   final DateTime? endDate;
+  final List<int> poDocumentIds;
 }
 
 class UpdateOrderLifecycleInput {

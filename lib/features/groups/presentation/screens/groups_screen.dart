@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_section_title.dart';
 import '../../../../core/widgets/searchable_select.dart';
+import '../../../../core/widgets/soft_master_data.dart';
+import '../../../../core/widgets/soft_primitives.dart';
 import '../../../units/domain/unit_definition.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../../units/presentation/screens/units_screen.dart';
@@ -25,54 +28,40 @@ class GroupsScreen extends StatelessWidget {
           return const Center(child: CircularProgressIndicator());
         }
 
-        return Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              AppSectionTitle(
-                title: 'Groups',
-                subtitle:
-                    'Create hierarchical groups and map each one to a reusable unit from Configurator Units.',
-                trailing: AppButton(
-                  label: 'Add Group',
-                  icon: Icons.add,
-                  isLoading: groups.isSaving,
-                  onPressed: units.activeUnits.isEmpty
-                      ? null
-                      : () => _openGroupEditor(context),
-                ),
-              ),
-              const SizedBox(height: 20),
-              _GroupsToolbar(),
-              if (units.activeUnits.isEmpty) ...[
-                const SizedBox(height: 12),
-                const _GroupsMessageBanner(
-                  message:
-                      'Create at least one active unit before adding groups.',
-                  isError: true,
-                ),
-              ],
-              if (groups.errorMessage != null) ...[
-                const SizedBox(height: 12),
-                _GroupsMessageBanner(
-                  message: groups.errorMessage!,
-                  isError: true,
-                ),
-              ],
-              const SizedBox(height: 20),
-              Expanded(
-                child: groups.filteredGroups.isEmpty
-                    ? const AppEmptyState(
-                        title: 'No groups found',
-                        message:
-                            'Create a top-level group like Paper, then add child groups beneath it as needed.',
-                        icon: Icons.grid_view_outlined,
-                      )
-                    : _GroupsTable(groups: groups.filteredGroups),
-              ),
-            ],
+        return SoftMasterDataPage(
+          title: 'Groups',
+          subtitle:
+              'Create hierarchical groups and map each one to a reusable unit from Configurator Units.',
+          action: AppButton(
+            label: 'Add Group',
+            icon: Icons.add,
+            isLoading: groups.isSaving,
+            onPressed: units.activeUnits.isEmpty
+                ? null
+                : () => _openGroupEditor(context),
           ),
+          toolbar: const _GroupsToolbar(),
+          messages: [
+            if (units.activeUnits.isEmpty)
+              const _GroupsMessageBanner(
+                message:
+                    'Create at least one active unit before adding groups.',
+                isError: true,
+              ),
+            if (groups.errorMessage != null)
+              _GroupsMessageBanner(
+                message: groups.errorMessage!,
+                isError: true,
+              ),
+          ],
+          body: groups.filteredGroups.isEmpty
+              ? const AppEmptyState(
+                  title: 'No groups found',
+                  message:
+                      'Create a top-level group like Paper, then add child groups beneath it as needed.',
+                  icon: Icons.grid_view_outlined,
+                )
+              : _GroupsTable(groups: groups.filteredGroups),
         );
       },
     );
@@ -121,55 +110,37 @@ class GroupsScreen extends StatelessWidget {
 }
 
 class _GroupsToolbar extends StatelessWidget {
+  const _GroupsToolbar();
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<GroupsProvider>();
     final isDesktop = MediaQuery.of(context).size.width >= 900;
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      crossAxisAlignment: WrapCrossAlignment.center,
+    return SoftMasterToolbar(
       children: [
         if (!isDesktop)
-          SizedBox(
-            width: 280,
-            child: TextField(
-              onChanged: provider.setSearchQuery,
-              decoration: InputDecoration(
-                hintText: 'Search groups or parent groups',
-                prefixIcon: const Icon(Icons.search),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
-                ),
-              ),
-            ),
+          SoftMasterSearchField(
+            width: 300,
+            hintText: 'Search groups or parent groups',
+            onChanged: provider.setSearchQuery,
           ),
-        SegmentedButton<GroupStatusFilter>(
-          segments: const [
-            ButtonSegment<GroupStatusFilter>(
+        SoftSegmentedFilter<GroupStatusFilter>(
+          selected: provider.statusFilter,
+          onChanged: provider.setStatusFilter,
+          options: const [
+            SoftSegmentOption<GroupStatusFilter>(
               value: GroupStatusFilter.active,
-              label: Text('Active'),
+              label: 'Active',
             ),
-            ButtonSegment<GroupStatusFilter>(
+            SoftSegmentOption<GroupStatusFilter>(
               value: GroupStatusFilter.archived,
-              label: Text('Archived'),
+              label: 'Archived',
             ),
-            ButtonSegment<GroupStatusFilter>(
+            SoftSegmentOption<GroupStatusFilter>(
               value: GroupStatusFilter.all,
-              label: Text('All'),
+              label: 'All',
             ),
           ],
-          selected: {provider.statusFilter},
-          onSelectionChanged: (selection) {
-            provider.setStatusFilter(selection.first);
-          },
         ),
       ],
     );
@@ -183,52 +154,17 @@ class _GroupsTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
-      padding: EdgeInsets.zero,
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: Color(0xFFE5E7F0))),
-            ),
-            child: const Row(
-              children: [
-                Expanded(flex: 3, child: _HeaderText('Name')),
-                Expanded(flex: 2, child: _HeaderText('Parent Group')),
-                Expanded(flex: 2, child: _HeaderText('Unit')),
-                Expanded(flex: 1, child: _HeaderText('Status')),
-                Expanded(flex: 2, child: _HeaderText('Actions')),
-              ],
-            ),
-          ),
-          Expanded(
-            child: ListView.separated(
-              itemCount: groups.length,
-              separatorBuilder: (context, index) =>
-                  const Divider(height: 1, color: Color(0xFFF1F2F7)),
-              itemBuilder: (context, index) => _GroupRow(group: groups[index]),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HeaderText extends StatelessWidget {
-  const _HeaderText(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      label,
-      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-        color: const Color(0xFF6B7280),
-        fontWeight: FontWeight.w700,
-      ),
+    return SoftMasterTable(
+      minWidth: 980,
+      columns: const [
+        SoftTableColumn('Name', flex: 3),
+        SoftTableColumn('Parent Group', flex: 2),
+        SoftTableColumn('Unit', flex: 2),
+        SoftTableColumn('Status', flex: 1),
+        SoftTableColumn('Actions', flex: 2),
+      ],
+      itemCount: groups.length,
+      rowBuilder: (context, index) => _GroupRow(group: groups[index]),
     );
   }
 }
@@ -247,131 +183,73 @@ class _GroupRow extends StatelessWidget {
     final unitName =
         _unitLabel(unitsProvider.units, group.unitId) ?? 'Unknown unit';
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 3,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  group.name,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                if (group.usageCount > 0) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    'Used in ${group.usageCount} records',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: const Color(0xFF6B7280),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          Expanded(flex: 2, child: Text(parentName)),
-          Expanded(flex: 2, child: Text(unitName)),
-          Expanded(
-            flex: 1,
-            child: _StatusChip(
-              label: group.isArchived ? 'Archived' : 'Active',
-              color: group.isArchived
-                  ? const Color(0xFF9CA3AF)
-                  : const Color(0xFF0F766E),
-              background: group.isArchived
-                  ? const Color(0xFFF3F4F6)
-                  : const Color(0xFFECFDF5),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _ActionLink(
-                  label: group.isUsed ? 'View' : 'Edit',
-                  onTap: () => GroupsScreen.openEditor(context, group: group),
-                ),
-                _ActionLink(
-                  label: group.isArchived ? 'Restore' : 'Archive',
-                  onTap: groupsProvider.isSaving
-                      ? null
-                      : () {
-                          if (group.isArchived) {
-                            groupsProvider.restoreGroup(group.id);
-                          } else {
-                            groupsProvider.archiveGroup(group.id);
-                          }
-                        },
+    return SoftMasterRow(
+      children: [
+        Expanded(
+          flex: 3,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SoftInlineText(group.name, weight: FontWeight.w700),
+              if (group.usageCount > 0) ...[
+                const SizedBox(height: 4),
+                SoftInlineText(
+                  'Used in ${group.usageCount} records',
+                  color: SoftErpTheme.textSecondary,
                 ),
               ],
-            ),
+            ],
           ),
-        ],
-      ),
+        ),
+        Expanded(flex: 2, child: SoftInlineText(parentName)),
+        Expanded(flex: 2, child: SoftInlineText(unitName)),
+        Expanded(
+          flex: 1,
+          child: SoftStatusPill(
+            label: group.isArchived ? 'Archived' : 'Active',
+            background: group.isArchived
+                ? const Color(0xFFF3F4F6)
+                : const Color(0xFFECFDF5),
+            textColor: group.isArchived
+                ? const Color(0xFF6B7280)
+                : const Color(0xFF0F766E),
+            borderColor: group.isArchived
+                ? const Color(0xFFE5E7EB)
+                : const Color(0xFFBFEAD8),
+          ),
+        ),
+        Expanded(
+          flex: 2,
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              SoftActionLink(
+                label: group.isUsed ? 'View' : 'Edit',
+                onTap: () => GroupsScreen.openEditor(context, group: group),
+              ),
+              SoftActionLink(
+                label: group.isArchived ? 'Restore' : 'Archive',
+                onTap: groupsProvider.isSaving
+                    ? null
+                    : () {
+                        if (group.isArchived) {
+                          groupsProvider.restoreGroup(group.id);
+                        } else {
+                          groupsProvider.archiveGroup(group.id);
+                        }
+                      },
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
   String? _unitLabel(List<UnitDefinition> units, int unitId) {
     final unit = units.where((entry) => entry.id == unitId).firstOrNull;
     return unit?.displayLabel;
-  }
-}
-
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({
-    required this.label,
-    required this.color,
-    required this.background,
-  });
-
-  final String label;
-  final Color color;
-  final Color background;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: color,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-}
-
-class _ActionLink extends StatelessWidget {
-  const _ActionLink({required this.label, this.onTap});
-
-  final String label;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextButton(
-      onPressed: onTap,
-      style: TextButton.styleFrom(
-        foregroundColor: const Color(0xFF6C63FF),
-        padding: EdgeInsets.zero,
-        minimumSize: Size.zero,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
-      child: Text(label),
-    );
   }
 }
 

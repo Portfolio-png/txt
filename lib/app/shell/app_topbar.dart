@@ -205,7 +205,11 @@ class AppTopBar extends StatelessWidget {
               ),
               if (config.actions.isNotEmpty) ...[
                 const SizedBox(width: 10),
-                _TopStripActions(actions: config.actions),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: _TopStripActions(actions: config.actions),
+                ),
               ],
               const SizedBox(width: 14),
               SizedBox(
@@ -329,12 +333,15 @@ class _TopStripActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      alignment: WrapAlignment.end,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: actions.map(_buildAction).toList(growable: false),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        for (var index = 0; index < actions.length; index++) ...[
+          if (index > 0) const SizedBox(width: 12),
+          _buildAction(actions[index]),
+        ],
+      ],
     );
   }
 

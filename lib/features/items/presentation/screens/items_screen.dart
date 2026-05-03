@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_section_title.dart';
 import '../../../../core/widgets/searchable_select.dart';
+import '../../../../core/widgets/soft_master_data.dart';
+import '../../../../core/widgets/soft_primitives.dart';
+import '../../../groups/domain/group_definition.dart';
 import '../../../groups/presentation/screens/groups_screen.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../units/presentation/screens/units_screen.dart';
@@ -27,47 +31,31 @@ class ItemsScreen extends StatelessWidget {
           return const Center(child: CircularProgressIndicator());
         }
 
-        return Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              AppSectionTitle(
-                title: 'Items',
-                subtitle:
-                    'Manage sellable catalog items with recursive property and value inheritance.',
-                trailing: AppButton(
-                  label: 'Add Item',
-                  icon: Icons.add,
-                  isLoading: items.isSaving,
-                  onPressed:
-                      groups.activeGroups.isEmpty || units.activeUnits.isEmpty
-                      ? null
-                      : () => _openItemEditor(context),
-                ),
-              ),
-              const SizedBox(height: 20),
-              const _ItemsToolbar(),
-              if (items.errorMessage != null) ...[
-                const SizedBox(height: 12),
-                _ItemsMessageBanner(
-                  message: items.errorMessage!,
-                  isError: true,
-                ),
-              ],
-              const SizedBox(height: 20),
-              Expanded(
-                child: items.filteredItems.isEmpty
-                    ? const AppEmptyState(
-                        title: 'No items found',
-                        message:
-                            'Create an item like Bottle - 100, then build recursive property branches such as Color -> Black -> Finish -> Matte.',
-                        icon: Icons.inventory_outlined,
-                      )
-                    : _ItemsTable(items: items.filteredItems),
-              ),
-            ],
+        return SoftMasterDataPage(
+          title: 'Items',
+          subtitle:
+              'Manage sellable catalog items with recursive property and value inheritance.',
+          action: AppButton(
+            label: 'Add Item',
+            icon: Icons.add,
+            isLoading: items.isSaving,
+            onPressed: groups.activeGroups.isEmpty || units.activeUnits.isEmpty
+                ? null
+                : () => _openItemEditor(context),
           ),
+          toolbar: const _ItemsToolbar(),
+          messages: [
+            if (items.errorMessage != null)
+              _ItemsMessageBanner(message: items.errorMessage!, isError: true),
+          ],
+          body: items.filteredItems.isEmpty
+              ? const AppEmptyState(
+                  title: 'No items found',
+                  message:
+                      'Create an item like Bottle - 100, then build recursive property branches such as Color -> Black -> Finish -> Matte.',
+                  icon: Icons.inventory_outlined,
+                )
+              : _ItemsTable(items: items.filteredItems),
         );
       },
     );
@@ -122,50 +110,30 @@ class _ItemsToolbar extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = context.watch<ItemsProvider>();
     final isDesktop = MediaQuery.of(context).size.width >= 900;
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
+    return SoftMasterToolbar(
       children: [
         if (!isDesktop)
-          SizedBox(
-            width: 360,
-            child: TextField(
-              onChanged: provider.setSearchQuery,
-              decoration: InputDecoration(
-                hintText: 'Search items, properties, values, or leaf nodes',
-                prefixIcon: const Icon(Icons.search),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
-                ),
-              ),
-            ),
+          SoftMasterSearchField(
+            hintText: 'Search items, properties, values, or leaf nodes',
+            onChanged: provider.setSearchQuery,
           ),
-        SegmentedButton<ItemStatusFilter>(
-          segments: const [
-            ButtonSegment<ItemStatusFilter>(
+        SoftSegmentedFilter<ItemStatusFilter>(
+          selected: provider.statusFilter,
+          onChanged: provider.setStatusFilter,
+          options: const [
+            SoftSegmentOption<ItemStatusFilter>(
               value: ItemStatusFilter.active,
-              label: Text('Active'),
+              label: 'Active',
             ),
-            ButtonSegment<ItemStatusFilter>(
+            SoftSegmentOption<ItemStatusFilter>(
               value: ItemStatusFilter.archived,
-              label: Text('Archived'),
+              label: 'Archived',
             ),
-            ButtonSegment<ItemStatusFilter>(
+            SoftSegmentOption<ItemStatusFilter>(
               value: ItemStatusFilter.all,
-              label: Text('All'),
+              label: 'All',
             ),
           ],
-          selected: {provider.statusFilter},
-          onSelectionChanged: (selection) {
-            provider.setStatusFilter(selection.first);
-          },
         ),
       ],
     );
@@ -179,53 +147,18 @@ class _ItemsTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
-      padding: EdgeInsets.zero,
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: Color(0xFFE5E7F0))),
-            ),
-            child: const Row(
-              children: [
-                Expanded(flex: 2, child: _HeaderText('Item')),
-                Expanded(flex: 2, child: _HeaderText('Qty / Unit')),
-                Expanded(flex: 2, child: _HeaderText('Group')),
-                Expanded(flex: 3, child: _HeaderText('Tree Summary')),
-                Expanded(flex: 1, child: _HeaderText('Status')),
-                Expanded(flex: 2, child: _HeaderText('Actions')),
-              ],
-            ),
-          ),
-          Expanded(
-            child: ListView.separated(
-              itemCount: items.length,
-              separatorBuilder: (context, index) =>
-                  const Divider(height: 1, color: Color(0xFFF1F2F7)),
-              itemBuilder: (context, index) => _ItemRow(item: items[index]),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HeaderText extends StatelessWidget {
-  const _HeaderText(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      label,
-      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-        color: const Color(0xFF6B7280),
-        fontWeight: FontWeight.w700,
-      ),
+    return SoftMasterTable(
+      minWidth: 1120,
+      columns: const [
+        SoftTableColumn('Item', flex: 2),
+        SoftTableColumn('Qty / Unit', flex: 2),
+        SoftTableColumn('Group', flex: 2),
+        SoftTableColumn('Tree Summary', flex: 3),
+        SoftTableColumn('Status', flex: 1),
+        SoftTableColumn('Actions', flex: 2),
+      ],
+      itemCount: items.length,
+      rowBuilder: (context, index) => _ItemRow(item: items[index]),
     );
   }
 }
@@ -254,84 +187,81 @@ class _ItemRow extends StatelessWidget {
         ? 'No orderable leaves'
         : '${item.leafVariationNodes.length} orderable leaf${item.leafVariationNodes.length == 1 ? '' : 's'}';
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 2,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.displayName,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                if (item.alias.trim().isNotEmpty)
-                  Text(
-                    item.alias,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: const Color(0xFF6B7280),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Text('${_formatQuantity(item.quantity)} / $unitLabel'),
-          ),
-          Expanded(flex: 2, child: Text(groupName)),
-          Expanded(
-            flex: 3,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(propertySummary),
+    return SoftMasterRow(
+      children: [
+        Expanded(
+          flex: 2,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SoftInlineText(item.displayName, weight: FontWeight.w700),
+              if (item.alias.trim().isNotEmpty) ...[
                 const SizedBox(height: 4),
-                Text(
-                  leafSummary,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFF6B7280),
-                  ),
-                ),
+                SoftInlineText(item.alias, color: SoftErpTheme.textSecondary),
               ],
-            ),
+            ],
           ),
-          Expanded(
-            flex: 1,
-            child: Text(item.isArchived ? 'Archived' : 'Active'),
+        ),
+        Expanded(
+          flex: 2,
+          child: SoftInlineText(
+            '${_formatQuantity(item.quantity)} / $unitLabel',
           ),
-          Expanded(
-            flex: 2,
-            child: Wrap(
-              spacing: 8,
-              children: [
-                AppButton(
-                  label: 'Open',
-                  variant: AppButtonVariant.secondary,
-                  onPressed: () => ItemsScreen.openEditor(context, item: item),
+        ),
+        Expanded(flex: 2, child: SoftInlineText(groupName)),
+        Expanded(
+          flex: 3,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SoftInlineText(propertySummary),
+              const SizedBox(height: 4),
+              SoftInlineText(leafSummary, color: SoftErpTheme.textSecondary),
+            ],
+          ),
+        ),
+        Expanded(
+          flex: 1,
+          child: SoftStatusPill(
+            label: item.isArchived ? 'Archived' : 'Active',
+            background: item.isArchived
+                ? const Color(0xFFF3F4F6)
+                : const Color(0xFFECFDF5),
+            textColor: item.isArchived
+                ? const Color(0xFF6B7280)
+                : const Color(0xFF0F766E),
+            borderColor: item.isArchived
+                ? const Color(0xFFE5E7EB)
+                : const Color(0xFFBFEAD8),
+          ),
+        ),
+        Expanded(
+          flex: 2,
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              SoftActionLink(
+                label: 'Open',
+                onTap: () => ItemsScreen.openEditor(context, item: item),
+              ),
+              if (!item.isUsed)
+                SoftActionLink(
+                  label: item.isArchived ? 'Restore' : 'Archive',
+                  onTap: itemsProvider.isSaving
+                      ? null
+                      : () {
+                          if (item.isArchived) {
+                            itemsProvider.restoreItem(item.id);
+                          } else {
+                            itemsProvider.archiveItem(item.id);
+                          }
+                        },
                 ),
-                if (!item.isUsed)
-                  AppButton(
-                    label: item.isArchived ? 'Restore' : 'Archive',
-                    variant: AppButtonVariant.secondary,
-                    isLoading: itemsProvider.isSaving,
-                    onPressed: () {
-                      if (item.isArchived) {
-                        itemsProvider.restoreItem(item.id);
-                      } else {
-                        itemsProvider.archiveItem(item.id);
-                      }
-                    },
-                  ),
-              ],
-            ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -418,7 +348,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
 
     _nameController.addListener(_handlePrimaryChange);
     _aliasController.addListener(_handlePrimaryChange);
-    _quantityController.addListener(_handlePrimaryChange);
     _displayNameController.addListener(() {
       if (_syncingDisplayName) {
         return;
@@ -504,11 +433,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     if (_displayNameTouched) {
       return;
     }
-    final quantity = double.tryParse(_quantityController.text.trim());
     final generated = _generateItemDisplayName(
       _nameController.text,
       _aliasController.text,
-      quantity,
     );
     if (_displayNameController.text != generated) {
       _syncingDisplayName = true;
@@ -563,7 +490,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     final unitsProvider = context.watch<UnitsProvider>();
     final duplicate = itemsProvider.checkDuplicate(
       name: _nameController.text,
-      quantity: double.tryParse(_quantityController.text.trim()),
+      quantity: widget.item?.quantity ?? 0.0,
       groupId: _selectedGroupId,
       variationTree: _variationTreeInputs,
       excludeId: widget.item?.id,
@@ -616,21 +543,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           const SizedBox(height: 12),
           _formRow(
             children: [
-              _buildTextField(
-                controller: _quantityController,
-                label: 'Quantity',
-                helper: 'Optional. Leave blank if not needed.',
-                readOnly: _isReadOnly,
-                required: false,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          _formRow(
-            children: [
               SearchableSelectField<int>(
                 tapTargetKey: const ValueKey<String>('items-group-field'),
                 value:
@@ -654,7 +566,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   }
                   return SearchableSelectOption<int>(
                     value: created.id,
-                    label: created.name,
+                    label: _groupOptionLabel(created, groupsProvider),
+                    searchText: _groupOptionSearchText(created, groupsProvider),
                   );
                 },
                 createOptionLabelBuilder: (query) => 'Create group "$query"',
@@ -662,7 +575,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   ...availableGroups.map(
                     (group) => SearchableSelectOption<int>(
                       value: group.id,
-                      label: group.name,
+                      label: _groupOptionLabel(group, groupsProvider),
+                      searchText: _groupOptionSearchText(group, groupsProvider),
                     ),
                   ),
                   if (selectedGroup != null &&
@@ -671,7 +585,12 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                       ))
                     SearchableSelectOption<int>(
                       value: selectedGroup.id,
-                      label: '${selectedGroup.name} (archived)',
+                      label:
+                          '${_groupOptionLabel(selectedGroup, groupsProvider)} (archived)',
+                      searchText: _groupOptionSearchText(
+                        selectedGroup,
+                        groupsProvider,
+                      ),
                     ),
                 ],
                 onChanged: (value) => setState(() {
@@ -722,6 +641,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                               groupBaseUnit?.unitGroupName ??
                               groupBaseUnit?.name ??
                               '',
+                          initialConversionBaseUnitId: groupBaseUnit?.id,
                         );
                         if (!mounted || created == null) {
                           return null;
@@ -772,7 +692,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           const SizedBox(height: 16),
           _PreviewCard(
             displayName: _displayNameController.text.trim(),
-            quantity: double.tryParse(_quantityController.text.trim()),
             unitLabel: selectedUnit?.displayLabel,
             propertyCount: _rootNodes.length,
             leafCount: _leafDrafts.length,
@@ -1162,16 +1081,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       return;
     }
 
-    final quantityText = _quantityController.text.trim();
-    final parsedQuantity = quantityText.isEmpty
-        ? 0.0
-        : double.tryParse(quantityText);
-    if (parsedQuantity == null || parsedQuantity < 0) {
-      setState(() {
-        _localError = 'Enter a valid decimal quantity or leave it blank.';
-      });
-      return;
-    }
+    final parsedQuantity = widget.item?.quantity ?? 0.0;
     if (_selectedGroupId == null || _selectedUnitId == null) {
       setState(() {
         _localError = 'Select both a group and a unit.';
@@ -1286,18 +1196,46 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     );
   }
 
-  String _generateItemDisplayName(String name, String alias, double? quantity) {
-    final base = [
+  String _generateItemDisplayName(String name, String alias) {
+    return [
       name.trim(),
       alias.trim(),
     ].where((entry) => entry.isNotEmpty).join(' / ');
-    if (base.isEmpty) {
-      return quantity == null || quantity <= 0 ? '' : _formatQuantity(quantity);
+  }
+
+  String _groupOptionLabel(
+    GroupDefinition group,
+    GroupsProvider groupsProvider,
+  ) {
+    final primaryGroup = _primaryGroupFor(group, groupsProvider);
+    if (primaryGroup.id == group.id) {
+      return '${group.name} • Primary group';
     }
-    if (quantity == null || quantity <= 0) {
-      return base;
+    return '${group.name} • Primary: ${primaryGroup.name}';
+  }
+
+  String _groupOptionSearchText(
+    GroupDefinition group,
+    GroupsProvider groupsProvider,
+  ) {
+    final primaryGroup = _primaryGroupFor(group, groupsProvider);
+    return '${group.name} ${primaryGroup.name}';
+  }
+
+  GroupDefinition _primaryGroupFor(
+    GroupDefinition group,
+    GroupsProvider groupsProvider,
+  ) {
+    var current = group;
+    final visited = <int>{current.id};
+    while (current.parentGroupId != null) {
+      final parent = groupsProvider.findById(current.parentGroupId);
+      if (parent == null || !visited.add(parent.id)) {
+        break;
+      }
+      current = parent;
     }
-    return '$base - ${_formatQuantity(quantity)}';
+    return current;
   }
 
   String _generateLeafDisplayName(_NodeDraft leaf) {
@@ -1396,7 +1334,7 @@ class _TreeNodeEditor extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 child: Row(
-                  mainAxisSize: MainAxisSize.min,
+                  mainAxisSize: MainAxisSize.max,
                   children: [
                     SizedBox(
                       width: 20,
@@ -1412,8 +1350,7 @@ class _TreeNodeEditor extends StatelessWidget {
                     Icon(icon, size: iconSize),
                     const SizedBox(width: 8),
                     if (draft.isNameEditing && !readOnly)
-                      SizedBox(
-                        width: 240,
+                      Expanded(
                         child: TextField(
                           controller: draft.nameController,
                           autofocus: true,
@@ -1435,8 +1372,7 @@ class _TreeNodeEditor extends StatelessWidget {
                         ),
                       )
                     else
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 320),
+                      Expanded(
                         child: Text(
                           summaryLabel,
                           overflow: TextOverflow.ellipsis,
@@ -1612,14 +1548,12 @@ class _SectionCard extends StatelessWidget {
 class _PreviewCard extends StatelessWidget {
   const _PreviewCard({
     required this.displayName,
-    required this.quantity,
     required this.unitLabel,
     required this.propertyCount,
     required this.leafCount,
   });
 
   final String displayName;
-  final double? quantity;
   final String? unitLabel;
   final int propertyCount;
   final int leafCount;
@@ -1634,11 +1568,6 @@ class _PreviewCard extends StatelessWidget {
         children: [
           _PreviewChip(
             label: displayName.isEmpty ? 'Display name pending' : displayName,
-          ),
-          _PreviewChip(
-            label: quantity == null
-                ? 'Quantity pending'
-                : _formatQuantity(quantity!),
           ),
           _PreviewChip(
             label: unitLabel == null ? 'Unit pending' : 'Unit: $unitLabel',

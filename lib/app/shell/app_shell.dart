@@ -61,9 +61,13 @@ class _AppShellState extends State<AppShell> {
       autofocus: true,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final isMobile = constraints.maxWidth < 900;
-          final compact = constraints.maxWidth < 1240;
-          final sidebarWidth = compact ? 250.0 : 286.0;
+          final isMobile =
+              constraints.maxWidth < _ShellLayoutMetrics.mobileBreakpoint;
+          final compact =
+              constraints.maxWidth < _ShellLayoutMetrics.compactBreakpoint;
+          final sidebarWidth = compact
+              ? _ShellLayoutMetrics.compactSidebarWidth
+              : _ShellLayoutMetrics.sidebarWidth;
 
           return Scaffold(
             backgroundColor: Colors.transparent,
@@ -94,9 +98,17 @@ class _AppShellState extends State<AppShell> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           SizedBox(
-                            width: sidebarWidth + 40,
+                            width:
+                                sidebarWidth +
+                                _ShellLayoutMetrics.sidebarLeftInset +
+                                _ShellLayoutMetrics.sidebarRightGap,
                             child: const Padding(
-                              padding: EdgeInsets.fromLTRB(20, 21.5, 0, 0),
+                              padding: EdgeInsets.fromLTRB(
+                                _ShellLayoutMetrics.brandLeftInset,
+                                _ShellLayoutMetrics.brandTopInset,
+                                0,
+                                0,
+                              ),
                               child: _ShellCompanyBrand(),
                             ),
                           ),
@@ -109,10 +121,10 @@ class _AppShellState extends State<AppShell> {
                           if (!isMobile)
                             Padding(
                               padding: const EdgeInsets.fromLTRB(
-                                30,
-                                10,
-                                10,
-                                22,
+                                _ShellLayoutMetrics.sidebarLeftInset,
+                                _ShellLayoutMetrics.sidebarTopGap,
+                                _ShellLayoutMetrics.sidebarRightGap,
+                                _ShellLayoutMetrics.sidebarBottomInset,
                               ),
                               child: SizedBox(
                                 width: sidebarWidth,
@@ -186,6 +198,22 @@ class _AppShellState extends State<AppShell> {
   }
 }
 
+class _ShellLayoutMetrics {
+  const _ShellLayoutMetrics._();
+
+  static const double mobileBreakpoint = 900;
+  static const double compactBreakpoint = 1240;
+  static const double compactSidebarWidth = 250;
+  static const double sidebarWidth = 286;
+  static const double sidebarLeftInset = 30;
+  static const double sidebarRightGap = 10;
+  static const double sidebarTopGap = 10;
+  static const double sidebarBottomInset = 22;
+  static const double brandLeftInset = 20;
+  static const double brandTopInset = 21.5;
+  static const double desktopContentMinWidth = 900;
+}
+
 class _ShellCompanyBrand extends StatelessWidget {
   const _ShellCompanyBrand();
 
@@ -247,7 +275,7 @@ class _DesktopContentFrame extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final minWidth = 900.0;
+        const minWidth = _ShellLayoutMetrics.desktopContentMinWidth;
         final width = constraints.maxWidth < minWidth
             ? minWidth
             : constraints.maxWidth;

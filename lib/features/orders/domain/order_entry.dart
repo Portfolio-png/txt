@@ -1,5 +1,12 @@
 enum OrderStatus { draft, notStarted, inProgress, completed, delayed }
 
+OrderStatus orderStatusFromName(String value) {
+  return OrderStatus.values
+          .where((status) => status.name == value)
+          .firstOrNull ??
+      OrderStatus.notStarted;
+}
+
 class OrderEntry {
   const OrderEntry({
     required this.id,
@@ -36,4 +43,8 @@ class OrderEntry {
   final DateTime createdAt;
   final DateTime? startDate;
   final DateTime? endDate;
+}
+
+extension<T> on Iterable<T> {
+  T? get firstOrNull => isEmpty ? null : first;
 }

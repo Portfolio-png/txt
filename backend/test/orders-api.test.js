@@ -8,6 +8,13 @@ test('orders persistence functions create, list, and update lifecycle', async ()
   const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-orders-api-'));
   const dbPath = path.join(tempDir, 'paper.db');
   process.env.DB_PATH = dbPath;
+  process.env.S3_ENDPOINT = 'https://storage.example.test';
+  process.env.S3_REGION = 'us-east-1';
+  process.env.S3_BUCKET = 'paper-test';
+  process.env.S3_ACCESS_KEY_ID = 'test-access';
+  process.env.S3_SECRET_ACCESS_KEY = 'test-secret';
+  process.env.S3_FORCE_PATH_STYLE = 'true';
+  process.env.S3_SKIP_OBJECT_VERIFY = 'true';
 
   const backend = require('../server.js');
 
@@ -37,6 +44,85 @@ test('orders persistence functions create, list, and update lifecycle', async ()
     const leaf = findFirstLeafVariation(item.variationTree || []);
     assert.ok(leaf, 'expected a seeded leaf variation path');
 
+    const uploadIntent = await backend.createPoUploadIntent({
+      fileName: 'client-po.pdf',
+      contentType: 'application/pdf',
+      sizeBytes: 1024,
+      sha256: 'a'.repeat(64),
+    });
+    assert.equal(uploadIntent.alreadyUploaded, false);
+    assert.ok(uploadIntent.upload.uploadUrl.includes('X-Amz-Signature'));
+
+    const document = await backend.completePoUpload({
+      uploadSessionId: uploadIntent.upload.uploadSessionId,
+      objectKey: uploadIntent.upload.objectKey,
+    });
+    assert.equal(document.fileName, 'client-po.pdf');
+
+    const repeatedIntent = await backend.createPoUploadIntent({
+      fileName: 'client-po.pdf',
+      contentType: 'application/pdf',
+      sizeBytes: 1024,
+      sha256: 'a'.repeat(64),
+    });
+    assert.equal(repeatedIntent.alreadyUploaded, true);
+    assert.equal(repeatedIntent.document.id, document.id);
+
+    await assert.rejects(
+      () =>
+        backend.saveOrder({
+          orderNo: 'ORD-BAD-DOC',
+          clientId: client.id,
+          clientName: client.name,
+          poNumber: 'PO-BAD-DOC',
+          clientCode: client.alias,
+          itemId: item.id,
+          itemName: item.displayName,
+          variationLeafNodeId: leaf.id,
+          variationPathLabel: leaf.displayName,
+          variationPathNodeIds: leaf.path,
+          quantity: 1,
+          status: 'draft',
+          poDocumentIds: [999999],
+        }),
+      /One or more PO documents were not uploaded/,
+    );
+    const afterFailedDocumentLink = await backend.getOrders();
+    assert.equal(
+      afterFailedDocumentLink.some((order) => order.order_no === 'ORD-BAD-DOC'),
+      false,
+      'failed PO document linking must not leave an order row behind',
+    );
+
+    // Test rollback for invalid material requirements
+    await assert.rejects(
+      () =>
+        backend.saveOrder({
+          orderNo: 'ORD-BAD-MAT',
+          clientId: client.id,
+          clientName: client.name,
+          poNumber: 'PO-BAD-MAT',
+          clientCode: client.alias,
+          itemId: item.id,
+          itemName: item.displayName,
+          variationLeafNodeId: leaf.id,
+          variationPathLabel: leaf.displayName,
+          variationPathNodeIds: leaf.path,
+          quantity: 1,
+          status: 'draft',
+          poDocumentIds: [document.id],
+          materialRequirements: [
+            { requiredQty: 'INVALID' } // this will throw or cause constraint failure if handled
+          ],
+        }),
+    );
+    const afterFailedMaterial = await backend.getOrders();
+    assert.equal(
+      afterFailedMaterial.some((order) => order.order_no === 'ORD-BAD-MAT'),
+      false,
+      'failed material requirement insertion must rollback order creation'
+    );
+
     const created = await backend.saveOrder({
       orderNo: 'ORD-DB-001',
       clientId: client.id,
@@ -52,6 +138,16 @@ test('orders persistence functions create, list, and update lifecycle', async ()
       status: 'inProgress',
       startDate: '2026-04-04T00:00:00.000Z',
       endDate: '2026-04-10T00:00:00.000Z',
+      poDocumentIds: [document.id],
+      materialRequirements: [
+        {
+          materialBarcode: 'MOCK-BARCODE',
+          materialName: 'Mock Material',
+          requiredQty: 5.5,
+          unitSymbol: 'kg'
+        }
+      ],
+      actor: { id: 1, name: 'Test User', role: 'admin', source: 'test' }
     });
 
     const createdDto = backend.rowToOrderDto
@@ -60,6 +156,33 @@ test('orders persistence functions create, list, and update lifecycle', async ()
     assert.equal(createdDto.orderNo, 'ORD-DB-001');
     assert.equal(createdDto.status, 'inProgress');
     assert.equal(createdDto.quantity, 12);
+    const linkedDocuments = await backend.getPoDocumentsForOrder(created.id);
+    assert.equal(linkedDocuments.length, 1);
+    assert.equal(linkedDocuments[0].id, document.id);
+
+    // Verify material requirements
+    const requirements = await backend.all('SELECT * FROM order_material_requirements WHERE order_id = ?', [created.id]);
+    assert.equal(requirements.length, 1);
+    assert.equal(requirements[0].required_qty, 5.5);
+    assert.equal(requirements[0].material_barcode, 'MOCK-BARCODE');
+
+    // Verify activity log for creation
+    const activityLogs = await backend.all('SELECT * FROM order_activity_log WHERE order_id = ? ORDER BY id ASC', [created.id]);
+    assert.ok(activityLogs.length >= 1, 'expected activity logs');
+    assert.ok(activityLogs.some(log => log.activity_type === 'order_created'));
+    const fetchedActivity = await backend.getOrderActivity(created.id);
+    assert.ok(fetchedActivity.length >= 1, 'expected activity API rows');
+    assert.equal(fetchedActivity[0].order_id, created.id);
+    await assert.rejects(
+      () => backend.getOrderActivity(999999),
+      /Order not found/,
+    );
+
+    // Test duplicate linking idempotency
+    const { newlyLinkedIds } = await backend.linkPoDocumentsToOrder(created.id, [document.id]);
+    assert.equal(newlyLinkedIds.length, 0, 'should be idempotent and return no newly linked ids');
+    const linkedOnce = await backend.getPoDocumentsForOrder(created.id);
+    assert.equal(linkedOnce.length, 1);
 
     const listedRows = await backend.getOrders();
     assert.equal(listedRows.length, seededOrders.length + 1);
@@ -75,16 +198,44 @@ test('orders persistence functions create, list, and update lifecycle', async ()
       status: 'completed',
       startDate: '2026-04-05T00:00:00.000Z',
       endDate: '2026-04-12T00:00:00.000Z',
+      actor: { id: 1, name: 'Test User', role: 'admin', source: 'test' }
     });
     const updatedDto = backend.rowToOrderDto ? backend.rowToOrderDto(updated) : updated;
     assert.equal(updatedDto.status, 'completed');
     assert.equal(updatedDto.endDate, '2026-04-12T00:00:00.000Z');
+
+    // Verify status history
+    const statusHistory = await backend.all('SELECT * FROM order_status_history WHERE order_id = ?', [created.id]);
+    assert.equal(statusHistory.length, 1);
+    assert.equal(statusHistory[0].previous_status, 'inProgress');
+    assert.equal(statusHistory[0].new_status, 'completed');
+    const fetchedStatusHistory = await backend.getOrderStatusHistory(created.id);
+    assert.equal(fetchedStatusHistory.length, 1);
+    assert.equal(fetchedStatusHistory[0].new_status, 'completed');
+    await assert.rejects(
+      () => backend.getOrderStatusHistory(999999),
+      /Order not found/,
+    );
+
+    // Verify activity log for update
+    const updateLogs = await backend.all('SELECT * FROM order_activity_log WHERE order_id = ? AND activity_type = ?', [created.id, 'lifecycle_updated']);
+    assert.equal(updateLogs.length, 1);
+
+    // Test invalid lifecycle rollback
+    await assert.rejects(
+      () => backend.updateOrderLifecycle({
+        id: created.id,
+        status: 'draft', // assuming valid
+        startDate: 'INVALID_DATE', // SQLite doesn't strictly throw on string insertion to TEXT, but let's test a failed case by throwing an error in updateOrderLifecycle or using non-existent order.
+      }),
+    );
 
     const drafted = await backend.updateOrderLifecycle({
       id: created.id,
       status: 'draft',
       startDate: null,
       endDate: null,
+      actor: { id: 1, name: 'Test User', role: 'admin', source: 'test' }
     });
     const draftedDto = backend.rowToOrderDto ? backend.rowToOrderDto(drafted) : drafted;
     assert.equal(draftedDto.status, 'draft');

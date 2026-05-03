@@ -22,6 +22,7 @@ class _AppSidebarState extends State<AppSidebar> {
     debugLabel: 'app_sidebar_scope',
   );
   final Map<String, FocusNode> _focusNodes = <String, FocusNode>{};
+  bool _isHovered = false;
 
   static const List<_SidebarItemData> _moduleItems = <_SidebarItemData>[
     _SidebarItemData('dashboard', 'Dashboard', Icons.dashboard_outlined),
@@ -175,10 +176,14 @@ class _AppSidebarState extends State<AppSidebar> {
         selectedKey: selectedKey,
         isConfiguratorExpanded: isConfiguratorExpanded,
       ),
-      child: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: Colors.white,
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: _isHovered ? Colors.white : Colors.white.withOpacity(0.8),
           borderRadius: BorderRadius.circular(widget.compact ? 18 : 34),
           boxShadow: SoftErpTheme.subtleShadow,
         ),
@@ -268,6 +273,7 @@ class _AppSidebarState extends State<AppSidebar> {
               ),
             ],
           ),
+        ),
         ),
       ),
     );
