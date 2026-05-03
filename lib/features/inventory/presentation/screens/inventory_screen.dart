@@ -3732,13 +3732,13 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
 
   @override
   Widget build(BuildContext context) {
-    final surfaceColor = widget.isSelected
-        ? _inventoryHoverColor
-        : widget.entry.depth == 0 && widget.entry.isExpanded
-        ? _inventoryHoverColor
-        : widget.isStriped
-        ? SoftErpTheme.cardSurfaceAlt
-        : SoftErpTheme.cardSurface;
+    final baseColor = widget.isStriped
+        ? const Color(0xFFF9FBFF).withValues(alpha: 0.8)
+        : SoftErpTheme.cardSurface.withValues(alpha: 0.8);
+    const hoverColor = Color(0xFFFFFFFF);
+    final selectedColor = widget.entry.depth == 0 && widget.entry.isExpanded
+        ? const Color(0xFFF2EFFF)
+        : const Color(0xFFF1F5FF);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -3755,83 +3755,78 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
                 widget.isSelected ||
                 (widget.entry.depth == 0 && widget.entry.isExpanded),
             onTap: widget.onTap,
+            baseColor: baseColor,
+            hoverColor: hoverColor,
+            selectedColor: selectedColor,
             child: SizedBox(
               height: widget.metrics.rowHeight,
               child: Padding(
                 padding: EdgeInsets.symmetric(
                   horizontal: widget.metrics.horizontalPadding,
                 ),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: surfaceColor,
-                    borderRadius: BorderRadius.circular(
-                      widget.metrics.rowRadius,
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: widget.metrics.nameWidth,
+                      child: _InventoryNameCell(
+                        record: widget.record,
+                        entry: widget.entry,
+                        metrics: widget.metrics,
+                        isPinned: widget.isPinned,
+                        onExpandToggle: widget.onExpandToggle,
+                      ),
                     ),
-                  ),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: widget.metrics.nameWidth,
-                        child: _InventoryNameCell(
-                          record: widget.record,
-                          entry: widget.entry,
-                          metrics: widget.metrics,
-                          isPinned: widget.isPinned,
-                          onExpandToggle: widget.onExpandToggle,
-                        ),
-                      ),
-                      _DataCell(
-                        _displayPrimaryId(widget.entry),
-                        width: widget.metrics.barcodeWidth,
-                        metrics: widget.metrics,
-                      ),
-                      _DataCell(
-                        _displayStock(widget.record),
-                        width: widget.metrics.stockWidth,
-                        metrics: widget.metrics,
-                      ),
-                      _DataCell(
-                        _activityDate(widget.record),
-                        width: widget.metrics.dateWidth,
-                        metrics: widget.metrics,
-                      ),
-                      _DataCell(
-                        widget.record.createdBy.ifEmpty('Demo Admin'),
-                        width: widget.metrics.createdByWidth,
-                        metrics: widget.metrics,
-                      ),
-                      SizedBox(
-                        width: widget.metrics.statusWidth,
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: _InventoryStatusBadge(
-                            record: widget.record,
-                            metrics: widget.metrics,
-                          ),
-                        ),
-                      ),
-                      SizedBox(
-                        width: widget.metrics.actionsWidth,
-                        child: _InventoryActionsCell(
+                    _DataCell(
+                      _displayPrimaryId(widget.entry),
+                      width: widget.metrics.barcodeWidth,
+                      metrics: widget.metrics,
+                    ),
+                    _DataCell(
+                      _displayStock(widget.record),
+                      width: widget.metrics.stockWidth,
+                      metrics: widget.metrics,
+                    ),
+                    _DataCell(
+                      _activityDate(widget.record),
+                      width: widget.metrics.dateWidth,
+                      metrics: widget.metrics,
+                    ),
+                    _DataCell(
+                      widget.record.createdBy.ifEmpty('Demo Admin'),
+                      width: widget.metrics.createdByWidth,
+                      metrics: widget.metrics,
+                    ),
+                    SizedBox(
+                      width: widget.metrics.statusWidth,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: _InventoryStatusBadge(
                           record: widget.record,
                           metrics: widget.metrics,
-                          hovered: _hovered,
-                          isSelected: widget.isSelected,
-                          isStriped: widget.isStriped,
-                          isRequestDelete: widget.isRequestDelete,
-                          onTap: widget.onTap,
-                          onReceive: widget.onReceive,
-                          showOpenAction: widget.showOpenAction,
-                          onAddSubGroup: widget.onAddSubGroup,
-                          onEdit: widget.onEdit,
-                          onDelete: widget.onDelete,
-                          onLinkGroup: widget.onLinkGroup,
-                          onLinkItem: widget.onLinkItem,
-                          onUnlink: widget.onUnlink,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                    SizedBox(
+                      width: widget.metrics.actionsWidth,
+                      child: _InventoryActionsCell(
+                        record: widget.record,
+                        metrics: widget.metrics,
+                        hovered: _hovered,
+                        isSelected: widget.isSelected,
+                        isStriped: widget.isStriped,
+                        isRequestDelete: widget.isRequestDelete,
+                        onTap: widget.onTap,
+                        onReceive: widget.onReceive,
+                        showOpenAction: widget.showOpenAction,
+                        onAddSubGroup: widget.onAddSubGroup,
+                        onEdit: widget.onEdit,
+                        onDelete: widget.onDelete,
+                        onLinkGroup: widget.onLinkGroup,
+                        onLinkItem: widget.onLinkItem,
+                        onUnlink: widget.onUnlink,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -5039,7 +5034,7 @@ class _InventoryTableMetrics {
         statusWidth: 136,
         actionsWidth: 152,
         headerHeight: 46,
-        rowHeight: 70,
+        rowHeight: 82,
         headerFontSize: 12,
         bodyFontSize: 14,
         statusFontSize: 11,
@@ -5051,7 +5046,7 @@ class _InventoryTableMetrics {
         statusHorizontalPadding: 8,
         statusVerticalPadding: 4,
         actionButtonSize: 24,
-        rowGap: 5,
+        rowGap: 4,
       );
     }
     if (width < 1500) {
@@ -5065,7 +5060,7 @@ class _InventoryTableMetrics {
         statusWidth: 172,
         actionsWidth: 168,
         headerHeight: 48,
-        rowHeight: 72,
+        rowHeight: 86,
         headerFontSize: 14,
         bodyFontSize: 15,
         statusFontSize: 12,
@@ -5090,7 +5085,7 @@ class _InventoryTableMetrics {
       statusWidth: 194,
       actionsWidth: 184,
       headerHeight: 50,
-      rowHeight: 74,
+      rowHeight: 86,
       headerFontSize: 14,
       bodyFontSize: 16,
       statusFontSize: 12,

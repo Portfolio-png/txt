@@ -151,7 +151,8 @@ class _AppShellState extends State<AppShell> {
   }
 
   bool _handleGlobalKeyEvent(KeyEvent event) {
-    if (ModalRoute.of(context)?.isCurrent != true) {
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) {
       return false;
     }
     return _handleShellKeyEvent(event) == KeyEventResult.handled;
@@ -166,6 +167,11 @@ class _AppShellState extends State<AppShell> {
     final isMetaPressed = HardwareKeyboard.instance.isMetaPressed;
     final usesCommandModifier = isControlPressed || isMetaPressed;
     if (!usesCommandModifier) {
+      final character = event.character;
+      if (_shouldRouteTypingToSearch(event, character)) {
+        context.read<NavigationProvider>().typeIntoTopStripSearch(character!);
+        return KeyEventResult.handled;
+      }
       return KeyEventResult.ignored;
     }
 
@@ -184,6 +190,54 @@ class _AppShellState extends State<AppShell> {
     }
 
     return KeyEventResult.ignored;
+  }
+
+  bool _shouldRouteTypingToSearch(KeyDownEvent event, String? character) {
+    if (character == null || character.isEmpty) {
+      return false;
+    }
+    if (HardwareKeyboard.instance.isAltPressed) {
+      return false;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.space) {
+      return false;
+    }
+    if (character.runes.length != 1) {
+      return false;
+    }
+    final codeUnit = character.runes.single;
+    if (codeUnit < 0x20 || codeUnit == 0x7F) {
+      return false;
+    }
+    if (_isEditableFocusActive()) {
+      return false;
+    }
+    return true;
+  }
+
+  bool _isEditableFocusActive() {
+    final primaryFocus = FocusManager.instance.primaryFocus;
+    if (primaryFocus ==
+        context.read<NavigationProvider>().topStripSearchFocusNode) {
+      return true;
+    }
+
+    final focusedContext = primaryFocus?.context;
+    if (focusedContext == null) {
+      return false;
+    }
+    if (focusedContext.widget is EditableText) {
+      return true;
+    }
+    var editableFound = focusedContext.widget is EditableText;
+    focusedContext.visitAncestorElements((element) {
+      if (element.widget is EditableText) {
+        editableFound = true;
+        return false;
+      }
+      return true;
+    });
+    return editableFound;
   }
 
   void _openNewOrderFromShortcut(BuildContext context) {
@@ -244,7 +298,7 @@ class _ShellCompanyBrand extends StatelessWidget {
           const SizedBox(width: 13),
           Expanded(
             child: Text(
-              'Shree Ganesh Metal Works',
+              'Sarvodaya Udyog',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(

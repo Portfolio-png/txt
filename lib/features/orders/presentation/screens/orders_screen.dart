@@ -840,9 +840,11 @@ class _SummaryCardState extends State<_SummaryCard> {
         borderRadius: BorderRadius.circular(22),
         child: SoftSurface(
           radius: 22,
-          color: widget.isActive 
-              ? const Color(0xFFF7F8FC) 
-              : (_isHovered ? SoftErpTheme.cardSurface : SoftErpTheme.cardSurface.withOpacity(0.8)),
+          color: widget.isActive
+              ? const Color(0xFFF7F8FC)
+              : (_isHovered
+                    ? SoftErpTheme.cardSurface
+                    : SoftErpTheme.cardSurface.withValues(alpha: 0.8)),
           strongBorder: widget.isActive,
           elevated: true,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -1046,7 +1048,7 @@ class _TableHeaderRow extends StatelessWidget {
         right: _OrdersTableMetrics.rightPadding,
       ),
       decoration: BoxDecoration(
-        color: SoftErpTheme.sectionSurface.withOpacity(0.8),
+        color: SoftErpTheme.sectionSurface.withValues(alpha: 0.8),
         borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
@@ -1121,8 +1123,8 @@ class _OrderDataRowState extends State<_OrderDataRow> {
     final quickAction = _primaryQuickAction(order, urgency);
     final isCompleted = order.status == OrderStatus.completed;
     final baseColor = isCompleted
-        ? const Color(0xFFF9FBFF).withOpacity(0.8)
-        : SoftErpTheme.cardSurface.withOpacity(0.8);
+        ? const Color(0xFFF9FBFF).withValues(alpha: 0.8)
+        : SoftErpTheme.cardSurface.withValues(alpha: 0.8);
     final hoverColor = isCompleted
         ? const Color(0xFFFFFFFF)
         : const Color(0xFFFFFFFF);
@@ -2010,17 +2012,14 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                               items,
                               isCompact: isCompact,
                             );
-                            final uploadPanel = _AnimatedOrderUploadPanel(
-                              visible: _showUploadPanel,
-                              child: _OrderUploadPanel(
-                                onClose: _toggleUploadPanel,
-                                onAddDocument: _handleAddDocument,
-                                documents: _poDocuments,
-                                recentFiles: _recentPoFiles,
-                                onRemoveDocument: _removePoDocument,
-                                onRetryDocument: _retryPoDocument,
-                                onUseRecentFile: _addCachedPoFile,
-                              ),
+                            final uploadPanel = _OrderUploadPanel(
+                              onClose: _toggleUploadPanel,
+                              onAddDocument: _handleAddDocument,
+                              documents: _poDocuments,
+                              recentFiles: _recentPoFiles,
+                              onRemoveDocument: _removePoDocument,
+                              onRetryDocument: _retryPoDocument,
+                              onUseRecentFile: _addCachedPoFile,
                             );
                             final canShowUploadColumn =
                                 _renderUploadPanel &&
@@ -2063,32 +2062,23 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                                         ],
                                       ),
                                     ),
-                                    const SizedBox(height: 14),
-                                    SizedBox(height: 220, child: uploadPanel),
+                                    _AnimatedOrderStackedUploadSlot(
+                                      visible: _showUploadPanel,
+                                      child: Padding(
+                                        padding: const EdgeInsets.only(top: 14),
+                                        child: uploadPanel,
+                                      ),
+                                    ),
                                   ],
                                 ),
                               );
                             }
-                            return SizedBox(
-                              height: 704,
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Expanded(
-                                    flex: canShowUploadColumn ? 3 : 4,
-                                    child: detailsPanel,
-                                  ),
-                                  const SizedBox(width: 14),
-                                  Expanded(
-                                    flex: canShowUploadColumn ? 6 : 9,
-                                    child: itemsPanel,
-                                  ),
-                                  if (canShowUploadColumn) ...[
-                                    const SizedBox(width: 14),
-                                    Expanded(flex: 3, child: uploadPanel),
-                                  ],
-                                ],
-                              ),
+                            return _AnimatedOrderEditorColumns(
+                              showUploadPanel: _showUploadPanel,
+                              renderUploadPanel: _renderUploadPanel,
+                              detailsPanel: detailsPanel,
+                              itemsPanel: itemsPanel,
+                              uploadPanel: uploadPanel,
                             );
                           },
                         ),
@@ -2144,7 +2134,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       setState(() {
         _showUploadPanel = false;
       });
-      Future<void>.delayed(const Duration(milliseconds: 760), () {
+      Future<void>.delayed(const Duration(milliseconds: 860), () {
         if (!mounted || _showUploadPanel) {
           return;
         }
@@ -2605,7 +2595,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
           key: fieldKey,
           tapTargetKey: fieldKey,
           value: line.selectedItemId,
-          decoration: _inputDecoration(hintText: 'Dolly'),
+          decoration: _inputDecoration(hintText: 'Select Item'),
           dialogTitle: 'Item',
           searchHintText: 'Search item',
           options: items
@@ -5461,31 +5451,125 @@ class _OrderItemsCountBadge extends StatelessWidget {
   }
 }
 
-class _AnimatedOrderUploadPanel extends StatelessWidget {
-  const _AnimatedOrderUploadPanel({required this.visible, required this.child});
+class _AnimatedOrderEditorColumns extends StatelessWidget {
+  const _AnimatedOrderEditorColumns({
+    required this.showUploadPanel,
+    required this.renderUploadPanel,
+    required this.detailsPanel,
+    required this.itemsPanel,
+    required this.uploadPanel,
+  });
+
+  final bool showUploadPanel;
+  final bool renderUploadPanel;
+  final Widget detailsPanel;
+  final Widget itemsPanel;
+  final Widget uploadPanel;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 704,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(
+          begin: showUploadPanel ? 0 : 1,
+          end: showUploadPanel ? 1 : 0,
+        ),
+        duration: const Duration(milliseconds: 820),
+        curve: Curves.easeInOutCubicEmphasized,
+        builder: (context, value, child) {
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              const gap = 14.0;
+              final totalWidth = constraints.maxWidth;
+              final closedContentWidth = math.max(0.0, totalWidth - gap);
+              final openContentWidth = math.max(0.0, totalWidth - (gap * 2));
+
+              final detailsClosed = closedContentWidth * 4 / 13;
+              final itemsClosed = closedContentWidth * 9 / 13;
+              final detailsOpen = openContentWidth * 3 / 12;
+              final itemsOpen = openContentWidth * 6 / 12;
+              final uploadOpen = openContentWidth * 3 / 12;
+
+              double lerp(double start, double end) {
+                return start + ((end - start) * value);
+              }
+
+              final detailsWidth = lerp(detailsClosed, detailsOpen);
+              final itemsWidth = lerp(itemsClosed, itemsOpen);
+              final uploadWidth = uploadOpen * value;
+              final uploadGap = gap * value;
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(width: detailsWidth, child: detailsPanel),
+                  const SizedBox(width: gap),
+                  SizedBox(width: itemsWidth, child: itemsPanel),
+                  if (renderUploadPanel) ...[
+                    SizedBox(width: uploadGap),
+                    ClipRect(
+                      child: SizedBox(
+                        width: uploadWidth,
+                        child: OverflowBox(
+                          alignment: Alignment.centerRight,
+                          minWidth: uploadOpen,
+                          maxWidth: uploadOpen,
+                          child: Transform(
+                            transform: Matrix4.identity()
+                              ..setEntry(3, 2, 0.001)
+                              ..setEntry(0, 1, (1 - value) * -0.08)
+                              ..setEntry(0, 3, (1 - value) * 74),
+                            alignment: Alignment.centerRight,
+                            child: SizedBox(
+                              width: uploadOpen,
+                              child: uploadPanel,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _AnimatedOrderStackedUploadSlot extends StatelessWidget {
+  const _AnimatedOrderStackedUploadSlot({
+    required this.visible,
+    required this.child,
+  });
 
   final bool visible;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
+    const targetHeight = 252.0;
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: visible ? 0 : 1, end: visible ? 1 : 0),
-      duration: const Duration(milliseconds: 720),
-      curve: Curves.easeInOutCubic,
+      duration: const Duration(milliseconds: 820),
+      curve: Curves.easeInOutCubicEmphasized,
       child: child,
       builder: (context, value, child) {
-        final eased = Curves.easeInOutCubic.transform(value);
-        final matrix = Matrix4.identity()
-          ..setEntry(3, 2, 0.001)
-          ..setEntry(0, 1, (1 - eased) * -0.12)
-          ..setEntry(0, 3, (1 - eased) * 92);
-        return Opacity(
-          opacity: (0.18 + (eased * 0.82)).clamp(0.0, 1.0),
-          child: Transform(
-            transform: matrix,
-            alignment: Alignment.centerRight,
-            child: child,
+        return ClipRect(
+          child: SizedBox(
+            height: targetHeight * value,
+            child: OverflowBox(
+              alignment: Alignment.topCenter,
+              minHeight: targetHeight,
+              maxHeight: targetHeight,
+              child: Transform.translate(
+                offset: Offset(0, (1 - value) * 18),
+                child: SizedBox(height: targetHeight, child: child),
+              ),
+            ),
           ),
         );
       },

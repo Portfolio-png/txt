@@ -60,7 +60,10 @@ fi
 echo "==> Installing dependencies"
 rm -rf node_modules
 if [[ -f "package-lock.json" ]]; then
-  npm ci
+  if ! npm ci; then
+    echo "npm ci failed (lockfile out of sync). Falling back to npm install."
+    npm install
+  fi
 else
   npm install
 fi

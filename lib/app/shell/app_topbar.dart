@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -239,6 +241,7 @@ class _ShellTopStripSearchField extends StatefulWidget {
 class _ShellTopStripSearchFieldState extends State<_ShellTopStripSearchField> {
   late final TextEditingController _controller;
   FocusNode? _focusNode;
+  int _lastConsumedSearchTextRevision = 0;
 
   @override
   void initState() {
@@ -291,6 +294,38 @@ class _ShellTopStripSearchFieldState extends State<_ShellTopStripSearchField> {
 
   @override
   Widget build(BuildContext context) {
+    final searchTextRevision = context.select<NavigationProvider, int>(
+      (navigation) => navigation.topStripSearchTextRevision,
+    );
+    if (searchTextRevision != _lastConsumedSearchTextRevision) {
+      _lastConsumedSearchTextRevision = searchTextRevision;
+      final pendingText = context
+          .read<NavigationProvider>()
+          .consumePendingTopStripSearchText();
+      if (pendingText.isNotEmpty) {
+        final selection = _controller.selection;
+        final text = _controller.text;
+        final start = selection.isValid
+            ? math.min(selection.start, selection.end)
+            : text.length;
+        final end = selection.isValid
+            ? math.max(selection.start, selection.end)
+            : text.length;
+        final nextText = text.replaceRange(start, end, pendingText);
+        final nextOffset = start + pendingText.length;
+        _controller.value = TextEditingValue(
+          text: nextText,
+          selection: TextSelection.collapsed(offset: nextOffset),
+        );
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _controller.text != nextText) {
+            return;
+          }
+          widget.search.onChanged(nextText);
+        });
+      }
+    }
+
     return TextField(
       key: const ValueKey<String>('shell_top_strip_search_field'),
       focusNode: _focusNode,

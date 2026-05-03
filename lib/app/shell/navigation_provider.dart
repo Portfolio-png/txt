@@ -29,11 +29,14 @@ class NavigationProvider extends ChangeNotifier {
     : _selectedKey = initialKey;
 
   String _selectedKey;
+  int _topStripSearchTextRevision = 0;
+  String _pendingTopStripSearchText = '';
   final FocusNode topStripSearchFocusNode = FocusNode(
     debugLabel: 'top_strip_search',
   );
 
   String get selectedKey => _selectedKey;
+  int get topStripSearchTextRevision => _topStripSearchTextRevision;
   bool _skipNextContentTransition = false;
 
   void select(String key, {bool skipTransition = false}) {
@@ -66,6 +69,23 @@ class NavigationProvider extends ChangeNotifier {
 
   void focusTopStripSearch() {
     topStripSearchFocusNode.requestFocus();
+  }
+
+  void typeIntoTopStripSearch(String text) {
+    if (text.isEmpty) {
+      focusTopStripSearch();
+      return;
+    }
+    _pendingTopStripSearchText += text;
+    _topStripSearchTextRevision += 1;
+    focusTopStripSearch();
+    notifyListeners();
+  }
+
+  String consumePendingTopStripSearchText() {
+    final text = _pendingTopStripSearchText;
+    _pendingTopStripSearchText = '';
+    return text;
   }
 
   @override
