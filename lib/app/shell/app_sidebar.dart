@@ -27,6 +27,11 @@ class _AppSidebarState extends State<AppSidebar> {
   static const List<_SidebarItemData> _moduleItems = <_SidebarItemData>[
     _SidebarItemData('dashboard', 'Dashboard', Icons.dashboard_outlined),
     _SidebarItemData('orders', 'Orders', Icons.receipt_long_outlined),
+    _SidebarItemData(
+      'delivery_challans',
+      'Delivery Challan',
+      Icons.description_outlined,
+    ),
     _SidebarItemData('inventory', 'Inventory', Icons.inventory_2_outlined),
     _SidebarItemData(
       'production_pipelines',
@@ -183,97 +188,99 @@ class _AppSidebarState extends State<AppSidebar> {
           duration: const Duration(milliseconds: 200),
           width: double.infinity,
           decoration: BoxDecoration(
-            color: _isHovered ? Colors.white : Colors.white.withOpacity(0.8),
-          borderRadius: BorderRadius.circular(widget.compact ? 18 : 34),
-          boxShadow: SoftErpTheme.subtleShadow,
-        ),
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(
-            widget.compact ? 10 : 14,
-            widget.compact ? 12 : 16,
-            widget.compact ? 10 : 14,
-            widget.compact ? 12 : 14,
+            color: _isHovered
+                ? Colors.white
+                : Colors.white.withValues(alpha: 0.8),
+            borderRadius: BorderRadius.circular(widget.compact ? 18 : 34),
+            boxShadow: SoftErpTheme.subtleShadow,
           ),
-          child: Column(
-            children: [
-              Expanded(
-                child: Column(
-                  children: [
-                    Expanded(
-                      child: SingleChildScrollView(
-                        child: Column(
-                          children: [
-                            _SidebarSection(
-                              title: 'Modules',
-                              compact: widget.compact,
-                              children: _moduleItems,
-                              selectedKey: selectedKey,
-                              onSelected: _selectKey,
-                              focusNodeForKey: _focusNodeFor,
-                            ),
-                            const SizedBox(height: 10),
-                            _SidebarSection(
-                              title: 'Configurator',
-                              compact: widget.compact,
-                              children: _configuratorItems,
-                              selectedKey: selectedKey,
-                              isExpandable: true,
-                              isExpanded: isConfiguratorExpanded,
-                              isParentSelected: false,
-                              onExpansionToggle: () {
-                                setState(() {
-                                  _isConfiguratorExpanded =
-                                      !_isConfiguratorExpanded;
-                                });
-                              },
-                              onSelected: _selectKey,
-                              focusNodeForKey: _focusNodeFor,
-                            ),
-                            if (canManageUsers) ...[
-                              const SizedBox(height: 10),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              widget.compact ? 10 : 14,
+              widget.compact ? 12 : 16,
+              widget.compact ? 10 : 14,
+              widget.compact ? 12 : 14,
+            ),
+            child: Column(
+              children: [
+                Expanded(
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            children: [
                               _SidebarSection(
-                                title: 'Admin',
+                                title: 'Modules',
                                 compact: widget.compact,
-                                children: _adminItems,
+                                children: _moduleItems,
                                 selectedKey: selectedKey,
                                 onSelected: _selectKey,
                                 focusNodeForKey: _focusNodeFor,
                               ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                    if (!widget.compact) ...[
-                      const SizedBox(height: 8),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 16,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFDFDFF),
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                        child: Text(
-                          'Settings &\nPreferences',
-                          style: Theme.of(context).textTheme.titleLarge
-                              ?.copyWith(
-                                color: SoftErpTheme.textPrimary,
-                                fontWeight: FontWeight.w500,
-                                fontSize: 13.5,
-                                height: 1.2,
+                              const SizedBox(height: 10),
+                              _SidebarSection(
+                                title: 'Configurator',
+                                compact: widget.compact,
+                                children: _configuratorItems,
+                                selectedKey: selectedKey,
+                                isExpandable: true,
+                                isExpanded: isConfiguratorExpanded,
+                                isParentSelected: false,
+                                onExpansionToggle: () {
+                                  setState(() {
+                                    _isConfiguratorExpanded =
+                                        !_isConfiguratorExpanded;
+                                  });
+                                },
+                                onSelected: _selectKey,
+                                focusNodeForKey: _focusNodeFor,
                               ),
+                              if (canManageUsers) ...[
+                                const SizedBox(height: 10),
+                                _SidebarSection(
+                                  title: 'Admin',
+                                  compact: widget.compact,
+                                  children: _adminItems,
+                                  selectedKey: selectedKey,
+                                  onSelected: _selectKey,
+                                  focusNodeForKey: _focusNodeFor,
+                                ),
+                              ],
+                            ],
+                          ),
                         ),
                       ),
+                      if (!widget.compact) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 16,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFDFDFF),
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                          child: Text(
+                            'Settings &\nPreferences',
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(
+                                  color: SoftErpTheme.textPrimary,
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 13.5,
+                                  height: 1.2,
+                                ),
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
         ),
       ),
     );

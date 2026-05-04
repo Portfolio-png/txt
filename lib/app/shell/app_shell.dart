@@ -9,6 +9,7 @@ import '../../core/theme/soft_erp_theme.dart';
 import '../../core/widgets/soft_primitives.dart';
 import '../../features/groups/presentation/screens/groups_screen.dart';
 import '../../features/auth/presentation/screens/user_management_screen.dart';
+import '../../features/delivery_challans/presentation/screens/delivery_challan_screen.dart';
 import '../../features/inventory/presentation/screens/inventory_screen.dart';
 import '../../features/inventory/presentation/screens/material_scan_screen.dart';
 import '../../features/items/presentation/screens/items_screen.dart';
@@ -399,6 +400,7 @@ class _ShellContentSwitcher extends StatelessWidget {
               'production_pipelines' => const ProductionPipelinesScreen(),
               'pm' => const PMScreen(),
               'orders' => const OrdersScreen(),
+              'delivery_challans' => const DeliveryChallanScreen(),
               'configurator' => const _ModulePlaceholder(
                 title: 'Configurator',
                 description:

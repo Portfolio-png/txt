@@ -335,6 +335,7 @@ app.use((req, res, next) => {
   if (dbInitError) {
     res.status(500).json({
       success: false,
+      message: `Database initialization failed: ${dbInitError.message}`,
       error: `Database initialization failed: ${dbInitError.message}`,
     });
     return;
@@ -342,6 +343,7 @@ app.use((req, res, next) => {
   if (!dbReady) {
     res.status(503).json({
       success: false,
+      message: 'Backend is still starting. Please retry in a moment.',
       error: 'Backend is still starting. Please retry in a moment.',
     });
     return;
@@ -1459,12 +1461,12 @@ function rowToOrderActivityDto(row) {
   return {
     id: row.id,
     orderId: row.order_id || 0,
-    activityType: row.activity_type || '',
+    activityType: row.activity_type || row.event_type || '',
     actorUserId: row.actor_user_id || null,
     actorName: row.actor_name || '',
     actorRole: row.actor_role || '',
     source: row.source || '',
-    details: parseJson(row.details_json, null),
+    details: parseJson(row.details_json || row.metadata_json, null),
     createdAt: row.created_at,
   };
 }
@@ -2107,6 +2109,23 @@ async function initDb() {
   `);
 
   await run(`
+    CREATE TABLE IF NOT EXISTS company_profiles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_name TEXT NOT NULL,
+      mobile TEXT DEFAULT '',
+      business_description TEXT DEFAULT '',
+      address TEXT DEFAULT '',
+      state_code TEXT DEFAULT '',
+      gstin TEXT DEFAULT '',
+      logo_url TEXT DEFAULT '',
+      signature_label TEXT DEFAULT '',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
     CREATE TABLE IF NOT EXISTS items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -2120,6 +2139,59 @@ async function initDb() {
       updated_at TEXT NOT NULL
     )
   `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS delivery_challans (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER REFERENCES orders(id),
+      order_no TEXT DEFAULT '',
+      challan_no TEXT NOT NULL UNIQUE,
+      date TEXT NOT NULL,
+      customer_name TEXT NOT NULL DEFAULT '',
+      customer_gstin TEXT DEFAULT '',
+      company_profile_snapshot TEXT,
+      notes TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'draft',
+      created_by INTEGER REFERENCES users(id),
+      updated_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS delivery_challan_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
+      order_item_id INTEGER,
+      item_id INTEGER,
+      line_no INTEGER NOT NULL DEFAULT 1,
+      particulars TEXT NOT NULL DEFAULT '',
+      hsn_code TEXT DEFAULT '',
+      quantity_pcs TEXT DEFAULT '',
+      weight TEXT DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS delivery_challan_activity_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
+      activity_type TEXT NOT NULL,
+      actor_user_id INTEGER,
+      actor_name TEXT,
+      actor_role TEXT,
+      details_json TEXT,
+      created_at TEXT NOT NULL
+    )
+  `);
+
+  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_status ON delivery_challans(status)');
+  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_date ON delivery_challans(date)');
+  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_items_challan_id ON delivery_challan_items(challan_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_activity_challan_id_created_at ON delivery_challan_activity_log(challan_id, created_at)');
 
   await run(`
     CREATE TABLE IF NOT EXISTS orders (
@@ -2237,6 +2309,23 @@ async function initDb() {
   await run('CREATE INDEX IF NOT EXISTS idx_order_material_requirements_material_barcode ON order_material_requirements(material_barcode)');
   await run('CREATE INDEX IF NOT EXISTS idx_order_status_history_order_id_changed_at ON order_status_history(order_id, changed_at)');
   await run('CREATE INDEX IF NOT EXISTS idx_order_activity_log_order_id_created_at ON order_activity_log(order_id, created_at)');
+
+  // --- Column migrations for order_activity_log on pre-existing databases ---
+  // The CREATE TABLE above is skipped if the table already exists. These
+  // ensureColumnExists calls add any missing columns added in later versions.
+  await ensureColumnExists('order_activity_log', 'activity_type', "TEXT NOT NULL DEFAULT ''");
+  await ensureColumnExists('order_activity_log', 'actor_user_id', 'INTEGER');
+  await ensureColumnExists('order_activity_log', 'actor_name', 'TEXT');
+  await ensureColumnExists('order_activity_log', 'actor_role', 'TEXT');
+  await ensureColumnExists('order_activity_log', 'source', 'TEXT');
+  await ensureColumnExists('order_activity_log', 'details_json', 'TEXT');
+  await migrateOrderActivityLogCompatibilityColumns();
+
+  await ensureColumnExists('delivery_challans', 'order_id', 'INTEGER');
+  await ensureColumnExists('delivery_challans', 'order_no', "TEXT DEFAULT ''");
+  await ensureColumnExists('delivery_challan_items', 'order_item_id', 'INTEGER');
+  await ensureColumnExists('delivery_challan_items', 'item_id', 'INTEGER');
+  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_order_id ON delivery_challans(order_id)');
 
   await run(`
     CREATE TABLE IF NOT EXISTS item_variations (
@@ -2393,6 +2482,7 @@ async function initDb() {
   await bootstrapUnitsFromMaterials();
   await backfillMaterialUnitIds();
   await seedClientsIfEmpty();
+  await seedCompanyProfileIfEmpty();
   await seedGroupsIfEmpty();
   await seedItemsIfEmpty();
   await seedOrdersIfEmpty();
@@ -2443,8 +2533,78 @@ async function ensureColumnExists(tableName, columnName, definition) {
   const columns = await all(`PRAGMA table_info(${tableName})`);
   const hasColumn = columns.some((column) => column.name === columnName);
   if (!hasColumn) {
+    console.log(`Migrating ${tableName}: adding ${columnName}`);
     await run(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
   }
+}
+
+async function migrateOrderActivityLogCompatibilityColumns() {
+  const columns = await all('PRAGMA table_info(order_activity_log)');
+  const hasColumn = (name) => columns.some((column) => column.name === name);
+
+  if (hasColumn('event_type') && hasColumn('activity_type')) {
+    await run(`
+      UPDATE order_activity_log
+      SET activity_type = event_type
+      WHERE TRIM(COALESCE(activity_type, '')) = ''
+        AND TRIM(COALESCE(event_type, '')) != ''
+    `);
+  }
+
+  if (hasColumn('metadata_json') && hasColumn('details_json')) {
+    await run(`
+      UPDATE order_activity_log
+      SET details_json = metadata_json
+      WHERE TRIM(COALESCE(details_json, '')) = ''
+        AND TRIM(COALESCE(metadata_json, '')) != ''
+    `);
+  }
+}
+
+function orderActivityTitle(activityType) {
+  return String(activityType || '')
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ') || 'Order Activity';
+}
+
+async function insertOrderActivityLog({
+  orderId,
+  activityType,
+  actor = null,
+  source = 'api',
+  details = {},
+  createdAt = new Date().toISOString(),
+}) {
+  const columns = await all('PRAGMA table_info(order_activity_log)');
+  const available = new Set(columns.map((column) => column.name));
+  const detailsJson = JSON.stringify(details || {});
+  const valuesByColumn = {
+    order_id: orderId,
+    activity_type: activityType,
+    event_type: activityType,
+    title: orderActivityTitle(activityType),
+    description: '',
+    actor_user_id: actor?.id || null,
+    actor_name: actor?.name || 'System',
+    actor_role: actor?.role || 'system',
+    source: actor?.source || source || 'api',
+    details_json: detailsJson,
+    metadata_json: detailsJson,
+    created_at: createdAt,
+  };
+  const insertColumns = Object.keys(valuesByColumn).filter((column) =>
+    available.has(column),
+  );
+  const placeholders = insertColumns.map(() => '?').join(', ');
+  await run(
+    `
+    INSERT INTO order_activity_log (${insertColumns.join(', ')})
+    VALUES (${placeholders})
+    `,
+    insertColumns.map((column) => valuesByColumn[column]),
+  );
 }
 
 async function seedMaterialsIfEmpty() {
@@ -3180,6 +3340,638 @@ async function ensureDemoClientsPresent() {
   }
 }
 
+const DEFAULT_COMPANY_PROFILE = Object.freeze({
+  companyName: 'Shree Ganesh Metal Works',
+  mobile: '9324041030',
+  businessDescription: 'Manufacturers of: FOUNTAIN PEN, BALL PEN & PEN PARTS',
+  address:
+    'Gala No. 1 Ground Floor, Vasundhara Udyog Bhavan, Behind KT Phase No. 1 Industrial Estate, Gaurai Pada, Vasai (East), Dist. Palghar - 401 208.',
+  stateCode: '27',
+  gstin: '27ABHPC1349L1ZN',
+  logoUrl: '',
+  signatureLabel: '',
+});
+
+async function seedCompanyProfileIfEmpty() {
+  const countRow = await get('SELECT COUNT(*) AS count FROM company_profiles');
+  if ((countRow?.count || 0) > 0) {
+    return;
+  }
+  await saveCompanyProfile(DEFAULT_COMPANY_PROFILE);
+}
+
+function rowToCompanyProfileDto(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: row.id,
+    company_name: row.company_name || '',
+    mobile: row.mobile || '',
+    business_description: row.business_description || '',
+    address: row.address || '',
+    state_code: row.state_code || '',
+    gstin: row.gstin || '',
+    logo_url: row.logo_url || '',
+    signature_label: row.signature_label || '',
+    created_at: row.created_at || null,
+    updated_at: row.updated_at || null,
+  };
+}
+
+async function getActiveCompanyProfile() {
+  let row = await get(
+    'SELECT * FROM company_profiles WHERE is_active = 1 ORDER BY id ASC LIMIT 1',
+  );
+  if (!row) {
+    await seedCompanyProfileIfEmpty();
+    row = await get(
+      'SELECT * FROM company_profiles WHERE is_active = 1 ORDER BY id ASC LIMIT 1',
+    );
+  }
+  return row;
+}
+
+async function saveCompanyProfile(input = {}) {
+  const companyName = String(input.companyName ?? input.company_name ?? '').trim();
+  if (!companyName) {
+    const error = new Error('Company name is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const mobile = String(input.mobile ?? '').trim();
+  const businessDescription = String(
+    input.businessDescription ?? input.business_description ?? '',
+  ).trim();
+  const address = String(input.address ?? '').trim();
+  const stateCode = String(input.stateCode ?? input.state_code ?? '').trim();
+  const gstin = String(input.gstin ?? '').trim();
+  const logoUrl = String(input.logoUrl ?? input.logo_url ?? input.logoPath ?? input.logo_path ?? '').trim();
+  const signatureLabel = String(
+    input.signatureLabel ??
+      input.signature_label ??
+      input.authorizedSignatoryName ??
+      input.authorized_signatory_name ??
+      '',
+  ).trim();
+  const now = new Date().toISOString();
+  const existing = await get(
+    'SELECT * FROM company_profiles WHERE is_active = 1 ORDER BY id ASC LIMIT 1',
+  );
+
+  if (existing) {
+    await run(
+      `
+      UPDATE company_profiles
+      SET company_name = ?, mobile = ?, business_description = ?, address = ?,
+          state_code = ?, gstin = ?, logo_url = ?, signature_label = ?, updated_at = ?
+      WHERE id = ?
+      `,
+      [
+        companyName,
+        mobile,
+        businessDescription,
+        address,
+        stateCode,
+        gstin,
+        logoUrl,
+        signatureLabel,
+        now,
+        existing.id,
+      ],
+    );
+    return get('SELECT * FROM company_profiles WHERE id = ?', [existing.id]);
+  }
+
+  const result = await run(
+    `
+    INSERT INTO company_profiles (
+      company_name, mobile, business_description, address, state_code, gstin,
+      logo_url, signature_label, is_active, created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+    `,
+    [
+      companyName,
+      mobile,
+      businessDescription,
+      address,
+      stateCode,
+      gstin,
+      logoUrl,
+      signatureLabel,
+      now,
+      now,
+    ],
+  );
+  return get('SELECT * FROM company_profiles WHERE id = ?', [result.lastID]);
+}
+
+const DELIVERY_CHALLAN_STATUSES = new Set(['draft', 'issued', 'cancelled']);
+
+function parseJsonObject(value, fallback = null) {
+  if (!value) {
+    return fallback;
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed
+      : fallback;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+async function getDeliveryChallanItems(challanId) {
+  return all(
+    `
+    SELECT *
+    FROM delivery_challan_items
+    WHERE challan_id = ?
+    ORDER BY line_no ASC, id ASC
+    `,
+    [challanId],
+  );
+}
+
+function rowToDeliveryChallanItemDto(row) {
+  return {
+    id: row.id,
+    challan_id: row.challan_id,
+    order_item_id: row.order_item_id || null,
+    item_id: row.item_id || null,
+    line_no: Number(row.line_no || 0),
+    particulars: row.particulars || '',
+    hsn_code: row.hsn_code || '',
+    quantity_pcs: row.quantity_pcs || '',
+    weight: row.weight || '',
+    created_at: row.created_at || null,
+    updated_at: row.updated_at || null,
+  };
+}
+
+async function rowToDeliveryChallanDto(row, { includeItems = true } = {}) {
+  const items = includeItems ? await getDeliveryChallanItems(row.id) : [];
+  return {
+    id: row.id,
+    order_id: row.order_id || null,
+    order_no: row.order_no || '',
+    challan_no: row.challan_no || '',
+    date: row.date || '',
+    customer_name: row.customer_name || '',
+    customer_gstin: row.customer_gstin || '',
+    company_profile_snapshot: parseJsonObject(row.company_profile_snapshot, null),
+    notes: row.notes || '',
+    status: row.status || 'draft',
+    created_by: row.created_by || null,
+    updated_by: row.updated_by || null,
+    created_at: row.created_at || null,
+    updated_at: row.updated_at || null,
+    items: items.map(rowToDeliveryChallanItemDto),
+    items_count: Number(row.items_count || items.length || 0),
+  };
+}
+
+async function generateChallanNumber() {
+  const row = await get(
+    `
+    SELECT challan_no
+    FROM delivery_challans
+    WHERE challan_no LIKE 'DC-%'
+    ORDER BY id DESC
+    LIMIT 1
+    `,
+  );
+  const match = String(row?.challan_no || '').match(/(\d+)$/);
+  const next = match ? Number(match[1]) + 1 : 1;
+  return `DC-${String(next).padStart(5, '0')}`;
+}
+
+function normalizeChallanDate(value) {
+  const input = String(value || '').trim();
+  if (!input) {
+    return new Date().toISOString().slice(0, 10);
+  }
+  if (Number.isNaN(Date.parse(input))) {
+    const error = new Error('Invalid challan date.');
+    error.statusCode = 400;
+    throw error;
+  }
+  return input.slice(0, 10);
+}
+
+function normalizeDeliveryChallanItems(items = []) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items
+    .map((item, index) => ({
+      orderItemId: Number(item.orderItemId ?? item.order_item_id ?? 0) || null,
+      itemId: Number(item.itemId ?? item.item_id ?? 0) || null,
+      lineNo: Number(item.lineNo ?? item.line_no ?? index + 1) || index + 1,
+      particulars: String(item.particulars || '').trim(),
+      hsnCode: String(item.hsnCode ?? item.hsn_code ?? '').trim(),
+      quantityPcs: String(item.quantityPcs ?? item.quantity_pcs ?? '').trim(),
+      weight: String(item.weight || '').trim(),
+    }))
+    .filter(
+      (item) =>
+        item.particulars ||
+        item.hsnCode ||
+        item.quantityPcs ||
+        item.weight ||
+        item.orderItemId ||
+        item.itemId,
+    )
+    .map((item, index) => ({ ...item, lineNo: index + 1 }));
+}
+
+async function getDeliveryChallanRowById(id) {
+  return get('SELECT * FROM delivery_challans WHERE id = ?', [Number(id)]);
+}
+
+async function listDeliveryChallans({ status, search, dateFrom, dateTo, orderId } = {}) {
+  const where = [];
+  const params = [];
+  const normalizedOrderId = Number(orderId || 0);
+  if (Number.isInteger(normalizedOrderId) && normalizedOrderId > 0) {
+    where.push('dc.order_id = ?');
+    params.push(normalizedOrderId);
+  }
+  if (status && DELIVERY_CHALLAN_STATUSES.has(status)) {
+    where.push('dc.status = ?');
+    params.push(status);
+  }
+  const normalizedSearch = String(search || '').trim().toLowerCase();
+  if (normalizedSearch) {
+    where.push('(LOWER(dc.challan_no) LIKE ? OR LOWER(dc.order_no) LIKE ? OR LOWER(dc.customer_name) LIKE ?)');
+    params.push(`%${normalizedSearch}%`, `%${normalizedSearch}%`, `%${normalizedSearch}%`);
+  }
+  if (dateFrom) {
+    where.push('date(dc.date) >= date(?)');
+    params.push(String(dateFrom).slice(0, 10));
+  }
+  if (dateTo) {
+    where.push('date(dc.date) <= date(?)');
+    params.push(String(dateTo).slice(0, 10));
+  }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const rows = await all(
+    `
+    SELECT dc.*, COUNT(dci.id) AS items_count
+    FROM delivery_challans dc
+    LEFT JOIN delivery_challan_items dci ON dci.challan_id = dc.id
+    ${whereSql}
+    GROUP BY dc.id
+    ORDER BY date(dc.date) DESC, dc.id DESC
+    `,
+    params,
+  );
+  return Promise.all(rows.map((row) => rowToDeliveryChallanDto(row, { includeItems: false })));
+}
+
+async function getOrderForDeliveryChallan(orderId) {
+  const order = await get(
+    `
+    SELECT o.*, c.gst_number AS client_gstin
+    FROM orders o
+    LEFT JOIN clients c ON c.id = o.client_id
+    WHERE o.id = ?
+    `,
+    [Number(orderId)],
+  );
+  if (!order) {
+    const error = new Error('Order not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  return order;
+}
+
+function orderItemSnapshotFromOrder(order) {
+  const variationLabel = String(order.variation_path_label || '').trim();
+  const itemName = String(order.item_name || '').trim();
+  return {
+    orderItemId: Number(order.id),
+    itemId: order.item_id || null,
+    particulars: variationLabel ? `${itemName} - ${variationLabel}` : itemName,
+    hsnCode: '',
+  };
+}
+
+async function logDeliveryChallanActivity(challanId, activityType, actor, details = {}) {
+  await run(
+    `
+    INSERT INTO delivery_challan_activity_log (
+      challan_id, activity_type, actor_user_id, actor_name, actor_role, details_json, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    `,
+    [
+      challanId,
+      activityType,
+      actor?.id || null,
+      actor?.name || 'System',
+      actor?.role || 'system',
+      JSON.stringify(details || {}),
+      new Date().toISOString(),
+    ],
+  );
+}
+
+function assertCanChangeIssuedChallanNo(req, existing, nextChallanNo) {
+  if (existing.status !== 'issued' || existing.challan_no === nextChallanNo) {
+    return;
+  }
+  if (req.user?.role === 'super_admin' || req.user?.role === 'admin') {
+    return;
+  }
+  const error = new Error('Issued challan numbers can only be changed by an admin.');
+  error.statusCode = 403;
+  throw error;
+}
+
+async function saveDeliveryChallan(input = {}, actor = null, req = null) {
+  const id = Number(input.id || 0);
+  const existing = id ? await getDeliveryChallanRowById(id) : null;
+  if (id && !existing) {
+    const error = new Error('Delivery challan not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  if (existing && existing.status !== 'draft') {
+    const requestedChallanNo = String(
+      input.challanNo ?? input.challan_no ?? existing.challan_no,
+    ).trim();
+    const error = new Error('Only draft challans can be edited.');
+    if (
+      existing.status === 'issued' &&
+      requestedChallanNo &&
+      requestedChallanNo !== existing.challan_no
+    ) {
+      assertCanChangeIssuedChallanNo(req || {}, existing, requestedChallanNo);
+      const duplicate = await get(
+        'SELECT id FROM delivery_challans WHERE LOWER(TRIM(challan_no)) = LOWER(TRIM(?)) AND id != ?',
+        [requestedChallanNo, id],
+      );
+      if (duplicate) {
+        error.message = 'Challan number already exists.';
+        error.statusCode = 409;
+        throw error;
+      }
+      await run(
+        'UPDATE delivery_challans SET challan_no = ?, updated_by = ?, updated_at = ? WHERE id = ?',
+        [requestedChallanNo, actor?.id || null, new Date().toISOString(), id],
+      );
+      await logDeliveryChallanActivity(id, 'challan_number_changed', actor, {
+        previousChallanNo: existing.challan_no,
+        challanNo: requestedChallanNo,
+      });
+      return getDeliveryChallanRowById(id);
+    }
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const orderId = Number(input.orderId ?? input.order_id ?? existing?.order_id ?? 0);
+  if (!Number.isInteger(orderId) || orderId <= 0) {
+    const error = new Error('Select an order before saving delivery challan.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const order = await getOrderForDeliveryChallan(orderId);
+  const orderSnapshot = orderItemSnapshotFromOrder(order);
+  const challanNo = String(
+    existing?.challan_no ?? input.challanNo ?? input.challan_no ?? (await generateChallanNumber()),
+  ).trim();
+  if (!challanNo) {
+    const error = new Error('Challan number is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const duplicate = await get(
+    'SELECT id FROM delivery_challans WHERE LOWER(TRIM(challan_no)) = LOWER(TRIM(?)) AND id != ?',
+    [challanNo, id || 0],
+  );
+  if (duplicate) {
+    const error = new Error('Challan number already exists.');
+    error.statusCode = 409;
+    throw error;
+  }
+
+  const date = normalizeChallanDate(input.date ?? existing?.date);
+  const customerName = String(order.client_name || '').trim();
+  const customerGstin = String(order.client_gstin || '').trim();
+  const orderNo = String(order.order_no || '').trim();
+  const notes = String(input.notes ?? existing?.notes ?? '').trim();
+  const items = normalizeDeliveryChallanItems(input.items || []).map((item) => {
+    const orderItemId = item.orderItemId || Number(order.id);
+    const itemId = item.itemId || order.item_id || null;
+    if (orderItemId !== Number(order.id)) {
+      const error = new Error('Selected challan item does not belong to the selected order.');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (itemId && Number(itemId) !== Number(order.item_id || 0)) {
+      const error = new Error('Selected challan item does not match the selected order item.');
+      error.statusCode = 400;
+      throw error;
+    }
+    return {
+      ...item,
+      orderItemId,
+      itemId,
+      particulars: orderSnapshot.particulars,
+      hsnCode: orderSnapshot.hsnCode,
+    };
+  });
+  const now = new Date().toISOString();
+
+  await run('BEGIN TRANSACTION');
+  try {
+    let challanId = id;
+    if (existing) {
+      await run(
+        `
+        UPDATE delivery_challans
+        SET order_id = ?, order_no = ?, challan_no = ?, date = ?, customer_name = ?, customer_gstin = ?,
+            notes = ?, updated_by = ?, updated_at = ?
+        WHERE id = ?
+        `,
+        [
+          orderId,
+          orderNo,
+          challanNo,
+          date,
+          customerName,
+          customerGstin,
+          notes,
+          actor?.id || null,
+          now,
+          challanId,
+        ],
+      );
+      await run('DELETE FROM delivery_challan_items WHERE challan_id = ?', [challanId]);
+    } else {
+      const result = await run(
+        `
+        INSERT INTO delivery_challans (
+          order_id, order_no, challan_no, date, customer_name, customer_gstin, notes, status,
+          created_by, updated_by, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)
+        `,
+        [
+          orderId,
+          orderNo,
+          challanNo,
+          date,
+          customerName,
+          customerGstin,
+          notes,
+          actor?.id || null,
+          actor?.id || null,
+          now,
+          now,
+        ],
+      );
+      challanId = result.lastID;
+    }
+
+    for (const item of items) {
+      await run(
+        `
+        INSERT INTO delivery_challan_items (
+          challan_id, order_item_id, item_id, line_no, particulars, hsn_code, quantity_pcs, weight, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        [
+          challanId,
+          item.orderItemId,
+          item.itemId,
+          item.lineNo,
+          item.particulars,
+          item.hsnCode,
+          item.quantityPcs,
+          item.weight,
+          now,
+          now,
+        ],
+      );
+    }
+
+    await logDeliveryChallanActivity(challanId, existing ? 'challan_edited' : 'challan_created', actor, {
+      challanNo,
+      itemCount: items.length,
+    });
+    const saved = await getDeliveryChallanRowById(challanId);
+    await run('COMMIT');
+    return saved;
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
+}
+
+async function issueDeliveryChallan(id, actor = null) {
+  const existing = await getDeliveryChallanRowById(id);
+  if (!existing) {
+    const error = new Error('Delivery challan not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  if (existing.status === 'cancelled') {
+    const error = new Error('Cancelled challans cannot be issued.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!existing.order_id) {
+    const error = new Error('Select an order before issuing challan.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!String(existing.customer_name || '').trim()) {
+    const error = new Error('Customer name is required before issuing challan.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const items = await getDeliveryChallanItems(id);
+  if (items.length === 0) {
+    const error = new Error('Add at least one line item before issuing challan.');
+    error.statusCode = 400;
+    throw error;
+  }
+  for (const item of items) {
+    if (!item.order_item_id && !item.item_id) {
+      const error = new Error('Each challan item must reference an order item.');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!String(item.quantity_pcs || '').trim() && !String(item.weight || '').trim()) {
+      const error = new Error('Enter Qty / Pcs or Weight for each challan item before issuing.');
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+  const profile = rowToCompanyProfileDto(await getActiveCompanyProfile());
+  const now = new Date().toISOString();
+  await run(
+    `
+    UPDATE delivery_challans
+    SET status = 'issued', company_profile_snapshot = ?, updated_by = ?, updated_at = ?
+    WHERE id = ?
+    `,
+    [JSON.stringify(profile), actor?.id || null, now, id],
+  );
+  await logDeliveryChallanActivity(id, 'challan_issued', actor, {
+    challanNo: existing.challan_no,
+    companyProfileId: profile?.id || null,
+  });
+  return getDeliveryChallanRowById(id);
+}
+
+async function cancelDeliveryChallan(id, actor = null) {
+  const existing = await getDeliveryChallanRowById(id);
+  if (!existing) {
+    const error = new Error('Delivery challan not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  if (existing.status === 'cancelled') {
+    return existing;
+  }
+  const now = new Date().toISOString();
+  await run(
+    "UPDATE delivery_challans SET status = 'cancelled', updated_by = ?, updated_at = ? WHERE id = ?",
+    [actor?.id || null, now, id],
+  );
+  await logDeliveryChallanActivity(id, 'challan_cancelled', actor, {
+    challanNo: existing.challan_no,
+    previousStatus: existing.status,
+  });
+  return getDeliveryChallanRowById(id);
+}
+
+async function deleteDraftDeliveryChallan(id, actor = null) {
+  const existing = await getDeliveryChallanRowById(id);
+  if (!existing) {
+    const error = new Error('Delivery challan not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  if (existing.status !== 'draft') {
+    const error = new Error('Only draft challans can be deleted.');
+    error.statusCode = 400;
+    throw error;
+  }
+  await logDeliveryChallanActivity(id, 'challan_deleted', actor, {
+    challanNo: existing.challan_no,
+  });
+  await run('DELETE FROM delivery_challans WHERE id = ?', [id]);
+}
+
 async function getOrderRowById(id) {
   return get('SELECT * FROM orders WHERE id = ?', [id]);
 }
@@ -3760,41 +4552,27 @@ async function saveOrder({
     }
 
     const activityType = existing ? 'order_updated' : 'order_created';
-    await run(`
-      INSERT INTO order_activity_log (
-        order_id, activity_type, actor_user_id, actor_name, actor_role, source, details_json, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
+    await insertOrderActivityLog({
       orderId,
       activityType,
-      actor?.id || null,
-      actor?.name || 'System',
-      actor?.role || 'system',
-      actor?.source || 'api',
-      JSON.stringify({
+      actor,
+      details: {
         status: normalizedStatus,
         quantity: normalizedQuantity,
         newlyLinkedDocs: newlyLinkedIds.length,
-        requirementsCount: Array.isArray(materialRequirements) ? materialRequirements.length : 0
-      }),
-      now
-    ]);
+        requirementsCount: Array.isArray(materialRequirements) ? materialRequirements.length : 0,
+      },
+      createdAt: now,
+    });
 
     if (newlyLinkedIds.length > 0) {
-      await run(`
-        INSERT INTO order_activity_log (
-          order_id, activity_type, actor_user_id, actor_name, actor_role, source, details_json, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
+      await insertOrderActivityLog({
         orderId,
-        'po_documents_linked',
-        actor?.id || null,
-        actor?.name || 'System',
-        actor?.role || 'system',
-        actor?.source || 'api',
-        JSON.stringify({ documentIds: newlyLinkedIds }),
-        now
-      ]);
+        activityType: 'po_documents_linked',
+        actor,
+        details: { documentIds: newlyLinkedIds },
+        createdAt: now,
+      });
     }
 
     const saved = await getOrderRowById(orderId);
@@ -3852,25 +4630,18 @@ async function updateOrderLifecycle({
       ]);
     }
 
-    await run(`
-      INSERT INTO order_activity_log (
-        order_id, activity_type, actor_user_id, actor_name, actor_role, source, details_json, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      id,
-      'lifecycle_updated',
-      actor?.id || null,
-      actor?.name || 'System',
-      actor?.role || 'system',
-      actor?.source || 'api',
-      JSON.stringify({
+    await insertOrderActivityLog({
+      orderId: id,
+      activityType: 'lifecycle_updated',
+      actor,
+      details: {
         previousStatus: existing.status,
         newStatus: normalizedStatus,
         startDate: normalizedStartDate,
-        endDate: normalizedEndDate
-      }),
-      now
-    ]);
+        endDate: normalizedEndDate,
+      },
+      createdAt: now,
+    });
 
     const updated = await getOrderRowById(id);
     await run('COMMIT');
@@ -6760,6 +7531,13 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+app.get('/api/delivery-challans/health', (_req, res) => {
+  res.json({
+    success: true,
+    module: 'delivery-challans',
+  });
+});
+
 app.use('/api', requireAuth);
 app.use('/api', requireApiWritePermission);
 
@@ -7917,6 +8695,197 @@ app.get('/api/clients', requirePermission('config.read'), async (req, res) => {
   }
 });
 
+function actorFromRequest(req) {
+  return {
+    id: req.user?.id || null,
+    name: req.user?.name || 'System',
+    role: req.user?.role || 'system',
+  };
+}
+
+app.get('/api/company-profile', requirePermission('config.read'), async (_req, res) => {
+  try {
+    const profile = await getActiveCompanyProfile();
+    res.json({ success: true, data: rowToCompanyProfileDto(profile), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, data: null, error: error.message });
+  }
+});
+
+app.put('/api/company-profile', requirePermission('config.write'), async (req, res) => {
+  try {
+    const profile = await saveCompanyProfile(req.body || {});
+    res.json({ success: true, data: rowToCompanyProfileDto(profile), error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      data: null,
+      error: error.message,
+    });
+  }
+});
+
+app.get('/api/delivery-challans', requirePermission('config.read'), async (req, res) => {
+  try {
+    const challans = await listDeliveryChallans({
+      status: String(req.query.status || '').trim(),
+      search: String(req.query.search || '').trim(),
+      dateFrom: String(req.query.date_from || req.query.dateFrom || '').trim(),
+      dateTo: String(req.query.date_to || req.query.dateTo || '').trim(),
+      orderId: req.query.order_id || req.query.orderId,
+    });
+    res.json({ success: true, data: challans, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, data: [], message: error.message, error: error.message });
+  }
+});
+
+app.post('/api/delivery-challans', requirePermission('config.write'), async (req, res) => {
+  try {
+    const challan = await saveDeliveryChallan(req.body || {}, actorFromRequest(req), req);
+    res.status(201).json({
+      success: true,
+      data: await rowToDeliveryChallanDto(challan),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      data: null,
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
+app.get('/api/orders/:orderId/delivery-challans', requirePermission('config.read'), async (req, res) => {
+  try {
+    const orderId = Number(req.params.orderId);
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      res.status(400).json({
+        success: false,
+        data: [],
+        message: 'Invalid order id.',
+        error: 'Invalid order id.',
+      });
+      return;
+    }
+    const challans = await listDeliveryChallans({ orderId });
+    res.json({ success: true, data: challans, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      data: [],
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
+app.get('/api/delivery-challans/:id', requirePermission('config.read'), async (req, res) => {
+  try {
+    const challan = await getDeliveryChallanRowById(Number(req.params.id));
+    if (!challan) {
+      res.status(404).json({
+        success: false,
+        data: null,
+        message: 'Delivery challan not found.',
+        error: 'Delivery challan not found.',
+      });
+      return;
+    }
+    res.json({ success: true, data: await rowToDeliveryChallanDto(challan), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, data: null, message: error.message, error: error.message });
+  }
+});
+
+app.put('/api/delivery-challans/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    const challan = await saveDeliveryChallan(
+      { ...(req.body || {}), id: Number(req.params.id) },
+      actorFromRequest(req),
+      req,
+    );
+    res.json({ success: true, data: await rowToDeliveryChallanDto(challan), error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      data: null,
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/delivery-challans/:id/issue', requirePermission('config.write'), async (req, res) => {
+  try {
+    const challan = await issueDeliveryChallan(Number(req.params.id), actorFromRequest(req));
+    res.json({ success: true, data: await rowToDeliveryChallanDto(challan), error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      data: null,
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/delivery-challans/:id/cancel', requirePermission('config.write'), async (req, res) => {
+  try {
+    const challan = await cancelDeliveryChallan(Number(req.params.id), actorFromRequest(req));
+    res.json({ success: true, data: await rowToDeliveryChallanDto(challan), error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      data: null,
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/delivery-challans/:id/print', requirePermission('config.write'), async (req, res) => {
+  try {
+    const challan = await getDeliveryChallanRowById(Number(req.params.id));
+    if (!challan) {
+      res.status(404).json({
+        success: false,
+        data: null,
+        message: 'Delivery challan not found.',
+        error: 'Delivery challan not found.',
+      });
+      return;
+    }
+    await logDeliveryChallanActivity(Number(req.params.id), 'challan_printed', actorFromRequest(req), {
+      challanNo: challan.challan_no,
+    });
+    res.json({ success: true, data: null, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      data: null,
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
+app.delete('/api/delivery-challans/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    await deleteDraftDeliveryChallan(Number(req.params.id), actorFromRequest(req));
+    res.json({ success: true, data: null, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      data: null,
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
 app.get('/api/orders', requirePermission('config.read'), async (req, res) => {
   try {
     const rows = await getOrders();
@@ -7999,20 +8968,12 @@ app.post('/api/orders/:id/po-documents', requirePermission('config.write'), asyn
         role: req.user?.role || 'system',
         source: 'api'
       };
-      await run(`
-        INSERT INTO order_activity_log (
-          order_id, activity_type, actor_user_id, actor_name, actor_role, source, details_json, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
+      await insertOrderActivityLog({
         orderId,
-        'po_documents_linked',
-        actor.id,
-        actor.name,
-        actor.role,
-        actor.source,
-        JSON.stringify({ documentIds: newlyLinkedIds }),
-        new Date().toISOString()
-      ]);
+        activityType: 'po_documents_linked',
+        actor,
+        details: { documentIds: newlyLinkedIds },
+      });
     }
     const documents = await getPoDocumentsForOrder(orderId);
     res.json({ success: true, documents, error: null });
@@ -8846,11 +9807,35 @@ app.post('/runs/:id/barcodes', async (req, res) => {
   }
 });
 
-app.use((error, _req, res, _next) => {
-  console.error('Request failed:', error);
+app.use('/api', (error, req, res, _next) => {
+  console.error(`[API ERROR] ${req.method} ${req.originalUrl}`, error);
+  const message = error.message || 'Internal server error';
+  res.status(error.statusCode || error.status || 500).json({
+    success: false,
+    message,
+    error: message,
+  });
+});
+
+// ── API 404 catch-all: must come AFTER all real routes, BEFORE error handler ──
+// Any /api/* path that fell through all routes gets a JSON 404 (never HTML).
+app.use('/api', (req, res) => {
+  console.warn(`[API 404] ${req.method} ${req.originalUrl}`);
+  const message = `API route not found: ${req.method} ${req.originalUrl}`;
+  res.status(404).json({
+    success: false,
+    message,
+    error: message,
+  });
+});
+
+app.use((error, req, res, _next) => {
+  console.error(`Request failed: ${req.method} ${req.originalUrl}`, error);
+  const message = IS_PRODUCTION ? 'Request failed.' : error.message;
   res.status(error.statusCode || 500).json({
     success: false,
-    error: IS_PRODUCTION ? 'Request failed.' : error.message,
+    message,
+    error: message,
   });
 });
 
@@ -8930,6 +9915,13 @@ module.exports = {
   saveClient,
   saveItem,
   saveOrder,
+  saveCompanyProfile,
+  getActiveCompanyProfile,
+  saveDeliveryChallan,
+  issueDeliveryChallan,
+  cancelDeliveryChallan,
+  deleteDraftDeliveryChallan,
+  listDeliveryChallans,
   createPoUploadIntent,
   completePoUpload,
   linkPoDocumentsToOrder,

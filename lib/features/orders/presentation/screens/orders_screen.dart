@@ -11,8 +11,11 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../../core/widgets/page_container.dart';
 import '../../../../core/widgets/soft_primitives.dart';
+import '../../../../app/shell/navigation_provider.dart';
 import '../../../clients/domain/client_definition.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
+import '../../../delivery_challans/presentation/providers/delivery_challan_provider.dart';
+import '../../../delivery_challans/presentation/screens/delivery_challan_screen.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/screens/items_screen.dart';
@@ -4012,10 +4015,28 @@ class _OrderDetailsModalState extends State<_OrderDetailsModal> {
                   ),
                   Positioned(
                     right: 24,
-                    child: _OrderDetailActionButton(
-                      key: const ValueKey<String>('orders-details-header-edit'),
-                      label: 'Edit',
-                      onPressed: widget.onEdit,
+                    child: Row(
+                      children: [
+                        _OrderDetailActionButton(
+                          label: 'View Delivery Challans',
+                          onPressed: () =>
+                              _viewDeliveryChallans(context, order),
+                        ),
+                        const SizedBox(width: 8),
+                        _OrderDetailActionButton(
+                          label: 'Create Delivery Challan',
+                          onPressed: () =>
+                              _createDeliveryChallan(context, order),
+                        ),
+                        const SizedBox(width: 8),
+                        _OrderDetailActionButton(
+                          key: const ValueKey<String>(
+                            'orders-details-header-edit',
+                          ),
+                          label: 'Edit',
+                          onPressed: widget.onEdit,
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -4079,6 +4100,25 @@ class _OrderDetailsModalState extends State<_OrderDetailsModal> {
         ),
       ),
     );
+  }
+
+  Future<void> _createDeliveryChallan(
+    BuildContext context,
+    OrderEntry order,
+  ) async {
+    await DeliveryChallanScreen.openEditorForOrder(context, order);
+  }
+
+  Future<void> _viewDeliveryChallans(
+    BuildContext context,
+    OrderEntry order,
+  ) async {
+    await context.read<DeliveryChallanProvider>().setOrderFilter(order.id);
+    if (!context.mounted) {
+      return;
+    }
+    Navigator.of(context).pop();
+    context.read<NavigationProvider>().select('delivery_challans');
   }
 }
 

@@ -17,6 +17,9 @@ import 'features/inventory/presentation/providers/inventory_provider.dart';
 import 'features/clients/data/repositories/api_client_repository.dart';
 import 'features/clients/data/repositories/client_repository.dart';
 import 'features/clients/presentation/providers/clients_provider.dart';
+import 'features/delivery_challans/data/api_delivery_challan_repository.dart';
+import 'features/delivery_challans/data/delivery_challan_repository.dart';
+import 'features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
 import 'features/items/data/repositories/api_item_repository.dart';
 import 'features/items/data/repositories/item_repository.dart';
 import 'features/items/presentation/providers/items_provider.dart';
@@ -60,6 +63,7 @@ class MyApp extends StatelessWidget {
     this.groupRepository,
     this.unitRepository,
     this.clientRepository,
+    this.deliveryChallanRepository,
     this.itemRepository,
     this.orderRepository,
     this.pipelineRunRepository,
@@ -70,6 +74,7 @@ class MyApp extends StatelessWidget {
   final GroupRepository? groupRepository;
   final UnitRepository? unitRepository;
   final ClientRepository? clientRepository;
+  final DeliveryChallanRepository? deliveryChallanRepository;
   final ItemRepository? itemRepository;
   final OrderRepository? orderRepository;
   final PipelineRunRepository? pipelineRunRepository;
@@ -129,6 +134,11 @@ class MyApp extends StatelessWidget {
               orderRepository ??
               _buildOrderRepository(context.read<AuthProvider>()),
         ),
+        Provider<DeliveryChallanRepository>(
+          create: (context) =>
+              deliveryChallanRepository ??
+              _buildDeliveryChallanRepository(context.read<AuthProvider>()),
+        ),
         Provider<PipelineRunRepository>(
           create: (context) =>
               pipelineRunRepository ??
@@ -181,6 +191,17 @@ class MyApp extends StatelessWidget {
                 ..initialize(),
           update: (context, repository, previous) =>
               previous ?? ItemsProvider(repository: repository)
+                ..initialize(),
+        ),
+        ChangeNotifierProxyProvider<
+          DeliveryChallanRepository,
+          DeliveryChallanProvider
+        >(
+          create: (context) => DeliveryChallanProvider(
+            repository: context.read<DeliveryChallanRepository>(),
+          )..initialize(),
+          update: (context, repository, previous) =>
+              previous ?? DeliveryChallanProvider(repository: repository)
                 ..initialize(),
         ),
       ],
@@ -244,6 +265,14 @@ class MyApp extends StatelessWidget {
 
   OrderRepository _buildOrderRepository(AuthProvider auth) {
     return ApiOrderRepository(
+      client: _authClient(auth),
+      baseUrl: _apiBaseUrl,
+      useMockResponses: _effectiveDemoMode,
+    );
+  }
+
+  DeliveryChallanRepository _buildDeliveryChallanRepository(AuthProvider auth) {
+    return ApiDeliveryChallanRepository(
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
       useMockResponses: _effectiveDemoMode,

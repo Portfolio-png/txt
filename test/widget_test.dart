@@ -2443,7 +2443,7 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pumpAndSettle();
 
-    expect(context.read<NavigationProvider>().selectedKey, 'inventory');
+    expect(context.read<NavigationProvider>().selectedKey, 'delivery_challans');
   });
 
   testWidgets('ctrl and command n open the new order editor', (tester) async {
