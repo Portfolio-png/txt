@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 
 import 'core/theme/soft_erp_theme.dart';
@@ -41,6 +42,9 @@ String _resolveApiBaseUrl() {
   final configured = _configuredApiBaseUrl.trim();
   if (configured.isNotEmpty) {
     return configured.replaceFirst(RegExp(r'/$'), '');
+  }
+  if (kIsWeb && (Uri.base.scheme == 'http' || Uri.base.scheme == 'https')) {
+    return Uri.base.origin.replaceFirst(RegExp(r'/$'), '');
   }
   return _localApiBaseUrl;
 }

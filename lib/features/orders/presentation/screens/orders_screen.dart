@@ -2367,6 +2367,23 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
               },
             ),
           ),
+          const SizedBox(height: 28),
+          _OrderEditorField(
+            label: 'Client Code',
+            child: TextFormField(
+              key: ValueKey<String>(
+                'orders-editor-client-code-field-${_selectedClientId ?? 'none'}',
+              ),
+              readOnly: true,
+              initialValue: _resolveClientCode(_selectedClient(clients)),
+              decoration: _inputDecoration(
+                hintText:
+                    _resolveClientCode(_selectedClient(clients)).isEmpty
+                    ? 'Select client'
+                    : _resolveClientCode(_selectedClient(clients)),
+              ),
+            ),
+          ),
           if (_selectedClientId != null &&
               _resolveClientCode(_selectedClient(clients)).isEmpty) ...[
             const SizedBox(height: 8),
@@ -2535,6 +2552,11 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
           child: _buildItemSelectForLine(items, index),
         ),
         const SizedBox(height: 10),
+        _OrderEditorField(
+          label: 'Quantity',
+          child: _buildQuantityFieldForLine(index),
+        ),
+        const SizedBox(height: 10),
         _OrderEditorField(label: 'Unit', child: _buildUnitField()),
         if (_itemWiseCompletionDate) ...[
           const SizedBox(height: 10),
@@ -2571,6 +2593,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       children: [
         _OrderItemsRow(
           itemField: _buildItemSelectForLine(items, index),
+          quantityField: _buildQuantityFieldForLine(index),
           unitField: _buildUnitField(),
           completionDateField: _itemWiseCompletionDate
               ? _buildCompletionDateFieldForLine(context, index)
@@ -2798,6 +2821,27 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
         hintText: 'Pieces',
         suffixIcon: Icons.keyboard_arrow_down_rounded,
       ),
+    );
+  }
+
+  Widget _buildQuantityFieldForLine(int index) {
+    final line = _lines[index];
+    return TextFormField(
+      key: index == 0
+          ? const ValueKey<String>('orders-editor-quantity-field')
+          : ValueKey<String>('orders-editor-quantity-field-${line.id}'),
+      controller: line.quantityController,
+      keyboardType: TextInputType.number,
+      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      textInputAction: TextInputAction.next,
+      decoration: _inputDecoration(hintText: '1'),
+      validator: (value) {
+        final quantity = int.tryParse((value ?? '').trim());
+        if (quantity == null || quantity <= 0) {
+          return 'Enter qty';
+        }
+        return null;
+      },
     );
   }
 
@@ -3067,13 +3111,19 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
           itemId: item.id,
           itemName: item.displayName,
           variationLeafNodeId: leaf?.id ?? 0,
-          variationPathLabel: leaf == null
+          variationPathLabel: line.selectedVariationValueNodeIds.isEmpty
               ? ''
-              : _variationPathOptionLabel(item, leaf),
-          variationPathNodeIds: leaf == null
+              : _variationSelectionLabel(
+                  item,
+                  line.selectedVariationValueNodeIds,
+                ),
+          variationPathNodeIds: line.selectedVariationValueNodeIds.isEmpty
               ? const <int>[]
-              : _pathNodeIdsForLeaf(item, leaf),
-          quantity: 1,
+              : _variationSelectionNodeIds(
+                  item,
+                  line.selectedVariationValueNodeIds,
+                ),
+          quantity: int.tryParse(line.quantityController.text.trim()) ?? 1,
           status: statusOverride ?? OrderStatus.notStarted,
           startDate: _startDate,
           endDate: _itemWiseCompletionDate
@@ -3331,6 +3381,16 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       return;
     }
 
+    if (valueNodeIds != null) {
+      final selectedValues = List<int>.from(valueNodeIds);
+      line.selectedRootPropertyId = rootPropertyId;
+      line.selectedVariationValueNodeIds = selectedValues;
+      line.selectedVariationLeafId =
+          leaf?.id ?? _selectedTerminalLeafForValues(item, selectedValues)?.id;
+      line.variationPathError = null;
+      return;
+    }
+
     final resolvedLeaf =
         leaf ?? _selectedLeafForLine(item, _defaultLeafIdForItem(item));
     final resolvedRootProperty = resolvedLeaf == null
@@ -3357,6 +3417,41 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     line.selectedVariationValueNodeIds = nextValueNodeIds;
     line.selectedVariationLeafId = nextLeaf?.id;
     line.variationPathError = null;
+  }
+
+  ItemVariationNodeDefinition? _selectedTerminalLeafForValues(
+    ItemDefinition item,
+    List<int> valueNodeIds,
+  ) {
+    if (item.topLevelProperties.isEmpty || valueNodeIds.isEmpty) {
+      return null;
+    }
+    final selectedValueIds = valueNodeIds.toSet();
+    final terminalValues = <ItemVariationNodeDefinition>[];
+    for (final root in item.topLevelProperties) {
+      ItemVariationNodeDefinition currentProperty = root;
+      while (true) {
+        final selectedValue = currentProperty.activeChildren
+            .where((node) => node.kind == ItemVariationNodeKind.value)
+            .where((node) => selectedValueIds.contains(node.id))
+            .firstOrNull;
+        if (selectedValue == null) {
+          return null;
+        }
+        final nextProperty = selectedValue.activeChildren
+            .where((node) => node.kind == ItemVariationNodeKind.property)
+            .firstOrNull;
+        if (nextProperty == null) {
+          if (!selectedValue.isLeafValue) {
+            return null;
+          }
+          terminalValues.add(selectedValue);
+          break;
+        }
+        currentProperty = nextProperty;
+      }
+    }
+    return terminalValues.isEmpty ? null : terminalValues.last;
   }
 
   int? _defaultLeafIdForItem(ItemDefinition? item) {
@@ -3396,7 +3491,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     List<int> valueNodeIds,
   ) {
     if (rootPropertyId == null) {
-      return null;
+      return _selectedTerminalLeafForValues(item, valueNodeIds);
     }
     final root = item.topLevelProperties
         .where((property) => property.id == rootPropertyId)
@@ -3436,6 +3531,74 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     ItemVariationNodeDefinition leaf,
   ) {
     return _pathNodesForLeaf(item, leaf).map((node) => node.id).toList();
+  }
+
+  List<int> _variationSelectionNodeIds(
+    ItemDefinition item,
+    List<int> valueNodeIds,
+  ) {
+    final selectedValueIds = valueNodeIds.toSet();
+    final nodeIds = <int>[];
+    for (final root in item.topLevelProperties) {
+      ItemVariationNodeDefinition currentProperty = root;
+      while (true) {
+        final selectedValue = currentProperty.activeChildren
+            .where((node) => node.kind == ItemVariationNodeKind.value)
+            .where((node) => selectedValueIds.contains(node.id))
+            .firstOrNull;
+        if (selectedValue == null) {
+          break;
+        }
+        nodeIds
+          ..add(currentProperty.id)
+          ..add(selectedValue.id);
+        final nextProperty = selectedValue.activeChildren
+            .where((node) => node.kind == ItemVariationNodeKind.property)
+            .firstOrNull;
+        if (nextProperty == null) {
+          break;
+        }
+        currentProperty = nextProperty;
+      }
+    }
+    return nodeIds;
+  }
+
+  String _variationSelectionLabel(
+    ItemDefinition item,
+    List<int> valueNodeIds,
+  ) {
+    final selectedValueIds = valueNodeIds.toSet();
+    final segments = <String>[];
+    for (final root in item.topLevelProperties) {
+      ItemVariationNodeDefinition currentProperty = root;
+      while (true) {
+        final selectedValue = currentProperty.activeChildren
+            .where((node) => node.kind == ItemVariationNodeKind.value)
+            .where((node) => selectedValueIds.contains(node.id))
+            .firstOrNull;
+        if (selectedValue == null) {
+          break;
+        }
+        final propertyName = currentProperty.name.trim();
+        final valueName = selectedValue.name.trim().isEmpty
+            ? selectedValue.displayName.trim()
+            : selectedValue.name.trim();
+        if (propertyName.isNotEmpty || valueName.isNotEmpty) {
+          segments.add(
+            valueName.isEmpty ? propertyName : '$propertyName: $valueName',
+          );
+        }
+        final nextProperty = selectedValue.activeChildren
+            .where((node) => node.kind == ItemVariationNodeKind.property)
+            .firstOrNull;
+        if (nextProperty == null) {
+          break;
+        }
+        currentProperty = nextProperty;
+      }
+    }
+    return segments.isEmpty ? item.displayName : segments.join(' / ');
   }
 
   List<String> _variationBreadcrumbSegments(
@@ -4840,7 +5003,8 @@ class _OrdersMessageBanner extends StatelessWidget {
 
 class _OrderLineDraft {
   _OrderLineDraft({required this.id})
-    : completionDateController = TextEditingController();
+    : quantityController = TextEditingController(text: '1'),
+      completionDateController = TextEditingController();
 
   final int id;
   int? selectedItemId;
@@ -4850,9 +5014,11 @@ class _OrderLineDraft {
   DateTime? completionDate;
   String? completionDateError;
   String? variationPathError;
+  final TextEditingController quantityController;
   final TextEditingController completionDateController;
 
   void dispose() {
+    quantityController.dispose();
     completionDateController.dispose();
   }
 }
@@ -4878,13 +5044,11 @@ class _PendingPoDocument {
 
 class _VariationStep {
   const _VariationStep({
-    required this.propertyRoot,
     required this.property,
     required this.values,
     required this.selectedValueId,
   });
 
-  final ItemVariationNodeDefinition propertyRoot;
   final ItemVariationNodeDefinition property;
   final List<ItemVariationNodeDefinition> values;
   final int? selectedValueId;
@@ -4950,16 +5114,12 @@ class _VariationPathSelectorDialogState
 
   @override
   Widget build(BuildContext context) {
-    final selectedRootProperty = _selectedRootProperty();
-    final nestedSteps = selectedRootProperty == null
-        ? const <_VariationStep>[]
-        : _variationSteps(selectedRootProperty).skip(1).toList(growable: false);
+    final steps = _allVariationSteps();
     final selectedLeaf = _resolveLeafFromSelection();
-    final rootSteps = _rootPropertySteps();
-    final totalSelectableSteps = rootSteps.length + nestedSteps.length;
-    final selectedStepCount =
-        rootSteps.where((step) => step.selectedValueId != null).length +
-        nestedSteps.where((step) => step.selectedValueId != null).length;
+    final totalSelectableSteps = steps.length;
+    final selectedStepCount = steps
+        .where((step) => step.selectedValueId != null)
+        .length;
 
     return Padding(
       padding: const EdgeInsets.all(22),
@@ -5026,26 +5186,12 @@ class _VariationPathSelectorDialogState
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    for (final step in rootSteps) ...[
+                    for (var stepIndex = 0; stepIndex < steps.length; stepIndex++) ...[
                       _buildStepRow(
-                        title: _variationStepTitle(step),
-                        child: _buildStepField(step, 0),
+                        title: _variationStepTitle(steps[stepIndex]),
+                        child: _buildStepField(steps[stepIndex]),
                       ),
-                      const SizedBox(height: 12),
-                    ],
-                    for (
-                      var stepIndex = 0;
-                      stepIndex < nestedSteps.length;
-                      stepIndex++
-                    ) ...[
-                      _buildStepRow(
-                        title: _variationStepTitle(nestedSteps[stepIndex]),
-                        child: _buildStepField(
-                          nestedSteps[stepIndex],
-                          stepIndex + 1,
-                        ),
-                      ),
-                      if (stepIndex != nestedSteps.length - 1)
+                      if (stepIndex != steps.length - 1)
                         const SizedBox(height: 12),
                     ],
                   ],
@@ -5065,7 +5211,7 @@ class _VariationPathSelectorDialogState
             child: Text(
               selectedLeaf == null
                   ? 'Complete the path by selecting each property.'
-                  : _variationPathOptionLabel(_item, selectedLeaf),
+                  : _selectionSummaryLabel(),
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: selectedLeaf == null
                     ? SoftErpTheme.textSecondary
@@ -5098,7 +5244,7 @@ class _VariationPathSelectorDialogState
     );
   }
 
-  Widget _buildStepField(_VariationStep step, int stepIndex) {
+  Widget _buildStepField(_VariationStep step) {
     final fieldKey = ValueKey<String>(
       'orders-variation-step-${step.property.id}',
     );
@@ -5132,11 +5278,14 @@ class _VariationPathSelectorDialogState
         }
         setState(() {
           _item = result.item;
-          _selectedRootPropertyId = _rootPropertyForLeaf(
-            result.item,
-            result.createdValueNode,
-          )?.id;
-          _selectedValueNodeIds = List<int>.from(result.selectedValueNodeIds);
+          final refreshedProperty = _findNodeById(
+            result.item.variationTree,
+            step.property.id,
+          );
+          _replaceSelectionUnderProperty(
+            refreshedProperty ?? step.property,
+            result.selectedValueNodeIds,
+          );
         });
         return SearchableSelectOption<int>(
           value: result.createdValueNode.id,
@@ -5157,40 +5306,18 @@ class _VariationPathSelectorDialogState
           .toList(growable: false),
       onChanged: (value) {
         setState(() {
-          if (stepIndex == 0) {
-            _selectedRootPropertyId = step.propertyRoot.id;
-          }
-          final nextValueIds = <int>[..._selectedValueNodeIds.take(stepIndex)];
-          if (value != null) {
-            nextValueIds.add(value);
-          }
-          _selectedValueNodeIds = nextValueIds;
+          _replaceSelectionUnderProperty(
+            step.property,
+            value == null ? const <int>[] : <int>[value],
+          );
         });
       },
     );
   }
 
-  List<_VariationStep> _rootPropertySteps() {
+  List<_VariationStep> _allVariationSteps() {
     return _item.topLevelProperties
-        .map((rootProperty) {
-          final values = rootProperty.activeChildren
-              .where((node) => node.kind == ItemVariationNodeKind.value)
-              .toList(growable: false);
-          final selectedValueId =
-              rootProperty.id == _selectedRootPropertyId &&
-                  _selectedValueNodeIds.isNotEmpty
-              ? _selectedValueNodeIds.first
-              : null;
-          final selectedValue = values
-              .where((node) => node.id == selectedValueId)
-              .firstOrNull;
-          return _VariationStep(
-            propertyRoot: rootProperty,
-            property: rootProperty,
-            values: values,
-            selectedValueId: selectedValue?.id,
-          );
-        })
+        .expand(_variationSteps)
         .toList(growable: false);
   }
 
@@ -5228,19 +5355,6 @@ class _VariationPathSelectorDialogState
     );
   }
 
-  ItemVariationNodeDefinition? _selectedRootProperty() {
-    final roots = _item.topLevelProperties;
-    if (roots.isEmpty) {
-      return null;
-    }
-    if (roots.length == 1) {
-      return roots.first;
-    }
-    return roots
-        .where((root) => root.id == _selectedRootPropertyId)
-        .firstOrNull;
-  }
-
   List<_VariationStep> _variationSteps(
     ItemVariationNodeDefinition? rootProperty,
   ) {
@@ -5249,20 +5363,15 @@ class _VariationPathSelectorDialogState
     }
     final steps = <_VariationStep>[];
     var currentProperty = rootProperty;
-    var depth = 0;
     while (true) {
       final values = currentProperty.activeChildren
           .where((node) => node.kind == ItemVariationNodeKind.value)
           .toList(growable: false);
-      final selectedValueId = depth < _selectedValueNodeIds.length
-          ? _selectedValueNodeIds[depth]
-          : null;
       final selectedValue = values
-          .where((node) => node.id == selectedValueId)
+          .where((node) => _selectedValueNodeIds.contains(node.id))
           .firstOrNull;
       steps.add(
         _VariationStep(
-          propertyRoot: rootProperty,
           property: currentProperty,
           values: values,
           selectedValueId: selectedValue?.id,
@@ -5275,111 +5384,110 @@ class _VariationPathSelectorDialogState
         break;
       }
       currentProperty = nextProperty;
-      depth += 1;
     }
     return steps;
   }
 
   ItemVariationNodeDefinition? _resolveLeafFromSelection() {
-    final rootProperty = _selectedRootProperty();
-    if (rootProperty == null || _selectedValueNodeIds.isEmpty) {
+    if (_item.topLevelProperties.isEmpty || _selectedValueNodeIds.isEmpty) {
       return null;
     }
-    ItemVariationNodeDefinition? currentValue;
-    ItemVariationNodeDefinition currentProperty = rootProperty;
-    for (final valueId in _selectedValueNodeIds) {
-      currentValue = currentProperty.activeChildren
-          .where((node) => node.kind == ItemVariationNodeKind.value)
-          .where((node) => node.id == valueId)
-          .firstOrNull;
-      if (currentValue == null) {
-        return null;
-      }
-      final nextProperty = currentValue.activeChildren
-          .where((node) => node.kind == ItemVariationNodeKind.property)
-          .firstOrNull;
-      if (nextProperty == null) {
-        return currentValue.isLeafValue ? currentValue : null;
-      }
-      currentProperty = nextProperty;
-    }
-    return currentValue != null && currentValue.isLeafValue
-        ? currentValue
-        : null;
-  }
-
-  ItemVariationNodeDefinition? _rootPropertyForLeaf(
-    ItemDefinition item,
-    ItemVariationNodeDefinition leaf,
-  ) {
-    return _pathNodesForLeaf(
-      item,
-      leaf,
-    ).where((node) => node.kind == ItemVariationNodeKind.property).firstOrNull;
-  }
-
-  List<ItemVariationNodeDefinition> _pathNodesForLeaf(
-    ItemDefinition item,
-    ItemVariationNodeDefinition leaf,
-  ) {
-    final path = <ItemVariationNodeDefinition>[];
-    void visit(
-      ItemVariationNodeDefinition node,
-      List<ItemVariationNodeDefinition> current,
-    ) {
-      final next = [...current, node];
-      if (node.id == leaf.id) {
-        path
-          ..clear()
-          ..addAll(next);
-        return;
-      }
-      for (final child in node.children) {
-        visit(child, next);
+    final terminalValues = <ItemVariationNodeDefinition>[];
+    for (final rootProperty in _item.topLevelProperties) {
+      ItemVariationNodeDefinition currentProperty = rootProperty;
+      while (true) {
+        final currentValue = currentProperty.activeChildren
+            .where((node) => node.kind == ItemVariationNodeKind.value)
+            .where((node) => _selectedValueNodeIds.contains(node.id))
+            .firstOrNull;
+        if (currentValue == null) {
+          return null;
+        }
+        final nextProperty = currentValue.activeChildren
+            .where((node) => node.kind == ItemVariationNodeKind.property)
+            .firstOrNull;
+        if (nextProperty == null) {
+          if (!currentValue.isLeafValue) {
+            return null;
+          }
+          terminalValues.add(currentValue);
+          break;
+        }
+        currentProperty = nextProperty;
       }
     }
-
-    for (final root in item.variationTree) {
-      visit(root, const []);
-    }
-    return path;
+    return terminalValues.isEmpty ? null : terminalValues.last;
   }
 
-  String _variationPathOptionLabel(
-    ItemDefinition item,
-    ItemVariationNodeDefinition leaf,
+  void _replaceSelectionUnderProperty(
+    ItemVariationNodeDefinition property,
+    List<int> selectedValueIds,
   ) {
-    final pathNodes = _pathNodesForLeaf(
-      item,
-      leaf,
-    ).where((node) => node.name.trim().isNotEmpty).toList(growable: false);
+    final blockedValueIds = _valueIdsUnder(property);
+    final nextValueNodeIds = <int>[];
+    for (final id in <int>[
+      ..._selectedValueNodeIds.where((id) => !blockedValueIds.contains(id)),
+      ...selectedValueIds,
+    ]) {
+      if (!nextValueNodeIds.contains(id)) {
+        nextValueNodeIds.add(id);
+      }
+    }
+    _selectedValueNodeIds = nextValueNodeIds;
+  }
+
+  Set<int> _valueIdsUnder(ItemVariationNodeDefinition node) {
+    final ids = <int>{};
+    void visit(ItemVariationNodeDefinition current) {
+      if (current.kind == ItemVariationNodeKind.value) {
+        ids.add(current.id);
+      }
+      for (final child in current.children) {
+        visit(child);
+      }
+    }
+
+    visit(node);
+    return ids;
+  }
+
+  ItemVariationNodeDefinition? _findNodeById(
+    List<ItemVariationNodeDefinition> nodes,
+    int id,
+  ) {
+    for (final node in nodes) {
+      if (node.id == id) {
+        return node;
+      }
+      final child = _findNodeById(node.children, id);
+      if (child != null) {
+        return child;
+      }
+    }
+    return null;
+  }
+
+  String _selectionSummaryLabel() {
     final segments = <String>[];
-    for (var index = 0; index < pathNodes.length; index++) {
-      final node = pathNodes[index];
-      if (node.kind != ItemVariationNodeKind.property) {
+    for (final step in _allVariationSteps()) {
+      final selectedValue = step.values
+          .where((value) => value.id == step.selectedValueId)
+          .firstOrNull;
+      if (selectedValue == null) {
         continue;
       }
-      final propertyName = node.name.trim();
-      final nextNode = index + 1 < pathNodes.length
-          ? pathNodes[index + 1]
-          : null;
-      if (nextNode != null && nextNode.kind == ItemVariationNodeKind.value) {
-        final valueName = nextNode.name.trim();
-        segments.add(
-          valueName.isEmpty ? propertyName : '$propertyName: $valueName',
-        );
-        index += 1;
+      final propertyName = step.property.name.trim();
+      final valueName = selectedValue.name.trim().isEmpty
+          ? selectedValue.displayName.trim()
+          : selectedValue.name.trim();
+      if (propertyName.isEmpty && valueName.isEmpty) {
         continue;
       }
-      segments.add(propertyName);
+      segments.add(
+        valueName.isEmpty ? propertyName : '$propertyName: $valueName',
+      );
     }
-    if (segments.isNotEmpty) {
-      return segments.join(' / ');
-    }
-    final fallback = leaf.displayName.trim().isNotEmpty
-        ? leaf.displayName.trim()
-        : leaf.name.trim();
-    return fallback.isEmpty ? 'Variation ${leaf.id}' : fallback;
+    return segments.isEmpty ? _item.displayName : segments.join(' / ');
   }
 
   void _submit() {
@@ -5958,6 +6066,8 @@ class _OrderItemsHeader extends StatelessWidget {
         children: [
           const Expanded(flex: 32, child: Text('Item', style: style)),
           const SizedBox(width: _OrderItemsHeader._columnGap),
+          const Expanded(flex: 12, child: Text('Qty', style: style)),
+          const SizedBox(width: _OrderItemsHeader._columnGap),
           const Expanded(flex: 18, child: Text('Unit', style: style)),
           if (showCompletionDate) ...[
             const SizedBox(width: _OrderItemsHeader._columnGap),
@@ -5976,12 +6086,14 @@ class _OrderItemsHeader extends StatelessWidget {
 class _OrderItemsRow extends StatelessWidget {
   const _OrderItemsRow({
     required this.itemField,
+    required this.quantityField,
     required this.unitField,
     this.completionDateField,
     this.onDelete,
   });
 
   final Widget itemField;
+  final Widget quantityField;
   final Widget unitField;
   final Widget? completionDateField;
   final VoidCallback? onDelete;
@@ -5999,6 +6111,8 @@ class _OrderItemsRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(flex: 32, child: itemField),
+          const SizedBox(width: _OrderItemsHeader._columnGap),
+          Expanded(flex: 12, child: quantityField),
           const SizedBox(width: _OrderItemsHeader._columnGap),
           Expanded(flex: 18, child: unitField),
           if (completionDateField != null) ...[

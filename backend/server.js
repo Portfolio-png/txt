@@ -3609,6 +3609,10 @@ async function saveOrder({
   const normalizedClientId = Number(clientId);
   const normalizedItemId = Number(itemId);
   const normalizedLeafId = Number(variationLeafNodeId || 0);
+  const normalizedVariationPathNodeIds = Array.isArray(variationPathNodeIds)
+    ? variationPathNodeIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+    : [];
+  const normalizedVariationPathJson = JSON.stringify(normalizedVariationPathNodeIds);
   const normalizedQuantity = Number(quantity || 0);
   const normalizedStartDate = normalizeOptionalDate(startDate, 'start date');
   const normalizedEndDate = normalizeOptionalDate(endDate, 'end date');
@@ -3631,8 +3635,13 @@ async function saveOrder({
     error.statusCode = 400;
     throw error;
   }
-  if (!normalizedClientId || !normalizedItemId || !normalizedLeafId) {
-    const error = new Error('Client, item, and variation path are required.');
+  if (
+    !normalizedClientId ||
+    !normalizedItemId ||
+    ((!Number.isFinite(normalizedLeafId) || normalizedLeafId <= 0) &&
+      normalizedVariationPathNodeIds.length === 0)
+  ) {
+    const error = new Error('Client, item, and variation values are required.');
     error.statusCode = 400;
     throw error;
   }
@@ -3653,9 +3662,17 @@ async function saveOrder({
         AND client_id = ?
         AND item_id = ?
         AND variation_leaf_node_id = ?
+        AND variation_path_node_ids_json = ?
         AND LOWER(TRIM(po_number)) = LOWER(TRIM(?))
       `,
-      [trimmedOrderNo, normalizedClientId, normalizedItemId, normalizedLeafId, trimmedPoNumber],
+      [
+        trimmedOrderNo,
+        normalizedClientId,
+        normalizedItemId,
+        normalizedLeafId,
+        normalizedVariationPathJson,
+        trimmedPoNumber,
+      ],
     );
 
     let orderId;
@@ -3677,7 +3694,7 @@ async function saveOrder({
           trimmedClientCode,
           trimmedItemName,
           trimmedVariationPathLabel,
-          JSON.stringify(Array.isArray(variationPathNodeIds) ? variationPathNodeIds : []),
+          normalizedVariationPathJson,
           existing.id,
         ],
       );
@@ -3702,7 +3719,7 @@ async function saveOrder({
           trimmedItemName,
           normalizedLeafId,
           trimmedVariationPathLabel,
-          JSON.stringify(Array.isArray(variationPathNodeIds) ? variationPathNodeIds : []),
+          normalizedVariationPathJson,
           Math.round(normalizedQuantity),
           normalizedStatus,
           now,
