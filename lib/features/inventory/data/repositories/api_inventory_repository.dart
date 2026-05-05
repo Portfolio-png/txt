@@ -634,11 +634,16 @@ class ApiInventoryRepository implements InventoryRepository {
   }
 
   @override
-  Future<MaterialRecord> linkMaterialToItem(String barcode, int itemId) {
+  Future<MaterialRecord> linkMaterialToItem(
+    String barcode,
+    int itemId,
+  ) {
     return _linkMutation(
       barcode,
       endpoint: 'link-item',
-      body: {'itemId': itemId},
+      body: {
+        'itemId': itemId,
+      },
       fallback: 'Failed to link item inheritance.',
       linkedGroupId: null,
       linkedItemId: itemId,

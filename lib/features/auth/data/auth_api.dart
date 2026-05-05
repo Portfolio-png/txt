@@ -53,6 +53,36 @@ class AuthApi {
     return AuthUser.fromJson(payload['user'] as Map<String, dynamic>);
   }
 
+  Future<void> clearBackendDatabase() async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/admin/clear-data'),
+      headers: _authHeaders,
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to clear backend database.',
+      );
+    }
+  }
+
+  Future<void> reseedDemoData() async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/admin/reseed-data'),
+      headers: _authHeaders,
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to reseed demo data.',
+      );
+    }
+  }
+
   Future<({List<AuthUser> users, int total, bool hasMore})> getUsers({
     String query = '',
     String role = '',

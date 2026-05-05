@@ -20,6 +20,9 @@ class InventoryProvider extends ChangeNotifier {
   MaterialRecord? _selectedMaterial;
   bool _isLoading = false;
   bool _isSaving = false;
+  // BUG-11: Separate flag for barcode lookup so it doesn't trigger the
+  // full-screen loading skeleton during barcode scan workflows.
+  bool _isLookingUp = false;
   String? _errorMessage;
   String? _lastLookupBarcode;
   String _searchQuery = '';
@@ -32,6 +35,7 @@ class InventoryProvider extends ChangeNotifier {
   MaterialRecord? get selectedMaterial => _selectedMaterial;
   bool get isLoading => _isLoading;
   bool get isSaving => _isSaving;
+  bool get isLookingUp => _isLookingUp;
   String? get errorMessage => _errorMessage;
   String? get lastLookupBarcode => _lastLookupBarcode;
   String get searchQuery => _searchQuery;
@@ -63,6 +67,32 @@ class InventoryProvider extends ChangeNotifier {
     } catch (error) {
       _errorMessage = _friendlyError(
         fallback: 'Failed to load inventory data.',
+        error: error,
+      );
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> refresh() async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await _repository.init();
+      await _reloadMaterials();
+      await loadInventoryHealth(silent: true);
+      if (_selectedMaterial != null) {
+        _selectedMaterial = _materials
+            .where((item) => item.barcode == _selectedMaterial!.barcode)
+            .firstOrNull;
+      }
+      _selectedMaterial ??= _materials.firstOrNull;
+    } catch (error) {
+      _errorMessage = _friendlyError(
+        fallback: 'Failed to refresh inventory data.',
         error: error,
       );
     } finally {
@@ -166,9 +196,15 @@ class InventoryProvider extends ChangeNotifier {
     );
   }
 
-  Future<void> linkMaterialToItem(String barcode, int itemId) async {
+  Future<void> linkMaterialToItem(
+    String barcode,
+    int itemId,
+  ) async {
     await _linkMutation(
-      action: () => _repository.linkMaterialToItem(barcode, itemId),
+      action: () => _repository.linkMaterialToItem(
+        barcode,
+        itemId,
+      ),
       fallback: 'Failed to link item inheritance.',
     );
   }
@@ -188,7 +224,9 @@ class InventoryProvider extends ChangeNotifier {
   }
 
   Future<MaterialRecord?> lookupBarcode(String barcode) async {
-    _isLoading = true;
+    // BUG-11: Use _isLookingUp instead of _isLoading so the full-screen
+    // loading skeleton is not triggered during barcode scan workflows.
+    _isLookingUp = true;
     _errorMessage = null;
     _lastLookupBarcode = barcode;
     notifyListeners();
@@ -214,7 +252,7 @@ class InventoryProvider extends ChangeNotifier {
       );
       return null;
     } finally {
-      _isLoading = false;
+      _isLookingUp = false;
       notifyListeners();
     }
   }
@@ -265,6 +303,10 @@ class InventoryProvider extends ChangeNotifier {
     try {
       _healthSnapshot = await _repository.getInventoryHealth();
     } catch (_) {
+      // BUG-09: The original fallback used the exact same predicate
+      // (pendingAlertCount > 0) for BOTH unitMismatchCount and
+      // pendingReconciliationCount, making both KPIs identical.
+      // Low-stock uses <=100 heuristic; reserved risk checks reserved > onHand.
       final lowStock = _materials
           .where((item) => item.availableToPromise <= 100 && item.onHand > 0)
           .length;
@@ -274,14 +316,21 @@ class InventoryProvider extends ChangeNotifier {
       _healthSnapshot = InventoryHealthSnapshot(
         lowStockCount: lowStock,
         reservedRiskCount: reservedRisk,
-        incomingTodayCount: _materials.where((item) => item.incoming > 0).length,
+        incomingTodayCount: _materials
+            .where((item) => item.incoming > 0)
+            .length,
         qualityHoldCount: _materials
             .where((item) => item.inventoryState == InventoryState.qualityHold)
             .length,
-        unitMismatchCount:
-            _materials.where((item) => item.pendingAlertCount > 0).length,
-        pendingReconciliationCount:
-            _materials.where((item) => item.pendingAlertCount > 0).length,
+        // unitMismatch: items with any pending alert (unit-related alerts)
+        unitMismatchCount: _materials
+            .where((item) => item.pendingAlertCount > 0)
+            .length,
+        // pendingReconciliation: items with reserved > 0 but not yet reconciled
+        // (distinct from reserved risk which checks reserved > onHand).
+        pendingReconciliationCount: _materials
+            .where((item) => item.reserved > 0 && item.availableToPromise == item.onHand)
+            .length,
       );
     }
     if (!silent) {

@@ -70,7 +70,7 @@ class ApiItemRepository implements ItemRepository {
         parentNodeId: null,
         timestamp: now,
       );
-      final created = ItemDefinition(
+      final created = ItemDefinition(namingFormat: const <String>[],
         id: itemId,
         name: input.name.trim(),
         alias: input.alias.trim(),
@@ -135,7 +135,7 @@ class ApiItemRepository implements ItemRepository {
         parentNodeId: null,
         timestamp: now,
       );
-      final updated = ItemDefinition(
+      final updated = ItemDefinition(namingFormat: const <String>[],
         id: current.id,
         name: input.name.trim(),
         alias: input.alias.trim(),
@@ -198,7 +198,7 @@ class ApiItemRepository implements ItemRepository {
       }
       final current = _mockItems[index];
       final now = DateTime.now();
-      final updated = ItemDefinition(
+      final updated = ItemDefinition(namingFormat: const <String>[],
         id: current.id,
         name: current.name,
         alias: current.alias,
@@ -241,7 +241,7 @@ class ApiItemRepository implements ItemRepository {
   ) {
     return nodes
         .map(
-          (node) => ItemVariationNodeDefinition(
+          (node) => ItemVariationNodeDefinition(code: '',
             id: node.id,
             itemId: node.itemId,
             parentNodeId: node.parentNodeId,
@@ -345,7 +345,7 @@ class ApiItemRepository implements ItemRepository {
             parentNodeId: nodeId,
             timestamp: timestamp,
           );
-          return ItemVariationNodeDefinition(
+          return ItemVariationNodeDefinition(code: '',
             id: nodeId,
             itemId: itemId,
             parentNodeId: parentNodeId,
@@ -399,7 +399,7 @@ class ApiItemRepository implements ItemRepository {
     final sixAmpPlatingPropertyId = _mockNextNodeId++;
     final sixAmpWithoutPlatingValueId = _mockNextNodeId++;
     final bottleTree = [
-      ItemVariationNodeDefinition(
+      ItemVariationNodeDefinition(code: '',
         id: ampPropertyId,
         itemId: bottleId,
         parentNodeId: null,
@@ -411,7 +411,7 @@ class ApiItemRepository implements ItemRepository {
         createdAt: now,
         updatedAt: now,
         children: [
-          ItemVariationNodeDefinition(
+          ItemVariationNodeDefinition(code: '',
             id: fiveAmpValueId,
             itemId: bottleId,
             parentNodeId: ampPropertyId,
@@ -423,7 +423,7 @@ class ApiItemRepository implements ItemRepository {
             createdAt: now,
             updatedAt: now,
             children: [
-              ItemVariationNodeDefinition(
+              ItemVariationNodeDefinition(code: '',
                 id: fiveAmpCountPropertyId,
                 itemId: bottleId,
                 parentNodeId: fiveAmpValueId,
@@ -435,7 +435,7 @@ class ApiItemRepository implements ItemRepository {
                 createdAt: now,
                 updatedAt: now,
                 children: [
-                  ItemVariationNodeDefinition(
+                  ItemVariationNodeDefinition(code: '',
                     id: fiveAmpCountValueId,
                     itemId: bottleId,
                     parentNodeId: fiveAmpCountPropertyId,
@@ -447,7 +447,7 @@ class ApiItemRepository implements ItemRepository {
                     createdAt: now,
                     updatedAt: now,
                     children: [
-                      ItemVariationNodeDefinition(
+                      ItemVariationNodeDefinition(code: '',
                         id: fiveAmpAlloyPropertyId,
                         itemId: bottleId,
                         parentNodeId: fiveAmpCountValueId,
@@ -459,7 +459,7 @@ class ApiItemRepository implements ItemRepository {
                         createdAt: now,
                         updatedAt: now,
                         children: [
-                          ItemVariationNodeDefinition(
+                          ItemVariationNodeDefinition(code: '',
                             id: fiveAmpAlloyValueId,
                             itemId: bottleId,
                             parentNodeId: fiveAmpAlloyPropertyId,
@@ -471,7 +471,7 @@ class ApiItemRepository implements ItemRepository {
                             createdAt: now,
                             updatedAt: now,
                             children: [
-                              ItemVariationNodeDefinition(
+                              ItemVariationNodeDefinition(code: '',
                                 id: fiveAmpContactPropertyId,
                                 itemId: bottleId,
                                 parentNodeId: fiveAmpAlloyValueId,
@@ -483,7 +483,7 @@ class ApiItemRepository implements ItemRepository {
                                 createdAt: now,
                                 updatedAt: now,
                                 children: [
-                                  ItemVariationNodeDefinition(
+                                  ItemVariationNodeDefinition(code: '',
                                     id: fiveAmpContactValueId,
                                     itemId: bottleId,
                                     parentNodeId: fiveAmpContactPropertyId,
@@ -495,7 +495,7 @@ class ApiItemRepository implements ItemRepository {
                                     createdAt: now,
                                     updatedAt: now,
                                     children: [
-                                      ItemVariationNodeDefinition(
+                                      ItemVariationNodeDefinition(code: '',
                                         id: fiveAmpTypePropertyId,
                                         itemId: bottleId,
                                         parentNodeId: fiveAmpContactValueId,
@@ -507,7 +507,7 @@ class ApiItemRepository implements ItemRepository {
                                         createdAt: now,
                                         updatedAt: now,
                                         children: [
-                                          ItemVariationNodeDefinition(
+                                          ItemVariationNodeDefinition(code: '',
                                             id: fiveAmpTypeValueId,
                                             itemId: bottleId,
                                             parentNodeId: fiveAmpTypePropertyId,
@@ -519,7 +519,7 @@ class ApiItemRepository implements ItemRepository {
                                             createdAt: now,
                                             updatedAt: now,
                                             children: [
-                                              ItemVariationNodeDefinition(
+                                              ItemVariationNodeDefinition(code: '',
                                                 id: fiveAmpPlatingPropertyId,
                                                 itemId: bottleId,
                                                 parentNodeId:
@@ -533,7 +533,7 @@ class ApiItemRepository implements ItemRepository {
                                                 createdAt: now,
                                                 updatedAt: now,
                                                 children: [
-                                                  ItemVariationNodeDefinition(
+                                                  ItemVariationNodeDefinition(code: '',
                                                     id: withoutPlatingValueId,
                                                     itemId: bottleId,
                                                     parentNodeId:
@@ -549,7 +549,7 @@ class ApiItemRepository implements ItemRepository {
                                                     updatedAt: now,
                                                     children: const [],
                                                   ),
-                                                  ItemVariationNodeDefinition(
+                                                  ItemVariationNodeDefinition(code: '',
                                                     id: withPlatingValueId,
                                                     itemId: bottleId,
                                                     parentNodeId:
@@ -585,7 +585,7 @@ class ApiItemRepository implements ItemRepository {
               ),
             ],
           ),
-          ItemVariationNodeDefinition(
+          ItemVariationNodeDefinition(code: '',
             id: sixAmpValueId,
             itemId: bottleId,
             parentNodeId: ampPropertyId,
@@ -597,7 +597,7 @@ class ApiItemRepository implements ItemRepository {
             createdAt: now,
             updatedAt: now,
             children: [
-              ItemVariationNodeDefinition(
+              ItemVariationNodeDefinition(code: '',
                 id: sixAmpCountPropertyId,
                 itemId: bottleId,
                 parentNodeId: sixAmpValueId,
@@ -609,7 +609,7 @@ class ApiItemRepository implements ItemRepository {
                 createdAt: now,
                 updatedAt: now,
                 children: [
-                  ItemVariationNodeDefinition(
+                  ItemVariationNodeDefinition(code: '',
                     id: sixAmpCountValueId,
                     itemId: bottleId,
                     parentNodeId: sixAmpCountPropertyId,
@@ -621,7 +621,7 @@ class ApiItemRepository implements ItemRepository {
                     createdAt: now,
                     updatedAt: now,
                     children: [
-                      ItemVariationNodeDefinition(
+                      ItemVariationNodeDefinition(code: '',
                         id: sixAmpAlloyPropertyId,
                         itemId: bottleId,
                         parentNodeId: sixAmpCountValueId,
@@ -633,7 +633,7 @@ class ApiItemRepository implements ItemRepository {
                         createdAt: now,
                         updatedAt: now,
                         children: [
-                          ItemVariationNodeDefinition(
+                          ItemVariationNodeDefinition(code: '',
                             id: sixAmpAlloyValueId,
                             itemId: bottleId,
                             parentNodeId: sixAmpAlloyPropertyId,
@@ -645,7 +645,7 @@ class ApiItemRepository implements ItemRepository {
                             createdAt: now,
                             updatedAt: now,
                             children: [
-                              ItemVariationNodeDefinition(
+                              ItemVariationNodeDefinition(code: '',
                                 id: sixAmpContactPropertyId,
                                 itemId: bottleId,
                                 parentNodeId: sixAmpAlloyValueId,
@@ -657,7 +657,7 @@ class ApiItemRepository implements ItemRepository {
                                 createdAt: now,
                                 updatedAt: now,
                                 children: [
-                                  ItemVariationNodeDefinition(
+                                  ItemVariationNodeDefinition(code: '',
                                     id: sixAmpContactValueId,
                                     itemId: bottleId,
                                     parentNodeId: sixAmpContactPropertyId,
@@ -669,7 +669,7 @@ class ApiItemRepository implements ItemRepository {
                                     createdAt: now,
                                     updatedAt: now,
                                     children: [
-                                      ItemVariationNodeDefinition(
+                                      ItemVariationNodeDefinition(code: '',
                                         id: sixAmpTypePropertyId,
                                         itemId: bottleId,
                                         parentNodeId: sixAmpContactValueId,
@@ -681,7 +681,7 @@ class ApiItemRepository implements ItemRepository {
                                         createdAt: now,
                                         updatedAt: now,
                                         children: [
-                                          ItemVariationNodeDefinition(
+                                          ItemVariationNodeDefinition(code: '',
                                             id: sixAmpTypeValueId,
                                             itemId: bottleId,
                                             parentNodeId: sixAmpTypePropertyId,
@@ -693,7 +693,7 @@ class ApiItemRepository implements ItemRepository {
                                             createdAt: now,
                                             updatedAt: now,
                                             children: [
-                                              ItemVariationNodeDefinition(
+                                              ItemVariationNodeDefinition(code: '',
                                                 id: sixAmpPlatingPropertyId,
                                                 itemId: bottleId,
                                                 parentNodeId: sixAmpTypeValueId,
@@ -706,7 +706,7 @@ class ApiItemRepository implements ItemRepository {
                                                 createdAt: now,
                                                 updatedAt: now,
                                                 children: [
-                                                  ItemVariationNodeDefinition(
+                                                  ItemVariationNodeDefinition(code: '',
                                                     id: sixAmpWithoutPlatingValueId,
                                                     itemId: bottleId,
                                                     parentNodeId:
@@ -746,7 +746,7 @@ class ApiItemRepository implements ItemRepository {
       ),
     ];
     _mockItems.add(
-      ItemDefinition(
+      ItemDefinition(namingFormat: const <String>[],
         id: bottleId,
         name: 'Epoxy Resin Base',
         alias: 'Binder',
@@ -766,7 +766,7 @@ class ApiItemRepository implements ItemRepository {
     final cureSpeedPropertyId = _mockNextNodeId++;
     final fastCureValueId = _mockNextNodeId++;
     final glueTree = [
-      ItemVariationNodeDefinition(
+      ItemVariationNodeDefinition(code: '',
         id: cureSpeedPropertyId,
         itemId: glueId,
         parentNodeId: null,
@@ -778,7 +778,7 @@ class ApiItemRepository implements ItemRepository {
         createdAt: now,
         updatedAt: now,
         children: [
-          ItemVariationNodeDefinition(
+          ItemVariationNodeDefinition(code: '',
             id: fastCureValueId,
             itemId: glueId,
             parentNodeId: cureSpeedPropertyId,
@@ -795,7 +795,7 @@ class ApiItemRepository implements ItemRepository {
       ),
     ];
     _mockItems.add(
-      ItemDefinition(
+      ItemDefinition(namingFormat: const <String>[],
         id: glueId,
         name: 'Hardener Compound',
         alias: 'Catalyst',
@@ -834,7 +834,7 @@ class ApiItemRepository implements ItemRepository {
     final glassLockTypePropertyId = _mockNextNodeId++;
     final glassRightLockValueId = _mockNextNodeId++;
     final bottleShowcaseTree = [
-      ItemVariationNodeDefinition(
+      ItemVariationNodeDefinition(code: '',
         id: bottleMaterialPropertyId,
         itemId: bottleShowcaseId,
         parentNodeId: null,
@@ -846,7 +846,7 @@ class ApiItemRepository implements ItemRepository {
         createdAt: now,
         updatedAt: now,
         children: [
-          ItemVariationNodeDefinition(
+          ItemVariationNodeDefinition(code: '',
             id: petValueId,
             itemId: bottleShowcaseId,
             parentNodeId: bottleMaterialPropertyId,
@@ -858,7 +858,7 @@ class ApiItemRepository implements ItemRepository {
             createdAt: now,
             updatedAt: now,
             children: [
-              ItemVariationNodeDefinition(
+              ItemVariationNodeDefinition(code: '',
                 id: bottleColorPropertyId,
                 itemId: bottleShowcaseId,
                 parentNodeId: petValueId,
@@ -870,7 +870,7 @@ class ApiItemRepository implements ItemRepository {
                 createdAt: now,
                 updatedAt: now,
                 children: [
-                  ItemVariationNodeDefinition(
+                  ItemVariationNodeDefinition(code: '',
                     id: frostedClearValueId,
                     itemId: bottleShowcaseId,
                     parentNodeId: bottleColorPropertyId,
@@ -882,7 +882,7 @@ class ApiItemRepository implements ItemRepository {
                     createdAt: now,
                     updatedAt: now,
                     children: [
-                      ItemVariationNodeDefinition(
+                      ItemVariationNodeDefinition(code: '',
                         id: pumpFinishPropertyId,
                         itemId: bottleShowcaseId,
                         parentNodeId: frostedClearValueId,
@@ -894,7 +894,7 @@ class ApiItemRepository implements ItemRepository {
                         createdAt: now,
                         updatedAt: now,
                         children: [
-                          ItemVariationNodeDefinition(
+                          ItemVariationNodeDefinition(code: '',
                             id: matteSilverValueId,
                             itemId: bottleShowcaseId,
                             parentNodeId: pumpFinishPropertyId,
@@ -906,7 +906,7 @@ class ApiItemRepository implements ItemRepository {
                             createdAt: now,
                             updatedAt: now,
                             children: [
-                              ItemVariationNodeDefinition(
+                              ItemVariationNodeDefinition(code: '',
                                 id: lockTypePropertyId,
                                 itemId: bottleShowcaseId,
                                 parentNodeId: matteSilverValueId,
@@ -918,7 +918,7 @@ class ApiItemRepository implements ItemRepository {
                                 createdAt: now,
                                 updatedAt: now,
                                 children: [
-                                  ItemVariationNodeDefinition(
+                                  ItemVariationNodeDefinition(code: '',
                                     id: leftLockValueId,
                                     itemId: bottleShowcaseId,
                                     parentNodeId: lockTypePropertyId,
@@ -932,7 +932,7 @@ class ApiItemRepository implements ItemRepository {
                                     updatedAt: now,
                                     children: const [],
                                   ),
-                                  ItemVariationNodeDefinition(
+                                  ItemVariationNodeDefinition(code: '',
                                     id: rightLockValueId,
                                     itemId: bottleShowcaseId,
                                     parentNodeId: lockTypePropertyId,
@@ -954,7 +954,7 @@ class ApiItemRepository implements ItemRepository {
                       ),
                     ],
                   ),
-                  ItemVariationNodeDefinition(
+                  ItemVariationNodeDefinition(code: '',
                     id: amberValueId,
                     itemId: bottleShowcaseId,
                     parentNodeId: bottleColorPropertyId,
@@ -966,7 +966,7 @@ class ApiItemRepository implements ItemRepository {
                     createdAt: now,
                     updatedAt: now,
                     children: [
-                      ItemVariationNodeDefinition(
+                      ItemVariationNodeDefinition(code: '',
                         id: amberPumpFinishPropertyId,
                         itemId: bottleShowcaseId,
                         parentNodeId: amberValueId,
@@ -978,7 +978,7 @@ class ApiItemRepository implements ItemRepository {
                         createdAt: now,
                         updatedAt: now,
                         children: [
-                          ItemVariationNodeDefinition(
+                          ItemVariationNodeDefinition(code: '',
                             id: glossGoldValueId,
                             itemId: bottleShowcaseId,
                             parentNodeId: amberPumpFinishPropertyId,
@@ -990,7 +990,7 @@ class ApiItemRepository implements ItemRepository {
                             createdAt: now,
                             updatedAt: now,
                             children: [
-                              ItemVariationNodeDefinition(
+                              ItemVariationNodeDefinition(code: '',
                                 id: amberLockTypePropertyId,
                                 itemId: bottleShowcaseId,
                                 parentNodeId: glossGoldValueId,
@@ -1002,7 +1002,7 @@ class ApiItemRepository implements ItemRepository {
                                 createdAt: now,
                                 updatedAt: now,
                                 children: [
-                                  ItemVariationNodeDefinition(
+                                  ItemVariationNodeDefinition(code: '',
                                     id: amberLeftLockValueId,
                                     itemId: bottleShowcaseId,
                                     parentNodeId: amberLockTypePropertyId,
@@ -1028,7 +1028,7 @@ class ApiItemRepository implements ItemRepository {
               ),
             ],
           ),
-          ItemVariationNodeDefinition(
+          ItemVariationNodeDefinition(code: '',
             id: glassValueId,
             itemId: bottleShowcaseId,
             parentNodeId: bottleMaterialPropertyId,
@@ -1040,7 +1040,7 @@ class ApiItemRepository implements ItemRepository {
             createdAt: now,
             updatedAt: now,
             children: [
-              ItemVariationNodeDefinition(
+              ItemVariationNodeDefinition(code: '',
                 id: glassColorPropertyId,
                 itemId: bottleShowcaseId,
                 parentNodeId: glassValueId,
@@ -1052,7 +1052,7 @@ class ApiItemRepository implements ItemRepository {
                 createdAt: now,
                 updatedAt: now,
                 children: [
-                  ItemVariationNodeDefinition(
+                  ItemVariationNodeDefinition(code: '',
                     id: clearValueId,
                     itemId: bottleShowcaseId,
                     parentNodeId: glassColorPropertyId,
@@ -1064,7 +1064,7 @@ class ApiItemRepository implements ItemRepository {
                     createdAt: now,
                     updatedAt: now,
                     children: [
-                      ItemVariationNodeDefinition(
+                      ItemVariationNodeDefinition(code: '',
                         id: glassPumpFinishPropertyId,
                         itemId: bottleShowcaseId,
                         parentNodeId: clearValueId,
@@ -1076,7 +1076,7 @@ class ApiItemRepository implements ItemRepository {
                         createdAt: now,
                         updatedAt: now,
                         children: [
-                          ItemVariationNodeDefinition(
+                          ItemVariationNodeDefinition(code: '',
                             id: roseGoldValueId,
                             itemId: bottleShowcaseId,
                             parentNodeId: glassPumpFinishPropertyId,
@@ -1088,7 +1088,7 @@ class ApiItemRepository implements ItemRepository {
                             createdAt: now,
                             updatedAt: now,
                             children: [
-                              ItemVariationNodeDefinition(
+                              ItemVariationNodeDefinition(code: '',
                                 id: glassLockTypePropertyId,
                                 itemId: bottleShowcaseId,
                                 parentNodeId: roseGoldValueId,
@@ -1100,7 +1100,7 @@ class ApiItemRepository implements ItemRepository {
                                 createdAt: now,
                                 updatedAt: now,
                                 children: [
-                                  ItemVariationNodeDefinition(
+                                  ItemVariationNodeDefinition(code: '',
                                     id: glassRightLockValueId,
                                     itemId: bottleShowcaseId,
                                     parentNodeId: glassLockTypePropertyId,
@@ -1130,7 +1130,7 @@ class ApiItemRepository implements ItemRepository {
       ),
     ];
     _mockItems.add(
-      ItemDefinition(
+      ItemDefinition(namingFormat: const <String>[],
         id: bottleShowcaseId,
         name: 'Isopropyl Cleaner',
         alias: 'Solvent',
@@ -1169,7 +1169,7 @@ class ApiItemRepository implements ItemRepository {
     final gsm350WindowPropertyId = _mockNextNodeId++;
     final gsm350WithWindowValueId = _mockNextNodeId++;
     final cartonShowcaseTree = [
-      ItemVariationNodeDefinition(
+      ItemVariationNodeDefinition(code: '',
         id: boardGsmPropertyId,
         itemId: cartonShowcaseId,
         parentNodeId: null,
@@ -1181,7 +1181,7 @@ class ApiItemRepository implements ItemRepository {
         createdAt: now,
         updatedAt: now,
         children: [
-          ItemVariationNodeDefinition(
+          ItemVariationNodeDefinition(code: '',
             id: gsm300ValueId,
             itemId: cartonShowcaseId,
             parentNodeId: boardGsmPropertyId,
@@ -1193,7 +1193,7 @@ class ApiItemRepository implements ItemRepository {
             createdAt: now,
             updatedAt: now,
             children: [
-              ItemVariationNodeDefinition(
+              ItemVariationNodeDefinition(code: '',
                 id: printFinishPropertyId,
                 itemId: cartonShowcaseId,
                 parentNodeId: gsm300ValueId,
@@ -1205,7 +1205,7 @@ class ApiItemRepository implements ItemRepository {
                 createdAt: now,
                 updatedAt: now,
                 children: [
-                  ItemVariationNodeDefinition(
+                  ItemVariationNodeDefinition(code: '',
                     id: matteValueId,
                     itemId: cartonShowcaseId,
                     parentNodeId: printFinishPropertyId,
@@ -1217,7 +1217,7 @@ class ApiItemRepository implements ItemRepository {
                     createdAt: now,
                     updatedAt: now,
                     children: [
-                      ItemVariationNodeDefinition(
+                      ItemVariationNodeDefinition(code: '',
                         id: foilPropertyId,
                         itemId: cartonShowcaseId,
                         parentNodeId: matteValueId,
@@ -1229,7 +1229,7 @@ class ApiItemRepository implements ItemRepository {
                         createdAt: now,
                         updatedAt: now,
                         children: [
-                          ItemVariationNodeDefinition(
+                          ItemVariationNodeDefinition(code: '',
                             id: goldFoilValueId,
                             itemId: cartonShowcaseId,
                             parentNodeId: foilPropertyId,
@@ -1241,7 +1241,7 @@ class ApiItemRepository implements ItemRepository {
                             createdAt: now,
                             updatedAt: now,
                             children: [
-                              ItemVariationNodeDefinition(
+                              ItemVariationNodeDefinition(code: '',
                                 id: windowPropertyId,
                                 itemId: cartonShowcaseId,
                                 parentNodeId: goldFoilValueId,
@@ -1253,7 +1253,7 @@ class ApiItemRepository implements ItemRepository {
                                 createdAt: now,
                                 updatedAt: now,
                                 children: [
-                                  ItemVariationNodeDefinition(
+                                  ItemVariationNodeDefinition(code: '',
                                     id: withWindowValueId,
                                     itemId: cartonShowcaseId,
                                     parentNodeId: windowPropertyId,
@@ -1267,7 +1267,7 @@ class ApiItemRepository implements ItemRepository {
                                     updatedAt: now,
                                     children: const [],
                                   ),
-                                  ItemVariationNodeDefinition(
+                                  ItemVariationNodeDefinition(code: '',
                                     id: noWindowValueId,
                                     itemId: cartonShowcaseId,
                                     parentNodeId: windowPropertyId,
@@ -1289,7 +1289,7 @@ class ApiItemRepository implements ItemRepository {
                       ),
                     ],
                   ),
-                  ItemVariationNodeDefinition(
+                  ItemVariationNodeDefinition(code: '',
                     id: glossValueId,
                     itemId: cartonShowcaseId,
                     parentNodeId: printFinishPropertyId,
@@ -1301,7 +1301,7 @@ class ApiItemRepository implements ItemRepository {
                     createdAt: now,
                     updatedAt: now,
                     children: [
-                      ItemVariationNodeDefinition(
+                      ItemVariationNodeDefinition(code: '',
                         id: glossFoilPropertyId,
                         itemId: cartonShowcaseId,
                         parentNodeId: glossValueId,
@@ -1313,7 +1313,7 @@ class ApiItemRepository implements ItemRepository {
                         createdAt: now,
                         updatedAt: now,
                         children: [
-                          ItemVariationNodeDefinition(
+                          ItemVariationNodeDefinition(code: '',
                             id: noFoilValueId,
                             itemId: cartonShowcaseId,
                             parentNodeId: glossFoilPropertyId,
@@ -1325,7 +1325,7 @@ class ApiItemRepository implements ItemRepository {
                             createdAt: now,
                             updatedAt: now,
                             children: [
-                              ItemVariationNodeDefinition(
+                              ItemVariationNodeDefinition(code: '',
                                 id: glossWindowPropertyId,
                                 itemId: cartonShowcaseId,
                                 parentNodeId: noFoilValueId,
@@ -1337,7 +1337,7 @@ class ApiItemRepository implements ItemRepository {
                                 createdAt: now,
                                 updatedAt: now,
                                 children: [
-                                  ItemVariationNodeDefinition(
+                                  ItemVariationNodeDefinition(code: '',
                                     id: glossNoWindowValueId,
                                     itemId: cartonShowcaseId,
                                     parentNodeId: glossWindowPropertyId,
@@ -1363,7 +1363,7 @@ class ApiItemRepository implements ItemRepository {
               ),
             ],
           ),
-          ItemVariationNodeDefinition(
+          ItemVariationNodeDefinition(code: '',
             id: gsm350ValueId,
             itemId: cartonShowcaseId,
             parentNodeId: boardGsmPropertyId,
@@ -1375,7 +1375,7 @@ class ApiItemRepository implements ItemRepository {
             createdAt: now,
             updatedAt: now,
             children: [
-              ItemVariationNodeDefinition(
+              ItemVariationNodeDefinition(code: '',
                 id: gsm350FinishPropertyId,
                 itemId: cartonShowcaseId,
                 parentNodeId: gsm350ValueId,
@@ -1387,7 +1387,7 @@ class ApiItemRepository implements ItemRepository {
                 createdAt: now,
                 updatedAt: now,
                 children: [
-                  ItemVariationNodeDefinition(
+                  ItemVariationNodeDefinition(code: '',
                     id: gsm350MatteValueId,
                     itemId: cartonShowcaseId,
                     parentNodeId: gsm350FinishPropertyId,
@@ -1399,7 +1399,7 @@ class ApiItemRepository implements ItemRepository {
                     createdAt: now,
                     updatedAt: now,
                     children: [
-                      ItemVariationNodeDefinition(
+                      ItemVariationNodeDefinition(code: '',
                         id: gsm350FoilPropertyId,
                         itemId: cartonShowcaseId,
                         parentNodeId: gsm350MatteValueId,
@@ -1411,7 +1411,7 @@ class ApiItemRepository implements ItemRepository {
                         createdAt: now,
                         updatedAt: now,
                         children: [
-                          ItemVariationNodeDefinition(
+                          ItemVariationNodeDefinition(code: '',
                             id: roseGoldFoilValueId,
                             itemId: cartonShowcaseId,
                             parentNodeId: gsm350FoilPropertyId,
@@ -1423,7 +1423,7 @@ class ApiItemRepository implements ItemRepository {
                             createdAt: now,
                             updatedAt: now,
                             children: [
-                              ItemVariationNodeDefinition(
+                              ItemVariationNodeDefinition(code: '',
                                 id: gsm350WindowPropertyId,
                                 itemId: cartonShowcaseId,
                                 parentNodeId: roseGoldFoilValueId,
@@ -1435,7 +1435,7 @@ class ApiItemRepository implements ItemRepository {
                                 createdAt: now,
                                 updatedAt: now,
                                 children: [
-                                  ItemVariationNodeDefinition(
+                                  ItemVariationNodeDefinition(code: '',
                                     id: gsm350WithWindowValueId,
                                     itemId: cartonShowcaseId,
                                     parentNodeId: gsm350WindowPropertyId,
@@ -1465,7 +1465,7 @@ class ApiItemRepository implements ItemRepository {
       ),
     ];
     _mockItems.add(
-      ItemDefinition(
+      ItemDefinition(namingFormat: const <String>[],
         id: cartonShowcaseId,
         name: 'Cyan Flexo Ink',
         alias: 'Pigment',
@@ -1483,7 +1483,7 @@ class ApiItemRepository implements ItemRepository {
 
     final legacyId = _mockNextItemId++;
     _mockItems.add(
-      ItemDefinition(
+      ItemDefinition(namingFormat: const <String>[],
         id: legacyId,
         name: 'Legacy Stock',
         alias: '',

@@ -874,7 +874,10 @@ class LocalInventoryRepository implements InventoryRepository {
   }
 
   @override
-  Future<MaterialRecord> linkMaterialToItem(String barcode, int itemId) async {
+  Future<MaterialRecord> linkMaterialToItem(
+    String barcode,
+    int itemId,
+  ) async {
     return _updateLink(barcode, linkedGroupId: null, linkedItemId: itemId);
   }
 

@@ -7,6 +7,7 @@ class ItemVariationNodeDefinition {
     required this.parentNodeId,
     required this.kind,
     required this.name,
+    required this.code,
     required this.displayName,
     required this.position,
     required this.isArchived,
@@ -20,6 +21,7 @@ class ItemVariationNodeDefinition {
   final int? parentNodeId;
   final ItemVariationNodeKind kind;
   final String name;
+  final String code;
   final String displayName;
   final int position;
   final bool isArchived;
@@ -59,6 +61,7 @@ class ItemDefinition {
     required this.quantity,
     required this.groupId,
     required this.unitId,
+    required this.namingFormat,
     required this.isArchived,
     required this.usageCount,
     required this.createdAt,
@@ -73,6 +76,7 @@ class ItemDefinition {
   final double quantity;
   final int groupId;
   final int unitId;
+  final List<String> namingFormat;
   final bool isArchived;
   final int usageCount;
   final DateTime createdAt;

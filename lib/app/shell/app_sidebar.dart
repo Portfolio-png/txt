@@ -4,6 +4,12 @@ import 'package:provider/provider.dart';
 
 import '../../core/theme/soft_erp_theme.dart';
 import '../../features/auth/presentation/providers/auth_provider.dart';
+import '../../features/clients/presentation/providers/clients_provider.dart';
+import '../../features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
+import '../../features/groups/presentation/providers/groups_provider.dart';
+import '../../features/inventory/presentation/providers/inventory_provider.dart';
+import '../../features/items/presentation/providers/items_provider.dart';
+import '../../features/orders/presentation/providers/orders_provider.dart';
 import 'navigation_provider.dart';
 
 class AppSidebar extends StatefulWidget {
@@ -253,25 +259,35 @@ class _AppSidebarState extends State<AppSidebar> {
                       ),
                       if (!widget.compact) ...[
                         const SizedBox(height: 8),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 18,
-                            vertical: 16,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFDFDFF),
-                            borderRadius: BorderRadius.circular(30),
-                          ),
-                          child: Text(
-                            'Settings &\nPreferences',
-                            style: Theme.of(context).textTheme.titleLarge
-                                ?.copyWith(
-                                  color: SoftErpTheme.textPrimary,
-                                  fontWeight: FontWeight.w500,
-                                  fontSize: 13.5,
-                                  height: 1.2,
-                                ),
+                        InkWell(
+                          borderRadius: BorderRadius.circular(30),
+                          onTap: () async {
+                            await showDialog<void>(
+                              context: context,
+                              builder: (dialogContext) =>
+                                  const _SettingsPreferencesDialog(),
+                            );
+                          },
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 16,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFDFDFF),
+                              borderRadius: BorderRadius.circular(30),
+                            ),
+                            child: Text(
+                              'Settings &\nPreferences',
+                              style: Theme.of(context).textTheme.titleLarge
+                                  ?.copyWith(
+                                    color: SoftErpTheme.textPrimary,
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 13.5,
+                                    height: 1.2,
+                                  ),
+                            ),
                           ),
                         ),
                       ],
@@ -314,6 +330,10 @@ class _SidebarSection extends StatelessWidget {
 
   static const Color _drawerColor = Color(0xFFEFEFF2);
   static const Color _drawerTabColor = Colors.white;
+
+  bool _matchesSelectedKey(String itemKey) {
+    return itemKey == selectedKey;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -405,7 +425,9 @@ class _SidebarSection extends StatelessWidget {
                                 child: _SidebarTile(
                                   item: entry.value,
                                   compact: compact,
-                                  isSelected: entry.value.key == selectedKey,
+                                  isSelected: _matchesSelectedKey(
+                                    entry.value.key,
+                                  ),
                                   inactiveColor: _drawerTabColor,
                                   focusNode: focusNodeForKey(entry.value.key),
                                   onTap: () => onSelected(entry.value.key),
@@ -446,7 +468,7 @@ class _SidebarSection extends StatelessWidget {
             child: _SidebarTile(
               item: item,
               compact: compact,
-              isSelected: item.key == selectedKey,
+              isSelected: _matchesSelectedKey(item.key),
               focusNode: focusNodeForKey(item.key),
               onTap: () => onSelected(item.key),
             ),
@@ -558,6 +580,217 @@ class _SidebarExpandableHeader extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _SettingsPreferencesDialog extends StatefulWidget {
+  const _SettingsPreferencesDialog();
+
+  @override
+  State<_SettingsPreferencesDialog> createState() =>
+      _SettingsPreferencesDialogState();
+}
+
+class _SettingsPreferencesDialogState
+    extends State<_SettingsPreferencesDialog> {
+  bool _isResetting = false;
+
+  Future<void> _handleClear() async {
+    setState(() {
+      _isResetting = true;
+    });
+    final messenger = ScaffoldMessenger.of(context);
+    final auth = context.read<AuthProvider>();
+    final success = await auth.clearBackendDatabase();
+    if (!mounted) {
+      return;
+    }
+    if (!success) {
+      setState(() {
+        _isResetting = false;
+      });
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            auth.errorMessage ?? 'Failed to clear backend database.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    await Future.wait<void>(<Future<void>>[
+      context.read<GroupsProvider>().refresh(),
+      context.read<ClientsProvider>().refresh(),
+      context.read<ItemsProvider>().refresh(),
+      context.read<OrdersProvider>().refresh(),
+      context.read<InventoryProvider>().refresh(),
+      context.read<DeliveryChallanProvider>().refresh(),
+    ]);
+
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isResetting = false;
+    });
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Backend database cleared successfully.')),
+    );
+  }
+
+  Future<void> _handleReseed() async {
+    setState(() {
+      _isResetting = true;
+    });
+    final messenger = ScaffoldMessenger.of(context);
+    final auth = context.read<AuthProvider>();
+    final success = await auth.reseedDemoData();
+    if (!mounted) {
+      return;
+    }
+    if (!success) {
+      setState(() {
+        _isResetting = false;
+      });
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            auth.errorMessage ?? 'Failed to reseed demo data.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    await Future.wait<void>(<Future<void>>[
+      context.read<GroupsProvider>().refresh(),
+      context.read<ClientsProvider>().refresh(),
+      context.read<ItemsProvider>().refresh(),
+      context.read<OrdersProvider>().refresh(),
+      context.read<InventoryProvider>().refresh(),
+      context.read<DeliveryChallanProvider>().refresh(),
+    ]);
+
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isResetting = false;
+    });
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Demo data reseeded successfully.')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 22, 24, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Settings & Preferences',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: SoftErpTheme.textPrimary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Clear the backend database and reseed demo data for a fresh testing workspace.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: SoftErpTheme.textSecondary,
+                  height: 1.45,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF7F5),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0xFFF4D4CB)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Clear or Reseed Database',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: SoftErpTheme.textPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'This resets orders, inventory, groups, items, clients, challans, and documents. Users and login access remain intact.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: SoftErpTheme.textSecondary,
+                        height: 1.45,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        OutlinedButton(
+                          onPressed: _isResetting ? null : _handleReseed,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: SoftErpTheme.accent,
+                            side: const BorderSide(color: SoftErpTheme.accent),
+                            minimumSize: const Size(120, 44),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          child: Text(
+                            _isResetting ? 'Wait…' : 'Reseed Data',
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        FilledButton(
+                          onPressed: _isResetting ? null : _handleClear,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: SoftErpTheme.accent,
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size(120, 44),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          child: Text(
+                            _isResetting ? 'Working…' : 'Clear Data',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: _isResetting
+                      ? null
+                      : () => Navigator.of(context).pop(),
+                  child: const Text('Close'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -110,12 +110,12 @@ class _MaterialScanScreenState extends State<MaterialScanScreen>
                 : _isAndroidPlatform
                 ? _AndroidScannerLayout(
                     controller: _controller!,
-                    isLoading: inventory.isLoading,
+                    isLoading: inventory.isLookingUp,
                     paused: _scannerPaused,
                   )
                 : _ManualLookupLayout(
                     controller: _manualController,
-                    isLoading: inventory.isLoading,
+                    isLoading: inventory.isLookingUp,
                     onLookup: () =>
                         _performLookup(_manualController.text.trim()),
                     stacked: isNarrow,

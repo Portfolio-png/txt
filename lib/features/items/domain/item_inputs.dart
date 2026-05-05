@@ -6,6 +6,7 @@ class ItemVariationNodeInput {
     this.parentNodeId,
     required this.kind,
     required this.name,
+    this.code = '',
     this.displayName = '',
     this.children = const [],
   });
@@ -14,6 +15,7 @@ class ItemVariationNodeInput {
   final int? parentNodeId;
   final ItemVariationNodeKind kind;
   final String name;
+  final String code;
   final String displayName;
   final List<ItemVariationNodeInput> children;
 }
@@ -26,6 +28,7 @@ class CreateItemInput {
     required this.quantity,
     required this.groupId,
     required this.unitId,
+    this.namingFormat = const [],
     this.variationTree = const [],
   });
 
@@ -35,6 +38,7 @@ class CreateItemInput {
   final double quantity;
   final int groupId;
   final int unitId;
+  final List<String> namingFormat;
   final List<ItemVariationNodeInput> variationTree;
 }
 
@@ -47,6 +51,7 @@ class UpdateItemInput {
     required this.quantity,
     required this.groupId,
     required this.unitId,
+    this.namingFormat = const [],
     this.variationTree = const [],
   });
 
@@ -57,5 +62,6 @@ class UpdateItemInput {
   final double quantity;
   final int groupId;
   final int unitId;
+  final List<String> namingFormat;
   final List<ItemVariationNodeInput> variationTree;
 }

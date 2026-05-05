@@ -499,9 +499,7 @@ class ItemsProvider extends ChangeNotifier {
               ItemVariationNodeInput(
                 kind: ItemVariationNodeKind.value,
                 name: valueName,
-                displayName: clonedChildren.isEmpty
-                    ? _generateLeafDisplayName(nextPath)
-                    : '',
+                displayName: _generateLeafDisplayName(nextPath),
                 children: clonedChildren,
               ),
             ],
@@ -539,33 +537,27 @@ class ItemsProvider extends ChangeNotifier {
     List<ItemVariationNodeInput> nodes, {
     required List<String> valuePath,
   }) {
-    return nodes
-        .map((node) {
-          if (node.kind == ItemVariationNodeKind.property) {
-            return ItemVariationNodeInput(
-              kind: node.kind,
-              name: node.name,
-              children: _cloneBranchForQuickCreate(
-                node.children,
-                valuePath: valuePath,
-              ),
-            );
-          }
-          final nextValuePath = <String>[...valuePath, node.name.trim()];
-          final clonedChildren = _cloneBranchForQuickCreate(
+    final result = <ItemVariationNodeInput>[];
+    for (final node in nodes) {
+      if (node.kind == ItemVariationNodeKind.property) {
+        // Clone this property node and recurse into its children (which are values)
+        result.add(ItemVariationNodeInput(
+          kind: node.kind,
+          name: node.name,
+          children: _cloneBranchForQuickCreate(
             node.children,
-            valuePath: nextValuePath,
-          );
-          return ItemVariationNodeInput(
-            kind: node.kind,
-            name: node.name,
-            displayName: clonedChildren.isEmpty
-                ? _generateLeafDisplayName(nextValuePath)
-                : '',
-            children: clonedChildren,
-          );
-        })
-        .toList(growable: false);
+            valuePath: valuePath,
+          ),
+        ));
+      } else if (node.kind == ItemVariationNodeKind.value) {
+        // Don't clone value nodes themselves, but recurse into their children
+        // to find sub-properties that should be inherited.
+        result.addAll(
+          _cloneBranchForQuickCreate(node.children, valuePath: valuePath),
+        );
+      }
+    }
+    return result;
   }
 
   ItemVariationNodeDefinition? _findNodeById(
@@ -688,7 +680,7 @@ class ItemsProvider extends ChangeNotifier {
     return valuePath
         .map((segment) => segment.trim())
         .where((segment) => segment.isNotEmpty)
-        .join(' ');
+        .join(' | ');
   }
 
   static String _treeSearchText(List<ItemVariationNodeDefinition> nodes) {

@@ -327,6 +327,54 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> clearBackendDatabase() async {
+    if (!can('config.write')) {
+      _errorMessage = 'You do not have permission to clear backend data.';
+      notifyListeners();
+      return false;
+    }
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      await _api.clearBackendDatabase();
+      return true;
+    } catch (error) {
+      _errorMessage = _friendly(
+        error,
+        fallback: 'Failed to clear backend database.',
+      );
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> reseedDemoData() async {
+    if (!can('config.write')) {
+      _errorMessage = 'You do not have permission to reseed demo data.';
+      notifyListeners();
+      return false;
+    }
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      await _api.reseedDemoData();
+      return true;
+    } catch (error) {
+      _errorMessage = _friendly(
+        error,
+        fallback: 'Failed to reseed demo data.',
+      );
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<bool> requestDelete({
     required String entityType,
     required String entityId,

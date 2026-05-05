@@ -272,12 +272,14 @@ class _NodeDraft {
     required this.kind,
     required this.parent,
     String name = '',
+    String code = '',
     String displayName = '',
     this.detailsExpanded = false,
     this.isNameEditing = false,
     this.displayNameTouched = false,
     List<_NodeDraft>? children,
   }) : nameController = TextEditingController(text: name),
+       codeController = TextEditingController(text: code),
        displayNameController = TextEditingController(text: displayName),
        children = children ?? <_NodeDraft>[];
 
@@ -285,6 +287,7 @@ class _NodeDraft {
   final ItemVariationNodeKind kind;
   _NodeDraft? parent;
   final TextEditingController nameController;
+  final TextEditingController codeController;
   final TextEditingController displayNameController;
   bool detailsExpanded;
   bool isNameEditing;
@@ -296,6 +299,7 @@ class _NodeDraft {
 
   void dispose() {
     nameController.dispose();
+    codeController.dispose();
     displayNameController.dispose();
     for (final child in children) {
       child.dispose();
@@ -325,6 +329,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   int? _selectedUnitId;
   bool _displayNameTouched = false;
   bool _syncingDisplayName = false;
+  List<String> _namingFormat = [];
   String? _localError;
 
   bool get _isReadOnly => widget.item?.isUsed ?? false;
@@ -344,6 +349,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     );
     _selectedGroupId = widget.item?.groupId;
     _selectedUnitId = widget.item?.unitId;
+    _namingFormat = widget.item?.namingFormat.toList() ?? [];
     _displayNameTouched = (widget.item?.displayName ?? '').trim().isNotEmpty;
 
     _nameController.addListener(_handlePrimaryChange);
@@ -375,12 +381,17 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       kind: node.kind,
       parent: parent,
       name: node.name,
+      code: node.code,
       displayName: node.displayName,
       detailsExpanded: false,
       isNameEditing: false,
       displayNameTouched: node.displayName.trim().isNotEmpty,
     );
     draft.nameController.addListener(() {
+      _syncLeafDisplayNames();
+      _handleChange();
+    });
+    draft.codeController.addListener(() {
       _syncLeafDisplayNames();
       _handleChange();
     });
@@ -405,6 +416,10 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       isNameEditing: false,
     );
     draft.nameController.addListener(() {
+      _syncLeafDisplayNames();
+      _handleChange();
+    });
+    draft.codeController.addListener(() {
       _syncLeafDisplayNames();
       _handleChange();
     });
@@ -823,13 +838,96 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final wideComposer = constraints.maxWidth >= 1140;
+                      final namingFormatSection = _SectionCard(
+                        title: 'Naming Format',
+                        child: Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: const Color(0xFFDCE2F0)),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Drag and drop properties to set the variation display name sequence.',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+                              ),
+                              const SizedBox(height: 12),
+                              if (_activeNamingFormat.isEmpty)
+                                const Text('Add properties to configure naming format.')
+                              else
+                                ReorderableListView(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  onReorder: (oldIndex, newIndex) {
+                                    setState(() {
+                                      if (newIndex > oldIndex) {
+                                        newIndex -= 1;
+                                      }
+                                      final format = _activeNamingFormat;
+                                      final item = format.removeAt(oldIndex);
+                                      format.insert(newIndex, item);
+                                      _namingFormat = format;
+                                      // Reset displayNameTouched on ALL leaf
+                                      // value nodes (not just root nodes) so
+                                      // _syncLeafDisplayNames regenerates them.
+                                      void resetLeaves(_NodeDraft node) {
+                                        if (node.isLeafValue) {
+                                          node.displayNameTouched = false;
+                                        }
+                                        for (final child in node.children) {
+                                          resetLeaves(child);
+                                        }
+                                      }
+                                      for (final node in _rootNodes) {
+                                        resetLeaves(node);
+                                      }
+                                      _syncLeafDisplayNames();
+                                    });
+                                  },
+                                  children: [
+                                    for (final token in _activeNamingFormat)
+                                      Container(
+                                        key: ValueKey(token),
+                                        margin: const EdgeInsets.only(bottom: 8),
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey[100],
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: Colors.grey[300]!),
+                                        ),
+                                        child: ListTile(
+                                          dense: true,
+                                          title: Text(
+                                            _getDisplayNameForToken(token),
+                                            style: const TextStyle(fontWeight: FontWeight.w500),
+                                          ),
+                                          trailing: const Icon(Icons.drag_handle, color: Colors.grey),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+
                       if (wideComposer) {
                         return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(flex: 5, child: detailsSection),
                             const SizedBox(width: 18),
-                            Expanded(flex: 6, child: variationTreeSection),
+                            Expanded(
+                              flex: 6,
+                              child: Column(
+                                children: [
+                                  variationTreeSection,
+                                  const SizedBox(height: 16),
+                                  namingFormatSection,
+                                ],
+                              ),
+                            ),
                           ],
                         );
                       }
@@ -839,6 +937,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                           detailsSection,
                           const SizedBox(height: 16),
                           variationTreeSection,
+                          const SizedBox(height: 16),
+                          namingFormatSection,
                         ],
                       );
                     },
@@ -936,12 +1036,48 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   List<ItemVariationNodeInput> get _variationTreeInputs =>
       _rootNodes.map((node) => _toInput(node, null)).toList(growable: false);
 
+  List<String> get _availableNamingTokens {
+    final tokens = <String>['name'];
+    for (var i = 0; i < _rootNodes.length; i++) {
+      if (_rootNodes[i].kind == ItemVariationNodeKind.property) {
+        tokens.add('prop_$i');
+      }
+    }
+    return tokens;
+  }
+
+  List<String> get _activeNamingFormat {
+    final available = _availableNamingTokens;
+    final format = _namingFormat.where((t) => available.contains(t)).toList();
+    for (final token in available) {
+      if (!format.contains(token)) {
+        format.add(token);
+      }
+    }
+    return format;
+  }
+
+  String _getDisplayNameForToken(String token) {
+    if (token == 'name') {
+      return 'Item Name';
+    }
+    if (token.startsWith('prop_')) {
+      final index = int.tryParse(token.substring(5));
+      if (index != null && index >= 0 && index < _rootNodes.length) {
+        final name = _rootNodes[index].nameController.text.trim();
+        return name.isNotEmpty ? name : 'Unnamed Property';
+      }
+    }
+    return token;
+  }
+
   ItemVariationNodeInput _toInput(_NodeDraft node, int? parentNodeId) {
     return ItemVariationNodeInput(
       id: node.id,
       parentNodeId: parentNodeId,
       kind: node.kind,
       name: node.nameController.text.trim(),
+      code: node.codeController.text.trim(),
       displayName: node.isLeafValue
           ? node.displayNameController.text.trim()
           : '',
@@ -957,8 +1093,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       return leafLabel.isEmpty ? _generateLeafDisplayName(node) : leafLabel;
     }
     final name = node.nameController.text.trim();
+    final code = node.codeController.text.trim();
     if (name.isNotEmpty) {
-      return name;
+      return code.isNotEmpty ? '$name [$code]' : name;
     }
     return node.kind == ItemVariationNodeKind.property
         ? 'Unnamed Property'
@@ -1117,6 +1254,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               quantity: parsedQuantity,
               groupId: _selectedGroupId!,
               unitId: _selectedUnitId!,
+              namingFormat: _activeNamingFormat,
               variationTree: _variationTreeInputs,
             ),
           )
@@ -1129,6 +1267,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               quantity: parsedQuantity,
               groupId: _selectedGroupId!,
               unitId: _selectedUnitId!,
+              namingFormat: _activeNamingFormat,
               variationTree: _variationTreeInputs,
             ),
           );
@@ -1239,18 +1378,34 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   }
 
   String _generateLeafDisplayName(_NodeDraft leaf) {
-    final segments = <String>[];
+    final pathValues = <String, String>{};
+
+    // Always include the item name for the 'name' token
+    final itemName = _nameController.text.trim();
+    if (itemName.isNotEmpty) {
+      pathValues['name'] = itemName;
+    }
+
     _NodeDraft? current = leaf;
     while (current != null) {
       if (current.kind == ItemVariationNodeKind.value &&
           current.parent != null &&
           current.parent!.kind == ItemVariationNodeKind.property) {
+        final propNode = current.parent!;
         final valueName = current.nameController.text.trim();
-        if (valueName.isNotEmpty) {
-          segments.insert(0, valueName);
+        final propIndex = _rootNodes.indexOf(propNode);
+        if (propIndex != -1 && valueName.isNotEmpty) {
+          pathValues['prop_$propIndex'] = valueName;
         }
       }
       current = current.parent;
+    }
+
+    final segments = <String>[];
+    for (final token in _activeNamingFormat) {
+      if (pathValues.containsKey(token)) {
+        segments.add(pathValues[token]!);
+      }
     }
     return segments.join(' ');
   }
@@ -1330,7 +1485,6 @@ class _TreeNodeEditor extends StatelessWidget {
             child: InkWell(
               borderRadius: BorderRadius.circular(8),
               onTap: canExpand ? onToggleBranch : null,
-              onDoubleTap: readOnly ? null : onEnableNameEditing,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 child: Row(
@@ -1351,36 +1505,75 @@ class _TreeNodeEditor extends StatelessWidget {
                     const SizedBox(width: 8),
                     if (draft.isNameEditing && !readOnly)
                       Expanded(
-                        child: TextField(
-                          controller: draft.nameController,
-                          autofocus: true,
-                          onEditingComplete: onFinishNameEditing,
-                          onSubmitted: (_) => onFinishNameEditing(),
-                          decoration: InputDecoration(
-                            isDense: true,
-                            hintText: isProperty
-                                ? 'Property name'
-                                : 'Value name',
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 8,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              flex: 3,
+                              child: TextField(
+                                controller: draft.nameController,
+                                autofocus: true,
+                                onEditingComplete: onFinishNameEditing,
+                                onSubmitted: (_) => onFinishNameEditing(),
+                                decoration: InputDecoration(
+                                  isDense: true,
+                                  hintText: isProperty
+                                      ? 'Property name'
+                                      : 'Value name',
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 8,
+                                  ),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                              ),
                             ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              flex: 2,
+                              child: TextField(
+                                controller: draft.codeController,
+                                onEditingComplete: onFinishNameEditing,
+                                onSubmitted: (_) => onFinishNameEditing(),
+                                decoration: InputDecoration(
+                                  isDense: true,
+                                  hintText: 'Code (Optional)',
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 8,
+                                  ),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
+                          ],
                         ),
                       )
                     else
                       Expanded(
-                        child: Text(
-                          summaryLabel,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: textColor,
-                            fontWeight: isProperty
-                                ? FontWeight.w700
-                                : FontWeight.w500,
+                        child: MouseRegion(
+                          cursor: readOnly
+                              ? MouseCursor.defer
+                              : SystemMouseCursors.text,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: readOnly ? null : onEnableNameEditing,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Text(
+                                summaryLabel,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: textColor,
+                                  fontWeight: isProperty
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),

@@ -1317,6 +1317,7 @@ function rowToMaterialDto(row) {
     createdAt: row.created_at,
     linkedGroupId: row.linked_group_id || null,
     linkedItemId: row.linked_item_id || null,
+    linkedVariationLeafNodeId: row.linked_variation_leaf_node_id || null,
     displayStock,
     createdBy: row.created_by || 'Demo Admin',
     workflowStatus: row.workflow_status || 'notStarted',
@@ -1499,6 +1500,13 @@ async function rowToItemDto(row) {
     quantity: Number(row.quantity || 0),
     groupId: row.group_id || null,
     unitId: row.unit_id || null,
+    namingFormat: (() => {
+      try {
+        return row.naming_format ? JSON.parse(row.naming_format) : [];
+      } catch (e) {
+        return [];
+      }
+    })(),
     isArchived: Boolean(row.is_archived),
     usageCount: row.usage_count || 0,
     createdAt: row.created_at,
@@ -2365,6 +2373,7 @@ async function initDb() {
       parent_node_id INTEGER REFERENCES item_variation_nodes(id) ON DELETE CASCADE,
       kind TEXT NOT NULL,
       name TEXT NOT NULL,
+      code TEXT NOT NULL DEFAULT '',
       display_name TEXT NOT NULL DEFAULT '',
       position INTEGER NOT NULL DEFAULT 0,
       is_archived INTEGER NOT NULL DEFAULT 0,
@@ -2374,8 +2383,10 @@ async function initDb() {
   `);
 
   await ensureColumnExists('items', 'quantity', 'REAL NOT NULL DEFAULT 0');
+  await ensureColumnExists('items', 'naming_format', "TEXT NOT NULL DEFAULT ''");
   await ensureColumnExists('item_variations', 'alias', "TEXT DEFAULT ''");
   await ensureColumnExists('item_variations', 'display_name', "TEXT DEFAULT ''");
+  await ensureColumnExists('item_variation_nodes', 'code', "TEXT NOT NULL DEFAULT ''");
 
   await ensureColumnExists('materials', 'unit_id', 'INTEGER');
   await ensureColumnExists('units', 'unit_group_id', 'INTEGER');
@@ -2383,6 +2394,7 @@ async function initDb() {
   await ensureColumnExists('units', 'conversion_base_unit_id', 'INTEGER');
   await ensureColumnExists('materials', 'linked_group_id', 'INTEGER');
   await ensureColumnExists('materials', 'linked_item_id', 'INTEGER');
+  await ensureColumnExists('materials', 'linked_variation_leaf_node_id', 'INTEGER');
   await ensureColumnExists('materials', 'location', "TEXT DEFAULT ''");
   await ensureColumnExists('materials', 'group_mode', 'TEXT');
   await ensureColumnExists(
@@ -3033,6 +3045,7 @@ async function getItemVariationTree(itemId) {
       parentNodeId: row.parent_node_id,
       kind: row.kind || 'property',
       name: row.name || '',
+      code: row.code || '',
       displayName: row.display_name || '',
       position: row.position || 0,
       isArchived: Boolean(row.is_archived),
@@ -3130,19 +3143,46 @@ async function getItemsWithUsage() {
   `);
 }
 
-async function findItemDuplicate({ name, groupId, quantity, excludeId = null }) {
+async function findItemDuplicate({ name, groupId, quantity, excludeId = null, variationTree = [] }) {
   const rows = await all('SELECT id, name, group_id, quantity FROM items');
   const normalizedName = normalizeUnitValue(name);
-  return rows.find((row) => {
+  const newProperties = new Set(
+    (variationTree || []).filter(n => String(n.kind) === 'property').map(n => normalizeUnitValue(n.name))
+  );
+
+  for (const row of rows) {
     if (excludeId != null && row.id === excludeId) {
-      return false;
+      continue;
     }
-    return (
+    const isBasicMatch = (
       row.group_id === groupId &&
       Number(row.quantity || 0) === Number(quantity || 0) &&
       normalizeUnitValue(row.name) === normalizedName
     );
-  }) || null;
+    if (!isBasicMatch) {
+      continue;
+    }
+
+    const existingNodes = await all('SELECT name FROM item_variation_nodes WHERE item_id = ? AND parent_node_id IS NULL', [row.id]);
+    const existingProperties = new Set(existingNodes.map(n => normalizeUnitValue(n.name)));
+    
+    let propertiesMatch = true;
+    if (existingProperties.size !== newProperties.size) {
+      propertiesMatch = false;
+    } else {
+      for (const prop of newProperties) {
+        if (!existingProperties.has(prop)) {
+          propertiesMatch = false;
+          break;
+        }
+      }
+    }
+
+    if (propertiesMatch) {
+      return row;
+    }
+  }
+  return null;
 }
 
 async function getGroupsWithUsage() {
@@ -4402,7 +4442,7 @@ async function saveOrder({
   const normalizedItemId = Number(itemId);
   const normalizedLeafId = Number(variationLeafNodeId || 0);
   const normalizedVariationPathNodeIds = Array.isArray(variationPathNodeIds)
-    ? variationPathNodeIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+    ? variationPathNodeIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0).sort((a, b) => a - b)
     : [];
   const normalizedVariationPathJson = JSON.stringify(normalizedVariationPathNodeIds);
   const normalizedQuantity = Number(quantity || 0);
@@ -4456,6 +4496,8 @@ async function saveOrder({
         AND variation_leaf_node_id = ?
         AND variation_path_node_ids_json = ?
         AND LOWER(TRIM(po_number)) = LOWER(TRIM(?))
+        AND start_date IS ?
+        AND end_date IS ?
       `,
       [
         trimmedOrderNo,
@@ -4464,6 +4506,8 @@ async function saveOrder({
         normalizedLeafId,
         normalizedVariationPathJson,
         trimmedPoNumber,
+        normalizedStartDate,
+        normalizedEndDate,
       ],
     );
 
@@ -4523,20 +4567,16 @@ async function saveOrder({
     }
 
     const { newlyLinkedIds } = await linkPoDocumentsToOrder(orderId, poDocumentIds);
-
-    await run('DELETE FROM order_material_requirements WHERE order_id = ?', [orderId]);
     for (const req of (Array.isArray(materialRequirements) ? materialRequirements : [])) {
       await run(`
         INSERT INTO order_material_requirements (
-          order_id, item_id, variation_leaf_node_id, material_id, material_barcode,
+          order_id, item_id, material_barcode,
           material_name, required_qty, allocated_qty, consumed_qty, shortage_qty,
           unit_id, unit_symbol, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         orderId,
         req.itemId || null,
-        req.variationLeafNodeId || null,
-        req.materialId || null,
         String(req.materialBarcode || '').trim(),
         String(req.materialName || '').trim(),
         normalizeMaterialRequirementNumber(req.requiredQty, 'required quantity'),
@@ -4919,11 +4959,13 @@ async function saveItem({
   quantity,
   groupId,
   unitId,
+  namingFormat = [],
   variationTree = [],
   id = null,
 }) {
   const trimmedName = String(name || '').trim();
   const trimmedAlias = String(alias || '').trim();
+  const serializedNamingFormat = JSON.stringify(Array.isArray(namingFormat) ? namingFormat : []);
   const normalizedQuantity = Number(quantity ?? 0);
   const trimmedDisplayName =
     String(displayName || '').trim() || buildItemDisplayName(name, alias, normalizedQuantity);
@@ -4960,6 +5002,7 @@ async function saveItem({
     groupId: normalizedGroupId,
     quantity: normalizedQuantity,
     excludeId: id,
+    variationTree: variationTree,
   });
   if (duplicate) {
     const error = new Error('An item with the same name and quantity already exists in this group.');
@@ -4967,7 +5010,12 @@ async function saveItem({
     throw error;
   }
 
-  const sanitizeNodes = (nodes, expectedKind, pathSegments = [], parentPropertyName = '') => {
+  const sanitizeNodes = (nodes, expectedKind, pathSegments = [], parentPropertyName = '', depth = 0) => {
+    if (depth > 10) {
+      const error = new Error('Variation tree is too deep.');
+      error.statusCode = 400;
+      throw error;
+    }
     const siblingNames = new Set();
     return (nodes || []).map((node, index) => {
       const trimmedName = String(node.name || '').trim();
@@ -4990,25 +5038,27 @@ async function saveItem({
       }
       siblingNames.add(normalizedName);
 
+      const nodeId = node.id || null;
+
       if (kind === 'property') {
         return {
+          id: nodeId,
           kind,
           name: trimmedName,
           displayName: '',
           position: index,
-          children: sanitizeNodes(node.children || [], 'value', pathSegments, trimmedName),
+          children: sanitizeNodes(node.children || [], 'value', pathSegments, trimmedName, depth + 1),
         };
       }
 
       const nextSegments = [...pathSegments, trimmedName];
-      const children = sanitizeNodes(node.children || [], 'property', nextSegments, '');
+      const children = sanitizeNodes(node.children || [], 'property', nextSegments, '', depth + 1);
       return {
+        id: nodeId,
         kind,
         name: trimmedName,
         displayName:
-          children.length === 0
-            ? String(node.displayName || '').trim() || buildVariationPathLabel(nextSegments)
-            : '',
+          String(node.displayName || '').trim() || buildVariationPathLabel(nextSegments),
         position: index,
         children,
       };
@@ -5025,8 +5075,8 @@ async function saveItem({
       const result = await run(
         `
         INSERT INTO items (
-          name, alias, display_name, quantity, group_id, unit_id, is_archived, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+          name, alias, display_name, quantity, group_id, unit_id, naming_format, is_archived, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
         `,
         [
           trimmedName,
@@ -5035,6 +5085,7 @@ async function saveItem({
           normalizedQuantity,
           normalizedGroupId,
           normalizedUnitId,
+          serializedNamingFormat,
           now,
           now,
         ],
@@ -5055,7 +5106,7 @@ async function saveItem({
       await run(
         `
         UPDATE items
-        SET name = ?, alias = ?, display_name = ?, quantity = ?, group_id = ?, unit_id = ?, updated_at = ?
+        SET name = ?, alias = ?, display_name = ?, quantity = ?, group_id = ?, unit_id = ?, naming_format = ?, updated_at = ?
         WHERE id = ?
         `,
         [
@@ -5065,38 +5116,71 @@ async function saveItem({
           normalizedQuantity,
           normalizedGroupId,
           normalizedUnitId,
+          serializedNamingFormat,
           now,
           id,
         ],
       );
-      await run('DELETE FROM item_variation_nodes WHERE item_id = ?', [id]);
     }
 
-    const insertNodes = async (nodes, parentNodeId = null) => {
+    const existingNodesRows = await all('SELECT id FROM item_variation_nodes WHERE item_id = ? AND is_archived = 0', [itemId]);
+    const existingNodeIds = new Set(existingNodesRows.map(row => row.id));
+    const processedNodeIds = new Set();
+
+    const upsertNodes = async (nodes, parentNodeId = null) => {
       for (const node of nodes) {
-        const result = await run(
-          `
-          INSERT INTO item_variation_nodes (
-            item_id, parent_node_id, kind, name, display_name, position,
-            is_archived, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
-          `,
-          [
-            itemId,
-            parentNodeId,
-            node.kind,
-            node.name,
-            node.displayName,
-            node.position,
-            now,
-            now,
-          ],
-        );
-        await insertNodes(node.children, result.lastID);
+        let nodeId = node.id;
+        if (nodeId && existingNodeIds.has(nodeId)) {
+          await run(
+            `
+            UPDATE item_variation_nodes
+            SET parent_node_id = ?, name = ?, code = ?, display_name = ?, position = ?, updated_at = ?
+            WHERE id = ?
+            `,
+            [
+              parentNodeId,
+              node.name,
+              node.code || '',
+              node.displayName,
+              node.position,
+              now,
+              nodeId,
+            ]
+          );
+        } else {
+          const result = await run(
+            `
+            INSERT INTO item_variation_nodes (
+              item_id, parent_node_id, kind, name, code, display_name, position,
+              is_archived, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+            `,
+            [
+              itemId,
+              parentNodeId,
+              node.kind,
+              node.name,
+              node.code || '',
+              node.displayName,
+              node.position,
+              now,
+              now,
+            ],
+          );
+          nodeId = result.lastID;
+        }
+        processedNodeIds.add(nodeId);
+        await upsertNodes(node.children || [], nodeId);
       }
     };
 
-    await insertNodes(sanitizedTree);
+    await upsertNodes(sanitizedTree);
+
+    for (const oldId of existingNodeIds) {
+      if (!processedNodeIds.has(oldId)) {
+        await run('UPDATE item_variation_nodes SET is_archived = 1, updated_at = ? WHERE id = ?', [now, oldId]);
+      }
+    }
 
     await run('COMMIT');
     return getItemRowById(itemId);
@@ -6956,7 +7040,7 @@ async function linkMaterialRecordToGroup(barcode, groupId) {
   return get('SELECT * FROM materials WHERE id = ?', [existing.id]);
 }
 
-async function linkMaterialRecordToItem(barcode, itemId) {
+async function linkMaterialRecordToItem(barcode, itemId, variationLeafNodeId = null) {
   const existing = await getMaterialRowByBarcode(barcode);
   if (!existing) {
     throw new Error('Material not found.');
@@ -6966,14 +7050,14 @@ async function linkMaterialRecordToItem(barcode, itemId) {
     throw new Error('Selected item is not available.');
   }
   await run(
-    'UPDATE materials SET linked_group_id = NULL, linked_item_id = ?, updated_at = ? WHERE id = ?',
-    [item.id, new Date().toISOString(), existing.id],
+    'UPDATE materials SET linked_group_id = NULL, linked_item_id = ?, linked_variation_leaf_node_id = ?, updated_at = ? WHERE id = ?',
+    [item.id, variationLeafNodeId, new Date().toISOString(), existing.id],
   );
   await logMaterialActivity({
     barcode: existing.barcode,
     type: 'linked',
     label: 'Inheritance linked',
-    description: `Linked to item ${item.display_name || item.name || item.id}.`,
+    description: `Linked to item ${item.display_name || item.name || item.id}${variationLeafNodeId ? ' (Variation ' + variationLeafNodeId + ')' : ''}.`,
     actor: existing.created_by || 'Demo Admin',
   });
   return get('SELECT * FROM materials WHERE id = ?', [existing.id]);
@@ -7087,7 +7171,11 @@ async function ensureParentMaterialRecord(seed) {
   if (seed.linkGroupId) {
     parent = await linkMaterialRecordToGroup(parent.barcode, seed.linkGroupId);
   } else if (seed.linkItemId) {
-    parent = await linkMaterialRecordToItem(parent.barcode, seed.linkItemId);
+    parent = await linkMaterialRecordToItem(
+      parent.barcode, 
+      seed.linkItemId, 
+      seed.linkVariationLeafNodeId || null
+    );
   } else {
     parent = await unlinkMaterialRecord(parent.barcode);
   }
@@ -7538,6 +7626,12 @@ app.get('/api/delivery-challans/health', (_req, res) => {
   });
 });
 
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
 app.use('/api', requireAuth);
 app.use('/api', requireApiWritePermission);
 
@@ -8725,6 +8819,57 @@ app.put('/api/company-profile', requirePermission('config.write'), async (req, r
   }
 });
 
+app.post(
+  '/api/admin/reset-demo-data',
+  requireRoles('super_admin', 'admin'),
+  requirePermission('config.write'),
+  async (_req, res) => {
+    try {
+      await resetAndSeedDemoData();
+      res.json({ success: true, error: null });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  },
+);
+
+app.post(
+  '/api/admin/clear-data',
+  requireRoles('super_admin', 'admin'),
+  requirePermission('config.write'),
+  async (_req, res) => {
+    try {
+      await clearAllData();
+      res.json({ success: true, error: null });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  },
+);
+
+app.post(
+  '/api/admin/reseed-data',
+  requireRoles('super_admin', 'admin'),
+  requirePermission('config.write'),
+  async (_req, res) => {
+    try {
+      await reseedDemoData();
+      res.json({ success: true, error: null });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  },
+);
+
 app.get('/api/delivery-challans', requirePermission('config.read'), async (req, res) => {
   try {
     const challans = await listDeliveryChallans({
@@ -9392,6 +9537,7 @@ app.patch('/api/materials/:barcode/link-item', requirePermission('inventory.upda
     const material = await linkMaterialRecordToItem(
       req.params.barcode,
       req.body?.itemId,
+      req.body?.variationLeafNodeId,
     );
     res.json({ success: true, material: rowToMaterialDto(material), error: null });
   } catch (error) {
@@ -9839,8 +9985,16 @@ app.use((error, req, res, _next) => {
   });
 });
 
-async function resetAndSeedDemoData() {
-  await initDb();
+async function clearAllData() {
+  await run('DELETE FROM delivery_challan_activity_log');
+  await run('DELETE FROM delivery_challan_items');
+  await run('DELETE FROM delivery_challans');
+  await run('DELETE FROM order_po_documents');
+  await run('DELETE FROM order_material_requirements');
+  await run('DELETE FROM order_status_history');
+  await run('DELETE FROM order_activity_log');
+  await run('DELETE FROM po_upload_sessions');
+  await run('DELETE FROM po_documents');
   await run('DELETE FROM run_barcode_inputs');
   await run('DELETE FROM pipeline_runs');
   await run('DELETE FROM pipeline_templates');
@@ -9860,8 +10014,12 @@ async function resetAndSeedDemoData() {
   await run('DELETE FROM inventory_reservations');
   await run('DELETE FROM inventory_alerts');
   await run('DELETE FROM materials');
+  await run('DELETE FROM company_profiles');
   await run('DELETE FROM groups');
   await run('DELETE FROM units');
+}
+
+async function reseedDemoData() {
   await seedMaterialsIfEmpty();
   await seedUnitsIfEmpty();
   await bootstrapUnitsFromMaterials();
@@ -9871,7 +10029,14 @@ async function resetAndSeedDemoData() {
   await seedItemsIfEmpty();
   await seedOrdersIfEmpty();
   await seedTemplatesIfEmpty();
+  await seedCompanyProfileIfEmpty();
   await ensureDemoDataset();
+}
+
+async function resetAndSeedDemoData() {
+  await initDb();
+  await clearAllData();
+  await reseedDemoData();
 }
 
 function startServer() {

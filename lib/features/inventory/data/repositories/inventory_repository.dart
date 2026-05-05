@@ -21,7 +21,10 @@ abstract class InventoryRepository {
   Future<MaterialRecord> updateMaterial(UpdateMaterialInput input);
   Future<void> deleteMaterial(String barcode);
   Future<MaterialRecord> linkMaterialToGroup(String barcode, int groupId);
-  Future<MaterialRecord> linkMaterialToItem(String barcode, int itemId);
+  Future<MaterialRecord> linkMaterialToItem(
+    String barcode,
+    int itemId,
+  );
   Future<MaterialRecord> unlinkMaterial(String barcode);
   Future<List<MaterialActivityEvent>> getMaterialActivity(String barcode);
   Future<InventoryHealthSnapshot> getInventoryHealth();

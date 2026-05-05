@@ -23,6 +23,7 @@ import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../items/presentation/screens/items_screen.dart';
+import 'package:paper/widgets/variation_path_selector_dialog.dart';
 import '../../../pm/presentation/barcode/material_barcode_toolkit.dart';
 import '../../../pm/presentation/screens/pm_screen.dart';
 import '../../../units/domain/unit_definition.dart';
@@ -40,7 +41,7 @@ import '../providers/inventory_provider.dart';
 
 enum _InventoryViewMode { groups, items }
 
-enum _InventorySummaryFilter { all, awaitingScan, linked }
+
 
 enum _InventoryListingMode { all, recentFirst }
 
@@ -130,7 +131,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
   final Set<String> _expandedParents = <String>{};
   bool _hasInitializedExpandedParents = false;
   _InventoryViewMode _viewMode = _InventoryViewMode.groups;
-  _InventorySummaryFilter _summaryFilter = _InventorySummaryFilter.all;
   _InventoryListingMode _listingMode = _InventoryListingMode.recentFirst;
   String? _supplierFilter;
   String? _typeFilter;
@@ -144,12 +144,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        return;
-      }
-      context.read<InventoryProvider>().loadInventoryHealth();
-    });
+    // KPIs removed: loadInventoryHealth() call removed
     _loadPinnedState();
   }
 
@@ -203,16 +198,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
           expandedParents: _expandedParents,
           searchQuery: inventory.searchQuery,
         );
-        final summary = _viewMode == _InventoryViewMode.groups
-            ? _InventorySummary.fromRecords(
-                _buildGroupSummaryRecords(
-                  filteredRecords,
-                  groupNameById: groupNameById,
-                  groupsById: groupsById,
-                  searchQuery: inventory.searchQuery,
-                ),
-              )
-            : _InventorySummary.fromRows(rows);
+        // KPIs removed: summary computation removed
         final selectableRows = rows
             .where((row) => row.record.id != null)
             .toList(growable: false);
@@ -277,7 +263,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
                             return;
                           }
                           setState(() {
-                            _summaryFilter = _InventorySummaryFilter.all;
                             _kindFilter = null;
                           });
                         },
@@ -331,7 +316,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
                             _supplierFilter = null;
                             _typeFilter = null;
                             _kindFilter = null;
-                            _summaryFilter = _InventorySummaryFilter.all;
                             _sortColumn = null;
                             _sortAscending = true;
                           });
@@ -360,20 +344,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
                           onDelete: () => _bulkDelete(selectedRecords),
                         ),
                       ],
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 4),
                       const Divider(height: 1, color: SoftErpTheme.border),
-                      const SizedBox(height: 18),
-                      _InventorySummaryRow(
-                        summary: summary,
-                        viewMode: _viewMode,
-                        activeFilter: _summaryFilter,
-                        onSelectFilter: (value) {
-                          setState(() {
-                            _summaryFilter = value;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 14),
                       Expanded(
                         child: _InventoryTable(
                           rows: rows,
@@ -685,20 +658,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
           if (_kindFilter != null && record.kind != _kindFilter) {
             return false;
           }
-          switch (_summaryFilter) {
-            case _InventorySummaryFilter.all:
-              break;
-            case _InventorySummaryFilter.awaitingScan:
-              if (record.hasBeenScanned) {
-                return false;
-              }
-              break;
-            case _InventorySummaryFilter.linked:
-              if (!record.hasInheritanceLink) {
-                return false;
-              }
-              break;
-          }
+          // KPIs removed: summaryFilter (awaiting scan / linked) removed
           if (normalizedQuery.isEmpty) {
             return true;
           }
@@ -739,44 +699,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
     return scoped;
   }
 
-  List<MaterialRecord> _buildGroupSummaryRecords(
-    List<MaterialRecord> scopedRecords, {
-    required Map<int, String> groupNameById,
-    required Map<int, GroupDefinition> groupsById,
-    required String searchQuery,
-  }) {
-    final groupRecordsByGroupId = <int, MaterialRecord>{
-      for (final record in scopedRecords.where(
-        (record) => record.linkedGroupId != null,
-      ))
-        record.linkedGroupId!: record,
-    };
 
-    if (_shouldIncludeMasterOnlyGroups()) {
-      final normalizedQuery = _normalize(searchQuery);
-      for (final group in groupsById.values.where(
-        (group) => !group.isArchived,
-      )) {
-        if (groupRecordsByGroupId.containsKey(group.id)) {
-          continue;
-        }
-        final parentName = groupNameById[group.parentGroupId] ?? '';
-        final matchesQuery =
-            normalizedQuery.isEmpty ||
-            _normalize(group.name).contains(normalizedQuery) ||
-            _normalize(parentName).contains(normalizedQuery);
-        if (!matchesQuery) {
-          continue;
-        }
-        groupRecordsByGroupId[group.id] = _masterGroupRecord(
-          group,
-          parentName: parentName,
-        );
-      }
-    }
-
-    return groupRecordsByGroupId.values.toList(growable: false);
-  }
 
   List<_InventoryRowEntry> _buildRows(
     List<MaterialRecord> scopedRecords, {
@@ -895,7 +818,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
             growable: false,
           );
       final hasChildren = childGroupIds.isNotEmpty || childRecords.isNotEmpty;
-      final isExpanded = expandedParents.contains(groupRecord.barcode);
+      final isExpanded =
+          _viewMode == _InventoryViewMode.groups ||
+          expandedParents.contains(groupRecord.barcode);
       rows.add(
         _InventoryRowEntry(
           record: groupRecord,
@@ -912,11 +837,14 @@ class _InventoryScreenState extends State<InventoryScreen> {
           opensDetails: false,
         ),
       );
-      if (!isExpanded) {
+      if (_viewMode != _InventoryViewMode.groups && !isExpanded) {
         return;
       }
       for (final childGroupId in childGroupIds) {
         appendGroupRows(childGroupId, depth + 1, rows);
+      }
+      if (_viewMode == _InventoryViewMode.groups) {
+        return;
       }
       childRecords.sort(
         (a, b) => _compareRowLike(
@@ -1022,9 +950,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   bool _shouldIncludeMasterOnlyGroups() {
+    // BUG-12: Master-only groups are structural tree nodes from the Masters
+    // module that have no inventory record yet. They must always appear in
+    // the groups view so the folder hierarchy is never broken by active
+    // supplier or type filters (those filters apply to inventory records, not
+    // group placeholders). Only suppress them in items view or when the kind
+    // filter explicitly excludes parent groups.
     return _viewMode == _InventoryViewMode.groups &&
-        _supplierFilter == null &&
-        _typeFilter == null &&
         (_kindFilter == null || _kindFilter == 'parent');
   }
 
@@ -3068,172 +3000,6 @@ class _InventoryBulkActionButton extends StatelessWidget {
   }
 }
 
-class _InventorySummaryRow extends StatelessWidget {
-  const _InventorySummaryRow({
-    required this.summary,
-    required this.viewMode,
-    required this.activeFilter,
-    required this.onSelectFilter,
-  });
-
-  final _InventorySummary summary;
-  final _InventoryViewMode viewMode;
-  final _InventorySummaryFilter activeFilter;
-  final ValueChanged<_InventorySummaryFilter> onSelectFilter;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final cardWidth = constraints.maxWidth >= 1260
-            ? 306.0
-            : constraints.maxWidth >= 980
-            ? 268.0
-            : constraints.maxWidth;
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              SizedBox(
-                width: cardWidth,
-                child: _SummaryCard(
-                  label: viewMode == _InventoryViewMode.groups
-                      ? 'All Groups'
-                      : 'All Items',
-                  value: summary.total,
-                  icon: Icons.inventory_2_outlined,
-                  iconColor: const Color(0xFF4D6DE6),
-                  iconBg: const Color(0xFFDEE9FF),
-                  isActive: activeFilter == _InventorySummaryFilter.all,
-                  onTap: () => onSelectFilter(_InventorySummaryFilter.all),
-                ),
-              ),
-              const SizedBox(width: 10),
-              SizedBox(
-                width: cardWidth,
-                child: _SummaryCard(
-                  label: 'Awaiting Scan',
-                  value: summary.awaitingScan,
-                  icon: Icons.cancel_outlined,
-                  iconColor: const Color(0xFFF24E4E),
-                  iconBg: const Color(0xFFFFE5E5),
-                  isActive:
-                      activeFilter == _InventorySummaryFilter.awaitingScan,
-                  onTap: () =>
-                      onSelectFilter(_InventorySummaryFilter.awaitingScan),
-                ),
-              ),
-              const SizedBox(width: 10),
-              SizedBox(
-                width: cardWidth,
-                child: _SummaryCard(
-                  label: 'Linked Records',
-                  value: summary.linked,
-                  icon: Icons.verified_rounded,
-                  iconColor: const Color(0xFF10B981),
-                  iconBg: const Color(0xFFDDF8EA),
-                  isActive: activeFilter == _InventorySummaryFilter.linked,
-                  onTap: () => onSelectFilter(_InventorySummaryFilter.linked),
-                ),
-              ),
-              if (constraints.maxWidth >= 1260) ...[
-                const SizedBox(width: 10),
-                SizedBox(width: cardWidth, child: const _SummaryGhostCard()),
-              ],
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({
-    required this.label,
-    required this.value,
-    required this.icon,
-    required this.iconColor,
-    required this.iconBg,
-    required this.isActive,
-    required this.onTap,
-  });
-
-  final String label;
-  final int value;
-  final IconData icon;
-  final Color iconColor;
-  final Color iconBg;
-  final bool isActive;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: SoftSurface(
-        height: 76,
-        radius: 20,
-        color: isActive ? const Color(0xFFFDFEFF) : const Color(0xCCFFFFFF),
-        strongBorder: isActive,
-        elevated: true,
-        padding: const EdgeInsets.symmetric(horizontal: 18),
-        child: Row(
-          children: [
-            Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                color: iconBg,
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Icon(icon, color: iconColor, size: 24),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xFF2F3342),
-                  fontSize: 18,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              '$value',
-              style: const TextStyle(
-                color: Color(0xFF2B3344),
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SummaryGhostCard extends StatelessWidget {
-  const _SummaryGhostCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return SoftSurface(
-      height: 76,
-      radius: 20,
-      color: const Color(0xBFFFFFFF),
-      strongBorder: false,
-      elevated: true,
-      child: const SizedBox.expand(),
-    );
-  }
-}
 
 class _InventoryTable extends StatefulWidget {
   const _InventoryTable({
@@ -3388,6 +3154,7 @@ class _InventoryTableState extends State<_InventoryTable> {
                         return _InventoryMainDataRow(
                           record: record,
                           entry: entry,
+                          viewMode: widget.viewMode,
                           metrics: metrics,
                           isSelected:
                               isSelectable &&
@@ -3501,22 +3268,25 @@ class _InventoryTableHeader extends StatelessWidget {
         children: [
           _HeaderCell(
             viewMode == _InventoryViewMode.groups ? 'Group Name' : 'Item Name',
-            width: metrics.nameWidth,
+            width: viewMode == _InventoryViewMode.groups
+                ? metrics.nameWidth + metrics.barcodeWidth
+                : metrics.nameWidth,
             metrics: metrics,
             onSortRequested: onSortRequested,
             sortColumn: _InventorySortColumn.name,
             activeSortColumn: sortColumn,
             sortAscending: sortAscending,
           ),
-          _HeaderCell(
-            viewMode == _InventoryViewMode.groups ? 'Group ID' : 'Item ID',
-            width: metrics.barcodeWidth,
-            metrics: metrics,
-            onSortRequested: onSortRequested,
-            sortColumn: _InventorySortColumn.id,
-            activeSortColumn: sortColumn,
-            sortAscending: sortAscending,
-          ),
+          if (viewMode != _InventoryViewMode.groups)
+            _HeaderCell(
+              'Item ID',
+              width: metrics.barcodeWidth,
+              metrics: metrics,
+              onSortRequested: onSortRequested,
+              sortColumn: _InventorySortColumn.id,
+              activeSortColumn: sortColumn,
+              sortAscending: sortAscending,
+            ),
           _HeaderCell(
             'Stock',
             width: metrics.stockWidth,
@@ -3684,6 +3454,7 @@ class _InventoryMainDataRow extends StatefulWidget {
   const _InventoryMainDataRow({
     required this.record,
     required this.entry,
+    required this.viewMode,
     required this.metrics,
     required this.isSelected,
     required this.isPinned,
@@ -3705,6 +3476,7 @@ class _InventoryMainDataRow extends StatefulWidget {
 
   final MaterialRecord record;
   final _InventoryRowEntry entry;
+  final _InventoryViewMode viewMode;
   final _InventoryTableMetrics metrics;
   final bool isSelected;
   final bool isPinned;
@@ -3767,7 +3539,10 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
                 child: Row(
                   children: [
                     SizedBox(
-                      width: widget.metrics.nameWidth,
+                      width: widget.viewMode == _InventoryViewMode.groups
+                          ? widget.metrics.nameWidth +
+                                widget.metrics.barcodeWidth
+                          : widget.metrics.nameWidth,
                       child: _InventoryNameCell(
                         record: widget.record,
                         entry: widget.entry,
@@ -3776,11 +3551,12 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
                         onExpandToggle: widget.onExpandToggle,
                       ),
                     ),
-                    _DataCell(
-                      _displayPrimaryId(widget.entry),
-                      width: widget.metrics.barcodeWidth,
-                      metrics: widget.metrics,
-                    ),
+                    if (widget.viewMode != _InventoryViewMode.groups)
+                      _DataCell(
+                        _displayPrimaryId(widget.entry),
+                        width: widget.metrics.barcodeWidth,
+                        metrics: widget.metrics,
+                      ),
                     _DataCell(
                       _displayStock(widget.record),
                       width: widget.metrics.stockWidth,
@@ -4948,31 +4724,7 @@ Color _alertText(InventoryAlertSeverity severity) {
   }
 }
 
-class _InventorySummary {
-  const _InventorySummary({
-    required this.total,
-    required this.awaitingScan,
-    required this.linked,
-  });
 
-  final int total;
-  final int awaitingScan;
-  final int linked;
-
-  factory _InventorySummary.fromRecords(List<MaterialRecord> records) {
-    return _InventorySummary(
-      total: records.length,
-      awaitingScan: records.where((record) => !record.hasBeenScanned).length,
-      linked: records.where((record) => record.hasInheritanceLink).length,
-    );
-  }
-
-  factory _InventorySummary.fromRows(List<_InventoryRowEntry> rows) {
-    return _InventorySummary.fromRecords(
-      rows.map((row) => row.record).toList(growable: false),
-    );
-  }
-}
 
 class _InventoryRowEntry {
   const _InventoryRowEntry({
@@ -6129,7 +5881,7 @@ class _LinkItemSheet extends StatelessWidget {
         .items
         .where((item) => !item.isArchived)
         .toList(growable: false);
-    final provider = context.watch<InventoryProvider>();
+
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -6165,11 +5917,65 @@ class _LinkItemSheet extends StatelessWidget {
                       ? const Icon(Icons.check_circle, color: Color(0xFF6049E3))
                       : null,
                   onTap: () async {
+
+                    final requiresVariation =
+                        item.topLevelProperties.isNotEmpty &&
+                        item.leafVariationNodes.isNotEmpty;
+
+                    if (requiresVariation) {
+                      final result = await showDialog<VariationPathSelectionResult>(
+                        context: context,
+                        builder: (dialogContext) => Dialog(
+                          insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 680, maxHeight: 760),
+                            child: VariationPathSelectorDialog(
+                              item: item,
+                              initialRootPropertyId: null,
+                              initialValueNodeIds: const [],
+                              onCreateValue: ({
+                                required item,
+                                required propertyNodeId,
+                                required propertyLabel,
+                                required valueName,
+                              }) async {
+                                final itemsProvider = context.read<ItemsProvider>();
+                                final result = await itemsProvider.appendVariationValue(
+                                  itemId: item.id,
+                                  propertyNodeId: propertyNodeId,
+                                  valueName: valueName,
+                                );
+                                if (!context.mounted) return null;
+                                if (result == null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        itemsProvider.errorMessage ?? 'Unable to create variation.',
+                                      ),
+                                    ),
+                                  );
+                                }
+                                return result;
+                              },
+                            ),
+                          ),
+                        ),
+                      );
+                      if (result == null || result.leaf == null) {
+                        return; // User cancelled or selected an incomplete path
+                      }
+
+                    }
+
+                    if (!context.mounted) return;
+
                     await context.read<InventoryProvider>().linkMaterialToItem(
                       record.barcode,
                       item.id,
                     );
-                    if (!context.mounted || provider.errorMessage != null) {
+                    if (!context.mounted) return;
+                    final provider = context.read<InventoryProvider>();
+                    if (provider.errorMessage != null) {
                       return;
                     }
                     Navigator.of(context).pop();

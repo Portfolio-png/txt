@@ -8,7 +8,7 @@ class VariationTreeView extends StatefulWidget {
     super.key,
     required this.roots,
     required this.onLeafSelected,
-    this.selectedLeafId,
+    this.selectedNodeIds = const <String>{},
     this.enabled = true,
     this.maxHeight = 400,
   });
@@ -16,7 +16,7 @@ class VariationTreeView extends StatefulWidget {
   final List<VariationNode> roots;
   final void Function(VariationNode leaf, List<String> pathNodeIds)
   onLeafSelected;
-  final String? selectedLeafId;
+  final Set<String> selectedNodeIds;
   final bool enabled;
   final double maxHeight;
 
@@ -29,10 +29,10 @@ class _VariationTreeViewState extends State<VariationTreeView> {
   final ScrollController _verticalController = ScrollController();
   final ScrollController _horizontalController = ScrollController();
 
-  String? _internalSelectedLeafId;
+  Set<String>? _internalSelectedNodeIds;
 
-  String? get _effectiveSelectedLeafId =>
-      widget.selectedLeafId ?? _internalSelectedLeafId;
+  Set<String> get _effectiveSelectedNodeIds =>
+      _internalSelectedNodeIds ?? widget.selectedNodeIds;
 
   @override
   void initState() {
@@ -46,9 +46,9 @@ class _VariationTreeViewState extends State<VariationTreeView> {
     if (oldWidget.roots != widget.roots) {
       _syncInitialExpansion(resetDeeperExpansions: false);
     }
-    if (widget.selectedLeafId != oldWidget.selectedLeafId &&
-        widget.selectedLeafId != null) {
-      _internalSelectedLeafId = null;
+    if (widget.selectedNodeIds.length != oldWidget.selectedNodeIds.length ||
+        !widget.selectedNodeIds.containsAll(oldWidget.selectedNodeIds)) {
+      _internalSelectedNodeIds = null;
     }
   }
 
@@ -80,7 +80,7 @@ class _VariationTreeViewState extends State<VariationTreeView> {
     final activeRoots = _filterArchived(widget.roots);
     final selectedPathIds = _selectedPathIds(
       activeRoots,
-      _effectiveSelectedLeafId,
+      _effectiveSelectedNodeIds,
     );
     final hasSelection = selectedPathIds.isNotEmpty;
 
@@ -166,14 +166,14 @@ class _VariationTreeViewState extends State<VariationTreeView> {
         : valuePath;
     final isExpandable = activeChildren.isNotEmpty;
     final isLeaf = _isLeafValue(node, activeChildren);
-    final isSelected = _effectiveSelectedLeafId == currentNodeId;
+    final isSelected = _effectiveSelectedNodeIds.contains(currentNodeId);
     final isOnSelectedPath = _isNodeOnSelectedPath(
       currentNodeId,
       selectedPathIds,
     );
     final containsSelectedLeaf = _subtreeContainsLeaf(
       node,
-      _effectiveSelectedLeafId,
+      _effectiveSelectedNodeIds,
     );
     final isRelatedToSelection =
         !hasSelection || isOnSelectedPath || containsSelectedLeaf;
@@ -210,7 +210,7 @@ class _VariationTreeViewState extends State<VariationTreeView> {
                 onTap: !widget.enabled
                     ? null
                     : isLeaf
-                    ? () => _handleLeafSelected(node, currentPathIds)
+                    ? () => _handleNodeTap(node, currentPathIds)
                     : isExpandable
                     ? () => _toggleExpanded(currentNodeId)
                     : null,
@@ -289,14 +289,9 @@ class _VariationTreeViewState extends State<VariationTreeView> {
     });
   }
 
-  void _handleLeafSelected(VariationNode leaf, List<String> pathNodeIds) {
-    if (!widget.enabled) {
-      return;
-    }
+  void _handleNodeTap(VariationNode leaf, List<String> pathNodeIds) {
     setState(() {
-      if (widget.selectedLeafId == null) {
-        _internalSelectedLeafId = _nodeId(leaf);
-      }
+      _internalSelectedNodeIds = pathNodeIds.toSet();
       _expandedNodeIds.addAll(pathNodeIds);
     });
     widget.onLeafSelected(leaf, pathNodeIds);
@@ -328,7 +323,7 @@ class _VariationTreeViewState extends State<VariationTreeView> {
         .map((segment) => segment.trim())
         .where((segment) => segment.isNotEmpty)
         .toList(growable: false);
-    return values.join(' ');
+    return values.join(' | ');
   }
 
   List<String> _collectPathNodeIds(List<String> existing, VariationNode node) {
@@ -337,18 +332,22 @@ class _VariationTreeViewState extends State<VariationTreeView> {
 
   Set<String> _selectedPathIds(
     List<VariationNode> roots,
-    String? selectedLeafId,
+    Set<String> selectedNodeIds,
   ) {
-    if (selectedLeafId == null || selectedLeafId.isEmpty) {
+    if (selectedNodeIds.isEmpty) {
       return <String>{};
     }
+    final allPaths = <String>{};
     for (final root in roots) {
-      final path = _findPathNodeIds(root, selectedLeafId, const <String>[]);
-      if (path.isNotEmpty) {
-        return path.toSet();
+      for (final selectedId in selectedNodeIds) {
+        final path = _findPathNodeIds(root, selectedId, const <String>[]);
+        if (path.isNotEmpty) {
+          allPaths.addAll(path);
+          break;
+        }
       }
     }
-    return <String>{};
+    return allPaths;
   }
 
   List<String> _findPathNodeIds(
@@ -369,15 +368,15 @@ class _VariationTreeViewState extends State<VariationTreeView> {
     return const <String>[];
   }
 
-  bool _subtreeContainsLeaf(VariationNode node, String? selectedLeafId) {
-    if (selectedLeafId == null || selectedLeafId.isEmpty) {
+  bool _subtreeContainsLeaf(VariationNode node, Set<String> selectedNodeIds) {
+    if (selectedNodeIds.isEmpty) {
       return false;
     }
-    if (_nodeId(node) == selectedLeafId) {
+    if (selectedNodeIds.contains(_nodeId(node))) {
       return true;
     }
     for (final child in _filterArchived(node.children)) {
-      if (_subtreeContainsLeaf(child, selectedLeafId)) {
+      if (_subtreeContainsLeaf(child, selectedNodeIds)) {
         return true;
       }
     }

@@ -18,6 +18,7 @@ class ItemVariationNodeDto {
     required this.parentNodeId,
     required this.kind,
     required this.name,
+    required this.code,
     required this.displayName,
     required this.position,
     required this.isArchived,
@@ -31,6 +32,7 @@ class ItemVariationNodeDto {
   final int? parentNodeId;
   final ItemVariationNodeKind kind;
   final String name;
+  final String code;
   final String displayName;
   final int position;
   final bool isArchived;
@@ -45,6 +47,7 @@ class ItemVariationNodeDto {
       parentNodeId: json['parentNodeId'] as int?,
       kind: _nodeKindFromJson(json['kind'] as String? ?? 'property'),
       name: json['name'] as String? ?? '',
+      code: json['code'] as String? ?? '',
       displayName: json['displayName'] as String? ?? '',
       position: json['position'] as int? ?? 0,
       isArchived: json['isArchived'] as bool? ?? false,
@@ -70,6 +73,7 @@ class ItemVariationNodeDto {
       parentNodeId: parentNodeId,
       kind: kind,
       name: name,
+      code: code,
       displayName: displayName,
       position: position,
       isArchived: isArchived,
@@ -91,6 +95,7 @@ class ItemDto {
     required this.quantity,
     required this.groupId,
     required this.unitId,
+    required this.namingFormat,
     required this.isArchived,
     required this.usageCount,
     required this.createdAt,
@@ -105,6 +110,7 @@ class ItemDto {
   final double quantity;
   final int groupId;
   final int unitId;
+  final List<String> namingFormat;
   final bool isArchived;
   final int usageCount;
   final DateTime createdAt;
@@ -120,6 +126,9 @@ class ItemDto {
       quantity: (json['quantity'] as num? ?? 0).toDouble(),
       groupId: json['groupId'] as int? ?? 0,
       unitId: json['unitId'] as int? ?? 0,
+      namingFormat: (json['namingFormat'] as List<dynamic>? ?? const [])
+          .map((e) => e.toString())
+          .toList(growable: false),
       isArchived: json['isArchived'] as bool? ?? false,
       usageCount: json['usageCount'] as int? ?? 0,
       createdAt:
@@ -146,6 +155,7 @@ class ItemDto {
       quantity: quantity,
       groupId: groupId,
       unitId: unitId,
+      namingFormat: namingFormat,
       isArchived: isArchived,
       usageCount: usageCount,
       createdAt: createdAt,
@@ -197,6 +207,7 @@ class ItemVariationNodeRequest {
     required this.parentNodeId,
     required this.kind,
     required this.name,
+    required this.code,
     required this.displayName,
     required this.children,
   });
@@ -205,6 +216,7 @@ class ItemVariationNodeRequest {
   final int? parentNodeId;
   final ItemVariationNodeKind kind;
   final String name;
+  final String code;
   final String displayName;
   final List<ItemVariationNodeRequest> children;
 
@@ -214,6 +226,7 @@ class ItemVariationNodeRequest {
       parentNodeId: input.parentNodeId,
       kind: input.kind,
       name: input.name,
+      code: input.code,
       displayName: input.displayName,
       children: input.children
           .map(ItemVariationNodeRequest.fromInput)
@@ -227,6 +240,7 @@ class ItemVariationNodeRequest {
       'parentNodeId': parentNodeId,
       'kind': _nodeKindToJson(kind),
       'name': name,
+      'code': code,
       'displayName': displayName,
       'children': children
           .map((entry) => entry.toJson())
@@ -243,6 +257,7 @@ class CreateItemRequest {
     required this.quantity,
     required this.groupId,
     required this.unitId,
+    required this.namingFormat,
     required this.variationTree,
   });
 
@@ -252,6 +267,7 @@ class CreateItemRequest {
   final double quantity;
   final int groupId;
   final int unitId;
+  final List<String> namingFormat;
   final List<ItemVariationNodeRequest> variationTree;
 
   factory CreateItemRequest.fromInput(CreateItemInput input) {
@@ -262,6 +278,7 @@ class CreateItemRequest {
       quantity: input.quantity,
       groupId: input.groupId,
       unitId: input.unitId,
+      namingFormat: input.namingFormat,
       variationTree: input.variationTree
           .map(ItemVariationNodeRequest.fromInput)
           .toList(growable: false),
@@ -276,6 +293,7 @@ class CreateItemRequest {
       'quantity': quantity,
       'groupId': groupId,
       'unitId': unitId,
+      'namingFormat': namingFormat,
       'variationTree': variationTree
           .map((entry) => entry.toJson())
           .toList(growable: false),
@@ -291,6 +309,7 @@ class UpdateItemRequest {
     required this.quantity,
     required this.groupId,
     required this.unitId,
+    required this.namingFormat,
     required this.variationTree,
   });
 
@@ -300,6 +319,7 @@ class UpdateItemRequest {
   final double quantity;
   final int groupId;
   final int unitId;
+  final List<String> namingFormat;
   final List<ItemVariationNodeRequest> variationTree;
 
   factory UpdateItemRequest.fromInput(UpdateItemInput input) {
@@ -310,6 +330,7 @@ class UpdateItemRequest {
       quantity: input.quantity,
       groupId: input.groupId,
       unitId: input.unitId,
+      namingFormat: input.namingFormat,
       variationTree: input.variationTree
           .map(ItemVariationNodeRequest.fromInput)
           .toList(growable: false),
@@ -324,6 +345,7 @@ class UpdateItemRequest {
       'quantity': quantity,
       'groupId': groupId,
       'unitId': unitId,
+      'namingFormat': namingFormat,
       'variationTree': variationTree
           .map((entry) => entry.toJson())
           .toList(growable: false),
