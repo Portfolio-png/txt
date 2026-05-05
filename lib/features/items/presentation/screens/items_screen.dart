@@ -149,7 +149,7 @@ class _ItemsTable extends StatelessWidget {
       minWidth: 1120,
       columns: const [
         SoftTableColumn('Item', flex: 2),
-        SoftTableColumn('Qty / Unit', flex: 2),
+        SoftTableColumn('Unit', flex: 2),
         SoftTableColumn('Group', flex: 2),
         SoftTableColumn('Tree Summary', flex: 3),
         SoftTableColumn('Status', flex: 1),
@@ -200,12 +200,7 @@ class _ItemRow extends StatelessWidget {
             ],
           ),
         ),
-        Expanded(
-          flex: 2,
-          child: SoftInlineText(
-            '${_formatQuantity(item.quantity)} / $unitLabel',
-          ),
-        ),
+        Expanded(flex: 2, child: SoftInlineText(unitLabel)),
         Expanded(flex: 2, child: SoftInlineText(groupName)),
         Expanded(
           flex: 3,
@@ -320,7 +315,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   late final TextEditingController _nameController;
   late final TextEditingController _aliasController;
   late final TextEditingController _displayNameController;
-  late final TextEditingController _quantityController;
   final List<_NodeDraft> _rootNodes = [];
   final ScrollController _variationTreeScrollController = ScrollController();
   int? _selectedGroupId;
@@ -331,6 +325,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   String? _localError;
 
   bool get _isReadOnly => widget.item?.isUsed ?? false;
+  double get _resolvedItemQuantity => widget.item?.quantity ?? 1.0;
 
   @override
   void initState() {
@@ -341,9 +336,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     _aliasController = TextEditingController(text: widget.item?.alias ?? '');
     _displayNameController = TextEditingController(
       text: widget.item?.displayName ?? '',
-    );
-    _quantityController = TextEditingController(
-      text: widget.item == null ? '' : _formatQuantity(widget.item!.quantity),
     );
     _selectedGroupId = widget.item?.groupId;
     _selectedUnitId = widget.item?.unitId;
@@ -488,7 +480,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     _nameController.dispose();
     _aliasController.dispose();
     _displayNameController.dispose();
-    _quantityController.dispose();
     _variationTreeScrollController.dispose();
     for (final node in _rootNodes) {
       node.dispose();
@@ -503,7 +494,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     final unitsProvider = context.watch<UnitsProvider>();
     final duplicate = itemsProvider.checkDuplicate(
       name: _nameController.text,
-      quantity: widget.item?.quantity ?? 0.0,
       groupId: _selectedGroupId,
       variationTree: _variationTreeInputs,
       excludeId: widget.item?.id,
@@ -522,23 +512,20 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
         children: [
           _formRow(
             children: [
-              _buildTextField(
-                controller: _nameController,
-                label: 'Name',
-                helper: 'Base commercial item name',
-                readOnly: _isReadOnly,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          _formRow(
-            children: [
-              _buildTextField(
-                controller: _aliasController,
-                label: 'Alias',
-                helper: 'Optional alternate label',
-                readOnly: _isReadOnly,
-                required: false,
+              _responsiveFieldPair(
+                first: _buildTextField(
+                  controller: _nameController,
+                  label: 'Name',
+                  helper: 'Base commercial item name',
+                  readOnly: _isReadOnly,
+                ),
+                second: _buildTextField(
+                  controller: _aliasController,
+                  label: 'Alias',
+                  helper: 'Optional alternate label',
+                  readOnly: _isReadOnly,
+                  required: false,
+                ),
               ),
             ],
           ),
@@ -849,78 +836,102 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                             children: [
                               Text(
                                 'Drag and drop properties to set the variation display name sequence.',
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: Colors.grey[600]),
                               ),
                               const SizedBox(height: 12),
                               if (_activeNamingFormat.isEmpty)
-                                const Text('Add properties to configure naming format.')
+                                const Text(
+                                  'Add properties to configure naming format.',
+                                )
                               else
-                                  SizedBox(
-                                    height: 42,
-                                    child: ReorderableListView(
-                                      scrollDirection: Axis.horizontal,
-                                      proxyDecorator: (child, index, animation) {
-                                        return Material(
-                                          color: Colors.transparent,
-                                          child: child,
-                                        );
-                                      },
-                                      onReorder: (oldIndex, newIndex) {
-                                        setState(() {
-                                          if (newIndex > oldIndex) {
-                                            newIndex -= 1;
+                                SizedBox(
+                                  height: 42,
+                                  child: ReorderableListView(
+                                    scrollDirection: Axis.horizontal,
+                                    proxyDecorator: (child, index, animation) {
+                                      return Material(
+                                        color: Colors.transparent,
+                                        child: child,
+                                      );
+                                    },
+                                    onReorder: (oldIndex, newIndex) {
+                                      setState(() {
+                                        if (newIndex > oldIndex) {
+                                          newIndex -= 1;
+                                        }
+                                        final format = _activeNamingFormat;
+                                        final item = format.removeAt(oldIndex);
+                                        format.insert(newIndex, item);
+                                        _namingFormat = format;
+                                        // Reset displayNameTouched on ALL leaf
+                                        // value nodes (not just root nodes) so
+                                        // _syncLeafDisplayNames regenerates them.
+                                        void resetLeaves(_NodeDraft node) {
+                                          if (node.isLeafValue) {
+                                            node.displayNameTouched = false;
                                           }
-                                          final format = _activeNamingFormat;
-                                          final item = format.removeAt(oldIndex);
-                                          format.insert(newIndex, item);
-                                          _namingFormat = format;
-                                          // Reset displayNameTouched on ALL leaf
-                                          // value nodes (not just root nodes) so
-                                          // _syncLeafDisplayNames regenerates them.
-                                          void resetLeaves(_NodeDraft node) {
-                                            if (node.isLeafValue) {
-                                              node.displayNameTouched = false;
-                                            }
-                                            for (final child in node.children) {
-                                              resetLeaves(child);
-                                            }
+                                          for (final child in node.children) {
+                                            resetLeaves(child);
                                           }
-                                          for (final node in _rootNodes) {
-                                            resetLeaves(node);
-                                          }
-                                          _syncLeafDisplayNames();
-                                        });
-                                      },
-                                      buildDefaultDragHandles: false,
-                                      children: [
-                                        ..._activeNamingFormat.asMap().entries.map((entry) {
+                                        }
+
+                                        for (final node in _rootNodes) {
+                                          resetLeaves(node);
+                                        }
+                                        _syncLeafDisplayNames();
+                                      });
+                                    },
+                                    buildDefaultDragHandles: false,
+                                    children: [
+                                      ..._activeNamingFormat.asMap().entries.map(
+                                        (entry) {
                                           final index = entry.key;
                                           final token = entry.value;
                                           return ReorderableDragStartListener(
                                             key: ValueKey(token),
                                             index: index,
                                             child: Container(
-                                              margin: const EdgeInsets.only(right: 8),
-                                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                                              margin: const EdgeInsets.only(
+                                                right: 8,
+                                              ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 16,
+                                                  ),
                                               decoration: BoxDecoration(
                                                 color: const Color(0xFFF1F5F9),
-                                                borderRadius: BorderRadius.circular(20),
-                                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                                                borderRadius:
+                                                    BorderRadius.circular(20),
+                                                border: Border.all(
+                                                  color: const Color(
+                                                    0xFFE2E8F0,
+                                                  ),
+                                                ),
                                               ),
                                               alignment: Alignment.center,
                                               child: Row(
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
                                                   Text(
-                                                    _getDisplayNameForToken(token),
-                                                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                                      fontWeight: FontWeight.w600,
-                                                      color: const Color(0xFF334155),
+                                                    _getDisplayNameForToken(
+                                                      token,
                                                     ),
+                                                    style: Theme.of(context)
+                                                        .textTheme
+                                                        .bodyMedium
+                                                        ?.copyWith(
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          color: const Color(
+                                                            0xFF334155,
+                                                          ),
+                                                        ),
                                                   ),
                                                   const SizedBox(width: 6),
                                                   const Icon(
-                                                    Icons.drag_indicator_rounded,
+                                                    Icons
+                                                        .drag_indicator_rounded,
                                                     size: 16,
                                                     color: Color(0xFF94A3B8),
                                                   ),
@@ -928,10 +939,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                               ),
                                             ),
                                           );
-                                        }),
-                                      ],
-                                    ),
+                                        },
+                                      ),
+                                    ],
                                   ),
+                                ),
                             ],
                           ),
                         ),
@@ -1062,7 +1074,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       _rootNodes.map((node) => _toInput(node, null)).toList(growable: false);
 
   List<String> get _availableNamingTokens {
-    final tokens = <String>[];
+    final tokens = <String>['name'];
     for (var i = 0; i < _rootNodes.length; i++) {
       if (_rootNodes[i].kind == ItemVariationNodeKind.property) {
         tokens.add('prop_$i');
@@ -1243,7 +1255,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       return;
     }
 
-    final parsedQuantity = widget.item?.quantity ?? 0.0;
+    final itemQuantity = _resolvedItemQuantity;
     if (_selectedGroupId == null || _selectedUnitId == null) {
       setState(() {
         _localError = 'Select both a group and a unit.';
@@ -1254,7 +1266,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     final itemsProvider = context.read<ItemsProvider>();
     final duplicate = itemsProvider.checkDuplicate(
       name: _nameController.text,
-      quantity: parsedQuantity,
       groupId: _selectedGroupId,
       variationTree: _variationTreeInputs,
       excludeId: widget.item?.id,
@@ -1276,7 +1287,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               name: _nameController.text.trim(),
               alias: _aliasController.text.trim(),
               displayName: _displayNameController.text.trim(),
-              quantity: parsedQuantity,
+              quantity: itemQuantity,
               groupId: _selectedGroupId!,
               unitId: _selectedUnitId!,
               namingFormat: _activeNamingFormat,
@@ -1289,7 +1300,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               name: _nameController.text.trim(),
               alias: _aliasController.text.trim(),
               displayName: _displayNameController.text.trim(),
-              quantity: parsedQuantity,
+              quantity: itemQuantity,
               groupId: _selectedGroupId!,
               unitId: _selectedUnitId!,
               namingFormat: _activeNamingFormat,
@@ -1338,6 +1349,24 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     );
   }
 
+  Widget _responsiveFieldPair({required Widget first, required Widget second}) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 520) {
+          return Column(children: [first, const SizedBox(height: 12), second]);
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: first),
+            const SizedBox(width: 12),
+            Expanded(child: second),
+          ],
+        );
+      },
+    );
+  }
+
   InputDecoration _fieldDecoration({
     required String label,
     required String helper,
@@ -1373,7 +1402,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   ) {
     final primaryGroup = _primaryGroupFor(group, groupsProvider);
     if (primaryGroup.id == group.id) {
-      return '${group.name} • Primary group';
+      return group.name;
     }
     return '${group.name} • Primary: ${primaryGroup.name}';
   }
@@ -1404,12 +1433,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
 
   String _generateLeafDisplayName(_NodeDraft leaf) {
     final pathValues = <String, String>{};
-
-    // Always include the item name for the 'name' token
-    final itemName = _nameController.text.trim();
-    if (itemName.isNotEmpty) {
-      pathValues['name'] = itemName;
-    }
+    final pathValueNames = <String>[];
 
     _NodeDraft? current = leaf;
     while (current != null) {
@@ -1418,6 +1442,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           current.parent!.kind == ItemVariationNodeKind.property) {
         final propNode = current.parent!;
         final valueName = current.nameController.text.trim();
+        if (valueName.isNotEmpty) {
+          pathValueNames.insert(0, valueName);
+        }
         final propIndex = _rootNodes.indexOf(propNode);
         if (propIndex != -1 && valueName.isNotEmpty) {
           pathValues['prop_$propIndex'] = valueName;
@@ -1428,8 +1455,16 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
 
     final segments = <String>[];
     for (final token in _activeNamingFormat) {
+      if (token == 'name') {
+        continue;
+      }
       if (pathValues.containsKey(token)) {
         segments.add(pathValues[token]!);
+      }
+    }
+    for (final value in pathValueNames) {
+      if (value.isNotEmpty && !segments.contains(value)) {
+        segments.add(value);
       }
     }
     return segments.join(' ');
@@ -1438,8 +1473,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   String _duplicateMessage(ItemDuplicateWarning warning) {
     return switch (warning) {
       ItemDuplicateWarning.none => '',
-      ItemDuplicateWarning.sameGroupAndQuantity =>
-        'An item with the same name and quantity already exists in the selected group.',
+      ItemDuplicateWarning.sameGroup =>
+        'An item with this name already exists in the selected group.',
       ItemDuplicateWarning.emptyNodeName =>
         'Every property and value node needs a name.',
       ItemDuplicateWarning.invalidTreeStructure =>
@@ -1826,8 +1861,8 @@ class _WarningText extends StatelessWidget {
   Widget build(BuildContext context) {
     final message = switch (warning) {
       ItemDuplicateWarning.none => '',
-      ItemDuplicateWarning.sameGroupAndQuantity =>
-        'An item with this name and quantity already exists in the selected group.',
+      ItemDuplicateWarning.sameGroup =>
+        'An item with this name already exists in the selected group.',
       ItemDuplicateWarning.emptyNodeName =>
         'Every property and value node needs a name.',
       ItemDuplicateWarning.invalidTreeStructure =>
@@ -1874,13 +1909,6 @@ class _ItemsMessageBanner extends StatelessWidget {
       ),
     );
   }
-}
-
-String _formatQuantity(double quantity) {
-  if (quantity == quantity.roundToDouble()) {
-    return quantity.toStringAsFixed(0);
-  }
-  return quantity.toString();
 }
 
 extension<T> on Iterable<T> {

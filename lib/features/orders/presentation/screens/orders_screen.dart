@@ -252,12 +252,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           }
                           // BUG-03: Re-read the latest version of this order
                           // from the provider so we never edit a stale snapshot.
-                          final latestOrder = this
-                              .context
-                              .read<OrdersProvider>()
-                              .orders
-                              .where((o) => o.id == order.id)
-                              .firstOrNull ?? order;
+                          final latestOrder =
+                              this.context
+                                  .read<OrdersProvider>()
+                                  .orders
+                                  .where((o) => o.id == order.id)
+                                  .firstOrNull ??
+                              order;
                           showDialog<void>(
                             context: this.context,
                             builder: (context) => Dialog(
@@ -266,7 +267,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 constraints: const BoxConstraints(
                                   maxWidth: 520,
                                 ),
-                                child: _OrderLifecycleEditorSheet(order: latestOrder),
+                                child: _OrderLifecycleEditorSheet(
+                                  order: latestOrder,
+                                ),
                               ),
                             ),
                           );
@@ -1343,9 +1346,9 @@ class _OrderDataRowState extends State<_OrderDataRow> {
     final message = assigningStartDateNow
         ? 'Started ${order.orderNo} — start date set to today.'
         : '${action.label} applied to ${order.orderNo}.';
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Color _rowEdgeTint(OrderStatus status, _OrderUrgency urgency) {
@@ -2376,13 +2379,6 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
               onChanged: (value) {
                 setState(() {
                   _selectedClientId = value;
-                  for (final line in _lines) {
-                    if (line.clientCodeController.text.isEmpty) {
-                      line.clientCodeController.text = _resolveClientCode(
-                        _selectedClient(clients),
-                      );
-                    }
-                  }
                 });
               },
               validator: (value) {
@@ -2596,90 +2592,95 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     List<ItemDefinition> items,
     int index,
   ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _OrderItemsRow(
-          itemField: _buildItemSelectForLine(items, index),
-          clientCodeField: _buildClientCodeFieldForLine(index),
-          quantityField: _buildQuantityFieldForLine(index),
-          unitField: _buildUnitField(),
-          completionDateField: _itemWiseCompletionDate
-              ? _buildCompletionDateFieldForLine(context, index)
-              : null,
-          onDelete: index == 0 ? null : () => _removeLine(index),
-        ),
-      ],
+    return _OrderItemsRow(
+      itemField: _buildItemSelectForLine(items, index),
+      clientCodeField: _buildClientCodeFieldForLine(index),
+      quantityField: _buildQuantityFieldForLine(index),
+      unitField: _buildUnitField(),
+      completionDateField: _itemWiseCompletionDate
+          ? _buildCompletionDateFieldForLine(context, index)
+          : null,
+      variationPathField: _buildVariationPathFieldForLineIfApplicable(
+        items,
+        index,
+      ),
+      onDelete: index == 0 ? null : () => _removeLine(index),
     );
   }
 
   Widget _buildItemSelectForLine(List<ItemDefinition> items, int index) {
     final line = _lines[index];
-    final selectedItem = _selectedItemForLine(items, line.selectedItemId);
     final groupsProvider = context.watch<GroupsProvider>();
     final fieldKey = index == 0
         ? const ValueKey<String>('orders-editor-item-field')
         : ValueKey<String>('orders-editor-item-field-${line.id}');
+    return SearchableSelectField<int>(
+      key: fieldKey,
+      tapTargetKey: fieldKey,
+      value: line.selectedItemId,
+      decoration: _inputDecoration(hintText: 'Select Item'),
+      dialogTitle: 'Item',
+      searchHintText: 'Search item',
+      options: items
+          .map((item) {
+            final primaryGroup =
+                groupsProvider.findById(item.groupId)?.name ??
+                'No primary group';
+            return SearchableSelectOption<int>(
+              value: item.id,
+              label: item.displayName,
+              searchText: '${item.displayName} $primaryGroup',
+            );
+          })
+          .toList(growable: false),
+      onCreateOption: (query) =>
+          _quickCreateItemForLine(context, lineIndex: index, name: query),
+      createOptionLabelBuilder: (query) => 'Create item "$query"',
+      onChanged: (value) {
+        var shouldOpenVariationSelector = false;
+        setState(() {
+          line.selectedItemId = value;
+          final latestItems = context.read<ItemsProvider>().items;
+          final item = _selectedItemForLine(latestItems, value);
+          _syncVariationSelectionForLine(line, item);
+          shouldOpenVariationSelector =
+              item != null && item.topLevelProperties.isNotEmpty;
+        });
+        if (shouldOpenVariationSelector) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) {
+              return;
+            }
+            final latestItems = context.read<ItemsProvider>().items;
+            _openVariationPathSelectorForLine(
+              context,
+              items: latestItems,
+              lineIndex: index,
+            );
+          });
+        }
+      },
+      validator: (value) {
+        if (value == null) {
+          return 'Select an item.';
+        }
+        return null;
+      },
+    );
+  }
+
+  Widget? _buildVariationPathFieldForLineIfApplicable(
+    List<ItemDefinition> items,
+    int index,
+  ) {
+    final line = _lines[index];
+    final selectedItem = _selectedItemForLine(items, line.selectedItemId);
+    if (selectedItem == null) return null;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SearchableSelectField<int>(
-          key: fieldKey,
-          tapTargetKey: fieldKey,
-          value: line.selectedItemId,
-          decoration: _inputDecoration(hintText: 'Select Item'),
-          dialogTitle: 'Item',
-          searchHintText: 'Search item',
-          options: items
-              .map((item) {
-                final primaryGroup =
-                    groupsProvider.findById(item.groupId)?.name ??
-                    'No primary group';
-                return SearchableSelectOption<int>(
-                  value: item.id,
-                  label: '${item.displayName} • $primaryGroup',
-                  searchText: '${item.displayName} $primaryGroup',
-                );
-              })
-              .toList(growable: false),
-          onCreateOption: (query) =>
-              _quickCreateItemForLine(context, lineIndex: index, name: query),
-          createOptionLabelBuilder: (query) => 'Create item "$query"',
-          onChanged: (value) {
-            var shouldOpenVariationSelector = false;
-            setState(() {
-              line.selectedItemId = value;
-              final latestItems = context.read<ItemsProvider>().items;
-              final item = _selectedItemForLine(latestItems, value);
-              _syncVariationSelectionForLine(line, item);
-              shouldOpenVariationSelector =
-                  item != null && item.topLevelProperties.isNotEmpty;
-            });
-            if (shouldOpenVariationSelector) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!mounted) {
-                  return;
-                }
-                final latestItems = context.read<ItemsProvider>().items;
-                _openVariationPathSelectorForLine(
-                  context,
-                  items: latestItems,
-                  lineIndex: index,
-                );
-              });
-            }
-          },
-          validator: (value) {
-            if (value == null) {
-              return 'Select an item.';
-            }
-            return null;
-          },
-        ),
-        const SizedBox(height: 8),
-        if (selectedItem != null) ...[
-          _buildVariationPathFieldForLine(items, index),
-        ],
+        _buildVariationPathFieldForLine(items, index),
         if (line.variationPathError != null) ...[
           const SizedBox(height: 6),
           Text(
@@ -2767,6 +2768,23 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     final selectedPropertyCount = line.selectedVariationValueNodeIds.length;
     final hasSelectedPath = selectedLeaf != null || selectedPropertyCount > 0;
 
+    final fullLabel = hasSelectedPath
+        ? _buildNamingFormatLabel(item, line.selectedVariationValueNodeIds)
+        : 'Select variation path';
+    final compactLabel = hasSelectedPath
+        ? _buildNamingFormatCodeLabel(item, line.selectedVariationValueNodeIds)
+        : fullLabel;
+    final labelStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+      color: hasSelectedPath
+          ? SoftErpTheme.accentDark
+          : SoftErpTheme.textSecondary,
+      fontWeight: FontWeight.w800,
+      decoration: TextDecoration.underline,
+      decorationColor: hasSelectedPath
+          ? SoftErpTheme.accentDark
+          : SoftErpTheme.textSecondary,
+    );
+
     return InkWell(
       key: ValueKey<String>(variationBaseKey),
       borderRadius: BorderRadius.circular(12),
@@ -2798,22 +2816,25 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                hasSelectedPath
-                    ? _buildNamingFormatLabel(item, line.selectedVariationValueNodeIds)
-                    : 'Select variation path',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: hasSelectedPath
-                      ? SoftErpTheme.accentDark
-                      : SoftErpTheme.textSecondary,
-                  fontWeight: FontWeight.w800,
-                  decoration: TextDecoration.underline,
-                  decorationColor: hasSelectedPath
-                      ? SoftErpTheme.accentDark
-                      : SoftErpTheme.textSecondary,
-                ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final displayLabel =
+                      _fitsSingleLine(
+                            fullLabel,
+                            labelStyle,
+                            constraints.maxWidth,
+                            Directionality.of(context),
+                          ) ||
+                          constraints.maxWidth >= 180
+                      ? fullLabel
+                      : compactLabel;
+                  return Text(
+                    displayLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: labelStyle,
+                  );
+                },
               ),
             ),
           ],
@@ -3092,7 +3113,6 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       );
       return;
     }
-
     final orderLines = <CreateOrderInput>[];
     for (var index = 0; index < _lines.length; index++) {
       final line = _lines[index];
@@ -3101,7 +3121,8 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
 
       // BUG-14: Items that have top-level properties but no leaf variants yet
       // have a structurally incomplete variation tree — block ordering them.
-      if (!isDraft && item != null &&
+      if (!isDraft &&
+          item != null &&
           item.topLevelProperties.isNotEmpty &&
           item.leafVariationNodes.isEmpty) {
         setState(() {
@@ -3120,13 +3141,17 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
 
       // BUG-02: Drafts skip variation path completeness check — they're allowed
       // to be saved in an incomplete state.
-      final requiresVariation = item?.topLevelProperties.isNotEmpty == true &&
+      final requiresVariation =
+          item?.topLevelProperties.isNotEmpty == true &&
           item?.leafVariationNodes.isNotEmpty == true;
       final isPathComplete = item == null
           ? false
           : (isDraft ||
-              !requiresVariation ||
-              _isVariationPathComplete(item, line.selectedVariationValueNodeIds));
+                !requiresVariation ||
+                _isVariationPathComplete(
+                  item,
+                  line.selectedVariationValueNodeIds,
+                ));
       if (item == null || !isPathComplete) {
         setState(() {
           line.variationPathError = item == null
@@ -3144,7 +3169,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
         );
         return;
       }
-      
+
       final lineClientCode = line.clientCodeController.text.trim();
 
       orderLines.add(
@@ -3187,27 +3212,31 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       return;
     }
 
-    final orderLinesWithDocuments = orderLines.asMap().entries.map((entry) {
-      final isHeader = entry.key == 0;
-      final input = entry.value;
-      return CreateOrderInput(
-        orderNo: input.orderNo,
-        clientId: input.clientId,
-        clientName: input.clientName,
-        poNumber: input.poNumber,
-        clientCode: input.clientCode,
-        itemId: input.itemId,
-        itemName: input.itemName,
-        variationLeafNodeId: input.variationLeafNodeId,
-        variationPathLabel: input.variationPathLabel,
-        variationPathNodeIds: input.variationPathNodeIds,
-        quantity: input.quantity,
-        status: input.status,
-        startDate: input.startDate,
-        endDate: input.endDate,
-        poDocumentIds: isHeader ? poDocumentIds : const <int>[],
-      );
-    }).toList(growable: false);
+    final orderLinesWithDocuments = orderLines
+        .asMap()
+        .entries
+        .map((entry) {
+          final isHeader = entry.key == 0;
+          final input = entry.value;
+          return CreateOrderInput(
+            orderNo: input.orderNo,
+            clientId: input.clientId,
+            clientName: input.clientName,
+            poNumber: input.poNumber,
+            clientCode: input.clientCode,
+            itemId: input.itemId,
+            itemName: input.itemName,
+            variationLeafNodeId: input.variationLeafNodeId,
+            variationPathLabel: input.variationPathLabel,
+            variationPathNodeIds: input.variationPathNodeIds,
+            quantity: input.quantity,
+            status: input.status,
+            startDate: input.startDate,
+            endDate: input.endDate,
+            poDocumentIds: isHeader ? poDocumentIds : const <int>[],
+          );
+        })
+        .toList(growable: false);
 
     OrderEntry? result;
     for (final input in orderLinesWithDocuments) {
@@ -3439,10 +3468,9 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     // Auto-resolve: use the single leaf if there's only one
     final resolvedLeaf =
         leaf ?? _selectedLeafForLine(item, _defaultLeafIdForItem(item));
-    final nextValueNodeIds =
-        resolvedLeaf == null
-            ? const <int>[]
-            : _valueNodeIdsForLeaf(item, resolvedLeaf);
+    final nextValueNodeIds = resolvedLeaf == null
+        ? const <int>[]
+        : _valueNodeIdsForLeaf(item, resolvedLeaf);
     final nextLeaf = _selectedTerminalLeafForValues(item, nextValueNodeIds);
 
     line.selectedRootPropertyId = null;
@@ -3485,10 +3513,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     return terminalValues.isEmpty ? null : terminalValues.first;
   }
 
-  bool _isVariationPathComplete(
-    ItemDefinition item,
-    List<int> valueNodeIds,
-  ) {
+  bool _isVariationPathComplete(ItemDefinition item, List<int> valueNodeIds) {
     if (item.topLevelProperties.isEmpty) {
       return true;
     }
@@ -3609,7 +3634,9 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
   /// Builds a display label using the item's naming format order.
   /// Format tokens: 'name' = item base name, 'prop_N' = Nth top-level property's selected value.
   String _buildNamingFormatLabel(ItemDefinition item, List<int> valueNodeIds) {
-    final itemName = item.displayName.trim().isEmpty ? item.name : item.displayName;
+    final itemName = item.displayName.trim().isEmpty
+        ? item.name
+        : item.displayName;
     if (valueNodeIds.isEmpty) {
       return itemName;
     }
@@ -3667,6 +3694,106 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     return parts.join(' ');
   }
 
+  String _buildNamingFormatCodeLabel(
+    ItemDefinition item,
+    List<int> valueNodeIds,
+  ) {
+    final itemName = item.displayName.trim().isEmpty
+        ? item.name
+        : item.displayName;
+    if (valueNodeIds.isEmpty) {
+      return itemName;
+    }
+
+    final selectedValueIds = valueNodeIds.toSet();
+    final propIdToValueCode = <int, String>{};
+    for (final root in item.topLevelProperties) {
+      ItemVariationNodeDefinition currentProperty = root;
+      while (true) {
+        final selectedValue = currentProperty.activeChildren
+            .where((node) => node.kind == ItemVariationNodeKind.value)
+            .where((node) => selectedValueIds.contains(node.id))
+            .firstOrNull;
+        if (selectedValue == null) {
+          break;
+        }
+        propIdToValueCode[currentProperty.id] = _nodeCodeOrGenerated(
+          selectedValue,
+        );
+        final nextProp = selectedValue.activeChildren
+            .where((node) => node.kind == ItemVariationNodeKind.property)
+            .firstOrNull;
+        if (nextProp == null) {
+          break;
+        }
+        currentProperty = nextProp;
+      }
+    }
+
+    final topProps = item.topLevelProperties;
+    final parts = <String>[];
+    if (item.namingFormat.isNotEmpty) {
+      for (final token in item.namingFormat) {
+        if (token == 'name') {
+          parts.add(itemName);
+        } else if (token.startsWith('prop_')) {
+          final index = int.tryParse(token.substring(5));
+          if (index != null && index >= 0 && index < topProps.length) {
+            final value = propIdToValueCode[topProps[index].id];
+            if (value != null && value.isNotEmpty) {
+              parts.add(value);
+            }
+          }
+        }
+      }
+    }
+    if (parts.isEmpty) {
+      parts.add(itemName);
+      parts.addAll(propIdToValueCode.values.where((value) => value.isNotEmpty));
+    }
+    return parts.join(' ');
+  }
+
+  bool _fitsSingleLine(
+    String text,
+    TextStyle? style,
+    double maxWidth,
+    TextDirection direction,
+  ) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      maxLines: 1,
+      textDirection: direction,
+    )..layout(maxWidth: maxWidth);
+    return !painter.didExceedMaxLines && painter.width <= maxWidth;
+  }
+
+  String _nodeCodeOrGenerated(ItemVariationNodeDefinition node) {
+    final code = node.code.trim();
+    if (code.isNotEmpty) {
+      return code;
+    }
+    final source = node.name.trim().isEmpty ? node.displayName : node.name;
+    return _generatedCodeForText(source);
+  }
+
+  String _generatedCodeForText(String value) {
+    final words = RegExp(
+      r'[A-Za-z0-9]+',
+    ).allMatches(value).map((match) => match.group(0)!).toList();
+    if (words.isEmpty) {
+      return value.trim();
+    }
+    if (words.length == 1) {
+      final word = words.single.toUpperCase();
+      return word.length <= 4 ? word : word.substring(0, 4);
+    }
+    return words
+        .map((word) => RegExp(r'^\d+$').hasMatch(word) ? word : word[0])
+        .join()
+        .toUpperCase();
+  }
+
   List<ItemVariationNodeDefinition> _pathNodesForLeaf(
     ItemDefinition item,
     ItemVariationNodeDefinition leaf,
@@ -3693,10 +3820,6 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       visit(root, const []);
     }
     return path;
-  }
-
-  String _resolveClientCode(ClientDefinition? client) {
-    return client?.alias.trim() ?? '';
   }
 
   InputDecoration _inputDecoration({
@@ -5094,8 +5217,6 @@ class _PendingPoDocument {
   String get sha256 => cachedFile.sha256;
 }
 
-
-
 class _CompletionDateResolution {
   const _CompletionDateResolution({
     this.date,
@@ -5685,6 +5806,7 @@ class _OrderItemsRow extends StatelessWidget {
     required this.quantityField,
     required this.unitField,
     this.completionDateField,
+    this.variationPathField,
     this.onDelete,
   });
 
@@ -5693,6 +5815,7 @@ class _OrderItemsRow extends StatelessWidget {
   final Widget quantityField;
   final Widget unitField;
   final Widget? completionDateField;
+  final Widget? variationPathField;
   final VoidCallback? onDelete;
 
   @override
@@ -5704,35 +5827,54 @@ class _OrderItemsRow extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFFF0EEF8)),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(flex: 28, child: itemField),
-          const SizedBox(width: _OrderItemsHeader._columnGap),
-          Expanded(flex: 18, child: clientCodeField),
-          const SizedBox(width: _OrderItemsHeader._columnGap),
-          Expanded(flex: 12, child: quantityField),
-          const SizedBox(width: _OrderItemsHeader._columnGap),
-          Expanded(flex: 18, child: unitField),
-          if (completionDateField != null) ...[
-            const SizedBox(width: _OrderItemsHeader._columnGap),
-            Expanded(flex: 24, child: completionDateField!),
-          ],
-          const SizedBox(width: 12),
-          SizedBox(
-            width: 36,
-            height: 52,
-            child: IconButton(
-              tooltip: 'Remove item',
-              padding: EdgeInsets.zero,
-              onPressed: onDelete,
-              icon: const Icon(
-                Icons.delete_outline_rounded,
-                size: 18,
-                color: Color(0xFFEF4444),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(flex: 28, child: itemField),
+              const SizedBox(width: _OrderItemsHeader._columnGap),
+              Expanded(flex: 18, child: clientCodeField),
+              const SizedBox(width: _OrderItemsHeader._columnGap),
+              Expanded(flex: 12, child: quantityField),
+              const SizedBox(width: _OrderItemsHeader._columnGap),
+              Expanded(flex: 18, child: unitField),
+              if (completionDateField != null) ...[
+                const SizedBox(width: _OrderItemsHeader._columnGap),
+                Expanded(flex: 24, child: completionDateField!),
+              ],
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 36,
+                height: 52,
+                child: IconButton(
+                  tooltip: 'Remove item',
+                  padding: EdgeInsets.zero,
+                  onPressed: onDelete,
+                  icon: const Icon(
+                    Icons.delete_outline_rounded,
+                    size: 18,
+                    color: Color(0xFFEF4444),
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
+          if (variationPathField != null) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  flex: completionDateField == null ? 100 : 76,
+                  child: variationPathField!,
+                ),
+                if (completionDateField != null) const Spacer(flex: 24),
+
+                const SizedBox(width: 48),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -6083,10 +6225,10 @@ int _statusPriorityWeight(OrderStatus status) {
   // above unstarted/draft orders. Give them the same weight as inProgress.
   return switch (status) {
     OrderStatus.inProgress => 3,
-    OrderStatus.delayed    => 3,
+    OrderStatus.delayed => 3,
     OrderStatus.notStarted => 2,
-    OrderStatus.draft      => 2,
-    OrderStatus.completed  => 0,
+    OrderStatus.draft => 2,
+    OrderStatus.completed => 0,
   };
 }
 

@@ -1723,12 +1723,11 @@ class FakeItemRepository extends ItemRepository {
     final duplicate = _items.any(
       (item) =>
           item.groupId == input.groupId &&
-          item.quantity == input.quantity &&
           item.name.trim().toLowerCase() == input.name.trim().toLowerCase(),
     );
     if (duplicate) {
       throw Exception(
-        'An item with the same name and quantity already exists in this group.',
+        'An item with the same name already exists in this group.',
       );
     }
     _validateTree(input.variationTree, ItemVariationNodeKind.property);
@@ -2620,7 +2619,7 @@ void main() {
     },
   );
 
-  testWidgets('orders flow auto-fills client code from client master', (
+  testWidgets('orders keep client code as a manual item text field', (
     tester,
   ) async {
     await pumpApp(tester, viewSize: const Size(1440, 900));
@@ -2645,9 +2644,14 @@ void main() {
     await tester.tap(find.text('Acme Packaging Pvt. Ltd. / Acme').last);
     await tester.pumpAndSettle();
 
-    expect(
-      find.text('Selected client has no client code in master.'),
-      findsNothing,
+    final clientCodeField = tester.widget<TextFormField>(
+      find.byKey(const ValueKey<String>('orders-editor-client-code-field')),
+    );
+    expect(clientCodeField.controller?.text, isEmpty);
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('orders-editor-client-code-field')),
+      'Customer Patti Name',
     );
 
     await tester.enterText(
@@ -2688,10 +2692,8 @@ void main() {
       find.byKey(const ValueKey<String>('orders-editor-variation-path-field')),
       findsOneWidget,
     );
-    expect(
-      find.textContaining('Action Dolly Plating: Without Plating'),
-      findsWidgets,
-    );
+    expect(find.textContaining('Without Plating'), findsWidgets);
+    expect(find.textContaining('Action Dolly Plating:'), findsNothing);
   });
 
   testWidgets('orders hide variation path until a variant item is selected', (
@@ -2904,10 +2906,8 @@ void main() {
       currentValue: 'Without Plating',
       newValue: 'With Plating',
     );
-    expect(
-      find.textContaining('Action Dolly Plating: With Plating'),
-      findsWidgets,
-    );
+    expect(find.textContaining('With Plating'), findsWidgets);
+    expect(find.textContaining('Action Dolly Plating:'), findsNothing);
   });
 
   testWidgets('orders search filters through the shared shell strip', (
@@ -3283,7 +3283,7 @@ void main() {
     expect(find.text('Draft'), findsWidgets);
   });
 
-  testWidgets('orders block creation when selected client has no code', (
+  testWidgets('orders allow creation when client master has no alias', (
     tester,
   ) async {
     final clientRepository = FakeClientRepository(
@@ -3334,9 +3334,10 @@ void main() {
 
     expect(
       find.text('Selected client has no client code in master.'),
-      findsOneWidget,
+      findsNothing,
     );
-    expect(find.text('No orders found'), findsOneWidget);
+    expect(find.text('ORD-003'), findsOneWidget);
+    expect(find.text('No Code Client'), findsOneWidget);
   });
 
   testWidgets(
@@ -3583,10 +3584,6 @@ void main() {
       find.widgetWithText(TextFormField, 'Alias'),
       'Travel Bottle',
     );
-    await tester.enterText(
-      find.widgetWithText(TextFormField, 'Quantity'),
-      '200',
-    );
 
     await tester.tap(find.byKey(const ValueKey<String>('items-group-field')));
     await tester.pumpAndSettle();
@@ -3633,12 +3630,12 @@ void main() {
     await tester.tap(find.widgetWithText(ElevatedButton, 'Create Item'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Bottle / Travel Bottle - 200'), findsWidgets);
+    expect(find.text('Bottle / Travel Bottle'), findsWidgets);
     final items = await itemRepository.getItems();
     final created = items
-        .where((item) => item.name == 'Bottle' && item.quantity == 200)
+        .where((item) => item.name == 'Bottle' && item.quantity == 1)
         .single;
-    expect(created.displayName, 'Bottle / Travel Bottle - 200');
+    expect(created.displayName, 'Bottle / Travel Bottle');
     expect(created.topLevelProperties.single.name, 'Color');
     expect(created.leafVariationNodes.single.displayName, 'Black Glossy');
   });
@@ -3654,10 +3651,6 @@ void main() {
     await tester.enterText(
       find.widgetWithText(TextFormField, 'Name'),
       'Test Item',
-    );
-    await tester.enterText(
-      find.widgetWithText(TextFormField, 'Quantity'),
-      '100',
     );
 
     await tester.tap(find.byKey(const ValueKey<String>('items-group-field')));

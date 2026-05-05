@@ -8,7 +8,7 @@ enum ItemStatusFilter { active, archived, all }
 
 enum ItemDuplicateWarning {
   none,
-  sameGroupAndQuantity,
+  sameGroup,
   emptyNodeName,
   invalidTreeStructure,
   duplicateSiblingName,
@@ -86,7 +86,6 @@ class ItemsProvider extends ChangeNotifier {
           return _normalize(item.name).contains(query) ||
               _normalize(item.alias).contains(query) ||
               _normalize(item.displayName).contains(query) ||
-              item.quantity.toString().contains(query) ||
               _normalize(treeText).contains(query);
         })
         .toList(growable: false);
@@ -121,7 +120,9 @@ class ItemsProvider extends ChangeNotifier {
         if (nameCompare != 0) {
           return nameCompare;
         }
-        return a.quantity.compareTo(b.quantity);
+        return a.displayName.toLowerCase().compareTo(
+          b.displayName.toLowerCase(),
+        );
       });
       _items = items;
     } catch (error) {
@@ -144,24 +145,21 @@ class ItemsProvider extends ChangeNotifier {
 
   ItemDuplicateCheck checkDuplicate({
     required String name,
-    required double? quantity,
     required int? groupId,
     required List<ItemVariationNodeInput> variationTree,
     int? excludeId,
   }) {
     final normalizedName = _normalize(name);
     if (groupId != null &&
-        quantity != null &&
         _items.any(
           (item) =>
               item.id != excludeId &&
               item.groupId == groupId &&
-              item.quantity == quantity &&
               _normalize(item.name) == normalizedName,
         )) {
       return const ItemDuplicateCheck(
         blockingDuplicate: true,
-        warning: ItemDuplicateWarning.sameGroupAndQuantity,
+        warning: ItemDuplicateWarning.sameGroup,
       );
     }
 
@@ -541,14 +539,16 @@ class ItemsProvider extends ChangeNotifier {
     for (final node in nodes) {
       if (node.kind == ItemVariationNodeKind.property) {
         // Clone this property node and recurse into its children (which are values)
-        result.add(ItemVariationNodeInput(
-          kind: node.kind,
-          name: node.name,
-          children: _cloneBranchForQuickCreate(
-            node.children,
-            valuePath: valuePath,
+        result.add(
+          ItemVariationNodeInput(
+            kind: node.kind,
+            name: node.name,
+            children: _cloneBranchForQuickCreate(
+              node.children,
+              valuePath: valuePath,
+            ),
           ),
-        ));
+        );
       } else if (node.kind == ItemVariationNodeKind.value) {
         // Don't clone value nodes themselves, but recurse into their children
         // to find sub-properties that should be inherited.

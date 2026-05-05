@@ -41,8 +41,6 @@ import '../providers/inventory_provider.dart';
 
 enum _InventoryViewMode { groups, items }
 
-
-
 enum _InventoryListingMode { all, recentFirst }
 
 enum _InventorySortColumn { name, id, stock, activity, createdBy, status }
@@ -699,8 +697,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
     return scoped;
   }
 
-
-
   List<_InventoryRowEntry> _buildRows(
     List<MaterialRecord> scopedRecords, {
     required Map<int, String> groupNameById,
@@ -710,12 +706,16 @@ class _InventoryScreenState extends State<InventoryScreen> {
     required String searchQuery,
   }) {
     if (_viewMode == _InventoryViewMode.items) {
-      return scopedRecords
+      final coveredItemIds = <int>{};
+      final rows = scopedRecords
           .where((record) => record.linkedItemId != null)
           .map((record) {
             final linkedItem = record.linkedItemId == null
                 ? null
                 : itemById[record.linkedItemId];
+            if (linkedItem != null) {
+              coveredItemIds.add(linkedItem.id);
+            }
             final linkedGroupName = linkedItem == null
                 ? null
                 : groupNameById[linkedItem.groupId];
@@ -726,12 +726,41 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   : linkedItem.displayName.trim().isEmpty
                   ? linkedItem.name
                   : linkedItem.displayName,
-              displayId: record.linkedItemId?.toString() ?? record.barcode,
+              displayId: record.barcode,
               displayMetadata: _itemMetadataText(record, linkedGroupName),
             );
           })
-          .toList(growable: false)
-        ..sort(_compareRowEntries);
+          .toList(growable: true);
+
+      if (_kindFilter == null || _kindFilter == 'child') {
+        final normalizedQuery = _normalize(searchQuery);
+        for (final item in itemById.values.where((item) => !item.isArchived)) {
+          if (coveredItemIds.contains(item.id)) {
+            continue;
+          }
+          final itemLabel = item.displayName.trim().isEmpty
+              ? item.name
+              : item.displayName;
+          final groupName = groupNameById[item.groupId] ?? '';
+          if (normalizedQuery.isNotEmpty &&
+              !_normalize(itemLabel).contains(normalizedQuery) &&
+              !_normalize(item.name).contains(normalizedQuery) &&
+              !_normalize(groupName).contains(normalizedQuery)) {
+            continue;
+          }
+          final masterRecord = _masterItemRecord(item);
+          rows.add(
+            _InventoryRowEntry(
+              record: masterRecord,
+              displayName: itemLabel,
+              displayId: masterRecord.barcode,
+              displayMetadata: _itemMetadataText(masterRecord, groupName),
+            ),
+          );
+        }
+      }
+
+      return rows..sort(_compareRowEntries);
     }
 
     final itemRecordsByGroupId = <int, List<MaterialRecord>>{};
@@ -790,7 +819,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
         if (!groupRecordsByGroupId.containsKey(item.groupId)) {
           continue;
         }
-        final itemLabel = item.displayName.trim().isEmpty ? item.name : item.displayName;
+        final itemLabel = item.displayName.trim().isEmpty
+            ? item.name
+            : item.displayName;
         final groupName = groupNameById[item.groupId] ?? '';
         if (normalizedQuery.isNotEmpty &&
             !_normalize(itemLabel).contains(normalizedQuery) &&
@@ -869,9 +900,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
       for (final childGroupId in childGroupIds) {
         appendGroupRows(childGroupId, depth + 1, rows);
       }
-      if (_viewMode == _InventoryViewMode.groups) {
-        return;
-      }
+      // Render child items in groups mode too (including master-only items)
       childRecords.sort(
         (a, b) => _compareRowLike(
           aRecord: a,
@@ -1027,7 +1056,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   MaterialRecord _masterItemRecord(ItemDefinition item) {
     return MaterialRecord(
       id: null,
-      barcode: 'ITEM-MASTER-${item.id}',
+      barcode: _masterItemInventoryBarcode(item.id),
       name: item.displayName.trim().isEmpty ? item.name : item.displayName,
       type: 'Item',
       grade: '',
@@ -1044,6 +1073,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
     );
+  }
+
+  String _masterItemInventoryBarcode(int itemId) {
+    return 'ITEM-MASTER-$itemId';
   }
 
   String _groupMetadataText(
@@ -1065,6 +1098,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   String _itemMetadataText(MaterialRecord record, String? linkedGroupName) {
     final parts = <String>[
+      'Barcode ${record.barcode}',
       if (linkedGroupName != null && linkedGroupName.trim().isNotEmpty)
         linkedGroupName.trim(),
       if (record.supplier.trim().isNotEmpty) record.supplier.trim(),
@@ -3048,7 +3082,6 @@ class _InventoryBulkActionButton extends StatelessWidget {
   }
 }
 
-
 class _InventoryTable extends StatefulWidget {
   const _InventoryTable({
     required this.rows,
@@ -3327,7 +3360,7 @@ class _InventoryTableHeader extends StatelessWidget {
           ),
           if (viewMode != _InventoryViewMode.groups)
             _HeaderCell(
-              'Item ID',
+              'Barcode',
               width: metrics.barcodeWidth,
               metrics: metrics,
               onSortRequested: onSortRequested,
@@ -4088,6 +4121,7 @@ class _InventoryDetailSheet extends StatelessWidget {
         : linkedItem.displayName;
     final title = linkedItemTitle ?? linkedGroup?.name ?? record.name;
     final cachedDetail = inventory.detailFor(record.barcode);
+    final canLoadControlTower = record.id != null;
 
     return Material(
       color: Colors.white,
@@ -4120,7 +4154,7 @@ class _InventoryDetailSheet extends StatelessWidget {
           ),
           Expanded(
             child: FutureBuilder<MaterialControlTowerDetail?>(
-              future: cachedDetail != null
+              future: !canLoadControlTower || cachedDetail != null
                   ? null
                   : context
                         .read<InventoryProvider>()
@@ -4155,6 +4189,16 @@ class _InventoryDetailSheet extends StatelessWidget {
                         AppInfoRow(
                           label: 'Inherited item',
                           value: linkedItem.displayName,
+                        ),
+                      if (linkedItem != null)
+                        AppInfoRow(
+                          label: 'Naming format',
+                          child: _ItemNamingFormatChips(item: linkedItem),
+                        ),
+                      if (linkedItem != null)
+                        AppInfoRow(
+                          label: 'Generated codes',
+                          child: _ItemGeneratedCodePreview(item: linkedItem),
                         ),
                       AppInfoRow(
                         label: 'Material class',
@@ -4382,6 +4426,198 @@ class _InventoryDetailSheet extends StatelessWidget {
     }
     return value.toStringAsFixed(2);
   }
+}
+
+class _ItemNamingFormatChips extends StatelessWidget {
+  const _ItemNamingFormatChips({required this.item});
+
+  final ItemDefinition item;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = _resolvedItemNamingTokens(item);
+    if (tokens.isEmpty) {
+      return const Text(
+        'No naming format configured.',
+        style: TextStyle(
+          color: Color(0xFF717B8C),
+          fontSize: 12,
+          fontWeight: FontWeight.w400,
+        ),
+      );
+    }
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: tokens
+          .map((token) => _Badge(label: _itemNamingTokenLabel(item, token)))
+          .toList(growable: false),
+    );
+  }
+}
+
+class _ItemGeneratedCodePreview extends StatelessWidget {
+  const _ItemGeneratedCodePreview({required this.item});
+
+  final ItemDefinition item;
+
+  @override
+  Widget build(BuildContext context) {
+    final leaves = item.leafVariationNodes;
+    final codes = leaves.isEmpty
+        ? <String>[_generatedCodeForText(_itemTitle(item))]
+        : leaves
+              .take(6)
+              .map((leaf) => _generatedItemVariationCode(item, leaf))
+              .where((code) => code.trim().isNotEmpty)
+              .toList(growable: false);
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final code in codes) _Badge(label: code),
+        if (leaves.length > codes.length)
+          _Badge(label: '+${leaves.length - codes.length} more'),
+      ],
+    );
+  }
+}
+
+List<String> _resolvedItemNamingTokens(ItemDefinition item) {
+  final available = <String>['name'];
+  for (var index = 0; index < item.topLevelProperties.length; index++) {
+    available.add('prop_$index');
+  }
+  final tokens = item.namingFormat
+      .where((token) => available.contains(token))
+      .toList(growable: true);
+  for (final token in available) {
+    if (!tokens.contains(token)) {
+      tokens.add(token);
+    }
+  }
+  return tokens;
+}
+
+String _itemNamingTokenLabel(ItemDefinition item, String token) {
+  if (token == 'name') {
+    return 'Item Name';
+  }
+  if (token.startsWith('prop_')) {
+    final index = int.tryParse(token.substring(5));
+    if (index != null && index >= 0 && index < item.topLevelProperties.length) {
+      final name = item.topLevelProperties[index].name.trim();
+      return name.isEmpty ? 'Unnamed Property' : name;
+    }
+  }
+  return token;
+}
+
+String _generatedItemVariationCode(
+  ItemDefinition item,
+  ItemVariationNodeDefinition leaf,
+) {
+  final selectedByTopPropertyId = <int, String>{};
+  ItemVariationNodeDefinition? current = leaf;
+  while (current != null) {
+    final parent = _findVariationNodeById(
+      item.variationTree,
+      current.parentNodeId,
+    );
+    if (parent != null && parent.kind == ItemVariationNodeKind.property) {
+      final topProperty = _topPropertyForNode(item, parent);
+      if (topProperty != null) {
+        selectedByTopPropertyId[topProperty.id] = _nodeCodeOrGenerated(current);
+      }
+    }
+    current = parent;
+  }
+
+  final parts = <String>[];
+  for (final token in _resolvedItemNamingTokens(item)) {
+    if (token == 'name') {
+      parts.add(_generatedCodeForText(_itemTitle(item)));
+    } else if (token.startsWith('prop_')) {
+      final index = int.tryParse(token.substring(5));
+      if (index != null &&
+          index >= 0 &&
+          index < item.topLevelProperties.length) {
+        final value =
+            selectedByTopPropertyId[item.topLevelProperties[index].id];
+        if (value != null && value.isNotEmpty) {
+          parts.add(value);
+        }
+      }
+    }
+  }
+  return parts.join(' ');
+}
+
+ItemVariationNodeDefinition? _topPropertyForNode(
+  ItemDefinition item,
+  ItemVariationNodeDefinition node,
+) {
+  var current = node;
+  while (current.parentNodeId != null) {
+    final parent = _findVariationNodeById(
+      item.variationTree,
+      current.parentNodeId,
+    );
+    if (parent == null) {
+      break;
+    }
+    current = parent;
+  }
+  return current.kind == ItemVariationNodeKind.property ? current : null;
+}
+
+ItemVariationNodeDefinition? _findVariationNodeById(
+  List<ItemVariationNodeDefinition> nodes,
+  int? id,
+) {
+  if (id == null) {
+    return null;
+  }
+  for (final node in nodes) {
+    if (node.id == id) {
+      return node;
+    }
+    final childMatch = _findVariationNodeById(node.children, id);
+    if (childMatch != null) {
+      return childMatch;
+    }
+  }
+  return null;
+}
+
+String _itemTitle(ItemDefinition item) {
+  return item.displayName.trim().isEmpty ? item.name : item.displayName;
+}
+
+String _nodeCodeOrGenerated(ItemVariationNodeDefinition node) {
+  final code = node.code.trim();
+  if (code.isNotEmpty) {
+    return code;
+  }
+  final source = node.name.trim().isEmpty ? node.displayName : node.name;
+  return _generatedCodeForText(source);
+}
+
+String _generatedCodeForText(String value) {
+  final words = RegExp(
+    r'[A-Za-z0-9]+',
+  ).allMatches(value).map((match) => match.group(0)!).toList();
+  if (words.isEmpty) {
+    return value.trim();
+  }
+  if (words.length == 1) {
+    final word = words.single.toUpperCase();
+    return word.length <= 4 ? word : word.substring(0, 4);
+  }
+  return words
+      .map((word) => RegExp(r'^\d+$').hasMatch(word) ? word : word[0])
+      .join()
+      .toUpperCase();
 }
 
 class _StockPositionList extends StatelessWidget {
@@ -4771,8 +5007,6 @@ Color _alertText(InventoryAlertSeverity severity) {
       return const Color(0xFFB42318);
   }
 }
-
-
 
 class _InventoryRowEntry {
   const _InventoryRowEntry({
@@ -5965,54 +6199,65 @@ class _LinkItemSheet extends StatelessWidget {
                       ? const Icon(Icons.check_circle, color: Color(0xFF6049E3))
                       : null,
                   onTap: () async {
-
                     final requiresVariation =
                         item.topLevelProperties.isNotEmpty &&
                         item.leafVariationNodes.isNotEmpty;
 
                     if (requiresVariation) {
-                      final result = await showDialog<VariationPathSelectionResult>(
-                        context: context,
-                        builder: (dialogContext) => Dialog(
-                          insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 680, maxHeight: 760),
-                            child: VariationPathSelectorDialog(
-                              item: item,
-                              initialRootPropertyId: null,
-                              initialValueNodeIds: const [],
-                              onCreateValue: ({
-                                required item,
-                                required propertyNodeId,
-                                required propertyLabel,
-                                required valueName,
-                              }) async {
-                                final itemsProvider = context.read<ItemsProvider>();
-                                final result = await itemsProvider.appendVariationValue(
-                                  itemId: item.id,
-                                  propertyNodeId: propertyNodeId,
-                                  valueName: valueName,
-                                );
-                                if (!context.mounted) return null;
-                                if (result == null) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        itemsProvider.errorMessage ?? 'Unable to create variation.',
-                                      ),
-                                    ),
-                                  );
-                                }
-                                return result;
-                              },
+                      final result =
+                          await showDialog<VariationPathSelectionResult>(
+                            context: context,
+                            builder: (dialogContext) => Dialog(
+                              insetPadding: const EdgeInsets.symmetric(
+                                horizontal: 28,
+                                vertical: 36,
+                              ),
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 680,
+                                  maxHeight: 760,
+                                ),
+                                child: VariationPathSelectorDialog(
+                                  item: item,
+                                  initialRootPropertyId: null,
+                                  initialValueNodeIds: const [],
+                                  onCreateValue:
+                                      ({
+                                        required item,
+                                        required propertyNodeId,
+                                        required propertyLabel,
+                                        required valueName,
+                                      }) async {
+                                        final itemsProvider = context
+                                            .read<ItemsProvider>();
+                                        final result = await itemsProvider
+                                            .appendVariationValue(
+                                              itemId: item.id,
+                                              propertyNodeId: propertyNodeId,
+                                              valueName: valueName,
+                                            );
+                                        if (!context.mounted) return null;
+                                        if (result == null) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                itemsProvider.errorMessage ??
+                                                    'Unable to create variation.',
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                        return result;
+                                      },
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                      );
+                          );
                       if (result == null || result.leaf == null) {
                         return; // User cancelled or selected an incomplete path
                       }
-
                     }
 
                     if (!context.mounted) return;
