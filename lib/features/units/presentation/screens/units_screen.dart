@@ -286,6 +286,9 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
   String? _localError;
   int? _selectedExistingFamilyUnitId;
   late _UnitGroupingMode _groupingMode;
+  bool _isBaseUnit = true;
+  late final TextEditingController _baseUnitNameController;
+  late final TextEditingController _baseUnitSymbolController;
 
   bool get _isDetailsLocked => widget.unit?.isUsed ?? false;
   @override
@@ -303,10 +306,14 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
       text: widget.unit?.conversionFactor.toString() ?? '1',
     );
     _selectedExistingFamilyUnitId = widget.initialConversionBaseUnitId;
+    _baseUnitNameController = TextEditingController();
+    _baseUnitSymbolController = TextEditingController();
     _nameController.addListener(_handleChange);
     _symbolController.addListener(_handleChange);
     _groupController.addListener(_handleChange);
     _conversionController.addListener(_handleChange);
+    _baseUnitNameController.addListener(_handleChange);
+    _baseUnitSymbolController.addListener(_handleChange);
     _groupingMode = _initialGroupingMode();
   }
 
@@ -338,11 +345,15 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
     _symbolController.removeListener(_handleChange);
     _groupController.removeListener(_handleChange);
     _conversionController.removeListener(_handleChange);
+    _baseUnitNameController.removeListener(_handleChange);
+    _baseUnitSymbolController.removeListener(_handleChange);
     _nameController.dispose();
     _symbolController.dispose();
     _notesController.dispose();
     _groupController.dispose();
     _conversionController.dispose();
+    _baseUnitNameController.dispose();
+    _baseUnitSymbolController.dispose();
     super.dispose();
   }
 
@@ -367,7 +378,8 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
             ).toLowerCase().compareTo(_existingFamilyLabel(b).toLowerCase()),
           );
     final requiresConversion =
-        _groupingMode == _UnitGroupingMode.existingFamily && baseUnit != null;
+        (_groupingMode == _UnitGroupingMode.existingFamily && baseUnit != null) ||
+        (_groupingMode == _UnitGroupingMode.newFamily && !_isBaseUnit);
     final title = widget.unit == null
         ? 'Create Unit'
         : _isDetailsLocked
@@ -595,17 +607,79 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                             if (_groupingMode !=
                                 _UnitGroupingMode.individual) ...[
                               const SizedBox(height: 16),
+                              if (_groupingMode == _UnitGroupingMode.newFamily) ...[
+                                Row(
+                                  children: [
+                                    Switch(
+                                      value: _isBaseUnit,
+                                      onChanged: (val) {
+                                        setState(() {
+                                          _isBaseUnit = val;
+                                          if (val) {
+                                            _conversionController.text = '1';
+                                          }
+                                        });
+                                      },
+                                      activeColor: const Color(0xFF6C63FF),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'This unit is the base reference point',
+                                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                          color: const Color(0xFF1E293B),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (!_isBaseUnit) ...[
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'Define the base unit for this family:',
+                                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                      color: const Color(0xFF64748B),
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        flex: 2,
+                                        child: _UnitTextField(
+                                          controller: _baseUnitNameController,
+                                          label: 'Base name (e.g. gram)',
+                                          helper: '',
+                                          readOnly: false,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: _UnitTextField(
+                                          controller: _baseUnitSymbolController,
+                                          label: 'Symbol (e.g. g)',
+                                          helper: '',
+                                          readOnly: false,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                                const SizedBox(height: 16),
+                              ],
                               _ConversionField(
                                 controller: _conversionController,
                                 readOnly: !requiresConversion,
-                                helper: baseUnit == null
+                                helper: (_groupingMode == _UnitGroupingMode.newFamily && _isBaseUnit)
                                     ? 'This unit becomes the base unit for the new family. Conversion stays 1.'
-                                    : '1 ${_symbolController.text.trim().isEmpty ? 'unit' : _symbolController.text.trim()} = this many ${baseUnit.symbol}.',
+                                    : '1 ${_symbolController.text.trim().isEmpty ? 'unit' : _symbolController.text.trim()} = this many ${_groupingMode == _UnitGroupingMode.newFamily ? (_baseUnitSymbolController.text.trim().isEmpty ? 'base' : _baseUnitSymbolController.text.trim()) : (baseUnit?.symbol ?? '')}.',
                               ),
                               const SizedBox(height: 10),
                               Text(
                                 _groupingMode == _UnitGroupingMode.newFamily
-                                    ? 'This creates a new unit family with this unit as the reference point.'
+                                    ? (_isBaseUnit ? 'This creates a new unit family with this unit as the reference point.' : 'This will create the base unit first, then this unit as a multiple of it.')
                                     : 'Units in the same family can be used interchangeably anywhere that family is allowed.',
                                 style: Theme.of(context).textTheme.bodySmall
                                     ?.copyWith(
@@ -721,7 +795,28 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
     final baseUnit = _resolvedBaseUnit(provider, groupName);
     final conversionFactor =
         double.tryParse(_conversionController.text.trim()) ?? 0;
-    if (_groupingMode == _UnitGroupingMode.existingFamily &&
+    
+    if (_groupingMode == _UnitGroupingMode.newFamily && !_isBaseUnit) {
+      if (_baseUnitNameController.text.trim().isEmpty || _baseUnitSymbolController.text.trim().isEmpty) {
+        setState(() {
+          _localError = 'Base unit name and symbol are required.';
+        });
+        return;
+      }
+      if (conversionFactor <= 0) {
+        setState(() {
+          _localError = 'Enter a conversion factor greater than 0.';
+        });
+        return;
+      }
+      final dupBase = provider.checkDuplicate(name: _baseUnitNameController.text, symbol: _baseUnitSymbolController.text);
+      if (dupBase.blockingDuplicate) {
+        setState(() {
+          _localError = 'A base unit with the same name and symbol already exists.';
+        });
+        return;
+      }
+    } else if (_groupingMode == _UnitGroupingMode.existingFamily &&
         baseUnit != null &&
         conversionFactor <= 0) {
       setState(() {
@@ -729,6 +824,7 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
       });
       return;
     }
+    
     if (!_isDetailsLocked) {
       final duplicate = provider.checkDuplicate(
         name: _nameController.text,
@@ -747,6 +843,19 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
       _localError = null;
     });
 
+    if (widget.unit == null && _groupingMode == _UnitGroupingMode.newFamily && !_isBaseUnit) {
+      final baseResult = await provider.createUnit(
+        CreateUnitInput(
+          name: _baseUnitNameController.text.trim(),
+          symbol: _baseUnitSymbolController.text.trim(),
+          notes: '',
+          unitGroupName: groupName,
+          conversionFactor: 1,
+        ),
+      );
+      if (baseResult == null) return;
+    }
+
     final result = widget.unit == null
         ? await provider.createUnit(
             CreateUnitInput(
@@ -754,7 +863,7 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
               symbol: _symbolController.text.trim(),
               notes: _notesController.text.trim(),
               unitGroupName: groupName,
-              conversionFactor: baseUnit == null ? 1 : conversionFactor,
+              conversionFactor: (_groupingMode == _UnitGroupingMode.newFamily && _isBaseUnit) ? 1 : conversionFactor,
             ),
           )
         : await provider.updateUnit(

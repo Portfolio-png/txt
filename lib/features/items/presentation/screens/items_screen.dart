@@ -39,9 +39,7 @@ class ItemsScreen extends StatelessWidget {
             label: 'Add Item',
             icon: Icons.add,
             isLoading: items.isSaving,
-            onPressed: groups.activeGroups.isEmpty || units.activeUnits.isEmpty
-                ? null
-                : () => _openItemEditor(context),
+            onPressed: () => _openItemEditor(context),
           ),
           toolbar: const _ItemsToolbar(),
           messages: [
@@ -857,56 +855,83 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                               if (_activeNamingFormat.isEmpty)
                                 const Text('Add properties to configure naming format.')
                               else
-                                ReorderableListView(
-                                  shrinkWrap: true,
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  onReorder: (oldIndex, newIndex) {
-                                    setState(() {
-                                      if (newIndex > oldIndex) {
-                                        newIndex -= 1;
-                                      }
-                                      final format = _activeNamingFormat;
-                                      final item = format.removeAt(oldIndex);
-                                      format.insert(newIndex, item);
-                                      _namingFormat = format;
-                                      // Reset displayNameTouched on ALL leaf
-                                      // value nodes (not just root nodes) so
-                                      // _syncLeafDisplayNames regenerates them.
-                                      void resetLeaves(_NodeDraft node) {
-                                        if (node.isLeafValue) {
-                                          node.displayNameTouched = false;
-                                        }
-                                        for (final child in node.children) {
-                                          resetLeaves(child);
-                                        }
-                                      }
-                                      for (final node in _rootNodes) {
-                                        resetLeaves(node);
-                                      }
-                                      _syncLeafDisplayNames();
-                                    });
-                                  },
-                                  children: [
-                                    for (final token in _activeNamingFormat)
-                                      Container(
-                                        key: ValueKey(token),
-                                        margin: const EdgeInsets.only(bottom: 8),
-                                        decoration: BoxDecoration(
-                                          color: Colors.grey[100],
-                                          borderRadius: BorderRadius.circular(8),
-                                          border: Border.all(color: Colors.grey[300]!),
-                                        ),
-                                        child: ListTile(
-                                          dense: true,
-                                          title: Text(
-                                            _getDisplayNameForToken(token),
-                                            style: const TextStyle(fontWeight: FontWeight.w500),
-                                          ),
-                                          trailing: const Icon(Icons.drag_handle, color: Colors.grey),
-                                        ),
-                                      ),
-                                  ],
-                                ),
+                                  SizedBox(
+                                    height: 42,
+                                    child: ReorderableListView(
+                                      scrollDirection: Axis.horizontal,
+                                      proxyDecorator: (child, index, animation) {
+                                        return Material(
+                                          color: Colors.transparent,
+                                          child: child,
+                                        );
+                                      },
+                                      onReorder: (oldIndex, newIndex) {
+                                        setState(() {
+                                          if (newIndex > oldIndex) {
+                                            newIndex -= 1;
+                                          }
+                                          final format = _activeNamingFormat;
+                                          final item = format.removeAt(oldIndex);
+                                          format.insert(newIndex, item);
+                                          _namingFormat = format;
+                                          // Reset displayNameTouched on ALL leaf
+                                          // value nodes (not just root nodes) so
+                                          // _syncLeafDisplayNames regenerates them.
+                                          void resetLeaves(_NodeDraft node) {
+                                            if (node.isLeafValue) {
+                                              node.displayNameTouched = false;
+                                            }
+                                            for (final child in node.children) {
+                                              resetLeaves(child);
+                                            }
+                                          }
+                                          for (final node in _rootNodes) {
+                                            resetLeaves(node);
+                                          }
+                                          _syncLeafDisplayNames();
+                                        });
+                                      },
+                                      buildDefaultDragHandles: false,
+                                      children: [
+                                        ..._activeNamingFormat.asMap().entries.map((entry) {
+                                          final index = entry.key;
+                                          final token = entry.value;
+                                          return ReorderableDragStartListener(
+                                            key: ValueKey(token),
+                                            index: index,
+                                            child: Container(
+                                              margin: const EdgeInsets.only(right: 8),
+                                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFF1F5F9),
+                                                borderRadius: BorderRadius.circular(20),
+                                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                                              ),
+                                              alignment: Alignment.center,
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Text(
+                                                    _getDisplayNameForToken(token),
+                                                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                                      fontWeight: FontWeight.w600,
+                                                      color: const Color(0xFF334155),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 6),
+                                                  const Icon(
+                                                    Icons.drag_indicator_rounded,
+                                                    size: 16,
+                                                    color: Color(0xFF94A3B8),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          );
+                                        }),
+                                      ],
+                                    ),
+                                  ),
                             ],
                           ),
                         ),

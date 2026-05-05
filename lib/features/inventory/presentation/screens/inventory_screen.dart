@@ -818,9 +818,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
             growable: false,
           );
       final hasChildren = childGroupIds.isNotEmpty || childRecords.isNotEmpty;
-      final isExpanded =
-          _viewMode == _InventoryViewMode.groups ||
-          expandedParents.contains(groupRecord.barcode);
+      final isExpanded = expandedParents.contains(groupRecord.barcode);
       rows.add(
         _InventoryRowEntry(
           record: groupRecord,
@@ -837,7 +835,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
           opensDetails: false,
         ),
       );
-      if (_viewMode != _InventoryViewMode.groups && !isExpanded) {
+      if (!isExpanded) {
         return;
       }
       for (final childGroupId in childGroupIds) {

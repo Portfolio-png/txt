@@ -97,11 +97,18 @@ class UnitsProvider extends ChangeNotifier {
     }).firstOrNull;
   }
 
+  UnitDefinition? get primaryUnit =>
+      _units.where((u) => u.name == 'Primary Unit' && u.symbol == '-').firstOrNull;
+
   bool areUnitsCompatible(int? groupUnitId, int? candidateUnitId) {
     if (groupUnitId == null || candidateUnitId == null) {
       return false;
     }
     if (groupUnitId == candidateUnitId) {
+      return true;
+    }
+    final primary = primaryUnit;
+    if (primary != null && primary.id == groupUnitId) {
       return true;
     }
     final groupUnit = findById(groupUnitId);
@@ -115,6 +122,10 @@ class UnitsProvider extends ChangeNotifier {
 
   List<UnitDefinition> compatibleActiveUnitsForGroupUnitId(int? groupUnitId) {
     if (groupUnitId == null) {
+      return activeUnits;
+    }
+    final primary = primaryUnit;
+    if (primary != null && primary.id == groupUnitId) {
       return activeUnits;
     }
     return activeUnits

@@ -36,18 +36,10 @@ class GroupsScreen extends StatelessWidget {
             label: 'Add Group',
             icon: Icons.add,
             isLoading: groups.isSaving,
-            onPressed: units.activeUnits.isEmpty
-                ? null
-                : () => _openGroupEditor(context),
+            onPressed: () => _openGroupEditor(context),
           ),
           toolbar: const _GroupsToolbar(),
           messages: [
-            if (units.activeUnits.isEmpty)
-              const _GroupsMessageBanner(
-                message:
-                    'Create at least one active unit before adding groups.',
-                isError: true,
-              ),
             if (groups.errorMessage != null)
               _GroupsMessageBanner(
                 message: groups.errorMessage!,
@@ -179,7 +171,7 @@ class _GroupRow extends StatelessWidget {
     final groupsProvider = context.watch<GroupsProvider>();
     final unitsProvider = context.watch<UnitsProvider>();
     final parentName =
-        groupsProvider.parentNameFor(group.parentGroupId) ?? 'Top level';
+        groupsProvider.parentNameFor(group.parentGroupId) ?? 'Primary Group';
     final unitName =
         _unitLabel(unitsProvider.units, group.unitId) ?? 'Unknown unit';
 
@@ -379,7 +371,7 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
                         : null,
                     decoration: _fieldDecoration(
                       label: 'Parent group',
-                      helper: 'Optional. Leave empty for top-level groups',
+                      helper: 'Optional. Leave empty to use Primary Group',
                     ),
                     dialogTitle: 'Parent group',
                     searchHintText: 'Search parent group',
@@ -387,7 +379,7 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
                     options: [
                       const SearchableSelectOption<int?>(
                         value: null,
-                        label: 'Top level',
+                        label: 'Primary Group',
                       ),
                       ...availableParents.map(
                         (group) => SearchableSelectOption<int?>(
@@ -684,7 +676,7 @@ class _PreviewCard extends StatelessWidget {
             children: [
               _PreviewChip(label: name.isEmpty ? 'Unnamed group' : name),
               _PreviewChip(
-                label: parentName == null ? 'Top level' : 'Parent: $parentName',
+                label: parentName == null ? 'Primary Group' : 'Parent: $parentName',
               ),
               _PreviewChip(
                 label: unitLabel == null ? 'Unit pending' : 'Unit: $unitLabel',

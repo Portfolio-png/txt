@@ -2495,6 +2495,7 @@ async function initDb() {
   await backfillMaterialUnitIds();
   await seedClientsIfEmpty();
   await seedCompanyProfileIfEmpty();
+  await ensurePrimaryGroupAndUnit();
   await seedGroupsIfEmpty();
   await seedItemsIfEmpty();
   await seedOrdersIfEmpty();
@@ -2502,6 +2503,18 @@ async function initDb() {
   await ensureDemoDataset();
   await bootstrapSuperAdminIfNeeded();
   dbReady = true;
+}
+
+async function ensurePrimaryGroupAndUnit() {
+  let unit = await get('SELECT id FROM units WHERE name = "Primary Unit"');
+  if (!unit) {
+    await run("INSERT INTO units (name, symbol, notes, created_at, updated_at) VALUES ('Primary Unit', '-', 'Default unit for ungrouped items', datetime('now'), datetime('now'))");
+    unit = await get('SELECT id FROM units WHERE name = "Primary Unit"');
+  }
+  let group = await get('SELECT id FROM groups WHERE name = "Primary Group" AND parent_group_id IS NULL');
+  if (!group) {
+    await run("INSERT INTO groups (name, parent_group_id, unit_id, created_at, updated_at) VALUES ('Primary Group', NULL, ?, datetime('now'), datetime('now'))", [unit.id]);
+  }
 }
 
 async function ensureDemoDataset() {
@@ -4753,8 +4766,15 @@ async function groupWouldCreateCycle(groupId, parentGroupId) {
 
 async function saveGroup({ name, parentGroupId = null, unitId, id = null }) {
   const trimmedName = String(name || '').trim();
-  const normalizedParentId = parentGroupId == null ? null : Number(parentGroupId);
+  let normalizedParentId = parentGroupId == null ? null : Number(parentGroupId);
   const normalizedUnitId = Number(unitId);
+
+  if (normalizedParentId == null && trimmedName !== 'Primary Group') {
+    const pg = await get('SELECT id FROM groups WHERE name = "Primary Group" AND parent_group_id IS NULL');
+    if (pg) {
+      normalizedParentId = pg.id;
+    }
+  }
 
   if (!trimmedName || !normalizedUnitId) {
     throw new Error('name and unitId are required.');
@@ -8836,6 +8856,7 @@ app.post(
   },
 );
 
+console.log('Registering /api/admin/clear-data route...');
 app.post(
   '/api/admin/clear-data',
   requireRoles('super_admin', 'admin'),
@@ -10003,12 +10024,12 @@ async function clearAllData() {
   await run('DELETE FROM item_variations');
   await run('DELETE FROM item_variation_dimensions');
   await run('DELETE FROM item_variation_nodes');
-  await run('DELETE FROM items');
-  await run('DELETE FROM clients');
   await run('DELETE FROM material_group_item_links');
   await run('DELETE FROM material_group_properties');
   await run('DELETE FROM material_group_units');
   await run('DELETE FROM material_group_preferences');
+  await run('DELETE FROM items');
+  await run('DELETE FROM clients');
   await run('DELETE FROM inventory_stock_positions');
   await run('DELETE FROM inventory_movements');
   await run('DELETE FROM inventory_reservations');
@@ -10017,6 +10038,8 @@ async function clearAllData() {
   await run('DELETE FROM company_profiles');
   await run('DELETE FROM groups');
   await run('DELETE FROM units');
+  
+  await ensurePrimaryGroupAndUnit();
 }
 
 async function reseedDemoData() {
