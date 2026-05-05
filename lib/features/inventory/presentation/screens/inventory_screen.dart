@@ -780,7 +780,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
     }
     // Also inject master-only items (no stock record yet) so their group shows
     // them as children and the group's expand chevron is visible.
-    if (_shouldIncludeMasterOnlyGroups()) {
+    // Always run this in groups view mode regardless of filter state.
+    if (_viewMode == _InventoryViewMode.groups) {
       final normalizedQuery = _normalize(searchQuery);
       for (final item in itemById.values.where((i) => !i.isArchived)) {
         if (coveredItemIds.contains(item.id)) {

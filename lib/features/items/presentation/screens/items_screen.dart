@@ -1062,7 +1062,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       _rootNodes.map((node) => _toInput(node, null)).toList(growable: false);
 
   List<String> get _availableNamingTokens {
-    final tokens = <String>['name'];
+    final tokens = <String>[];
     for (var i = 0; i < _rootNodes.length; i++) {
       if (_rootNodes[i].kind == ItemVariationNodeKind.property) {
         tokens.add('prop_$i');

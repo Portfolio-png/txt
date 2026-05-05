@@ -2800,7 +2800,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
             Expanded(
               child: Text(
                 hasSelectedPath
-                    ? 'Selected $selectedPropertyCount ${selectedPropertyCount == 1 ? 'value' : 'values'}'
+                    ? _buildNamingFormatLabel(item, line.selectedVariationValueNodeIds)
                     : 'Select variation path',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -3604,6 +3604,67 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       }
     }
     return segments.isEmpty ? item.displayName : segments.join(' / ');
+  }
+
+  /// Builds a display label using the item's naming format order.
+  /// Format tokens: 'name' = item base name, 'prop_N' = Nth top-level property's selected value.
+  String _buildNamingFormatLabel(ItemDefinition item, List<int> valueNodeIds) {
+    final itemName = item.displayName.trim().isEmpty ? item.name : item.displayName;
+    if (valueNodeIds.isEmpty) {
+      return itemName;
+    }
+
+    // Build a map: propertyId -> selected value name, walking the tree
+    final selectedValueIds = valueNodeIds.toSet();
+    // Map property node id -> selected value name
+    final propIdToValue = <int, String>{};
+    for (final root in item.topLevelProperties) {
+      ItemVariationNodeDefinition currentProperty = root;
+      while (true) {
+        final selectedValue = currentProperty.activeChildren
+            .where((n) => n.kind == ItemVariationNodeKind.value)
+            .where((n) => selectedValueIds.contains(n.id))
+            .firstOrNull;
+        if (selectedValue == null) break;
+        final valName = selectedValue.name.trim().isEmpty
+            ? selectedValue.displayName.trim()
+            : selectedValue.name.trim();
+        propIdToValue[currentProperty.id] = valName;
+        final nextProp = selectedValue.activeChildren
+            .where((n) => n.kind == ItemVariationNodeKind.property)
+            .firstOrNull;
+        if (nextProp == null) break;
+        currentProperty = nextProp;
+      }
+    }
+
+    final topProps = item.topLevelProperties;
+    final parts = <String>[];
+
+    // If naming format is specified, follow it
+    if (item.namingFormat.isNotEmpty) {
+      for (final token in item.namingFormat) {
+        if (token == 'name') {
+          parts.add(itemName);
+        } else if (token.startsWith('prop_')) {
+          final idx = int.tryParse(token.substring(5));
+          if (idx != null && idx >= 0 && idx < topProps.length) {
+            final value = propIdToValue[topProps[idx].id];
+            if (value != null && value.isNotEmpty) {
+              parts.add(value);
+            }
+          }
+        }
+      }
+    }
+
+    // Fallback: item name + all selected values in tree order
+    if (parts.isEmpty) {
+      parts.add(itemName);
+      parts.addAll(propIdToValue.values.where((v) => v.isNotEmpty));
+    }
+
+    return parts.join(' ');
   }
 
   List<ItemVariationNodeDefinition> _pathNodesForLeaf(
