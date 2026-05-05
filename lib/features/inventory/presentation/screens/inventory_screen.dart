@@ -735,6 +735,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
     }
 
     final itemRecordsByGroupId = <int, List<MaterialRecord>>{};
+    // Collect items that already have inventory records.
+    final coveredItemIds = <int>{};
     for (final record in scopedRecords.where(
       (record) => record.linkedItemId != null,
     )) {
@@ -742,6 +744,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
       if (linkedItem == null) {
         continue;
       }
+      coveredItemIds.add(linkedItem.id);
       itemRecordsByGroupId
           .putIfAbsent(linkedItem.groupId, () => <MaterialRecord>[])
           .add(record);
@@ -773,6 +776,30 @@ class _InventoryScreenState extends State<InventoryScreen> {
           group,
           parentName: parentName,
         );
+      }
+    }
+    // Also inject master-only items (no stock record yet) so their group shows
+    // them as children and the group's expand chevron is visible.
+    if (_shouldIncludeMasterOnlyGroups()) {
+      final normalizedQuery = _normalize(searchQuery);
+      for (final item in itemById.values.where((i) => !i.isArchived)) {
+        if (coveredItemIds.contains(item.id)) {
+          continue;
+        }
+        if (!groupRecordsByGroupId.containsKey(item.groupId)) {
+          continue;
+        }
+        final itemLabel = item.displayName.trim().isEmpty ? item.name : item.displayName;
+        final groupName = groupNameById[item.groupId] ?? '';
+        if (normalizedQuery.isNotEmpty &&
+            !_normalize(itemLabel).contains(normalizedQuery) &&
+            !_normalize(item.name).contains(normalizedQuery) &&
+            !_normalize(groupName).contains(normalizedQuery)) {
+          continue;
+        }
+        itemRecordsByGroupId
+            .putIfAbsent(item.groupId, () => <MaterialRecord>[])
+            .add(_masterItemRecord(item));
       }
     }
     final childGroupIdsByParentId = <int, List<int>>{};
@@ -994,6 +1021,28 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   String _masterGroupInventoryBarcode(int groupId) {
     return 'GROUP-MASTER-$groupId';
+  }
+
+  MaterialRecord _masterItemRecord(ItemDefinition item) {
+    return MaterialRecord(
+      id: null,
+      barcode: 'ITEM-MASTER-${item.id}',
+      name: item.displayName.trim().isEmpty ? item.name : item.displayName,
+      type: 'Item',
+      grade: '',
+      thickness: '',
+      supplier: '',
+      location: 'Master Items',
+      notes: 'Master item without inventory stock record.',
+      kind: 'child',
+      parentBarcode: null,
+      numberOfChildren: 0,
+      linkedChildBarcodes: const <String>[],
+      scanCount: 0,
+      linkedItemId: item.id,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+    );
   }
 
   String _groupMetadataText(
