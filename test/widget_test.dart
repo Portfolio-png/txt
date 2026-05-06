@@ -1840,7 +1840,7 @@ class FakeItemRepository extends ItemRepository {
       upload: ItemAssetUploadTarget(
         uploadSessionId: 'test-session',
         objectKey:
-            'item-images/${input.itemId}/${input.sha256}/${input.fileName}',
+            'masters/items/item-${input.itemId}/test-session-${input.fileName}',
         uploadUrl: Uri.parse('https://mock.local/test-session'),
         headers: const <String, String>{},
       ),
@@ -1877,7 +1877,7 @@ class FakeItemRepository extends ItemRepository {
       contentType: 'image/png',
       sizeBytes: 1,
       sha256: List.filled(64, '0').join(),
-      objectKey: 'item-images/1/test.png',
+      objectKey: 'masters/items/item-1/test.png',
       status: 'uploaded',
       isPrimary: true,
     );
@@ -2054,7 +2054,7 @@ class FakeOrderRepository extends OrderRepository {
       alreadyUploaded: false,
       upload: PoUploadTarget(
         uploadSessionId: sessionId,
-        objectKey: 'test/${input.sha256}/${input.fileName}',
+        objectKey: 'orders/po-docs/$sessionId-${input.fileName}',
         uploadUrl: Uri.parse('https://mock.local/$sessionId'),
         headers: const <String, String>{},
       ),

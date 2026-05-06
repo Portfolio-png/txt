@@ -254,7 +254,7 @@ class ApiItemRepository implements ItemRepository {
         upload: ItemAssetUploadTarget(
           uploadSessionId: sessionId,
           objectKey:
-              'item-images/${input.itemId}/${input.sha256}/${input.fileName}',
+              'masters/items/item-${input.itemId}/$sessionId-${input.fileName}',
           uploadUrl: Uri.parse('https://mock.local/$sessionId'),
           headers: const <String, String>{},
         ),
@@ -262,6 +262,7 @@ class ApiItemRepository implements ItemRepository {
     }
 
     final body = jsonEncode({
+      'uploadType': 'ITEM_IMAGE',
       'entityType': 'item',
       'entityId': input.itemId,
       'fileName': input.fileName,

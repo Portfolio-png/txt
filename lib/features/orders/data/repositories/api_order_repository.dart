@@ -166,7 +166,7 @@ class ApiOrderRepository implements OrderRepository {
         alreadyUploaded: false,
         upload: PoUploadTarget(
           uploadSessionId: sessionId,
-          objectKey: 'mock-po-documents/${input.sha256}/${input.fileName}',
+          objectKey: 'orders/po-docs/$sessionId-${input.fileName}',
           uploadUrl: Uri.parse('https://mock.local/$sessionId'),
           headers: const <String, String>{},
         ),
@@ -178,6 +178,7 @@ class ApiOrderRepository implements OrderRepository {
       uri,
       headers: const {'Content-Type': 'application/json'},
       body: jsonEncode({
+        'uploadType': 'ORDER_PO',
         'fileName': input.fileName,
         'contentType': input.contentType,
         'sizeBytes': input.sizeBytes,

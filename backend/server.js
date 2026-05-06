@@ -1,9 +1,14 @@
 const express = require('express');
+const {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const cors = require('cors');
 const crypto = require('crypto');
 const fs = require('fs');
-const http = require('http');
-const https = require('https');
 const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
 
@@ -29,6 +34,11 @@ const PASSWORD_ITERATIONS = 120000;
 const PASSWORD_KEY_LENGTH = 32;
 const PASSWORD_POLICY_ERROR =
   'Use at least 10 characters with letters and numbers. Avoid names or common words.';
+const S3_UPLOAD_PREFIXES = Object.freeze({
+  ITEM_IMAGE: 'masters/items/',
+  ORDER_PO: 'orders/po-docs/',
+  DELIVERY_CHALLAN: 'logistics/challans/',
+});
 const COMMON_WEAK_PASSWORDS = new Set([
   'password',
   'password123',
@@ -4525,12 +4535,54 @@ function normalizePoFileName(fileName) {
     .slice(0, 160) || 'purchase-order';
 }
 
-function assertValidPoUploadInput({ fileName, contentType, sizeBytes, sha256 }) {
+function normalizeUploadType(uploadType) {
+  return String(uploadType || '').trim().toUpperCase();
+}
+
+function getS3Prefix(uploadType) {
+  const normalizedUploadType = normalizeUploadType(uploadType);
+  const prefix = S3_UPLOAD_PREFIXES[normalizedUploadType];
+  if (!prefix) {
+    const error = new Error('Unsupported upload type.');
+    error.statusCode = 400;
+    throw error;
+  }
+  return prefix;
+}
+
+function buildS3ObjectKey({
+  uploadType,
+  fileName,
+  sha256,
+  entityType = '',
+  entityId = null,
+}) {
+  const prefix = getS3Prefix(uploadType);
+  const uniqueStem = `${Date.now()}-${String(sha256 || '').slice(0, 12)}`;
+  if (normalizeUploadType(uploadType) === 'ITEM_IMAGE') {
+    return `${prefix}${entityType}-${entityId}/${uniqueStem}-${fileName}`;
+  }
+  return `${prefix}${uniqueStem}-${fileName}`;
+}
+
+function assertValidPoUploadInput({
+  uploadType,
+  fileName,
+  contentType,
+  sizeBytes,
+  sha256,
+}) {
+  const normalizedUploadType = normalizeUploadType(uploadType);
   const normalizedContentType = String(contentType || '').toLowerCase().trim();
   const normalizedSize = Number(sizeBytes || 0);
   const normalizedSha = String(sha256 || '').toLowerCase().trim();
   const normalizedName = normalizePoFileName(fileName);
 
+  if (normalizedUploadType !== 'ORDER_PO') {
+    const error = new Error('PO uploads must declare uploadType = ORDER_PO.');
+    error.statusCode = 400;
+    throw error;
+  }
   if (!ALLOWED_PO_CONTENT_TYPES.has(normalizedContentType)) {
     const error = new Error('Only PDF, PNG, JPG, and JPEG purchase order files are allowed.');
     error.statusCode = 400;
@@ -4548,6 +4600,7 @@ function assertValidPoUploadInput({ fileName, contentType, sizeBytes, sha256 }) 
   }
 
   return {
+    uploadType: normalizedUploadType,
     fileName: normalizedName,
     contentType: normalizedContentType,
     sizeBytes: Math.round(normalizedSize),
@@ -4564,6 +4617,7 @@ function normalizeAssetFileName(fileName) {
 }
 
 function assertValidAssetUploadInput({
+  uploadType,
   entityType,
   entityId,
   fileName,
@@ -4574,11 +4628,17 @@ function assertValidAssetUploadInput({
 }) {
   const normalizedEntityType = String(entityType || '').trim().toLowerCase();
   const normalizedEntityId = Number(entityId || 0);
+  const normalizedUploadType = normalizeUploadType(uploadType);
   const normalizedContentType = String(contentType || '').toLowerCase().trim();
   const normalizedSize = Number(sizeBytes || 0);
   const normalizedSha = String(sha256 || '').toLowerCase().trim();
   const normalizedName = normalizeAssetFileName(fileName);
 
+  if (normalizedUploadType !== 'ITEM_IMAGE') {
+    const error = new Error('Item image uploads must declare uploadType = ITEM_IMAGE.');
+    error.statusCode = 400;
+    throw error;
+  }
   if (normalizedEntityType !== 'item') {
     const error = new Error('Only item image uploads are supported.');
     error.statusCode = 400;
@@ -4611,6 +4671,7 @@ function assertValidAssetUploadInput({
   }
 
   return {
+    uploadType: normalizedUploadType,
     entityType: normalizedEntityType,
     entityId: normalizedEntityId,
     fileName: normalizedName,
@@ -4622,142 +4683,101 @@ function assertValidAssetUploadInput({
 }
 
 function getS3Config() {
-  const endpoint = String(process.env.S3_ENDPOINT || '').replace(/\/+$/, '');
+  const endpoint = String(process.env.S3_ENDPOINT || '').trim().replace(/\/+$/, '');
   return {
     endpoint,
-    region: process.env.S3_REGION || 'us-east-1',
-    bucket: process.env.S3_BUCKET || '',
-    accessKeyId: process.env.S3_ACCESS_KEY_ID || '',
-    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || '',
-    forcePathStyle: String(process.env.S3_FORCE_PATH_STYLE || 'true').toLowerCase() !== 'false',
-    publicBaseUrl: String(process.env.S3_PUBLIC_BASE_URL || '').replace(/\/+$/, ''),
+    region:
+      String(process.env.PAPER_S3_REGION || process.env.S3_REGION || 'us-east-1').trim() ||
+      'us-east-1',
+    bucket: String(
+      process.env.PAPER_S3_BUCKET_NAME || process.env.S3_BUCKET || '',
+    ).trim(),
+    forcePathStyle: parseBooleanEnv(
+      process.env.S3_FORCE_PATH_STYLE,
+      Boolean(endpoint),
+    ),
   };
 }
 
 function assertS3Configured() {
   const config = getS3Config();
-  if (
-    !config.endpoint ||
-    !config.bucket ||
-    !config.accessKeyId ||
-    !config.secretAccessKey
-  ) {
-    const error = new Error('PO upload storage is not configured.');
+  if (!config.bucket) {
+    const error = new Error(
+      'S3 upload storage is not configured. Set PAPER_S3_BUCKET_NAME.',
+    );
     error.statusCode = 503;
     throw error;
   }
   return config;
 }
 
-function hmac(key, value, encoding) {
-  return crypto.createHmac('sha256', key).update(value, 'utf8').digest(encoding);
-}
+let cachedS3Client = null;
+let cachedS3ClientConfigKey = '';
 
-function sha256Hex(value) {
-  return crypto.createHash('sha256').update(value, 'utf8').digest('hex');
-}
-
-function formatAmzDate(date = new Date()) {
-  return date.toISOString().replace(/[:-]|\.\d{3}/g, '');
-}
-
-function encodeS3PathSegment(value) {
-  return encodeURIComponent(value).replace(/[!'()*]/g, (char) =>
-    `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
-  );
-}
-
-function encodeS3Key(key) {
-  return String(key || '')
-    .split('/')
-    .map(encodeS3PathSegment)
-    .join('/');
-}
-
-function presignS3Url({ method, objectKey, expiresSeconds = 900 }) {
+function getS3Client() {
   const config = assertS3Configured();
-  const endpointUrl = new URL(config.publicBaseUrl || config.endpoint);
-  const encodedKey = encodeS3Key(objectKey);
-  const canonicalUri = config.forcePathStyle
-    ? `/${encodeS3PathSegment(config.bucket)}/${encodedKey}`
-    : `/${encodedKey}`;
-  const host = config.forcePathStyle
-    ? endpointUrl.host
-    : `${config.bucket}.${endpointUrl.host}`;
-  const requestUrl = new URL(`${endpointUrl.protocol}//${host}${canonicalUri}`);
-  const amzDate = formatAmzDate();
-  const dateStamp = amzDate.slice(0, 8);
-  const credentialScope = `${dateStamp}/${config.region}/s3/aws4_request`;
-  const signedHeaders = 'host';
-  const queryParams = {
-    'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
-    'X-Amz-Credential': `${config.accessKeyId}/${credentialScope}`,
-    'X-Amz-Date': amzDate,
-    'X-Amz-Expires': String(expiresSeconds),
-    'X-Amz-SignedHeaders': signedHeaders,
-  };
-  const canonicalQuery = Object.entries(queryParams)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
-    .join('&');
-  const canonicalRequest = [
-    method,
-    canonicalUri,
-    canonicalQuery,
-    `host:${host}\n`,
-    signedHeaders,
-    'UNSIGNED-PAYLOAD',
-  ].join('\n');
-  const stringToSign = [
-    'AWS4-HMAC-SHA256',
-    amzDate,
-    credentialScope,
-    sha256Hex(canonicalRequest),
-  ].join('\n');
-  const signingKey = hmac(
-    hmac(
-      hmac(hmac(`AWS4${config.secretAccessKey}`, dateStamp), config.region),
-      's3',
-    ),
-    'aws4_request',
-  );
-  const signature = hmac(signingKey, stringToSign, 'hex');
-  for (const [key, value] of Object.entries(queryParams)) {
-    requestUrl.searchParams.set(key, value);
+  const configKey = JSON.stringify({
+    endpoint: config.endpoint || '',
+    region: config.region,
+    forcePathStyle: config.forcePathStyle,
+  });
+  if (cachedS3Client && cachedS3ClientConfigKey === configKey) {
+    return cachedS3Client;
   }
-  requestUrl.searchParams.set('X-Amz-Signature', signature);
-  return requestUrl.toString();
+  const clientConfig = {
+    region: config.region,
+  };
+  if (config.endpoint) {
+    clientConfig.endpoint = config.endpoint;
+  }
+  if (config.forcePathStyle) {
+    clientConfig.forcePathStyle = true;
+  }
+  cachedS3Client = new S3Client(clientConfig);
+  cachedS3ClientConfigKey = configKey;
+  return cachedS3Client;
 }
 
-function requestHead(url) {
-  return new Promise((resolve, reject) => {
-    const parsedUrl = new URL(url);
-    const transport = parsedUrl.protocol === 'http:' ? http : https;
-    const request = transport.request(
-      parsedUrl,
-      { method: 'HEAD' },
-      (response) => {
-        response.resume();
-        resolve(response.statusCode || 0);
-      },
-    );
-    request.setTimeout(10000, () => {
-      request.destroy(new Error('Timed out while verifying uploaded PO object.'));
+async function presignS3Url({
+  method,
+  objectKey,
+  contentType = null,
+  expiresSeconds = 900,
+}) {
+  const config = assertS3Configured();
+  const client = getS3Client();
+  let command;
+  if (method === 'PUT') {
+    command = new PutObjectCommand({
+      Bucket: config.bucket,
+      Key: objectKey,
+      ...(contentType ? { ContentType: contentType } : {}),
     });
-    request.on('error', reject);
-    request.end();
-  });
+  } else if (method === 'GET') {
+    command = new GetObjectCommand({
+      Bucket: config.bucket,
+      Key: objectKey,
+    });
+  } else {
+    throw new Error(`Unsupported S3 presign method: ${method}`);
+  }
+  return getSignedUrl(client, command, { expiresIn: expiresSeconds });
 }
 
 async function assertS3ObjectExists(objectKey) {
   if (String(process.env.S3_SKIP_OBJECT_VERIFY || '').toLowerCase() === 'true') {
     return;
   }
-  const statusCode = await requestHead(
-    presignS3Url({ method: 'HEAD', objectKey, expiresSeconds: 60 }),
-  );
-  if (statusCode < 200 || statusCode >= 300) {
-    const error = new Error('Uploaded PO object could not be verified.');
+  const config = assertS3Configured();
+  try {
+    await getS3Client().send(
+      new HeadObjectCommand({
+        Bucket: config.bucket,
+        Key: objectKey,
+      }),
+    );
+  } catch (_) {
+    const error = new Error('Uploaded S3 object could not be verified.');
     error.statusCode = 400;
     throw error;
   }
@@ -4778,7 +4798,11 @@ async function createPoUploadIntent(input) {
     };
   }
 
-  const objectKey = `po-documents/${normalized.sha256}/${normalizePoFileName(normalized.fileName)}`;
+  const objectKey = buildS3ObjectKey({
+    uploadType: normalized.uploadType,
+    fileName: normalized.fileName,
+    sha256: normalized.sha256,
+  });
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
   const uploadSessionId = `po-upload-${now.getTime()}-${crypto
@@ -4809,9 +4833,10 @@ async function createPoUploadIntent(input) {
     upload: {
       uploadSessionId,
       objectKey,
-      uploadUrl: presignS3Url({
+      uploadUrl: await presignS3Url({
         method: 'PUT',
         objectKey,
+        contentType: normalized.contentType,
         expiresSeconds: 900,
       }),
       expiresAt,
@@ -4942,7 +4967,7 @@ async function createPoDocumentReadUrl(documentId) {
   }
   return {
     document: rowToPoDocumentDto(document),
-    readUrl: presignS3Url({
+    readUrl: await presignS3Url({
       method: 'GET',
       objectKey: document.object_key,
       expiresSeconds: 300,
@@ -4963,9 +4988,9 @@ async function assertAssetEntityExists(entityType, entityId) {
   throw error;
 }
 
-function assetReadUrlPayload(objectKey, expiresSeconds = 300) {
+async function assetReadUrlPayload(objectKey, expiresSeconds = 300) {
   return {
-    readUrl: presignS3Url({
+    readUrl: await presignS3Url({
       method: 'GET',
       objectKey,
       expiresSeconds,
@@ -4987,10 +5012,12 @@ async function listAssetsForEntity(entityType, entityId, { includeReadUrls = tru
     `,
     [normalizedEntityType, normalizedEntityId],
   );
-  return rows.map((row) =>
-    rowToAssetDto(
-      row,
-      includeReadUrls ? assetReadUrlPayload(row.object_key) : null,
+  return Promise.all(
+    rows.map(async (row) =>
+      rowToAssetDto(
+        row,
+        includeReadUrls ? await assetReadUrlPayload(row.object_key) : null,
+      ),
     ),
   );
 }
@@ -5010,12 +5037,21 @@ async function createAssetUploadIntent(input) {
   if (existing) {
     return {
       alreadyUploaded: true,
-      asset: rowToAssetDto(existing, assetReadUrlPayload(existing.object_key)),
+      asset: rowToAssetDto(
+        existing,
+        await assetReadUrlPayload(existing.object_key),
+      ),
       upload: null,
     };
   }
 
-  const objectKey = `${normalized.entityType}-images/${normalized.entityId}/${normalized.sha256}/${normalized.fileName}`;
+  const objectKey = buildS3ObjectKey({
+    uploadType: normalized.uploadType,
+    fileName: normalized.fileName,
+    sha256: normalized.sha256,
+    entityType: normalized.entityType,
+    entityId: normalized.entityId,
+  });
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
   const uploadSessionId = `asset-upload-${now.getTime()}-${crypto
@@ -5050,9 +5086,10 @@ async function createAssetUploadIntent(input) {
     upload: {
       uploadSessionId,
       objectKey,
-      uploadUrl: presignS3Url({
+      uploadUrl: await presignS3Url({
         method: 'PUT',
         objectKey,
+        contentType: normalized.contentType,
         expiresSeconds: 900,
       }),
       expiresAt,
@@ -5139,7 +5176,7 @@ async function completeAssetUpload({ uploadSessionId, objectKey }) {
     'SELECT * FROM uploaded_assets WHERE object_key = ?',
     [session.object_key],
   );
-  return rowToAssetDto(asset, assetReadUrlPayload(asset.object_key));
+  return rowToAssetDto(asset, await assetReadUrlPayload(asset.object_key));
 }
 
 async function createAssetReadUrl(assetId) {
@@ -5152,7 +5189,7 @@ async function createAssetReadUrl(assetId) {
     error.statusCode = 404;
     throw error;
   }
-  const payload = assetReadUrlPayload(asset.object_key);
+  const payload = await assetReadUrlPayload(asset.object_key);
   return {
     asset: rowToAssetDto(asset, payload),
     readUrl: payload.readUrl,
@@ -5191,7 +5228,7 @@ async function setPrimaryAsset(assetId) {
   const updated = await get('SELECT * FROM uploaded_assets WHERE id = ?', [
     asset.id,
   ]);
-  return rowToAssetDto(updated, assetReadUrlPayload(updated.object_key));
+  return rowToAssetDto(updated, await assetReadUrlPayload(updated.object_key));
 }
 
 async function deleteAsset(assetId) {

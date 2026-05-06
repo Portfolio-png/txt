@@ -9,12 +9,10 @@ test('orders persistence functions create, list, and update lifecycle', async ()
   const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-orders-api-'));
   const dbPath = path.join(tempDir, 'paper.db');
   process.env.DB_PATH = dbPath;
-  process.env.S3_ENDPOINT = 'https://storage.example.test';
-  process.env.S3_REGION = 'us-east-1';
-  process.env.S3_BUCKET = 'paper-test';
-  process.env.S3_ACCESS_KEY_ID = 'test-access';
-  process.env.S3_SECRET_ACCESS_KEY = 'test-secret';
-  process.env.S3_FORCE_PATH_STYLE = 'true';
+  process.env.PAPER_S3_REGION = 'us-east-1';
+  process.env.PAPER_S3_BUCKET_NAME = 'paper-test';
+  process.env.AWS_ACCESS_KEY_ID = 'test-access';
+  process.env.AWS_SECRET_ACCESS_KEY = 'test-secret';
   process.env.S3_SKIP_OBJECT_VERIFY = 'true';
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'owner@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'Qz79Luma4821';
@@ -54,6 +52,7 @@ test('orders persistence functions create, list, and update lifecycle', async ()
     assert.ok(leaf, 'expected a seeded leaf variation path');
 
     const uploadIntent = await backend.createPoUploadIntent({
+      uploadType: 'ORDER_PO',
       fileName: 'client-po.pdf',
       contentType: 'application/pdf',
       sizeBytes: 1024,
@@ -61,6 +60,7 @@ test('orders persistence functions create, list, and update lifecycle', async ()
     });
     assert.equal(uploadIntent.alreadyUploaded, false);
     assert.ok(uploadIntent.upload.uploadUrl.includes('X-Amz-Signature'));
+    assert.match(uploadIntent.upload.objectKey, /^orders\/po-docs\/\d+-a{12}-client-po\.pdf$/);
 
     const document = await backend.completePoUpload({
       uploadSessionId: uploadIntent.upload.uploadSessionId,
@@ -69,6 +69,7 @@ test('orders persistence functions create, list, and update lifecycle', async ()
     assert.equal(document.fileName, 'client-po.pdf');
 
     const repeatedIntent = await backend.createPoUploadIntent({
+      uploadType: 'ORDER_PO',
       fileName: 'client-po.pdf',
       contentType: 'application/pdf',
       sizeBytes: 1024,
@@ -89,7 +90,7 @@ test('orders persistence functions create, list, and update lifecycle', async ()
         'application/pdf',
         256,
         'c'.repeat(64),
-        'po-documents/stale/stale-po.pdf',
+        'orders/po-docs/stale/stale-po.pdf',
         staleTimestamp,
         staleTimestamp,
       ],
@@ -106,12 +107,13 @@ test('orders persistence functions create, list, and update lifecycle', async ()
         'application/pdf',
         256,
         'd'.repeat(64),
-        'po-documents/stale/stale-session-po.pdf',
+        'orders/po-docs/stale/stale-session-po.pdf',
         staleTimestamp,
         staleTimestamp,
       ],
     );
     await backend.createPoUploadIntent({
+      uploadType: 'ORDER_PO',
       fileName: 'fresh-po.pdf',
       contentType: 'application/pdf',
       sizeBytes: 512,
@@ -129,6 +131,7 @@ test('orders persistence functions create, list, and update lifecycle', async ()
     assert.equal(staleSession == null, true);
 
     const imageIntent = await backend.createAssetUploadIntent({
+      uploadType: 'ITEM_IMAGE',
       entityType: 'item',
       entityId: item.id,
       fileName: 'printed-sleeve.png',
@@ -139,6 +142,10 @@ test('orders persistence functions create, list, and update lifecycle', async ()
     });
     assert.equal(imageIntent.alreadyUploaded, false);
     assert.ok(imageIntent.upload.uploadUrl.includes('X-Amz-Signature'));
+    assert.match(
+      imageIntent.upload.objectKey,
+      new RegExp(`^masters/items/item-${item.id}/\\d+-b{12}-printed-sleeve\\.png$`),
+    );
     const asset = await backend.completeAssetUpload({
       uploadSessionId: imageIntent.upload.uploadSessionId,
       objectKey: imageIntent.upload.objectKey,
@@ -434,6 +441,7 @@ test('orders persistence functions create, list, and update lifecycle', async ()
         `/api/items/${item.id}/assets/upload-intent`,
         owner.token,
         {
+          uploadType: 'ITEM_IMAGE',
           fileName: 'alias-item-image.png',
           contentType: 'image/png',
           sizeBytes: 128,
