@@ -95,6 +95,7 @@ class ItemDto {
     required this.quantity,
     required this.groupId,
     required this.unitId,
+    required this.unitConversions,
     required this.namingFormat,
     required this.isArchived,
     required this.usageCount,
@@ -110,6 +111,7 @@ class ItemDto {
   final double quantity;
   final int groupId;
   final int unitId;
+  final List<ItemUnitConversionDto> unitConversions;
   final List<String> namingFormat;
   final bool isArchived;
   final int usageCount;
@@ -126,6 +128,12 @@ class ItemDto {
       quantity: (json['quantity'] as num? ?? 0).toDouble(),
       groupId: json['groupId'] as int? ?? 0,
       unitId: json['unitId'] as int? ?? 0,
+      unitConversions: (json['unitConversions'] as List<dynamic>? ?? const [])
+          .map(
+            (item) =>
+                ItemUnitConversionDto.fromJson(item as Map<String, dynamic>),
+          )
+          .toList(growable: false),
       namingFormat: (json['namingFormat'] as List<dynamic>? ?? const [])
           .map((e) => e.toString())
           .toList(growable: false),
@@ -155,6 +163,9 @@ class ItemDto {
       quantity: quantity,
       groupId: groupId,
       unitId: unitId,
+      unitConversions: unitConversions
+          .map((entry) => entry.toDomain())
+          .toList(growable: false),
       namingFormat: namingFormat,
       isArchived: isArchived,
       usageCount: usageCount,
@@ -163,6 +174,38 @@ class ItemDto {
       variationTree: variationTree
           .map((entry) => entry.toDomain())
           .toList(growable: false),
+    );
+  }
+}
+
+class ItemUnitConversionDto {
+  const ItemUnitConversionDto({
+    required this.unitId,
+    required this.unitName,
+    required this.unitSymbol,
+    required this.factorToPrimary,
+  });
+
+  final int unitId;
+  final String unitName;
+  final String unitSymbol;
+  final double factorToPrimary;
+
+  factory ItemUnitConversionDto.fromJson(Map<String, dynamic> json) {
+    return ItemUnitConversionDto(
+      unitId: json['unitId'] as int? ?? 0,
+      unitName: json['unitName'] as String? ?? '',
+      unitSymbol: json['unitSymbol'] as String? ?? '',
+      factorToPrimary: (json['factorToPrimary'] as num? ?? 1).toDouble(),
+    );
+  }
+
+  ItemUnitConversionDefinition toDomain() {
+    return ItemUnitConversionDefinition(
+      unitId: unitId,
+      unitName: unitName,
+      unitSymbol: unitSymbol,
+      factorToPrimary: factorToPrimary,
     );
   }
 }
@@ -257,6 +300,7 @@ class CreateItemRequest {
     required this.quantity,
     required this.groupId,
     required this.unitId,
+    required this.unitConversions,
     required this.namingFormat,
     required this.variationTree,
   });
@@ -267,6 +311,7 @@ class CreateItemRequest {
   final double quantity;
   final int groupId;
   final int unitId;
+  final List<ItemUnitConversionRequest> unitConversions;
   final List<String> namingFormat;
   final List<ItemVariationNodeRequest> variationTree;
 
@@ -278,6 +323,9 @@ class CreateItemRequest {
       quantity: input.quantity,
       groupId: input.groupId,
       unitId: input.unitId,
+      unitConversions: input.unitConversions
+          .map(ItemUnitConversionRequest.fromInput)
+          .toList(growable: false),
       namingFormat: input.namingFormat,
       variationTree: input.variationTree
           .map(ItemVariationNodeRequest.fromInput)
@@ -293,6 +341,9 @@ class CreateItemRequest {
       'quantity': quantity,
       'groupId': groupId,
       'unitId': unitId,
+      'unitConversions': unitConversions
+          .map((entry) => entry.toJson())
+          .toList(growable: false),
       'namingFormat': namingFormat,
       'variationTree': variationTree
           .map((entry) => entry.toJson())
@@ -309,6 +360,7 @@ class UpdateItemRequest {
     required this.quantity,
     required this.groupId,
     required this.unitId,
+    required this.unitConversions,
     required this.namingFormat,
     required this.variationTree,
   });
@@ -319,6 +371,7 @@ class UpdateItemRequest {
   final double quantity;
   final int groupId;
   final int unitId;
+  final List<ItemUnitConversionRequest> unitConversions;
   final List<String> namingFormat;
   final List<ItemVariationNodeRequest> variationTree;
 
@@ -330,6 +383,9 @@ class UpdateItemRequest {
       quantity: input.quantity,
       groupId: input.groupId,
       unitId: input.unitId,
+      unitConversions: input.unitConversions
+          .map(ItemUnitConversionRequest.fromInput)
+          .toList(growable: false),
       namingFormat: input.namingFormat,
       variationTree: input.variationTree
           .map(ItemVariationNodeRequest.fromInput)
@@ -345,10 +401,34 @@ class UpdateItemRequest {
       'quantity': quantity,
       'groupId': groupId,
       'unitId': unitId,
+      'unitConversions': unitConversions
+          .map((entry) => entry.toJson())
+          .toList(growable: false),
       'namingFormat': namingFormat,
       'variationTree': variationTree
           .map((entry) => entry.toJson())
           .toList(growable: false),
     };
+  }
+}
+
+class ItemUnitConversionRequest {
+  const ItemUnitConversionRequest({
+    required this.unitId,
+    required this.factorToPrimary,
+  });
+
+  final int unitId;
+  final double factorToPrimary;
+
+  factory ItemUnitConversionRequest.fromInput(ItemUnitConversionInput input) {
+    return ItemUnitConversionRequest(
+      unitId: input.unitId,
+      factorToPrimary: input.factorToPrimary,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {'unitId': unitId, 'factorToPrimary': factorToPrimary};
   }
 }

@@ -1492,6 +1492,21 @@ async function rowToItemDto(row) {
     return null;
   }
 
+  const unitConversionRows = await all(
+    `
+    SELECT
+      item_unit_conversions.unit_id,
+      item_unit_conversions.factor_to_primary,
+      units.name AS unit_name,
+      units.symbol AS unit_symbol
+    FROM item_unit_conversions
+    INNER JOIN units ON units.id = item_unit_conversions.unit_id
+    WHERE item_unit_conversions.item_id = ?
+    ORDER BY LOWER(units.name) ASC, LOWER(units.symbol) ASC
+    `,
+    [row.id],
+  );
+
   return {
     id: row.id,
     name: row.name || '',
@@ -1500,6 +1515,12 @@ async function rowToItemDto(row) {
     quantity: Number(row.quantity || 0),
     groupId: row.group_id || null,
     unitId: row.unit_id || null,
+    unitConversions: unitConversionRows.map((entry) => ({
+      unitId: entry.unit_id || 0,
+      unitName: entry.unit_name || '',
+      unitSymbol: entry.unit_symbol || '',
+      factorToPrimary: Number(entry.factor_to_primary || 1),
+    })),
     namingFormat: (() => {
       try {
         return row.naming_format ? JSON.parse(row.naming_format) : [];
@@ -2149,6 +2170,22 @@ async function initDb() {
   `);
 
   await run(`
+    CREATE TABLE IF NOT EXISTS item_unit_conversions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+      unit_id INTEGER NOT NULL REFERENCES units(id),
+      factor_to_primary REAL NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(item_id, unit_id)
+    )
+  `);
+
+  await run(
+    'CREATE INDEX IF NOT EXISTS idx_item_unit_conversions_item_id ON item_unit_conversions(item_id)',
+  );
+
+  await run(`
     CREATE TABLE IF NOT EXISTS delivery_challans (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       order_id INTEGER REFERENCES orders(id),
@@ -2384,6 +2421,7 @@ async function initDb() {
 
   await ensureColumnExists('items', 'quantity', 'REAL NOT NULL DEFAULT 0');
   await ensureColumnExists('items', 'naming_format', "TEXT NOT NULL DEFAULT ''");
+  await ensureColumnExists('item_unit_conversions', 'factor_to_primary', 'REAL NOT NULL DEFAULT 1');
   await ensureColumnExists('item_variations', 'alias', "TEXT DEFAULT ''");
   await ensureColumnExists('item_variations', 'display_name', "TEXT DEFAULT ''");
   await ensureColumnExists('item_variation_nodes', 'code', "TEXT NOT NULL DEFAULT ''");
@@ -4979,6 +5017,7 @@ async function saveItem({
   quantity,
   groupId,
   unitId,
+  unitConversions = [],
   namingFormat = [],
   variationTree = [],
   id = null,
@@ -5015,6 +5054,40 @@ async function saveItem({
     const error = new Error('Selected unit does not exist or is archived.');
     error.statusCode = 400;
     throw error;
+  }
+
+  const normalizedUnitConversions = [];
+  const seenConversionUnits = new Set();
+  for (const entry of Array.isArray(unitConversions) ? unitConversions : []) {
+    const secondaryUnitId = Number(entry?.unitId);
+    const factorToPrimary = Number(entry?.factorToPrimary);
+
+    if (!secondaryUnitId || !Number.isFinite(factorToPrimary) || factorToPrimary <= 0) {
+      const error = new Error('Secondary unit conversions must include a valid unit and a factor greater than 0.');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (secondaryUnitId === normalizedUnitId) {
+      continue;
+    }
+    if (seenConversionUnits.has(secondaryUnitId)) {
+      const error = new Error('Each secondary unit can only be added once.');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    const secondaryUnitRow = await get('SELECT * FROM units WHERE id = ?', [secondaryUnitId]);
+    if (!secondaryUnitRow || secondaryUnitRow.is_archived) {
+      const error = new Error('Secondary unit does not exist or is archived.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    seenConversionUnits.add(secondaryUnitId);
+    normalizedUnitConversions.push({
+      unitId: secondaryUnitId,
+      factorToPrimary,
+    });
   }
 
   const duplicate = await findItemDuplicate({
@@ -5200,6 +5273,28 @@ async function saveItem({
       if (!processedNodeIds.has(oldId)) {
         await run('UPDATE item_variation_nodes SET is_archived = 1, updated_at = ? WHERE id = ?', [now, oldId]);
       }
+    }
+
+    await run('DELETE FROM item_unit_conversions WHERE item_id = ?', [itemId]);
+    for (const conversion of normalizedUnitConversions) {
+      await run(
+        `
+        INSERT INTO item_unit_conversions (
+          item_id,
+          unit_id,
+          factor_to_primary,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?)
+        `,
+        [
+          itemId,
+          conversion.unitId,
+          conversion.factorToPrimary,
+          now,
+          now,
+        ],
+      );
     }
 
     await run('COMMIT');

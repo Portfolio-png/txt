@@ -81,6 +81,16 @@ class ApiItemRepository implements ItemRepository {
         quantity: input.quantity,
         groupId: input.groupId,
         unitId: input.unitId,
+        unitConversions: input.unitConversions
+            .map(
+              (entry) => ItemUnitConversionDefinition(
+                unitId: entry.unitId,
+                unitName: '',
+                unitSymbol: '',
+                factorToPrimary: entry.factorToPrimary,
+              ),
+            )
+            .toList(growable: false),
         namingFormat: input.namingFormat,
         isArchived: false,
         usageCount: 0,
@@ -145,6 +155,16 @@ class ApiItemRepository implements ItemRepository {
         quantity: input.quantity,
         groupId: input.groupId,
         unitId: input.unitId,
+        unitConversions: input.unitConversions
+            .map(
+              (entry) => ItemUnitConversionDefinition(
+                unitId: entry.unitId,
+                unitName: '',
+                unitSymbol: '',
+                factorToPrimary: entry.factorToPrimary,
+              ),
+            )
+            .toList(growable: false),
         namingFormat: input.namingFormat,
         isArchived: current.isArchived,
         usageCount: current.usageCount,
@@ -204,6 +224,7 @@ class ApiItemRepository implements ItemRepository {
         quantity: current.quantity,
         groupId: current.groupId,
         unitId: current.unitId,
+        unitConversions: current.unitConversions,
         namingFormat: current.namingFormat,
         isArchived: archive,
         usageCount: current.usageCount,

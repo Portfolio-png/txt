@@ -1,5 +1,15 @@
 import 'item_definition.dart';
 
+class ItemUnitConversionInput {
+  const ItemUnitConversionInput({
+    required this.unitId,
+    required this.factorToPrimary,
+  });
+
+  final int unitId;
+  final double factorToPrimary;
+}
+
 class ItemVariationNodeInput {
   const ItemVariationNodeInput({
     this.id,
@@ -28,6 +38,7 @@ class CreateItemInput {
     required this.quantity,
     required this.groupId,
     required this.unitId,
+    this.unitConversions = const [],
     this.namingFormat = const [],
     this.variationTree = const [],
   });
@@ -38,6 +49,7 @@ class CreateItemInput {
   final double quantity;
   final int groupId;
   final int unitId;
+  final List<ItemUnitConversionInput> unitConversions;
   final List<String> namingFormat;
   final List<ItemVariationNodeInput> variationTree;
 }
@@ -51,6 +63,7 @@ class UpdateItemInput {
     required this.quantity,
     required this.groupId,
     required this.unitId,
+    this.unitConversions = const [],
     this.namingFormat = const [],
     this.variationTree = const [],
   });
@@ -62,6 +75,7 @@ class UpdateItemInput {
   final double quantity;
   final int groupId;
   final int unitId;
+  final List<ItemUnitConversionInput> unitConversions;
   final List<String> namingFormat;
   final List<ItemVariationNodeInput> variationTree;
 }

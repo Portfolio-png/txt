@@ -61,6 +61,7 @@ class ItemDefinition {
     required this.quantity,
     required this.groupId,
     required this.unitId,
+    this.unitConversions = const [],
     this.namingFormat = const [],
     required this.isArchived,
     required this.usageCount,
@@ -76,6 +77,7 @@ class ItemDefinition {
   final double quantity;
   final int groupId;
   final int unitId;
+  final List<ItemUnitConversionDefinition> unitConversions;
   final List<String> namingFormat;
   final bool isArchived;
   final int usageCount;
@@ -111,4 +113,18 @@ class ItemDefinition {
     }
     return leaves;
   }
+}
+
+class ItemUnitConversionDefinition {
+  const ItemUnitConversionDefinition({
+    required this.unitId,
+    required this.unitName,
+    required this.unitSymbol,
+    required this.factorToPrimary,
+  });
+
+  final int unitId;
+  final String unitName;
+  final String unitSymbol;
+  final double factorToPrimary;
 }

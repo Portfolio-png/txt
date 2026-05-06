@@ -300,6 +300,30 @@ class _NodeDraft {
   }
 }
 
+class _UnitConversionDraft {
+  _UnitConversionDraft({required this.unitId, double unitsPerPrimary = 1})
+    : factorController = TextEditingController(
+        text: _formatUnitConversionFactor(unitsPerPrimary),
+      );
+
+  final int unitId;
+  final TextEditingController factorController;
+
+  double get unitsPerPrimary =>
+      double.tryParse(factorController.text.trim()) ?? 1.0;
+
+  void dispose() {
+    factorController.dispose();
+  }
+}
+
+String _formatUnitConversionFactor(double value) {
+  if (value == value.roundToDouble()) {
+    return value.toInt().toString();
+  }
+  return value.toString();
+}
+
 class _ItemEditorSheet extends StatefulWidget {
   const _ItemEditorSheet({this.item, this.initialName = ''});
 
@@ -323,6 +347,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   bool _syncingDisplayName = false;
   List<String> _namingFormat = [];
   String? _localError;
+  final List<_UnitConversionDraft> _secondaryUnitConversions = [];
 
   bool get _isReadOnly => widget.item?.isUsed ?? false;
   double get _resolvedItemQuantity => widget.item?.quantity ?? 1.0;
@@ -356,6 +381,16 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
         in widget.item?.variationTree ??
             const <ItemVariationNodeDefinition>[]) {
       _rootNodes.add(_draftFromNode(node, null));
+    }
+    for (final conversion in widget.item?.unitConversions ?? const []) {
+      final draft = _UnitConversionDraft(
+        unitId: conversion.unitId,
+        unitsPerPrimary: conversion.factorToPrimary <= 0
+            ? 1
+            : 1 / conversion.factorToPrimary,
+      );
+      draft.factorController.addListener(_handleChange);
+      _secondaryUnitConversions.add(draft);
     }
 
     _syncPrimaryDisplayName();
@@ -434,6 +469,61 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     }
   }
 
+  List<int> get _orderedUnitIds => [
+    ...?(_selectedUnitId == null ? null : <int>[_selectedUnitId!]),
+    ..._secondaryUnitConversions.map((draft) => draft.unitId),
+  ];
+
+  void _rebuildUnitOrderFrom(
+    List<int> orderedUnitIds,
+    Map<int, double> unitsPerOldPrimary,
+  ) {
+    for (final draft in _secondaryUnitConversions) {
+      draft.dispose();
+    }
+    _secondaryUnitConversions.clear();
+    _selectedUnitId = orderedUnitIds.isEmpty ? null : orderedUnitIds.first;
+    if (_selectedUnitId == null) {
+      return;
+    }
+    final newPrimaryUnitsPerOldPrimary =
+        unitsPerOldPrimary[_selectedUnitId!] ?? 1;
+    for (final unitId in orderedUnitIds.skip(1)) {
+      final unitsPerPrimary =
+          (unitsPerOldPrimary[unitId] ?? 1) / newPrimaryUnitsPerOldPrimary;
+      final draft = _UnitConversionDraft(
+        unitId: unitId,
+        unitsPerPrimary: unitsPerPrimary,
+      );
+      draft.factorController.addListener(_handleChange);
+      _secondaryUnitConversions.add(draft);
+    }
+  }
+
+  void _reorderUnits(int oldIndex, int newIndex) {
+    final orderedUnitIds = _orderedUnitIds.toList(growable: true);
+    if (orderedUnitIds.length < 2) {
+      return;
+    }
+    if (newIndex > oldIndex) {
+      newIndex -= 1;
+    }
+    if (oldIndex < 0 ||
+        oldIndex >= orderedUnitIds.length ||
+        newIndex < 0 ||
+        newIndex >= orderedUnitIds.length) {
+      return;
+    }
+    final unitsPerOldPrimary = <int, double>{
+      ...?(_selectedUnitId == null ? null : <int, double>{_selectedUnitId!: 1}),
+      for (final draft in _secondaryUnitConversions)
+        draft.unitId: draft.unitsPerPrimary,
+    };
+    final moved = orderedUnitIds.removeAt(oldIndex);
+    orderedUnitIds.insert(newIndex, moved);
+    _rebuildUnitOrderFrom(orderedUnitIds, unitsPerOldPrimary);
+  }
+
   void _syncPrimaryDisplayName() {
     if (_displayNameTouched) {
       return;
@@ -484,6 +574,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     for (final node in _rootNodes) {
       node.dispose();
     }
+    for (final conv in _secondaryUnitConversions) {
+      conv.dispose();
+    }
     super.dispose();
   }
 
@@ -500,12 +593,20 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     );
     final availableGroups = groupsProvider.activeGroups;
     final selectedGroup = groupsProvider.findById(_selectedGroupId);
-    final availableUnits = unitsProvider.compatibleActiveUnitsForGroupUnitId(
-      selectedGroup?.unitId,
-    );
-    final selectedUnit = unitsProvider.units
+    final availableUnits = unitsProvider.units
+        .where((u) => !u.isArchived)
+        .toList(growable: false);
+    final selectedUnit = availableUnits
         .where((unit) => unit.id == _selectedUnitId)
         .firstOrNull;
+    final primaryUnitSymbol = selectedUnit?.symbol ?? selectedUnit?.name ?? '';
+    final alreadySelectedUnitIds = {
+      ...(_selectedUnitId == null ? const <int>[] : <int>[_selectedUnitId!]),
+      ..._secondaryUnitConversions.map((c) => c.unitId),
+    };
+    final addableUnits = unitsProvider.units
+        .where((u) => !u.isArchived && !alreadySelectedUnitIds.contains(u.id))
+        .toList(growable: false);
     final detailsSection = _SectionCard(
       title: 'Item Details',
       child: Column(
@@ -551,7 +652,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                     : selectedGroup?.id,
                 decoration: _fieldDecoration(
                   label: 'Group',
-                  helper: 'Choose the group first. Unit options depend on it.',
+                  helper: 'Use the group to classify the item.',
                 ),
                 dialogTitle: 'Group',
                 searchHintText: 'Search group',
@@ -595,17 +696,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                 ],
                 onChanged: (value) => setState(() {
                   _selectedGroupId = value;
-                  final group = groupsProvider.findById(value);
-                  if (group == null) {
-                    _selectedUnitId = null;
-                    return;
-                  }
-                  if (!unitsProvider.areUnitsCompatible(
-                    group.unitId,
-                    _selectedUnitId,
-                  )) {
-                    _selectedUnitId = group.unitId;
-                  }
                 }),
                 validator: (value) => value == null ? 'Required' : null,
               ),
@@ -616,86 +706,165 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
             children: [
               SearchableSelectField<int>(
                 tapTargetKey: const ValueKey<String>('items-unit-field'),
-                value: availableUnits.any((unit) => unit.id == _selectedUnitId)
-                    ? _selectedUnitId
-                    : selectedUnit?.id,
+                value: null,
                 decoration: _fieldDecoration(
-                  label: 'Unit',
-                  helper: selectedGroup == null
-                      ? 'Select a group first. Units are filtered by that group.'
-                      : 'Only units compatible with the selected group are available.',
+                  label: selectedUnit == null ? 'Unit' : 'Add another unit',
+                  helper:
+                      'Select units for this item. Each selection appears below.',
                 ),
-                dialogTitle: 'Unit',
+                dialogTitle: selectedUnit == null ? 'Unit' : 'Add another unit',
                 searchHintText: 'Search unit',
-                fieldEnabled: !_isReadOnly && selectedGroup != null,
-                onCreateOption: selectedGroup == null
-                    ? null
-                    : (query) async {
-                        final groupBaseUnit = unitsProvider.findById(
-                          selectedGroup.unitId,
-                        );
-                        final created = await UnitsScreen.openEditor(
-                          context,
-                          initialName: query,
-                          initialGroupName:
-                              groupBaseUnit?.unitGroupName ??
-                              groupBaseUnit?.name ??
-                              '',
-                          initialConversionBaseUnitId: groupBaseUnit?.id,
-                        );
-                        if (!mounted || created == null) {
-                          return null;
-                        }
-                        if (!unitsProvider.areUnitsCompatible(
-                          selectedGroup.unitId,
-                          created.id,
-                        )) {
-                          setState(() {
-                            _localError =
-                                'The created unit is not compatible with the selected group.';
-                          });
-                          return null;
-                        }
-                        setState(() {
-                          _localError = null;
-                        });
-                        return SearchableSelectOption<int>(
-                          value: created.id,
-                          label: created.displayLabel,
-                        );
-                      },
+                fieldEnabled: !_isReadOnly,
+                onCreateOption: (query) async {
+                  final created = await UnitsScreen.openEditor(
+                    context,
+                    initialName: query,
+                  );
+                  if (!mounted || created == null) {
+                    return null;
+                  }
+                  setState(() {
+                    _localError = null;
+                  });
+                  return SearchableSelectOption<int>(
+                    value: created.id,
+                    label: created.displayLabel,
+                  );
+                },
                 createOptionLabelBuilder: (query) => 'Create unit "$query"',
                 options: [
-                  ...availableUnits.map(
+                  ...addableUnits.map(
                     (unit) => SearchableSelectOption<int>(
                       value: unit.id,
                       label: unit.displayLabel,
                     ),
                   ),
-                  if (selectedUnit != null &&
-                      availableUnits.every(
-                        (unit) => unit.id != selectedUnit.id,
-                      ))
-                    SearchableSelectOption<int>(
-                      value: selectedUnit.id,
-                      label: '${selectedUnit.displayLabel} (archived)',
-                    ),
                 ],
                 onChanged: (value) => setState(() {
+                  if (value == null) {
+                    return;
+                  }
                   _localError = null;
-                  _selectedUnitId = value;
+                  if (_selectedUnitId == null) {
+                    _selectedUnitId = value;
+                    return;
+                  }
+                  final exists = _secondaryUnitConversions.any(
+                    (draft) => draft.unitId == value,
+                  );
+                  if (exists || value == _selectedUnitId) {
+                    return;
+                  }
+                  final draft = _UnitConversionDraft(unitId: value);
+                  draft.factorController.addListener(_handleChange);
+                  _secondaryUnitConversions.add(draft);
                 }),
-                validator: (value) => value == null ? 'Required' : null,
               ),
             ],
           ),
           const SizedBox(height: 16),
-          _PreviewCard(
-            displayName: _displayNameController.text.trim(),
-            unitLabel: selectedUnit?.displayLabel,
-            propertyCount: _rootNodes.length,
-            leafCount: _leafDrafts.length,
-          ),
+          if (selectedUnit != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: SizedBox(
+                height: 54,
+                child: ReorderableListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  buildDefaultDragHandles: false,
+                  shrinkWrap: true,
+                  proxyDecorator: (child, index, animation) {
+                    return Material(color: Colors.transparent, child: child);
+                  },
+                  itemCount: _orderedUnitIds.length,
+                  onReorder: _isReadOnly
+                      ? (oldIndex, newIndex) {}
+                      : (oldIndex, newIndex) =>
+                            setState(() => _reorderUnits(oldIndex, newIndex)),
+                  itemBuilder: (context, index) {
+                    final unitId = _orderedUnitIds[index];
+                    final unit = unitsProvider.findById(unitId);
+                    return Padding(
+                      key: ValueKey<String>('unit-bubble-$unitId'),
+                      padding: EdgeInsets.only(
+                        right: index == _orderedUnitIds.length - 1 ? 0 : 10,
+                      ),
+                      child: ReorderableDelayedDragStartListener(
+                        index: index,
+                        enabled: !_isReadOnly,
+                        child: _UnitSelectionBubble(
+                          label: unit?.displayLabel ?? 'Unit #$unitId',
+                          onRemove: _isReadOnly
+                              ? null
+                              : () => setState(() {
+                                  if (unitId == _selectedUnitId) {
+                                    _selectedUnitId = null;
+                                    for (final draft
+                                        in _secondaryUnitConversions) {
+                                      draft.dispose();
+                                    }
+                                    _secondaryUnitConversions.clear();
+                                    return;
+                                  }
+                                  final draft = _secondaryUnitConversions
+                                      .firstWhere(
+                                        (entry) => entry.unitId == unitId,
+                                      );
+                                  _secondaryUnitConversions.remove(draft);
+                                  draft.dispose();
+                                }),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            )
+          else
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Select a unit first.',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: Colors.grey[400]),
+              ),
+            ),
+          if (selectedUnit != null) ...[
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Arrange the unit bubbles to choose the base unit. Define how 1 ${selectedUnit.displayLabel} converts to the units on the right.',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+              ),
+            ),
+          ],
+          if (_secondaryUnitConversions.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            for (var i = 0; i < _secondaryUnitConversions.length; i++) ...[
+              _UnitConversionRow(
+                draft: _secondaryUnitConversions[i],
+                baseUnitSymbol: primaryUnitSymbol,
+                unitLabel:
+                    unitsProvider
+                        .findById(_secondaryUnitConversions[i].unitId)
+                        ?.displayLabel ??
+                    '?',
+                unitSymbol:
+                    unitsProvider
+                        .findById(_secondaryUnitConversions[i].unitId)
+                        ?.symbol ??
+                    '?',
+                onRemove: () => setState(() {
+                  _secondaryUnitConversions.removeAt(i).dispose();
+                }),
+              ),
+              if (i != _secondaryUnitConversions.length - 1)
+                const SizedBox(height: 8),
+            ],
+          ],
           const SizedBox(height: 12),
           _WarningText(warning: duplicate.warning),
         ],
@@ -823,6 +992,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final wideComposer = constraints.maxWidth >= 1140;
+
                       final namingFormatSection = _SectionCard(
                         title: 'Naming Format',
                         child: Container(
@@ -1053,23 +1223,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     );
   }
 
-  List<_NodeDraft> get _leafDrafts {
-    final leaves = <_NodeDraft>[];
-    void visit(_NodeDraft node) {
-      if (node.isLeafValue) {
-        leaves.add(node);
-      }
-      for (final child in node.children) {
-        visit(child);
-      }
-    }
-
-    for (final node in _rootNodes) {
-      visit(node);
-    }
-    return leaves;
-  }
-
   List<ItemVariationNodeInput> get _variationTreeInputs =>
       _rootNodes.map((node) => _toInput(node, null)).toList(growable: false);
 
@@ -1262,6 +1415,15 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       });
       return;
     }
+    for (final conversion in _secondaryUnitConversions) {
+      if (conversion.unitsPerPrimary <= 0) {
+        setState(() {
+          _localError =
+              'Every secondary unit conversion must be greater than 0.';
+        });
+        return;
+      }
+    }
 
     final itemsProvider = context.read<ItemsProvider>();
     final duplicate = itemsProvider.checkDuplicate(
@@ -1290,6 +1452,14 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               quantity: itemQuantity,
               groupId: _selectedGroupId!,
               unitId: _selectedUnitId!,
+              unitConversions: _secondaryUnitConversions
+                  .map(
+                    (draft) => ItemUnitConversionInput(
+                      unitId: draft.unitId,
+                      factorToPrimary: 1 / draft.unitsPerPrimary,
+                    ),
+                  )
+                  .toList(growable: false),
               namingFormat: _activeNamingFormat,
               variationTree: _variationTreeInputs,
             ),
@@ -1303,6 +1473,14 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               quantity: itemQuantity,
               groupId: _selectedGroupId!,
               unitId: _selectedUnitId!,
+              unitConversions: _secondaryUnitConversions
+                  .map(
+                    (draft) => ItemUnitConversionInput(
+                      unitId: draft.unitId,
+                      factorToPrimary: 1 / draft.unitsPerPrimary,
+                    ),
+                  )
+                  .toList(growable: false),
               namingFormat: _activeNamingFormat,
               variationTree: _variationTreeInputs,
             ),
@@ -1798,56 +1976,53 @@ class _SectionCard extends StatelessWidget {
   }
 }
 
-class _PreviewCard extends StatelessWidget {
-  const _PreviewCard({
-    required this.displayName,
-    required this.unitLabel,
-    required this.propertyCount,
-    required this.leafCount,
-  });
-
-  final String displayName;
-  final String? unitLabel;
-  final int propertyCount;
-  final int leafCount;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppCard(
-      backgroundColor: const Color(0xFFF8FAFC),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 12,
-        children: [
-          _PreviewChip(
-            label: displayName.isEmpty ? 'Display name pending' : displayName,
-          ),
-          _PreviewChip(
-            label: unitLabel == null ? 'Unit pending' : 'Unit: $unitLabel',
-          ),
-          _PreviewChip(label: 'Top properties: $propertyCount'),
-          _PreviewChip(label: 'Leaf nodes: $leafCount'),
-        ],
-      ),
-    );
-  }
-}
-
-class _PreviewChip extends StatelessWidget {
-  const _PreviewChip({required this.label});
+class _UnitSelectionBubble extends StatelessWidget {
+  const _UnitSelectionBubble({required this.label, this.onRemove});
 
   final String label;
+  final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) {
+    const backgroundColor = Color(0xFFF3F4F6);
+    const borderColor = Color(0xFFE2E8F0);
+    const textColor = Color(0xFF334155);
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: backgroundColor,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: borderColor),
       ),
-      child: Text(label),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: textColor,
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+            ),
+          ),
+          if (onRemove != null) ...[
+            const SizedBox(width: 6),
+            InkWell(
+              borderRadius: BorderRadius.circular(999),
+              onTap: onRemove,
+              child: const Padding(
+                padding: EdgeInsets.all(0.5),
+                child: Icon(
+                  Icons.close_rounded,
+                  size: 13,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -1913,4 +2088,113 @@ class _ItemsMessageBanner extends StatelessWidget {
 
 extension<T> on Iterable<T> {
   T? get firstOrNull => isEmpty ? null : first;
+}
+
+class _UnitConversionRow extends StatelessWidget {
+  const _UnitConversionRow({
+    required this.draft,
+    required this.baseUnitSymbol,
+    required this.unitLabel,
+    required this.unitSymbol,
+    required this.onRemove,
+  });
+
+  final _UnitConversionDraft draft;
+  final String baseUnitSymbol;
+  final String unitLabel;
+  final String unitSymbol;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFCBD5E1)),
+            ),
+            child: Text(
+              '1 $baseUnitSymbol',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF334155),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            '=',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: const Color(0xFF94A3B8),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 80,
+            child: TextFormField(
+              controller: draft.factorController,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF1F2937),
+              ),
+              decoration: InputDecoration(
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Color(0xFFDCE2F0)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Color(0xFFDCE2F0)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Color(0xFF6366F1)),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            unitSymbol,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF6366F1),
+            ),
+          ),
+          const Spacer(),
+          IconButton(
+            onPressed: onRemove,
+            tooltip: 'Remove $unitLabel',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            icon: const Icon(
+              Icons.close_rounded,
+              size: 16,
+              color: Color(0xFF94A3B8),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
