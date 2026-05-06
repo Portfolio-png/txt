@@ -10316,9 +10316,78 @@ app.post('/api/assets/upload-intent', requirePermission('config.write'), async (
   }
 });
 
+app.post('/api/items/:id/assets/upload-intent', requirePermission('config.write'), async (req, res) => {
+  try {
+    const entityId = Number(req.params.id);
+    if (!Number.isInteger(entityId) || entityId <= 0) {
+      res.status(400).json({
+        success: false,
+        intent: null,
+        error: 'A valid item id is required.',
+      });
+      return;
+    }
+    const requestedEntityId = req.body?.entityId;
+    if (requestedEntityId != null && Number(requestedEntityId) !== entityId) {
+      res.status(400).json({
+        success: false,
+        intent: null,
+        error: 'Request item id does not match the upload route item id.',
+      });
+      return;
+    }
+    const intent = await createAssetUploadIntent({
+      ...(req.body || {}),
+      entityType: 'item',
+      entityId,
+    });
+    res.status(intent.alreadyUploaded ? 200 : 201).json({
+      success: true,
+      intent,
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      intent: null,
+      error: error.message,
+    });
+  }
+});
+
 app.post('/api/assets/upload-complete', requirePermission('config.write'), async (req, res) => {
   try {
     const asset = await completeAssetUpload(req.body || {});
+    res.json({ success: true, asset, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      asset: null,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/items/:id/assets/upload-complete', requirePermission('config.write'), async (req, res) => {
+  try {
+    const entityId = Number(req.params.id);
+    if (!Number.isInteger(entityId) || entityId <= 0) {
+      res.status(400).json({
+        success: false,
+        asset: null,
+        error: 'A valid item id is required.',
+      });
+      return;
+    }
+    const asset = await completeAssetUpload(req.body || {});
+    if (asset.entityType !== 'item' || Number(asset.entityId) !== entityId) {
+      res.status(400).json({
+        success: false,
+        asset: null,
+        error: 'Completed upload does not belong to the requested item.',
+      });
+      return;
+    }
     res.json({ success: true, asset, error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({

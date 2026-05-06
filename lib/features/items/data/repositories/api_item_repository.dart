@@ -261,21 +261,29 @@ class ApiItemRepository implements ItemRepository {
       );
     }
 
-    final uri = Uri.parse('$baseUrl/api/assets/upload-intent');
-    final response = await _client.post(
-      uri,
+    final body = jsonEncode({
+      'entityType': 'item',
+      'entityId': input.itemId,
+      'fileName': input.fileName,
+      'contentType': input.contentType,
+      'sizeBytes': input.sizeBytes,
+      'sha256': input.sha256,
+      'isPrimary': input.isPrimary,
+    });
+    var response = await _client.post(
+      Uri.parse('$baseUrl/api/assets/upload-intent'),
       headers: const {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'entityType': 'item',
-        'entityId': input.itemId,
-        'fileName': input.fileName,
-        'contentType': input.contentType,
-        'sizeBytes': input.sizeBytes,
-        'sha256': input.sha256,
-        'isPrimary': input.isPrimary,
-      }),
+      body: body,
     );
-    final payload = _decodeJsonObject(response.body);
+    var payload = _decodeJsonObject(response.body);
+    if (_isMissingAssetRoute(response.statusCode, payload)) {
+      response = await _client.post(
+        Uri.parse('$baseUrl/api/items/${input.itemId}/assets/upload-intent'),
+        headers: const {'Content-Type': 'application/json'},
+        body: body,
+      );
+      payload = _decodeJsonObject(response.body);
+    }
     if (response.statusCode < 200 ||
         response.statusCode >= 300 ||
         payload['success'] != true ||
@@ -333,16 +341,25 @@ class ApiItemRepository implements ItemRepository {
       return created;
     }
 
-    final uri = Uri.parse('$baseUrl/api/assets/upload-complete');
-    final response = await _client.post(
-      uri,
+    final body = jsonEncode({
+      'uploadSessionId': input.uploadSessionId,
+      'objectKey': input.objectKey,
+    });
+    var response = await _client.post(
+      Uri.parse('$baseUrl/api/assets/upload-complete'),
       headers: const {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'uploadSessionId': input.uploadSessionId,
-        'objectKey': input.objectKey,
-      }),
+      body: body,
     );
-    final payload = _decodeJsonObject(response.body);
+    var payload = _decodeJsonObject(response.body);
+    if (input.itemId != null &&
+        _isMissingAssetRoute(response.statusCode, payload)) {
+      response = await _client.post(
+        Uri.parse('$baseUrl/api/items/${input.itemId}/assets/upload-complete'),
+        headers: const {'Content-Type': 'application/json'},
+        body: body,
+      );
+      payload = _decodeJsonObject(response.body);
+    }
     if (response.statusCode < 200 ||
         response.statusCode >= 300 ||
         payload['success'] != true ||
@@ -1831,6 +1848,16 @@ class ApiItemRepository implements ItemRepository {
       throw const ItemApiException('Unexpected response shape.');
     }
     return decoded;
+  }
+
+  bool _isMissingAssetRoute(int statusCode, Map<String, dynamic> payload) {
+    if (statusCode != 404) {
+      return false;
+    }
+    final error = (payload['error'] as String? ?? '').toLowerCase();
+    final message = (payload['message'] as String? ?? '').toLowerCase();
+    return error.contains('api route not found') ||
+        message.contains('api route not found');
   }
 
   ItemAsset _itemAssetFromJson(Map<String, dynamic> json) {

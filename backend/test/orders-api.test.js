@@ -429,6 +429,36 @@ test('orders persistence functions create, list, and update lifecycle', async ()
     const baseUrl = `http://127.0.0.1:${port}`;
     try {
       const owner = await login(baseUrl, 'owner@paper.local', 'Qz79Luma4821');
+      const assetIntentResponse = await postJson(
+        baseUrl,
+        `/api/items/${item.id}/assets/upload-intent`,
+        owner.token,
+        {
+          fileName: 'alias-item-image.png',
+          contentType: 'image/png',
+          sizeBytes: 128,
+          sha256: 'f'.repeat(64),
+          isPrimary: true,
+        },
+      );
+      assert.equal(assetIntentResponse.status, 201);
+      assert.equal(assetIntentResponse.body.success, true);
+      assert.equal(assetIntentResponse.body.intent.upload != null, true);
+
+      const assetCompleteResponse = await postJson(
+        baseUrl,
+        `/api/items/${item.id}/assets/upload-complete`,
+        owner.token,
+        {
+          uploadSessionId:
+              assetIntentResponse.body.intent.upload.uploadSessionId,
+          objectKey: assetIntentResponse.body.intent.upload.objectKey,
+        },
+      );
+      assert.equal(assetCompleteResponse.status, 200);
+      assert.equal(assetCompleteResponse.body.success, true);
+      assert.equal(assetCompleteResponse.body.asset.entityId, item.id);
+
       const createResponse = await postJson(baseUrl, '/api/orders', owner.token, {
         orderNo: 'ORD-HTTP-001',
         clientId: client.id,

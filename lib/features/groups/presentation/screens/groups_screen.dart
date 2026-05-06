@@ -256,6 +256,7 @@ class _GroupEditorSheet extends StatefulWidget {
 }
 
 class _GroupEditorSheetState extends State<_GroupEditorSheet> {
+  static const String _primaryGroupName = 'Primary Group';
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameController;
   int? _selectedParentId;
@@ -263,6 +264,11 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
   String? _localError;
 
   bool get _isReadOnly => widget.group?.isUsed ?? false;
+  bool get _isEditingPrimaryGroup =>
+      widget.group != null &&
+      widget.group!.parentGroupId == null &&
+      GroupsProvider.normalizeValue(widget.group!.name) ==
+          GroupsProvider.normalizeValue(_primaryGroupName);
 
   @override
   void initState() {
@@ -300,13 +306,29 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
     final availableParents = groupsProvider.availableParentsFor(
       excludeGroupId: widget.group?.id,
     );
+    final resolvedParentId = _resolvedParentGroupId(groupsProvider);
+    final parentOptions = _isEditingPrimaryGroup
+        ? const <SearchableSelectOption<int?>>[
+            SearchableSelectOption<int?>(
+              value: null,
+              label: 'Primary Group (root)',
+            ),
+          ]
+        : availableParents
+              .map(
+                (group) => SearchableSelectOption<int?>(
+                  value: group.id,
+                  label: group.name,
+                ),
+              )
+              .toList(growable: false);
     final availableUnits = unitsProvider.activeUnits;
     final selectedUnit = unitsProvider.units
         .where((unit) => unit.id == _selectedUnitId)
         .firstOrNull;
     final duplicate = groupsProvider.checkDuplicate(
       name: _nameController.text,
-      parentGroupId: _selectedParentId,
+      parentGroupId: resolvedParentId,
       excludeId: widget.group?.id,
     );
 
@@ -363,15 +385,18 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
                   const SizedBox(height: 12),
                   SearchableSelectField<int?>(
                     tapTargetKey: const ValueKey<String>('groups-parent-field'),
-                    value:
-                        availableParents.any(
-                          (group) => group.id == _selectedParentId,
-                        )
-                        ? _selectedParentId
+                    value: _isEditingPrimaryGroup
+                        ? null
+                        : availableParents.any(
+                            (group) => group.id == resolvedParentId,
+                          )
+                        ? resolvedParentId
                         : null,
                     decoration: _fieldDecoration(
                       label: 'Parent group',
-                      helper: 'Optional. Leave empty to use Primary Group',
+                      helper: _isEditingPrimaryGroup
+                          ? 'Root group of the hierarchy'
+                          : 'Defaults to the real Primary Group. Choose another parent only when needed.',
                     ),
                     dialogTitle: 'Parent group',
                     searchHintText: 'Search parent group',
@@ -399,18 +424,7 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
                     },
                     createOptionLabelBuilder: (query) =>
                         'Create parent group "$query"',
-                    options: [
-                      const SearchableSelectOption<int?>(
-                        value: null,
-                        label: 'Primary Group',
-                      ),
-                      ...availableParents.map(
-                        (group) => SearchableSelectOption<int?>(
-                          value: group.id,
-                          label: group.name,
-                        ),
-                      ),
-                    ],
+                    options: parentOptions,
                     onChanged: (value) {
                       setState(() {
                         _selectedParentId = value;
@@ -484,7 +498,7 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
                   const SizedBox(height: 16),
                   _PreviewCard(
                     name: _nameController.text.trim(),
-                    parentName: groupsProvider.parentNameFor(_selectedParentId),
+                    parentName: groupsProvider.parentNameFor(resolvedParentId),
                     unitLabel: unitsProvider.units
                         .where((unit) => unit.id == _selectedUnitId)
                         .firstOrNull
@@ -497,7 +511,7 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
                         widget.group != null &&
                         groupsProvider.wouldCreateCycle(
                           groupId: widget.group!.id,
-                          parentGroupId: _selectedParentId,
+                          parentGroupId: resolvedParentId,
                         ),
                   ),
                   const SizedBox(height: 20),
@@ -554,6 +568,7 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
 
     final groupsProvider = context.read<GroupsProvider>();
     final unitsProvider = context.read<UnitsProvider>();
+    final resolvedParentId = _resolvedParentGroupId(groupsProvider);
     if (_selectedUnitId == null ||
         !unitsProvider.activeUnits.any((unit) => unit.id == _selectedUnitId)) {
       setState(() {
@@ -564,7 +579,7 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
     if (widget.group != null &&
         groupsProvider.wouldCreateCycle(
           groupId: widget.group!.id,
-          parentGroupId: _selectedParentId,
+          parentGroupId: resolvedParentId,
         )) {
       setState(() {
         _localError =
@@ -575,7 +590,7 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
 
     final duplicate = groupsProvider.checkDuplicate(
       name: _nameController.text,
-      parentGroupId: _selectedParentId,
+      parentGroupId: resolvedParentId,
       excludeId: widget.group?.id,
     );
     if (duplicate.blockingDuplicate) {
@@ -594,7 +609,7 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
         ? await groupsProvider.createGroup(
             CreateGroupInput(
               name: _nameController.text.trim(),
-              parentGroupId: _selectedParentId,
+              parentGroupId: resolvedParentId,
               unitId: _selectedUnitId!,
             ),
           )
@@ -602,7 +617,7 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
             UpdateGroupInput(
               id: widget.group!.id,
               name: _nameController.text.trim(),
-              parentGroupId: _selectedParentId,
+              parentGroupId: resolvedParentId,
               unitId: _selectedUnitId!,
             ),
           );
@@ -632,6 +647,24 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
         borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
       ),
     );
+  }
+
+  int? _resolvedParentGroupId(GroupsProvider groupsProvider) {
+    if (_selectedParentId != null) {
+      return _selectedParentId;
+    }
+    if (_isEditingPrimaryGroup) {
+      return null;
+    }
+    return groupsProvider.activeGroups
+        .where(
+          (group) =>
+              group.parentGroupId == null &&
+              GroupsProvider.normalizeValue(group.name) ==
+                  GroupsProvider.normalizeValue(_primaryGroupName),
+        )
+        .firstOrNull
+        ?.id;
   }
 }
 

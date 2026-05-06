@@ -82,8 +82,10 @@ class CompleteItemAssetUploadInput {
   const CompleteItemAssetUploadInput({
     required this.uploadSessionId,
     required this.objectKey,
+    this.itemId,
   });
 
   final String uploadSessionId;
   final String objectKey;
+  final int? itemId;
 }

@@ -3746,6 +3746,49 @@ void main() {
     expect(created.unitId, 1);
   });
 
+  testWidgets('groups parent dropdown shows one primary group option', (
+    tester,
+  ) async {
+    final groupRepository = FakeGroupRepository(
+      seedGroups: <GroupDefinition>[
+        GroupDefinition(
+          id: 1,
+          name: 'Primary Group',
+          parentGroupId: null,
+          unitId: 1,
+          isArchived: false,
+          usageCount: 1,
+          createdAt: DateTime(2024),
+          updatedAt: DateTime(2024),
+        ),
+        GroupDefinition(
+          id: 2,
+          name: 'Paper',
+          parentGroupId: 1,
+          unitId: 2,
+          isArchived: false,
+          usageCount: 0,
+          createdAt: DateTime(2024),
+          updatedAt: DateTime(2024),
+        ),
+      ],
+    );
+    await pumpApp(tester, groupRepository: groupRepository);
+
+    await openGroupsScreen(tester);
+
+    await tester.tap(find.text('Add Group'));
+    await tester.pumpAndSettle();
+
+    final beforeOpenCount = find.text('Primary Group').evaluate().length;
+
+    await tester.tap(find.byKey(const ValueKey<String>('groups-parent-field')));
+    await tester.pumpAndSettle();
+
+    final afterOpenCount = find.text('Primary Group').evaluate().length;
+    expect(afterOpenCount, beforeOpenCount + 1);
+  });
+
   testWidgets('groups edit flow preloads parent and unit', (tester) async {
     await pumpApp(tester);
 

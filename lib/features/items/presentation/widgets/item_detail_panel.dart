@@ -170,6 +170,7 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
         CompleteItemAssetUploadInput(
           uploadSessionId: upload.uploadSessionId,
           objectKey: upload.objectKey,
+          itemId: widget.item.id,
         ),
       );
       if (completed == null) {
