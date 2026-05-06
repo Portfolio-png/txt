@@ -5,14 +5,19 @@ const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
+function loadBackend() {
+  delete require.cache[require.resolve('../server.js')];
+  return require('../server.js');
+}
+
 test('auth roles and delete approval workflow', async () => {
   const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-auth-api-'));
   process.env.DB_PATH = path.join(tempDir, 'paper.db');
   process.env.PAPER_SUPER_ADMIN_EMAIL = 'primary@paper.local';
   process.env.PAPER_SUPER_ADMIN_PASSWORD = 'OwnerPass1234';
 
-  const backend = require('../server.js');
-  await backend.initDb();
+  const backend = loadBackend();
+  await backend.resetAndSeedDemoData();
   const { server, port } = await listen(backend.app);
   const baseUrl = `http://127.0.0.1:${port}`;
 
@@ -314,6 +319,235 @@ test('auth roles and delete approval workflow', async () => {
       admin.token,
     );
     assert.equal(deletedLookup.status, 404);
+  } finally {
+    await closeServer(server);
+    await backend.closeDb();
+  }
+});
+
+test('clear-data preserves auth state and reset-demo-data rebuilds seeded workspace', async () => {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-auth-reset-'));
+  process.env.DB_PATH = path.join(tempDir, 'paper.db');
+  process.env.PAPER_SUPER_ADMIN_EMAIL = 'owner@paper.local';
+  process.env.PAPER_SUPER_ADMIN_PASSWORD = 'Qz79Luma4821';
+
+  const backend = loadBackend();
+  await backend.resetAndSeedDemoData();
+  const { server, port } = await listen(backend.app);
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    const owner = await login(baseUrl, 'owner@paper.local', 'Qz79Luma4821');
+
+    const workerResponse = await postJson(baseUrl, '/api/users', owner.token, {
+      name: 'Warehouse User',
+      email: 'warehouse@paper.local',
+      password: 'M7vL2pQa91xz',
+    });
+    assert.equal(workerResponse.status, 201);
+    const workerId = workerResponse.body.user.id;
+
+    const permissionOverride = await patchJson(
+      baseUrl,
+      `/api/users/${workerId}/permissions`,
+      owner.token,
+      {
+        overrides: [{ key: 'inventory.delete', allowed: false }],
+      },
+    );
+    assert.equal(permissionOverride.status, 200);
+
+    const material = await backend.createParentWithChildren({
+      name: 'Clear Data Material',
+      type: 'Raw Material',
+      unit: 'Kg',
+      numberOfChildren: 0,
+    });
+    const now = new Date().toISOString();
+    await backend.run(
+      'INSERT INTO scan_history (barcode, scanned_at) VALUES (?, ?)',
+      [material.barcode, now],
+    );
+    await backend.run(
+      `
+      INSERT INTO material_activity (
+        barcode, event_type, event_label, event_description, actor, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?)
+      `,
+      [
+        material.barcode,
+        'manual-test',
+        'Manual test event',
+        'Created for clear-data verification.',
+        'test',
+        now,
+      ],
+    );
+
+    await backend.saveUnit({
+      name: 'Clear Length Base',
+      symbol: 'clb',
+      notes: '',
+      unitGroupName: 'Clear Length',
+      conversionFactor: 1,
+    });
+    await backend.saveUnit({
+      name: 'Clear Length Derived',
+      symbol: 'cld',
+      notes: '',
+      unitGroupName: 'Clear Length',
+      conversionFactor: 100,
+    });
+
+    const deleteRequest = await postJson(
+      baseUrl,
+      '/api/delete-requests',
+      owner.token,
+      {
+        entityType: 'material',
+        entityId: material.barcode,
+        entityLabel: material.name,
+        reason: 'Clear/reset verification',
+      },
+    );
+    assert.equal(deleteRequest.status, 201);
+
+    const authUsersBefore = await backend.get(
+      'SELECT COUNT(*) AS count FROM users',
+    );
+    const authSessionsBefore = await backend.get(
+      'SELECT COUNT(*) AS count FROM auth_sessions',
+    );
+    const authEventsBefore = await backend.get(
+      'SELECT COUNT(*) AS count FROM auth_events',
+    );
+    const overridesBefore = await backend.get(
+      'SELECT COUNT(*) AS count FROM user_permission_overrides',
+    );
+    const deleteRequestsBefore = await backend.get(
+      'SELECT COUNT(*) AS count FROM delete_requests',
+    );
+    const unitGroupsBefore = await backend.get(
+      'SELECT COUNT(*) AS count FROM unit_groups',
+    );
+    assert.ok(Number(unitGroupsBefore.count || 0) > 0);
+
+    const clearResponse = await postJson(
+      baseUrl,
+      '/api/admin/clear-data',
+      owner.token,
+      {},
+    );
+    assert.equal(clearResponse.status, 200);
+
+    const meAfterClear = await getJson(baseUrl, '/api/auth/me', owner.token);
+    assert.equal(meAfterClear.status, 200);
+    assert.equal(meAfterClear.body.user.email, 'owner@paper.local');
+
+    const authUsersAfter = await backend.get(
+      'SELECT COUNT(*) AS count FROM users',
+    );
+    const authSessionsAfter = await backend.get(
+      'SELECT COUNT(*) AS count FROM auth_sessions',
+    );
+    const authEventsAfter = await backend.get(
+      'SELECT COUNT(*) AS count FROM auth_events',
+    );
+    const overridesAfter = await backend.get(
+      'SELECT COUNT(*) AS count FROM user_permission_overrides',
+    );
+    const deleteRequestsAfter = await backend.get(
+      'SELECT COUNT(*) AS count FROM delete_requests',
+    );
+    assert.equal(authUsersAfter.count, authUsersBefore.count);
+    assert.equal(authSessionsAfter.count, authSessionsBefore.count);
+    assert.ok(
+      Number(authEventsAfter.count || 0) >= Number(authEventsBefore.count || 0),
+    );
+    assert.equal(overridesAfter.count, overridesBefore.count);
+    assert.equal(deleteRequestsAfter.count, deleteRequestsBefore.count);
+
+    const materialsAfterClear = await backend.get(
+      'SELECT COUNT(*) AS count FROM materials',
+    );
+    const clientsAfterClear = await backend.get(
+      'SELECT COUNT(*) AS count FROM clients',
+    );
+    const itemsAfterClear = await backend.get(
+      'SELECT COUNT(*) AS count FROM items',
+    );
+    const ordersAfterClear = await backend.get(
+      'SELECT COUNT(*) AS count FROM orders',
+    );
+    const scanHistoryAfterClear = await backend.get(
+      'SELECT COUNT(*) AS count FROM scan_history',
+    );
+    const materialActivityAfterClear = await backend.get(
+      'SELECT COUNT(*) AS count FROM material_activity',
+    );
+    const unitGroupsAfterClear = await backend.get(
+      'SELECT COUNT(*) AS count FROM unit_groups',
+    );
+    assert.equal(materialsAfterClear.count, 0);
+    assert.equal(clientsAfterClear.count, 0);
+    assert.equal(itemsAfterClear.count, 0);
+    assert.equal(ordersAfterClear.count, 0);
+    assert.equal(scanHistoryAfterClear.count, 0);
+    assert.equal(materialActivityAfterClear.count, 0);
+    assert.equal(unitGroupsAfterClear.count, 0);
+
+    const primaryUnit = await backend.get(
+      "SELECT * FROM units WHERE name = 'Primary Unit' AND symbol = '-'",
+    );
+    const primaryGroup = await backend.get(
+      "SELECT * FROM groups WHERE name = 'Primary Group'",
+    );
+    assert.ok(primaryUnit, 'expected primary unit baseline after clear');
+    assert.ok(primaryGroup, 'expected primary group baseline after clear');
+
+    await backend.saveClient({
+      name: 'Dirty Client',
+      alias: 'Dirty',
+      gstNumber: '',
+      address: '',
+    });
+    await backend.createParentWithChildren({
+      name: 'Dirty Material',
+      type: 'Raw Material',
+      unit: 'Kg',
+      numberOfChildren: 0,
+    });
+
+    const resetResponse = await postJson(
+      baseUrl,
+      '/api/admin/reset-demo-data',
+      owner.token,
+      {},
+    );
+    assert.equal(resetResponse.status, 200);
+
+    const dirtyClientAfterReset = await backend.get(
+      'SELECT * FROM clients WHERE lower(name) = lower(?)',
+      ['Dirty Client'],
+    );
+    const dirtyMaterialAfterReset = await backend.get(
+      'SELECT * FROM materials WHERE lower(name) = lower(?)',
+      ['Dirty Material'],
+    );
+    assert.equal(dirtyClientAfterReset == null, true);
+    assert.equal(dirtyMaterialAfterReset == null, true);
+
+    const seededClients = await backend.getClientsWithUsage();
+    const seededOrders = await backend.getOrders();
+    const seededItems = await backend.getItemsWithUsage();
+    const seededMaterials = await backend.all('SELECT * FROM materials');
+    assert.ok(seededClients.length >= 3, 'expected demo clients after reset');
+    assert.ok(seededItems.length >= 2, 'expected demo items after reset');
+    assert.ok(seededOrders.length >= 1, 'expected demo orders after reset');
+    assert.ok(
+      seededMaterials.length >= 1,
+      'expected demo materials after reset',
+    );
   } finally {
     await closeServer(server);
     await backend.closeDb();

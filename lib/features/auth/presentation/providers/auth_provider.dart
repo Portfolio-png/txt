@@ -364,10 +364,28 @@ class AuthProvider extends ChangeNotifier {
       await _api.reseedDemoData();
       return true;
     } catch (error) {
-      _errorMessage = _friendly(
-        error,
-        fallback: 'Failed to reseed demo data.',
-      );
+      _errorMessage = _friendly(error, fallback: 'Failed to reseed demo data.');
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> resetDemoData() async {
+    if (!can('config.write')) {
+      _errorMessage = 'You do not have permission to reset demo data.';
+      notifyListeners();
+      return false;
+    }
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      await _api.resetDemoData();
+      return true;
+    } catch (error) {
+      _errorMessage = _friendly(error, fallback: 'Failed to reset demo data.');
       return false;
     } finally {
       _isLoading = false;

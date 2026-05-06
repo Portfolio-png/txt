@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const { mkdtempSync } = require('node:fs');
+const http = require('node:http');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
@@ -15,11 +16,19 @@ test('orders persistence functions create, list, and update lifecycle', async ()
   process.env.S3_SECRET_ACCESS_KEY = 'test-secret';
   process.env.S3_FORCE_PATH_STYLE = 'true';
   process.env.S3_SKIP_OBJECT_VERIFY = 'true';
+  process.env.PAPER_SUPER_ADMIN_EMAIL = 'owner@paper.local';
+  process.env.PAPER_SUPER_ADMIN_PASSWORD = 'Qz79Luma4821';
 
   const backend = require('../server.js');
 
   try {
-    await backend.initDb();
+    await backend.resetAndSeedDemoData();
+    const orderColumns = await backend.all("PRAGMA table_info(orders)");
+    assert.equal(
+      orderColumns.some((column) => column.name === 'updated_at'),
+      true,
+      'orders table must expose updated_at',
+    );
 
     const seededClients = await backend.getClientsWithUsage();
     const seededItems = await backend.getItemsWithUsage();
@@ -68,6 +77,80 @@ test('orders persistence functions create, list, and update lifecycle', async ()
     assert.equal(repeatedIntent.alreadyUploaded, true);
     assert.equal(repeatedIntent.document.id, document.id);
 
+    const staleTimestamp = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    await backend.run(
+      `
+      INSERT INTO po_documents (
+        file_name, content_type, size_bytes, sha256, object_key, status, created_at, uploaded_at
+      ) VALUES (?, ?, ?, ?, ?, 'uploaded', ?, ?)
+      `,
+      [
+        'stale-po.pdf',
+        'application/pdf',
+        256,
+        'c'.repeat(64),
+        'po-documents/stale/stale-po.pdf',
+        staleTimestamp,
+        staleTimestamp,
+      ],
+    );
+    await backend.run(
+      `
+      INSERT INTO po_upload_sessions (
+        id, file_name, content_type, size_bytes, sha256, object_key, status, expires_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+      `,
+      [
+        'stale-upload-session',
+        'stale-session-po.pdf',
+        'application/pdf',
+        256,
+        'd'.repeat(64),
+        'po-documents/stale/stale-session-po.pdf',
+        staleTimestamp,
+        staleTimestamp,
+      ],
+    );
+    await backend.createPoUploadIntent({
+      fileName: 'fresh-po.pdf',
+      contentType: 'application/pdf',
+      sizeBytes: 512,
+      sha256: 'e'.repeat(64),
+    });
+    const staleDocument = await backend.get(
+      "SELECT id FROM po_documents WHERE sha256 = ?",
+      ['c'.repeat(64)],
+    );
+    assert.equal(staleDocument == null, true);
+    const staleSession = await backend.get(
+      "SELECT id FROM po_upload_sessions WHERE id = ?",
+      ['stale-upload-session'],
+    );
+    assert.equal(staleSession == null, true);
+
+    const imageIntent = await backend.createAssetUploadIntent({
+      entityType: 'item',
+      entityId: item.id,
+      fileName: 'printed-sleeve.png',
+      contentType: 'image/png',
+      sizeBytes: 2048,
+      sha256: 'b'.repeat(64),
+      isPrimary: true,
+    });
+    assert.equal(imageIntent.alreadyUploaded, false);
+    assert.ok(imageIntent.upload.uploadUrl.includes('X-Amz-Signature'));
+    const asset = await backend.completeAssetUpload({
+      uploadSessionId: imageIntent.upload.uploadSessionId,
+      objectKey: imageIntent.upload.objectKey,
+    });
+    assert.equal(asset.entityType, 'item');
+    assert.equal(asset.entityId, item.id);
+    assert.equal(asset.isPrimary, true);
+    assert.ok(asset.readUrl.includes('X-Amz-Signature'));
+    const itemAssets = await backend.listAssetsForEntity('item', item.id);
+    assert.equal(itemAssets.length, 1);
+    assert.equal(itemAssets[0].id, asset.id);
+
     await assert.rejects(
       () =>
         backend.saveOrder({
@@ -86,6 +169,24 @@ test('orders persistence functions create, list, and update lifecycle', async ()
           poDocumentIds: [999999],
         }),
       /One or more PO documents were not uploaded/,
+    );
+    await assert.rejects(
+      () =>
+        backend.saveOrder({
+          orderNo: 'ORD-BAD-QTY',
+          clientId: client.id,
+          clientName: client.name,
+          poNumber: 'PO-BAD-QTY',
+          clientCode: client.alias,
+          itemId: item.id,
+          itemName: item.displayName,
+          variationLeafNodeId: leaf.id,
+          variationPathLabel: leaf.displayName,
+          variationPathNodeIds: leaf.path,
+          quantity: 1.5,
+          status: 'draft',
+        }),
+      /whole number/,
     );
     const afterFailedDocumentLink = await backend.getOrders();
     assert.equal(
@@ -202,7 +303,7 @@ test('orders persistence functions create, list, and update lifecycle', async ()
     });
     const updatedDto = backend.rowToOrderDto ? backend.rowToOrderDto(updated) : updated;
     assert.equal(updatedDto.status, 'completed');
-    assert.equal(updatedDto.endDate, '2026-04-12T00:00:00.000Z');
+    assert.equal(updatedDto.endDate, '2026-04-12');
 
     // Verify status history
     const statusHistory = await backend.all('SELECT * FROM order_status_history WHERE order_id = ?', [created.id]);
@@ -220,6 +321,39 @@ test('orders persistence functions create, list, and update lifecycle', async ()
     // Verify activity log for update
     const updateLogs = await backend.all('SELECT * FROM order_activity_log WHERE order_id = ? AND activity_type = ?', [created.id, 'lifecycle_updated']);
     assert.equal(updateLogs.length, 1);
+
+    const merged = await backend.saveOrder(
+      {
+        orderNo: 'ORD-DB-001',
+        clientId: client.id,
+        clientName: client.name,
+        poNumber: 'PO-DB-77',
+        clientCode: 'client-facing code',
+        itemId: item.id,
+        itemName: item.displayName,
+        variationLeafNodeId: leaf.id,
+        variationPathLabel: 'FORGED LABEL',
+        variationPathNodeIds: [...leaf.path].reverse(),
+        quantity: 4,
+        status: 'completed',
+        startDate: '2026-04-05T00:00:00.000Z',
+        endDate: '2026-04-12T00:00:00.000Z',
+        actor: { id: 1, name: 'Test User', role: 'admin', source: 'test' },
+      },
+      { returnMeta: true },
+    );
+    assert.equal(merged.merged, true);
+    assert.equal(merged.quantityBefore, 12);
+    assert.equal(merged.quantityAdded, 4);
+    assert.equal(merged.quantityAfter, 16);
+    const mergedRow = await backend.get('SELECT * FROM orders WHERE id = ?', [created.id]);
+    assert.equal(mergedRow.quantity, 16);
+    assert.equal(mergedRow.status, 'completed');
+    assert.equal(mergedRow.client_code, 'client-facing code');
+    assert.equal(mergedRow.variation_path_node_ids_json, JSON.stringify(leaf.path));
+    assert.equal(mergedRow.variation_path_label, leaf.displayName);
+    assert.ok(mergedRow.updated_at);
+    assert.notEqual(mergedRow.updated_at, created.updated_at);
 
     // Test invalid lifecycle rollback
     await assert.rejects(
@@ -239,6 +373,107 @@ test('orders persistence functions create, list, and update lifecycle', async ()
     });
     const draftedDto = backend.rowToOrderDto ? backend.rowToOrderDto(drafted) : drafted;
     assert.equal(draftedDto.status, 'draft');
+
+    const draftOnlyClient = await backend.saveClient({
+      name: 'Draft Only Client',
+      alias: 'DOC',
+      gstNumber: '29ABCDE1234F2Z5',
+      address: 'Draft Street',
+    });
+    await backend.saveOrder({
+      orderNo: 'ORD-DRAFT-ONLY',
+      clientId: draftOnlyClient.id,
+      clientName: draftOnlyClient.name,
+      poNumber: 'PO-DRAFT-ONLY',
+      clientCode: 'draft-code',
+      itemId: item.id,
+      itemName: item.displayName,
+      variationLeafNodeId: leaf.id,
+      variationPathLabel: leaf.displayName,
+      variationPathNodeIds: leaf.path,
+      quantity: 5,
+      status: 'draft',
+    });
+    const renamedDraftOnlyClient = await backend.saveClient({
+      id: draftOnlyClient.id,
+      name: 'Draft Only Client Renamed',
+      alias: 'DOC',
+      gstNumber: '29ABCDE1234F2Z5',
+      address: 'Draft Street',
+    });
+    assert.equal(renamedDraftOnlyClient.name, 'Draft Only Client Renamed');
+
+    const importedMaterial = await backend.createParentWithChildren({
+      name: 'Imported Production Material',
+      type: 'Raw Material',
+      unit: 'kg',
+      location: 'STAGING',
+      numberOfChildren: 0,
+    });
+    await backend.run(
+      'DELETE FROM inventory_stock_positions WHERE material_barcode = ?',
+      [importedMaterial.barcode],
+    );
+    await backend.initDb();
+    const gatedBackfillCount = await backend.get(
+      `
+      SELECT COUNT(*) AS count
+      FROM inventory_stock_positions
+      WHERE material_barcode = ?
+      `,
+      [importedMaterial.barcode],
+    );
+    assert.equal(Number(gatedBackfillCount?.count || 0), 0);
+
+    const { server, port } = await listen(backend.app);
+    const baseUrl = `http://127.0.0.1:${port}`;
+    try {
+      const owner = await login(baseUrl, 'owner@paper.local', 'Qz79Luma4821');
+      const createResponse = await postJson(baseUrl, '/api/orders', owner.token, {
+        orderNo: 'ORD-HTTP-001',
+        clientId: client.id,
+        clientName: client.name,
+        poNumber: 'PO-HTTP-001',
+        clientCode: 'http-client-code',
+        itemId: item.id,
+        itemName: item.displayName,
+        variationLeafNodeId: leaf.id,
+        variationPathLabel: leaf.displayName,
+        variationPathNodeIds: leaf.path,
+        quantity: 6,
+        status: 'inProgress',
+        startDate: '2026-04-20T00:00:00.000Z',
+        endDate: '2026-04-25T00:00:00.000Z',
+      });
+      assert.equal(createResponse.status, 201);
+      assert.equal(createResponse.body.merged, false);
+
+      const mergeResponse = await postJson(baseUrl, '/api/orders', owner.token, {
+        orderNo: 'ORD-HTTP-001',
+        clientId: client.id,
+        clientName: client.name,
+        poNumber: 'PO-HTTP-001',
+        clientCode: 'http-client-code-updated',
+        itemId: item.id,
+        itemName: item.displayName,
+        variationLeafNodeId: leaf.id,
+        variationPathLabel: 'FORGED LABEL',
+        variationPathNodeIds: [...leaf.path].reverse(),
+        quantity: 4,
+        status: 'completed',
+        startDate: '2026-04-20T00:00:00.000Z',
+        endDate: '2026-04-25T00:00:00.000Z',
+      });
+      assert.equal(mergeResponse.status, 200);
+      assert.equal(mergeResponse.body.merged, true);
+      assert.equal(mergeResponse.body.quantityBefore, 6);
+      assert.equal(mergeResponse.body.quantityAdded, 4);
+      assert.equal(mergeResponse.body.quantityAfter, 10);
+      assert.equal(mergeResponse.body.order.quantity, 10);
+      assert.equal(mergeResponse.body.order.status, 'completed');
+    } finally {
+      await closeServer(server);
+    }
   } finally {
     await backend.closeDb();
   }
@@ -246,7 +481,7 @@ test('orders persistence functions create, list, and update lifecycle', async ()
 
 function findFirstLeafVariation(nodes, currentPath = []) {
   for (const node of nodes) {
-    const nextPath = [...currentPath, node.id];
+    const nextPath = node.kind === 'value' ? [...currentPath, node.id] : [...currentPath];
     if (node.kind === 'value' && (!node.children || node.children.length === 0)) {
       return { id: node.id, displayName: node.displayName, path: nextPath };
     }
@@ -256,4 +491,61 @@ function findFirstLeafVariation(nodes, currentPath = []) {
     }
   }
   return null;
+}
+
+async function login(baseUrl, email, password) {
+  const response = await postJson(baseUrl, '/api/auth/login', null, {
+    email,
+    password,
+  });
+  assert.equal(response.status, 200);
+  return response.body;
+}
+
+async function listen(app) {
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  return { server, port: address.port };
+}
+
+async function closeServer(server) {
+  await new Promise((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve())),
+  );
+}
+
+async function postJson(baseUrl, pathname, token, body) {
+  const payload = JSON.stringify(body);
+  return requestJson(baseUrl, pathname, 'POST', token, payload);
+}
+
+async function requestJson(baseUrl, pathname, method, token, body) {
+  const target = new URL(pathname, baseUrl);
+  const headers = {
+    Accept: 'application/json',
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  if (body != null) {
+    headers['Content-Type'] = 'application/json';
+    headers['Content-Length'] = Buffer.byteLength(body);
+  }
+
+  const response = await fetch(target, {
+    method,
+    headers,
+    body,
+  });
+  const text = await response.text();
+  let parsed = null;
+  if (text) {
+    try {
+      parsed = JSON.parse(text);
+    } catch (error) {
+      parsed = { raw: text };
+    }
+  }
+  return { status: response.status, body: parsed };
 }

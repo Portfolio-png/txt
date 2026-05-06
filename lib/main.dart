@@ -59,6 +59,7 @@ void main() {
 class MyApp extends StatelessWidget {
   const MyApp({
     super.key,
+    this.authProvider,
     this.inventoryRepository,
     this.groupRepository,
     this.unitRepository,
@@ -70,6 +71,7 @@ class MyApp extends StatelessWidget {
     this.demoModeOverride,
   });
 
+  final AuthProvider? authProvider;
   final InventoryRepository? inventoryRepository;
   final GroupRepository? groupRepository;
   final UnitRepository? unitRepository;
@@ -99,11 +101,14 @@ class MyApp extends StatelessWidget {
 
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider<AuthProvider>(
-          create: (_) =>
-              AuthProvider(baseUrl: _apiBaseUrl, demoMode: _effectiveDemoMode)
-                ..initialize(),
-        ),
+        if (authProvider != null)
+          ChangeNotifierProvider<AuthProvider>.value(value: authProvider!)
+        else
+          ChangeNotifierProvider<AuthProvider>(
+            create: (_) =>
+                AuthProvider(baseUrl: _apiBaseUrl, demoMode: _effectiveDemoMode)
+                  ..initialize(),
+          ),
         Provider<InventoryRepository>(
           create: (context) =>
               inventoryRepository ??
@@ -295,14 +300,45 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class _AuthGate extends StatelessWidget {
+class _AuthGate extends StatefulWidget {
   const _AuthGate();
 
   @override
+  State<_AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<_AuthGate> {
+  String? _lastRefreshToken;
+
+  void _refreshAfterAuthentication(String token) {
+    if (_lastRefreshToken == token) {
+      return;
+    }
+    _lastRefreshToken = token;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      Future.wait<void>([
+        context.read<OrdersProvider>().refresh(),
+        context.read<InventoryProvider>().refresh(),
+        context.read<UnitsProvider>().refresh(),
+        context.read<GroupsProvider>().refresh(),
+        context.read<ClientsProvider>().refresh(),
+        context.read<ItemsProvider>().refresh(),
+        context.read<DeliveryChallanProvider>().refresh(),
+      ]);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final authenticated = context.select<AuthProvider, bool>(
-      (auth) => auth.isAuthenticated,
-    );
+    final auth = context.watch<AuthProvider>();
+    final authenticated = auth.isAuthenticated;
+    final token = auth.token;
+    if (authenticated && token != null && token.isNotEmpty) {
+      _refreshAfterAuthentication(token);
+    }
     return authenticated ? const AppShell() : const LoginScreen();
   }
 }

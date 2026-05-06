@@ -17,6 +17,7 @@ import '../../../units/presentation/providers/units_provider.dart';
 import '../../domain/item_definition.dart';
 import '../../domain/item_inputs.dart';
 import '../providers/items_provider.dart';
+import '../widgets/item_detail_panel.dart';
 
 class ItemsScreen extends StatelessWidget {
   const ItemsScreen({super.key});
@@ -186,6 +187,11 @@ class _ItemRow extends StatelessWidget {
         : '${item.leafVariationNodes.length} orderable leaf${item.leafVariationNodes.length == 1 ? '' : 's'}';
 
     return SoftMasterRow(
+      onTap: () => showItemDetailPanel(
+        context,
+        item: item,
+        onEdit: () => ItemsScreen.openEditor(context, item: item),
+      ),
       children: [
         Expanded(
           flex: 2,
@@ -235,7 +241,7 @@ class _ItemRow extends StatelessWidget {
             runSpacing: 8,
             children: [
               SoftActionLink(
-                label: 'Open',
+                label: 'Edit',
                 onTap: () => ItemsScreen.openEditor(context, item: item),
               ),
               if (!item.isUsed)
@@ -350,7 +356,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   final List<_UnitConversionDraft> _secondaryUnitConversions = [];
 
   bool get _isReadOnly => widget.item?.isUsed ?? false;
-  double get _resolvedItemQuantity => widget.item?.quantity ?? 1.0;
 
   @override
   void initState() {
@@ -662,13 +667,26 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                     context,
                     initialName: query,
                   );
-                  if (!mounted || created == null) {
+                  if (!context.mounted || created == null) {
                     return null;
                   }
+                  await context.read<GroupsProvider>().refresh();
+                  if (!context.mounted) {
+                    return null;
+                  }
+                  final refreshedGroupsProvider = context
+                      .read<GroupsProvider>();
+                  setState(() {
+                    _selectedGroupId = created.id;
+                    _localError = null;
+                  });
                   return SearchableSelectOption<int>(
                     value: created.id,
-                    label: _groupOptionLabel(created, groupsProvider),
-                    searchText: _groupOptionSearchText(created, groupsProvider),
+                    label: _groupOptionLabel(created, refreshedGroupsProvider),
+                    searchText: _groupOptionSearchText(
+                      created,
+                      refreshedGroupsProvider,
+                    ),
                   );
                 },
                 createOptionLabelBuilder: (query) => 'Create group "$query"',
@@ -720,7 +738,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                     context,
                     initialName: query,
                   );
-                  if (!mounted || created == null) {
+                  if (!context.mounted || created == null) {
+                    return null;
+                  }
+                  await context.read<UnitsProvider>().refresh();
+                  if (!context.mounted) {
                     return null;
                   }
                   setState(() {
@@ -1408,7 +1430,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       return;
     }
 
-    final itemQuantity = _resolvedItemQuantity;
     if (_selectedGroupId == null || _selectedUnitId == null) {
       setState(() {
         _localError = 'Select both a group and a unit.';
@@ -1449,7 +1470,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               name: _nameController.text.trim(),
               alias: _aliasController.text.trim(),
               displayName: _displayNameController.text.trim(),
-              quantity: itemQuantity,
               groupId: _selectedGroupId!,
               unitId: _selectedUnitId!,
               unitConversions: _secondaryUnitConversions
@@ -1470,7 +1490,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               name: _nameController.text.trim(),
               alias: _aliasController.text.trim(),
               displayName: _displayNameController.text.trim(),
-              quantity: itemQuantity,
               groupId: _selectedGroupId!,
               unitId: _selectedUnitId!,
               unitConversions: _secondaryUnitConversions

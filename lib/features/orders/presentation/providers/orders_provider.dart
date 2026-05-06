@@ -17,6 +17,8 @@ class OrdersProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool _isSaving = false;
   String? _errorMessage;
+  String? _lastCreateOutcomeMessage;
+  bool _lastCreateWasMerged = false;
   bool _initialized = false;
 
   List<OrderEntry> get orders => List<OrderEntry>.unmodifiable(_orders);
@@ -24,6 +26,8 @@ class OrdersProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isSaving => _isSaving;
   String? get errorMessage => _errorMessage;
+  String? get lastCreateOutcomeMessage => _lastCreateOutcomeMessage;
+  bool get lastCreateWasMerged => _lastCreateWasMerged;
 
   List<OrderEntry> get filteredOrders {
     final query = _normalize(_searchQuery);
@@ -76,7 +80,22 @@ class OrdersProvider extends ChangeNotifier {
   }
 
   Future<OrderEntry?> createOrder(CreateOrderInput input) async {
-    return _save(() => _repository.createOrder(input));
+    final existing = _matchingOrderForInput(input);
+    _lastCreateOutcomeMessage = null;
+    _lastCreateWasMerged = false;
+    return _save(
+      () => _repository.createOrder(input),
+      onSuccess: (saved) {
+        if (existing != null && existing.id == saved.id) {
+          _lastCreateWasMerged = true;
+          _lastCreateOutcomeMessage =
+              '${input.quantity} added to existing order (was ${existing.quantity}, now ${saved.quantity}).';
+          return;
+        }
+        _lastCreateWasMerged = false;
+        _lastCreateOutcomeMessage = null;
+      },
+    );
   }
 
   Future<OrderEntry?> updateOrderLifecycle(
@@ -113,16 +132,22 @@ class OrdersProvider extends ChangeNotifier {
     return _repository.createPoDocumentReadUrl(documentId);
   }
 
-  Future<OrderEntry?> _save(Future<OrderEntry> Function() action) async {
+  Future<OrderEntry?> _save(
+    Future<OrderEntry> Function() action, {
+    void Function(OrderEntry saved)? onSuccess,
+  }) async {
     _isSaving = true;
     _errorMessage = null;
     notifyListeners();
     try {
       final saved = await action();
+      onSuccess?.call(saved);
       await refresh();
       return _orders.where((order) => order.id == saved.id).firstOrNull ??
           saved;
     } catch (error) {
+      _lastCreateOutcomeMessage = null;
+      _lastCreateWasMerged = false;
       _errorMessage = error.toString();
       notifyListeners();
       return null;
@@ -134,6 +159,26 @@ class OrdersProvider extends ChangeNotifier {
 
   static String _normalize(String value) {
     return value.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+  }
+
+  OrderEntry? _matchingOrderForInput(CreateOrderInput input) {
+    return _orders.where((order) {
+      return _normalize(order.orderNo) == _normalize(input.orderNo) &&
+          order.clientId == input.clientId &&
+          order.itemId == input.itemId &&
+          order.variationLeafNodeId == input.variationLeafNodeId &&
+          _normalize(order.poNumber) == _normalize(input.poNumber) &&
+          _sameMoment(order.startDate, input.startDate) &&
+          _sameMoment(order.endDate, input.endDate);
+    }).firstOrNull;
+  }
+
+  bool _sameMoment(DateTime? left, DateTime? right) {
+    if (left == null || right == null) {
+      return left == right;
+    }
+    return left.toUtc().millisecondsSinceEpoch ==
+        right.toUtc().millisecondsSinceEpoch;
   }
 }
 

@@ -10,6 +10,7 @@ import '../../features/groups/presentation/providers/groups_provider.dart';
 import '../../features/inventory/presentation/providers/inventory_provider.dart';
 import '../../features/items/presentation/providers/items_provider.dart';
 import '../../features/orders/presentation/providers/orders_provider.dart';
+import '../../features/units/presentation/providers/units_provider.dart';
 import 'navigation_provider.dart';
 
 class AppSidebar extends StatefulWidget {
@@ -622,6 +623,7 @@ class _SettingsPreferencesDialogState
 
     await Future.wait<void>(<Future<void>>[
       context.read<GroupsProvider>().refresh(),
+      context.read<UnitsProvider>().refresh(),
       context.read<ClientsProvider>().refresh(),
       context.read<ItemsProvider>().refresh(),
       context.read<OrdersProvider>().refresh(),
@@ -640,13 +642,13 @@ class _SettingsPreferencesDialogState
     );
   }
 
-  Future<void> _handleReseed() async {
+  Future<void> _handleResetAndReseed() async {
     setState(() {
       _isResetting = true;
     });
     final messenger = ScaffoldMessenger.of(context);
     final auth = context.read<AuthProvider>();
-    final success = await auth.reseedDemoData();
+    final success = await auth.resetDemoData();
     if (!mounted) {
       return;
     }
@@ -656,9 +658,7 @@ class _SettingsPreferencesDialogState
       });
       messenger.showSnackBar(
         SnackBar(
-          content: Text(
-            auth.errorMessage ?? 'Failed to reseed demo data.',
-          ),
+          content: Text(auth.errorMessage ?? 'Failed to reset demo data.'),
         ),
       );
       return;
@@ -666,6 +666,7 @@ class _SettingsPreferencesDialogState
 
     await Future.wait<void>(<Future<void>>[
       context.read<GroupsProvider>().refresh(),
+      context.read<UnitsProvider>().refresh(),
       context.read<ClientsProvider>().refresh(),
       context.read<ItemsProvider>().refresh(),
       context.read<OrdersProvider>().refresh(),
@@ -680,7 +681,9 @@ class _SettingsPreferencesDialogState
       _isResetting = false;
     });
     messenger.showSnackBar(
-      const SnackBar(content: Text('Demo data reseeded successfully.')),
+      const SnackBar(
+        content: Text('Demo data reset and reseeded successfully.'),
+      ),
     );
   }
 
@@ -706,7 +709,7 @@ class _SettingsPreferencesDialogState
               ),
               const SizedBox(height: 10),
               Text(
-                'Clear the backend database and reseed demo data for a fresh testing workspace.',
+                'Clear operational data or rebuild a fresh demo workspace. Users, sessions, permissions, and audit data stay intact.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: SoftErpTheme.textSecondary,
                   height: 1.45,
@@ -725,7 +728,7 @@ class _SettingsPreferencesDialogState
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Clear or Reseed Database',
+                      'Workspace Data Controls',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         color: SoftErpTheme.textPrimary,
                         fontWeight: FontWeight.w700,
@@ -733,31 +736,36 @@ class _SettingsPreferencesDialogState
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'This resets orders, inventory, groups, items, clients, challans, and documents. Users and login access remain intact.',
+                      'Clear Data leaves only the minimum app baseline. Reset + Reseed Demo clears operational data and rebuilds the seeded demo workspace.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: SoftErpTheme.textSecondary,
                         height: 1.45,
                       ),
                     ),
                     const SizedBox(height: 14),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
+                    Wrap(
+                      alignment: WrapAlignment.end,
+                      runAlignment: WrapAlignment.end,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 10,
+                      runSpacing: 10,
                       children: [
                         OutlinedButton(
-                          onPressed: _isResetting ? null : _handleReseed,
+                          onPressed: _isResetting
+                              ? null
+                              : _handleResetAndReseed,
                           style: OutlinedButton.styleFrom(
                             foregroundColor: SoftErpTheme.accent,
                             side: const BorderSide(color: SoftErpTheme.accent),
-                            minimumSize: const Size(120, 44),
+                            minimumSize: const Size(168, 44),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(16),
                             ),
                           ),
                           child: Text(
-                            _isResetting ? 'Wait…' : 'Reseed Data',
+                            _isResetting ? 'Working…' : 'Reset + Reseed Demo',
                           ),
                         ),
-                        const SizedBox(width: 10),
                         FilledButton(
                           onPressed: _isResetting ? null : _handleClear,
                           style: FilledButton.styleFrom(
@@ -768,9 +776,7 @@ class _SettingsPreferencesDialogState
                               borderRadius: BorderRadius.circular(16),
                             ),
                           ),
-                          child: Text(
-                            _isResetting ? 'Working…' : 'Clear Data',
-                          ),
+                          child: Text(_isResetting ? 'Working…' : 'Clear Data'),
                         ),
                       ],
                     ),

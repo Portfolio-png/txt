@@ -10,7 +10,16 @@ test('delivery challans create issue and preserve company profile snapshot', asy
 
   const backend = require('../server.js');
   try {
-    await backend.initDb();
+    await backend.resetAndSeedDemoData();
+    const challanItemColumns = await backend.all("PRAGMA table_info(delivery_challan_items)");
+    assert.equal(
+      challanItemColumns.find((column) => column.name === 'quantity_pcs')?.type,
+      'REAL',
+    );
+    assert.equal(
+      challanItemColumns.find((column) => column.name === 'weight')?.type,
+      'REAL',
+    );
     const actor = { id: 1, name: 'Delivery Tester', role: 'admin' };
 
     const profile = await backend.getActiveCompanyProfile();
@@ -39,6 +48,18 @@ test('delivery challans create issue and preserve company profile snapshot', asy
     assert.equal(created.order_id, order.id);
     assert.equal(created.customer_name, order.client_name);
     assert.equal(created.status, 'draft');
+    const aggregated = await backend.get(
+      `
+      SELECT
+        SUM(quantity_pcs) AS total_qty,
+        SUM(weight) AS total_weight
+      FROM delivery_challan_items
+      WHERE challan_id = ?
+      `,
+      [created.id],
+    );
+    assert.equal(Number(aggregated.total_qty || 0), 10);
+    assert.equal(Number(aggregated.total_weight || 0), 2.5);
 
     const issued = await backend.issueDeliveryChallan(created.id, actor);
     assert.equal(issued.status, 'issued');
@@ -63,6 +84,46 @@ test('delivery challans create issue and preserve company profile snapshot', asy
     await assert.rejects(
       () => backend.issueDeliveryChallan(empty.id, actor),
       /Add at least one line item before issuing challan/,
+    );
+
+    const zeroMeasure = await backend.saveDeliveryChallan(
+      {
+        order_id: order.id,
+        date: '2026-05-04',
+        items: [
+          {
+            order_item_id: order.id,
+            quantity_pcs: '0',
+            weight: '0',
+          },
+        ],
+      },
+      actor,
+      { user: actor },
+    );
+    await assert.rejects(
+      () => backend.issueDeliveryChallan(zeroMeasure.id, actor),
+      /Enter Qty \/ Pcs or Weight/,
+    );
+
+    await assert.rejects(
+      () =>
+        backend.saveDeliveryChallan(
+          {
+            order_id: order.id,
+            date: '2026-05-04',
+            items: [
+              {
+                order_item_id: order.id,
+                quantity_pcs: '-1',
+                weight: '',
+              },
+            ],
+          },
+          actor,
+          { user: actor },
+        ),
+      /Invalid challan quantity/,
     );
   } finally {
     await backend.closeDb();

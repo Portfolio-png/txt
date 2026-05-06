@@ -31,7 +31,7 @@ class LocalInventoryRepository implements InventoryRepository {
     final dbPath = p.join(directory.path, 'paper_inventory.db');
     _database = await openDatabase(
       dbPath,
-      version: 10,
+      version: 11,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE materials (
@@ -56,6 +56,7 @@ class LocalInventoryRepository implements InventoryRepository {
             scan_count INTEGER NOT NULL DEFAULT 0,
             linked_group_id INTEGER,
             linked_item_id INTEGER,
+            linked_variation_leaf_node_id INTEGER,
             display_stock TEXT DEFAULT '',
             created_by TEXT DEFAULT '',
             workflow_status TEXT DEFAULT 'notStarted',
@@ -307,6 +308,11 @@ class LocalInventoryRepository implements InventoryRepository {
           );
           await db.execute(
             'ALTER TABLE materials ADD COLUMN pending_alert_count INTEGER NOT NULL DEFAULT 0',
+          );
+        }
+        if (oldVersion < 11) {
+          await db.execute(
+            'ALTER TABLE materials ADD COLUMN linked_variation_leaf_node_id INTEGER',
           );
         }
       },
@@ -870,20 +876,36 @@ class LocalInventoryRepository implements InventoryRepository {
     String barcode,
     int groupId,
   ) async {
-    return _updateLink(barcode, linkedGroupId: groupId, linkedItemId: null);
+    return _updateLink(
+      barcode,
+      linkedGroupId: groupId,
+      linkedItemId: null,
+      linkedVariationLeafNodeId: null,
+    );
   }
 
   @override
   Future<MaterialRecord> linkMaterialToItem(
     String barcode,
-    int itemId,
-  ) async {
-    return _updateLink(barcode, linkedGroupId: null, linkedItemId: itemId);
+    int itemId, {
+    int? variationLeafNodeId,
+  }) async {
+    return _updateLink(
+      barcode,
+      linkedGroupId: null,
+      linkedItemId: itemId,
+      linkedVariationLeafNodeId: variationLeafNodeId,
+    );
   }
 
   @override
   Future<MaterialRecord> unlinkMaterial(String barcode) async {
-    return _updateLink(barcode, linkedGroupId: null, linkedItemId: null);
+    return _updateLink(
+      barcode,
+      linkedGroupId: null,
+      linkedItemId: null,
+      linkedVariationLeafNodeId: null,
+    );
   }
 
   Future<Database> get _db async {
@@ -928,6 +950,7 @@ class LocalInventoryRepository implements InventoryRepository {
     String barcode, {
     required int? linkedGroupId,
     required int? linkedItemId,
+    required int? linkedVariationLeafNodeId,
   }) async {
     final db = await _db;
     return db.transaction((txn) async {
@@ -940,6 +963,7 @@ class LocalInventoryRepository implements InventoryRepository {
         {
           'linked_group_id': linkedGroupId,
           'linked_item_id': linkedItemId,
+          'linked_variation_leaf_node_id': linkedVariationLeafNodeId,
           'updated_at': DateTime.now().toIso8601String(),
         },
         where: 'barcode = ?',

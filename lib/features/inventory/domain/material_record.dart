@@ -23,6 +23,7 @@ class MaterialRecord {
     required this.scanCount,
     this.linkedGroupId,
     this.linkedItemId,
+    this.linkedVariationLeafNodeId,
     this.displayStock = '',
     this.createdBy = '',
     this.workflowStatus = 'notStarted',
@@ -62,6 +63,7 @@ class MaterialRecord {
   final int scanCount;
   final int? linkedGroupId;
   final int? linkedItemId;
+  final int? linkedVariationLeafNodeId;
   final String displayStock;
   final String createdBy;
   final String workflowStatus;

@@ -23,8 +23,9 @@ abstract class InventoryRepository {
   Future<MaterialRecord> linkMaterialToGroup(String barcode, int groupId);
   Future<MaterialRecord> linkMaterialToItem(
     String barcode,
-    int itemId,
-  );
+    int itemId, {
+    int? variationLeafNodeId,
+  });
   Future<MaterialRecord> unlinkMaterial(String barcode);
   Future<List<MaterialActivityEvent>> getMaterialActivity(String barcode);
   Future<InventoryHealthSnapshot> getInventoryHealth();

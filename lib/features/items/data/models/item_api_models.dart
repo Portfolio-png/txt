@@ -297,7 +297,6 @@ class CreateItemRequest {
     required this.name,
     required this.alias,
     required this.displayName,
-    required this.quantity,
     required this.groupId,
     required this.unitId,
     required this.unitConversions,
@@ -308,7 +307,6 @@ class CreateItemRequest {
   final String name;
   final String alias;
   final String displayName;
-  final double quantity;
   final int groupId;
   final int unitId;
   final List<ItemUnitConversionRequest> unitConversions;
@@ -320,7 +318,6 @@ class CreateItemRequest {
       name: input.name,
       alias: input.alias,
       displayName: input.displayName,
-      quantity: input.quantity,
       groupId: input.groupId,
       unitId: input.unitId,
       unitConversions: input.unitConversions
@@ -338,7 +335,6 @@ class CreateItemRequest {
       'name': name,
       'alias': alias,
       'displayName': displayName,
-      'quantity': quantity,
       'groupId': groupId,
       'unitId': unitId,
       'unitConversions': unitConversions
@@ -357,7 +353,6 @@ class UpdateItemRequest {
     required this.name,
     required this.alias,
     required this.displayName,
-    required this.quantity,
     required this.groupId,
     required this.unitId,
     required this.unitConversions,
@@ -368,7 +363,6 @@ class UpdateItemRequest {
   final String name;
   final String alias;
   final String displayName;
-  final double quantity;
   final int groupId;
   final int unitId;
   final List<ItemUnitConversionRequest> unitConversions;
@@ -380,7 +374,6 @@ class UpdateItemRequest {
       name: input.name,
       alias: input.alias,
       displayName: input.displayName,
-      quantity: input.quantity,
       groupId: input.groupId,
       unitId: input.unitId,
       unitConversions: input.unitConversions
@@ -398,7 +391,6 @@ class UpdateItemRequest {
       'name': name,
       'alias': alias,
       'displayName': displayName,
-      'quantity': quantity,
       'groupId': groupId,
       'unitId': unitId,
       'unitConversions': unitConversions

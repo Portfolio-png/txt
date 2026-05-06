@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../../domain/item_asset.dart';
 import '../../domain/item_definition.dart';
 import '../../domain/item_inputs.dart';
 import '../models/item_api_models.dart';
@@ -19,8 +20,13 @@ class ApiItemRepository implements ItemRepository {
   final bool useMockResponses;
 
   static final List<ItemDefinition> _mockItems = <ItemDefinition>[];
+  static final Map<int, List<ItemAsset>> _mockAssetsByItemId =
+      <int, List<ItemAsset>>{};
+  static final Map<String, ItemAssetUploadIntentInput> _mockUploadSessions =
+      <String, ItemAssetUploadIntentInput>{};
   static int _mockNextItemId = 1;
   static int _mockNextNodeId = 1;
+  static int _mockNextAssetId = 1;
   static bool _mockSeeded = false;
 
   @override
@@ -78,7 +84,7 @@ class ApiItemRepository implements ItemRepository {
           name: input.name,
           alias: input.alias,
         ),
-        quantity: input.quantity,
+        quantity: 0,
         groupId: input.groupId,
         unitId: input.unitId,
         unitConversions: input.unitConversions
@@ -152,7 +158,7 @@ class ApiItemRepository implements ItemRepository {
           name: input.name,
           alias: input.alias,
         ),
-        quantity: input.quantity,
+        quantity: 0,
         groupId: input.groupId,
         unitId: input.unitId,
         unitConversions: input.unitConversions
@@ -202,6 +208,214 @@ class ApiItemRepository implements ItemRepository {
   @override
   Future<ItemDefinition> restoreItem(int id) async {
     return _updateArchiveState(id, archive: false);
+  }
+
+  @override
+  Future<List<ItemAsset>> getItemAssets(int itemId) async {
+    if (useMockResponses) {
+      return List<ItemAsset>.from(
+        _mockAssetsByItemId[itemId] ?? const <ItemAsset>[],
+      );
+    }
+
+    final uri = Uri.parse('$baseUrl/api/items/$itemId/assets');
+    final response = await _client.get(uri);
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw ItemApiException(
+        payload['error'] as String? ?? 'Failed to fetch item images.',
+      );
+    }
+    return (payload['assets'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(_itemAssetFromJson)
+        .toList(growable: false);
+  }
+
+  @override
+  Future<ItemAssetUploadIntent> createAssetUploadIntent(
+    ItemAssetUploadIntentInput input,
+  ) async {
+    if (useMockResponses) {
+      final existing =
+          (_mockAssetsByItemId[input.itemId] ?? const <ItemAsset>[])
+              .where((asset) => asset.sha256 == input.sha256)
+              .firstOrNull;
+      if (existing != null) {
+        return ItemAssetUploadIntent(alreadyUploaded: true, asset: existing);
+      }
+      final sessionId =
+          'mock-asset-session-${DateTime.now().microsecondsSinceEpoch}';
+      _mockUploadSessions[sessionId] = input;
+      return ItemAssetUploadIntent(
+        alreadyUploaded: false,
+        upload: ItemAssetUploadTarget(
+          uploadSessionId: sessionId,
+          objectKey:
+              'item-images/${input.itemId}/${input.sha256}/${input.fileName}',
+          uploadUrl: Uri.parse('https://mock.local/$sessionId'),
+          headers: const <String, String>{},
+        ),
+      );
+    }
+
+    final uri = Uri.parse('$baseUrl/api/assets/upload-intent');
+    final response = await _client.post(
+      uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'entityType': 'item',
+        'entityId': input.itemId,
+        'fileName': input.fileName,
+        'contentType': input.contentType,
+        'sizeBytes': input.sizeBytes,
+        'sha256': input.sha256,
+        'isPrimary': input.isPrimary,
+      }),
+    );
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true ||
+        payload['intent'] is! Map<String, dynamic>) {
+      throw ItemApiException(
+        payload['error'] as String? ?? 'Failed to create image upload.',
+      );
+    }
+    return _itemAssetUploadIntentFromJson(
+      payload['intent'] as Map<String, dynamic>,
+    );
+  }
+
+  @override
+  Future<ItemAsset> completeAssetUpload(
+    CompleteItemAssetUploadInput input,
+  ) async {
+    if (useMockResponses) {
+      final session = _mockUploadSessions[input.uploadSessionId];
+      if (session == null) {
+        throw ItemApiException('Upload session not found.');
+      }
+      final current = List<ItemAsset>.from(
+        _mockAssetsByItemId[session.itemId] ?? const <ItemAsset>[],
+      );
+      final existing = current
+          .where((asset) => asset.sha256 == session.sha256)
+          .firstOrNull;
+      if (existing != null) {
+        return existing;
+      }
+      final now = DateTime.now();
+      final shouldBePrimary = session.isPrimary || current.isEmpty;
+      final created = ItemAsset(
+        id: _mockNextAssetId++,
+        entityType: 'item',
+        entityId: session.itemId,
+        fileName: session.fileName,
+        contentType: session.contentType,
+        sizeBytes: session.sizeBytes,
+        sha256: session.sha256,
+        objectKey: input.objectKey,
+        status: 'uploaded',
+        isPrimary: shouldBePrimary,
+        createdAt: now,
+        uploadedAt: now,
+      );
+      _mockAssetsByItemId[session.itemId] = <ItemAsset>[
+        if (shouldBePrimary)
+          for (final asset in current) _copyAsset(asset, isPrimary: false)
+        else
+          ...current,
+        created,
+      ];
+      return created;
+    }
+
+    final uri = Uri.parse('$baseUrl/api/assets/upload-complete');
+    final response = await _client.post(
+      uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'uploadSessionId': input.uploadSessionId,
+        'objectKey': input.objectKey,
+      }),
+    );
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true ||
+        payload['asset'] is! Map<String, dynamic>) {
+      throw ItemApiException(
+        payload['error'] as String? ?? 'Failed to complete image upload.',
+      );
+    }
+    return _itemAssetFromJson(payload['asset'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<ItemAsset> setPrimaryAsset(int assetId) async {
+    if (useMockResponses) {
+      for (final entry in _mockAssetsByItemId.entries) {
+        final index = entry.value.indexWhere((asset) => asset.id == assetId);
+        if (index == -1) {
+          continue;
+        }
+        final updated = entry.value
+            .map((asset) => _copyAsset(asset, isPrimary: asset.id == assetId))
+            .toList(growable: false);
+        _mockAssetsByItemId[entry.key] = updated;
+        return updated[index];
+      }
+      throw ItemApiException('Asset not found.');
+    }
+
+    final uri = Uri.parse('$baseUrl/api/assets/$assetId/primary');
+    final response = await _client.patch(uri);
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true ||
+        payload['asset'] is! Map<String, dynamic>) {
+      throw ItemApiException(
+        payload['error'] as String? ?? 'Failed to set primary image.',
+      );
+    }
+    return _itemAssetFromJson(payload['asset'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<void> deleteAsset(int assetId) async {
+    if (useMockResponses) {
+      for (final entry in _mockAssetsByItemId.entries) {
+        final current = entry.value;
+        if (!current.any((asset) => asset.id == assetId)) {
+          continue;
+        }
+        final removed = current.firstWhere((asset) => asset.id == assetId);
+        final retained = current
+            .where((asset) => asset.id != assetId)
+            .toList(growable: true);
+        if (removed.isPrimary && retained.isNotEmpty) {
+          retained[0] = _copyAsset(retained[0], isPrimary: true);
+        }
+        _mockAssetsByItemId[entry.key] = retained;
+        return;
+      }
+      throw ItemApiException('Asset not found.');
+    }
+
+    final uri = Uri.parse('$baseUrl/api/assets/$assetId');
+    final response = await _client.delete(uri);
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw ItemApiException(
+        payload['error'] as String? ?? 'Failed to delete image.',
+      );
+    }
   }
 
   Future<ItemDefinition> _updateArchiveState(
@@ -1617,6 +1831,84 @@ class ApiItemRepository implements ItemRepository {
       throw const ItemApiException('Unexpected response shape.');
     }
     return decoded;
+  }
+
+  ItemAsset _itemAssetFromJson(Map<String, dynamic> json) {
+    return ItemAsset(
+      id: json['id'] as int? ?? 0,
+      entityType: json['entityType'] as String? ?? '',
+      entityId: json['entityId'] as int? ?? 0,
+      fileName: json['fileName'] as String? ?? '',
+      contentType: json['contentType'] as String? ?? '',
+      sizeBytes: json['sizeBytes'] as int? ?? 0,
+      sha256: json['sha256'] as String? ?? '',
+      objectKey: json['objectKey'] as String? ?? '',
+      status: json['status'] as String? ?? 'uploaded',
+      isPrimary: json['isPrimary'] as bool? ?? false,
+      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? ''),
+      uploadedAt: DateTime.tryParse(json['uploadedAt'] as String? ?? ''),
+      readUrl: _optionalUri(json['readUrl']),
+      readUrlExpiresAt: DateTime.tryParse(
+        json['readUrlExpiresAt'] as String? ?? '',
+      ),
+    );
+  }
+
+  ItemAssetUploadIntent _itemAssetUploadIntentFromJson(
+    Map<String, dynamic> json,
+  ) {
+    return ItemAssetUploadIntent(
+      alreadyUploaded: json['alreadyUploaded'] as bool? ?? false,
+      asset: json['asset'] is Map<String, dynamic>
+          ? _itemAssetFromJson(json['asset'] as Map<String, dynamic>)
+          : null,
+      upload: json['upload'] is Map<String, dynamic>
+          ? _itemAssetUploadTargetFromJson(
+              json['upload'] as Map<String, dynamic>,
+            )
+          : null,
+    );
+  }
+
+  ItemAssetUploadTarget _itemAssetUploadTargetFromJson(
+    Map<String, dynamic> json,
+  ) {
+    return ItemAssetUploadTarget(
+      uploadSessionId: json['uploadSessionId'] as String? ?? '',
+      objectKey: json['objectKey'] as String? ?? '',
+      uploadUrl: Uri.parse(json['uploadUrl'] as String? ?? ''),
+      headers: (json['headers'] as Map<String, dynamic>? ?? const {}).map(
+        (key, value) => MapEntry(key, '$value'),
+      ),
+      expiresAt: DateTime.tryParse(json['expiresAt'] as String? ?? ''),
+    );
+  }
+
+  Uri? _optionalUri(Object? value) {
+    final raw = value as String? ?? '';
+    if (raw.trim().isEmpty) {
+      return null;
+    }
+    return Uri.tryParse(raw);
+  }
+
+  static ItemAsset _copyAsset(ItemAsset asset, {required bool isPrimary}) {
+    return ItemAsset(
+      id: asset.id,
+      entityType: asset.entityType,
+      entityId: asset.entityId,
+      fileName: asset.fileName,
+      contentType: asset.contentType,
+      sizeBytes: asset.sizeBytes,
+      sha256: asset.sha256,
+      objectKey: asset.objectKey,
+      status: asset.status,
+      isPrimary: isPrimary,
+      createdAt: asset.createdAt,
+      uploadedAt: asset.uploadedAt,
+      readUrl: asset.readUrl,
+      readUrlExpiresAt: asset.readUrlExpiresAt,
+    );
   }
 }
 

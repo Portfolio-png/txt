@@ -1,5 +1,6 @@
 import '../../domain/item_definition.dart';
 import '../../domain/item_inputs.dart';
+import '../../domain/item_asset.dart';
 
 abstract class ItemRepository {
   Future<void> init();
@@ -8,4 +9,11 @@ abstract class ItemRepository {
   Future<ItemDefinition> updateItem(UpdateItemInput input);
   Future<ItemDefinition> archiveItem(int id);
   Future<ItemDefinition> restoreItem(int id);
+  Future<List<ItemAsset>> getItemAssets(int itemId);
+  Future<ItemAssetUploadIntent> createAssetUploadIntent(
+    ItemAssetUploadIntentInput input,
+  );
+  Future<ItemAsset> completeAssetUpload(CompleteItemAssetUploadInput input);
+  Future<ItemAsset> setPrimaryAsset(int assetId);
+  Future<void> deleteAsset(int assetId);
 }

@@ -22,6 +22,7 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 18080,
         DB_PATH: path.join(__dirname, 'data', 'paper.db'),
+        PAPER_SEED_DEMO_DATA_ON_BOOT: 'false',
       },
     },
   ],

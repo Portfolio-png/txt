@@ -23,6 +23,7 @@ import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../items/presentation/screens/items_screen.dart';
+import '../../../items/presentation/widgets/item_detail_panel.dart';
 import 'package:paper/widgets/variation_path_selector_dialog.dart';
 import '../../../pm/presentation/barcode/material_barcode_toolkit.dart';
 import '../../../pm/presentation/screens/pm_screen.dart';
@@ -1186,6 +1187,23 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   Future<void> _openDetails(MaterialRecord record) async {
     _dismissInventoryActionOverlays();
+    final linkedItemId = record.linkedItemId;
+    if (linkedItemId != null) {
+      final linkedItem = context
+          .read<ItemsProvider>()
+          .items
+          .where((item) => item.id == linkedItemId)
+          .firstOrNull;
+      if (linkedItem != null) {
+        await showItemDetailPanel(
+          context,
+          item: linkedItem,
+          barcode: record.barcode,
+          onEdit: () => ItemsScreen.openEditor(context, item: linkedItem),
+        );
+        return;
+      }
+    }
     final provider = context.read<InventoryProvider>();
     await provider.selectMaterial(record.barcode);
     if (!mounted) {
@@ -2036,6 +2054,12 @@ class _InventoryMovementComposerDialogState
                       labelText: 'From Location',
                       border: OutlineInputBorder(),
                     ),
+                    validator: (value) {
+                      if ((value?.trim().isEmpty ?? true)) {
+                        return 'Enter the source location';
+                      }
+                      return null;
+                    },
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
@@ -6202,6 +6226,7 @@ class _LinkItemSheet extends StatelessWidget {
                     final requiresVariation =
                         item.topLevelProperties.isNotEmpty &&
                         item.leafVariationNodes.isNotEmpty;
+                    int? selectedVariationLeafNodeId;
 
                     if (requiresVariation) {
                       final result =
@@ -6258,6 +6283,7 @@ class _LinkItemSheet extends StatelessWidget {
                       if (result == null || result.leaf == null) {
                         return; // User cancelled or selected an incomplete path
                       }
+                      selectedVariationLeafNodeId = result.leaf!.id;
                     }
 
                     if (!context.mounted) return;
@@ -6265,6 +6291,7 @@ class _LinkItemSheet extends StatelessWidget {
                     await context.read<InventoryProvider>().linkMaterialToItem(
                       record.barcode,
                       item.id,
+                      variationLeafNodeId: selectedVariationLeafNodeId,
                     );
                     if (!context.mounted) return;
                     final provider = context.read<InventoryProvider>();

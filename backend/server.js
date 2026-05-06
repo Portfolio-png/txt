@@ -19,6 +19,10 @@ const app = express();
 const PORT = Number(process.env.PORT || 18080);
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'paper.db');
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const SEED_DEMO_DATA_ON_BOOT = parseBooleanEnv(
+  process.env.PAPER_SEED_DEMO_DATA_ON_BOOT,
+  false,
+);
 const JWT_SECRET = resolveJwtSecret();
 const JWT_TTL_SECONDS = Number(process.env.PAPER_JWT_TTL_SECONDS || 60 * 60 * 12);
 const PASSWORD_ITERATIONS = 120000;
@@ -39,6 +43,14 @@ const COMMON_WEAK_PASSWORDS = new Set([
   'paper123',
   'letmein',
 ]);
+
+function parseBooleanEnv(value, fallback = false) {
+  if (value == null || String(value).trim() === '') {
+    return fallback;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  return ['1', 'true', 'yes', 'y', 'on'].includes(normalized);
+}
 const USER_ROLES = new Set(['super_admin', 'admin', 'user']);
 const PERMISSION_KEYS = [
   'inventory.read',
@@ -385,6 +397,17 @@ function all(sql, params = []) {
       resolve(rows);
     });
   });
+}
+
+async function enableForeignKeys() {
+  await run('PRAGMA foreign_keys = ON');
+  const row = await get('PRAGMA foreign_keys');
+  if (Number(row?.foreign_keys || 0) !== 1) {
+    throw new Error('SQLite foreign key enforcement could not be enabled.');
+  }
+  // WAL mode: readers don't block writers and vice versa.
+  // Safe for single-process Node.js + SQLite; persists across connections.
+  await run('PRAGMA journal_mode = WAL');
 }
 
 function base64UrlEncode(value) {
@@ -1454,6 +1477,29 @@ function rowToPoDocumentDto(row) {
   };
 }
 
+function rowToAssetDto(row, readUrlPayload = null) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    entityType: row.entity_type || '',
+    entityId: Number(row.entity_id || 0),
+    fileName: row.file_name || '',
+    contentType: row.content_type || '',
+    sizeBytes: Number(row.size_bytes || 0),
+    sha256: row.sha256 || '',
+    objectKey: row.object_key || '',
+    status: row.status || 'uploaded',
+    isPrimary: Number(row.is_primary || 0) === 1,
+    createdAt: row.created_at,
+    uploadedAt: row.uploaded_at,
+    readUrl: readUrlPayload?.readUrl || null,
+    readUrlExpiresAt: readUrlPayload?.expiresAt || null,
+  };
+}
+
 function rowToOrderActivityDto(row) {
   if (!row) {
     return null;
@@ -1792,6 +1838,7 @@ function buildSeedTemplates() {
 }
 
 async function initDb() {
+  await enableForeignKeys();
   await run(`
     CREATE TABLE IF NOT EXISTS materials (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2213,8 +2260,8 @@ async function initDb() {
       line_no INTEGER NOT NULL DEFAULT 1,
       particulars TEXT NOT NULL DEFAULT '',
       hsn_code TEXT DEFAULT '',
-      quantity_pcs TEXT DEFAULT '',
-      weight TEXT DEFAULT '',
+      quantity_pcs REAL NOT NULL DEFAULT 0,
+      weight REAL NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
@@ -2254,6 +2301,7 @@ async function initDb() {
       quantity INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'notStarted',
       created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT '',
       start_date TEXT,
       end_date TEXT
     )
@@ -2302,6 +2350,48 @@ async function initDb() {
   );
   await run(
     'CREATE INDEX IF NOT EXISTS idx_po_upload_sessions_sha256 ON po_upload_sessions(sha256)',
+  );
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS uploaded_assets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity_type TEXT NOT NULL,
+      entity_id INTEGER NOT NULL,
+      file_name TEXT NOT NULL,
+      content_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL DEFAULT 0,
+      sha256 TEXT NOT NULL,
+      object_key TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'uploaded',
+      is_primary INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      uploaded_at TEXT
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS asset_upload_sessions (
+      id TEXT PRIMARY KEY,
+      entity_type TEXT NOT NULL,
+      entity_id INTEGER NOT NULL,
+      file_name TEXT NOT NULL,
+      content_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL DEFAULT 0,
+      sha256 TEXT NOT NULL,
+      object_key TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      is_primary INTEGER NOT NULL DEFAULT 0,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      completed_at TEXT
+    )
+  `);
+
+  await run(
+    'CREATE INDEX IF NOT EXISTS idx_uploaded_assets_entity ON uploaded_assets(entity_type, entity_id, status, is_primary)',
+  );
+  await run(
+    'CREATE INDEX IF NOT EXISTS idx_asset_upload_sessions_entity ON asset_upload_sessions(entity_type, entity_id)',
   );
 
   await run(`
@@ -2370,7 +2460,18 @@ async function initDb() {
   await ensureColumnExists('delivery_challans', 'order_no', "TEXT DEFAULT ''");
   await ensureColumnExists('delivery_challan_items', 'order_item_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'item_id', 'INTEGER');
+  await ensureDeliveryChallanItemNumericColumns();
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_order_id ON delivery_challans(order_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_items_challan_id ON delivery_challan_items(challan_id)');
+
+  await ensureColumnExists('orders', 'updated_at', "TEXT NOT NULL DEFAULT ''");
+  await run(`
+    UPDATE orders
+    SET updated_at = CASE
+      WHEN TRIM(COALESCE(updated_at, '')) = '' THEN created_at
+      ELSE updated_at
+    END
+  `);
 
   await run(`
     CREATE TABLE IF NOT EXISTS item_variations (
@@ -2527,18 +2628,24 @@ async function initDb() {
     )
   `);
 
-  await seedMaterialsIfEmpty();
-  await seedUnitsIfEmpty();
+  if (SEED_DEMO_DATA_ON_BOOT) {
+    await seedMaterialsIfEmpty();
+    await seedUnitsIfEmpty();
+  }
   await bootstrapUnitsFromMaterials();
   await backfillMaterialUnitIds();
-  await seedClientsIfEmpty();
-  await seedCompanyProfileIfEmpty();
+  if (SEED_DEMO_DATA_ON_BOOT) {
+    await seedClientsIfEmpty();
+    await seedCompanyProfileIfEmpty();
+  }
   await ensurePrimaryGroupAndUnit();
-  await seedGroupsIfEmpty();
-  await seedItemsIfEmpty();
-  await seedOrdersIfEmpty();
-  await seedTemplatesIfEmpty();
-  await ensureDemoDataset();
+  if (SEED_DEMO_DATA_ON_BOOT) {
+    await seedGroupsIfEmpty();
+    await seedItemsIfEmpty();
+    await seedOrdersIfEmpty();
+    await seedTemplatesIfEmpty();
+    await ensureDemoDataset();
+  }
   await bootstrapSuperAdminIfNeeded();
   dbReady = true;
 }
@@ -2563,12 +2670,17 @@ async function ensureDemoDataset() {
   await ensureDemoItemsPresent();
   await ensureDemoOrdersPresent();
   await ensureDemoMaterialsPresent();
-  await backfillInventoryLedgerForMaterials();
+  await backfillInventoryLedgerForMaterials({
+    inferMissingPositions: SEED_DEMO_DATA_ON_BOOT,
+  });
   await backfillMaterialUnitIds();
   await ensureDemoPipelineRunsPresent();
+  await cleanupStaleUnlinkedPoDocuments();
 }
 
-async function backfillInventoryLedgerForMaterials() {
+async function backfillInventoryLedgerForMaterials({
+  inferMissingPositions = false,
+} = {}) {
   const materials = await all('SELECT * FROM materials');
   for (const material of materials) {
     const positionCountRow = await get(
@@ -2576,7 +2688,7 @@ async function backfillInventoryLedgerForMaterials() {
       [material.barcode],
     );
     const hasPosition = Number(positionCountRow?.count || 0) > 0;
-    if (!hasPosition) {
+    if (!hasPosition && inferMissingPositions) {
       const inferredOnHand = Number(material.number_of_children || 0) > 0
         ? Number(material.number_of_children || 0) * 100
         : 100;
@@ -2592,12 +2704,101 @@ async function backfillInventoryLedgerForMaterials() {
   }
 }
 
+async function cleanupStaleUnlinkedPoDocuments({
+  olderThanHours = 24,
+  now = new Date(),
+} = {}) {
+  const cutoff = new Date(now.getTime() - olderThanHours * 60 * 60 * 1000).toISOString();
+  await run(
+    `
+    DELETE FROM po_upload_sessions
+    WHERE status != 'completed'
+      AND COALESCE(completed_at, expires_at, created_at) <= ?
+    `,
+    [cutoff],
+  );
+  await run(
+    `
+    DELETE FROM po_documents
+    WHERE status = 'uploaded'
+      AND COALESCE(uploaded_at, created_at) <= ?
+      AND id NOT IN (SELECT document_id FROM order_po_documents)
+    `,
+    [cutoff],
+  );
+}
+
 async function ensureColumnExists(tableName, columnName, definition) {
   const columns = await all(`PRAGMA table_info(${tableName})`);
   const hasColumn = columns.some((column) => column.name === columnName);
   if (!hasColumn) {
     console.log(`Migrating ${tableName}: adding ${columnName}`);
     await run(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+  }
+}
+
+async function ensureDeliveryChallanItemNumericColumns() {
+  const columns = await all('PRAGMA table_info(delivery_challan_items)');
+  if (!columns.length) {
+    return;
+  }
+
+  const quantityColumn = columns.find((column) => column.name === 'quantity_pcs');
+  const weightColumn = columns.find((column) => column.name === 'weight');
+  const normalizedType = (column) => String(column?.type || '').trim().toUpperCase();
+  if (normalizedType(quantityColumn) === 'REAL' && normalizedType(weightColumn) === 'REAL') {
+    return;
+  }
+
+  console.log('Migrating delivery_challan_items: converting quantity_pcs and weight to REAL');
+  await run('BEGIN TRANSACTION');
+  try {
+    await run('ALTER TABLE delivery_challan_items RENAME TO delivery_challan_items_legacy');
+    await run(`
+      CREATE TABLE delivery_challan_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
+        order_item_id INTEGER,
+        item_id INTEGER,
+        line_no INTEGER NOT NULL DEFAULT 1,
+        particulars TEXT NOT NULL DEFAULT '',
+        hsn_code TEXT DEFAULT '',
+        quantity_pcs REAL NOT NULL DEFAULT 0,
+        weight REAL NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `);
+    await run(`
+      INSERT INTO delivery_challan_items (
+        id, challan_id, order_item_id, item_id, line_no, particulars, hsn_code,
+        quantity_pcs, weight, created_at, updated_at
+      )
+      SELECT
+        id,
+        challan_id,
+        order_item_id,
+        item_id,
+        line_no,
+        particulars,
+        hsn_code,
+        CASE
+          WHEN TRIM(COALESCE(quantity_pcs, '')) = '' THEN 0
+          ELSE CAST(quantity_pcs AS REAL)
+        END,
+        CASE
+          WHEN TRIM(COALESCE(weight, '')) = '' THEN 0
+          ELSE CAST(weight AS REAL)
+        END,
+        created_at,
+        updated_at
+      FROM delivery_challan_items_legacy
+    `);
+    await run('DROP TABLE delivery_challan_items_legacy');
+    await run('COMMIT');
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
   }
 }
 
@@ -2632,6 +2833,17 @@ function orderActivityTitle(activityType) {
     .join(' ') || 'Order Activity';
 }
 
+// Cache order_activity_log column set once at startup to avoid repeated PRAGMA
+// calls on every order save/lifecycle update (H-5 fix).
+let _orderActivityLogColumns = null;
+async function getOrderActivityLogColumns() {
+  if (!_orderActivityLogColumns) {
+    const columns = await all('PRAGMA table_info(order_activity_log)');
+    _orderActivityLogColumns = new Set(columns.map((col) => col.name));
+  }
+  return _orderActivityLogColumns;
+}
+
 async function insertOrderActivityLog({
   orderId,
   activityType,
@@ -2640,8 +2852,7 @@ async function insertOrderActivityLog({
   details = {},
   createdAt = new Date().toISOString(),
 }) {
-  const columns = await all('PRAGMA table_info(order_activity_log)');
-  const available = new Set(columns.map((column) => column.name));
+  const available = await getOrderActivityLogColumns();
   const detailsJson = JSON.stringify(details || {});
   const valuesByColumn = {
     order_id: orderId,
@@ -3024,13 +3235,18 @@ async function getUnitRowById(id) {
       units.*,
       unit_groups.name AS unit_group_name,
       base_unit.name AS conversion_base_unit_name,
-      COUNT(materials.id) AS usage_count
+      (
+        (SELECT COUNT(*) FROM materials WHERE materials.unit_id = units.id) +
+        (SELECT COUNT(*) FROM groups WHERE groups.unit_id = units.id) +
+        (SELECT COUNT(*) FROM items WHERE items.unit_id = units.id) +
+        (SELECT COUNT(*) FROM item_unit_conversions WHERE item_unit_conversions.unit_id = units.id) +
+        (SELECT COUNT(*) FROM units AS dependent_units WHERE dependent_units.conversion_base_unit_id = units.id) +
+        (SELECT COUNT(*) FROM order_material_requirements WHERE order_material_requirements.unit_id = units.id)
+      ) AS usage_count
     FROM units
     LEFT JOIN unit_groups ON unit_groups.id = units.unit_group_id
     LEFT JOIN units AS base_unit ON base_unit.id = units.conversion_base_unit_id
-    LEFT JOIN materials ON materials.unit_id = units.id
     WHERE units.id = ?
-    GROUP BY units.id
     `,
     [id],
   );
@@ -3041,7 +3257,11 @@ async function getGroupRowById(id) {
     `
     SELECT
       groups.*,
-      0 AS usage_count
+      (
+        (SELECT COUNT(*) FROM groups AS child_groups WHERE child_groups.parent_group_id = groups.id) +
+        (SELECT COUNT(*) FROM items WHERE items.group_id = groups.id AND items.is_archived = 0) +
+        (SELECT COUNT(*) FROM materials WHERE materials.linked_group_id = groups.id)
+      ) AS usage_count
     FROM groups
     WHERE groups.id = ?
     `,
@@ -3054,7 +3274,7 @@ async function getClientRowById(id) {
     `
     SELECT
       clients.*,
-      0 AS usage_count
+      (SELECT COUNT(*) FROM orders WHERE orders.client_id = clients.id) AS usage_count
     FROM clients
     WHERE clients.id = ?
     `,
@@ -3137,6 +3357,160 @@ async function getItemVariationTree(itemId) {
   return roots;
 }
 
+function activeChildrenForNode(node) {
+  return (node.children || []).filter((child) => !child.isArchived);
+}
+
+function activeTopLevelVariationProperties(tree = []) {
+  return (tree || []).filter(
+    (node) => !node.isArchived && String(node.kind) === 'property',
+  );
+}
+
+function findVariationNodeById(nodes = [], nodeId) {
+  for (const node of nodes || []) {
+    if (Number(node.id) === Number(nodeId)) {
+      return node;
+    }
+    const found = findVariationNodeById(node.children || [], nodeId);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+}
+
+function activeValuePathForLeaf(tree = [], leafNodeId) {
+  const selection = activeValueSelectionForLeaf(tree, leafNodeId);
+  return selection ? selection.nodeIds : null;
+}
+
+function activeValueSelectionForLeaf(tree = [], leafNodeId) {
+  const walkProperty = (propertyNode, path) => {
+    for (const valueNode of activeChildrenForNode(propertyNode).filter(
+      (node) => String(node.kind) === 'value',
+    )) {
+      const nextPath = {
+        nodeIds: [...path.nodeIds, Number(valueNode.id)],
+        segments: [...path.segments, String(valueNode.name || '').trim()],
+      };
+      if (Number(valueNode.id) === Number(leafNodeId)) {
+        const activeChildProperty = activeChildrenForNode(valueNode).find(
+          (node) => String(node.kind) === 'property',
+        );
+        return activeChildProperty ? null : nextPath;
+      }
+      for (const childProperty of activeChildrenForNode(valueNode).filter(
+        (node) => String(node.kind) === 'property',
+      )) {
+        const found = walkProperty(childProperty, nextPath);
+        if (found) {
+          return found;
+        }
+      }
+    }
+    return null;
+  };
+
+  for (const propertyNode of activeTopLevelVariationProperties(tree)) {
+    const found = walkProperty(propertyNode, {
+      nodeIds: [],
+      segments: [],
+    });
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+}
+
+function variationPathLabelForNodeIds(tree = [], pathNodeIds = []) {
+  const segments = [];
+  for (const nodeId of pathNodeIds) {
+    const node = findVariationNodeById(tree, nodeId);
+    if (!node || node.isArchived || String(node.kind) !== 'value') {
+      continue;
+    }
+    const segment = String(node.name || '').trim();
+    if (segment) {
+      segments.push(segment);
+    }
+  }
+  return buildVariationPathLabel(segments);
+}
+
+async function resolveOrderVariationSelection({
+  itemId,
+  variationLeafNodeId = 0,
+  variationPathNodeIds = [],
+  status = 'notStarted',
+}) {
+  const item = await getItemRowById(itemId);
+  if (!item || item.is_archived) {
+    const error = new Error('Selected item is not available.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const tree = await getItemVariationTree(item.id);
+  const hasActiveVariationProperties = activeTopLevelVariationProperties(tree).length > 0;
+  const normalizedPathNodeIds = Array.isArray(variationPathNodeIds)
+    ? variationPathNodeIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+    : [];
+  let normalizedLeafId = Number(variationLeafNodeId || 0);
+
+  if (!hasActiveVariationProperties) {
+    return {
+      item,
+      variationLeafNodeId: 0,
+      variationPathNodeIds: [],
+      variationPathNodeIdsJson: '[]',
+      variationPathLabel: '',
+    };
+  }
+
+  if ((!Number.isFinite(normalizedLeafId) || normalizedLeafId <= 0) && normalizedPathNodeIds.length > 0) {
+    normalizedLeafId = normalizedPathNodeIds[normalizedPathNodeIds.length - 1];
+  }
+
+  const isDraft = status === 'draft';
+  if (!Number.isFinite(normalizedLeafId) || normalizedLeafId <= 0) {
+    if (isDraft) {
+      const draftPath = [...normalizedPathNodeIds];
+      return {
+        item,
+        variationLeafNodeId: 0,
+        variationPathNodeIds: draftPath,
+        variationPathNodeIdsJson: JSON.stringify(draftPath),
+        variationPathLabel: variationPathLabelForNodeIds(tree, draftPath),
+      };
+    }
+    const error = new Error('Client, item, and variation values are required.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const leafNode = findVariationNodeById(tree, normalizedLeafId);
+  const leafSelection = activeValueSelectionForLeaf(tree, normalizedLeafId);
+  if (
+    !leafNode ||
+    leafNode.isArchived ||
+    String(leafNode.kind) !== 'value' ||
+    !leafSelection
+  ) {
+    const error = new Error('Selected variation leaf is not available for this item.');
+    error.statusCode = 400;
+    throw error;
+  }
+  return {
+    item,
+    variationLeafNodeId: normalizedLeafId,
+    variationPathNodeIds: leafSelection.nodeIds,
+    variationPathNodeIdsJson: JSON.stringify(leafSelection.nodeIds),
+    variationPathLabel: buildVariationPathLabel(leafSelection.segments),
+  };
+}
+
 async function getItemVariationDimensions(itemId) {
   return all(
     `
@@ -3176,7 +3550,13 @@ async function getItemRowById(id) {
     `
     SELECT
       items.*,
-      0 AS usage_count
+      (
+        (SELECT COUNT(*) FROM orders WHERE orders.item_id = items.id) +
+        (SELECT COUNT(*) FROM delivery_challan_items WHERE delivery_challan_items.item_id = items.id) +
+        (SELECT COUNT(*) FROM order_material_requirements WHERE order_material_requirements.item_id = items.id) +
+        (SELECT COUNT(*) FROM materials WHERE materials.linked_item_id = items.id) +
+        (SELECT COUNT(*) FROM material_group_item_links WHERE material_group_item_links.item_id = items.id)
+      ) AS usage_count
     FROM items
     WHERE items.id = ?
     `,
@@ -3188,14 +3568,20 @@ async function getItemsWithUsage() {
   return all(`
     SELECT
       items.*,
-      0 AS usage_count
+      (
+        (SELECT COUNT(*) FROM orders WHERE orders.item_id = items.id) +
+        (SELECT COUNT(*) FROM delivery_challan_items WHERE delivery_challan_items.item_id = items.id) +
+        (SELECT COUNT(*) FROM order_material_requirements WHERE order_material_requirements.item_id = items.id) +
+        (SELECT COUNT(*) FROM materials WHERE materials.linked_item_id = items.id) +
+        (SELECT COUNT(*) FROM material_group_item_links WHERE material_group_item_links.item_id = items.id)
+      ) AS usage_count
     FROM items
     ORDER BY items.is_archived ASC, LOWER(items.name) ASC
   `);
 }
 
-async function findItemDuplicate({ name, groupId, quantity, excludeId = null, variationTree = [] }) {
-  const rows = await all('SELECT id, name, group_id, quantity FROM items');
+async function findItemDuplicate({ name, groupId, excludeId = null, variationTree = [] }) {
+  const rows = await all('SELECT id, name, group_id FROM items');
   const normalizedName = normalizeUnitValue(name);
   const newProperties = new Set(
     (variationTree || []).filter(n => String(n.kind) === 'property').map(n => normalizeUnitValue(n.name))
@@ -3207,7 +3593,6 @@ async function findItemDuplicate({ name, groupId, quantity, excludeId = null, va
     }
     const isBasicMatch = (
       row.group_id === groupId &&
-      Number(row.quantity || 0) === Number(quantity || 0) &&
       normalizeUnitValue(row.name) === normalizedName
     );
     if (!isBasicMatch) {
@@ -3240,7 +3625,11 @@ async function getGroupsWithUsage() {
   return all(`
     SELECT
       groups.*,
-      0 AS usage_count
+      (
+        (SELECT COUNT(*) FROM groups AS child_groups WHERE child_groups.parent_group_id = groups.id) +
+        (SELECT COUNT(*) FROM items WHERE items.group_id = groups.id AND items.is_archived = 0) +
+        (SELECT COUNT(*) FROM materials WHERE materials.linked_group_id = groups.id)
+      ) AS usage_count
     FROM groups
     ORDER BY groups.is_archived ASC, LOWER(groups.name) ASC
   `);
@@ -3250,7 +3639,7 @@ async function getClientsWithUsage() {
   return all(`
     SELECT
       clients.*,
-      0 AS usage_count
+      (SELECT COUNT(*) FROM orders WHERE orders.client_id = clients.id) AS usage_count
     FROM clients
     ORDER BY clients.is_archived ASC, LOWER(clients.name) ASC
   `);
@@ -3328,6 +3717,29 @@ async function saveClient({ name, alias = '', gstNumber = '', address = '', id =
     const error = new Error('Client not found.');
     error.statusCode = 404;
     throw error;
+  }
+  if ((existing.usage_count || 0) > 0) {
+    const lockedOrderUsage = Number(
+      (
+        await get(
+          `
+          SELECT COUNT(*) AS count
+          FROM orders
+          WHERE client_id = ?
+            AND status IN ('inProgress', 'completed', 'delayed')
+          `,
+          [id],
+        )
+      )?.count || 0,
+    );
+    const identityChanged =
+      normalizePartyValue(existing.name) !== normalizePartyValue(trimmedName) ||
+      normalizeGstNumber(existing.gst_number) !== trimmedGstNumber;
+    if (identityChanged && lockedOrderUsage > 0) {
+      const error = new Error('Used clients cannot change name or GST number.');
+      error.statusCode = 409;
+      throw error;
+    }
   }
 
   await run(
@@ -3587,6 +3999,10 @@ async function getDeliveryChallanItems(challanId) {
 }
 
 function rowToDeliveryChallanItemDto(row) {
+  const formatMeasure = (value) => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? String(numeric) : '';
+  };
   return {
     id: row.id,
     challan_id: row.challan_id,
@@ -3595,8 +4011,8 @@ function rowToDeliveryChallanItemDto(row) {
     line_no: Number(row.line_no || 0),
     particulars: row.particulars || '',
     hsn_code: row.hsn_code || '',
-    quantity_pcs: row.quantity_pcs || '',
-    weight: row.weight || '',
+    quantity_pcs: formatMeasure(row.quantity_pcs),
+    weight: formatMeasure(row.weight),
     created_at: row.created_at || null,
     updated_at: row.updated_at || null,
   };
@@ -3650,6 +4066,20 @@ function normalizeChallanDate(value) {
     throw error;
   }
   return input.slice(0, 10);
+}
+
+function normalizeDeliveryChallanMeasure(value, fieldName) {
+  const input = String(value ?? '').trim();
+  if (!input) {
+    return 0;
+  }
+  const numeric = Number(input);
+  if (!Number.isFinite(numeric) || numeric < 0) {
+    const error = new Error(`Invalid ${fieldName}.`);
+    error.statusCode = 400;
+    throw error;
+  }
+  return numeric;
 }
 
 function normalizeDeliveryChallanItems(items = []) {
@@ -3945,8 +4375,8 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
           item.lineNo,
           item.particulars,
           item.hsnCode,
-          item.quantityPcs,
-          item.weight,
+          normalizeDeliveryChallanMeasure(item.quantityPcs, 'challan quantity'),
+          normalizeDeliveryChallanMeasure(item.weight, 'challan weight'),
           now,
           now,
         ],
@@ -4000,7 +4430,11 @@ async function issueDeliveryChallan(id, actor = null) {
       error.statusCode = 400;
       throw error;
     }
-    if (!String(item.quantity_pcs || '').trim() && !String(item.weight || '').trim()) {
+    const quantity = Number(item.quantity_pcs);
+    const weight = Number(item.weight);
+    const hasQuantity = Number.isFinite(quantity) && quantity > 0;
+    const hasWeight = Number.isFinite(weight) && weight > 0;
+    if (!hasQuantity && !hasWeight) {
       const error = new Error('Enter Qty / Pcs or Weight for each challan item before issuing.');
       error.statusCode = 400;
       throw error;
@@ -4077,6 +4511,12 @@ const ALLOWED_PO_CONTENT_TYPES = new Set([
   'image/jpeg',
 ]);
 
+const ALLOWED_ASSET_CONTENT_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+]);
+
 function normalizePoFileName(fileName) {
   const baseName = path.basename(String(fileName || '').trim());
   return baseName
@@ -4112,6 +4552,72 @@ function assertValidPoUploadInput({ fileName, contentType, sizeBytes, sha256 }) 
     contentType: normalizedContentType,
     sizeBytes: Math.round(normalizedSize),
     sha256: normalizedSha,
+  };
+}
+
+function normalizeAssetFileName(fileName) {
+  const baseName = path.basename(String(fileName || '').trim());
+  return baseName
+    .replace(/[^\w.\- ()]/g, '_')
+    .replace(/_+/g, '_')
+    .slice(0, 160) || 'asset-image';
+}
+
+function assertValidAssetUploadInput({
+  entityType,
+  entityId,
+  fileName,
+  contentType,
+  sizeBytes,
+  sha256,
+  isPrimary,
+}) {
+  const normalizedEntityType = String(entityType || '').trim().toLowerCase();
+  const normalizedEntityId = Number(entityId || 0);
+  const normalizedContentType = String(contentType || '').toLowerCase().trim();
+  const normalizedSize = Number(sizeBytes || 0);
+  const normalizedSha = String(sha256 || '').toLowerCase().trim();
+  const normalizedName = normalizeAssetFileName(fileName);
+
+  if (normalizedEntityType !== 'item') {
+    const error = new Error('Only item image uploads are supported.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!Number.isInteger(normalizedEntityId) || normalizedEntityId <= 0) {
+    const error = new Error('A valid item id is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!ALLOWED_ASSET_CONTENT_TYPES.has(normalizedContentType)) {
+    const error = new Error('Only PNG, JPG, JPEG, and WEBP images are allowed.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!Number.isFinite(normalizedSize) || normalizedSize <= 0) {
+    const error = new Error('File size must be greater than zero.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (normalizedSize > 10 * 1024 * 1024) {
+    const error = new Error('Item images must be 10 MB or smaller.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!/^[a-f0-9]{64}$/.test(normalizedSha)) {
+    const error = new Error('A valid SHA-256 file hash is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    entityType: normalizedEntityType,
+    entityId: normalizedEntityId,
+    fileName: normalizedName,
+    contentType: normalizedContentType,
+    sizeBytes: Math.round(normalizedSize),
+    sha256: normalizedSha,
+    isPrimary: Boolean(isPrimary),
   };
 }
 
@@ -4258,6 +4764,7 @@ async function assertS3ObjectExists(objectKey) {
 }
 
 async function createPoUploadIntent(input) {
+  await cleanupStaleUnlinkedPoDocuments();
   const normalized = assertValidPoUploadInput(input || {});
   const existing = await get(
     "SELECT * FROM po_documents WHERE sha256 = ? AND status = 'uploaded'",
@@ -4444,6 +4951,282 @@ async function createPoDocumentReadUrl(documentId) {
   };
 }
 
+async function assertAssetEntityExists(entityType, entityId) {
+  if (entityType === 'item') {
+    const item = await getItemRowById(entityId);
+    if (item) {
+      return;
+    }
+  }
+  const error = new Error('Asset owner not found.');
+  error.statusCode = 404;
+  throw error;
+}
+
+function assetReadUrlPayload(objectKey, expiresSeconds = 300) {
+  return {
+    readUrl: presignS3Url({
+      method: 'GET',
+      objectKey,
+      expiresSeconds,
+    }),
+    expiresAt: new Date(Date.now() + expiresSeconds * 1000).toISOString(),
+  };
+}
+
+async function listAssetsForEntity(entityType, entityId, { includeReadUrls = true } = {}) {
+  const normalizedEntityType = String(entityType || '').trim().toLowerCase();
+  const normalizedEntityId = Number(entityId || 0);
+  await assertAssetEntityExists(normalizedEntityType, normalizedEntityId);
+  const rows = await all(
+    `
+    SELECT *
+    FROM uploaded_assets
+    WHERE entity_type = ? AND entity_id = ? AND status = 'uploaded'
+    ORDER BY is_primary DESC, datetime(uploaded_at) DESC, id DESC
+    `,
+    [normalizedEntityType, normalizedEntityId],
+  );
+  return rows.map((row) =>
+    rowToAssetDto(
+      row,
+      includeReadUrls ? assetReadUrlPayload(row.object_key) : null,
+    ),
+  );
+}
+
+async function createAssetUploadIntent(input) {
+  const normalized = assertValidAssetUploadInput(input || {});
+  await assertAssetEntityExists(normalized.entityType, normalized.entityId);
+
+  const existing = await get(
+    `
+    SELECT *
+    FROM uploaded_assets
+    WHERE entity_type = ? AND entity_id = ? AND sha256 = ? AND status = 'uploaded'
+    `,
+    [normalized.entityType, normalized.entityId, normalized.sha256],
+  );
+  if (existing) {
+    return {
+      alreadyUploaded: true,
+      asset: rowToAssetDto(existing, assetReadUrlPayload(existing.object_key)),
+      upload: null,
+    };
+  }
+
+  const objectKey = `${normalized.entityType}-images/${normalized.entityId}/${normalized.sha256}/${normalized.fileName}`;
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
+  const uploadSessionId = `asset-upload-${now.getTime()}-${crypto
+    .randomBytes(8)
+    .toString('hex')}`;
+  await run(
+    `
+    INSERT INTO asset_upload_sessions (
+      id, entity_type, entity_id, file_name, content_type, size_bytes, sha256,
+      object_key, status, is_primary, expires_at, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+    `,
+    [
+      uploadSessionId,
+      normalized.entityType,
+      normalized.entityId,
+      normalized.fileName,
+      normalized.contentType,
+      normalized.sizeBytes,
+      normalized.sha256,
+      objectKey,
+      normalized.isPrimary ? 1 : 0,
+      expiresAt,
+      now.toISOString(),
+    ],
+  );
+
+  return {
+    alreadyUploaded: false,
+    asset: null,
+    upload: {
+      uploadSessionId,
+      objectKey,
+      uploadUrl: presignS3Url({
+        method: 'PUT',
+        objectKey,
+        expiresSeconds: 900,
+      }),
+      expiresAt,
+      headers: {
+        'Content-Type': normalized.contentType,
+      },
+    },
+  };
+}
+
+async function completeAssetUpload({ uploadSessionId, objectKey }) {
+  const session = await get('SELECT * FROM asset_upload_sessions WHERE id = ?', [
+    uploadSessionId,
+  ]);
+  if (!session || session.object_key !== objectKey) {
+    const error = new Error('Upload session not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  if (new Date(session.expires_at).getTime() < Date.now()) {
+    const error = new Error('Upload session expired.');
+    error.statusCode = 410;
+    throw error;
+  }
+  await assertAssetEntityExists(session.entity_type, Number(session.entity_id));
+  await assertS3ObjectExists(session.object_key);
+
+  const primaryCount = await get(
+    `
+    SELECT COUNT(*) AS count
+    FROM uploaded_assets
+    WHERE entity_type = ? AND entity_id = ? AND status = 'uploaded' AND is_primary = 1
+    `,
+    [session.entity_type, Number(session.entity_id)],
+  );
+  const shouldBePrimary =
+    Number(session.is_primary || 0) === 1 || Number(primaryCount?.count || 0) === 0;
+  const now = new Date().toISOString();
+
+  await run('BEGIN TRANSACTION');
+  try {
+    if (shouldBePrimary) {
+      await run(
+        `
+        UPDATE uploaded_assets
+        SET is_primary = 0
+        WHERE entity_type = ? AND entity_id = ? AND status = 'uploaded'
+        `,
+        [session.entity_type, Number(session.entity_id)],
+      );
+    }
+    await run(
+      `
+      INSERT OR IGNORE INTO uploaded_assets (
+        entity_type, entity_id, file_name, content_type, size_bytes, sha256,
+        object_key, status, is_primary, created_at, uploaded_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'uploaded', ?, ?, ?)
+      `,
+      [
+        session.entity_type,
+        Number(session.entity_id),
+        session.file_name,
+        session.content_type,
+        Number(session.size_bytes || 0),
+        session.sha256,
+        session.object_key,
+        shouldBePrimary ? 1 : 0,
+        session.created_at || now,
+        now,
+      ],
+    );
+    await run(
+      "UPDATE asset_upload_sessions SET status = 'completed', completed_at = ? WHERE id = ?",
+      [now, uploadSessionId],
+    );
+    await run('COMMIT');
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
+
+  const asset = await get(
+    'SELECT * FROM uploaded_assets WHERE object_key = ?',
+    [session.object_key],
+  );
+  return rowToAssetDto(asset, assetReadUrlPayload(asset.object_key));
+}
+
+async function createAssetReadUrl(assetId) {
+  const asset = await get(
+    "SELECT * FROM uploaded_assets WHERE id = ? AND status = 'uploaded'",
+    [Number(assetId || 0)],
+  );
+  if (!asset) {
+    const error = new Error('Asset not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  const payload = assetReadUrlPayload(asset.object_key);
+  return {
+    asset: rowToAssetDto(asset, payload),
+    readUrl: payload.readUrl,
+    expiresAt: payload.expiresAt,
+  };
+}
+
+async function setPrimaryAsset(assetId) {
+  const asset = await get(
+    "SELECT * FROM uploaded_assets WHERE id = ? AND status = 'uploaded'",
+    [Number(assetId || 0)],
+  );
+  if (!asset) {
+    const error = new Error('Asset not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  await run('BEGIN TRANSACTION');
+  try {
+    await run(
+      `
+      UPDATE uploaded_assets
+      SET is_primary = 0
+      WHERE entity_type = ? AND entity_id = ? AND status = 'uploaded'
+      `,
+      [asset.entity_type, Number(asset.entity_id)],
+    );
+    await run('UPDATE uploaded_assets SET is_primary = 1 WHERE id = ?', [
+      asset.id,
+    ]);
+    await run('COMMIT');
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
+  const updated = await get('SELECT * FROM uploaded_assets WHERE id = ?', [
+    asset.id,
+  ]);
+  return rowToAssetDto(updated, assetReadUrlPayload(updated.object_key));
+}
+
+async function deleteAsset(assetId) {
+  const asset = await get(
+    "SELECT * FROM uploaded_assets WHERE id = ? AND status = 'uploaded'",
+    [Number(assetId || 0)],
+  );
+  if (!asset) {
+    const error = new Error('Asset not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  await run('UPDATE uploaded_assets SET status = ? WHERE id = ?', [
+    'deleted',
+    asset.id,
+  ]);
+  if (Number(asset.is_primary || 0) === 1) {
+    const replacement = await get(
+      `
+      SELECT *
+      FROM uploaded_assets
+      WHERE entity_type = ? AND entity_id = ? AND status = 'uploaded'
+      ORDER BY datetime(uploaded_at) DESC, id DESC
+      LIMIT 1
+      `,
+      [asset.entity_type, Number(asset.entity_id)],
+    );
+    if (replacement) {
+      await run('UPDATE uploaded_assets SET is_primary = 1 WHERE id = ?', [
+        replacement.id,
+      ]);
+    }
+  }
+}
+
 function normalizeMaterialRequirementNumber(value, fieldName) {
   if (value == null || value === '') {
     return 0;
@@ -4461,12 +5244,16 @@ function normalizeOptionalDate(value, fieldName) {
   if (value == null || value === '') {
     return null;
   }
-  if (Number.isNaN(Date.parse(value))) {
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) {
     const error = new Error(`Invalid ${fieldName}.`);
     error.statusCode = 400;
     throw error;
   }
-  return value;
+  // M-2 fix: always store as ISO date-only (YYYY-MM-DD) so merge-match
+  // comparisons using SQLite 'IS' work consistently regardless of how the
+  // date was originally supplied (full ISO string vs date-only string).
+  return new Date(parsed).toISOString().slice(0, 10);
 }
 
 async function saveOrder({
@@ -4487,15 +5274,10 @@ async function saveOrder({
   poDocumentIds = [],
   materialRequirements = [],
   actor = null,
-}) {
+} = {}, { returnMeta = false } = {}) {
   const trimmedOrderNo = String(orderNo || '').trim();
   const normalizedClientId = Number(clientId);
   const normalizedItemId = Number(itemId);
-  const normalizedLeafId = Number(variationLeafNodeId || 0);
-  const normalizedVariationPathNodeIds = Array.isArray(variationPathNodeIds)
-    ? variationPathNodeIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0).sort((a, b) => a - b)
-    : [];
-  const normalizedVariationPathJson = JSON.stringify(normalizedVariationPathNodeIds);
   const normalizedQuantity = Number(quantity || 0);
   const normalizedStartDate = normalizeOptionalDate(startDate, 'start date');
   const normalizedEndDate = normalizeOptionalDate(endDate, 'end date');
@@ -4503,7 +5285,6 @@ async function saveOrder({
   const trimmedClientName = String(clientName || '').trim();
   const trimmedClientCode = String(clientCode || '').trim();
   const trimmedItemName = String(itemName || '').trim();
-  const trimmedVariationPathLabel = String(variationPathLabel || '').trim();
   const allowedStatuses = new Set([
     'draft',
     'notStarted',
@@ -4518,13 +5299,14 @@ async function saveOrder({
     error.statusCode = 400;
     throw error;
   }
-  if (
-    !normalizedClientId ||
-    !normalizedItemId ||
-    ((!Number.isFinite(normalizedLeafId) || normalizedLeafId <= 0) &&
-      normalizedVariationPathNodeIds.length === 0)
-  ) {
-    const error = new Error('Client, item, and variation values are required.');
+  if (!normalizedClientId || !normalizedItemId) {
+    const error = new Error('Client and item are required.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const client = await getClientRowById(normalizedClientId);
+  if (!client || client.is_archived) {
+    const error = new Error('Selected client is not available.');
     error.statusCode = 400;
     throw error;
   }
@@ -4533,6 +5315,20 @@ async function saveOrder({
     error.statusCode = 400;
     throw error;
   }
+  if (!Number.isInteger(normalizedQuantity)) {
+    const error = new Error('Quantity must be a whole number.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const variationSelection = await resolveOrderVariationSelection({
+    itemId: normalizedItemId,
+    variationLeafNodeId,
+    variationPathNodeIds,
+    status: normalizedStatus,
+  });
+  const normalizedLeafId = variationSelection.variationLeafNodeId;
+  const normalizedVariationPathJson = variationSelection.variationPathNodeIdsJson;
+  const canonicalVariationPathLabel = variationSelection.variationPathLabel;
   await assertPoDocumentsUploaded(poDocumentIds);
 
   const now = new Date().toISOString();
@@ -4563,7 +5359,20 @@ async function saveOrder({
     );
 
     let orderId;
+    let merged = false;
+    let quantityBefore = 0;
+    let finalStatus = normalizedStatus;
     if (existing) {
+      merged = true;
+      quantityBefore = Number(existing.quantity || 0);
+      // C-1 fix: never downgrade an order's status during a quantity-merge.
+      // The lifecycle priority order is: draft < notStarted < inProgress < delayed < completed.
+      // Merging additional quantity should not reset a running/completed order.
+      const STATUS_RANK = { draft: 0, notStarted: 1, inProgress: 2, delayed: 2, completed: 3 };
+      const existingRank = STATUS_RANK[existing.status] ?? 1;
+      const incomingRank = STATUS_RANK[normalizedStatus] ?? 1;
+      const mergedStatus = incomingRank > existingRank ? normalizedStatus : existing.status;
+      finalStatus = mergedStatus;
       await run(
         `
         UPDATE orders
@@ -4572,7 +5381,11 @@ async function saveOrder({
             client_code = ?,
             item_name = ?,
             variation_path_label = ?,
-            variation_path_node_ids_json = ?
+            variation_path_node_ids_json = ?,
+            status = ?,
+            start_date = ?,
+            end_date = ?,
+            updated_at = ?
         WHERE id = ?
         `,
         [
@@ -4580,21 +5393,38 @@ async function saveOrder({
           trimmedClientName,
           trimmedClientCode,
           trimmedItemName,
-          trimmedVariationPathLabel,
+          canonicalVariationPathLabel,
           normalizedVariationPathJson,
+          mergedStatus,
+          normalizedStartDate,
+          normalizedEndDate,
+          now,
           existing.id,
         ],
       );
+      if (existing.status !== mergedStatus) {
+        await run(`
+          INSERT INTO order_status_history (
+            order_id, previous_status, new_status, changed_by_user_id, changed_at
+          ) VALUES (?, ?, ?, ?, ?)
+        `, [
+          existing.id,
+          existing.status,
+          mergedStatus,
+          actor?.id || null,
+          now,
+        ]);
+      }
       orderId = existing.id;
     } else {
       const result = await run(
         `
         INSERT INTO orders (
           order_no, client_id, client_name, po_number, client_code, item_id, item_name,
-          variation_leaf_node_id, variation_path_label, variation_path_node_ids_json,
-          quantity, status, created_at, start_date, end_date
+          variation_leaf_node_id, variation_path_label, variation_path_node_ids_json, quantity,
+          status, created_at, updated_at, start_date, end_date
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           trimmedOrderNo,
@@ -4605,10 +5435,11 @@ async function saveOrder({
           normalizedItemId,
           trimmedItemName,
           normalizedLeafId,
-          trimmedVariationPathLabel,
+          canonicalVariationPathLabel,
           normalizedVariationPathJson,
-          Math.round(normalizedQuantity),
+          normalizedQuantity,
           normalizedStatus,
+          now,
           now,
           normalizedStartDate,
           normalizedEndDate,
@@ -4648,7 +5479,10 @@ async function saveOrder({
       activityType,
       actor,
       details: {
-        status: normalizedStatus,
+        merged,
+        previousQuantity: quantityBefore,
+        quantityAfter: quantityBefore + normalizedQuantity,
+        status: finalStatus,
         quantity: normalizedQuantity,
         newlyLinkedDocs: newlyLinkedIds.length,
         requirementsCount: Array.isArray(materialRequirements) ? materialRequirements.length : 0,
@@ -4668,12 +5502,32 @@ async function saveOrder({
 
     const saved = await getOrderRowById(orderId);
     await run('COMMIT');
+    if (returnMeta) {
+      return {
+        orderRow: saved,
+        merged,
+        quantityBefore,
+        quantityAdded: normalizedQuantity,
+        quantityAfter: quantityBefore + normalizedQuantity,
+      };
+    }
     return saved;
   } catch (error) {
     await run('ROLLBACK');
     throw error;
   }
 }
+
+// C-4 fix: valid lifecycle transitions. 'completed' is terminal and can only
+// be changed by an admin (checked in the route layer via requirePermission).
+// Keys are current status → Set of statuses the order is allowed to move to.
+const ORDER_LIFECYCLE_TRANSITIONS = {
+  draft:      new Set(['notStarted', 'inProgress']),
+  notStarted: new Set(['draft', 'inProgress', 'delayed']),
+  inProgress: new Set(['notStarted', 'completed', 'delayed']),
+  delayed:    new Set(['inProgress', 'completed', 'notStarted']),
+  completed:  new Set(['inProgress', 'delayed']), // admin-only reversal handled below
+};
 
 async function updateOrderLifecycle({
   id,
@@ -4700,11 +5554,24 @@ async function updateOrderLifecycle({
   const normalizedEndDate = normalizeOptionalDate(endDate, 'end date');
   const now = new Date().toISOString();
 
+  // Enforce transition rules. Admins/super-admins can override any transition.
+  if (existing.status !== normalizedStatus) {
+    const isAdmin = actor?.role === 'admin' || actor?.role === 'super_admin';
+    const allowed = ORDER_LIFECYCLE_TRANSITIONS[existing.status];
+    if (!isAdmin && allowed && !allowed.has(normalizedStatus)) {
+      const error = new Error(
+        `Cannot move order from '${existing.status}' to '${normalizedStatus}'. Allowed transitions: ${[...allowed].join(', ')}.`,
+      );
+      error.statusCode = 409;
+      throw error;
+    }
+  }
+
   await run('BEGIN TRANSACTION');
   try {
     await run(
-      'UPDATE orders SET status = ?, start_date = ?, end_date = ? WHERE id = ?',
-      [normalizedStatus, normalizedStartDate, normalizedEndDate, id],
+      'UPDATE orders SET status = ?, start_date = ?, end_date = ?, updated_at = ? WHERE id = ?',
+      [normalizedStatus, normalizedStartDate, normalizedEndDate, now, id],
     );
 
     if (existing.status !== normalizedStatus) {
@@ -4994,13 +5861,7 @@ async function ensureDemoGroupsPresent() {
 
 function buildItemDisplayName(name, alias, quantity) {
   const parts = [String(name || '').trim(), String(alias || '').trim()].filter(Boolean);
-  const base = parts.join(' / ');
-  const qty = Number(quantity || 0);
-  if (!Number.isFinite(qty) || qty <= 0) {
-    return base;
-  }
-  const qtyLabel = Number.isInteger(qty) ? String(qty) : String(qty);
-  return base ? `${base} - ${qtyLabel}` : qtyLabel;
+  return parts.join(' / ');
 }
 
 function buildVariationPathLabel(segments = []) {
@@ -5014,7 +5875,7 @@ async function saveItem({
   name,
   alias = '',
   displayName = '',
-  quantity,
+  quantity = 0,
   groupId,
   unitId,
   unitConversions = [],
@@ -5025,7 +5886,8 @@ async function saveItem({
   const trimmedName = String(name || '').trim();
   const trimmedAlias = String(alias || '').trim();
   const serializedNamingFormat = JSON.stringify(Array.isArray(namingFormat) ? namingFormat : []);
-  const normalizedQuantity = Number(quantity ?? 0);
+  const quantityNumber = Number(quantity ?? 0);
+  const normalizedQuantity = Number.isFinite(quantityNumber) ? quantityNumber : 0;
   const trimmedDisplayName =
     String(displayName || '').trim() || buildItemDisplayName(name, alias, normalizedQuantity);
   const normalizedGroupId = Number(groupId);
@@ -5033,8 +5895,6 @@ async function saveItem({
 
   if (
     !trimmedName ||
-    !Number.isFinite(normalizedQuantity) ||
-    normalizedQuantity < 0 ||
     !normalizedGroupId ||
     !normalizedUnitId ||
     !trimmedDisplayName
@@ -5093,12 +5953,11 @@ async function saveItem({
   const duplicate = await findItemDuplicate({
     name: trimmedName,
     groupId: normalizedGroupId,
-    quantity: normalizedQuantity,
     excludeId: id,
     variationTree: variationTree,
   });
   if (duplicate) {
-    const error = new Error('An item with the same name and quantity already exists in this group.');
+    const error = new Error('An item with the same name and variation properties already exists in this group.');
     error.statusCode = 409;
     throw error;
   }
@@ -5159,6 +6018,17 @@ async function saveItem({
   };
 
   const sanitizedTree = sanitizeNodes(variationTree, 'property');
+  const comparableTree = (nodes = []) =>
+    (nodes || []).map((node) => ({
+      id: node.id || null,
+      kind: node.kind,
+      name: String(node.name || '').trim(),
+      displayName: String(node.displayName || '').trim(),
+      // H-1 fix: include 'code' so that renaming a variation node's barcode/
+      // naming code on a used item is correctly treated as a structural change.
+      code: String(node.code || '').trim(),
+      children: comparableTree(node.children || []),
+    }));
 
   const now = new Date().toISOString();
   await run('BEGIN TRANSACTION');
@@ -5192,9 +6062,19 @@ async function saveItem({
         throw error;
       }
       if ((existing.usage_count || 0) > 0) {
-        const error = new Error('Used items cannot be edited.');
-        error.statusCode = 409;
-        throw error;
+        const existingTree = await getItemVariationTree(id);
+        const structuralChangeDetected =
+          Number(existing.group_id || 0) !== normalizedGroupId ||
+          Number(existing.unit_id || 0) !== normalizedUnitId ||
+          JSON.stringify(comparableTree(existingTree)) !==
+            JSON.stringify(comparableTree(sanitizedTree));
+        if (structuralChangeDetected) {
+          const error = new Error(
+            'Used items can only update names, aliases, display names, naming formats, and unit conversions.',
+          );
+          error.statusCode = 409;
+          throw error;
+        }
       }
       await run(
         `
@@ -5915,12 +6795,17 @@ async function getUnitsWithUsage() {
       units.*,
       unit_groups.name AS unit_group_name,
       base_unit.name AS conversion_base_unit_name,
-      COUNT(materials.id) AS usage_count
+      (
+        (SELECT COUNT(*) FROM materials WHERE materials.unit_id = units.id) +
+        (SELECT COUNT(*) FROM groups WHERE groups.unit_id = units.id) +
+        (SELECT COUNT(*) FROM items WHERE items.unit_id = units.id) +
+        (SELECT COUNT(*) FROM item_unit_conversions WHERE item_unit_conversions.unit_id = units.id) +
+        (SELECT COUNT(*) FROM units AS dependent_units WHERE dependent_units.conversion_base_unit_id = units.id) +
+        (SELECT COUNT(*) FROM order_material_requirements WHERE order_material_requirements.unit_id = units.id)
+      ) AS usage_count
     FROM units
     LEFT JOIN unit_groups ON unit_groups.id = units.unit_group_id
     LEFT JOIN units AS base_unit ON base_unit.id = units.conversion_base_unit_id
-    LEFT JOIN materials ON materials.unit_id = units.id
-    GROUP BY units.id
     ORDER BY units.is_archived ASC, LOWER(COALESCE(unit_groups.name, '')) ASC, LOWER(units.name) ASC, LOWER(units.symbol) ASC
   `);
 }
@@ -6003,9 +6888,11 @@ async function saveUnit({
     const detailsChanged =
       normalizeUnitValue(existing.name) !== normalizeUnitValue(trimmedName) ||
       normalizeUnitValue(existing.symbol) !== normalizeUnitValue(trimmedSymbol) ||
-      String(existing.notes || '').trim() !== trimmedNotes;
+      (existing.unit_group_id || null) !== (resolvedUnitGroupId || null) ||
+      Number(existing.conversion_factor || 1) !== Number(resolvedConversion.conversionFactor || 1) ||
+      (existing.conversion_base_unit_id || null) !== (resolvedConversion.conversionBaseUnitId || null);
     if (detailsChanged) {
-      const error = new Error('Used units cannot change name, symbol, or notes.');
+      const error = new Error('Used units cannot change identity or conversion details.');
       error.statusCode = 409;
       throw error;
     }
@@ -6418,6 +7305,46 @@ function normalizeMovementType(value = '') {
   return allowed.has(normalized) ? normalized : 'adjust';
 }
 
+function normalizeActorLabel(actor, fallback = 'System') {
+  if (actor && typeof actor === 'object') {
+    const name = String(actor.name || '').trim();
+    if (name) {
+      return name;
+    }
+  }
+  const text = String(actor || '').trim();
+  return text || fallback;
+}
+
+async function getInventoryStockPosition(materialBarcode, locationId, lotCode) {
+  return get(
+    `
+    SELECT *
+    FROM inventory_stock_positions
+    WHERE material_barcode = ? AND location_id = ? AND lot_code = ?
+    LIMIT 1
+    `,
+    [materialBarcode, locationId, lotCode],
+  );
+}
+
+async function assertInventoryQuantityAvailable({
+  materialBarcode,
+  locationId,
+  lotCode,
+  qty,
+  column = 'on_hand_qty',
+  label = 'stock',
+}) {
+  const position = await getInventoryStockPosition(materialBarcode, locationId, lotCode);
+  const available = Number(position?.[column] || 0);
+  if (qty > available) {
+    const error = new Error(`Insufficient ${label}. Available: ${available}, requested: ${qty}.`);
+    error.statusCode = 409;
+    throw error;
+  }
+}
+
 function normalizeMaterialClassFromType(type = '') {
   const value = String(type || '').trim().toLowerCase();
   if (value.includes('packaging')) {
@@ -6458,6 +7385,14 @@ async function upsertInventoryStockPosition({
   );
 
   if (!existing) {
+    const nextOnHand = Number(onHandDelta || 0);
+    const nextReserved = Number(reservedDelta || 0);
+    const nextDamaged = Number(damagedDelta || 0);
+    if (nextOnHand < 0 || nextReserved < 0 || nextDamaged < 0) {
+      const error = new Error('Movement would result in negative stock.');
+      error.statusCode = 422;
+      throw error;
+    }
     await run(
       `
       INSERT INTO inventory_stock_positions (
@@ -6470,18 +7405,23 @@ async function upsertInventoryStockPosition({
         normalizedLocation,
         normalizedLot,
         unitId,
-        Math.max(0, Number(onHandDelta || 0)),
-        Math.max(0, Number(reservedDelta || 0)),
-        Math.max(0, Number(damagedDelta || 0)),
+        nextOnHand,
+        nextReserved,
+        nextDamaged,
         now,
       ],
     );
     return;
   }
 
-  const nextOnHand = Math.max(0, Number(existing.on_hand_qty || 0) + Number(onHandDelta || 0));
-  const nextReserved = Math.max(0, Number(existing.reserved_qty || 0) + Number(reservedDelta || 0));
-  const nextDamaged = Math.max(0, Number(existing.damaged_qty || 0) + Number(damagedDelta || 0));
+  const nextOnHand = Number(existing.on_hand_qty || 0) + Number(onHandDelta || 0);
+  const nextReserved = Number(existing.reserved_qty || 0) + Number(reservedDelta || 0);
+  const nextDamaged = Number(existing.damaged_qty || 0) + Number(damagedDelta || 0);
+  if (nextOnHand < 0 || nextReserved < 0 || nextDamaged < 0) {
+    const error = new Error('Movement would result in negative stock.');
+    error.statusCode = 422;
+    throw error;
+  }
   await run(
     `
     UPDATE inventory_stock_positions
@@ -6776,9 +7716,16 @@ async function applyInventoryMovement(payload) {
   const now = new Date().toISOString();
   const movementId = `mov-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
   const fromLocationId = String(payload?.fromLocationId || '').trim() || null;
-  const toLocationId = String(payload?.toLocationId || '').trim() || material.location || 'MAIN';
+  const defaultLocationId = String(material.location || '').trim() || 'MAIN';
+  const toLocationId = String(payload?.toLocationId || '').trim() || defaultLocationId;
   const lotCode = String(payload?.lotCode || '').trim() || barcode;
-  const actor = String(payload?.actor || '').trim() || 'Demo Admin';
+  const actor = normalizeActorLabel(payload?.actor, 'Demo Admin');
+
+  if (movementType === 'transfer' && !fromLocationId) {
+    const error = new Error('fromLocationId is required for transfer movements.');
+    error.statusCode = 400;
+    throw error;
+  }
 
   await run('BEGIN TRANSACTION');
   try {
@@ -6792,9 +7739,15 @@ async function applyInventoryMovement(payload) {
         now,
       });
     } else if (movementType === 'transfer') {
+      await assertInventoryQuantityAvailable({
+        materialBarcode: material.barcode,
+        locationId: fromLocationId,
+        lotCode,
+        qty,
+      });
       await upsertInventoryStockPosition({
         materialBarcode: material.barcode,
-        locationId: fromLocationId || material.location || 'MAIN',
+        locationId: fromLocationId,
         lotCode,
         unitId: material.unit_id || null,
         onHandDelta: -qty,
@@ -6833,6 +7786,14 @@ async function applyInventoryMovement(payload) {
         ],
       );
     } else if (movementType === 'release') {
+      await assertInventoryQuantityAvailable({
+        materialBarcode: material.barcode,
+        locationId: toLocationId,
+        lotCode,
+        qty,
+        column: 'reserved_qty',
+        label: 'reserved stock',
+      });
       await upsertInventoryStockPosition({
         materialBarcode: material.barcode,
         locationId: toLocationId,
@@ -6863,6 +7824,14 @@ async function applyInventoryMovement(payload) {
         );
       }
     } else {
+      if (movementType === 'issue' || movementType === 'consume') {
+        await assertInventoryQuantityAvailable({
+          materialBarcode: material.barcode,
+          locationId: toLocationId,
+          lotCode,
+          qty,
+        });
+      }
       const onHandDelta = movementType === 'issue' || movementType === 'consume'
         ? -qty
         : qty;
@@ -7142,7 +8111,7 @@ async function linkMaterialRecordToGroup(barcode, groupId) {
     throw new Error('Selected group is not available.');
   }
   await run(
-    'UPDATE materials SET linked_group_id = ?, linked_item_id = NULL, updated_at = ? WHERE id = ?',
+    'UPDATE materials SET linked_group_id = ?, linked_item_id = NULL, linked_variation_leaf_node_id = NULL, updated_at = ? WHERE id = ?',
     [group.id, new Date().toISOString(), existing.id],
   );
   await logMaterialActivity({
@@ -7164,15 +8133,38 @@ async function linkMaterialRecordToItem(barcode, itemId, variationLeafNodeId = n
   if (!item || item.is_archived) {
     throw new Error('Selected item is not available.');
   }
+  const tree = await getItemVariationTree(item.id);
+  const hasActiveVariationProperties = activeTopLevelVariationProperties(tree).length > 0;
+  const normalizedLeafId = variationLeafNodeId == null ? null : Number(variationLeafNodeId);
+  if (hasActiveVariationProperties) {
+    const leafPath = activeValuePathForLeaf(tree, normalizedLeafId);
+    const leafNode = findVariationNodeById(tree, normalizedLeafId);
+    if (
+      !Number.isFinite(normalizedLeafId) ||
+      normalizedLeafId <= 0 ||
+      !leafNode ||
+      leafNode.isArchived ||
+      String(leafNode.kind) !== 'value' ||
+      !leafPath
+    ) {
+      const error = new Error('Select an orderable variation leaf before linking this item.');
+      error.statusCode = 400;
+      throw error;
+    }
+  } else if (normalizedLeafId != null && normalizedLeafId > 0) {
+    const error = new Error('Simple items cannot be linked to a variation leaf.');
+    error.statusCode = 400;
+    throw error;
+  }
   await run(
     'UPDATE materials SET linked_group_id = NULL, linked_item_id = ?, linked_variation_leaf_node_id = ?, updated_at = ? WHERE id = ?',
-    [item.id, variationLeafNodeId, new Date().toISOString(), existing.id],
+    [item.id, hasActiveVariationProperties ? normalizedLeafId : null, new Date().toISOString(), existing.id],
   );
   await logMaterialActivity({
     barcode: existing.barcode,
     type: 'linked',
     label: 'Inheritance linked',
-    description: `Linked to item ${item.display_name || item.name || item.id}${variationLeafNodeId ? ' (Variation ' + variationLeafNodeId + ')' : ''}.`,
+    description: `Linked to item ${item.display_name || item.name || item.id}${hasActiveVariationProperties ? ' (Variation ' + normalizedLeafId + ')' : ''}.`,
     actor: existing.created_by || 'Demo Admin',
   });
   return get('SELECT * FROM materials WHERE id = ?', [existing.id]);
@@ -7184,7 +8176,7 @@ async function unlinkMaterialRecord(barcode) {
     throw new Error('Material not found.');
   }
   await run(
-    'UPDATE materials SET linked_group_id = NULL, linked_item_id = NULL, updated_at = ? WHERE id = ?',
+    'UPDATE materials SET linked_group_id = NULL, linked_item_id = NULL, linked_variation_leaf_node_id = NULL, updated_at = ? WHERE id = ?',
     [new Date().toISOString(), existing.id],
   );
   await logMaterialActivity({
@@ -7195,6 +8187,49 @@ async function unlinkMaterialRecord(barcode) {
     actor: existing.created_by || 'Demo Admin',
   });
   return get('SELECT * FROM materials WHERE id = ?', [existing.id]);
+}
+
+function firstActiveOrderableLeafIdFromTree(tree) {
+  const walkProperty = (propertyNode) => {
+    const valueNodes = activeChildrenForNode(propertyNode).filter(
+      (node) => String(node.kind) === 'value',
+    );
+    for (const valueNode of valueNodes) {
+      const childProperties = activeChildrenForNode(valueNode).filter(
+        (node) => String(node.kind) === 'property',
+      );
+      if (childProperties.length === 0) {
+        return Number(valueNode.id);
+      }
+      for (const childProperty of childProperties) {
+        const found = walkProperty(childProperty);
+        if (found) {
+          return found;
+        }
+      }
+    }
+    return null;
+  };
+
+  for (const propertyNode of activeTopLevelVariationProperties(tree)) {
+    const found = walkProperty(propertyNode);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+}
+
+async function resolveMaterialSeedVariationLeafNodeId(itemId, explicitLeafNodeId = null) {
+  const normalizedExplicitLeafId = Number(explicitLeafNodeId || 0);
+  if (Number.isFinite(normalizedExplicitLeafId) && normalizedExplicitLeafId > 0) {
+    return normalizedExplicitLeafId;
+  }
+  const tree = await getItemVariationTree(Number(itemId));
+  if (activeTopLevelVariationProperties(tree).length === 0) {
+    return null;
+  }
+  return firstActiveOrderableLeafIdFromTree(tree);
 }
 
 async function findParentMaterialByName(name) {
@@ -7286,11 +8321,11 @@ async function ensureParentMaterialRecord(seed) {
   if (seed.linkGroupId) {
     parent = await linkMaterialRecordToGroup(parent.barcode, seed.linkGroupId);
   } else if (seed.linkItemId) {
-    parent = await linkMaterialRecordToItem(
-      parent.barcode, 
-      seed.linkItemId, 
-      seed.linkVariationLeafNodeId || null
+    const variationLeafNodeId = await resolveMaterialSeedVariationLeafNodeId(
+      seed.linkItemId,
+      seed.linkVariationLeafNodeId,
     );
+    parent = await linkMaterialRecordToItem(parent.barcode, seed.linkItemId, variationLeafNodeId);
   } else {
     parent = await unlinkMaterialRecord(parent.barcode);
   }
@@ -7435,6 +8470,49 @@ async function ensureDemoMaterialsPresent() {
       createdAt: oneDayAgo(5),
       linkItemId:
           itemByDisplayName.get(normalizeUnitValue('Cyan Flexo Ink - 15'))?.id || null,
+    },
+    {
+      name: 'Kraft Paper Reel',
+      type: 'Raw Material',
+      grade: '150 GSM',
+      thickness: '-',
+      supplier: 'GreenFiber Mills',
+      unit: 'Sheet',
+      notes: 'Primary kraft stock staged for cutting and conversion runs.',
+      numberOfChildren: 2,
+      scanCount: 9,
+      childScanCounts: [3, 2],
+      createdAt: oneDayAgo(4),
+      linkGroupId: groupByName.get('kraft')?.id || null,
+    },
+    {
+      name: 'Shrink Film Reel',
+      type: 'Raw Material',
+      grade: 'Clear LD',
+      thickness: '35 micron',
+      supplier: 'PackFilm Co',
+      unit: 'Roll',
+      notes: 'Film reel for sleeve and packing runs.',
+      numberOfChildren: 2,
+      scanCount: 8,
+      childScanCounts: [2, 1],
+      createdAt: oneDayAgo(4),
+      linkItemId:
+          itemByDisplayName.get(normalizeUnitValue('Printed Sleeve - 200'))?.id || null,
+    },
+    {
+      name: 'Steel Sheet Batch',
+      type: 'Raw Material',
+      grade: 'Utility',
+      thickness: '1.2 mm',
+      supplier: 'Metro Metals',
+      unit: 'Pieces',
+      notes: 'Sheet batch reserved for dolly demo production scans.',
+      numberOfChildren: 2,
+      scanCount: 5,
+      childScanCounts: [1, 1],
+      createdAt: oneDayAgo(3),
+      linkGroupId: groupByName.get('packaging components')?.id || null,
     },
   ];
 
@@ -8776,7 +9854,7 @@ app.get('/api/materials/:barcode', requirePermission('inventory.read'), async (r
       error: null,
     });
   } catch (error) {
-    res.status(500).json({ success: false, material: null, error: error.message });
+    res.status(error.statusCode || 500).json({ success: false, material: null, error: error.message });
   }
 });
 
@@ -8854,6 +9932,14 @@ app.patch('/api/units/:id/archive', requirePermission('config.write'), async (re
     const existing = await getUnitRowById(id);
     if (!existing) {
       res.status(404).json({ success: false, unit: null, error: 'Unit not found.' });
+      return;
+    }
+    if ((existing.usage_count || 0) > 0) {
+      res.status(409).json({
+        success: false,
+        unit: null,
+        error: 'Used units cannot be archived.',
+      });
       return;
     }
     await run('UPDATE units SET is_archived = 1, updated_at = ? WHERE id = ?', [
@@ -9164,8 +10250,16 @@ app.post('/api/orders', requirePermission('config.write'), async (req, res) => {
       role: req.user?.role || 'system',
       source: 'api'
     };
-    const order = await saveOrder({ ...(req.body || {}), actor });
-    res.status(201).json({ success: true, order: rowToOrderDto(order), error: null });
+    const result = await saveOrder({ ...(req.body || {}), actor }, { returnMeta: true });
+    res.status(result.merged ? 200 : 201).json({
+      success: true,
+      order: rowToOrderDto(result.orderRow),
+      merged: result.merged,
+      quantityBefore: result.quantityBefore,
+      quantityAdded: result.quantityAdded,
+      quantityAfter: result.quantityAfter,
+      error: null,
+    });
   } catch (error) {
     res.status(error.statusCode || 500).json({
       success: false,
@@ -9200,6 +10294,88 @@ app.post('/api/order-po-uploads/complete', requirePermission('config.write'), as
     res.status(error.statusCode || 500).json({
       success: false,
       document: null,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/assets/upload-intent', requirePermission('config.write'), async (req, res) => {
+  try {
+    const intent = await createAssetUploadIntent(req.body || {});
+    res.status(intent.alreadyUploaded ? 200 : 201).json({
+      success: true,
+      intent,
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      intent: null,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/assets/upload-complete', requirePermission('config.write'), async (req, res) => {
+  try {
+    const asset = await completeAssetUpload(req.body || {});
+    res.json({ success: true, asset, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      asset: null,
+      error: error.message,
+    });
+  }
+});
+
+app.get('/api/items/:id/assets', requirePermission('config.read'), async (req, res) => {
+  try {
+    const assets = await listAssetsForEntity('item', Number(req.params.id));
+    res.json({ success: true, assets, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      assets: [],
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/assets/:id/read-url', requirePermission('config.read'), async (req, res) => {
+  try {
+    const payload = await createAssetReadUrl(Number(req.params.id));
+    res.json({ success: true, ...payload, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      asset: null,
+      readUrl: null,
+      error: error.message,
+    });
+  }
+});
+
+app.patch('/api/assets/:id/primary', requirePermission('config.write'), async (req, res) => {
+  try {
+    const asset = await setPrimaryAsset(Number(req.params.id));
+    res.json({ success: true, asset, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      asset: null,
+      error: error.message,
+    });
+  }
+});
+
+app.delete('/api/assets/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    await deleteAsset(Number(req.params.id));
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
       error: error.message,
     });
   }
@@ -9365,6 +10541,14 @@ app.patch('/api/clients/:id/archive', requirePermission('config.write'), async (
       res.status(404).json({ success: false, client: null, error: 'Client not found.' });
       return;
     }
+    if ((existing.usage_count || 0) > 0) {
+      res.status(409).json({
+        success: false,
+        client: null,
+        error: 'Used clients cannot be archived.',
+      });
+      return;
+    }
     await run('UPDATE clients SET is_archived = 1, updated_at = ? WHERE id = ?', [
       new Date().toISOString(),
       id,
@@ -9442,6 +10626,14 @@ app.patch('/api/items/:id/archive', requirePermission('config.write'), async (re
       res.status(404).json({ success: false, item: null, error: 'Item not found.' });
       return;
     }
+    if ((existing.usage_count || 0) > 0) {
+      res.status(409).json({
+        success: false,
+        item: null,
+        error: 'Used items cannot be archived.',
+      });
+      return;
+    }
     const now = new Date().toISOString();
     await run('UPDATE items SET is_archived = 1, updated_at = ? WHERE id = ?', [now, id]);
     await run('UPDATE item_variation_nodes SET is_archived = 1, updated_at = ? WHERE item_id = ?', [now, id]);
@@ -9507,6 +10699,14 @@ app.patch('/api/groups/:id/archive', requirePermission('config.write'), async (r
       res.status(404).json({ success: false, group: null, error: 'Group not found.' });
       return;
     }
+    if ((existing.usage_count || 0) > 0) {
+      res.status(409).json({
+        success: false,
+        group: null,
+        error: 'Used groups cannot be archived.',
+      });
+      return;
+    }
     const activeChildren = await getActiveChildGroups(id);
     if (activeChildren.length > 0) {
       res.status(409).json({
@@ -9565,7 +10765,7 @@ app.post('/api/materials/parent', requirePermission('inventory.create'), async (
       : { selectedItemIds: [], selectedItems: [], propertyDrafts: [] };
     res.status(201).json({ success: true, material, groupConfiguration, error: null });
   } catch (error) {
-    res.status(500).json({ success: false, material: null, error: error.message });
+    res.status(error.statusCode || 500).json({ success: false, material: null, error: error.message });
   }
 });
 
@@ -9583,7 +10783,7 @@ app.post('/api/materials/:barcode/child', requirePermission('inventory.create'),
     const material = await createChildMaterial(req.params.barcode, payload);
     res.status(201).json({ success: true, material: rowToMaterialDto(material), error: null });
   } catch (error) {
-    res.status(500).json({ success: false, material: null, error: error.message });
+    res.status(error.statusCode || 500).json({ success: false, material: null, error: error.message });
   }
 });
 
@@ -9644,7 +10844,7 @@ app.patch('/api/materials/:barcode/link-group', requirePermission('inventory.upd
     );
     res.json({ success: true, material: rowToMaterialDto(material), error: null });
   } catch (error) {
-    res.status(500).json({ success: false, material: null, error: error.message });
+    res.status(error.statusCode || 500).json({ success: false, material: null, error: error.message });
   }
 });
 
@@ -9657,7 +10857,7 @@ app.patch('/api/materials/:barcode/link-item', requirePermission('inventory.upda
     );
     res.json({ success: true, material: rowToMaterialDto(material), error: null });
   } catch (error) {
-    res.status(500).json({ success: false, material: null, error: error.message });
+    res.status(error.statusCode || 500).json({ success: false, material: null, error: error.message });
   }
 });
 
@@ -9666,7 +10866,7 @@ app.patch('/api/materials/:barcode/unlink', requirePermission('inventory.update'
     const material = await unlinkMaterialRecord(req.params.barcode);
     res.json({ success: true, material: rowToMaterialDto(material), error: null });
   } catch (error) {
-    res.status(500).json({ success: false, material: null, error: error.message });
+    res.status(error.statusCode || 500).json({ success: false, material: null, error: error.message });
   }
 });
 
@@ -10102,39 +11302,52 @@ app.use((error, req, res, _next) => {
 });
 
 async function clearAllData() {
-  await run('DELETE FROM delivery_challan_activity_log');
-  await run('DELETE FROM delivery_challan_items');
-  await run('DELETE FROM delivery_challans');
-  await run('DELETE FROM order_po_documents');
-  await run('DELETE FROM order_material_requirements');
-  await run('DELETE FROM order_status_history');
-  await run('DELETE FROM order_activity_log');
-  await run('DELETE FROM po_upload_sessions');
-  await run('DELETE FROM po_documents');
-  await run('DELETE FROM run_barcode_inputs');
-  await run('DELETE FROM pipeline_runs');
-  await run('DELETE FROM pipeline_templates');
-  await run('DELETE FROM orders');
-  await run('DELETE FROM item_variation_values');
-  await run('DELETE FROM item_variations');
-  await run('DELETE FROM item_variation_dimensions');
-  await run('DELETE FROM item_variation_nodes');
-  await run('DELETE FROM material_group_item_links');
-  await run('DELETE FROM material_group_properties');
-  await run('DELETE FROM material_group_units');
-  await run('DELETE FROM material_group_preferences');
-  await run('DELETE FROM items');
-  await run('DELETE FROM clients');
-  await run('DELETE FROM inventory_stock_positions');
-  await run('DELETE FROM inventory_movements');
-  await run('DELETE FROM inventory_reservations');
-  await run('DELETE FROM inventory_alerts');
-  await run('DELETE FROM materials');
-  await run('DELETE FROM company_profiles');
-  await run('DELETE FROM groups');
-  await run('DELETE FROM units');
-  
-  await ensurePrimaryGroupAndUnit();
+  await run('BEGIN TRANSACTION');
+  try {
+    await run('DELETE FROM delivery_challan_activity_log');
+    await run('DELETE FROM delivery_challan_items');
+    await run('DELETE FROM delivery_challans');
+    await run('DELETE FROM order_po_documents');
+    await run('DELETE FROM order_material_requirements');
+    await run('DELETE FROM order_status_history');
+    await run('DELETE FROM order_activity_log');
+    await run('DELETE FROM po_upload_sessions');
+    await run('DELETE FROM po_documents');
+    await run('DELETE FROM asset_upload_sessions');
+    await run('DELETE FROM uploaded_assets');
+    await run('DELETE FROM run_barcode_inputs');
+    await run('DELETE FROM pipeline_runs');
+    await run('DELETE FROM pipeline_templates');
+    await run('DELETE FROM orders');
+    await run('DELETE FROM item_variation_values');
+    await run('DELETE FROM item_variations');
+    await run('DELETE FROM item_variation_dimensions');
+    await run('DELETE FROM item_variation_nodes');
+    await run('DELETE FROM material_group_item_links');
+    await run('DELETE FROM material_group_properties');
+    await run('DELETE FROM material_group_units');
+    await run('DELETE FROM material_group_preferences');
+    await run('DELETE FROM inventory_stock_positions');
+    await run('DELETE FROM inventory_movements');
+    await run('DELETE FROM inventory_reservations');
+    await run('DELETE FROM inventory_alerts');
+    await run('DELETE FROM scan_history');
+    await run('DELETE FROM material_activity');
+    await run('DELETE FROM materials');
+    await run('DELETE FROM item_unit_conversions');
+    await run('DELETE FROM items');
+    await run('DELETE FROM clients');
+    await run('DELETE FROM company_profiles');
+    await run('DELETE FROM groups');
+    await run('DELETE FROM units');
+    await run('DELETE FROM unit_groups');
+
+    await ensurePrimaryGroupAndUnit();
+    await run('COMMIT');
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
 }
 
 async function reseedDemoData() {
@@ -10196,6 +11409,7 @@ module.exports = {
   run,
   saveUnit,
   saveClient,
+  saveGroup,
   saveItem,
   saveOrder,
   saveCompanyProfile,
@@ -10207,6 +11421,12 @@ module.exports = {
   listDeliveryChallans,
   createPoUploadIntent,
   completePoUpload,
+  createAssetUploadIntent,
+  completeAssetUpload,
+  listAssetsForEntity,
+  createAssetReadUrl,
+  setPrimaryAsset,
+  deleteAsset,
   linkPoDocumentsToOrder,
   getPoDocumentsForOrder,
   createPoDocumentReadUrl,
@@ -10223,6 +11443,10 @@ module.exports = {
   getItemsWithUsage,
   createParentWithChildren,
   getMaterialRowByBarcode,
+  applyInventoryMovement,
+  linkMaterialRecordToGroup,
+  linkMaterialRecordToItem,
+  unlinkMaterialRecord,
   getMaterialGroupGovernance,
   updateMaterialGroupConfiguration,
   rowToClientDto,

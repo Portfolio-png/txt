@@ -376,6 +376,29 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
                     dialogTitle: 'Parent group',
                     searchHintText: 'Search parent group',
                     fieldEnabled: !_isReadOnly,
+                    onCreateOption: (query) async {
+                      final created = await GroupsScreen.openEditor(
+                        context,
+                        initialName: query,
+                      );
+                      if (!context.mounted || created == null) {
+                        return null;
+                      }
+                      await context.read<GroupsProvider>().refresh();
+                      if (!context.mounted) {
+                        return null;
+                      }
+                      setState(() {
+                        _selectedParentId = created.id;
+                        _localError = null;
+                      });
+                      return SearchableSelectOption<int?>(
+                        value: created.id,
+                        label: created.name,
+                      );
+                    },
+                    createOptionLabelBuilder: (query) =>
+                        'Create parent group "$query"',
                     options: [
                       const SearchableSelectOption<int?>(
                         value: null,
@@ -416,6 +439,14 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
                       if (!context.mounted || created == null) {
                         return null;
                       }
+                      await context.read<UnitsProvider>().refresh();
+                      if (!context.mounted) {
+                        return null;
+                      }
+                      setState(() {
+                        _selectedUnitId = created.id;
+                        _localError = null;
+                      });
                       return SearchableSelectOption<int>(
                         value: created.id,
                         label: created.displayLabel,
@@ -676,7 +707,9 @@ class _PreviewCard extends StatelessWidget {
             children: [
               _PreviewChip(label: name.isEmpty ? 'Unnamed group' : name),
               _PreviewChip(
-                label: parentName == null ? 'Primary Group' : 'Parent: $parentName',
+                label: parentName == null
+                    ? 'Primary Group'
+                    : 'Parent: $parentName',
               ),
               _PreviewChip(
                 label: unitLabel == null ? 'Unit pending' : 'Unit: $unitLabel',

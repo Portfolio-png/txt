@@ -115,6 +115,7 @@ class ApiInventoryRepository implements InventoryRepository {
         createdAt: current.createdAt,
         linkedGroupId: current.linkedGroupId,
         linkedItemId: current.linkedItemId,
+        linkedVariationLeafNodeId: current.linkedVariationLeafNodeId,
         displayStock: current.displayStock,
         createdBy: current.createdBy,
         workflowStatus: current.workflowStatus,
@@ -296,6 +297,7 @@ class ApiInventoryRepository implements InventoryRepository {
         createdAt: current.createdAt,
         linkedGroupId: current.linkedGroupId,
         linkedItemId: current.linkedItemId,
+        linkedVariationLeafNodeId: current.linkedVariationLeafNodeId,
         displayStock: current.displayStock,
         createdBy: current.createdBy,
         workflowStatus: current.workflowStatus,
@@ -361,6 +363,7 @@ class ApiInventoryRepository implements InventoryRepository {
         createdAt: current.createdAt,
         linkedGroupId: current.linkedGroupId,
         linkedItemId: current.linkedItemId,
+        linkedVariationLeafNodeId: current.linkedVariationLeafNodeId,
         displayStock: current.displayStock,
         createdBy: current.createdBy,
         workflowStatus: current.workflowStatus,
@@ -457,6 +460,7 @@ class ApiInventoryRepository implements InventoryRepository {
         createdAt: parent.createdAt,
         linkedGroupId: parent.linkedGroupId,
         linkedItemId: parent.linkedItemId,
+        linkedVariationLeafNodeId: parent.linkedVariationLeafNodeId,
         displayStock: parent.displayStock,
         createdBy: parent.createdBy,
         workflowStatus: parent.workflowStatus,
@@ -515,6 +519,7 @@ class ApiInventoryRepository implements InventoryRepository {
         createdAt: current.createdAt,
         linkedGroupId: current.linkedGroupId,
         linkedItemId: current.linkedItemId,
+        linkedVariationLeafNodeId: current.linkedVariationLeafNodeId,
         displayStock: current.displayStock,
         createdBy: current.createdBy,
         workflowStatus: current.workflowStatus,
@@ -599,6 +604,7 @@ class ApiInventoryRepository implements InventoryRepository {
             createdAt: parent.createdAt,
             linkedGroupId: parent.linkedGroupId,
             linkedItemId: parent.linkedItemId,
+            linkedVariationLeafNodeId: parent.linkedVariationLeafNodeId,
             displayStock: parent.displayStock,
             createdBy: parent.createdBy,
             workflowStatus: parent.workflowStatus,
@@ -630,23 +636,24 @@ class ApiInventoryRepository implements InventoryRepository {
       fallback: 'Failed to link group inheritance.',
       linkedGroupId: groupId,
       linkedItemId: null,
+      linkedVariationLeafNodeId: null,
     );
   }
 
   @override
   Future<MaterialRecord> linkMaterialToItem(
     String barcode,
-    int itemId,
-  ) {
+    int itemId, {
+    int? variationLeafNodeId,
+  }) {
     return _linkMutation(
       barcode,
       endpoint: 'link-item',
-      body: {
-        'itemId': itemId,
-      },
+      body: {'itemId': itemId, 'variationLeafNodeId': ?variationLeafNodeId},
       fallback: 'Failed to link item inheritance.',
       linkedGroupId: null,
       linkedItemId: itemId,
+      linkedVariationLeafNodeId: variationLeafNodeId,
     );
   }
 
@@ -659,6 +666,7 @@ class ApiInventoryRepository implements InventoryRepository {
       fallback: 'Failed to unlink inherited properties.',
       linkedGroupId: null,
       linkedItemId: null,
+      linkedVariationLeafNodeId: null,
     );
   }
 
@@ -1145,6 +1153,7 @@ class ApiInventoryRepository implements InventoryRepository {
     String barcode, {
     required int? linkedGroupId,
     required int? linkedItemId,
+    int? linkedVariationLeafNodeId,
   }) {
     final index = _mockMaterials.indexWhere(
       (item) => _normalizeBarcode(item.barcode) == _normalizeBarcode(barcode),
@@ -1175,6 +1184,7 @@ class ApiInventoryRepository implements InventoryRepository {
       createdAt: current.createdAt,
       linkedGroupId: linkedGroupId,
       linkedItemId: linkedItemId,
+      linkedVariationLeafNodeId: linkedVariationLeafNodeId,
       displayStock: current.displayStock,
       createdBy: current.createdBy,
       workflowStatus: current.workflowStatus,
@@ -1260,6 +1270,7 @@ class ApiInventoryRepository implements InventoryRepository {
     required String fallback,
     required int? linkedGroupId,
     required int? linkedItemId,
+    required int? linkedVariationLeafNodeId,
   }) async {
     if (useMockResponses) {
       _seedMockStoreIfNeeded();
@@ -1292,6 +1303,7 @@ class ApiInventoryRepository implements InventoryRepository {
         createdAt: current.createdAt,
         linkedGroupId: linkedGroupId,
         linkedItemId: linkedItemId,
+        linkedVariationLeafNodeId: linkedVariationLeafNodeId,
         displayStock: current.displayStock,
         createdBy: current.createdBy,
         workflowStatus: current.workflowStatus,

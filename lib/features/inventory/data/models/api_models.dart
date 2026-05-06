@@ -31,6 +31,7 @@ class MaterialDto {
     required this.createdAt,
     required this.linkedGroupId,
     required this.linkedItemId,
+    this.linkedVariationLeafNodeId,
     required this.displayStock,
     required this.createdBy,
     required this.workflowStatus,
@@ -70,6 +71,7 @@ class MaterialDto {
   final DateTime createdAt;
   final int? linkedGroupId;
   final int? linkedItemId;
+  final int? linkedVariationLeafNodeId;
   final String displayStock;
   final String createdBy;
   final String workflowStatus;
@@ -117,6 +119,7 @@ class MaterialDto {
           DateTime.now(),
       linkedGroupId: json['linkedGroupId'] as int?,
       linkedItemId: json['linkedItemId'] as int?,
+      linkedVariationLeafNodeId: json['linkedVariationLeafNodeId'] as int?,
       displayStock: json['displayStock'] as String? ?? '',
       createdBy: json['createdBy'] as String? ?? '',
       workflowStatus: json['workflowStatus'] as String? ?? 'notStarted',
@@ -137,8 +140,7 @@ class MaterialDto {
       availableToPromise: (json['availableToPromise'] as num?)?.toDouble() ?? 0,
       incoming: (json['incoming'] as num?)?.toDouble() ?? 0,
       linkedOrderCount: (json['linkedOrderCount'] as num?)?.toInt() ?? 0,
-      linkedPipelineCount:
-          (json['linkedPipelineCount'] as num?)?.toInt() ?? 0,
+      linkedPipelineCount: (json['linkedPipelineCount'] as num?)?.toInt() ?? 0,
       pendingAlertCount: (json['pendingAlertCount'] as num?)?.toInt() ?? 0,
       updatedAt:
           DateTime.tryParse(json['updatedAt'] as String? ?? '') ??
@@ -171,6 +173,7 @@ class MaterialDto {
       'createdAt': createdAt.toIso8601String(),
       'linkedGroupId': linkedGroupId,
       'linkedItemId': linkedItemId,
+      'linkedVariationLeafNodeId': linkedVariationLeafNodeId,
       'displayStock': displayStock,
       'createdBy': createdBy,
       'workflowStatus': workflowStatus,
@@ -213,6 +216,7 @@ class MaterialDto {
       scanCount: scanCount,
       linkedGroupId: linkedGroupId,
       linkedItemId: linkedItemId,
+      linkedVariationLeafNodeId: linkedVariationLeafNodeId,
       displayStock: displayStock,
       createdBy: createdBy,
       workflowStatus: workflowStatus,
@@ -255,6 +259,7 @@ class MaterialDto {
       createdAt: record.createdAt,
       linkedGroupId: record.linkedGroupId,
       linkedItemId: record.linkedItemId,
+      linkedVariationLeafNodeId: record.linkedVariationLeafNodeId,
       displayStock: record.displayStock,
       createdBy: record.createdBy,
       workflowStatus: record.workflowStatus,
@@ -656,7 +661,9 @@ class MaterialControlTowerDetailResponse {
           ? null
           : MaterialDto.fromJson(json['material'] as Map<String, dynamic>),
       stockPositions: (json['stockPositions'] as List<dynamic>? ?? const [])
-          .map((item) => StockPositionDto.fromJson(item as Map<String, dynamic>))
+          .map(
+            (item) => StockPositionDto.fromJson(item as Map<String, dynamic>),
+          )
           .toList(growable: false),
       movements: (json['movements'] as List<dynamic>? ?? const [])
           .map(
@@ -671,7 +678,9 @@ class MaterialControlTowerDetailResponse {
           )
           .toList(growable: false),
       alerts: (json['alerts'] as List<dynamic>? ?? const [])
-          .map((item) => InventoryAlertDto.fromJson(item as Map<String, dynamic>))
+          .map(
+            (item) => InventoryAlertDto.fromJson(item as Map<String, dynamic>),
+          )
           .toList(growable: false),
       linkedOrderDemand: (json['linkedOrderDemand'] as num?)?.toDouble() ?? 0,
       linkedPipelineDemand:
@@ -727,7 +736,8 @@ class InventoryHealthResponse {
       success: json['success'] as bool? ?? false,
       health: InventoryHealthSnapshot(
         lowStockCount: (rawHealth['lowStockCount'] as num?)?.toInt() ?? 0,
-        reservedRiskCount: (rawHealth['reservedRiskCount'] as num?)?.toInt() ?? 0,
+        reservedRiskCount:
+            (rawHealth['reservedRiskCount'] as num?)?.toInt() ?? 0,
         incomingTodayCount:
             (rawHealth['incomingTodayCount'] as num?)?.toInt() ?? 0,
         qualityHoldCount: (rawHealth['qualityHoldCount'] as num?)?.toInt() ?? 0,

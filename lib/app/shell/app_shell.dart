@@ -299,7 +299,7 @@ class _ShellCompanyBrand extends StatelessWidget {
           const SizedBox(width: 13),
           Expanded(
             child: Text(
-              'Sarvodaya Udyog',
+              'Sarvadnya Udyog Private Limited',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(

@@ -83,6 +83,21 @@ class AuthApi {
     }
   }
 
+  Future<void> resetDemoData() async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/admin/reset-demo-data'),
+      headers: _authHeaders,
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to reset demo data.',
+      );
+    }
+  }
+
   Future<({List<AuthUser> users, int total, bool hasMore})> getUsers({
     String query = '',
     String role = '',

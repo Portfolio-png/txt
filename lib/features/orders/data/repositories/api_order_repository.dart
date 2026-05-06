@@ -68,7 +68,9 @@ class ApiOrderRepository implements OrderRepository {
             order.clientId == input.clientId &&
             order.itemId == input.itemId &&
             order.variationLeafNodeId == input.variationLeafNodeId &&
-            _normalize(order.poNumber) == normalizedPoNumber,
+            _normalize(order.poNumber) == normalizedPoNumber &&
+            _sameMoment(order.startDate, input.startDate) &&
+            _sameMoment(order.endDate, input.endDate),
       );
       if (index != -1) {
         final existing = _mockOrders[index];
@@ -85,10 +87,10 @@ class ApiOrderRepository implements OrderRepository {
           variationPathLabel: input.variationPathLabel.trim(),
           variationPathNodeIds: List<int>.from(input.variationPathNodeIds),
           quantity: existing.quantity + input.quantity,
-          status: existing.status,
+          status: input.status,
           createdAt: existing.createdAt,
-          startDate: existing.startDate,
-          endDate: existing.endDate,
+          startDate: input.startDate,
+          endDate: input.endDate,
         );
         _mockOrders[index] = updated;
         _linkMockPoDocuments(updated.id, input.poDocumentIds);
@@ -480,6 +482,14 @@ class ApiOrderRepository implements OrderRepository {
 
   static String _normalize(String value) {
     return value.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+  }
+
+  static bool _sameMoment(DateTime? left, DateTime? right) {
+    if (left == null || right == null) {
+      return left == right;
+    }
+    return left.toUtc().millisecondsSinceEpoch ==
+        right.toUtc().millisecondsSinceEpoch;
   }
 
   static void _linkMockPoDocuments(int orderId, List<int> documentIds) {

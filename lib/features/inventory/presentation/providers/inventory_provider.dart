@@ -198,12 +198,14 @@ class InventoryProvider extends ChangeNotifier {
 
   Future<void> linkMaterialToItem(
     String barcode,
-    int itemId,
-  ) async {
+    int itemId, {
+    int? variationLeafNodeId,
+  }) async {
     await _linkMutation(
       action: () => _repository.linkMaterialToItem(
         barcode,
         itemId,
+        variationLeafNodeId: variationLeafNodeId,
       ),
       fallback: 'Failed to link item inheritance.',
     );
@@ -238,7 +240,7 @@ class InventoryProvider extends ChangeNotifier {
         return null;
       }
 
-      await _reloadMaterials();
+      _upsertMaterial(record);
       _selectedMaterial =
           _materials
               .where((item) => item.barcode == record.barcode)
@@ -329,7 +331,10 @@ class InventoryProvider extends ChangeNotifier {
         // pendingReconciliation: items with reserved > 0 but not yet reconciled
         // (distinct from reserved risk which checks reserved > onHand).
         pendingReconciliationCount: _materials
-            .where((item) => item.reserved > 0 && item.availableToPromise == item.onHand)
+            .where(
+              (item) =>
+                  item.reserved > 0 && item.availableToPromise == item.onHand,
+            )
             .length,
       );
     }
@@ -461,6 +466,19 @@ class InventoryProvider extends ChangeNotifier {
 
   Future<void> _reloadMaterials() async {
     _materials = await _repository.getAllMaterials();
+  }
+
+  void _upsertMaterial(MaterialRecord record) {
+    final next = List<MaterialRecord>.from(_materials);
+    final existingIndex = next.indexWhere(
+      (item) => item.barcode == record.barcode,
+    );
+    if (existingIndex >= 0) {
+      next[existingIndex] = record;
+    } else {
+      next.insert(0, record);
+    }
+    _materials = next;
   }
 
   Future<void> _linkMutation({

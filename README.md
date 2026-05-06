@@ -63,6 +63,7 @@ PAPER_JWT_SECRET=<long-random-secret>
 PAPER_SUPER_ADMIN_EMAIL=<your-email>
 PAPER_SUPER_ADMIN_PASSWORD=<temporary-strong-password>
 PAPER_SUPER_ADMIN_NAME=<your-name>
+PAPER_SEED_DEMO_DATA_ON_BOOT=false
 ```
 
 Optional security tuning:
@@ -112,7 +113,8 @@ Before go-live:
 2. `PAPER_JWT_SECRET` is long and unique for the environment.
 3. `PAPER_SUPER_ADMIN_PASSWORD` is rotated after first login.
 4. `PAPER_CORS_ORIGIN` is set to your trusted frontend origins.
-5. Health check and smoke script both pass.
+5. `PAPER_SEED_DEMO_DATA_ON_BOOT=false` so clearing data stays cleared after a backend restart.
+6. Health check and smoke script both pass.
 
 Backup and restore:
 

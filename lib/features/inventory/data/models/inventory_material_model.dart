@@ -26,6 +26,7 @@ class InventoryMaterialModel {
     required this.scanCount,
     required this.linkedGroupId,
     required this.linkedItemId,
+    this.linkedVariationLeafNodeId,
     required this.displayStock,
     required this.createdBy,
     required this.workflowStatus,
@@ -65,6 +66,7 @@ class InventoryMaterialModel {
   final int scanCount;
   final int? linkedGroupId;
   final int? linkedItemId;
+  final int? linkedVariationLeafNodeId;
   final String displayStock;
   final String createdBy;
   final String workflowStatus;
@@ -108,6 +110,7 @@ class InventoryMaterialModel {
       scanCount: (map['scan_count'] as int?) ?? 0,
       linkedGroupId: map['linked_group_id'] as int?,
       linkedItemId: map['linked_item_id'] as int?,
+      linkedVariationLeafNodeId: map['linked_variation_leaf_node_id'] as int?,
       displayStock: map['display_stock'] as String? ?? '',
       createdBy: map['created_by'] as String? ?? '',
       workflowStatus: map['workflow_status'] as String? ?? 'notStarted',
@@ -125,7 +128,8 @@ class InventoryMaterialModel {
       ),
       onHand: (map['on_hand_qty'] as num?)?.toDouble() ?? 0,
       reserved: (map['reserved_qty'] as num?)?.toDouble() ?? 0,
-      availableToPromise: (map['available_to_promise_qty'] as num?)?.toDouble() ?? 0,
+      availableToPromise:
+          (map['available_to_promise_qty'] as num?)?.toDouble() ?? 0,
       incoming: (map['incoming_qty'] as num?)?.toDouble() ?? 0,
       linkedOrderCount: (map['linked_order_count'] as num?)?.toInt() ?? 0,
       linkedPipelineCount: (map['linked_pipeline_count'] as num?)?.toInt() ?? 0,
@@ -160,6 +164,7 @@ class InventoryMaterialModel {
       'scan_count': scanCount,
       'linked_group_id': linkedGroupId,
       'linked_item_id': linkedItemId,
+      'linked_variation_leaf_node_id': linkedVariationLeafNodeId,
       'display_stock': displayStock,
       'created_by': createdBy,
       'workflow_status': workflowStatus,
@@ -202,6 +207,7 @@ class InventoryMaterialModel {
       scanCount: scanCount,
       linkedGroupId: linkedGroupId,
       linkedItemId: linkedItemId,
+      linkedVariationLeafNodeId: linkedVariationLeafNodeId,
       displayStock: displayStock,
       createdBy: createdBy,
       workflowStatus: workflowStatus,

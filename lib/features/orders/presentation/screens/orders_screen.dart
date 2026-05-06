@@ -2868,7 +2868,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       validator: (value) {
         final quantity = int.tryParse((value ?? '').trim());
         if (quantity == null || quantity <= 0) {
-          return 'Enter qty';
+          return 'Enter whole qty';
         }
         return null;
       },
@@ -3239,14 +3239,24 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
         .toList(growable: false);
 
     OrderEntry? result;
+    var mergedLineCount = 0;
+    var createdLineCount = 0;
+    String? singleLineOutcomeMessage;
+    final ordersProvider = context.read<OrdersProvider>();
     for (final input in orderLinesWithDocuments) {
-      result = await context.read<OrdersProvider>().createOrder(input);
+      result = await ordersProvider.createOrder(input);
       if (!context.mounted) {
         return;
       }
       if (result == null) {
         break;
       }
+      if (ordersProvider.lastCreateWasMerged) {
+        mergedLineCount += 1;
+      } else {
+        createdLineCount += 1;
+      }
+      singleLineOutcomeMessage = ordersProvider.lastCreateOutcomeMessage;
     }
 
     if (!context.mounted) {
@@ -3254,15 +3264,23 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     }
 
     if (result != null) {
+      final totalLines = orderLinesWithDocuments.length;
+      final finalMessage = totalLines == 1
+          ? (singleLineOutcomeMessage ?? successMessage)
+          : mergedLineCount == 0
+          ? successMessage
+          : createdLineCount == 0
+          ? '$mergedLineCount order line(s) merged into existing orders.'
+          : '$createdLineCount order line(s) created, $mergedLineCount merged into existing orders.';
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(successMessage)));
+      ).showSnackBar(SnackBar(content: Text(finalMessage)));
       Navigator.of(context).pop();
       return;
     }
 
     final message =
-        context.read<OrdersProvider>().errorMessage ??
+        ordersProvider.errorMessage ??
         'Unable to create order. Please try again.';
     ScaffoldMessenger.of(
       context,

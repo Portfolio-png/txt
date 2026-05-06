@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/repositories/item_repository.dart';
+import '../../domain/item_asset.dart';
 import '../../domain/item_definition.dart';
 import '../../domain/item_inputs.dart';
 
@@ -53,16 +54,21 @@ class ItemsProvider extends ChangeNotifier {
   final ItemRepository _repository;
 
   List<ItemDefinition> _items = const [];
+  final Map<int, List<ItemAsset>> _assetsByItemId = <int, List<ItemAsset>>{};
   bool _isLoading = false;
   bool _isSaving = false;
+  bool _isAssetUploading = false;
   String? _errorMessage;
   String _searchQuery = '';
   ItemStatusFilter _statusFilter = ItemStatusFilter.active;
   bool _initialized = false;
 
   List<ItemDefinition> get items => _items;
+  List<ItemAsset> assetsForItem(int itemId) =>
+      _assetsByItemId[itemId] ?? const <ItemAsset>[];
   bool get isLoading => _isLoading;
   bool get isSaving => _isSaving;
+  bool get isAssetUploading => _isAssetUploading;
   String? get errorMessage => _errorMessage;
   String get searchQuery => _searchQuery;
   ItemStatusFilter get statusFilter => _statusFilter;
@@ -268,7 +274,6 @@ class ItemsProvider extends ChangeNotifier {
           name: current.name,
           alias: current.alias,
           displayName: current.displayName,
-          quantity: current.quantity,
           groupId: current.groupId,
           unitId: current.unitId,
           variationTree: mutation.nodes,
@@ -316,7 +321,6 @@ class ItemsProvider extends ChangeNotifier {
           name: current.name,
           alias: current.alias,
           displayName: current.displayName,
-          quantity: current.quantity,
           groupId: current.groupId,
           unitId: current.unitId,
           variationTree: <ItemVariationNodeInput>[
@@ -360,6 +364,93 @@ class ItemsProvider extends ChangeNotifier {
 
   Future<ItemDefinition?> restoreItem(int id) async {
     return _save(() => _repository.restoreItem(id));
+  }
+
+  Future<List<ItemAsset>> loadItemAssets(int itemId) async {
+    try {
+      final assets = await _repository.getItemAssets(itemId);
+      _assetsByItemId[itemId] = assets;
+      notifyListeners();
+      return assets;
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return _assetsByItemId[itemId] ?? const <ItemAsset>[];
+    }
+  }
+
+  Future<ItemAssetUploadIntent?> createAssetUploadIntent(
+    ItemAssetUploadIntentInput input,
+  ) async {
+    _isAssetUploading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      return await _repository.createAssetUploadIntent(input);
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return null;
+    } finally {
+      _isAssetUploading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<ItemAsset?> completeAssetUpload(
+    CompleteItemAssetUploadInput input,
+  ) async {
+    _isAssetUploading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final asset = await _repository.completeAssetUpload(input);
+      await loadItemAssets(asset.entityId);
+      return asset;
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return null;
+    } finally {
+      _isAssetUploading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<ItemAsset?> setPrimaryAsset(int assetId) async {
+    _isAssetUploading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final asset = await _repository.setPrimaryAsset(assetId);
+      await loadItemAssets(asset.entityId);
+      return asset;
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return null;
+    } finally {
+      _isAssetUploading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> deleteAsset(ItemAsset asset) async {
+    _isAssetUploading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      await _repository.deleteAsset(asset.id);
+      await loadItemAssets(asset.entityId);
+      return true;
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return false;
+    } finally {
+      _isAssetUploading = false;
+      notifyListeners();
+    }
   }
 
   Future<ItemDefinition?> _save(

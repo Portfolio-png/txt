@@ -35,7 +35,6 @@ class CreateItemInput {
     required this.name,
     this.alias = '',
     required this.displayName,
-    required this.quantity,
     required this.groupId,
     required this.unitId,
     this.unitConversions = const [],
@@ -46,7 +45,6 @@ class CreateItemInput {
   final String name;
   final String alias;
   final String displayName;
-  final double quantity;
   final int groupId;
   final int unitId;
   final List<ItemUnitConversionInput> unitConversions;
@@ -60,7 +58,6 @@ class UpdateItemInput {
     required this.name,
     this.alias = '',
     required this.displayName,
-    required this.quantity,
     required this.groupId,
     required this.unitId,
     this.unitConversions = const [],
@@ -72,7 +69,6 @@ class UpdateItemInput {
   final String name;
   final String alias;
   final String displayName;
-  final double quantity;
   final int groupId;
   final int unitId;
   final List<ItemUnitConversionInput> unitConversions;

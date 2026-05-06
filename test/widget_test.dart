@@ -4,6 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
 import 'package:paper/app/shell/navigation_provider.dart';
+import 'package:paper/features/auth/presentation/providers/auth_provider.dart';
+import 'package:paper/features/delivery_challans/data/delivery_challan_repository.dart';
+import 'package:paper/features/delivery_challans/domain/delivery_challan.dart';
 import 'package:paper/features/groups/data/repositories/group_repository.dart';
 import 'package:paper/features/groups/domain/group_definition.dart';
 import 'package:paper/features/groups/domain/group_inputs.dart';
@@ -20,6 +23,7 @@ import 'package:paper/features/clients/data/repositories/client_repository.dart'
 import 'package:paper/features/clients/domain/client_definition.dart';
 import 'package:paper/features/clients/domain/client_inputs.dart';
 import 'package:paper/features/items/data/repositories/item_repository.dart';
+import 'package:paper/features/items/domain/item_asset.dart';
 import 'package:paper/features/items/domain/item_definition.dart';
 import 'package:paper/features/items/domain/item_inputs.dart';
 import 'package:paper/features/orders/data/repositories/order_repository.dart';
@@ -376,7 +380,11 @@ class FakeInventoryRepository extends InventoryRepository {
   }
 
   @override
-  Future<MaterialRecord> linkMaterialToItem(String barcode, int itemId) async {
+  Future<MaterialRecord> linkMaterialToItem(
+    String barcode,
+    int itemId, {
+    int? variationLeafNodeId,
+  }) async {
     final index = _materials.indexWhere((item) => item.barcode == barcode);
     if (index == -1) {
       throw Exception('Material not found.');
@@ -401,6 +409,7 @@ class FakeInventoryRepository extends InventoryRepository {
       scanCount: current.scanCount,
       linkedGroupId: null,
       linkedItemId: itemId,
+      linkedVariationLeafNodeId: variationLeafNodeId,
       displayStock: current.displayStock,
       createdBy: current.createdBy,
       workflowStatus: current.workflowStatus,
@@ -1737,7 +1746,7 @@ class FakeItemRepository extends ItemRepository {
       name: input.name.trim(),
       alias: input.alias.trim(),
       displayName: input.displayName.trim(),
-      quantity: input.quantity,
+      quantity: 0,
       groupId: input.groupId,
       unitId: input.unitId,
       isArchived: false,
@@ -1760,7 +1769,7 @@ class FakeItemRepository extends ItemRepository {
       name: input.name.trim(),
       alias: input.alias.trim(),
       displayName: input.displayName.trim(),
-      quantity: input.quantity,
+      quantity: 0,
       groupId: input.groupId,
       unitId: input.unitId,
       isArchived: current.isArchived,
@@ -1816,6 +1825,66 @@ class FakeItemRepository extends ItemRepository {
     _items[index] = updated;
     return updated;
   }
+
+  @override
+  Future<List<ItemAsset>> getItemAssets(int itemId) async {
+    return const <ItemAsset>[];
+  }
+
+  @override
+  Future<ItemAssetUploadIntent> createAssetUploadIntent(
+    ItemAssetUploadIntentInput input,
+  ) async {
+    return ItemAssetUploadIntent(
+      alreadyUploaded: false,
+      upload: ItemAssetUploadTarget(
+        uploadSessionId: 'test-session',
+        objectKey:
+            'item-images/${input.itemId}/${input.sha256}/${input.fileName}',
+        uploadUrl: Uri.parse('https://mock.local/test-session'),
+        headers: const <String, String>{},
+      ),
+    );
+  }
+
+  @override
+  Future<ItemAsset> completeAssetUpload(
+    CompleteItemAssetUploadInput input,
+  ) async {
+    return ItemAsset(
+      id: 1,
+      entityType: 'item',
+      entityId: 1,
+      fileName: 'test.png',
+      contentType: 'image/png',
+      sizeBytes: 1,
+      sha256: List.filled(64, '0').join(),
+      objectKey: input.objectKey,
+      status: 'uploaded',
+      isPrimary: true,
+      createdAt: DateTime.now(),
+      uploadedAt: DateTime.now(),
+    );
+  }
+
+  @override
+  Future<ItemAsset> setPrimaryAsset(int assetId) async {
+    return ItemAsset(
+      id: assetId,
+      entityType: 'item',
+      entityId: 1,
+      fileName: 'test.png',
+      contentType: 'image/png',
+      sizeBytes: 1,
+      sha256: List.filled(64, '0').join(),
+      objectKey: 'item-images/1/test.png',
+      status: 'uploaded',
+      isPrimary: true,
+    );
+  }
+
+  @override
+  Future<void> deleteAsset(int assetId) async {}
 
   List<ItemVariationNodeDefinition> _buildTree(
     List<ItemVariationNodeInput> inputs,
@@ -1917,7 +1986,9 @@ class FakeOrderRepository extends OrderRepository {
           order.clientId == input.clientId &&
           order.itemId == input.itemId &&
           order.variationLeafNodeId == input.variationLeafNodeId &&
-          order.poNumber.trim().toLowerCase() == normalizedPoNo,
+          order.poNumber.trim().toLowerCase() == normalizedPoNo &&
+          _sameMoment(order.startDate, input.startDate) &&
+          _sameMoment(order.endDate, input.endDate),
     );
     if (index != -1) {
       final current = _orders[index];
@@ -1934,10 +2005,10 @@ class FakeOrderRepository extends OrderRepository {
         variationPathLabel: input.variationPathLabel.trim(),
         variationPathNodeIds: List<int>.from(input.variationPathNodeIds),
         quantity: current.quantity + input.quantity,
-        status: current.status,
+        status: input.status,
         createdAt: current.createdAt,
-        startDate: current.startDate,
-        endDate: current.endDate,
+        startDate: input.startDate,
+        endDate: input.endDate,
       );
       _orders[index] = updated;
       await linkPoDocuments(updated.id, input.poDocumentIds);
@@ -2125,6 +2196,212 @@ class FakeOrderRepository extends OrderRepository {
       ),
     );
   }
+
+  bool _sameMoment(DateTime? left, DateTime? right) {
+    if (left == null || right == null) {
+      return left == right;
+    }
+    return left.toUtc().millisecondsSinceEpoch ==
+        right.toUtc().millisecondsSinceEpoch;
+  }
+}
+
+class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
+  int getChallansCalls = 0;
+  int getCompanyProfileCalls = 0;
+
+  @override
+  Future<void> init() async {}
+
+  @override
+  Future<CompanyProfile> getCompanyProfile() async {
+    getCompanyProfileCalls += 1;
+    return const CompanyProfile(
+      id: 1,
+      companyName: 'Paper ERP',
+      mobile: '9999999999',
+      businessDescription: 'Packaging and paper conversion',
+      address: 'Pune',
+      stateCode: '27',
+      gstin: '27ABCDE1234F1Z5',
+      logoUrl: '',
+      signatureLabel: 'Ops Admin',
+    );
+  }
+
+  @override
+  Future<List<DeliveryChallan>> getChallans({
+    DeliveryChallanStatus? status,
+    String search = '',
+    DateTime? dateFrom,
+    DateTime? dateTo,
+    int? orderId,
+  }) async {
+    getChallansCalls += 1;
+    return const <DeliveryChallan>[];
+  }
+
+  @override
+  Future<List<DeliveryChallan>> getOrderChallans(int orderId) async =>
+      const <DeliveryChallan>[];
+
+  @override
+  Future<DeliveryChallan> getChallan(int id) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<DeliveryChallan> createChallan(DeliveryChallanDraftInput input) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<DeliveryChallan> updateChallan(
+    int id,
+    DeliveryChallanDraftInput input,
+  ) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<DeliveryChallan> issueChallan(int id) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<DeliveryChallan> cancelChallan(int id) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> deleteChallan(int id) async {}
+
+  @override
+  Future<void> recordPrint(int id) async {}
+
+  @override
+  Future<CompanyProfile> updateCompanyProfile(CompanyProfile profile) async =>
+      profile;
+}
+
+class TrackingInventoryRepository extends FakeInventoryRepository {
+  int getAllMaterialsCalls = 0;
+
+  @override
+  Future<List<MaterialRecord>> getAllMaterials() async {
+    getAllMaterialsCalls += 1;
+    return super.getAllMaterials();
+  }
+}
+
+class TrackingUnitRepository extends FakeUnitRepository {
+  int getUnitsCalls = 0;
+
+  @override
+  Future<List<UnitDefinition>> getUnits() async {
+    getUnitsCalls += 1;
+    return super.getUnits();
+  }
+}
+
+class TrackingGroupRepository extends FakeGroupRepository {
+  int getGroupsCalls = 0;
+
+  @override
+  Future<List<GroupDefinition>> getGroups() async {
+    getGroupsCalls += 1;
+    return super.getGroups();
+  }
+}
+
+class TrackingClientRepository extends FakeClientRepository {
+  int getClientsCalls = 0;
+
+  @override
+  Future<List<ClientDefinition>> getClients() async {
+    getClientsCalls += 1;
+    return super.getClients();
+  }
+}
+
+class TrackingItemRepository extends FakeItemRepository {
+  int getItemsCalls = 0;
+
+  @override
+  Future<List<ItemDefinition>> getItems() async {
+    getItemsCalls += 1;
+    return super.getItems();
+  }
+}
+
+class TrackingOrderRepository extends FakeOrderRepository {
+  int getOrdersCalls = 0;
+
+  @override
+  Future<List<OrderEntry>> getOrders() async {
+    getOrdersCalls += 1;
+    return super.getOrders();
+  }
+}
+
+class FakeAuthProvider extends AuthProvider {
+  FakeAuthProvider({bool authenticated = true, bool canWriteConfig = true})
+    : _authenticated = authenticated,
+      _tokenValue = authenticated ? 'test-token' : null,
+      _canWriteConfig = canWriteConfig,
+      super(baseUrl: 'http://localhost');
+
+  bool _authenticated;
+  String? _tokenValue;
+  final bool _canWriteConfig;
+  int clearCalls = 0;
+  int resetCalls = 0;
+  String? _error;
+
+  @override
+  bool get isAuthenticated => _authenticated;
+
+  @override
+  String? get token => _tokenValue;
+
+  @override
+  String? get errorMessage => _error;
+
+  @override
+  bool get canAccessUserManagement => _authenticated;
+
+  @override
+  bool can(String permissionKey) {
+    if (!_authenticated) {
+      return false;
+    }
+    if (permissionKey == 'config.write') {
+      return _canWriteConfig;
+    }
+    return true;
+  }
+
+  @override
+  Future<bool> clearBackendDatabase() async {
+    clearCalls += 1;
+    _error = null;
+    notifyListeners();
+    return true;
+  }
+
+  @override
+  Future<bool> resetDemoData() async {
+    resetCalls += 1;
+    _error = null;
+    notifyListeners();
+    return true;
+  }
+
+  void authenticate({String token = 'test-token'}) {
+    _authenticated = true;
+    _tokenValue = token;
+    notifyListeners();
+  }
 }
 
 ItemVariationNodeDefinition _node({
@@ -2155,12 +2432,14 @@ ItemVariationNodeDefinition _node({
 void main() {
   Future<void> pumpApp(
     WidgetTester tester, {
+    AuthProvider? authProvider,
     FakeInventoryRepository? repository,
     FakeGroupRepository? groupRepository,
     FakeUnitRepository? unitRepository,
     FakeClientRepository? clientRepository,
     FakeItemRepository? itemRepository,
     FakeOrderRepository? orderRepository,
+    DeliveryChallanRepository? deliveryChallanRepository,
     Size viewSize = const Size(1280, 900),
   }) async {
     tester.view.physicalSize = viewSize;
@@ -2171,10 +2450,13 @@ void main() {
     await tester.pumpWidget(
       MyApp(
         demoModeOverride: true,
+        authProvider: authProvider,
         inventoryRepository: repository ?? FakeInventoryRepository(),
         groupRepository: groupRepository ?? FakeGroupRepository(),
         unitRepository: unitRepository ?? FakeUnitRepository(),
         clientRepository: clientRepository ?? FakeClientRepository(),
+        deliveryChallanRepository:
+            deliveryChallanRepository ?? FakeDeliveryChallanRepository(),
         itemRepository: itemRepository ?? FakeItemRepository(),
         orderRepository: orderRepository ?? FakeOrderRepository(),
       ),
@@ -3632,9 +3914,7 @@ void main() {
 
     expect(find.text('Bottle / Travel Bottle'), findsWidgets);
     final items = await itemRepository.getItems();
-    final created = items
-        .where((item) => item.name == 'Bottle' && item.quantity == 1)
-        .single;
+    final created = items.where((item) => item.name == 'Bottle').single;
     expect(created.displayName, 'Bottle / Travel Bottle');
     expect(created.topLevelProperties.single.name, 'Color');
     expect(created.leafVariationNodes.single.displayName, 'Black Glossy');
@@ -3800,4 +4080,175 @@ void main() {
 
     expect(find.text('Scanned 2 times'), findsWidgets);
   });
+
+  testWidgets(
+    'settings dialog shows truthful actions and refreshes providers after clear and reset',
+    (tester) async {
+      final authProvider = FakeAuthProvider(authenticated: true);
+      final inventoryRepository = TrackingInventoryRepository();
+      final groupRepository = TrackingGroupRepository();
+      final unitRepository = TrackingUnitRepository();
+      final clientRepository = TrackingClientRepository();
+      final itemRepository = TrackingItemRepository();
+      final orderRepository = TrackingOrderRepository();
+      final deliveryChallanRepository = FakeDeliveryChallanRepository();
+
+      await pumpApp(
+        tester,
+        authProvider: authProvider,
+        repository: inventoryRepository,
+        groupRepository: groupRepository,
+        unitRepository: unitRepository,
+        clientRepository: clientRepository,
+        itemRepository: itemRepository,
+        orderRepository: orderRepository,
+        deliveryChallanRepository: deliveryChallanRepository,
+        viewSize: const Size(1440, 900),
+      );
+
+      await tester.tap(find.text('Settings &\nPreferences'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Workspace Data Controls'), findsOneWidget);
+      expect(find.text('Clear Data'), findsOneWidget);
+      expect(find.text('Reset + Reseed Demo'), findsOneWidget);
+      expect(find.text('Reseed Data'), findsNothing);
+
+      final initialInventoryFetches = inventoryRepository.getAllMaterialsCalls;
+      final initialGroupFetches = groupRepository.getGroupsCalls;
+      final initialUnitFetches = unitRepository.getUnitsCalls;
+      final initialClientFetches = clientRepository.getClientsCalls;
+      final initialItemFetches = itemRepository.getItemsCalls;
+      final initialOrderFetches = orderRepository.getOrdersCalls;
+      final initialChallanFetches = deliveryChallanRepository.getChallansCalls;
+
+      await tester.ensureVisible(
+        find.widgetWithText(FilledButton, 'Clear Data'),
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Clear Data'));
+      await tester.pumpAndSettle();
+
+      expect(authProvider.clearCalls, 1);
+      expect(
+        find.text('Backend database cleared successfully.'),
+        findsOneWidget,
+      );
+      expect(
+        inventoryRepository.getAllMaterialsCalls,
+        greaterThan(initialInventoryFetches),
+      );
+      expect(groupRepository.getGroupsCalls, greaterThan(initialGroupFetches));
+      expect(unitRepository.getUnitsCalls, greaterThan(initialUnitFetches));
+      expect(
+        clientRepository.getClientsCalls,
+        greaterThan(initialClientFetches),
+      );
+      expect(itemRepository.getItemsCalls, greaterThan(initialItemFetches));
+      expect(orderRepository.getOrdersCalls, greaterThan(initialOrderFetches));
+      expect(
+        deliveryChallanRepository.getChallansCalls,
+        greaterThan(initialChallanFetches),
+      );
+
+      final postClearInventoryFetches =
+          inventoryRepository.getAllMaterialsCalls;
+      final postClearGroupFetches = groupRepository.getGroupsCalls;
+      final postClearUnitFetches = unitRepository.getUnitsCalls;
+      final postClearClientFetches = clientRepository.getClientsCalls;
+      final postClearItemFetches = itemRepository.getItemsCalls;
+      final postClearOrderFetches = orderRepository.getOrdersCalls;
+      final postClearChallanFetches =
+          deliveryChallanRepository.getChallansCalls;
+
+      await tester.ensureVisible(
+        find.widgetWithText(OutlinedButton, 'Reset + Reseed Demo'),
+      );
+      await tester.tap(
+        find.widgetWithText(OutlinedButton, 'Reset + Reseed Demo'),
+      );
+      await tester.pumpAndSettle();
+
+      expect(authProvider.resetCalls, 1);
+      expect(
+        inventoryRepository.getAllMaterialsCalls,
+        greaterThan(postClearInventoryFetches),
+      );
+      expect(
+        groupRepository.getGroupsCalls,
+        greaterThan(postClearGroupFetches),
+      );
+      expect(unitRepository.getUnitsCalls, greaterThan(postClearUnitFetches));
+      expect(
+        clientRepository.getClientsCalls,
+        greaterThan(postClearClientFetches),
+      );
+      expect(itemRepository.getItemsCalls, greaterThan(postClearItemFetches));
+      expect(
+        orderRepository.getOrdersCalls,
+        greaterThan(postClearOrderFetches),
+      );
+      expect(
+        deliveryChallanRepository.getChallansCalls,
+        greaterThan(postClearChallanFetches),
+      );
+    },
+  );
+
+  testWidgets(
+    'auth transition triggers one authenticated refresh across core providers',
+    (tester) async {
+      final authProvider = FakeAuthProvider(authenticated: false);
+      final inventoryRepository = TrackingInventoryRepository();
+      final groupRepository = TrackingGroupRepository();
+      final unitRepository = TrackingUnitRepository();
+      final clientRepository = TrackingClientRepository();
+      final itemRepository = TrackingItemRepository();
+      final orderRepository = TrackingOrderRepository();
+      final deliveryChallanRepository = FakeDeliveryChallanRepository();
+
+      await pumpApp(
+        tester,
+        authProvider: authProvider,
+        repository: inventoryRepository,
+        groupRepository: groupRepository,
+        unitRepository: unitRepository,
+        clientRepository: clientRepository,
+        itemRepository: itemRepository,
+        orderRepository: orderRepository,
+        deliveryChallanRepository: deliveryChallanRepository,
+      );
+
+      expect(find.text('Sign in'), findsOneWidget);
+
+      final initialInventoryFetches = inventoryRepository.getAllMaterialsCalls;
+      final initialGroupFetches = groupRepository.getGroupsCalls;
+      final initialUnitFetches = unitRepository.getUnitsCalls;
+      final initialClientFetches = clientRepository.getClientsCalls;
+      final initialItemFetches = itemRepository.getItemsCalls;
+      final initialOrderFetches = orderRepository.getOrdersCalls;
+      final initialChallanFetches = deliveryChallanRepository.getChallansCalls;
+
+      authProvider.authenticate();
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sign in'), findsNothing);
+      expect(
+        inventoryRepository.getAllMaterialsCalls,
+        greaterThan(initialInventoryFetches),
+      );
+      expect(groupRepository.getGroupsCalls, greaterThan(initialGroupFetches));
+      expect(unitRepository.getUnitsCalls, greaterThan(initialUnitFetches));
+      expect(
+        clientRepository.getClientsCalls,
+        greaterThan(initialClientFetches),
+      );
+      expect(itemRepository.getItemsCalls, greaterThan(initialItemFetches));
+      expect(orderRepository.getOrdersCalls, greaterThan(initialOrderFetches));
+      expect(
+        deliveryChallanRepository.getChallansCalls,
+        greaterThan(initialChallanFetches),
+      );
+    },
+  );
 }
