@@ -544,10 +544,18 @@ class _NodeDraft {
   bool detailsExpanded;
   bool isNameEditing;
   bool displayNameTouched;
+  bool inheritedFromGroup = false;
+  bool inheritedMandatory = false;
+  String? inheritedPropertyKey;
+  int? inheritedSourceGroupId;
+  String? inheritedSourceGroupName;
   final List<_NodeDraft> children;
 
   bool get isLeafValue =>
       kind == ItemVariationNodeKind.value && children.isEmpty;
+
+  bool get isLockedInheritedProperty =>
+      inheritedFromGroup && kind == ItemVariationNodeKind.property;
 
   void dispose() {
     nameController.dispose();
@@ -608,6 +616,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   String? _localError;
   final List<_UnitConversionDraft> _secondaryUnitConversions = [];
   final Set<String> _promotedPropertyKeys = <String>{};
+  bool _isLoadingGroupSchema = false;
 
   bool get _isReadOnly => widget.item?.isUsed ?? false;
 
@@ -641,6 +650,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
             const <ItemVariationNodeDefinition>[]) {
       _rootNodes.add(_draftFromNode(node, null));
     }
+    _hydrateExistingGroupBackedNodes();
     for (final conversion in widget.item?.unitConversions ?? const []) {
       final draft = _UnitConversionDraft(
         unitId: conversion.unitId,
@@ -654,6 +664,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
 
     _syncPrimaryDisplayName();
     _syncLeafDisplayNames();
+    if (_selectedGroupId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _loadInheritedSchemaForGroup(_selectedGroupId!);
+      });
+    }
   }
 
   _NodeDraft _draftFromNode(
@@ -785,6 +800,126 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
 
   String _propertyKey(String value) => value.trim().toLowerCase();
 
+  String _propertyKeyForNode(_NodeDraft node) =>
+      _propertyKey(node.inheritedPropertyKey ?? node.nameController.text);
+
+  void _hydrateExistingGroupBackedNodes() {
+    for (final node in _rootNodes) {
+      if (node.kind != ItemVariationNodeKind.property) {
+        continue;
+      }
+      final schemaEntry = _propertySchemaForNode(node);
+      if (schemaEntry == null || schemaEntry.sourceType != 'inherited_group') {
+        continue;
+      }
+      node.inheritedFromGroup = true;
+      node.inheritedMandatory = schemaEntry.mandatory;
+      node.inheritedPropertyKey = schemaEntry.propertyKey;
+      node.inheritedSourceGroupId = schemaEntry.sourceGroupId;
+      node.inheritedSourceGroupName = schemaEntry.sourceGroupName;
+    }
+  }
+
+  void _resetInheritedFlags() {
+    for (final node in _rootNodes) {
+      if (node.kind != ItemVariationNodeKind.property) {
+        continue;
+      }
+      node.inheritedFromGroup = false;
+      node.inheritedMandatory = false;
+      node.inheritedPropertyKey = null;
+      node.inheritedSourceGroupId = null;
+      node.inheritedSourceGroupName = null;
+    }
+  }
+
+  void _applyEffectiveSchemaToRootNodes(
+    List<governance.GroupPropertyDraft> propertyDrafts,
+  ) {
+    _resetInheritedFlags();
+    final draftsByKey = <String, governance.GroupPropertyDraft>{
+      for (final draft in propertyDrafts)
+        _propertyKey(draft.propertyKey ?? draft.name): draft,
+    };
+    final matchedKeys = <String>{};
+    for (final node in _rootNodes) {
+      if (node.kind != ItemVariationNodeKind.property) {
+        continue;
+      }
+      final key = _propertyKeyForNode(node);
+      final draft = draftsByKey[key];
+      if (draft == null) {
+        continue;
+      }
+      matchedKeys.add(key);
+      node.inheritedFromGroup = true;
+      node.inheritedMandatory = draft.mandatory;
+      node.inheritedPropertyKey = draft.propertyKey ?? key;
+      node.inheritedSourceGroupId = draft.sourceGroupId;
+      node.inheritedSourceGroupName = draft.sourceGroupName;
+      if (node.nameController.text.trim().isEmpty) {
+        node.nameController.text = draft.name;
+      }
+    }
+    for (final entry in draftsByKey.entries) {
+      if (matchedKeys.contains(entry.key)) {
+        continue;
+      }
+      final node = _newDraft(ItemVariationNodeKind.property, null);
+      node.nameController.text = entry.value.name;
+      node.inheritedFromGroup = true;
+      node.inheritedMandatory = entry.value.mandatory;
+      node.inheritedPropertyKey = entry.value.propertyKey ?? entry.key;
+      node.inheritedSourceGroupId = entry.value.sourceGroupId;
+      node.inheritedSourceGroupName = entry.value.sourceGroupName;
+      _rootNodes.add(node);
+    }
+  }
+
+  Future<void> _loadInheritedSchemaForGroup(int groupId) async {
+    setState(() {
+      _isLoadingGroupSchema = true;
+      _localError = null;
+    });
+    final schema = await context.read<InventoryProvider>().loadEffectiveSchema(
+      groupId,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isLoadingGroupSchema = false;
+      if (schema != null) {
+        _applyEffectiveSchemaToRootNodes(schema.propertyDrafts);
+      }
+    });
+  }
+
+  Future<void> _handleGroupChanged(int? value) async {
+    setState(() {
+      _selectedGroupId = value;
+      _localError = null;
+    });
+    if (value == null) {
+      setState(_resetInheritedFlags);
+      return;
+    }
+    await _loadInheritedSchemaForGroup(value);
+  }
+
+  bool _isMandatoryInheritedPropertySatisfied(_NodeDraft node) {
+    if (!node.inheritedFromGroup || !node.inheritedMandatory) {
+      return true;
+    }
+    for (final child in node.children) {
+      if (child.kind == ItemVariationNodeKind.value &&
+          child.nameController.text.trim().isNotEmpty) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   String _groupInventoryBarcode(int groupId) {
     final linked = context
         .read<InventoryProvider>()
@@ -795,7 +930,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   }
 
   ItemPropertySchemaEntry? _propertySchemaForNode(_NodeDraft node) {
-    final key = _propertyKey(node.nameController.text);
+    final key = _propertyKeyForNode(node);
     if (key.isEmpty) {
       return null;
     }
@@ -811,7 +946,22 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     final propertyKey = _propertyKey(node.nameController.text);
     final schemaEntry = _propertySchemaForNode(node);
     final pills = <_TreeMetaPillSpec>[];
-    if (schemaEntry != null) {
+    if (node.inheritedFromGroup) {
+      pills.add(
+        const _TreeMetaPillSpec(
+          label: 'Group schema',
+          tone: _TreeMetaPillTone.inherited,
+        ),
+      );
+      if (node.inheritedMandatory) {
+        pills.add(
+          const _TreeMetaPillSpec(
+            label: 'Required',
+            tone: _TreeMetaPillTone.required,
+          ),
+        );
+      }
+    } else if (schemaEntry != null) {
       switch (schemaEntry.sourceType) {
         case 'inherited_group':
           pills.add(
@@ -841,6 +991,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       );
     }
     if (_promotedPropertyKeys.contains(propertyKey) &&
+        !node.inheritedFromGroup &&
         schemaEntry?.sourceType != 'inherited_group') {
       pills.add(
         _TreeMetaPillSpec(label: 'Promoted', tone: _TreeMetaPillTone.promoted),
@@ -1070,10 +1221,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   }
                   final refreshedGroupsProvider = context
                       .read<GroupsProvider>();
-                  setState(() {
-                    _selectedGroupId = created.id;
-                    _localError = null;
-                  });
+                  await _handleGroupChanged(created.id);
                   return SearchableSelectOption<int>(
                     value: created.id,
                     label: _groupOptionLabel(created, refreshedGroupsProvider),
@@ -1106,9 +1254,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                       ),
                     ),
                 ],
-                onChanged: (value) => setState(() {
-                  _selectedGroupId = value;
-                }),
+                onChanged: (value) => _handleGroupChanged(value),
                 validator: (value) => value == null ? 'Required' : null,
               ),
             ],
@@ -1257,6 +1403,17 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               ),
             ),
           ],
+          if (_isLoadingGroupSchema) ...[
+            const SizedBox(height: 8),
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          ],
           if (_secondaryUnitConversions.isNotEmpty) ...[
             const SizedBox(height: 12),
             for (var i = 0; i < _secondaryUnitConversions.length; i++) ...[
@@ -1331,10 +1488,20 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                           ),
                           onToggleBranch: () =>
                               _toggleNodeDetails(_rootNodes[index]),
-                          onEnableNameEditing: () =>
-                              _setNodeNameEditing(_rootNodes[index], true),
-                          onFinishNameEditing: () =>
-                              _setNodeNameEditing(_rootNodes[index], false),
+                          onEnableNameEditing:
+                              _rootNodes[index].isLockedInheritedProperty
+                              ? null
+                              : () => _setNodeNameEditing(
+                                  _rootNodes[index],
+                                  true,
+                                ),
+                          onFinishNameEditing:
+                              _rootNodes[index].isLockedInheritedProperty
+                              ? null
+                              : () => _setNodeNameEditing(
+                                  _rootNodes[index],
+                                  false,
+                                ),
                           onAddProperty:
                               _rootNodes[index].kind ==
                                   ItemVariationNodeKind.value
@@ -1344,7 +1511,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                               _rootNodes[index].kind ==
                                       ItemVariationNodeKind.property &&
                                   _selectedGroupId != null &&
-                                  !_isReadOnly
+                                  !_isReadOnly &&
+                                  !_rootNodes[index].isLockedInheritedProperty
                               ? () => _promotePropertyToGroup(_rootNodes[index])
                               : null,
                           onAddValue:
@@ -1358,7 +1526,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                           onMoveDown: index == _rootNodes.length - 1
                               ? null
                               : () => _moveNode(_rootNodes, index, index + 1),
-                          onRemove: () => _removeNode(_rootNodes, index),
+                          onRemove: _rootNodes[index].isLockedInheritedProperty
+                              ? null
+                              : () => _removeNode(_rootNodes, index),
                           buildChildEditor: _buildChildEditor,
                         ),
                         if (index != _rootNodes.length - 1)
@@ -1633,15 +1803,20 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       summaryLabel: _summaryLabelForNode(child),
       metaPills: _propertyMetaPillsForNode(child),
       onToggleBranch: () => _toggleNodeDetails(child),
-      onEnableNameEditing: () => _setNodeNameEditing(child, true),
-      onFinishNameEditing: () => _setNodeNameEditing(child, false),
+      onEnableNameEditing: child.isLockedInheritedProperty
+          ? null
+          : () => _setNodeNameEditing(child, true),
+      onFinishNameEditing: child.isLockedInheritedProperty
+          ? null
+          : () => _setNodeNameEditing(child, false),
       onAddProperty: child.kind == ItemVariationNodeKind.value
           ? () => _addChildProperty(child)
           : null,
       onPromoteToGroup:
           child.kind == ItemVariationNodeKind.property &&
               _selectedGroupId != null &&
-              !_isReadOnly
+              !_isReadOnly &&
+              !child.isLockedInheritedProperty
           ? () => _promotePropertyToGroup(child)
           : null,
       onAddValue: child.kind == ItemVariationNodeKind.property
@@ -1651,7 +1826,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       onMoveDown: index == siblings.length - 1
           ? null
           : () => _moveNode(siblings, index, index + 1),
-      onRemove: () => _removeNode(siblings, index),
+      onRemove: child.isLockedInheritedProperty
+          ? null
+          : () => _removeNode(siblings, index),
       buildChildEditor: _buildChildEditor,
     );
   }
@@ -1732,6 +1909,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   }
 
   void _setNodeNameEditing(_NodeDraft node, bool editing) {
+    if (node.isLockedInheritedProperty) {
+      return;
+    }
     setState(() {
       node.isNameEditing = editing;
       if (editing) {
@@ -1826,6 +2006,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   }
 
   void _removeNode(List<_NodeDraft> siblings, int index) {
+    if (siblings[index].isLockedInheritedProperty) {
+      return;
+    }
     setState(() {
       final node = siblings.removeAt(index);
       node.dispose();
@@ -1852,6 +2035,18 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
         setState(() {
           _localError =
               'Every secondary unit conversion must be greater than 0.';
+        });
+        return;
+      }
+    }
+    for (final node in _rootNodes) {
+      if (!_isMandatoryInheritedPropertySatisfied(node)) {
+        final propertyName = node.nameController.text.trim().isEmpty
+            ? 'Unnamed Property'
+            : node.nameController.text.trim();
+        setState(() {
+          _localError =
+              'Provide at least one value for required property "$propertyName".';
         });
         return;
       }
@@ -2118,14 +2313,14 @@ class _TreeNodeEditor extends StatelessWidget {
   final String summaryLabel;
   final List<_TreeMetaPillSpec> metaPills;
   final VoidCallback onToggleBranch;
-  final VoidCallback onEnableNameEditing;
-  final VoidCallback onFinishNameEditing;
+  final VoidCallback? onEnableNameEditing;
+  final VoidCallback? onFinishNameEditing;
   final VoidCallback? onAddProperty;
   final VoidCallback? onPromoteToGroup;
   final VoidCallback? onAddValue;
   final VoidCallback? onMoveUp;
   final VoidCallback? onMoveDown;
-  final VoidCallback onRemove;
+  final VoidCallback? onRemove;
   final Widget Function(_NodeDraft child, int depth, List<_NodeDraft> siblings)
   buildChildEditor;
 
@@ -2185,7 +2380,7 @@ class _TreeNodeEditor extends StatelessWidget {
                                 controller: draft.nameController,
                                 autofocus: true,
                                 onEditingComplete: onFinishNameEditing,
-                                onSubmitted: (_) => onFinishNameEditing(),
+                                onSubmitted: (_) => onFinishNameEditing?.call(),
                                 decoration: InputDecoration(
                                   isDense: true,
                                   hintText: isProperty
@@ -2207,7 +2402,7 @@ class _TreeNodeEditor extends StatelessWidget {
                               child: TextField(
                                 controller: draft.codeController,
                                 onEditingComplete: onFinishNameEditing,
-                                onSubmitted: (_) => onFinishNameEditing(),
+                                onSubmitted: (_) => onFinishNameEditing?.call(),
                                 decoration: InputDecoration(
                                   isDense: true,
                                   hintText: 'Code (Optional)',
@@ -2286,11 +2481,12 @@ class _TreeNodeEditor extends StatelessWidget {
                           icon: Icons.upload_rounded,
                           onPressed: onPromoteToGroup,
                         ),
-                      _TreeActionButton(
-                        tooltip: 'Edit name',
-                        icon: Icons.edit_outlined,
-                        onPressed: onEnableNameEditing,
-                      ),
+                      if (onEnableNameEditing != null)
+                        _TreeActionButton(
+                          tooltip: 'Edit name',
+                          icon: Icons.edit_outlined,
+                          onPressed: onEnableNameEditing,
+                        ),
                       _TreeActionButton(
                         tooltip: 'Move up',
                         icon: Icons.arrow_upward,
@@ -2301,11 +2497,12 @@ class _TreeNodeEditor extends StatelessWidget {
                         icon: Icons.arrow_downward,
                         onPressed: onMoveDown,
                       ),
-                      _TreeActionButton(
-                        tooltip: 'Remove',
-                        icon: Icons.delete_outline,
-                        onPressed: onRemove,
-                      ),
+                      if (onRemove != null)
+                        _TreeActionButton(
+                          tooltip: 'Remove',
+                          icon: Icons.delete_outline,
+                          onPressed: onRemove,
+                        ),
                     ],
                   ],
                 ),
@@ -2348,7 +2545,7 @@ class _TreeNodeEditor extends StatelessWidget {
   }
 }
 
-enum _TreeMetaPillTone { manual, seeded, inherited, promoted }
+enum _TreeMetaPillTone { manual, seeded, inherited, promoted, required }
 
 class _TreeMetaPillSpec {
   const _TreeMetaPillSpec({required this.label, required this.tone});
@@ -2384,6 +2581,11 @@ class _TreeMetaPill extends StatelessWidget {
         const Color(0xFFF5F3FF),
         const Color(0xFFC4B5FD),
         const Color(0xFF6D28D9),
+      ),
+      _TreeMetaPillTone.required => (
+        const Color(0xFFFEF3C7),
+        const Color(0xFFFCD34D),
+        const Color(0xFFB45309),
       ),
     };
   }

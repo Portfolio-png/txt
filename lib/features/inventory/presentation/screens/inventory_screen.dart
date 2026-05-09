@@ -19,6 +19,7 @@ import '../../../../core/widgets/soft_primitives.dart';
 import '../../../groups/domain/group_definition.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../groups/presentation/screens/groups_screen.dart';
+import '../../../groups/presentation/widgets/structured_group_editor_dialog.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/providers/items_provider.dart';
@@ -115,7 +116,7 @@ class InventoryScreen extends StatefulWidget {
   }
 
   static Future<void> openCreateGroupForm(BuildContext context) async {
-    await _showInventoryModal<void>(context, const _AddMaterialForm());
+    await StructuredGroupEditorDialog.open(context);
   }
 
   static Future<bool?> openAddStockForm(BuildContext context) {
@@ -494,15 +495,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
       return;
     }
 
-    final linkedGroupId = initialRecord.linkedGroupId;
-    if (linkedGroupId != null) {
-      final linkedGroup = context.read<GroupsProvider>().findById(
-        linkedGroupId,
-      );
-      if (linkedGroup != null) {
-        await GroupsScreen.openEditor(context, group: linkedGroup);
-        return;
-      }
+    final linkedGroup = _resolveGroupForInventoryRecord(initialRecord);
+    if (linkedGroup != null) {
+      await GroupsScreen.openEditor(context, group: linkedGroup);
+      return;
     }
 
     await showDialog<void>(
@@ -515,6 +511,44 @@ class _InventoryScreenState extends State<InventoryScreen> {
         ),
       ),
     );
+  }
+
+  GroupDefinition? _resolveGroupForInventoryRecord(MaterialRecord record) {
+    final groupsProvider = context.read<GroupsProvider>();
+    final linkedGroupId = record.linkedGroupId;
+    if (linkedGroupId != null) {
+      final linkedGroup = groupsProvider.findById(linkedGroupId);
+      if (linkedGroup != null) {
+        return linkedGroup;
+      }
+    }
+
+    final normalizedRecordName = record.name.trim().toLowerCase();
+    if (normalizedRecordName.isEmpty) {
+      return null;
+    }
+
+    final exactMatches = groupsProvider.groups
+        .where(
+          (group) =>
+              group.name.trim().toLowerCase() == normalizedRecordName &&
+              (record.unitId == null || group.unitId == record.unitId),
+        )
+        .toList(growable: false);
+    if (exactMatches.isNotEmpty) {
+      return exactMatches.last;
+    }
+    return null;
+  }
+
+  bool _isGroupLikeRecord(MaterialRecord record) {
+    final normalizedType = record.type.trim().toLowerCase();
+    return record.linkedGroupId != null ||
+        record.groupMode != null ||
+        record.isParent ||
+        normalizedType == 'group' ||
+        normalizedType == 'item group' ||
+        _viewMode == _InventoryViewMode.groups;
   }
 
   Future<void> _handleQuickCreate(_InventoryQuickCreateAction action) async {
@@ -1272,9 +1306,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   Future<void> _openEditMaterial(MaterialRecord record) async {
     _dismissInventoryActionOverlays();
-    if (record.isParent &&
-        (record.groupMode == 'item_group_authoring' ||
-            record.type.trim().toLowerCase() == 'item group')) {
+    if (_isGroupLikeRecord(record)) {
       await _openCreateGroupEditor(initialRecord: record);
       return;
     }

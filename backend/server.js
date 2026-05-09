@@ -5867,7 +5867,18 @@ async function saveGroup({ name, parentGroupId = null, unitId, id = null }) {
     error.statusCode = 404;
     throw error;
   }
-  if ((existing.usage_count || 0) > 0) {
+  const blockingUsage = await get(
+    `
+    SELECT
+      (SELECT COUNT(*) FROM groups AS child_groups WHERE child_groups.parent_group_id = ? AND child_groups.is_archived = 0) AS active_child_count,
+      (SELECT COUNT(*) FROM items WHERE items.group_id = ? AND items.is_archived = 0) AS active_item_count
+    `,
+    [id, id],
+  );
+  if (
+    Number(blockingUsage?.active_child_count || 0) > 0 ||
+    Number(blockingUsage?.active_item_count || 0) > 0
+  ) {
     const error = new Error('Used groups cannot be edited.');
     error.statusCode = 409;
     throw error;
@@ -6307,6 +6318,38 @@ async function saveItem({
 
     const existingPropertySchema = await getItemPropertySchema(itemId);
     const effectiveSchema = await getEffectiveSchema(normalizedGroupId);
+    const topLevelPropertiesByKey = new Map(
+      sanitizedTree
+        .filter((node) => node.kind === 'property')
+        .map((node) => [
+          normalizePropertyKey(node.name),
+          node,
+        ])
+        .filter(([key]) => Boolean(key)),
+    );
+    for (const draft of effectiveSchema.propertyDrafts || []) {
+      if (!draft?.mandatory) {
+        continue;
+      }
+      const propertyKey = normalizePropertyKey(draft.propertyKey || draft.name);
+      if (!propertyKey) {
+        continue;
+      }
+      const propertyNode = topLevelPropertiesByKey.get(propertyKey);
+      const hasDirectValueChild =
+        propertyNode &&
+        Array.isArray(propertyNode.children) &&
+        propertyNode.children.some(
+          (child) => child.kind === 'value' && String(child.name || '').trim(),
+        );
+      if (!hasDirectValueChild) {
+        const error = new Error(
+          `Provide at least one value for required property "${draft.name}".`,
+        );
+        error.statusCode = 400;
+        throw error;
+      }
+    }
     await persistItemPropertySchema(
       itemId,
       mergeItemPropertySchema({

@@ -108,9 +108,6 @@ class ApiGroupRepository implements GroupRepository {
         throw GroupApiException('Group not found.');
       }
       final current = _mockGroups[index];
-      if (current.isUsed) {
-        throw GroupApiException('Used groups cannot be edited.');
-      }
       _validateCreateOrUpdate(
         id: input.id,
         name: input.name,
