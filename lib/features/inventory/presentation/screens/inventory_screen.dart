@@ -32,6 +32,7 @@ import '../../../units/domain/unit_inputs.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../../units/presentation/screens/units_screen.dart';
 import '../../domain/create_parent_material_input.dart';
+import '../../domain/effective_group_schema.dart';
 import '../../domain/group_property_draft.dart' as governance;
 import '../../domain/inventory_control_tower.dart';
 import '../../domain/material_control_tower_detail.dart';
@@ -6013,28 +6014,91 @@ class _PropertyChip extends StatelessWidget {
     required this.label,
     required this.onRemove,
     this.removable = true,
+    this.badge,
+    this.tone = _PropertyChipTone.manual,
   });
 
   final String label;
   final VoidCallback onRemove;
   final bool removable;
+  final String? badge;
+  final _PropertyChipTone tone;
+
+  ({
+    Color background,
+    Color border,
+    Color text,
+    Color badgeBackground,
+    Color badgeText,
+  })
+  _colors() {
+    return switch (tone) {
+      _PropertyChipTone.manual => (
+        background: const Color(0xFFF6F4FF),
+        border: const Color(0xFFCFC7FF),
+        text: const Color(0xFF2A00E4),
+        badgeBackground: const Color(0xFFE9E2FF),
+        badgeText: const Color(0xFF6049E3),
+      ),
+      _PropertyChipTone.seed => (
+        background: const Color(0xFFF3F8FF),
+        border: const Color(0xFFBFDBFE),
+        text: const Color(0xFF1D4ED8),
+        badgeBackground: const Color(0xFFE0F2FE),
+        badgeText: const Color(0xFF0369A1),
+      ),
+      _PropertyChipTone.inherited => (
+        background: const Color(0xFFF8FAFC),
+        border: const Color(0xFFE2E8F0),
+        text: const Color(0xFF334155),
+        badgeBackground: const Color(0xFFEFF6FF),
+        badgeText: const Color(0xFF2563EB),
+      ),
+      _PropertyChipTone.neutral => (
+        background: const Color(0xFFF8FAFC),
+        border: const Color(0xFFE2E8F0),
+        text: const Color(0xFF475569),
+        badgeBackground: const Color(0xFFF1F5F9),
+        badgeText: const Color(0xFF64748B),
+      ),
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
+    final colors = _colors();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
       decoration: BoxDecoration(
-        color: const Color(0xFFF6F4FF),
-        border: Border.all(color: const Color(0xFFCFC7FF)),
+        color: colors.background,
+        border: Border.all(color: colors.border),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (badge != null) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: BoxDecoration(
+                color: colors.badgeBackground,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                badge!,
+                style: _inventoryInterStyle(
+                  color: colors.badgeText,
+                  size: 10,
+                  weight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+          ],
           Text(
             label,
             style: _inventoryInterStyle(
-              color: const Color(0xFF2A00E4),
+              color: colors.text,
               size: 12,
               weight: FontWeight.w500,
             ),
@@ -6062,11 +6126,13 @@ class _SeedPropertyToggleChip extends StatelessWidget {
     required this.label,
     required this.enabled,
     required this.onChanged,
+    required this.badge,
   });
 
   final String label;
   final bool enabled;
   final ValueChanged<bool> onChanged;
+  final String badge;
 
   @override
   Widget build(BuildContext context) {
@@ -6087,6 +6153,26 @@ class _SeedPropertyToggleChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: BoxDecoration(
+                color: enabled
+                    ? const Color(0xFFDBEAFE)
+                    : const Color(0xFFE2E8F0),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                badge,
+                style: _inventoryInterStyle(
+                  color: enabled
+                      ? const Color(0xFF1D4ED8)
+                      : const Color(0xFF64748B),
+                  size: 10,
+                  weight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
             Icon(
               enabled
                   ? Icons.check_circle_rounded
@@ -6113,6 +6199,8 @@ class _SeedPropertyToggleChip extends StatelessWidget {
     );
   }
 }
+
+enum _PropertyChipTone { neutral, manual, seed, inherited }
 
 class _LinkGroupSheet extends StatelessWidget {
   const _LinkGroupSheet({required this.record});
@@ -6325,9 +6413,15 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
 
   int? _selectedUnitId;
   int? _selectedParentGroupId;
-  int? _selectedSeedItemId;
-  final List<String> _addedProperties = <String>[];
+  final Set<int> _selectedSeedItemIds = <int>{};
+  EffectiveGroupSchema? _inheritedSchema;
+  bool _isLoadingInheritedSchema = false;
+  final Map<String, governance.GroupPropertyDraft> _seedPropertyCatalog =
+      <String, governance.GroupPropertyDraft>{};
+  final Map<String, governance.GroupPropertyDraft> _manualPropertyDrafts =
+      <String, governance.GroupPropertyDraft>{};
   final Set<String> _disabledSeedPropertyKeys = <String>{};
+  final Set<String> _discardedInheritedPropertyKeys = <String>{};
 
   @override
   void dispose() {
@@ -6353,10 +6447,12 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
     final selectedParentGroup = groups
         .where((group) => group.id == _selectedParentGroupId)
         .firstOrNull;
-    final selectedSeedItem = items
-        .where((item) => item.id == _selectedSeedItemId)
-        .firstOrNull;
-    final seedProperties = _seedPropertyNames(selectedSeedItem);
+    final selectedSeedItems = items
+        .where((item) => _selectedSeedItemIds.contains(item.id))
+        .toList(growable: false);
+    final inheritedDrafts = _activeInheritedPropertyDrafts();
+    final seedDrafts = _enabledSeedPropertyDrafts();
+    final manualDrafts = _manualPropertyDrafts.values.toList(growable: false);
 
     return Material(
       color: Colors.white,
@@ -6473,9 +6569,7 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
                               ),
                             ],
                             onChanged: (value) {
-                              setState(() {
-                                _selectedParentGroupId = value;
-                              });
+                              _setSelectedParentGroup(value);
                             },
                           ),
                           const SizedBox(height: 16),
@@ -6575,20 +6669,15 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
                         children: [
                           SearchableSelectField<int?>(
                             tapTargetKey: const ValueKey<String>(
-                              'inventory-create-group-seed-item',
+                              'inventory-create-group-seed-items',
                             ),
-                            value:
-                                items.any(
-                                  (item) => item.id == _selectedSeedItemId,
-                                )
-                                ? _selectedSeedItemId
-                                : null,
+                            value: null,
                             decoration: _selectDecoration(
-                              label: 'Seed Item',
+                              label: 'Seed Items',
                               helper:
-                                  'Optional. Reuse top-level properties from an existing item.',
+                                  'Optional. Reuse structured properties from one or more existing items.',
                             ),
-                            dialogTitle: 'Seed Item',
+                            dialogTitle: 'Add Seed Item',
                             searchHintText: 'Search item',
                             options: [
                               const SearchableSelectOption<int?>(
@@ -6607,13 +6696,114 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
                               ),
                             ],
                             onChanged: (value) {
-                              setState(() {
-                                _selectedSeedItemId = value;
-                                _disabledSeedPropertyKeys.clear();
-                              });
+                              _addSelectedSeedItem(value, items);
                             },
                           ),
+                          if (selectedSeedItems.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                for (final item in selectedSeedItems)
+                                  _PropertyChip(
+                                    label: item.displayName.trim().isEmpty
+                                        ? item.name
+                                        : item.displayName,
+                                    badge: 'Seed',
+                                    tone: _PropertyChipTone.seed,
+                                    onRemove: () =>
+                                        _removeSelectedSeedItem(item.id, items),
+                                  ),
+                              ],
+                            ),
+                          ],
                           const SizedBox(height: 18),
+                          if (_isLoadingInheritedSchema) ...[
+                            Row(
+                              children: [
+                                const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  'Loading inherited properties...',
+                                  style: _inventoryInterStyle(
+                                    color: const Color(0xFF64748B),
+                                    size: 13,
+                                    weight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                          ],
+                          if (inheritedDrafts.isNotEmpty ||
+                              _discardedInheritedPropertyKeys.isNotEmpty) ...[
+                            Text(
+                              'Inherited Properties',
+                              style: _inventoryInterStyle(
+                                color: const Color(0xFF334155),
+                                size: 14,
+                                weight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: const Color(0xFFE2E8F0),
+                                ),
+                              ),
+                              child: Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  ...(_inheritedSchema?.propertyDrafts ??
+                                          const <
+                                            governance.GroupPropertyDraft
+                                          >[])
+                                      .map(
+                                        (draft) => _SeedPropertyToggleChip(
+                                          label: draft.name,
+                                          badge: 'Inherited',
+                                          enabled:
+                                              !_discardedInheritedPropertyKeys
+                                                  .contains(
+                                                    _propertyKey(
+                                                      draft.propertyKey ??
+                                                          draft.name,
+                                                    ),
+                                                  ),
+                                          onChanged: (enabled) {
+                                            setState(() {
+                                              final key = _propertyKey(
+                                                draft.propertyKey ?? draft.name,
+                                              );
+                                              if (enabled) {
+                                                _discardedInheritedPropertyKeys
+                                                    .remove(key);
+                                              } else {
+                                                _discardedInheritedPropertyKeys
+                                                    .add(key);
+                                              }
+                                            });
+                                          },
+                                        ),
+                                      ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 18),
+                          ],
                           Text(
                             'Properties',
                             style: _inventoryInterStyle(
@@ -6686,12 +6876,13 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
                               ),
                             ),
                             child:
-                                seedProperties.isEmpty &&
-                                    _addedProperties.isEmpty
+                                seedDrafts.isEmpty &&
+                                    manualDrafts.isEmpty &&
+                                    inheritedDrafts.isEmpty
                                 ? Text(
-                                    selectedSeedItem == null
+                                    selectedSeedItems.isEmpty
                                         ? 'No properties added yet. Pick a seed item or add properties manually.'
-                                        : 'No properties added yet. This seed item has no top-level properties.',
+                                        : 'No properties added yet. These seed items have no structured properties.',
                                     style: _inventoryInterStyle(
                                       color: const Color(0xFF94A3B8),
                                       size: 13,
@@ -6702,15 +6893,21 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
                                     spacing: 8,
                                     runSpacing: 8,
                                     children: [
-                                      ...seedProperties.map(
-                                        (property) => _SeedPropertyToggleChip(
-                                          label: property,
+                                      ..._seedPropertyCatalog.values.map(
+                                        (draft) => _SeedPropertyToggleChip(
+                                          label: draft.name,
+                                          badge: 'Seeded',
                                           enabled: !_disabledSeedPropertyKeys
-                                              .contains(_propertyKey(property)),
+                                              .contains(
+                                                _propertyKey(
+                                                  draft.propertyKey ??
+                                                      draft.name,
+                                                ),
+                                              ),
                                           onChanged: (enabled) {
                                             setState(() {
                                               final key = _propertyKey(
-                                                property,
+                                                draft.propertyKey ?? draft.name,
                                               );
                                               if (enabled) {
                                                 _disabledSeedPropertyKeys
@@ -6724,12 +6921,19 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
                                           },
                                         ),
                                       ),
-                                      ..._addedProperties.map(
-                                        (property) => _PropertyChip(
-                                          label: property,
+                                      ...manualDrafts.map(
+                                        (draft) => _PropertyChip(
+                                          label: draft.name,
+                                          badge: 'Manual',
+                                          tone: _PropertyChipTone.manual,
                                           onRemove: () {
                                             setState(() {
-                                              _addedProperties.remove(property);
+                                              _manualPropertyDrafts.remove(
+                                                _propertyKey(
+                                                  draft.propertyKey ??
+                                                      draft.name,
+                                                ),
+                                              );
                                             });
                                           },
                                         ),
@@ -6861,24 +7065,19 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
         .items
         .where((item) => !item.isArchived)
         .toList(growable: false);
-    final selectedSeedItem = items
-        .where((item) => item.id == _selectedSeedItemId)
-        .firstOrNull;
-    final enabledSeedProperties = _enabledSeedProperties(
-      _seedPropertyNames(selectedSeedItem),
-    );
+    final selectedSeedItems = items
+        .where((item) => _selectedSeedItemIds.contains(item.id))
+        .toList(growable: false);
+    final inheritedDrafts = _activeInheritedPropertyDrafts();
+    final propertyDrafts = _combinedStructuredDrafts();
     final notes = <String>[
       if (selectedParentGroup != null)
         'Parent Group: ${selectedParentGroup.name}',
       if (selectedParentGroup == null) 'Parent Group: Primary',
-      if (selectedSeedItem != null)
-        'Seed Item: ${selectedSeedItem.displayName.trim().isEmpty ? selectedSeedItem.name : selectedSeedItem.displayName}',
-      if (enabledSeedProperties.isNotEmpty)
-        'Seeded Properties: ${enabledSeedProperties.join(', ')}',
-      if (_addedProperties.isNotEmpty)
-        'Manual Properties: ${_addedProperties.join(', ')}',
+      if (selectedSeedItems.isNotEmpty)
+        'Seed Items: ${selectedSeedItems.map((item) => item.displayName.trim().isEmpty ? item.name : item.displayName).join(', ')}',
     ].join('\n');
-    final childrenCount = selectedSeedItem == null ? 0 : 1;
+    final childrenCount = selectedSeedItems.length;
     final provider = context.read<InventoryProvider>();
     final groupsProvider = context.read<GroupsProvider>();
     final itemsProvider = context.read<ItemsProvider>();
@@ -6900,6 +7099,15 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
         groupMode: selectedParentGroup == null
             ? 'standalone_group'
             : 'nested_group',
+        inheritanceEnabled:
+            inheritedDrafts.isNotEmpty ||
+            selectedSeedItems.isNotEmpty ||
+            _discardedInheritedPropertyKeys.isNotEmpty,
+        selectedItemIds: _selectedSeedItemIds.toList(growable: false),
+        propertyDrafts: propertyDrafts,
+        discardedPropertyKeys: _discardedInheritedPropertyKeys.toList(
+          growable: false,
+        ),
         notes: notes,
         numberOfChildren: childrenCount,
       ),
@@ -6924,56 +7132,252 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
       return;
     }
     final existingKeys = {
-      ..._addedProperties.map(_propertyKey),
-      ..._enabledSeedProperties(
-        _seedPropertyNames(
-          context
-              .read<ItemsProvider>()
-              .items
-              .where((item) => item.id == _selectedSeedItemId)
-              .firstOrNull,
-        ),
-      ).map(_propertyKey),
+      ..._manualPropertyDrafts.keys,
+      ..._enabledSeedPropertyDrafts().map(
+        (draft) => _propertyKey(draft.propertyKey ?? draft.name),
+      ),
+      ..._activeInheritedPropertyDrafts().map(
+        (draft) => _propertyKey(draft.propertyKey ?? draft.name),
+      ),
     };
     if (existingKeys.contains(_propertyKey(value))) {
       _propertyController.clear();
       return;
     }
     setState(() {
-      _addedProperties.add(value);
+      final key = _propertyKey(value);
+      _manualPropertyDrafts[key] = governance.GroupPropertyDraft(
+        name: value,
+        propertyKey: key,
+        inputType: 'Text',
+        mandatory: false,
+        sourceType: governance.GroupPropertySourceType.manual,
+        state: governance.GroupPropertyState.active,
+      );
       _propertyController.clear();
     });
   }
 
-  List<String> _seedPropertyNames(ItemDefinition? item) {
-    if (item == null) {
-      return const <String>[];
+  Future<void> _setSelectedParentGroup(int? value) async {
+    setState(() {
+      _selectedParentGroupId = value;
+      _discardedInheritedPropertyKeys.clear();
+      _inheritedSchema = null;
+      _isLoadingInheritedSchema = value != null;
+    });
+    if (value == null) {
+      return;
     }
-    final seen = <String>{};
-    final properties = <String>[];
-    for (final property in item.topLevelProperties) {
-      final name = property.displayName.trim().isEmpty
-          ? property.name.trim()
-          : property.displayName.trim();
-      final key = _propertyKey(name);
-      if (name.isNotEmpty && seen.add(key)) {
-        properties.add(name);
-      }
+    final schema = await context.read<InventoryProvider>().loadEffectiveSchema(
+      value,
+    );
+    if (!mounted || _selectedParentGroupId != value) {
+      return;
     }
-    return properties
-      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    setState(() {
+      _inheritedSchema = schema;
+      // Start fresh — the parent group already incorporates its own ancestor
+      // discards in the propertyDrafts it exposes. We do not inherit *its*
+      // discard list, which only tracks what it masked from its own ancestors.
+      _discardedInheritedPropertyKeys.clear();
+      _isLoadingInheritedSchema = false;
+    });
   }
 
-  List<String> _enabledSeedProperties(List<String> seedProperties) {
-    return seedProperties
+  void _addSelectedSeedItem(int? value, List<ItemDefinition> items) {
+    if (value == null) {
+      return;
+    }
+    if (_selectedSeedItemIds.contains(value)) {
+      return;
+    }
+    setState(() {
+      _selectedSeedItemIds.add(value);
+      _disabledSeedPropertyKeys.clear();
+      _rebuildSeedPropertyCatalog(items);
+    });
+  }
+
+  void _removeSelectedSeedItem(int itemId, List<ItemDefinition> items) {
+    setState(() {
+      _selectedSeedItemIds.remove(itemId);
+      _disabledSeedPropertyKeys.clear();
+      _rebuildSeedPropertyCatalog(items);
+    });
+  }
+
+  void _rebuildSeedPropertyCatalog(List<ItemDefinition> items) {
+    final seedDrafts = _seedPropertyDraftsForItems(
+      items
+          .where((item) => _selectedSeedItemIds.contains(item.id))
+          .toList(growable: false),
+    );
+    _seedPropertyCatalog
+      ..clear()
+      ..addEntries(
+        seedDrafts.map(
+          (draft) =>
+              MapEntry(_propertyKey(draft.propertyKey ?? draft.name), draft),
+        ),
+      );
+  }
+
+  List<governance.GroupPropertyDraft> _seedPropertyDraftsForItems(
+    List<ItemDefinition> items,
+  ) {
+    if (items.isEmpty) {
+      return const <governance.GroupPropertyDraft>[];
+    }
+    final propertySources = <String, Set<String>>{};
+    final propertySourceIds = <String, Set<int>>{};
+    final propertyTypes = <String, String>{};
+    final propertyTypeSet = <String, Set<String>>{};
+    final propertyDisplayNames = <String, String>{};
+    final propertyMandatory = <String, bool>{};
+    final propertyUnitIds = <String, int?>{};
+    final propertyUnitSymbols = <String, String?>{};
+    final propertyUnitLabels = <String, String?>{};
+
+    for (final item in items) {
+      final sourceItemLabel = item.displayName.trim().isEmpty
+          ? item.name
+          : item.displayName;
+      if (item.propertySchema.isNotEmpty) {
+        for (final property in item.propertySchema) {
+          final propertyName = property.displayName.trim();
+          if (propertyName.isEmpty) {
+            continue;
+          }
+          final key = _propertyKey(
+            property.propertyKey.isEmpty ? propertyName : property.propertyKey,
+          );
+          propertyDisplayNames[key] = propertyName;
+          propertySources
+              .putIfAbsent(key, () => <String>{})
+              .add(sourceItemLabel);
+          propertySourceIds.putIfAbsent(key, () => <int>{}).add(item.id);
+          propertyTypes[key] = property.inputType;
+          propertyTypeSet
+              .putIfAbsent(key, () => <String>{})
+              .add(property.inputType);
+          propertyMandatory[key] =
+              (propertyMandatory[key] ?? false) || property.mandatory;
+          propertyUnitIds[key] = property.unitId;
+          propertyUnitSymbols[key] = property.unitSymbol;
+          propertyUnitLabels[key] = property.unitLabel;
+        }
+        continue;
+      }
+      for (final property in item.topLevelProperties) {
+        final propertyName = property.displayName.trim().isEmpty
+            ? property.name.trim()
+            : property.displayName.trim();
+        if (propertyName.isEmpty) {
+          continue;
+        }
+        final key = _propertyKey(propertyName);
+        propertyDisplayNames[key] = propertyName;
+        propertySources.putIfAbsent(key, () => <String>{}).add(sourceItemLabel);
+        propertySourceIds.putIfAbsent(key, () => <int>{}).add(item.id);
+        final inferredType = property.activeChildren.isNotEmpty
+            ? 'Dropdown'
+            : 'Text';
+        propertyTypes[key] = inferredType;
+        propertyTypeSet.putIfAbsent(key, () => <String>{}).add(inferredType);
+      }
+    }
+
+    return propertySources.entries
+        .map((entry) {
+          final key = entry.key;
+          final sourceNames = entry.value.toList(growable: false)..sort();
+          final sourceIds = (propertySourceIds[key] ?? <int>{}).toList(
+            growable: false,
+          )..sort();
+          final hasTypeConflict = (propertyTypeSet[key]?.length ?? 0) > 1;
+          return governance.GroupPropertyDraft(
+            name: propertyDisplayNames[key] ?? _titleCaseFromKey(key),
+            propertyKey: key,
+            inputType: hasTypeConflict
+                ? 'Text'
+                : (propertyTypes[key] ?? 'Text'),
+            mandatory: propertyMandatory[key] ?? false,
+            unitId: propertyUnitIds[key],
+            unitSymbol: propertyUnitSymbols[key],
+            unitLabel: propertyUnitLabels[key],
+            sourceType: governance.GroupPropertySourceType.inheritedItem,
+            state: governance.GroupPropertyState.active,
+            hasTypeConflict: hasTypeConflict,
+            coverageCount: sourceIds.length,
+            selectedItemCountAtResolution: items.length,
+            resolutionSource: hasTypeConflict
+                ? 'conflict_default_text'
+                : 'seeded_from_items',
+            sources: sourceIds
+                .asMap()
+                .entries
+                .map(
+                  (source) => governance.GroupPropertySource(
+                    itemId: source.value,
+                    itemName: source.key < sourceNames.length
+                        ? sourceNames[source.key]
+                        : null,
+                  ),
+                )
+                .toList(growable: false),
+          );
+        })
+        .toList(growable: false);
+  }
+
+  List<governance.GroupPropertyDraft> _enabledSeedPropertyDrafts() {
+    return _seedPropertyCatalog.values
         .where(
-          (property) =>
-              !_disabledSeedPropertyKeys.contains(_propertyKey(property)),
+          (draft) => !_disabledSeedPropertyKeys.contains(
+            _propertyKey(draft.propertyKey ?? draft.name),
+          ),
         )
         .toList(growable: false);
   }
 
-  String _propertyKey(String value) => value.trim().toLowerCase();
+  List<governance.GroupPropertyDraft> _activeInheritedPropertyDrafts() {
+    return (_inheritedSchema?.propertyDrafts ??
+            const <governance.GroupPropertyDraft>[])
+        .where(
+          (draft) => !_discardedInheritedPropertyKeys.contains(
+            _propertyKey(draft.propertyKey ?? draft.name),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  List<governance.GroupPropertyDraft> _combinedStructuredDrafts() {
+    final combined = <String, governance.GroupPropertyDraft>{};
+    // 1. Inherited parent-group drafts (lowest priority — overrideable by seed/manual)
+    for (final draft in _activeInheritedPropertyDrafts()) {
+      combined[_propertyKey(draft.propertyKey ?? draft.name)] = draft;
+    }
+    // 2. Seed item drafts (override inherited if same key)
+    for (final draft in _enabledSeedPropertyDrafts()) {
+      combined[_propertyKey(draft.propertyKey ?? draft.name)] = draft;
+    }
+    // 3. Manually-added properties (highest priority)
+    for (final draft in _manualPropertyDrafts.values) {
+      combined[_propertyKey(draft.propertyKey ?? draft.name)] = draft;
+    }
+    return combined.values.toList(growable: false);
+  }
+
+  String _propertyKey(String value) =>
+      value.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+
+  String _titleCaseFromKey(String key) {
+    return key
+        .split(RegExp(r'[\s_-]+'))
+        .where((part) => part.isNotEmpty)
+        .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
+        .join(' ');
+  }
 
   InputDecoration _selectDecoration({
     required String label,
@@ -7087,6 +7491,8 @@ class _InventoryCreateGroupEditorState
   bool _showPartialMatches = true;
   String _propertyInputType = 'Text';
   bool _propertyMandatory = false;
+  int? _selectedParentGroupId;
+  EffectiveGroupSchema? _inheritedGroupSchema;
   final Set<int> _selectedItemIds = <int>{};
   final Set<String> _unlinkedInheritedPropertyKeys = <String>{};
   final List<_GroupPropertyDraft> _properties = <_GroupPropertyDraft>[];
@@ -7094,6 +7500,7 @@ class _InventoryCreateGroupEditorState
       <int, _UnitGovernanceDraft>{};
   bool _isHydratingExisting = false;
   bool _didHydrateExisting = false;
+  bool _isLoadingInheritedGroupSchema = false;
 
   bool get _isEditMode => widget.initialRecord != null;
 
@@ -7135,6 +7542,7 @@ class _InventoryCreateGroupEditorState
   @override
   Widget build(BuildContext context) {
     final inventory = context.watch<InventoryProvider>();
+    final groups = context.watch<GroupsProvider>().activeGroups;
     final items = context.watch<ItemsProvider>().items.toList(growable: false);
     final unitGroups =
         context
@@ -7146,7 +7554,7 @@ class _InventoryCreateGroupEditorState
             .toList(growable: false)
           ..sort();
     final units = context.watch<UnitsProvider>().activeUnits;
-    final inheritedProperties = _derivedPropertiesFromItems(items);
+    final inheritedProperties = _derivedInheritedProperties(items);
     final selectedCount = _selectedItemIds.length;
     final activeInheritedProperties = _inheritPropertiesFromItems
         ? inheritedProperties
@@ -7209,16 +7617,21 @@ class _InventoryCreateGroupEditorState
     final allCoverageCount = activeInheritedProperties
         .where((property) => property.coverageCount == selectedCount)
         .length;
+    final parentInheritedProperties = _derivedPropertiesFromParentGroup();
     final hasBlockingReview =
         conflictedCount > 0 ||
         unitGroupMismatch ||
-        (_inheritPropertiesFromItems && _selectedItemIds.isEmpty);
+        (_inheritPropertiesFromItems &&
+            _selectedItemIds.isEmpty &&
+            parentInheritedProperties.isEmpty);
     final blockingReviewReasons = <String>[
       if (conflictedCount > 0)
         '$conflictedCount conflicted ${conflictedCount == 1 ? 'property' : 'properties'}',
       if (unitGroupMismatch) 'Unit strategy mismatch',
-      if (_inheritPropertiesFromItems && _selectedItemIds.isEmpty)
-        'Select at least one source item',
+      if (_inheritPropertiesFromItems &&
+          _selectedItemIds.isEmpty &&
+          parentInheritedProperties.isEmpty)
+        'Select at least one source item or parent group',
     ];
 
     final basicInformationCard = _CreateGroupEditorCard(
@@ -7249,6 +7662,55 @@ class _InventoryCreateGroupEditorState
               weight: FontWeight.w400,
             ),
           ),
+          const SizedBox(height: 16),
+          _EditorFieldLabel('Parent Group'),
+          const SizedBox(height: 6),
+          SearchableSelectField<int?>(
+            tapTargetKey: const ValueKey<String>(
+              'inventory-advanced-group-parent',
+            ),
+            value: groups.any((group) => group.id == _selectedParentGroupId)
+                ? _selectedParentGroupId
+                : null,
+            decoration: _selectDecoration(
+              label: 'Parent Group',
+              helper:
+                  'Primary means this group starts a new inheritance chain.',
+            ),
+            dialogTitle: 'Parent Group',
+            searchHintText: 'Search parent group',
+            options: [
+              const SearchableSelectOption<int?>(value: null, label: 'Primary'),
+              ...groups.map(
+                (group) => SearchableSelectOption<int?>(
+                  value: group.id,
+                  label: group.name,
+                ),
+              ),
+            ],
+            onChanged: _setAdvancedParentGroup,
+          ),
+          if (_isLoadingInheritedGroupSchema) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Loading inherited schema...',
+                  style: _inventoryInterStyle(
+                    color: const Color(0xFF64748B),
+                    size: 12,
+                    weight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 16),
           _EditorFieldLabel('Description'),
           const SizedBox(height: 6),
@@ -7605,7 +8067,7 @@ class _InventoryCreateGroupEditorState
             value: _inheritPropertiesFromItems,
             title: 'Inherit properties from selected items',
             subtitle:
-                'Link item properties into this group. You can unlink individual inherited properties below.',
+                'Link item properties into this group in addition to any inherited parent schema.',
             onChanged: (value) {
               setState(() {
                 _inheritPropertiesFromItems = value;
@@ -7850,9 +8312,10 @@ class _InventoryCreateGroupEditorState
                         border: Border.all(color: const Color(0xFFE2E8F0)),
                       ),
                       child: Text(
-                        _selectedItemIds.isEmpty
-                            ? 'Select items to inherit their properties.'
-                            : 'No inheritable properties found on selected items.',
+                        _selectedItemIds.isEmpty &&
+                                parentInheritedProperties.isEmpty
+                            ? 'Select a parent group or source items to inherit properties.'
+                            : 'No inheritable properties found from the current parent/item selection.',
                         style: _inventoryInterStyle(
                           color: const Color(0xFF94A3B8),
                           size: 12,
@@ -8493,6 +8956,9 @@ class _InventoryCreateGroupEditorState
     }
 
     if (configuration != null) {
+      final linkedGroup = initial.linkedGroupId == null
+          ? null
+          : context.read<GroupsProvider>().findById(initial.linkedGroupId);
       final itemsById = {
         for (final item in context.read<ItemsProvider>().items) item.id: item,
       };
@@ -8534,16 +9000,21 @@ class _InventoryCreateGroupEditorState
             name: draft.name,
             inputType: draft.inputType,
             mandatory: draft.mandatory,
+            propertyKey: draft.propertyKey,
+            unitId: draft.unitId,
+            unitSymbol: draft.unitSymbol,
+            unitLabel: draft.unitLabel,
             state: state,
             isInherited:
-                draft.sourceType ==
-                governance.GroupPropertySourceType.inheritedItem,
+                draft.sourceType != governance.GroupPropertySourceType.manual,
             sourceType: draft.sourceType,
-            sourceLabel: sourceItemNames.isEmpty
-                ? null
-                : sourceItemNames.join(', '),
+            sourceLabel: sourceItemNames.isNotEmpty
+                ? sourceItemNames.join(', ')
+                : draft.sourceGroupName,
             sourceItemIds: sourceItemIds,
             sourceItemNames: sourceItemNames,
+            sourceGroupId: draft.sourceGroupId,
+            sourceGroupName: draft.sourceGroupName,
             overrideLocked: draft.overrideLocked,
             hasTypeConflict: draft.hasTypeConflict,
             coverageCount: draft.coverageCount,
@@ -8562,11 +9033,15 @@ class _InventoryCreateGroupEditorState
           isPrimary: row.isPrimary,
         );
       }
+      unlinkedKeys.addAll(
+        configuration.discardedPropertyKeys.map(_propertyKey),
+      );
 
       setState(() {
         _inheritPropertiesFromItems = configuration.inheritanceEnabled;
         _commonOnlyMode = configuration.uiPreferences.commonOnlyMode;
         _showPartialMatches = configuration.uiPreferences.showPartialMatches;
+        _selectedParentGroupId = linkedGroup?.parentGroupId;
         _selectedItemIds
           ..clear()
           ..addAll(configuration.selectedItemIds);
@@ -8580,6 +9055,12 @@ class _InventoryCreateGroupEditorState
           ..clear()
           ..addAll(unitGovernanceByUnitId);
       });
+      if (linkedGroup?.parentGroupId != null) {
+        await _loadAdvancedParentSchema(
+          linkedGroup!.parentGroupId,
+          preserveDiscardedKeys: true,
+        );
+      }
     }
 
     if (!mounted) {
@@ -8607,7 +9088,7 @@ class _InventoryCreateGroupEditorState
     }
     final items = context.read<ItemsProvider>().items;
     final inheritedByKey = {
-      for (final property in _derivedPropertiesFromItems(items))
+      for (final property in _derivedInheritedProperties(items))
         _propertyKey(property.name): property,
     };
     final key = _propertyKey(name);
@@ -8616,6 +9097,7 @@ class _InventoryCreateGroupEditorState
       _upsertPropertyDraft(
         _GroupPropertyDraft(
           name: name,
+          propertyKey: key,
           inputType: _propertyInputType,
           mandatory: _propertyMandatory,
           state: inherited == null
@@ -8700,7 +9182,7 @@ class _InventoryCreateGroupEditorState
           thickness: '',
           supplier: '',
           location: _locationController.text.trim(),
-          parentGroupId: null,
+          parentGroupId: _selectedParentGroupId,
           unitId: null,
           unit: 'Pieces',
           groupMode: 'item_group_authoring',
@@ -8711,6 +9193,9 @@ class _InventoryCreateGroupEditorState
           uiPreferences: groupcfg.GroupUiPreferences(
             commonOnlyMode: _commonOnlyMode,
             showPartialMatches: _showPartialMatches,
+          ),
+          discardedPropertyKeys: _unlinkedInheritedPropertyKeys.toList(
+            growable: false,
           ),
           notes: notes,
           numberOfChildren: _selectedItemIds.length,
@@ -8741,6 +9226,9 @@ class _InventoryCreateGroupEditorState
           uiPreferences: groupcfg.GroupUiPreferences(
             commonOnlyMode: _commonOnlyMode,
             showPartialMatches: _showPartialMatches,
+          ),
+          discardedPropertyKeys: _unlinkedInheritedPropertyKeys.toList(
+            growable: false,
           ),
         );
       }
@@ -8811,6 +9299,53 @@ class _InventoryCreateGroupEditorState
     return combined.values.toList(growable: false);
   }
 
+  List<_GroupPropertyDraft> _derivedPropertiesFromParentGroup() {
+    final drafts =
+        _inheritedGroupSchema?.propertyDrafts ??
+        const <governance.GroupPropertyDraft>[];
+    return drafts
+        .map(
+          (draft) => _GroupPropertyDraft(
+            name: draft.name,
+            inputType: draft.inputType,
+            mandatory: draft.mandatory,
+            propertyKey: draft.propertyKey,
+            unitId: draft.unitId,
+            unitSymbol: draft.unitSymbol,
+            unitLabel: draft.unitLabel,
+            isInherited: true,
+            sourceType: governance.GroupPropertySourceType.inheritedGroup,
+            sourceLabel: draft.sourceGroupName ?? 'Inherited from parent group',
+            sourceItemIds: const <int>[],
+            sourceItemNames: const <String>[],
+            sourceGroupId: draft.sourceGroupId,
+            sourceGroupName: draft.sourceGroupName,
+            overrideLocked: draft.overrideLocked,
+            hasTypeConflict: draft.hasTypeConflict,
+            coverageCount: _selectedItemIds.length,
+            selectedItemCountAtResolution: _selectedItemIds.length,
+            resolutionSource: draft.resolutionSource ?? 'inherited_from_group',
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  List<_GroupPropertyDraft> _derivedInheritedProperties(
+    List<ItemDefinition> items,
+  ) {
+    final combined = <String, _GroupPropertyDraft>{};
+    for (final property in _derivedPropertiesFromParentGroup()) {
+      combined[_propertyKey(property.propertyKey ?? property.name)] = property;
+    }
+    if (_inheritPropertiesFromItems) {
+      for (final property in _derivedPropertiesFromItems(items)) {
+        final key = _propertyKey(property.propertyKey ?? property.name);
+        combined.putIfAbsent(key, () => property);
+      }
+    }
+    return combined.values.toList(growable: false);
+  }
+
   List<_GroupPropertyDraft> _derivedPropertiesFromItems(
     List<ItemDefinition> items,
   ) {
@@ -8818,19 +9353,52 @@ class _InventoryCreateGroupEditorState
     final propertySourceIds = <String, Set<int>>{};
     final propertyTypes = <String, String>{};
     final propertyTypeSet = <String, Set<String>>{};
+    final propertyDisplayNames = <String, String>{};
+    final propertyMandatory = <String, bool>{};
+    final propertyUnitIds = <String, int?>{};
+    final propertyUnitSymbols = <String, String?>{};
+    final propertyUnitLabels = <String, String?>{};
 
     for (final item in items.where(
       (item) => _selectedItemIds.contains(item.id),
     )) {
+      final sourceItemLabel = item.displayName.trim().isEmpty
+          ? item.name
+          : item.displayName;
+      if (item.propertySchema.isNotEmpty) {
+        for (final property in item.propertySchema) {
+          final propertyName = property.displayName.trim();
+          if (propertyName.isEmpty) {
+            continue;
+          }
+          final key = _propertyKey(
+            property.propertyKey.isEmpty ? propertyName : property.propertyKey,
+          );
+          propertyDisplayNames[key] = propertyName;
+          propertySources
+              .putIfAbsent(key, () => <String>{})
+              .add(sourceItemLabel);
+          propertySourceIds.putIfAbsent(key, () => <int>{}).add(item.id);
+          propertyTypes[key] = property.inputType;
+          propertyTypeSet
+              .putIfAbsent(key, () => <String>{})
+              .add(property.inputType);
+          propertyMandatory[key] =
+              (propertyMandatory[key] ?? false) || property.mandatory;
+          propertyUnitIds[key] = property.unitId;
+          propertyUnitSymbols[key] = property.unitSymbol;
+          propertyUnitLabels[key] = property.unitLabel;
+        }
+        continue;
+      }
       for (final property in item.topLevelProperties) {
         final propertyName = property.displayName.trim();
         if (propertyName.isEmpty) {
           continue;
         }
-        final key = propertyName.toLowerCase();
-        propertySources
-            .putIfAbsent(key, () => <String>{})
-            .add(item.displayName);
+        final key = _propertyKey(propertyName);
+        propertyDisplayNames[key] = propertyName;
+        propertySources.putIfAbsent(key, () => <String>{}).add(sourceItemLabel);
         propertySourceIds.putIfAbsent(key, () => <int>{}).add(item.id);
         final inferredType = property.activeChildren.isNotEmpty
             ? 'Dropdown'
@@ -8849,11 +9417,15 @@ class _InventoryCreateGroupEditorState
           )..sort();
           final hasTypeConflict = (propertyTypeSet[key]?.length ?? 0) > 1;
           return _GroupPropertyDraft(
-            name: _titleCaseFromKey(key),
+            name: propertyDisplayNames[key] ?? _titleCaseFromKey(key),
             inputType: hasTypeConflict
                 ? 'Text'
                 : (propertyTypes[key] ?? 'Text'),
-            mandatory: false,
+            mandatory: propertyMandatory[key] ?? false,
+            propertyKey: key,
+            unitId: propertyUnitIds[key],
+            unitSymbol: propertyUnitSymbols[key],
+            unitLabel: propertyUnitLabels[key],
             isInherited: true,
             sourceType: governance.GroupPropertySourceType.inheritedItem,
             sourceLabel: sourceLabel.join(', '),
@@ -8914,7 +9486,38 @@ class _InventoryCreateGroupEditorState
         .join(' ');
   }
 
-  String _propertyKey(String value) => value.trim().toLowerCase();
+  String _propertyKey(String value) =>
+      value.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+
+  InputDecoration _selectDecoration({
+    required String label,
+    required String helper,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      helperText: helper,
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: Color(0xFFD8E0EA)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: Color(0xFFD8E0EA)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: Color(0xFF6049E3)),
+      ),
+      helperStyle: _inventoryInterStyle(
+        color: const Color(0xFF6B7280),
+        size: 12,
+        weight: FontWeight.w400,
+      ),
+    );
+  }
 
   (String, Color) _itemCompatibilityLabel({
     required ItemDefinition item,
@@ -9013,10 +9616,41 @@ class _InventoryCreateGroupEditorState
     _properties.add(draft);
   }
 
+  Future<void> _setAdvancedParentGroup(int? value) async {
+    setState(() {
+      _selectedParentGroupId = value;
+    });
+    await _loadAdvancedParentSchema(value);
+  }
+
+  Future<void> _loadAdvancedParentSchema(
+    int? value, {
+    bool preserveDiscardedKeys = false,
+  }) async {
+    setState(() {
+      _inheritedGroupSchema = null;
+      _isLoadingInheritedGroupSchema = value != null;
+      if (!preserveDiscardedKeys) {
+        _unlinkedInheritedPropertyKeys.clear();
+      }
+    });
+    if (value == null) {
+      return;
+    }
+    final schema = await context.read<InventoryProvider>().loadEffectiveSchema(
+      value,
+    );
+    if (!mounted || _selectedParentGroupId != value) {
+      return;
+    }
+    setState(() {
+      _inheritedGroupSchema = schema;
+      _isLoadingInheritedGroupSchema = false;
+    });
+  }
+
   List<_GroupPropertyDraft> _finalPropertyDrafts(List<ItemDefinition> items) {
-    final inherited = _inheritPropertiesFromItems
-        ? _derivedPropertiesFromItems(items)
-        : const <_GroupPropertyDraft>[];
+    final inherited = _derivedInheritedProperties(items);
     final activeInherited = inherited
         .where(
           (property) => !_unlinkedInheritedPropertyKeys.contains(
@@ -9047,8 +9681,12 @@ class _InventoryCreateGroupEditorState
         .toList(growable: false);
     return governance.GroupPropertyDraft(
       name: property.name,
+      propertyKey: property.propertyKey,
       inputType: property.inputType,
       mandatory: property.mandatory,
+      unitId: property.unitId,
+      unitSymbol: property.unitSymbol,
+      unitLabel: property.unitLabel,
       sourceType: property.sourceType,
       state: switch (property.state) {
         _EditorPropertyState.active => governance.GroupPropertyState.active,
@@ -9059,6 +9697,8 @@ class _InventoryCreateGroupEditorState
       sources: sourceIds
           .map((itemId) => governance.GroupPropertySource(itemId: itemId))
           .toList(growable: false),
+      sourceGroupId: property.sourceGroupId,
+      sourceGroupName: property.sourceGroupName,
       overrideLocked: property.overrideLocked,
       hasTypeConflict: property.hasTypeConflict,
       coverageCount: property.coverageCount,
@@ -9073,12 +9713,18 @@ class _GroupPropertyDraft {
     required this.name,
     required this.inputType,
     required this.mandatory,
+    this.propertyKey,
+    this.unitId,
+    this.unitSymbol,
+    this.unitLabel,
     this.state = _EditorPropertyState.active,
     this.isInherited = false,
     this.sourceType = governance.GroupPropertySourceType.manual,
     this.sourceLabel,
     this.sourceItemIds = const <int>[],
     this.sourceItemNames = const <String>[],
+    this.sourceGroupId,
+    this.sourceGroupName,
     this.overrideLocked = false,
     this.hasTypeConflict = false,
     this.coverageCount = 0,
@@ -9089,12 +9735,18 @@ class _GroupPropertyDraft {
   final String name;
   final String inputType;
   final bool mandatory;
+  final String? propertyKey;
+  final int? unitId;
+  final String? unitSymbol;
+  final String? unitLabel;
   final _EditorPropertyState state;
   final bool isInherited;
   final governance.GroupPropertySourceType sourceType;
   final String? sourceLabel;
   final List<int> sourceItemIds;
   final List<String> sourceItemNames;
+  final int? sourceGroupId;
+  final String? sourceGroupName;
   final bool overrideLocked;
   final bool hasTypeConflict;
   final int coverageCount;
@@ -9105,12 +9757,18 @@ class _GroupPropertyDraft {
     String? name,
     String? inputType,
     bool? mandatory,
+    String? propertyKey,
+    int? unitId,
+    String? unitSymbol,
+    String? unitLabel,
     _EditorPropertyState? state,
     bool? isInherited,
     governance.GroupPropertySourceType? sourceType,
     String? sourceLabel,
     List<int>? sourceItemIds,
     List<String>? sourceItemNames,
+    int? sourceGroupId,
+    String? sourceGroupName,
     bool? overrideLocked,
     bool? hasTypeConflict,
     int? coverageCount,
@@ -9121,12 +9779,18 @@ class _GroupPropertyDraft {
       name: name ?? this.name,
       inputType: inputType ?? this.inputType,
       mandatory: mandatory ?? this.mandatory,
+      propertyKey: propertyKey ?? this.propertyKey,
+      unitId: unitId ?? this.unitId,
+      unitSymbol: unitSymbol ?? this.unitSymbol,
+      unitLabel: unitLabel ?? this.unitLabel,
       state: state ?? this.state,
       isInherited: isInherited ?? this.isInherited,
       sourceType: sourceType ?? this.sourceType,
       sourceLabel: sourceLabel ?? this.sourceLabel,
       sourceItemIds: sourceItemIds ?? this.sourceItemIds,
       sourceItemNames: sourceItemNames ?? this.sourceItemNames,
+      sourceGroupId: sourceGroupId ?? this.sourceGroupId,
+      sourceGroupName: sourceGroupName ?? this.sourceGroupName,
       overrideLocked: overrideLocked ?? this.overrideLocked,
       hasTypeConflict: hasTypeConflict ?? this.hasTypeConflict,
       coverageCount: coverageCount ?? this.coverageCount,
@@ -9552,6 +10216,30 @@ class _EditorPropertyListTile extends StatelessWidget {
     return 'most items';
   }
 
+  ({String label, Color bg, Color text}) _sourceStyle(
+    _GroupPropertyDraft property,
+  ) {
+    return switch (property.sourceType) {
+      governance.GroupPropertySourceType.inheritedGroup => (
+        label: 'Parent schema',
+        bg: const Color(0xFFEFF6FF),
+        text: const Color(0xFF2563EB),
+      ),
+      governance.GroupPropertySourceType.inheritedItem => (
+        label: 'Seeded from item',
+        bg: const Color(0xFFE0F2FE),
+        text: const Color(0xFF0369A1),
+      ),
+      governance.GroupPropertySourceType.manual => (
+        label: property.state == _EditorPropertyState.overridden
+            ? 'Manual override'
+            : 'Manual',
+        bg: const Color(0xFFF1F5F9),
+        text: const Color(0xFF475569),
+      ),
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final statusStyle = switch (property.state) {
@@ -9575,6 +10263,7 @@ class _EditorPropertyListTile extends StatelessWidget {
         text: const Color(0xFF334155),
       ),
     };
+    final sourceStyle = _sourceStyle(property);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -9615,6 +10304,25 @@ class _EditorPropertyListTile extends StatelessWidget {
                         statusStyle.label,
                         style: _inventoryInterStyle(
                           color: statusStyle.text,
+                          size: 10,
+                          weight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: sourceStyle.bg,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        sourceStyle.label,
+                        style: _inventoryInterStyle(
+                          color: sourceStyle.text,
                           size: 10,
                           weight: FontWeight.w600,
                         ),

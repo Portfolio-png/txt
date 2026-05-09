@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../../domain/create_parent_material_input.dart';
+import '../../domain/effective_group_schema.dart';
 import '../../domain/group_property_draft.dart';
 import '../../domain/inventory_control_tower.dart';
 import '../../domain/material_activity_event.dart';
@@ -31,7 +32,7 @@ class LocalInventoryRepository implements InventoryRepository {
     final dbPath = p.join(directory.path, 'paper_inventory.db');
     _database = await openDatabase(
       dbPath,
-      version: 11,
+      version: 12,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE materials (
@@ -94,8 +95,13 @@ class LocalInventoryRepository implements InventoryRepository {
             display_name TEXT NOT NULL,
             input_type TEXT NOT NULL DEFAULT 'Text',
             mandatory INTEGER NOT NULL DEFAULT 0,
+            unit_id INTEGER,
+            unit_symbol TEXT,
+            unit_label TEXT,
             source_type TEXT NOT NULL DEFAULT 'manual',
             source_item_ids_json TEXT NOT NULL DEFAULT '[]',
+            source_group_id INTEGER,
+            source_group_name TEXT,
             state TEXT NOT NULL DEFAULT 'active',
             override_locked INTEGER NOT NULL DEFAULT 0,
             has_type_conflict INTEGER NOT NULL DEFAULT 0,
@@ -125,6 +131,7 @@ class LocalInventoryRepository implements InventoryRepository {
             material_id INTEGER NOT NULL UNIQUE,
             common_only_mode INTEGER NOT NULL DEFAULT 1,
             show_partial_matches INTEGER NOT NULL DEFAULT 1,
+            discarded_property_keys_json TEXT NOT NULL DEFAULT '[]',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
           )
@@ -228,8 +235,13 @@ class LocalInventoryRepository implements InventoryRepository {
               display_name TEXT NOT NULL,
               input_type TEXT NOT NULL DEFAULT 'Text',
               mandatory INTEGER NOT NULL DEFAULT 0,
+              unit_id INTEGER,
+              unit_symbol TEXT,
+              unit_label TEXT,
               source_type TEXT NOT NULL DEFAULT 'manual',
               source_item_ids_json TEXT NOT NULL DEFAULT '[]',
+              source_group_id INTEGER,
+              source_group_name TEXT,
               state TEXT NOT NULL DEFAULT 'active',
               override_locked INTEGER NOT NULL DEFAULT 0,
               has_type_conflict INTEGER NOT NULL DEFAULT 0,
@@ -270,6 +282,7 @@ class LocalInventoryRepository implements InventoryRepository {
               material_id INTEGER NOT NULL UNIQUE,
               common_only_mode INTEGER NOT NULL DEFAULT 1,
               show_partial_matches INTEGER NOT NULL DEFAULT 1,
+              discarded_property_keys_json TEXT NOT NULL DEFAULT '[]',
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL
             )
@@ -313,6 +326,26 @@ class LocalInventoryRepository implements InventoryRepository {
         if (oldVersion < 11) {
           await db.execute(
             'ALTER TABLE materials ADD COLUMN linked_variation_leaf_node_id INTEGER',
+          );
+        }
+        if (oldVersion < 12) {
+          await db.execute(
+            'ALTER TABLE material_group_properties ADD COLUMN unit_id INTEGER',
+          );
+          await db.execute(
+            'ALTER TABLE material_group_properties ADD COLUMN unit_symbol TEXT',
+          );
+          await db.execute(
+            'ALTER TABLE material_group_properties ADD COLUMN unit_label TEXT',
+          );
+          await db.execute(
+            'ALTER TABLE material_group_properties ADD COLUMN source_group_id INTEGER',
+          );
+          await db.execute(
+            'ALTER TABLE material_group_properties ADD COLUMN source_group_name TEXT',
+          );
+          await db.execute(
+            'ALTER TABLE material_group_preferences ADD COLUMN discarded_property_keys_json TEXT NOT NULL DEFAULT \'[]\'',
           );
         }
       },
@@ -406,6 +439,16 @@ class LocalInventoryRepository implements InventoryRepository {
   ) async {
     final db = await _db;
     final parentBarcode = _generateParentBarcode();
+    Map<String, Object?>? parentGroupMaterialRow;
+    if (input.parentGroupId != null) {
+      final parentRows = await db.query(
+        'materials',
+        where: 'linked_group_id = ?',
+        whereArgs: [input.parentGroupId],
+        limit: 1,
+      );
+      parentGroupMaterialRow = parentRows.isEmpty ? null : parentRows.first;
+    }
     final childBarcodes = List<String>.generate(
       input.numberOfChildren,
       (index) => _generateChildBarcode(parentBarcode, index + 1),
@@ -429,7 +472,7 @@ class LocalInventoryRepository implements InventoryRepository {
         inheritanceEnabled: input.inheritanceEnabled,
         createdAt: now,
         kind: 'parent',
-        parentBarcode: null,
+        parentBarcode: (parentGroupMaterialRow?['barcode'] as String?)?.trim(),
         numberOfChildren: input.numberOfChildren,
         linkedChildBarcodes: childBarcodes,
         scanCount: 0,
@@ -454,6 +497,7 @@ class LocalInventoryRepository implements InventoryRepository {
         propertyDrafts: input.propertyDrafts,
         unitGovernance: input.unitGovernance,
         uiPreferences: input.uiPreferences,
+        discardedPropertyKeys: input.discardedPropertyKeys,
         createdAt: now,
       );
       await _recordActivity(
@@ -1160,6 +1204,66 @@ class LocalInventoryRepository implements InventoryRepository {
   }
 
   @override
+  Future<EffectiveGroupSchema> getEffectiveSchema(int groupId) async {
+    final db = await _db;
+    final rows = await db.query(
+      'materials',
+      where: 'linked_group_id = ?',
+      whereArgs: [groupId],
+      limit: 1,
+    );
+    if (rows.isEmpty) {
+      return EffectiveGroupSchema(groupId: groupId);
+    }
+
+    // BUG: The local repository does not have access to the master 'groups' table.
+    // Previously, this code walked the inventory 'parent_barcode' chain, but that
+    // represents physical inventory nesting, not the logical group hierarchy (a group
+    // can have a parentGroupId without a physical parent inventory material).
+    // TODO: Once a shared Groups SQLite DB is available, walk 'parent_group_id' here.
+    // For now, in offline mode, we only return the current group's configuration.
+    final materialRow = rows.first;
+    final materialId = (materialRow['id'] as num?)?.toInt();
+    if (materialId == null) {
+      return EffectiveGroupSchema(groupId: groupId);
+    }
+
+    final config = await _readGroupGovernance(
+      db,
+      materialId: materialId,
+      inheritanceEnabled: (materialRow['inheritance_enabled'] as int? ?? 0) == 1,
+    );
+
+    final effectiveByKey = <String, GroupPropertyDraft>{};
+    final discarded = <String>{};
+
+    for (final key in config.discardedPropertyKeys) {
+      final normalized = key.trim().toLowerCase();
+      if (normalized.isEmpty) {
+        continue;
+      }
+      discarded.add(normalized);
+    }
+    for (final draft in config.propertyDrafts) {
+      final key = (draft.propertyKey ?? draft.name).trim().toLowerCase();
+      if (key.isEmpty || discarded.contains(key)) {
+        continue;
+      }
+      effectiveByKey[key] = draft;
+    }
+
+    final groupName = (materialRow['name'] as String? ?? '').trim();
+
+    return EffectiveGroupSchema(
+      groupId: groupId,
+      propertyDrafts: effectiveByKey.values.toList(growable: false),
+      discardedPropertyKeys: discarded.toList(growable: false),
+      lineageGroupIds: [groupId],
+      lineageGroupNames: groupName.isNotEmpty ? [groupName] : const [],
+    );
+  }
+
+  @override
   Future<MaterialGroupConfiguration> updateGroupConfiguration(
     String barcode, {
     required bool inheritanceEnabled,
@@ -1167,6 +1271,7 @@ class LocalInventoryRepository implements InventoryRepository {
     required List<GroupPropertyDraft> propertyDrafts,
     required List<GroupUnitGovernance> unitGovernance,
     required GroupUiPreferences uiPreferences,
+    required List<String> discardedPropertyKeys,
   }) async {
     final db = await _db;
     return db.transaction((txn) async {
@@ -1195,6 +1300,7 @@ class LocalInventoryRepository implements InventoryRepository {
         propertyDrafts: propertyDrafts,
         unitGovernance: unitGovernance,
         uiPreferences: uiPreferences,
+        discardedPropertyKeys: discardedPropertyKeys,
         createdAt: now,
       );
       await _recordActivity(
@@ -1221,6 +1327,7 @@ class LocalInventoryRepository implements InventoryRepository {
     required List<GroupPropertyDraft> propertyDrafts,
     required List<GroupUnitGovernance> unitGovernance,
     required GroupUiPreferences uiPreferences,
+    required List<String> discardedPropertyKeys,
     required DateTime createdAt,
   }) async {
     final nowIso = createdAt.toIso8601String();
@@ -1275,13 +1382,20 @@ class LocalInventoryRepository implements InventoryRepository {
       'material_id': materialId,
       'common_only_mode': uiPreferences.commonOnlyMode ? 1 : 0,
       'show_partial_matches': uiPreferences.showPartialMatches ? 1 : 0,
+      'discarded_property_keys_json': jsonEncode(
+        discardedPropertyKeys
+            .map((value) => value.trim().toLowerCase())
+            .where((value) => value.isNotEmpty)
+            .toSet()
+            .toList(growable: false),
+      ),
       'created_at': nowIso,
       'updated_at': nowIso,
     });
 
     final seenKeys = <String>{};
     for (final property in propertyDrafts) {
-      final key = property.name.trim().toLowerCase();
+      final key = (property.propertyKey ?? property.name).trim().toLowerCase();
       if (key.isEmpty || seenKeys.contains(key)) {
         continue;
       }
@@ -1300,11 +1414,18 @@ class LocalInventoryRepository implements InventoryRepository {
             ? 'Text'
             : property.inputType.trim(),
         'mandatory': property.mandatory ? 1 : 0,
+        'unit_id': property.unitId,
+        'unit_symbol': property.unitSymbol,
+        'unit_label': property.unitLabel,
         'source_type':
-            property.sourceType == GroupPropertySourceType.inheritedItem
-            ? 'inherited_item'
-            : 'manual',
+            switch (property.sourceType) {
+              GroupPropertySourceType.inheritedItem => 'inherited_item',
+              GroupPropertySourceType.inheritedGroup => 'inherited_group',
+              GroupPropertySourceType.manual => 'manual',
+            },
         'source_item_ids_json': jsonEncode(sourceItemIds),
+        'source_group_id': property.sourceGroupId,
+        'source_group_name': property.sourceGroupName,
         'state': switch (property.state) {
           GroupPropertyState.active => 'active',
           GroupPropertyState.unlinked => 'unlinked',
@@ -1373,9 +1494,15 @@ class LocalInventoryRepository implements InventoryRepository {
               name: (row['display_name'] as String? ?? '').trim(),
               inputType: (row['input_type'] as String? ?? 'Text').trim(),
               mandatory: (row['mandatory'] as int? ?? 0) == 1,
-              sourceType: sourceTypeWire == 'inherited_item'
-                  ? GroupPropertySourceType.inheritedItem
-                  : GroupPropertySourceType.manual,
+              propertyKey: (row['property_key'] as String? ?? '').trim(),
+              unitId: (row['unit_id'] as num?)?.toInt(),
+              unitSymbol: (row['unit_symbol'] as String?)?.trim(),
+              unitLabel: (row['unit_label'] as String?)?.trim(),
+              sourceType: switch (sourceTypeWire) {
+                'inherited_item' => GroupPropertySourceType.inheritedItem,
+                'inherited_group' => GroupPropertySourceType.inheritedGroup,
+                _ => GroupPropertySourceType.manual,
+              },
               state: switch (stateWire) {
                 'unlinked' => GroupPropertyState.unlinked,
                 'overridden' => GroupPropertyState.overridden,
@@ -1384,6 +1511,8 @@ class LocalInventoryRepository implements InventoryRepository {
               sources: sourceIds
                   .map((id) => GroupPropertySource(itemId: id))
                   .toList(growable: false),
+              sourceGroupId: (row['source_group_id'] as num?)?.toInt(),
+              sourceGroupName: (row['source_group_name'] as String?)?.trim(),
               overrideLocked: (row['override_locked'] as int? ?? 0) == 1,
               hasTypeConflict: (row['has_type_conflict'] as int? ?? 0) == 1,
               coverageCount: (row['coverage_count'] as int? ?? 0),
@@ -1412,6 +1541,9 @@ class LocalInventoryRepository implements InventoryRepository {
         showPartialMatches:
             (preference?['show_partial_matches'] as int? ?? 1) == 1,
       ),
+      discardedPropertyKeys: _decodeStringList(
+        preference?['discarded_property_keys_json'],
+      ),
     );
   }
 
@@ -1427,6 +1559,21 @@ class LocalInventoryRepository implements InventoryRepository {
     return decoded
         .map((value) => (value as num?)?.toInt())
         .whereType<int>()
+        .toList(growable: false);
+  }
+
+  List<String> _decodeStringList(Object? rawValue) {
+    final jsonString = (rawValue as String? ?? '').trim();
+    if (jsonString.isEmpty) {
+      return const <String>[];
+    }
+    final decoded = jsonDecode(jsonString);
+    if (decoded is! List<dynamic>) {
+      return const <String>[];
+    }
+    return decoded
+        .map((value) => value?.toString().trim() ?? '')
+        .where((value) => value.isNotEmpty)
         .toList(growable: false);
   }
 

@@ -102,6 +102,7 @@ class ItemDto {
     required this.createdAt,
     required this.updatedAt,
     required this.variationTree,
+    required this.propertySchema,
   });
 
   final int id;
@@ -118,6 +119,7 @@ class ItemDto {
   final DateTime createdAt;
   final DateTime updatedAt;
   final List<ItemVariationNodeDto> variationTree;
+  final List<ItemPropertySchemaEntryDto> propertySchema;
 
   factory ItemDto.fromJson(Map<String, dynamic> json) {
     return ItemDto(
@@ -151,6 +153,13 @@ class ItemDto {
                 ItemVariationNodeDto.fromJson(item as Map<String, dynamic>),
           )
           .toList(growable: false),
+      propertySchema: (json['propertySchema'] as List<dynamic>? ?? const [])
+          .map(
+            (item) => ItemPropertySchemaEntryDto.fromJson(
+              item as Map<String, dynamic>,
+            ),
+          )
+          .toList(growable: false),
     );
   }
 
@@ -174,6 +183,75 @@ class ItemDto {
       variationTree: variationTree
           .map((entry) => entry.toDomain())
           .toList(growable: false),
+      propertySchema: propertySchema
+          .map((entry) => entry.toDomain())
+          .toList(growable: false),
+    );
+  }
+}
+
+class ItemPropertySchemaEntryDto {
+  const ItemPropertySchemaEntryDto({
+    required this.propertyKey,
+    required this.displayName,
+    required this.inputType,
+    required this.mandatory,
+    this.unitId,
+    this.unitSymbol,
+    this.unitLabel,
+    this.sourceType,
+    this.sourceGroupId,
+    this.sourceGroupName,
+    this.sourceItemIds = const [],
+    this.sortOrder = 0,
+  });
+
+  final String propertyKey;
+  final String displayName;
+  final String inputType;
+  final bool mandatory;
+  final int? unitId;
+  final String? unitSymbol;
+  final String? unitLabel;
+  final String? sourceType;
+  final int? sourceGroupId;
+  final String? sourceGroupName;
+  final List<int> sourceItemIds;
+  final int sortOrder;
+
+  factory ItemPropertySchemaEntryDto.fromJson(Map<String, dynamic> json) {
+    return ItemPropertySchemaEntryDto(
+      propertyKey: json['propertyKey'] as String? ?? '',
+      displayName: json['displayName'] as String? ?? '',
+      inputType: json['inputType'] as String? ?? 'Text',
+      mandatory: json['mandatory'] as bool? ?? false,
+      unitId: (json['unitId'] as num?)?.toInt(),
+      unitSymbol: json['unitSymbol'] as String?,
+      unitLabel: json['unitLabel'] as String?,
+      sourceType: json['sourceType'] as String?,
+      sourceGroupId: (json['sourceGroupId'] as num?)?.toInt(),
+      sourceGroupName: json['sourceGroupName'] as String?,
+      sourceItemIds: (json['sourceItemIds'] as List<dynamic>? ?? const [])
+          .map((entry) => (entry as num).toInt())
+          .toList(growable: false),
+      sortOrder: (json['sortOrder'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  ItemPropertySchemaEntry toDomain() {
+    return ItemPropertySchemaEntry(
+      propertyKey: propertyKey,
+      displayName: displayName,
+      inputType: inputType,
+      mandatory: mandatory,
+      unitId: unitId,
+      unitSymbol: unitSymbol,
+      unitLabel: unitLabel,
+      sourceType: sourceType ?? 'manual',
+      sourceGroupId: sourceGroupId,
+      sourceGroupName: sourceGroupName,
+      sourceItemIds: sourceItemIds,
+      sortOrder: sortOrder,
     );
   }
 }

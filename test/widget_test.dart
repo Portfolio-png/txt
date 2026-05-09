@@ -12,6 +12,7 @@ import 'package:paper/features/groups/domain/group_definition.dart';
 import 'package:paper/features/groups/domain/group_inputs.dart';
 import 'package:paper/features/inventory/data/repositories/inventory_repository.dart';
 import 'package:paper/features/inventory/domain/create_parent_material_input.dart';
+import 'package:paper/features/inventory/domain/effective_group_schema.dart';
 import 'package:paper/features/inventory/domain/group_property_draft.dart';
 import 'package:paper/features/inventory/domain/inventory_control_tower.dart';
 import 'package:paper/features/inventory/domain/material_activity_event.dart';
@@ -19,6 +20,7 @@ import 'package:paper/features/inventory/domain/material_control_tower_detail.da
 import 'package:paper/features/inventory/domain/material_group_configuration.dart';
 import 'package:paper/features/inventory/domain/material_inputs.dart';
 import 'package:paper/features/inventory/domain/material_record.dart';
+import 'package:paper/features/inventory/presentation/screens/inventory_screen.dart';
 import 'package:paper/features/clients/data/repositories/client_repository.dart';
 import 'package:paper/features/clients/domain/client_definition.dart';
 import 'package:paper/features/clients/domain/client_inputs.dart';
@@ -37,6 +39,25 @@ import 'package:paper/features/units/domain/unit_inputs.dart';
 import 'package:paper/main.dart';
 
 class FakeInventoryRepository extends InventoryRepository {
+  FakeInventoryRepository({
+    List<MaterialRecord>? seedMaterials,
+    Map<int, EffectiveGroupSchema>? effectiveSchemasByGroupId,
+  }) : _effectiveSchemasByGroupId = Map<int, EffectiveGroupSchema>.from(
+         effectiveSchemasByGroupId ?? const <int, EffectiveGroupSchema>{},
+       ) {
+    if (seedMaterials != null) {
+      _materials
+        ..clear()
+        ..addAll(seedMaterials);
+      _nextId = seedMaterials.isEmpty
+          ? 1
+          : seedMaterials
+                    .map((record) => record.id ?? 0)
+                    .reduce((left, right) => left > right ? left : right) +
+                1;
+    }
+  }
+
   final List<MaterialRecord> _materials = <MaterialRecord>[
     MaterialRecord(
       id: 1,
@@ -104,6 +125,7 @@ class FakeInventoryRepository extends InventoryRepository {
   int _saveCounter = 0;
   final Map<String, MaterialGroupConfiguration> _groupConfigurations =
       <String, MaterialGroupConfiguration>{};
+  final Map<int, EffectiveGroupSchema> _effectiveSchemasByGroupId;
 
   @override
   Future<void> init() async {}
@@ -179,6 +201,7 @@ class FakeInventoryRepository extends InventoryRepository {
       inheritanceEnabled: input.inheritanceEnabled,
       selectedItemIds: input.selectedItemIds,
       propertyDrafts: input.propertyDrafts,
+      discardedPropertyKeys: input.discardedPropertyKeys,
     );
 
     return SaveParentResult(
@@ -534,6 +557,12 @@ class FakeInventoryRepository extends InventoryRepository {
   }
 
   @override
+  Future<EffectiveGroupSchema> getEffectiveSchema(int groupId) async {
+    return _effectiveSchemasByGroupId[groupId] ??
+        EffectiveGroupSchema(groupId: groupId);
+  }
+
+  @override
   Future<MaterialGroupConfiguration> updateGroupConfiguration(
     String barcode, {
     required bool inheritanceEnabled,
@@ -541,11 +570,13 @@ class FakeInventoryRepository extends InventoryRepository {
     required List<GroupPropertyDraft> propertyDrafts,
     required List<GroupUnitGovernance> unitGovernance,
     required GroupUiPreferences uiPreferences,
+    required List<String> discardedPropertyKeys,
   }) async {
     final next = MaterialGroupConfiguration(
       inheritanceEnabled: inheritanceEnabled,
       selectedItemIds: selectedItemIds,
       propertyDrafts: propertyDrafts,
+      discardedPropertyKeys: discardedPropertyKeys,
       unitGovernance: unitGovernance,
       uiPreferences: uiPreferences,
     );
@@ -4216,6 +4247,200 @@ void main() {
     expect(created.unit, 'bdl');
     expect(created.unitId, isNotNull);
   });
+
+  testWidgets(
+    'inventory create-group modal loads inherited properties from selected parent',
+    (tester) async {
+      final repository = FakeInventoryRepository(
+        effectiveSchemasByGroupId: <int, EffectiveGroupSchema>{
+          1: EffectiveGroupSchema(
+            groupId: 1,
+            propertyDrafts: const <GroupPropertyDraft>[
+              GroupPropertyDraft(
+                name: 'Length',
+                propertyKey: 'length',
+                inputType: 'Number',
+                mandatory: true,
+                unitSymbol: 'mm',
+                unitLabel: 'Millimetre',
+                sourceType: GroupPropertySourceType.inheritedGroup,
+                sourceGroupId: 1,
+                sourceGroupName: 'Paper',
+              ),
+            ],
+            lineageGroupIds: const <int>[1],
+            lineageGroupNames: const <String>['Paper'],
+          ),
+        },
+      );
+      await pumpApp(tester, repository: repository);
+
+      final context = tester.element(find.byType(Scaffold).first);
+      InventoryScreen.openCreateGroupForm(context);
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('inventory-create-group-parent')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Paper').last);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Inherited Properties'), findsOneWidget);
+      expect(find.text('Length'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'inventory create-group modal deep-seeds structured property drafts from seed item',
+    (tester) async {
+      final repository = FakeInventoryRepository();
+      final itemRepository = FakeItemRepository(
+        seedItems: <ItemDefinition>[
+          ItemDefinition(
+            id: 41,
+            name: 'Profile Rod',
+            alias: 'PR',
+            displayName: 'Profile Rod - 10',
+            quantity: 10,
+            groupId: 1,
+            unitId: 1,
+            propertySchema: const <ItemPropertySchemaEntry>[
+              ItemPropertySchemaEntry(
+                propertyKey: 'length',
+                displayName: 'Length',
+                inputType: 'Number',
+                mandatory: true,
+                unitSymbol: 'mm',
+                unitLabel: 'Millimetre',
+                sortOrder: 0,
+              ),
+            ],
+            isArchived: false,
+            usageCount: 0,
+            createdAt: DateTime(2024),
+            updatedAt: DateTime(2024),
+            variationTree: const <ItemVariationNodeDefinition>[],
+          ),
+        ],
+      );
+      await pumpApp(
+        tester,
+        repository: repository,
+        itemRepository: itemRepository,
+      );
+
+      final context = tester.element(find.byType(Scaffold).first);
+      InventoryScreen.openCreateGroupForm(context);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Enter group name'),
+        'Seeded Group',
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('inventory-create-group-unit')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Kilogram (Kg)').last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('inventory-create-group-seed-item')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Profile Rod - 10').last);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Length'), findsOneWidget);
+
+      await tester.tap(find.text('Save').last);
+      await tester.pumpAndSettle();
+
+      final created = (await repository.getAllMaterials())
+          .where((record) => record.name == 'Seeded Group')
+          .single;
+      final configuration = await repository.getGroupConfiguration(
+        created.barcode,
+      );
+      final seeded = configuration.propertyDrafts.singleWhere(
+        (draft) => draft.propertyKey == 'length',
+      );
+      expect(seeded.inputType, 'Number');
+      expect(seeded.mandatory, isTrue);
+      expect(seeded.unitSymbol, 'mm');
+      expect(seeded.unitLabel, 'Millimetre');
+    },
+  );
+
+  testWidgets(
+    'inventory create-group modal stores discarded inherited properties separately',
+    (tester) async {
+      final repository = FakeInventoryRepository(
+        effectiveSchemasByGroupId: <int, EffectiveGroupSchema>{
+          1: EffectiveGroupSchema(
+            groupId: 1,
+            propertyDrafts: const <GroupPropertyDraft>[
+              GroupPropertyDraft(
+                name: 'Length',
+                propertyKey: 'length',
+                inputType: 'Number',
+                mandatory: true,
+                sourceType: GroupPropertySourceType.inheritedGroup,
+                sourceGroupId: 1,
+                sourceGroupName: 'Paper',
+              ),
+            ],
+          ),
+        },
+      );
+      await pumpApp(tester, repository: repository);
+
+      final context = tester.element(find.byType(Scaffold).first);
+      InventoryScreen.openCreateGroupForm(context);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Enter group name'),
+        'Masked Group',
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('inventory-create-group-unit')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Kilogram (Kg)').last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('inventory-create-group-parent')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Paper').last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Length').last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Save').last);
+      await tester.pumpAndSettle();
+
+      final created = (await repository.getAllMaterials())
+          .where((record) => record.name == 'Masked Group')
+          .single;
+      final configuration = await repository.getGroupConfiguration(
+        created.barcode,
+      );
+      expect(configuration.discardedPropertyKeys, contains('length'));
+      expect(
+        configuration.propertyDrafts.where(
+          (draft) => draft.propertyKey == 'length',
+        ),
+        isEmpty,
+      );
+    },
+  );
 
   testWidgets('scan lookups increment trace count', (tester) async {
     await pumpApp(tester);

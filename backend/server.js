@@ -1562,6 +1562,7 @@ async function rowToItemDto(row) {
     `,
     [row.id],
   );
+  const propertySchema = await getItemPropertySchema(row.id);
 
   return {
     id: row.id,
@@ -1589,6 +1590,7 @@ async function rowToItemDto(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     variationTree: await getItemVariationTree(row.id),
+    propertySchema,
   };
 }
 
@@ -2081,6 +2083,7 @@ async function initDb() {
       material_id INTEGER NOT NULL REFERENCES materials(id),
       common_only_mode INTEGER NOT NULL DEFAULT 1,
       show_partial_matches INTEGER NOT NULL DEFAULT 1,
+      discarded_property_keys_json TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       UNIQUE(material_id)
@@ -2240,6 +2243,32 @@ async function initDb() {
 
   await run(
     'CREATE INDEX IF NOT EXISTS idx_item_unit_conversions_item_id ON item_unit_conversions(item_id)',
+  );
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS item_property_schema (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+      property_key TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      input_type TEXT NOT NULL DEFAULT 'Text',
+      mandatory INTEGER NOT NULL DEFAULT 0,
+      unit_id INTEGER,
+      unit_symbol TEXT,
+      unit_label TEXT,
+      source_type TEXT NOT NULL DEFAULT 'manual',
+      source_group_id INTEGER,
+      source_group_name TEXT,
+      source_item_ids_json TEXT NOT NULL DEFAULT '[]',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(item_id, property_key)
+    )
+  `);
+
+  await run(
+    'CREATE INDEX IF NOT EXISTS idx_item_property_schema_item_id ON item_property_schema(item_id)',
   );
 
   await run(`
@@ -2581,6 +2610,36 @@ async function initDb() {
     'material_group_properties',
     'resolution_source',
     'TEXT',
+  );
+  await ensureColumnExists(
+    'material_group_properties',
+    'unit_id',
+    'INTEGER',
+  );
+  await ensureColumnExists(
+    'material_group_properties',
+    'unit_symbol',
+    'TEXT',
+  );
+  await ensureColumnExists(
+    'material_group_properties',
+    'unit_label',
+    'TEXT',
+  );
+  await ensureColumnExists(
+    'material_group_properties',
+    'source_group_id',
+    'INTEGER',
+  );
+  await ensureColumnExists(
+    'material_group_properties',
+    'source_group_name',
+    'TEXT',
+  );
+  await ensureColumnExists(
+    'material_group_preferences',
+    'discarded_property_keys_json',
+    "TEXT NOT NULL DEFAULT '[]'",
   );
   await ensureColumnExists('users', 'failed_login_attempts', 'INTEGER NOT NULL DEFAULT 0');
   await ensureColumnExists('users', 'first_failed_login_at', 'TEXT');
@@ -5503,7 +5562,15 @@ async function saveOrder({
     }
 
     const { newlyLinkedIds } = await linkPoDocumentsToOrder(orderId, poDocumentIds);
-    for (const req of (Array.isArray(materialRequirements) ? materialRequirements : [])) {
+    const normalizedMaterialRequirements = Array.isArray(materialRequirements)
+      ? materialRequirements
+      : [];
+    if (normalizedMaterialRequirements.length > 0) {
+      await run('DELETE FROM order_material_requirements WHERE order_id = ?', [
+        orderId,
+      ]);
+    }
+    for (const req of normalizedMaterialRequirements) {
       await run(`
         INSERT INTO order_material_requirements (
           order_id, item_id, material_barcode,
@@ -5539,7 +5606,7 @@ async function saveOrder({
         status: finalStatus,
         quantity: normalizedQuantity,
         newlyLinkedDocs: newlyLinkedIds.length,
-        requirementsCount: Array.isArray(materialRequirements) ? materialRequirements.length : 0,
+        requirementsCount: normalizedMaterialRequirements.length,
       },
       createdAt: now,
     });
@@ -5612,6 +5679,11 @@ async function updateOrderLifecycle({
   if (existing.status !== normalizedStatus) {
     const isAdmin = actor?.role === 'admin' || actor?.role === 'super_admin';
     const allowed = ORDER_LIFECYCLE_TRANSITIONS[existing.status];
+    if (!isAdmin && existing.status === 'completed') {
+      const error = new Error('Only administrators can reverse a completed order.');
+      error.statusCode = 409;
+      throw error;
+    }
     if (!isAdmin && allowed && !allowed.has(normalizedStatus)) {
       const error = new Error(
         `Cannot move order from '${existing.status}' to '${normalizedStatus}'. Allowed transitions: ${[...allowed].join(', ')}.`,
@@ -6051,6 +6123,7 @@ async function saveItem({
           id: nodeId,
           kind,
           name: trimmedName,
+          code: String(node.code || '').trim(),
           displayName: '',
           position: index,
           children: sanitizeNodes(node.children || [], 'value', pathSegments, trimmedName, depth + 1),
@@ -6063,6 +6136,7 @@ async function saveItem({
         id: nodeId,
         kind,
         name: trimmedName,
+        code: String(node.code || '').trim(),
         displayName:
           String(node.displayName || '').trim() || buildVariationPathLabel(nextSegments),
         position: index,
@@ -6230,6 +6304,18 @@ async function saveItem({
         ],
       );
     }
+
+    const existingPropertySchema = await getItemPropertySchema(itemId);
+    const effectiveSchema = await getEffectiveSchema(normalizedGroupId);
+    await persistItemPropertySchema(
+      itemId,
+      mergeItemPropertySchema({
+        variationTree: sanitizedTree,
+        effectiveDrafts: effectiveSchema.propertyDrafts,
+        existingSchema: existingPropertySchema,
+      }),
+      now,
+    );
 
     await run('COMMIT');
     return getItemRowById(itemId);
@@ -7046,6 +7132,23 @@ async function getMaterialRowByBarcode(barcode) {
   return rows.find((item) => normalizeBarcode(item.barcode) === normalized) || null;
 }
 
+async function getGroupMaterialRowByGroupId(groupId) {
+  const normalizedGroupId = Number(groupId);
+  if (!Number.isInteger(normalizedGroupId) || normalizedGroupId <= 0) {
+    return null;
+  }
+  return get(
+    `
+    SELECT *
+    FROM materials
+    WHERE linked_group_id = ?
+    ORDER BY id ASC
+    LIMIT 1
+    `,
+    [normalizedGroupId],
+  );
+}
+
 function normalizePropertyKey(value) {
   return String(value || '').trim().toLowerCase();
 }
@@ -7055,14 +7158,23 @@ function normalizeGroupPropertyDraft(rawDraft) {
   if (!name) {
     return null;
   }
+  const propertyKey =
+    String(rawDraft?.propertyKey || '').trim() || normalizePropertyKey(name);
   const inputType = String(rawDraft?.inputType || 'Text').trim() || 'Text';
-  const sourceType = rawDraft?.sourceType === 'inherited_item' ? 'inherited_item' : 'manual';
+  const sourceType = ['inherited_item', 'inherited_group', 'manual'].includes(rawDraft?.sourceType)
+    ? rawDraft.sourceType
+    : 'manual';
   const state = ['active', 'unlinked', 'overridden'].includes(rawDraft?.state)
     ? rawDraft.state
     : 'active';
   const overrideLocked = Boolean(rawDraft?.overrideLocked);
   const hasTypeConflict = Boolean(rawDraft?.hasTypeConflict);
   const mandatory = Boolean(rawDraft?.mandatory);
+  const unitId = Number(rawDraft?.unitId);
+  const unitSymbol = String(rawDraft?.unitSymbol || '').trim() || null;
+  const unitLabel = String(rawDraft?.unitLabel || '').trim() || null;
+  const sourceGroupId = Number(rawDraft?.sourceGroupId);
+  const sourceGroupName = String(rawDraft?.sourceGroupName || '').trim() || null;
   const coverageCount = Number(rawDraft?.coverageCount || 0);
   const selectedItemCountAtResolution = Number(
     rawDraft?.selectedItemCountAtResolution || 0,
@@ -7074,12 +7186,17 @@ function normalizeGroupPropertyDraft(rawDraft) {
     .filter((id) => Number.isInteger(id) && id > 0);
 
   return {
-    propertyKey: normalizePropertyKey(name),
+    propertyKey,
     displayName: name,
     inputType,
     sourceType,
     state,
     mandatory,
+    unitId: Number.isInteger(unitId) && unitId > 0 ? unitId : null,
+    unitSymbol,
+    unitLabel,
+    sourceGroupId: Number.isInteger(sourceGroupId) && sourceGroupId > 0 ? sourceGroupId : null,
+    sourceGroupName,
     overrideLocked,
     hasTypeConflict,
     coverageCount: Number.isFinite(coverageCount) ? Math.max(0, Math.trunc(coverageCount)) : 0,
@@ -7088,6 +7205,321 @@ function normalizeGroupPropertyDraft(rawDraft) {
       : 0,
     resolutionSource,
     sourceItemIds: [...new Set(sourceItemIds)],
+  };
+}
+
+function normalizeDiscardedPropertyKeys(rawKeys) {
+  if (!Array.isArray(rawKeys)) {
+    return [];
+  }
+  const keys = [];
+  const seen = new Set();
+  for (const rawKey of rawKeys) {
+    const propertyKey = normalizePropertyKey(rawKey);
+    if (!propertyKey || seen.has(propertyKey)) {
+      continue;
+    }
+    seen.add(propertyKey);
+    keys.push(propertyKey);
+  }
+  return keys;
+}
+
+async function getItemPropertySchema(itemId) {
+  const normalizedItemId = Number(itemId);
+  if (!Number.isInteger(normalizedItemId) || normalizedItemId <= 0) {
+    return [];
+  }
+  const rows = await all(
+    `
+    SELECT *
+    FROM item_property_schema
+    WHERE item_id = ?
+    ORDER BY sort_order ASC, id ASC
+    `,
+    [normalizedItemId],
+  );
+  return rows.map((row) => ({
+    propertyKey: row.property_key || '',
+    displayName: row.display_name || '',
+    inputType: row.input_type || 'Text',
+    mandatory: Number(row.mandatory || 0) === 1,
+    unitId: row.unit_id ? Number(row.unit_id) : null,
+    unitSymbol: row.unit_symbol || null,
+    unitLabel: row.unit_label || null,
+    sourceType: row.source_type || 'manual',
+    sourceGroupId: row.source_group_id ? Number(row.source_group_id) : null,
+    sourceGroupName: row.source_group_name || null,
+    sourceItemIds: parseJson(row.source_item_ids_json, [])
+      .map((entry) => Number(entry))
+      .filter((entry) => Number.isInteger(entry) && entry > 0),
+    sortOrder: Number(row.sort_order || 0),
+  }));
+}
+
+function normalizePropertyKey(value = '') {
+  return normalizeUnitValue(String(value || '').trim());
+}
+
+function collectTopLevelPropertySchemaFromTree(
+  variationTree = [],
+  {
+    existingByKey = new Map(),
+    fallbackByKey = new Map(),
+  } = {},
+) {
+  const drafts = [];
+  const seen = new Set();
+  let sortOrder = 0;
+  for (const node of Array.isArray(variationTree) ? variationTree : []) {
+    if (!node || String(node.kind) !== 'property') {
+      continue;
+    }
+    const displayName = String(node.name || '').trim();
+    if (!displayName) {
+      continue;
+    }
+    const propertyKey = normalizePropertyKey(displayName);
+    if (!propertyKey || seen.has(propertyKey)) {
+      continue;
+    }
+    seen.add(propertyKey);
+    const existing = existingByKey.get(propertyKey);
+    const fallback = fallbackByKey.get(propertyKey);
+    drafts.push({
+      propertyKey,
+      displayName,
+      inputType: existing?.inputType || fallback?.inputType || 'Text',
+      mandatory: existing?.mandatory ?? fallback?.mandatory ?? false,
+      unitId: existing?.unitId ?? fallback?.unitId ?? null,
+      unitSymbol: existing?.unitSymbol ?? fallback?.unitSymbol ?? null,
+      unitLabel: existing?.unitLabel ?? fallback?.unitLabel ?? null,
+      sourceType: existing?.sourceType || fallback?.sourceType || 'manual',
+      sourceGroupId: existing?.sourceGroupId ?? fallback?.sourceGroupId ?? null,
+      sourceGroupName: existing?.sourceGroupName ?? fallback?.sourceGroupName ?? null,
+      sourceItemIds: Array.isArray(existing?.sourceItemIds)
+        ? existing.sourceItemIds
+        : (Array.isArray(fallback?.sourceItemIds) ? fallback.sourceItemIds : []),
+      sortOrder: sortOrder++,
+    });
+  }
+  return drafts;
+}
+
+function mergeItemPropertySchema({
+  variationTree = [],
+  effectiveDrafts = [],
+  existingSchema = [],
+} = {}) {
+  const existingByKey = new Map(
+    (Array.isArray(existingSchema) ? existingSchema : [])
+      .map((entry) => [normalizePropertyKey(entry.propertyKey || entry.displayName), entry])
+      .filter(([key]) => Boolean(key)),
+  );
+  const effectiveByKey = new Map(
+    (Array.isArray(effectiveDrafts) ? effectiveDrafts : [])
+      .map((draft) => {
+        const propertyKey = normalizePropertyKey(draft.propertyKey || draft.name);
+        return [
+          propertyKey,
+          {
+            propertyKey,
+            displayName: draft.name,
+            inputType: draft.inputType,
+            mandatory: draft.mandatory,
+            unitId: draft.unitId ?? null,
+            unitSymbol: draft.unitSymbol ?? null,
+            unitLabel: draft.unitLabel ?? null,
+            sourceType: draft.sourceType || 'manual',
+            sourceGroupId: draft.sourceGroupId ?? null,
+            sourceGroupName: draft.sourceGroupName ?? null,
+            sourceItemIds: Array.isArray(draft.sources)
+              ? draft.sources
+                  .map((source) => Number(source.itemId))
+                  .filter((sourceId) => Number.isInteger(sourceId) && sourceId > 0)
+              : [],
+            sortOrder: 0,
+          },
+        ];
+      })
+      .filter(([key]) => Boolean(key)),
+  );
+
+  const merged = collectTopLevelPropertySchemaFromTree(variationTree, {
+    existingByKey,
+    fallbackByKey: effectiveByKey,
+  });
+  const seen = new Set(merged.map((entry) => entry.propertyKey));
+  let sortOrder = merged.length;
+  for (const draft of Array.isArray(effectiveDrafts) ? effectiveDrafts : []) {
+    const propertyKey = normalizePropertyKey(draft.propertyKey || draft.name);
+    if (!propertyKey || seen.has(propertyKey)) {
+      continue;
+    }
+    seen.add(propertyKey);
+    merged.push({
+      propertyKey,
+      displayName: draft.name,
+      inputType: draft.inputType,
+      mandatory: draft.mandatory,
+      unitId: draft.unitId ?? null,
+      unitSymbol: draft.unitSymbol ?? null,
+      unitLabel: draft.unitLabel ?? null,
+      sourceType: draft.sourceType || 'manual',
+      sourceGroupId: draft.sourceGroupId ?? null,
+      sourceGroupName: draft.sourceGroupName ?? null,
+      sourceItemIds: Array.isArray(draft.sources)
+        ? draft.sources
+            .map((source) => Number(source.itemId))
+            .filter((sourceId) => Number.isInteger(sourceId) && sourceId > 0)
+        : [],
+      sortOrder: sortOrder++,
+    });
+  }
+  return merged;
+}
+
+async function persistItemPropertySchema(itemId, propertySchema, now = new Date().toISOString()) {
+  await run('DELETE FROM item_property_schema WHERE item_id = ?', [itemId]);
+  const seen = new Set();
+  const normalizedEntries = (Array.isArray(propertySchema) ? propertySchema : [])
+    .map((entry) => ({
+      propertyKey: normalizePropertyKey(entry?.propertyKey || entry?.displayName || ''),
+      displayName: String(entry?.displayName || '').trim(),
+      inputType: String(entry?.inputType || 'Text').trim() || 'Text',
+      mandatory: Boolean(entry?.mandatory),
+      unitId: Number(entry?.unitId),
+      unitSymbol: String(entry?.unitSymbol || '').trim() || null,
+      unitLabel: String(entry?.unitLabel || '').trim() || null,
+      sourceType: ['inherited_item', 'inherited_group', 'manual'].includes(entry?.sourceType)
+        ? entry.sourceType
+        : 'manual',
+      sourceGroupId: Number(entry?.sourceGroupId),
+      sourceGroupName: String(entry?.sourceGroupName || '').trim() || null,
+      sourceItemIds: [...new Set(
+        (Array.isArray(entry?.sourceItemIds) ? entry.sourceItemIds : [])
+          .map((id) => Number(id))
+          .filter((id) => Number.isInteger(id) && id > 0),
+      )],
+      sortOrder: Number(entry?.sortOrder || 0),
+    }))
+    .filter((entry) => entry.propertyKey && entry.displayName)
+    .filter((entry) => {
+      if (seen.has(entry.propertyKey)) {
+        return false;
+      }
+      seen.add(entry.propertyKey);
+      return true;
+    });
+
+  for (let index = 0; index < normalizedEntries.length; index += 1) {
+    const entry = normalizedEntries[index];
+    await run(
+      `
+      INSERT INTO item_property_schema (
+        item_id, property_key, display_name, input_type, mandatory,
+        unit_id, unit_symbol, unit_label, source_type, source_group_id,
+        source_group_name, source_item_ids_json, sort_order, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        itemId,
+        entry.propertyKey,
+        entry.displayName,
+        entry.inputType,
+        entry.mandatory ? 1 : 0,
+        Number.isInteger(entry.unitId) && entry.unitId > 0 ? entry.unitId : null,
+        entry.unitSymbol,
+        entry.unitLabel,
+        entry.sourceType,
+        Number.isInteger(entry.sourceGroupId) && entry.sourceGroupId > 0
+          ? entry.sourceGroupId
+          : null,
+        entry.sourceGroupName,
+        JSON.stringify(entry.sourceItemIds),
+        Number.isFinite(entry.sortOrder) ? entry.sortOrder : index,
+        now,
+        now,
+      ],
+    );
+  }
+}
+
+async function getEffectiveSchema(groupId) {
+  const normalizedGroupId = Number(groupId);
+  if (!Number.isInteger(normalizedGroupId) || normalizedGroupId <= 0) {
+    const error = new Error('Valid groupId is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const lineageRows = [];
+  let cursor = await getGroupRowById(normalizedGroupId);
+  if (!cursor) {
+    const error = new Error('Group not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  while (cursor) {
+    lineageRows.unshift(cursor);
+    cursor = cursor.parent_group_id
+      ? await getGroupRowById(Number(cursor.parent_group_id))
+      : null;
+  }
+
+  const mergedByKey = new Map();
+  const discardedPropertyKeys = new Set();
+
+  for (const groupRow of lineageRows) {
+    const materialRow = await getGroupMaterialRowByGroupId(groupRow.id);
+    if (!materialRow) {
+      continue;
+    }
+    const governance = await getMaterialGroupGovernance(materialRow.id);
+    for (const discardedKey of governance.discardedPropertyKeys || []) {
+      discardedPropertyKeys.add(normalizePropertyKey(discardedKey));
+      mergedByKey.delete(normalizePropertyKey(discardedKey));
+    }
+    for (const rawDraft of governance.propertyDrafts || []) {
+      const draft = normalizeGroupPropertyDraft(rawDraft);
+      if (!draft) {
+        continue;
+      }
+      const propertyKey = draft.propertyKey;
+      if (discardedPropertyKeys.has(propertyKey)) {
+        continue;
+      }
+      mergedByKey.set(propertyKey, {
+        name: draft.displayName,
+        propertyKey,
+        inputType: draft.inputType,
+        mandatory: draft.mandatory,
+        sourceType: draft.sourceType === 'manual' ? 'inherited_group' : draft.sourceType,
+        state: draft.state,
+        unitId: draft.unitId,
+        unitSymbol: draft.unitSymbol,
+        unitLabel: draft.unitLabel,
+        sourceGroupId: draft.sourceGroupId || groupRow.id,
+        sourceGroupName: draft.sourceGroupName || groupRow.name || '',
+        overrideLocked: draft.overrideLocked,
+        hasTypeConflict: draft.hasTypeConflict,
+        coverageCount: draft.coverageCount,
+        selectedItemCountAtResolution: draft.selectedItemCountAtResolution,
+        resolutionSource: draft.resolutionSource,
+        sources: (Array.isArray(rawDraft.sources) ? rawDraft.sources : []).map((source) => ({
+          itemId: Number(source.itemId),
+          itemName: source.itemName || null,
+        })),
+      });
+    }
+  }
+
+  return {
+    groupId: normalizedGroupId,
+    propertyDrafts: [...mergedByKey.values()],
+    discardedPropertyKeys: [...discardedPropertyKeys],
+    lineageGroupIds: lineageRows.map((row) => Number(row.id)),
+    lineageGroupNames: lineageRows.map((row) => row.name || ''),
   };
 }
 
@@ -7129,6 +7561,9 @@ async function persistMaterialGroupGovernance(materialId, payload, now = new Dat
     .map(normalizeGroupUnitGovernance)
     .filter(Boolean);
   const preferences = normalizeGroupUiPreferences(payload?.uiPreferences || {});
+  const discardedPropertyKeys = normalizeDiscardedPropertyKeys(
+    payload?.discardedPropertyKeys,
+  );
   const drafts = draftsInput
     .map(normalizeGroupPropertyDraft)
     .filter(Boolean);
@@ -7162,8 +7597,9 @@ async function persistMaterialGroupGovernance(materialId, payload, now = new Dat
         material_id, property_key, display_name, input_type, mandatory,
         source_type, source_item_ids_json, state, override_locked, has_type_conflict,
         coverage_count, selected_item_count_at_resolution, resolution_source,
+        unit_id, unit_symbol, unit_label, source_group_id, source_group_name,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         materialId,
@@ -7179,6 +7615,11 @@ async function persistMaterialGroupGovernance(materialId, payload, now = new Dat
         draft.coverageCount,
         draft.selectedItemCountAtResolution,
         draft.resolutionSource,
+        draft.unitId,
+        draft.unitSymbol,
+        draft.unitLabel,
+        draft.sourceGroupId,
+        draft.sourceGroupName,
         now,
         now,
       ],
@@ -7206,13 +7647,14 @@ async function persistMaterialGroupGovernance(materialId, payload, now = new Dat
   await run(
     `
     INSERT INTO material_group_preferences (
-      material_id, common_only_mode, show_partial_matches, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?)
+      material_id, common_only_mode, show_partial_matches, discarded_property_keys_json, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?)
     `,
     [
       materialId,
       preferences.commonOnlyMode ? 1 : 0,
       preferences.showPartialMatches ? 1 : 0,
+      JSON.stringify(discardedPropertyKeys),
       now,
       now,
     ],
@@ -7281,6 +7723,11 @@ async function getMaterialGroupGovernance(materialId) {
       mandatory: Number(row.mandatory || 0) === 1,
       sourceType: row.source_type || 'manual',
       state: row.state || 'active',
+      unitId: row.unit_id ? Number(row.unit_id) : null,
+      unitSymbol: row.unit_symbol || null,
+      unitLabel: row.unit_label || null,
+      sourceGroupId: row.source_group_id ? Number(row.source_group_id) : null,
+      sourceGroupName: row.source_group_name || null,
       overrideLocked: Number(row.override_locked || 0) === 1,
       hasTypeConflict: Number(row.has_type_conflict || 0) === 1,
       coverageCount: Number(row.coverage_count || 0),
@@ -7298,8 +7745,18 @@ async function getMaterialGroupGovernance(materialId) {
     commonOnlyMode: Number(preferencesRow?.common_only_mode ?? 1) === 1,
     showPartialMatches: Number(preferencesRow?.show_partial_matches ?? 1) === 1,
   };
+  const discardedPropertyKeys = normalizeDiscardedPropertyKeys(
+    parseJson(preferencesRow?.discarded_property_keys_json, []),
+  );
 
-  return { selectedItemIds, selectedItems, propertyDrafts, unitGovernance, uiPreferences };
+  return {
+    selectedItemIds,
+    selectedItems,
+    propertyDrafts,
+    unitGovernance,
+    uiPreferences,
+    discardedPropertyKeys,
+  };
 }
 
 async function incrementMaterialScanCount(barcode) {
@@ -10869,6 +11326,19 @@ app.patch('/api/groups/:id/restore', requirePermission('config.write'), async (r
   }
 });
 
+app.get('/api/groups/:id/effective-schema', requirePermission('config.read'), async (req, res) => {
+  try {
+    const schema = await getEffectiveSchema(Number(req.params.id));
+    res.json({ success: true, schema, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      schema: null,
+      error: error.message,
+    });
+  }
+});
+
 app.post('/api/materials/parent', requirePermission('inventory.create'), async (req, res) => {
   try {
     const payload = { ...(req.body || {}), actor: currentActor(req) };
@@ -11566,6 +12036,8 @@ module.exports = {
   getItemsWithUsage,
   createParentWithChildren,
   getMaterialRowByBarcode,
+  getEffectiveSchema,
+  getItemPropertySchema,
   applyInventoryMovement,
   linkMaterialRecordToGroup,
   linkMaterialRecordToItem,

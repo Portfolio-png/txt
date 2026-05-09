@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/repositories/inventory_repository.dart';
 import '../../domain/create_parent_material_input.dart';
+import '../../domain/effective_group_schema.dart';
 import '../../domain/group_property_draft.dart';
 import '../../domain/inventory_control_tower.dart';
 import '../../domain/material_activity_event.dart';
@@ -409,6 +410,21 @@ class InventoryProvider extends ChangeNotifier {
     }
   }
 
+  Future<EffectiveGroupSchema?> loadEffectiveSchema(int groupId) async {
+    try {
+      _errorMessage = null;
+      notifyListeners();
+      return await _repository.getEffectiveSchema(groupId);
+    } catch (error) {
+      _errorMessage = _friendlyError(
+        fallback: 'Failed to load inherited properties.',
+        error: error,
+      );
+      notifyListeners();
+      return null;
+    }
+  }
+
   Future<void> updateGroupConfiguration(
     String barcode, {
     required bool inheritanceEnabled,
@@ -416,6 +432,7 @@ class InventoryProvider extends ChangeNotifier {
     required List<GroupPropertyDraft> propertyDrafts,
     required List<GroupUnitGovernance> unitGovernance,
     required GroupUiPreferences uiPreferences,
+    required List<String> discardedPropertyKeys,
   }) async {
     _isSaving = true;
     _errorMessage = null;
@@ -429,6 +446,7 @@ class InventoryProvider extends ChangeNotifier {
         propertyDrafts: propertyDrafts,
         unitGovernance: unitGovernance,
         uiPreferences: uiPreferences,
+        discardedPropertyKeys: discardedPropertyKeys,
       );
       await _reloadMaterials();
       _selectedMaterial = _materials

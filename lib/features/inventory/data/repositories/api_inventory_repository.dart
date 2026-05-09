@@ -2,7 +2,9 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../../../groups/data/models/group_api_models.dart';
 import '../../domain/create_parent_material_input.dart';
+import '../../domain/effective_group_schema.dart';
 import '../../domain/group_property_draft.dart';
 import '../../domain/inventory_control_tower.dart';
 import '../../domain/material_activity_event.dart';
@@ -76,6 +78,116 @@ class ApiInventoryRepository implements InventoryRepository {
   }
 
   @override
+  Future<EffectiveGroupSchema> getEffectiveSchema(int groupId) async {
+    if (useMockResponses) {
+      return EffectiveGroupSchema(
+        groupId: groupId,
+        propertyDrafts: const [],
+        discardedPropertyKeys: const [],
+        lineageGroupIds: [groupId],
+        lineageGroupNames: const [],
+      );
+    }
+
+    final uri = Uri.parse('$baseUrl/api/groups/$groupId/effective-schema');
+    final response = await _client.get(uri);
+    final payload = _decodeJson(response.body) as Map<String, dynamic>? ?? {};
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final error =
+          payload['error'] as String? ?? 'Failed to fetch effective schema.';
+      if (response.statusCode == 404 ||
+          error.contains('API route not found') ||
+          error.contains('Cannot GET /api/groups/')) {
+        return _getEffectiveSchemaFallback(groupId);
+      }
+      throw InventoryApiException(error);
+    }
+    final schemaJson = payload['schema'];
+    if (payload['success'] != true || schemaJson is! Map<String, dynamic>) {
+      throw InventoryApiException(
+        payload['error'] as String? ?? 'Failed to fetch effective schema.',
+      );
+    }
+    return EffectiveGroupSchemaDto.fromJson(schemaJson).toDomain();
+  }
+
+  Future<EffectiveGroupSchema> _getEffectiveSchemaFallback(int groupId) async {
+    final groups = await _getGroups();
+    final materials = await getAllMaterials();
+    final groupsById = <int, GroupDto>{
+      for (final group in groups) group.id: group,
+    };
+    final lineage = <GroupDto>[];
+    var currentId = groupId;
+    final seen = <int>{};
+    while (groupsById.containsKey(currentId) && !seen.contains(currentId)) {
+      seen.add(currentId);
+      final group = groupsById[currentId]!;
+      lineage.insert(0, group);
+      final parentId = group.parentGroupId;
+      if (parentId == null) {
+        break;
+      }
+      currentId = parentId;
+    }
+
+    final draftsByKey = <String, GroupPropertyDraft>{};
+    final discardedKeys = <String>{};
+    for (final group in lineage) {
+      final linkedMaterial = materials
+          .where((material) => material.linkedGroupId == group.id)
+          .firstOrNull;
+      if (linkedMaterial == null) {
+        continue;
+      }
+      final config = await getGroupConfiguration(linkedMaterial.barcode);
+      for (final key in config.discardedPropertyKeys) {
+        final normalized = _normalizePropertyKey(key);
+        if (normalized.isNotEmpty) {
+          discardedKeys.add(normalized);
+          draftsByKey.remove(normalized);
+        }
+      }
+      for (final draft in config.propertyDrafts) {
+        final normalized = _normalizePropertyKey(
+          draft.propertyKey ?? draft.name,
+        );
+        if (normalized.isEmpty || discardedKeys.contains(normalized)) {
+          continue;
+        }
+        draftsByKey[normalized] = draft;
+      }
+    }
+
+    return EffectiveGroupSchema(
+      groupId: groupId,
+      propertyDrafts: draftsByKey.values.toList(growable: false),
+      discardedPropertyKeys: discardedKeys.toList(growable: false),
+      lineageGroupIds: lineage.map((group) => group.id).toList(growable: false),
+      lineageGroupNames: lineage
+          .map((group) => group.name)
+          .toList(growable: false),
+    );
+  }
+
+  Future<List<GroupDto>> _getGroups() async {
+    final uri = Uri.parse('$baseUrl/api/groups');
+    final response = await _client.get(uri);
+    final payload = _decodeJson(response.body) as Map<String, dynamic>? ?? {};
+    final parsed = GroupsListResponse.fromJson(payload);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !parsed.success) {
+      throw InventoryApiException(
+        payload['error'] as String? ?? 'Failed to fetch groups.',
+      );
+    }
+    return parsed.groups;
+  }
+
+  String _normalizePropertyKey(String value) => value.trim().toLowerCase();
+
+  @override
   Future<MaterialGroupConfiguration> updateGroupConfiguration(
     String barcode, {
     required bool inheritanceEnabled,
@@ -83,6 +195,7 @@ class ApiInventoryRepository implements InventoryRepository {
     required List<GroupPropertyDraft> propertyDrafts,
     required List<GroupUnitGovernance> unitGovernance,
     required GroupUiPreferences uiPreferences,
+    required List<String> discardedPropertyKeys,
   }) async {
     if (useMockResponses) {
       _seedMockStoreIfNeeded();
@@ -128,6 +241,7 @@ class ApiInventoryRepository implements InventoryRepository {
         propertyDrafts: propertyDrafts,
         unitGovernance: unitGovernance,
         uiPreferences: uiPreferences,
+        discardedPropertyKeys: discardedPropertyKeys,
       );
       _mockGroupConfigs[barcode] = config;
       return config;
@@ -144,6 +258,7 @@ class ApiInventoryRepository implements InventoryRepository {
           .map((row) => GroupUnitGovernanceDto.fromDomain(row).toJson())
           .toList(growable: false),
       'uiPreferences': GroupUiPreferencesDto.fromDomain(uiPreferences).toJson(),
+      'discardedPropertyKeys': discardedPropertyKeys,
     };
     final response = await _client.patch(
       uri,

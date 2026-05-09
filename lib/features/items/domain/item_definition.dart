@@ -52,6 +52,36 @@ class ItemVariationNodeDefinition {
   }
 }
 
+class ItemPropertySchemaEntry {
+  const ItemPropertySchemaEntry({
+    required this.propertyKey,
+    required this.displayName,
+    required this.inputType,
+    required this.mandatory,
+    this.unitId,
+    this.unitSymbol,
+    this.unitLabel,
+    this.sourceType = 'manual',
+    this.sourceGroupId,
+    this.sourceGroupName,
+    this.sourceItemIds = const <int>[],
+    this.sortOrder = 0,
+  });
+
+  final String propertyKey;
+  final String displayName;
+  final String inputType;
+  final bool mandatory;
+  final int? unitId;
+  final String? unitSymbol;
+  final String? unitLabel;
+  final String sourceType;
+  final int? sourceGroupId;
+  final String? sourceGroupName;
+  final List<int> sourceItemIds;
+  final int sortOrder;
+}
+
 class ItemDefinition {
   const ItemDefinition({
     required this.id,
@@ -62,6 +92,7 @@ class ItemDefinition {
     required this.groupId,
     required this.unitId,
     this.unitConversions = const [],
+    this.propertySchema = const [],
     this.namingFormat = const [],
     required this.isArchived,
     required this.usageCount,
@@ -78,6 +109,7 @@ class ItemDefinition {
   final int groupId;
   final int unitId;
   final List<ItemUnitConversionDefinition> unitConversions;
+  final List<ItemPropertySchemaEntry> propertySchema;
   final List<String> namingFormat;
   final bool isArchived;
   final int usageCount;

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../../domain/create_parent_material_input.dart';
+import '../../domain/effective_group_schema.dart';
 import '../../domain/group_property_draft.dart';
 import '../../domain/material_activity_event.dart';
 import '../../domain/inventory_control_tower.dart';
@@ -826,6 +827,7 @@ class CreateParentRequest {
     required this.propertyDrafts,
     required this.unitGovernance,
     required this.uiPreferences,
+    required this.discardedPropertyKeys,
     required this.notes,
     required this.numberOfChildren,
   });
@@ -845,6 +847,7 @@ class CreateParentRequest {
   final List<GroupPropertyDraftDto> propertyDrafts;
   final List<GroupUnitGovernanceDto> unitGovernance;
   final GroupUiPreferencesDto uiPreferences;
+  final List<String> discardedPropertyKeys;
   final String notes;
   final int numberOfChildren;
 
@@ -869,6 +872,7 @@ class CreateParentRequest {
           .map(GroupUnitGovernanceDto.fromDomain)
           .toList(growable: false),
       uiPreferences: GroupUiPreferencesDto.fromDomain(input.uiPreferences),
+      discardedPropertyKeys: input.discardedPropertyKeys,
       notes: input.notes,
       numberOfChildren: input.numberOfChildren,
     );
@@ -895,6 +899,7 @@ class CreateParentRequest {
           .map((unitGovernanceRow) => unitGovernanceRow.toJson())
           .toList(growable: false),
       'uiPreferences': uiPreferences.toJson(),
+      'discardedPropertyKeys': discardedPropertyKeys,
       'notes': notes,
       'numberOfChildren': numberOfChildren,
     };
@@ -933,6 +938,7 @@ class GroupPropertySourceDto {
 class GroupPropertyDraftDto {
   const GroupPropertyDraftDto({
     required this.name,
+    this.propertyKey,
     required this.inputType,
     required this.mandatory,
     required this.sourceType,
@@ -942,10 +948,16 @@ class GroupPropertyDraftDto {
     required this.hasTypeConflict,
     required this.coverageCount,
     required this.selectedItemCountAtResolution,
+    this.unitId,
+    this.unitSymbol,
+    this.unitLabel,
+    this.sourceGroupId,
+    this.sourceGroupName,
     this.resolutionSource,
   });
 
   final String name;
+  final String? propertyKey;
   final String inputType;
   final bool mandatory;
   final String sourceType;
@@ -955,11 +967,19 @@ class GroupPropertyDraftDto {
   final bool hasTypeConflict;
   final int coverageCount;
   final int selectedItemCountAtResolution;
+  final int? unitId;
+  final String? unitSymbol;
+  final String? unitLabel;
+  final int? sourceGroupId;
+  final String? sourceGroupName;
   final String? resolutionSource;
 
   factory GroupPropertyDraftDto.fromJson(Map<String, dynamic> json) {
     return GroupPropertyDraftDto(
-      name: json['name'] as String? ?? '',
+      // Backend effective-schema uses 'name'; governance endpoint uses 'displayName'.
+      // Accept both to be resilient to either serialisation shape.
+      name: json['name'] as String? ?? json['displayName'] as String? ?? '',
+      propertyKey: json['propertyKey'] as String?,
       inputType: json['inputType'] as String? ?? 'Text',
       mandatory: json['mandatory'] as bool? ?? false,
       sourceType: json['sourceType'] as String? ?? 'manual',
@@ -975,6 +995,11 @@ class GroupPropertyDraftDto {
       coverageCount: json['coverageCount'] as int? ?? 0,
       selectedItemCountAtResolution:
           json['selectedItemCountAtResolution'] as int? ?? 0,
+      unitId: (json['unitId'] as num?)?.toInt(),
+      unitSymbol: json['unitSymbol'] as String?,
+      unitLabel: json['unitLabel'] as String?,
+      sourceGroupId: (json['sourceGroupId'] as num?)?.toInt(),
+      sourceGroupName: json['sourceGroupName'] as String?,
       resolutionSource: json['resolutionSource'] as String?,
     );
   }
@@ -982,6 +1007,7 @@ class GroupPropertyDraftDto {
   factory GroupPropertyDraftDto.fromDomain(GroupPropertyDraft draft) {
     return GroupPropertyDraftDto(
       name: draft.name,
+      propertyKey: draft.propertyKey,
       inputType: draft.inputType,
       mandatory: draft.mandatory,
       sourceType: _sourceTypeToWire(draft.sourceType),
@@ -993,6 +1019,11 @@ class GroupPropertyDraftDto {
       hasTypeConflict: draft.hasTypeConflict,
       coverageCount: draft.coverageCount,
       selectedItemCountAtResolution: draft.selectedItemCountAtResolution,
+      unitId: draft.unitId,
+      unitSymbol: draft.unitSymbol,
+      unitLabel: draft.unitLabel,
+      sourceGroupId: draft.sourceGroupId,
+      sourceGroupName: draft.sourceGroupName,
       resolutionSource: draft.resolutionSource,
     );
   }
@@ -1000,6 +1031,7 @@ class GroupPropertyDraftDto {
   GroupPropertyDraft toDomain() {
     return GroupPropertyDraft(
       name: name,
+      propertyKey: propertyKey,
       inputType: inputType,
       mandatory: mandatory,
       sourceType: _sourceTypeFromWire(sourceType),
@@ -1011,6 +1043,11 @@ class GroupPropertyDraftDto {
       hasTypeConflict: hasTypeConflict,
       coverageCount: coverageCount,
       selectedItemCountAtResolution: selectedItemCountAtResolution,
+      unitId: unitId,
+      unitSymbol: unitSymbol,
+      unitLabel: unitLabel,
+      sourceGroupId: sourceGroupId,
+      sourceGroupName: sourceGroupName,
       resolutionSource: resolutionSource,
     );
   }
@@ -1018,6 +1055,7 @@ class GroupPropertyDraftDto {
   Map<String, dynamic> toJson() {
     return {
       'name': name,
+      'propertyKey': propertyKey,
       'inputType': inputType,
       'mandatory': mandatory,
       'sourceType': sourceType,
@@ -1029,6 +1067,11 @@ class GroupPropertyDraftDto {
       'hasTypeConflict': hasTypeConflict,
       'coverageCount': coverageCount,
       'selectedItemCountAtResolution': selectedItemCountAtResolution,
+      'unitId': unitId,
+      'unitSymbol': unitSymbol,
+      'unitLabel': unitLabel,
+      'sourceGroupId': sourceGroupId,
+      'sourceGroupName': sourceGroupName,
       'resolutionSource': resolutionSource,
     };
   }
@@ -1037,6 +1080,8 @@ class GroupPropertyDraftDto {
     switch (value) {
       case 'inherited_item':
         return GroupPropertySourceType.inheritedItem;
+      case 'inherited_group':
+        return GroupPropertySourceType.inheritedGroup;
       default:
         return GroupPropertySourceType.manual;
     }
@@ -1046,6 +1091,8 @@ class GroupPropertyDraftDto {
     switch (value) {
       case GroupPropertySourceType.inheritedItem:
         return 'inherited_item';
+      case GroupPropertySourceType.inheritedGroup:
+        return 'inherited_group';
       case GroupPropertySourceType.manual:
         return 'manual';
     }
@@ -1118,12 +1165,14 @@ class MaterialGroupConfigurationDto {
     required this.propertyDrafts,
     required this.unitGovernance,
     required this.uiPreferences,
+    required this.discardedPropertyKeys,
   });
 
   final List<int> selectedItemIds;
   final List<GroupPropertyDraftDto> propertyDrafts;
   final List<GroupUnitGovernanceDto> unitGovernance;
   final GroupUiPreferencesDto uiPreferences;
+  final List<String> discardedPropertyKeys;
 
   factory MaterialGroupConfigurationDto.fromJson(Map<String, dynamic> json) {
     return MaterialGroupConfigurationDto(
@@ -1145,6 +1194,10 @@ class MaterialGroupConfigurationDto {
       uiPreferences: GroupUiPreferencesDto.fromJson(
         json['uiPreferences'] as Map<String, dynamic>? ?? const {},
       ),
+      discardedPropertyKeys:
+          (json['discardedPropertyKeys'] as List<dynamic>? ?? const [])
+              .map((entry) => entry.toString())
+              .toList(growable: false),
     );
   }
 
@@ -1158,6 +1211,7 @@ class MaterialGroupConfigurationDto {
           .map((unitGovernanceRow) => unitGovernanceRow.toJson())
           .toList(growable: false),
       'uiPreferences': uiPreferences.toJson(),
+      'discardedPropertyKeys': discardedPropertyKeys,
     };
   }
 
@@ -1172,6 +1226,58 @@ class MaterialGroupConfigurationDto {
           .map((unitGovernanceRow) => unitGovernanceRow.toDomain())
           .toList(growable: false),
       uiPreferences: uiPreferences.toDomain(),
+      discardedPropertyKeys: discardedPropertyKeys,
+    );
+  }
+}
+
+class EffectiveGroupSchemaDto {
+  const EffectiveGroupSchemaDto({
+    required this.groupId,
+    required this.propertyDrafts,
+    required this.discardedPropertyKeys,
+    required this.lineageGroupIds,
+    required this.lineageGroupNames,
+  });
+
+  final int groupId;
+  final List<GroupPropertyDraftDto> propertyDrafts;
+  final List<String> discardedPropertyKeys;
+  final List<int> lineageGroupIds;
+  final List<String> lineageGroupNames;
+
+  factory EffectiveGroupSchemaDto.fromJson(Map<String, dynamic> json) {
+    return EffectiveGroupSchemaDto(
+      groupId: (json['groupId'] as num?)?.toInt() ?? 0,
+      propertyDrafts: (json['propertyDrafts'] as List<dynamic>? ?? const [])
+          .map(
+            (item) =>
+                GroupPropertyDraftDto.fromJson(item as Map<String, dynamic>),
+          )
+          .toList(growable: false),
+      discardedPropertyKeys:
+          (json['discardedPropertyKeys'] as List<dynamic>? ?? const [])
+              .map((entry) => entry.toString())
+              .toList(growable: false),
+      lineageGroupIds: (json['lineageGroupIds'] as List<dynamic>? ?? const [])
+          .map((entry) => (entry as num).toInt())
+          .toList(growable: false),
+      lineageGroupNames:
+          (json['lineageGroupNames'] as List<dynamic>? ?? const [])
+              .map((entry) => entry.toString())
+              .toList(growable: false),
+    );
+  }
+
+  EffectiveGroupSchema toDomain() {
+    return EffectiveGroupSchema(
+      groupId: groupId,
+      propertyDrafts: propertyDrafts
+          .map((draft) => draft.toDomain())
+          .toList(growable: false),
+      discardedPropertyKeys: discardedPropertyKeys,
+      lineageGroupIds: lineageGroupIds,
+      lineageGroupNames: lineageGroupNames,
     );
   }
 }

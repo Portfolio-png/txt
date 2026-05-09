@@ -1,4 +1,5 @@
 import '../../domain/create_parent_material_input.dart';
+import '../../domain/effective_group_schema.dart';
 import '../../domain/group_property_draft.dart';
 import '../../domain/inventory_control_tower.dart';
 import '../../domain/material_activity_event.dart';
@@ -36,6 +37,7 @@ abstract class InventoryRepository {
     CreateInventoryMovementInput input,
   );
   Future<MaterialGroupConfiguration> getGroupConfiguration(String barcode);
+  Future<EffectiveGroupSchema> getEffectiveSchema(int groupId);
   Future<MaterialGroupConfiguration> updateGroupConfiguration(
     String barcode, {
     required bool inheritanceEnabled,
@@ -43,6 +45,7 @@ abstract class InventoryRepository {
     required List<GroupPropertyDraft> propertyDrafts,
     required List<GroupUnitGovernance> unitGovernance,
     required GroupUiPreferences uiPreferences,
+    required List<String> discardedPropertyKeys,
   });
 }
 
