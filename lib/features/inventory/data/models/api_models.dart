@@ -817,6 +817,7 @@ class CreateParentRequest {
     required this.thickness,
     required this.supplier,
     required this.location,
+    required this.parentGroupId,
     required this.unitId,
     required this.unit,
     required this.groupMode,
@@ -835,6 +836,7 @@ class CreateParentRequest {
   final String thickness;
   final String supplier;
   final String location;
+  final int? parentGroupId;
   final int? unitId;
   final String unit;
   final String? groupMode;
@@ -854,6 +856,7 @@ class CreateParentRequest {
       thickness: input.thickness,
       supplier: input.supplier,
       location: input.location,
+      parentGroupId: input.parentGroupId,
       unitId: input.unitId,
       unit: input.unit,
       groupMode: input.groupMode,
@@ -879,6 +882,7 @@ class CreateParentRequest {
       'thickness': thickness,
       'supplier': supplier,
       'location': location,
+      'parentGroupId': parentGroupId,
       'unitId': unitId,
       'unit': unit,
       'groupMode': groupMode,

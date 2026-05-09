@@ -3890,6 +3890,123 @@ void main() {
     expect(find.text('Legacy Stock - 5'), findsWidgets);
   });
 
+  testWidgets('items screen toggles between table and card grid views', (
+    tester,
+  ) async {
+    await pumpApp(tester, viewSize: const Size(1440, 900));
+
+    await openItemsScreen(tester);
+
+    expect(find.text('Tree Summary'), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('items-grid-view')), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('items-grid-size-controls')),
+      findsNothing,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('items-view-toggle-button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('items-grid-view')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey<String>('item-card-1')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('items-grid-size-controls')),
+      findsOneWidget,
+    );
+    expect(find.text('Tree Summary'), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('items-view-toggle-button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey<String>('items-grid-view')), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('items-grid-size-controls')),
+      findsNothing,
+    );
+    expect(find.text('Tree Summary'), findsOneWidget);
+  });
+
+  testWidgets(
+    'item card grid uses sand banner neutral footer and opens detail',
+    (tester) async {
+      await pumpApp(tester, viewSize: const Size(1440, 900));
+
+      await openItemsScreen(tester);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('items-view-toggle-button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Switch Action Dolly - 1'), findsOneWidget);
+
+      final banner = tester.widget<Container>(
+        find.byKey(const ValueKey<String>('item-card-banner-1')),
+      );
+      expect(banner.color, const Color(0xFFE4C17C));
+
+      final footer = tester.widget<Container>(
+        find.byKey(const ValueKey<String>('item-card-footer-1')),
+      );
+      final footerDecoration = footer.decoration! as BoxDecoration;
+      expect(footerDecoration.color, const Color(0xFFF8F8FC));
+      expect(footerDecoration.color, isNot(const Color(0xFF7B1FA2)));
+
+      await tester.tap(find.byKey(const ValueKey<String>('item-card-1')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Display name'), findsOneWidget);
+      expect(find.text('Switch Action Dolly - 1'), findsWidgets);
+    },
+  );
+
+  testWidgets('item grid sliders update delegate width and height', (
+    tester,
+  ) async {
+    await pumpApp(tester, viewSize: const Size(1440, 900));
+
+    await openItemsScreen(tester);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('items-view-toggle-button')),
+    );
+    await tester.pumpAndSettle();
+
+    SliverGridDelegateWithMaxCrossAxisExtent delegate() =>
+        tester
+                .widget<GridView>(
+                  find.byKey(const ValueKey<String>('items-grid-view')),
+                )
+                .gridDelegate
+            as SliverGridDelegateWithMaxCrossAxisExtent;
+
+    expect(delegate().maxCrossAxisExtent, 200);
+    expect(delegate().childAspectRatio, closeTo(200 / 250, 0.001));
+
+    await tester.drag(
+      find.byKey(const ValueKey<String>('items-card-width-slider')),
+      const Offset(160, 0),
+    );
+    await tester.pumpAndSettle();
+
+    expect(delegate().maxCrossAxisExtent, greaterThan(200));
+
+    final widthAfter = delegate().maxCrossAxisExtent;
+
+    await tester.drag(
+      find.byKey(const ValueKey<String>('items-card-height-slider')),
+      const Offset(140, 0),
+    );
+    await tester.pumpAndSettle();
+
+    expect(delegate().childAspectRatio, lessThan(widthAfter / 250));
+  });
+
   testWidgets('items add flow creates recursive variation tree', (
     tester,
   ) async {

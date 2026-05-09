@@ -12,6 +12,7 @@ class CreateParentMaterialInput {
     this.unitId,
     this.unit = '',
     this.location = '',
+    this.parentGroupId,
     this.groupMode,
     this.inheritanceEnabled = false,
     this.selectedItemIds = const <int>[],
@@ -30,6 +31,7 @@ class CreateParentMaterialInput {
   final int? unitId;
   final String unit;
   final String location;
+  final int? parentGroupId;
   final String? groupMode;
   final bool inheritanceEnabled;
   final List<int> selectedItemIds;

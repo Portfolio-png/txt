@@ -6880,6 +6880,8 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
     ].join('\n');
     final childrenCount = selectedSeedItem == null ? 0 : 1;
     final provider = context.read<InventoryProvider>();
+    final groupsProvider = context.read<GroupsProvider>();
+    final itemsProvider = context.read<ItemsProvider>();
     final selectedUnit = context
         .read<UnitsProvider>()
         .units
@@ -6892,6 +6894,7 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
         grade: '',
         thickness: '',
         supplier: '',
+        parentGroupId: selectedParentGroup?.id,
         unitId: _selectedUnitId,
         unit: selectedUnit?.displayLabel ?? 'Pieces',
         groupMode: selectedParentGroup == null
@@ -6903,6 +6906,12 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
     );
 
     if (!context.mounted || provider.errorMessage != null) {
+      return;
+    }
+
+    await groupsProvider.refresh();
+    await itemsProvider.refresh();
+    if (!context.mounted) {
       return;
     }
 
@@ -8637,6 +8646,8 @@ class _InventoryCreateGroupEditorState
       return;
     }
     final provider = context.read<InventoryProvider>();
+    final groupsProvider = context.read<GroupsProvider>();
+    final itemsProvider = context.read<ItemsProvider>();
     final selectedItems = context
         .read<ItemsProvider>()
         .items
@@ -8689,6 +8700,7 @@ class _InventoryCreateGroupEditorState
           thickness: '',
           supplier: '',
           location: _locationController.text.trim(),
+          parentGroupId: null,
           unitId: null,
           unit: 'Pieces',
           groupMode: 'item_group_authoring',
@@ -8735,6 +8747,12 @@ class _InventoryCreateGroupEditorState
     }
 
     if (!context.mounted || provider.errorMessage != null) {
+      return;
+    }
+
+    await groupsProvider.refresh();
+    await itemsProvider.refresh();
+    if (!context.mounted) {
       return;
     }
 

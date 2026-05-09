@@ -3089,6 +3089,13 @@ async function seedTemplatesIfEmpty() {
 async function createParentWithChildren(payload) {
   const resolvedUnit = await resolveUnitPayload(payload);
   const actor = String(payload?.actor || '').trim() || 'Demo Admin';
+  const normalizedGroupMode = String(payload.groupMode || '').trim() || null;
+  const shouldCreateMasterGroup = (
+    String(payload.type || '').trim() === 'Group' ||
+    normalizedGroupMode === 'item_group_authoring' ||
+    normalizedGroupMode === 'standalone_group' ||
+    normalizedGroupMode === 'nested_group'
+  );
   const parentBarcode = generateParentBarcode();
   const childBarcodes = Array.from(
     { length: Number(payload.numberOfChildren || 0) },
@@ -3101,6 +3108,15 @@ async function createParentWithChildren(payload) {
 
   await run('BEGIN TRANSACTION');
   try {
+    let linkedGroupId = null;
+    if (shouldCreateMasterGroup && resolvedUnit.unitId) {
+      const group = await saveGroup({
+        name: payload.name,
+        parentGroupId: payload.parentGroupId ?? null,
+        unitId: resolvedUnit.unitId,
+      });
+      linkedGroupId = group.id;
+    }
     const parentResult = await run(
       `
       INSERT INTO materials (
@@ -3108,7 +3124,7 @@ async function createParentWithChildren(payload) {
         created_at, kind, parent_barcode, number_of_children,
         linked_child_barcodes, scan_count, linked_group_id, linked_item_id,
         display_stock, created_by, workflow_status, updated_at, last_scanned_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'parent', NULL, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, NULL)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'parent', NULL, ?, ?, 0, ?, NULL, ?, ?, ?, ?, NULL)
       `,
       [
         parentBarcode,
@@ -3121,11 +3137,12 @@ async function createParentWithChildren(payload) {
         resolvedUnit.unitId,
         resolvedUnit.unit,
         payload.notes || '',
-        String(payload.groupMode || '').trim() || null,
+        normalizedGroupMode,
         payload.inheritanceEnabled ? 1 : 0,
         createdAt,
         Number(payload.numberOfChildren || 0),
         JSON.stringify(childBarcodes),
+        linkedGroupId,
         parentDisplayStock,
         actor,
         'inProgress',
@@ -3154,7 +3171,7 @@ async function createParentWithChildren(payload) {
           resolvedUnit.unitId,
           resolvedUnit.unit,
           payload.notes || '',
-          String(payload.groupMode || '').trim() || null,
+          normalizedGroupMode,
           payload.inheritanceEnabled ? 1 : 0,
           createdAt,
           parentBarcode,

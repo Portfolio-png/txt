@@ -17,48 +17,11 @@ import '../../../units/presentation/providers/units_provider.dart';
 import '../../domain/item_definition.dart';
 import '../../domain/item_inputs.dart';
 import '../providers/items_provider.dart';
+import '../widgets/item_card.dart';
 import '../widgets/item_detail_panel.dart';
 
-class ItemsScreen extends StatelessWidget {
+class ItemsScreen extends StatefulWidget {
   const ItemsScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Consumer3<ItemsProvider, GroupsProvider, UnitsProvider>(
-      builder: (context, items, groups, units, _) {
-        if ((items.isLoading && items.items.isEmpty) ||
-            (groups.isLoading && groups.groups.isEmpty) ||
-            (units.isLoading && units.units.isEmpty)) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        return SoftMasterDataPage(
-          title: 'Items',
-          subtitle:
-              'Manage sellable catalog items with recursive property and value inheritance.',
-          action: AppButton(
-            label: 'Add Item',
-            icon: Icons.add,
-            isLoading: items.isSaving,
-            onPressed: () => _openItemEditor(context),
-          ),
-          toolbar: const _ItemsToolbar(),
-          messages: [
-            if (items.errorMessage != null)
-              _ItemsMessageBanner(message: items.errorMessage!, isError: true),
-          ],
-          body: items.filteredItems.isEmpty
-              ? const AppEmptyState(
-                  title: 'No items found',
-                  message:
-                      'Create an item like Bottle - 100, then build recursive property branches such as Color -> Black -> Finish -> Matte.',
-                  icon: Icons.inventory_outlined,
-                )
-              : _ItemsTable(items: items.filteredItems),
-        );
-      },
-    );
-  }
 
   static Future<ItemDefinition?> openEditor(
     BuildContext context, {
@@ -93,17 +56,95 @@ class ItemsScreen extends StatelessWidget {
     );
   }
 
-  static Future<ItemDefinition?> _openItemEditor(
-    BuildContext context, {
-    ItemDefinition? item,
-    String initialName = '',
-  }) {
-    return openEditor(context, item: item, initialName: initialName);
+  @override
+  State<ItemsScreen> createState() => _ItemsScreenState();
+}
+
+class _ItemsScreenState extends State<ItemsScreen> {
+  bool _isGridView = false;
+  double _cardWidth = 200;
+  double _cardHeight = 250;
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer3<ItemsProvider, GroupsProvider, UnitsProvider>(
+      builder: (context, items, groups, units, _) {
+        if ((items.isLoading && items.items.isEmpty) ||
+            (groups.isLoading && groups.groups.isEmpty) ||
+            (units.isLoading && units.units.isEmpty)) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        return SoftMasterDataPage(
+          title: 'Items',
+          subtitle:
+              'Manage sellable catalog items with recursive property and value inheritance.',
+          action: AppButton(
+            label: 'Add Item',
+            icon: Icons.add,
+            isLoading: items.isSaving,
+            onPressed: () => ItemsScreen.openEditor(context),
+          ),
+          toolbar: _ItemsToolbar(
+            isGridView: _isGridView,
+            cardWidth: _cardWidth,
+            cardHeight: _cardHeight,
+            onToggleView: () {
+              setState(() {
+                _isGridView = !_isGridView;
+              });
+            },
+            onCardWidthChanged: (value) {
+              setState(() {
+                _cardWidth = value;
+              });
+            },
+            onCardHeightChanged: (value) {
+              setState(() {
+                _cardHeight = value;
+              });
+            },
+          ),
+          messages: [
+            if (items.errorMessage != null)
+              _ItemsMessageBanner(message: items.errorMessage!, isError: true),
+          ],
+          body: items.filteredItems.isEmpty
+              ? const AppEmptyState(
+                  title: 'No items found',
+                  message:
+                      'Create an item like Bottle - 100, then build recursive property branches such as Color -> Black -> Finish -> Matte.',
+                  icon: Icons.inventory_outlined,
+                )
+              : _isGridView
+              ? _ItemsGrid(
+                  items: items.filteredItems,
+                  cardWidth: _cardWidth,
+                  cardHeight: _cardHeight,
+                )
+              : _ItemsTable(items: items.filteredItems),
+        );
+      },
+    );
   }
 }
 
 class _ItemsToolbar extends StatelessWidget {
-  const _ItemsToolbar();
+  const _ItemsToolbar({
+    required this.isGridView,
+    required this.cardWidth,
+    required this.cardHeight,
+    required this.onToggleView,
+    required this.onCardWidthChanged,
+    required this.onCardHeightChanged,
+  });
+
+  final bool isGridView;
+  final double cardWidth;
+  final double cardHeight;
+  final VoidCallback onToggleView;
+  final ValueChanged<double> onCardWidthChanged;
+  final ValueChanged<double> onCardHeightChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -134,7 +175,164 @@ class _ItemsToolbar extends StatelessWidget {
             ),
           ],
         ),
+        _ItemsViewToggleButton(isGridView: isGridView, onTap: onToggleView),
+        if (isGridView)
+          _ItemsGridSizeControls(
+            cardWidth: cardWidth,
+            cardHeight: cardHeight,
+            onCardWidthChanged: onCardWidthChanged,
+            onCardHeightChanged: onCardHeightChanged,
+          ),
       ],
+    );
+  }
+}
+
+class _ItemsGridSizeControls extends StatelessWidget {
+  const _ItemsGridSizeControls({
+    required this.cardWidth,
+    required this.cardHeight,
+    required this.onCardWidthChanged,
+    required this.onCardHeightChanged,
+  });
+
+  final double cardWidth;
+  final double cardHeight;
+  final ValueChanged<double> onCardWidthChanged;
+  final ValueChanged<double> onCardHeightChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const ValueKey<String>('items-grid-size-controls'),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: SoftErpTheme.cardSurface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Wrap(
+        spacing: 14,
+        runSpacing: 10,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          _ItemsGridSlider(
+            sliderKey: const ValueKey<String>('items-card-width-slider'),
+            icon: Icons.horizontal_distribute_rounded,
+            value: cardWidth,
+            min: 120,
+            max: 400,
+            onChanged: onCardWidthChanged,
+          ),
+          _ItemsGridSlider(
+            sliderKey: const ValueKey<String>('items-card-height-slider'),
+            icon: Icons.vertical_distribute_rounded,
+            value: cardHeight,
+            min: 150,
+            max: 500,
+            onChanged: onCardHeightChanged,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ItemsGridSlider extends StatelessWidget {
+  const _ItemsGridSlider({
+    required this.sliderKey,
+    required this.icon,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.onChanged,
+  });
+
+  final Key sliderKey;
+  final IconData icon;
+  final double value;
+  final double min;
+  final double max;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 220,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 18, color: SoftErpTheme.textSecondary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                activeTrackColor: const Color(0xFFE4C17C),
+                thumbColor: const Color(0xFFE4C17C),
+                overlayColor: const Color(0xFFE4C17C).withValues(alpha: 0.18),
+                inactiveTrackColor: const Color(0xFFE9E7DF),
+                trackHeight: 2.5,
+              ),
+              child: Slider.adaptive(
+                key: sliderKey,
+                value: value,
+                min: min,
+                max: max,
+                onChanged: onChanged,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ItemsViewToggleButton extends StatelessWidget {
+  const _ItemsViewToggleButton({required this.isGridView, required this.onTap});
+
+  final bool isGridView;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        key: const ValueKey<String>('items-view-toggle-button'),
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: SoftErpTheme.cardSurface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: SoftErpTheme.border),
+            boxShadow: SoftErpTheme.insetShadow,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isGridView
+                    ? Icons.view_headline_rounded
+                    : Icons.grid_view_rounded,
+                size: 18,
+                color: SoftErpTheme.textPrimary,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                isGridView ? 'List View' : 'Card View',
+                style: const TextStyle(
+                  color: SoftErpTheme.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -158,6 +356,59 @@ class _ItemsTable extends StatelessWidget {
       ],
       itemCount: items.length,
       rowBuilder: (context, index) => _ItemRow(item: items[index]),
+    );
+  }
+}
+
+class _ItemsGrid extends StatelessWidget {
+  const _ItemsGrid({
+    required this.items,
+    required this.cardWidth,
+    required this.cardHeight,
+  });
+
+  final List<ItemDefinition> items;
+  final double cardWidth;
+  final double cardHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final spacing = width >= 1200 ? 18.0 : 14.0;
+
+        return GridView.builder(
+          key: const ValueKey<String>('items-grid-view'),
+          padding: const EdgeInsets.only(bottom: 12),
+          gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: cardWidth,
+            crossAxisSpacing: spacing,
+            mainAxisSpacing: spacing,
+            childAspectRatio: cardWidth / cardHeight,
+          ),
+          itemCount: items.length,
+          itemBuilder: (context, index) => _GridItemCard(item: items[index]),
+        );
+      },
+    );
+  }
+}
+
+class _GridItemCard extends StatelessWidget {
+  const _GridItemCard({required this.item});
+
+  final ItemDefinition item;
+
+  @override
+  Widget build(BuildContext context) {
+    return ItemCard(
+      item: item,
+      onTap: () => showItemDetailPanel(
+        context,
+        item: item,
+        onEdit: () => ItemsScreen.openEditor(context, item: item),
+      ),
     );
   }
 }
