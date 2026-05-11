@@ -11,6 +11,7 @@ import '../../features/inventory/presentation/providers/inventory_provider.dart'
 import '../../features/items/presentation/providers/items_provider.dart';
 import '../../features/orders/presentation/providers/orders_provider.dart';
 import '../../features/units/presentation/providers/units_provider.dart';
+import '../../features/vendors/presentation/providers/vendors_provider.dart';
 import 'navigation_provider.dart';
 
 class AppSidebar extends StatefulWidget {
@@ -36,7 +37,7 @@ class _AppSidebarState extends State<AppSidebar> {
     _SidebarItemData('orders', 'Orders', Icons.receipt_long_outlined),
     _SidebarItemData(
       'delivery_challans',
-      'Delivery Challan',
+      'Challans',
       Icons.description_outlined,
     ),
     _SidebarItemData('inventory', 'Inventory', Icons.inventory_2_outlined),
@@ -625,6 +626,7 @@ class _SettingsPreferencesDialogState
       context.read<GroupsProvider>().refresh(),
       context.read<UnitsProvider>().refresh(),
       context.read<ClientsProvider>().refresh(),
+      context.read<VendorsProvider>().refresh(),
       context.read<ItemsProvider>().refresh(),
       context.read<OrdersProvider>().refresh(),
       context.read<InventoryProvider>().refresh(),
@@ -668,6 +670,7 @@ class _SettingsPreferencesDialogState
       context.read<GroupsProvider>().refresh(),
       context.read<UnitsProvider>().refresh(),
       context.read<ClientsProvider>().refresh(),
+      context.read<VendorsProvider>().refresh(),
       context.read<ItemsProvider>().refresh(),
       context.read<OrdersProvider>().refresh(),
       context.read<InventoryProvider>().refresh(),

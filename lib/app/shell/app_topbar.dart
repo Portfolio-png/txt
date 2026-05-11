@@ -135,6 +135,8 @@ ShellTopStripConfig resolveTopStrip(String selectedKey, BuildContext context) {
       );
     case 'inventory_scan':
       return const ShellTopStripConfig(title: 'Material Scan');
+    case 'delivery_challans':
+      return const ShellTopStripConfig(title: 'Challans');
     case 'production_pipelines':
       return const ShellTopStripConfig(title: 'Production Pipelines');
     case 'configurator':

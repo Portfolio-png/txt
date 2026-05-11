@@ -12,6 +12,7 @@ class DeliveryChallanProvider extends ChangeNotifier {
   List<DeliveryChallan> _challans = const <DeliveryChallan>[];
   CompanyProfile? _companyProfile;
   String _searchQuery = '';
+  ChallanType? _typeFilter;
   DeliveryChallanStatus? _statusFilter;
   int? _orderFilterId;
   bool _isLoading = false;
@@ -23,6 +24,7 @@ class DeliveryChallanProvider extends ChangeNotifier {
       List<DeliveryChallan>.unmodifiable(_challans);
   CompanyProfile? get companyProfile => _companyProfile;
   String get searchQuery => _searchQuery;
+  ChallanType? get typeFilter => _typeFilter;
   DeliveryChallanStatus? get statusFilter => _statusFilter;
   int? get orderFilterId => _orderFilterId;
   bool get isLoading => _isLoading;
@@ -46,6 +48,7 @@ class DeliveryChallanProvider extends ChangeNotifier {
       final results = await Future.wait([
         _repository.getCompanyProfile(),
         _repository.getChallans(
+          type: _typeFilter,
           status: _statusFilter,
           search: _searchQuery,
           orderId: _orderFilterId,
@@ -75,6 +78,11 @@ class DeliveryChallanProvider extends ChangeNotifier {
 
   Future<void> setSearchQuery(String value) async {
     _searchQuery = value;
+    await refresh();
+  }
+
+  Future<void> setTypeFilter(ChallanType? value) async {
+    _typeFilter = value;
     await refresh();
   }
 

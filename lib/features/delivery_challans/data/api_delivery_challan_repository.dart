@@ -76,6 +76,7 @@ class ApiDeliveryChallanRepository implements DeliveryChallanRepository {
 
   @override
   Future<List<DeliveryChallan>> getChallans({
+    ChallanType? type,
     DeliveryChallanStatus? status,
     String search = '',
     DateTime? dateFrom,
@@ -89,21 +90,27 @@ class ApiDeliveryChallanRepository implements DeliveryChallanRepository {
             if (orderId != null && challan.orderId != orderId) {
               return false;
             }
+            if (type != null && challan.type != type) {
+              return false;
+            }
             if (status != null && challan.status != status) {
               return false;
             }
             if (query.isNotEmpty &&
                 !challan.challanNo.toLowerCase().contains(query) &&
                 !challan.orderNo.toLowerCase().contains(query) &&
-                !challan.customerName.toLowerCase().contains(query)) {
+                !challan.customerName.toLowerCase().contains(query) &&
+                !challan.vendorName.toLowerCase().contains(query) &&
+                !challan.sourceReference.toLowerCase().contains(query)) {
               return false;
             }
             return true;
           })
           .toList(growable: false);
     }
-    final uri = Uri.parse('$baseUrl/api/delivery-challans').replace(
+    final uri = Uri.parse('$baseUrl/api/challans').replace(
       queryParameters: <String, String>{
+        if (type != null) 'type': type.name,
         if (status != null) 'status': status.name,
         if (search.trim().isNotEmpty) 'search': search.trim(),
         if (dateFrom != null) 'date_from': _dateOnly(dateFrom),
@@ -116,7 +123,7 @@ class ApiDeliveryChallanRepository implements DeliveryChallanRepository {
       method: 'GET',
       uri: uri,
       response: response,
-      fallback: 'Failed to fetch delivery challans.',
+      fallback: 'Failed to fetch challans.',
     );
     return (_dataList(payload, 'challans'))
         .map((item) => DeliveryChallan.fromJson(item as Map<String, dynamic>))
@@ -134,7 +141,7 @@ class ApiDeliveryChallanRepository implements DeliveryChallanRepository {
       method: 'GET',
       uri: uri,
       response: response,
-      fallback: 'Failed to fetch order delivery challans.',
+      fallback: 'Failed to fetch order challans.',
     );
     return (_dataList(payload, 'challans'))
         .map((item) => DeliveryChallan.fromJson(item as Map<String, dynamic>))
@@ -146,13 +153,13 @@ class ApiDeliveryChallanRepository implements DeliveryChallanRepository {
     if (useMockResponses) {
       return _mockChallans.firstWhere((challan) => challan.id == id);
     }
-    final uri = Uri.parse('$baseUrl/api/delivery-challans/$id');
+    final uri = Uri.parse('$baseUrl/api/challans/$id');
     final response = await _sendRequest(method: 'GET', uri: uri);
     final payload = _decodeApiResponse(
       method: 'GET',
       uri: uri,
       response: response,
-      fallback: 'Failed to fetch delivery challan.',
+      fallback: 'Failed to fetch challan.',
     );
     return DeliveryChallan.fromJson(_dataObject(payload, 'challan'));
   }
@@ -162,12 +169,19 @@ class ApiDeliveryChallanRepository implements DeliveryChallanRepository {
     if (useMockResponses) {
       final created = DeliveryChallan(
         id: _mockNextId++,
+        type: input.type,
         orderId: input.orderId,
         orderNo: 'Order ${input.orderId}',
-        challanNo: 'DC-${_mockNextId.toString().padLeft(5, '0')}',
+        challanNo:
+            '${input.type == ChallanType.reception ? 'RC' : 'DC'}-${_mockNextId.toString().padLeft(5, '0')}',
         date: input.date,
+        location: input.location,
         customerName: '',
         customerGstin: '',
+        vendorId: input.vendorId > 0 ? input.vendorId : null,
+        vendorName: '',
+        vendorGstin: '',
+        sourceReference: input.sourceReference,
         companyProfileSnapshot: null,
         notes: input.notes,
         status: DeliveryChallanStatus.draft,
@@ -181,9 +195,9 @@ class ApiDeliveryChallanRepository implements DeliveryChallanRepository {
     }
     return _sendChallan(
       method: 'POST',
-      uri: Uri.parse('$baseUrl/api/delivery-challans'),
+      uri: Uri.parse('$baseUrl/api/challans'),
       input: input,
-      fallback: 'Failed to create delivery challan.',
+      fallback: 'Failed to create challan.',
     );
   }
 
@@ -197,12 +211,18 @@ class ApiDeliveryChallanRepository implements DeliveryChallanRepository {
       final current = _mockChallans[index];
       final updated = DeliveryChallan(
         id: current.id,
+        type: input.type,
         orderId: input.orderId,
         orderNo: current.orderNo,
         challanNo: current.challanNo,
         date: input.date,
+        location: input.location,
         customerName: current.customerName,
         customerGstin: current.customerGstin,
+        vendorId: input.vendorId > 0 ? input.vendorId : current.vendorId,
+        vendorName: current.vendorName,
+        vendorGstin: current.vendorGstin,
+        sourceReference: input.sourceReference,
         companyProfileSnapshot: current.companyProfileSnapshot,
         notes: input.notes,
         status: current.status,
@@ -216,19 +236,19 @@ class ApiDeliveryChallanRepository implements DeliveryChallanRepository {
     }
     return _sendChallan(
       method: 'PUT',
-      uri: Uri.parse('$baseUrl/api/delivery-challans/$id'),
+      uri: Uri.parse('$baseUrl/api/challans/$id'),
       input: input,
-      fallback: 'Failed to update delivery challan.',
+      fallback: 'Failed to update challan.',
     );
   }
 
   @override
   Future<DeliveryChallan> issueChallan(int id) =>
-      _statusAction(id, 'issue', 'Failed to issue delivery challan.');
+      _statusAction(id, 'issue', 'Failed to issue challan.');
 
   @override
   Future<DeliveryChallan> cancelChallan(int id) =>
-      _statusAction(id, 'cancel', 'Failed to cancel delivery challan.');
+      _statusAction(id, 'cancel', 'Failed to cancel challan.');
 
   @override
   Future<void> deleteChallan(int id) async {
@@ -238,13 +258,13 @@ class ApiDeliveryChallanRepository implements DeliveryChallanRepository {
       );
       return;
     }
-    final uri = Uri.parse('$baseUrl/api/delivery-challans/$id');
+    final uri = Uri.parse('$baseUrl/api/challans/$id');
     final response = await _sendRequest(method: 'DELETE', uri: uri);
     _decodeApiResponse(
       method: 'DELETE',
       uri: uri,
       response: response,
-      fallback: 'Failed to delete delivery challan.',
+      fallback: 'Failed to delete challan.',
     );
   }
 
@@ -266,12 +286,18 @@ class ApiDeliveryChallanRepository implements DeliveryChallanRepository {
       final current = _mockChallans[index];
       final updated = DeliveryChallan(
         id: current.id,
+        type: current.type,
         orderId: current.orderId,
         orderNo: current.orderNo,
         challanNo: current.challanNo,
         date: current.date,
+        location: current.location,
         customerName: current.customerName,
         customerGstin: current.customerGstin,
+        vendorId: current.vendorId,
+        vendorName: current.vendorName,
+        vendorGstin: current.vendorGstin,
+        sourceReference: current.sourceReference,
         companyProfileSnapshot: action == 'issue'
             ? _mockProfile
             : current.companyProfileSnapshot,
@@ -287,7 +313,7 @@ class ApiDeliveryChallanRepository implements DeliveryChallanRepository {
       _mockChallans[index] = updated;
       return updated;
     }
-    final uri = Uri.parse('$baseUrl/api/delivery-challans/$id/$action');
+    final uri = Uri.parse('$baseUrl/api/challans/$id/$action');
     final response = await _sendRequest(method: 'POST', uri: uri);
     final payload = _decodeApiResponse(
       method: 'POST',

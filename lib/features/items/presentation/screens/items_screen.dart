@@ -29,9 +29,14 @@ class ItemsScreen extends StatefulWidget {
     BuildContext context, {
     ItemDefinition? item,
     String initialName = '',
+    int? initialGroupId,
   }) {
     final isNarrow = MediaQuery.of(context).size.width < 980;
-    final body = _ItemEditorSheet(item: item, initialName: initialName);
+    final body = _ItemEditorSheet(
+      item: item,
+      initialName: initialName,
+      initialGroupId: initialGroupId,
+    );
     if (isNarrow) {
       return showModalBottomSheet<ItemDefinition?>(
         context: context,
@@ -592,10 +597,15 @@ String _formatUnitConversionFactor(double value) {
 }
 
 class _ItemEditorSheet extends StatefulWidget {
-  const _ItemEditorSheet({this.item, this.initialName = ''});
+  const _ItemEditorSheet({
+    this.item,
+    this.initialName = '',
+    this.initialGroupId,
+  });
 
   final ItemDefinition? item;
   final String initialName;
+  final int? initialGroupId;
 
   @override
   State<_ItemEditorSheet> createState() => _ItemEditorSheetState();
@@ -630,7 +640,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     _displayNameController = TextEditingController(
       text: widget.item?.displayName ?? '',
     );
-    _selectedGroupId = widget.item?.groupId;
+    _selectedGroupId = widget.item?.groupId ?? widget.initialGroupId;
     _selectedUnitId = widget.item?.unitId;
     _namingFormat = widget.item?.namingFormat.toList() ?? [];
     _displayNameTouched = (widget.item?.displayName ?? '').trim().isNotEmpty;

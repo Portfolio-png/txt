@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_empty_state.dart';
+import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../../core/widgets/soft_master_data.dart';
 import '../../../../core/widgets/soft_primitives.dart';
@@ -57,35 +58,15 @@ class UnitsScreen extends StatelessWidget {
     String initialGroupName = '',
     int? initialConversionBaseUnitId,
   }) {
-    final isNarrow = MediaQuery.of(context).size.width < 900;
-    final body = _UnitEditorSheet(
-      unit: unit,
-      initialName: initialName,
-      initialGroupName: initialGroupName,
-      initialConversionBaseUnitId: initialConversionBaseUnitId,
-    );
-    if (isNarrow) {
-      return showModalBottomSheet<UnitDefinition?>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (context) => Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-          ),
-          child: body,
-        ),
-      );
-    }
-
-    return showDialog<UnitDefinition?>(
-      context: context,
-      builder: (context) => Dialog(
-        insetPadding: const EdgeInsets.all(32),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: unit == null ? 460 : 520),
-          child: body,
-        ),
+    return showErpFormDialog<UnitDefinition?>(
+      context,
+      maxWidth: unit == null ? 460 : 520,
+      maxHeight: 860,
+      child: _UnitEditorSheet(
+        unit: unit,
+        initialName: initialName,
+        initialGroupName: initialGroupName,
+        initialConversionBaseUnitId: initialConversionBaseUnitId,
       ),
     );
   }
@@ -378,7 +359,8 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
             ).toLowerCase().compareTo(_existingFamilyLabel(b).toLowerCase()),
           );
     final requiresConversion =
-        (_groupingMode == _UnitGroupingMode.existingFamily && baseUnit != null) ||
+        (_groupingMode == _UnitGroupingMode.existingFamily &&
+            baseUnit != null) ||
         (_groupingMode == _UnitGroupingMode.newFamily && !_isBaseUnit);
     final title = widget.unit == null
         ? 'Create Unit'
@@ -607,7 +589,8 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                             if (_groupingMode !=
                                 _UnitGroupingMode.individual) ...[
                               const SizedBox(height: 16),
-                              if (_groupingMode == _UnitGroupingMode.newFamily) ...[
+                              if (_groupingMode ==
+                                  _UnitGroupingMode.newFamily) ...[
                                 Row(
                                   children: [
                                     Switch(
@@ -626,10 +609,13 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                                     Expanded(
                                       child: Text(
                                         'This unit is the base reference point',
-                                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                          color: const Color(0xFF1E293B),
-                                          fontWeight: FontWeight.w600,
-                                        ),
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.copyWith(
+                                              color: const Color(0xFF1E293B),
+                                              fontWeight: FontWeight.w600,
+                                            ),
                                       ),
                                     ),
                                   ],
@@ -638,10 +624,13 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                                   const SizedBox(height: 12),
                                   Text(
                                     'Define the base unit for this family:',
-                                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                                      color: const Color(0xFF64748B),
-                                      fontWeight: FontWeight.w700,
-                                    ),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelMedium
+                                        ?.copyWith(
+                                          color: const Color(0xFF64748B),
+                                          fontWeight: FontWeight.w700,
+                                        ),
                                   ),
                                   const SizedBox(height: 8),
                                   Row(
@@ -672,14 +661,19 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                               _ConversionField(
                                 controller: _conversionController,
                                 readOnly: !requiresConversion,
-                                helper: (_groupingMode == _UnitGroupingMode.newFamily && _isBaseUnit)
+                                helper:
+                                    (_groupingMode ==
+                                            _UnitGroupingMode.newFamily &&
+                                        _isBaseUnit)
                                     ? 'This unit becomes the base unit for the new family. Conversion stays 1.'
                                     : '1 ${_symbolController.text.trim().isEmpty ? 'unit' : _symbolController.text.trim()} = this many ${_groupingMode == _UnitGroupingMode.newFamily ? (_baseUnitSymbolController.text.trim().isEmpty ? 'base' : _baseUnitSymbolController.text.trim()) : (baseUnit?.symbol ?? '')}.',
                               ),
                               const SizedBox(height: 10),
                               Text(
                                 _groupingMode == _UnitGroupingMode.newFamily
-                                    ? (_isBaseUnit ? 'This creates a new unit family with this unit as the reference point.' : 'This will create the base unit first, then this unit as a multiple of it.')
+                                    ? (_isBaseUnit
+                                          ? 'This creates a new unit family with this unit as the reference point.'
+                                          : 'This will create the base unit first, then this unit as a multiple of it.')
                                     : 'Units in the same family can be used interchangeably anywhere that family is allowed.',
                                 style: Theme.of(context).textTheme.bodySmall
                                     ?.copyWith(
@@ -795,9 +789,10 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
     final baseUnit = _resolvedBaseUnit(provider, groupName);
     final conversionFactor =
         double.tryParse(_conversionController.text.trim()) ?? 0;
-    
+
     if (_groupingMode == _UnitGroupingMode.newFamily && !_isBaseUnit) {
-      if (_baseUnitNameController.text.trim().isEmpty || _baseUnitSymbolController.text.trim().isEmpty) {
+      if (_baseUnitNameController.text.trim().isEmpty ||
+          _baseUnitSymbolController.text.trim().isEmpty) {
         setState(() {
           _localError = 'Base unit name and symbol are required.';
         });
@@ -809,10 +804,14 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
         });
         return;
       }
-      final dupBase = provider.checkDuplicate(name: _baseUnitNameController.text, symbol: _baseUnitSymbolController.text);
+      final dupBase = provider.checkDuplicate(
+        name: _baseUnitNameController.text,
+        symbol: _baseUnitSymbolController.text,
+      );
       if (dupBase.blockingDuplicate) {
         setState(() {
-          _localError = 'A base unit with the same name and symbol already exists.';
+          _localError =
+              'A base unit with the same name and symbol already exists.';
         });
         return;
       }
@@ -824,7 +823,7 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
       });
       return;
     }
-    
+
     if (!_isDetailsLocked) {
       final duplicate = provider.checkDuplicate(
         name: _nameController.text,
@@ -843,7 +842,9 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
       _localError = null;
     });
 
-    if (widget.unit == null && _groupingMode == _UnitGroupingMode.newFamily && !_isBaseUnit) {
+    if (widget.unit == null &&
+        _groupingMode == _UnitGroupingMode.newFamily &&
+        !_isBaseUnit) {
       final baseResult = await provider.createUnit(
         CreateUnitInput(
           name: _baseUnitNameController.text.trim(),
@@ -863,7 +864,10 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
               symbol: _symbolController.text.trim(),
               notes: _notesController.text.trim(),
               unitGroupName: groupName,
-              conversionFactor: (_groupingMode == _UnitGroupingMode.newFamily && _isBaseUnit) ? 1 : conversionFactor,
+              conversionFactor:
+                  (_groupingMode == _UnitGroupingMode.newFamily && _isBaseUnit)
+                  ? 1
+                  : conversionFactor,
             ),
           )
         : await provider.updateUnit(

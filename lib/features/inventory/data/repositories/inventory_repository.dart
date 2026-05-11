@@ -2,6 +2,7 @@ import '../../domain/create_parent_material_input.dart';
 import '../../domain/effective_group_schema.dart';
 import '../../domain/group_property_draft.dart';
 import '../../domain/inventory_control_tower.dart';
+import '../../domain/inventory_set_definition.dart';
 import '../../domain/material_activity_event.dart';
 import '../../domain/material_control_tower_detail.dart';
 import '../../domain/material_group_configuration.dart';
@@ -47,6 +48,9 @@ abstract class InventoryRepository {
     required GroupUiPreferences uiPreferences,
     required List<String> discardedPropertyKeys,
   });
+  Future<List<InventorySetDefinition>> getSets();
+  Future<InventorySetDefinition> saveSet(SaveInventorySetInput input);
+  Future<void> deleteSet(int setId);
 }
 
 class SaveParentResult {

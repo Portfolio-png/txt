@@ -9,6 +9,7 @@ import '../../domain/create_parent_material_input.dart';
 import '../../domain/effective_group_schema.dart';
 import '../../domain/group_property_draft.dart';
 import '../../domain/inventory_control_tower.dart';
+import '../../domain/inventory_set_definition.dart';
 import '../../domain/material_activity_event.dart';
 import '../../domain/material_control_tower_detail.dart';
 import '../../domain/material_group_configuration.dart';
@@ -32,7 +33,7 @@ class LocalInventoryRepository implements InventoryRepository {
     final dbPath = p.join(directory.path, 'paper_inventory.db');
     _database = await openDatabase(
       dbPath,
-      version: 12,
+      version: 14,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE materials (
@@ -152,6 +153,29 @@ class LocalInventoryRepository implements InventoryRepository {
             event_description TEXT DEFAULT '',
             actor TEXT DEFAULT '',
             created_at TEXT NOT NULL
+          )
+        ''');
+        await db.execute('''
+          CREATE TABLE inventory_sets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          )
+        ''');
+        await db.execute('''
+          CREATE TABLE inventory_set_lines (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            set_id INTEGER NOT NULL,
+            item_id INTEGER NOT NULL,
+            variation_leaf_node_id INTEGER DEFAULT 0,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            position INTEGER NOT NULL DEFAULT 0,
+            item_name TEXT DEFAULT '',
+            item_display_name TEXT DEFAULT '',
+            variation_path_label TEXT DEFAULT '',
+            variation_path_node_ids_json TEXT NOT NULL DEFAULT '[]',
+            UNIQUE(set_id, item_id, variation_leaf_node_id)
           )
         ''');
       },
@@ -347,6 +371,34 @@ class LocalInventoryRepository implements InventoryRepository {
           await db.execute(
             'ALTER TABLE material_group_preferences ADD COLUMN discarded_property_keys_json TEXT NOT NULL DEFAULT \'[]\'',
           );
+        }
+        if (oldVersion < 13) {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS inventory_sets (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              name TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            )
+          ''');
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS inventory_set_lines (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              set_id INTEGER NOT NULL,
+              item_id INTEGER NOT NULL,
+              variation_leaf_node_id INTEGER DEFAULT 0,
+              quantity INTEGER NOT NULL DEFAULT 1,
+              position INTEGER NOT NULL DEFAULT 0,
+              item_name TEXT DEFAULT '',
+              item_display_name TEXT DEFAULT '',
+              variation_path_label TEXT DEFAULT '',
+              variation_path_node_ids_json TEXT NOT NULL DEFAULT '[]',
+              UNIQUE(set_id, item_id, variation_leaf_node_id)
+            )
+          ''');
+        }
+        if (oldVersion < 14) {
+          await _migrateInventorySetLinesTable(db);
         }
       },
     );
@@ -1231,7 +1283,8 @@ class LocalInventoryRepository implements InventoryRepository {
     final config = await _readGroupGovernance(
       db,
       materialId: materialId,
-      inheritanceEnabled: (materialRow['inheritance_enabled'] as int? ?? 0) == 1,
+      inheritanceEnabled:
+          (materialRow['inheritance_enabled'] as int? ?? 0) == 1,
     );
 
     final effectiveByKey = <String, GroupPropertyDraft>{};
@@ -1318,6 +1371,253 @@ class LocalInventoryRepository implements InventoryRepository {
         inheritanceEnabled: inheritanceEnabled,
       );
     });
+  }
+
+  @override
+  Future<List<InventorySetDefinition>> getSets() async {
+    final db = await _db;
+    final setRows = await db.query(
+      'inventory_sets',
+      orderBy: 'created_at DESC, id DESC',
+    );
+    return Future.wait(
+      setRows.map((row) async => _mapInventorySetDefinition(db, row)),
+    );
+  }
+
+  @override
+  Future<InventorySetDefinition> saveSet(SaveInventorySetInput input) async {
+    final db = await _db;
+    return db.transaction((txn) async {
+      final now = DateTime.now().toIso8601String();
+      final mergedLines = _mergeInventorySetLines(input.lines);
+      int setId;
+      String createdAt = now;
+      if (input.id == null) {
+        setId = await txn.insert('inventory_sets', {
+          'name': input.name.trim(),
+          'created_at': now,
+          'updated_at': now,
+        });
+      } else {
+        setId = input.id!;
+        final existing = await txn.query(
+          'inventory_sets',
+          where: 'id = ?',
+          whereArgs: [setId],
+          limit: 1,
+        );
+        if (existing.isEmpty) {
+          throw Exception('Set not found.');
+        }
+        createdAt = existing.first['created_at'] as String? ?? now;
+        await txn.update(
+          'inventory_sets',
+          {'name': input.name.trim(), 'updated_at': now},
+          where: 'id = ?',
+          whereArgs: [setId],
+        );
+        await txn.delete(
+          'inventory_set_lines',
+          where: 'set_id = ?',
+          whereArgs: [setId],
+        );
+      }
+
+      for (final line in mergedLines) {
+        await txn.insert('inventory_set_lines', {
+          'set_id': setId,
+          'item_id': line.itemId,
+          'variation_leaf_node_id': line.variationLeafNodeId <= 0
+              ? 0
+              : line.variationLeafNodeId,
+          'quantity': line.quantity,
+          'position': line.position,
+          'item_name': line.itemName,
+          'item_display_name': line.itemDisplayName,
+          'variation_path_label': line.variationPathLabel,
+          'variation_path_node_ids_json': jsonEncode(line.variationPathNodeIds),
+        });
+      }
+      final row = {
+        'id': setId,
+        'name': input.name.trim(),
+        'created_at': createdAt,
+        'updated_at': now,
+      };
+      return _mapInventorySetDefinition(txn, row);
+    });
+  }
+
+  @override
+  Future<void> deleteSet(int setId) async {
+    final db = await _db;
+    await db.transaction((txn) async {
+      await txn.delete(
+        'inventory_set_lines',
+        where: 'set_id = ?',
+        whereArgs: [setId],
+      );
+      await txn.delete('inventory_sets', where: 'id = ?', whereArgs: [setId]);
+    });
+  }
+
+  List<SaveInventorySetLineInput> _mergeInventorySetLines(
+    List<SaveInventorySetLineInput> lines,
+  ) {
+    final merged = <String, SaveInventorySetLineInput>{};
+    for (final line in lines) {
+      final key = '${line.itemId}:${line.variationLeafNodeId}';
+      final existing = merged[key];
+      merged[key] = SaveInventorySetLineInput(
+        itemId: line.itemId,
+        variationLeafNodeId: line.variationLeafNodeId,
+        quantity: (existing?.quantity ?? 0) + line.quantity,
+        position: existing?.position ?? line.position,
+        itemName: existing?.itemName ?? line.itemName,
+        itemDisplayName: existing?.itemDisplayName ?? line.itemDisplayName,
+        variationPathLabel:
+            existing?.variationPathLabel ?? line.variationPathLabel,
+        variationPathNodeIds:
+            existing?.variationPathNodeIds ?? line.variationPathNodeIds,
+      );
+    }
+    return merged.values.toList(growable: false)
+      ..sort((a, b) => a.position.compareTo(b.position));
+  }
+
+  Future<InventorySetDefinition> _mapInventorySetDefinition(
+    DatabaseExecutor executor,
+    Map<String, Object?> row,
+  ) async {
+    final setId = (row['id'] as num?)?.toInt() ?? 0;
+    final lines = await executor.rawQuery(
+      '''
+      SELECT
+        lines.id,
+        lines.item_id,
+        lines.variation_leaf_node_id,
+        lines.quantity,
+        lines.position,
+        lines.item_name,
+        lines.item_display_name,
+        lines.variation_path_label,
+        lines.variation_path_node_ids_json
+      FROM inventory_set_lines lines
+      WHERE lines.set_id = ?
+      ORDER BY lines.position ASC, lines.id ASC
+      ''',
+      [setId],
+    );
+
+    return InventorySetDefinition(
+      id: setId,
+      name: row['name'] as String? ?? '',
+      totalItemCount: lines.fold<int>(
+        0,
+        (sum, line) => sum + ((line['quantity'] as num?)?.toInt() ?? 0),
+      ),
+      createdAt:
+          DateTime.tryParse(row['created_at'] as String? ?? '') ??
+          DateTime.now(),
+      updatedAt:
+          DateTime.tryParse(row['updated_at'] as String? ?? '') ??
+          DateTime.now(),
+      lines: lines
+          .map(
+            (line) => InventorySetLineDefinition(
+              id: (line['id'] as num?)?.toInt(),
+              itemId: (line['item_id'] as num?)?.toInt() ?? 0,
+              variationLeafNodeId:
+                  (line['variation_leaf_node_id'] as num?)?.toInt() ?? 0,
+              quantity: (line['quantity'] as num?)?.toInt() ?? 0,
+              position: (line['position'] as num?)?.toInt() ?? 0,
+              itemName: line['item_name'] as String? ?? '',
+              itemDisplayName: line['item_display_name'] as String? ?? '',
+              variationPathLabel:
+                  (line['variation_path_label'] as String?)?.trim().isEmpty ??
+                      true
+                  ? (((line['variation_leaf_node_id'] as num?)?.toInt() ?? 0) ==
+                            0
+                        ? 'Base item'
+                        : '')
+                  : (line['variation_path_label'] as String? ?? ''),
+              variationPathNodeIds: _decodeIntList(
+                line['variation_path_node_ids_json'] as String?,
+              ),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  static Future<void> _migrateInventorySetLinesTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS inventory_set_lines_next (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        set_id INTEGER NOT NULL,
+        item_id INTEGER NOT NULL,
+        variation_leaf_node_id INTEGER DEFAULT 0,
+        quantity INTEGER NOT NULL DEFAULT 1,
+        position INTEGER NOT NULL DEFAULT 0,
+        item_name TEXT DEFAULT '',
+        item_display_name TEXT DEFAULT '',
+        variation_path_label TEXT DEFAULT '',
+        variation_path_node_ids_json TEXT NOT NULL DEFAULT '[]',
+        UNIQUE(set_id, item_id, variation_leaf_node_id)
+      )
+    ''');
+    await db.execute('''
+      INSERT INTO inventory_set_lines_next (
+        id,
+        set_id,
+        item_id,
+        variation_leaf_node_id,
+        quantity,
+        position,
+        item_name,
+        item_display_name,
+        variation_path_label,
+        variation_path_node_ids_json
+      )
+      SELECT
+        id,
+        set_id,
+        item_id,
+        COALESCE(variation_leaf_node_id, 0),
+        quantity,
+        position,
+        '',
+        '',
+        CASE
+          WHEN COALESCE(variation_leaf_node_id, 0) = 0 THEN 'Base item'
+          ELSE ''
+        END,
+        '[]'
+      FROM inventory_set_lines
+    ''');
+    await db.execute('DROP TABLE inventory_set_lines');
+    await db.execute(
+      'ALTER TABLE inventory_set_lines_next RENAME TO inventory_set_lines',
+    );
+  }
+
+  static List<int> _decodeIntList(String? rawJson) {
+    if (rawJson == null || rawJson.trim().isEmpty) {
+      return const <int>[];
+    }
+    try {
+      final decoded = jsonDecode(rawJson);
+      if (decoded is! List) {
+        return const <int>[];
+      }
+      return decoded
+          .map((value) => value is num ? value.toInt() : int.tryParse('$value'))
+          .whereType<int>()
+          .toList(growable: false);
+    } catch (_) {
+      return const <int>[];
+    }
   }
 
   Future<void> _persistGroupGovernance(
@@ -1417,12 +1717,11 @@ class LocalInventoryRepository implements InventoryRepository {
         'unit_id': property.unitId,
         'unit_symbol': property.unitSymbol,
         'unit_label': property.unitLabel,
-        'source_type':
-            switch (property.sourceType) {
-              GroupPropertySourceType.inheritedItem => 'inherited_item',
-              GroupPropertySourceType.inheritedGroup => 'inherited_group',
-              GroupPropertySourceType.manual => 'manual',
-            },
+        'source_type': switch (property.sourceType) {
+          GroupPropertySourceType.inheritedItem => 'inherited_item',
+          GroupPropertySourceType.inheritedGroup => 'inherited_group',
+          GroupPropertySourceType.manual => 'manual',
+        },
         'source_item_ids_json': jsonEncode(sourceItemIds),
         'source_group_id': property.sourceGroupId,
         'source_group_name': property.sourceGroupName,

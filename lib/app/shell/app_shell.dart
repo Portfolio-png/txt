@@ -18,6 +18,7 @@ import '../../features/orders/presentation/screens/orders_screen.dart';
 import '../../features/pm/presentation/screens/pm_screen.dart';
 import '../../features/production_pipelines/presentation/screens/production_pipelines_screen.dart';
 import '../../features/units/presentation/screens/units_screen.dart';
+import '../../features/vendors/presentation/screens/vendors_screen.dart';
 import 'app_sidebar.dart';
 import 'app_topbar.dart';
 import 'navigation_provider.dart';
@@ -408,12 +409,7 @@ class _ShellContentSwitcher extends StatelessWidget {
                 icon: Icons.tune_outlined,
               ),
               'configurator_clients' => const ClientsScreen(),
-              'configurator_vendors' => const _ModulePlaceholder(
-                title: 'Vendors',
-                description:
-                    'Vendor master data will appear here inside Configurator.',
-                icon: Icons.storefront_outlined,
-              ),
+              'configurator_vendors' => const VendorsScreen(),
               'configurator_items' => const ItemsScreen(),
               'configurator_groups' => const GroupsScreen(),
               'configurator_units' => const UnitsScreen(),

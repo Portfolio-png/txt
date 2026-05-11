@@ -1,5 +1,14 @@
 enum DeliveryChallanStatus { draft, issued, cancelled }
 
+enum ChallanType { delivery, reception }
+
+ChallanType challanTypeFromName(String value) {
+  return ChallanType.values.firstWhere(
+    (type) => type.name == value.toLowerCase(),
+    orElse: () => ChallanType.delivery,
+  );
+}
+
 DeliveryChallanStatus deliveryChallanStatusFromName(String value) {
   return DeliveryChallanStatus.values.firstWhere(
     (status) => status.name == value,
@@ -94,9 +103,11 @@ class DeliveryChallanItem {
     required this.id,
     required this.orderItemId,
     required this.itemId,
+    required this.variationLeafNodeId,
     required this.lineNo,
     required this.particulars,
     required this.hsnCode,
+    required this.variationPathLabel,
     required this.quantityPcs,
     required this.weight,
   });
@@ -104,9 +115,11 @@ class DeliveryChallanItem {
   final int id;
   final int? orderItemId;
   final int? itemId;
+  final int variationLeafNodeId;
   final int lineNo;
   final String particulars;
   final String hsnCode;
+  final String variationPathLabel;
   final String quantityPcs;
   final String weight;
 
@@ -115,9 +128,11 @@ class DeliveryChallanItem {
       id: 0,
       orderItemId: null,
       itemId: null,
+      variationLeafNodeId: 0,
       lineNo: lineNo,
       particulars: '',
       hsnCode: '',
+      variationPathLabel: '',
       quantityPcs: '',
       weight: '',
     );
@@ -128,9 +143,17 @@ class DeliveryChallanItem {
       id: json['id'] as int? ?? 0,
       orderItemId: json['orderItemId'] as int? ?? json['order_item_id'] as int?,
       itemId: json['itemId'] as int? ?? json['item_id'] as int?,
+      variationLeafNodeId:
+          json['variationLeafNodeId'] as int? ??
+          json['variation_leaf_node_id'] as int? ??
+          0,
       lineNo: json['lineNo'] as int? ?? json['line_no'] as int? ?? 0,
       particulars: json['particulars'] as String? ?? '',
       hsnCode: json['hsnCode'] as String? ?? json['hsn_code'] as String? ?? '',
+      variationPathLabel:
+          json['variationPathLabel'] as String? ??
+          json['variation_path_label'] as String? ??
+          '',
       quantityPcs:
           json['quantityPcs'] as String? ??
           json['quantity_pcs'] as String? ??
@@ -144,8 +167,10 @@ class DeliveryChallanItem {
       'line_no': lineNo,
       if (orderItemId != null) 'order_item_id': orderItemId,
       if (itemId != null) 'item_id': itemId,
+      'variation_leaf_node_id': variationLeafNodeId,
       'particulars': particulars,
       'hsn_code': hsnCode,
+      'variation_path_label': variationPathLabel,
       'quantity_pcs': quantityPcs,
       'weight': weight,
     };
@@ -155,12 +180,18 @@ class DeliveryChallanItem {
 class DeliveryChallan {
   const DeliveryChallan({
     required this.id,
+    required this.type,
     required this.orderId,
     required this.orderNo,
     required this.challanNo,
     required this.date,
+    required this.location,
     required this.customerName,
     required this.customerGstin,
+    required this.vendorId,
+    required this.vendorName,
+    required this.vendorGstin,
+    required this.sourceReference,
     required this.companyProfileSnapshot,
     required this.notes,
     required this.status,
@@ -171,12 +202,18 @@ class DeliveryChallan {
   });
 
   final int id;
+  final ChallanType type;
   final int? orderId;
   final String orderNo;
   final String challanNo;
   final DateTime date;
+  final String location;
   final String customerName;
   final String customerGstin;
+  final int? vendorId;
+  final String vendorName;
+  final String vendorGstin;
+  final String sourceReference;
   final CompanyProfile? companyProfileSnapshot;
   final String notes;
   final DeliveryChallanStatus status;
@@ -188,6 +225,8 @@ class DeliveryChallan {
   bool get isDraft => status == DeliveryChallanStatus.draft;
   bool get isIssued => status == DeliveryChallanStatus.issued;
   bool get isCancelled => status == DeliveryChallanStatus.cancelled;
+  bool get isReception => type == ChallanType.reception;
+  bool get isDelivery => type == ChallanType.delivery;
 
   factory DeliveryChallan.fromJson(Map<String, dynamic> json) {
     final items = (json['items'] as List<dynamic>? ?? const [])
@@ -199,11 +238,17 @@ class DeliveryChallan {
         json['companyProfileSnapshot'] ?? json['company_profile_snapshot'];
     return DeliveryChallan(
       id: json['id'] as int? ?? 0,
+      type: challanTypeFromName(
+        json['type'] as String? ??
+            json['challan_type'] as String? ??
+            'delivery',
+      ),
       orderId: json['orderId'] as int? ?? json['order_id'] as int?,
       orderNo: json['orderNo'] as String? ?? json['order_no'] as String? ?? '',
       challanNo:
           json['challanNo'] as String? ?? json['challan_no'] as String? ?? '',
       date: DateTime.tryParse(json['date'] as String? ?? '') ?? DateTime.now(),
+      location: json['location'] as String? ?? '',
       customerName:
           json['customerName'] as String? ??
           json['customer_name'] as String? ??
@@ -211,6 +256,17 @@ class DeliveryChallan {
       customerGstin:
           json['customerGstin'] as String? ??
           json['customer_gstin'] as String? ??
+          '',
+      vendorId: json['vendorId'] as int? ?? json['vendor_id'] as int?,
+      vendorName:
+          json['vendorName'] as String? ?? json['vendor_name'] as String? ?? '',
+      vendorGstin:
+          json['vendorGstin'] as String? ??
+          json['vendor_gstin'] as String? ??
+          '',
+      sourceReference:
+          json['sourceReference'] as String? ??
+          json['source_reference'] as String? ??
           '',
       companyProfileSnapshot: snapshot is Map<String, dynamic>
           ? CompanyProfile.fromJson(snapshot)
@@ -230,12 +286,18 @@ class DeliveryChallan {
   DeliveryChallan copyWith({List<DeliveryChallanItem>? items}) {
     return DeliveryChallan(
       id: id,
+      type: type,
       orderId: orderId,
       orderNo: orderNo,
       challanNo: challanNo,
       date: date,
+      location: location,
       customerName: customerName,
       customerGstin: customerGstin,
+      vendorId: vendorId,
+      vendorName: vendorName,
+      vendorGstin: vendorGstin,
+      sourceReference: sourceReference,
       companyProfileSnapshot: companyProfileSnapshot,
       notes: notes,
       status: status,

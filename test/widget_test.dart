@@ -15,6 +15,7 @@ import 'package:paper/features/inventory/domain/create_parent_material_input.dar
 import 'package:paper/features/inventory/domain/effective_group_schema.dart';
 import 'package:paper/features/inventory/domain/group_property_draft.dart';
 import 'package:paper/features/inventory/domain/inventory_control_tower.dart';
+import 'package:paper/features/inventory/domain/inventory_set_definition.dart';
 import 'package:paper/features/inventory/domain/material_activity_event.dart';
 import 'package:paper/features/inventory/domain/material_control_tower_detail.dart';
 import 'package:paper/features/inventory/domain/material_group_configuration.dart';
@@ -24,6 +25,7 @@ import 'package:paper/features/inventory/presentation/screens/inventory_screen.d
 import 'package:paper/features/clients/data/repositories/client_repository.dart';
 import 'package:paper/features/clients/domain/client_definition.dart';
 import 'package:paper/features/clients/domain/client_inputs.dart';
+import 'package:paper/features/clients/presentation/screens/clients_screen.dart';
 import 'package:paper/features/items/data/repositories/item_repository.dart';
 import 'package:paper/features/items/domain/item_asset.dart';
 import 'package:paper/features/items/domain/item_definition.dart';
@@ -36,11 +38,16 @@ import 'package:paper/features/orders/domain/po_document.dart';
 import 'package:paper/features/units/data/repositories/unit_repository.dart';
 import 'package:paper/features/units/domain/unit_definition.dart';
 import 'package:paper/features/units/domain/unit_inputs.dart';
+import 'package:paper/features/vendors/data/repositories/vendor_repository.dart';
+import 'package:paper/features/vendors/domain/vendor_definition.dart';
+import 'package:paper/features/vendors/domain/vendor_inputs.dart';
+import 'package:paper/features/vendors/presentation/screens/vendors_screen.dart';
 import 'package:paper/main.dart';
 
 class FakeInventoryRepository extends InventoryRepository {
   FakeInventoryRepository({
     List<MaterialRecord>? seedMaterials,
+    List<InventorySetDefinition>? seedSets,
     Map<int, EffectiveGroupSchema>? effectiveSchemasByGroupId,
   }) : _effectiveSchemasByGroupId = Map<int, EffectiveGroupSchema>.from(
          effectiveSchemasByGroupId ?? const <int, EffectiveGroupSchema>{},
@@ -53,6 +60,17 @@ class FakeInventoryRepository extends InventoryRepository {
           ? 1
           : seedMaterials
                     .map((record) => record.id ?? 0)
+                    .reduce((left, right) => left > right ? left : right) +
+                1;
+    }
+    if (seedSets != null) {
+      _sets
+        ..clear()
+        ..addAll(seedSets);
+      _nextSetId = seedSets.isEmpty
+          ? 1
+          : seedSets
+                    .map((set) => set.id)
                     .reduce((left, right) => left > right ? left : right) +
                 1;
     }
@@ -126,6 +144,8 @@ class FakeInventoryRepository extends InventoryRepository {
   final Map<String, MaterialGroupConfiguration> _groupConfigurations =
       <String, MaterialGroupConfiguration>{};
   final Map<int, EffectiveGroupSchema> _effectiveSchemasByGroupId;
+  final List<InventorySetDefinition> _sets = <InventorySetDefinition>[];
+  int _nextSetId = 1;
 
   @override
   Future<void> init() async {}
@@ -583,6 +603,91 @@ class FakeInventoryRepository extends InventoryRepository {
     _groupConfigurations[barcode] = next;
     return next;
   }
+
+  @override
+  Future<List<InventorySetDefinition>> getSets() async =>
+      List<InventorySetDefinition>.from(_sets)
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+  @override
+  Future<InventorySetDefinition> saveSet(SaveInventorySetInput input) async {
+    final merged = <String, SaveInventorySetLineInput>{};
+    for (final line in input.lines) {
+      final key = '${line.itemId}::${line.variationLeafNodeId}';
+      final current = merged[key];
+      if (current == null) {
+        merged[key] = line;
+      } else {
+        merged[key] = SaveInventorySetLineInput(
+          itemId: line.itemId,
+          variationLeafNodeId: line.variationLeafNodeId,
+          quantity: current.quantity + line.quantity,
+          position: current.position,
+          itemName: current.itemName,
+          itemDisplayName: current.itemDisplayName,
+          variationPathLabel: current.variationPathLabel,
+          variationPathNodeIds: current.variationPathNodeIds,
+        );
+      }
+    }
+    final now = DateTime.now();
+    final existingIndex = input.id == null
+        ? -1
+        : _sets.indexWhere((set) => set.id == input.id);
+    final lines = merged.values.toList(growable: false)
+      ..sort((a, b) => a.position.compareTo(b.position));
+    final resolvedLines = lines
+        .asMap()
+        .entries
+        .map((entry) {
+          final index = entry.key;
+          final line = entry.value;
+          return InventorySetLineDefinition(
+            id: index + 1,
+            itemId: line.itemId,
+            variationLeafNodeId: line.variationLeafNodeId,
+            quantity: line.quantity,
+            position: index,
+            itemName: line.itemName.isEmpty
+                ? 'Item ${line.itemId}'
+                : line.itemName,
+            itemDisplayName: line.itemDisplayName.isEmpty
+                ? (line.itemName.isEmpty
+                      ? 'Item ${line.itemId}'
+                      : line.itemName)
+                : line.itemDisplayName,
+            variationPathLabel: line.variationPathLabel.isEmpty
+                ? (line.variationLeafNodeId == 0
+                      ? 'Base item'
+                      : 'Leaf ${line.variationLeafNodeId}')
+                : line.variationPathLabel,
+            variationPathNodeIds: line.variationPathNodeIds,
+          );
+        })
+        .toList(growable: false);
+    final next = InventorySetDefinition(
+      id: existingIndex >= 0 ? _sets[existingIndex].id : _nextSetId++,
+      name: input.name.trim(),
+      totalItemCount: resolvedLines.fold<int>(
+        0,
+        (sum, line) => sum + line.quantity,
+      ),
+      createdAt: existingIndex >= 0 ? _sets[existingIndex].createdAt : now,
+      updatedAt: now,
+      lines: resolvedLines,
+    );
+    if (existingIndex >= 0) {
+      _sets[existingIndex] = next;
+    } else {
+      _sets.add(next);
+    }
+    return next;
+  }
+
+  @override
+  Future<void> deleteSet(int setId) async {
+    _sets.removeWhere((set) => set.id == setId);
+  }
 }
 
 class FakeUnitRepository extends UnitRepository {
@@ -1034,6 +1139,139 @@ class FakeClientRepository extends ClientRepository {
       updatedAt: DateTime.now(),
     );
     _clients[index] = updated;
+    return updated;
+  }
+}
+
+class FakeVendorRepository extends VendorRepository {
+  FakeVendorRepository({List<VendorDefinition>? seedVendors})
+    : _vendors =
+          seedVendors ??
+          <VendorDefinition>[
+            VendorDefinition(
+              id: 1,
+              name: 'Supplier A',
+              alias: 'SUP-A',
+              gstNumber: '27ABCDE1234F1Z5',
+              address: 'Bhosari, Pune',
+              contactName: 'Rahul',
+              phone: '9876543210',
+              email: 'ops@suppliera.com',
+              isArchived: false,
+              usageCount: 0,
+              createdAt: DateTime(2024),
+              updatedAt: DateTime(2024),
+            ),
+            VendorDefinition(
+              id: 2,
+              name: 'Legacy Vendor',
+              alias: 'LEG',
+              gstNumber: '',
+              address: 'Mumbai',
+              contactName: 'Desk',
+              phone: '',
+              email: '',
+              isArchived: true,
+              usageCount: 0,
+              createdAt: DateTime(2024),
+              updatedAt: DateTime(2024),
+            ),
+          ];
+
+  final List<VendorDefinition> _vendors;
+  int _nextId = 3;
+
+  @override
+  Future<void> init() async {}
+
+  @override
+  Future<List<VendorDefinition>> getVendors() async =>
+      List<VendorDefinition>.from(_vendors);
+
+  @override
+  Future<VendorDefinition> createVendor(CreateVendorInput input) async {
+    final now = DateTime.now();
+    final created = VendorDefinition(
+      id: _nextId++,
+      name: input.name.trim(),
+      alias: input.alias.trim(),
+      gstNumber: input.gstNumber.trim(),
+      address: input.address.trim(),
+      contactName: input.contactName.trim(),
+      phone: input.phone.trim(),
+      email: input.email.trim(),
+      isArchived: false,
+      usageCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    );
+    _vendors.add(created);
+    return created;
+  }
+
+  @override
+  Future<VendorDefinition> updateVendor(UpdateVendorInput input) async {
+    final index = _vendors.indexWhere((vendor) => vendor.id == input.id);
+    final current = _vendors[index];
+    final updated = VendorDefinition(
+      id: current.id,
+      name: input.name.trim(),
+      alias: input.alias.trim(),
+      gstNumber: input.gstNumber.trim(),
+      address: input.address.trim(),
+      contactName: input.contactName.trim(),
+      phone: input.phone.trim(),
+      email: input.email.trim(),
+      isArchived: current.isArchived,
+      usageCount: current.usageCount,
+      createdAt: current.createdAt,
+      updatedAt: DateTime.now(),
+    );
+    _vendors[index] = updated;
+    return updated;
+  }
+
+  @override
+  Future<VendorDefinition> archiveVendor(int id) async {
+    final index = _vendors.indexWhere((vendor) => vendor.id == id);
+    final current = _vendors[index];
+    final updated = VendorDefinition(
+      id: current.id,
+      name: current.name,
+      alias: current.alias,
+      gstNumber: current.gstNumber,
+      address: current.address,
+      contactName: current.contactName,
+      phone: current.phone,
+      email: current.email,
+      isArchived: true,
+      usageCount: current.usageCount,
+      createdAt: current.createdAt,
+      updatedAt: DateTime.now(),
+    );
+    _vendors[index] = updated;
+    return updated;
+  }
+
+  @override
+  Future<VendorDefinition> restoreVendor(int id) async {
+    final index = _vendors.indexWhere((vendor) => vendor.id == id);
+    final current = _vendors[index];
+    final updated = VendorDefinition(
+      id: current.id,
+      name: current.name,
+      alias: current.alias,
+      gstNumber: current.gstNumber,
+      address: current.address,
+      contactName: current.contactName,
+      phone: current.phone,
+      email: current.email,
+      isArchived: false,
+      usageCount: current.usageCount,
+      createdAt: current.createdAt,
+      updatedAt: DateTime.now(),
+    );
+    _vendors[index] = updated;
     return updated;
   }
 }
@@ -2238,8 +2476,29 @@ class FakeOrderRepository extends OrderRepository {
 }
 
 class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
+  FakeDeliveryChallanRepository({
+    List<DeliveryChallan>? seedChallans,
+    CompanyProfile? companyProfile,
+  }) : _challans = List<DeliveryChallan>.from(seedChallans ?? const []) {
+    if (companyProfile != null) {
+      _companyProfile = companyProfile;
+    }
+  }
+
   int getChallansCalls = 0;
   int getCompanyProfileCalls = 0;
+  final List<DeliveryChallan> _challans;
+  CompanyProfile _companyProfile = const CompanyProfile(
+    id: 1,
+    companyName: 'Paper ERP',
+    mobile: '9999999999',
+    businessDescription: 'Packaging and paper conversion',
+    address: 'Pune',
+    stateCode: '27',
+    gstin: '27ABCDE1234F1Z5',
+    logoUrl: '',
+    signatureLabel: 'Ops Admin',
+  );
 
   @override
   Future<void> init() async {}
@@ -2247,21 +2506,12 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
   @override
   Future<CompanyProfile> getCompanyProfile() async {
     getCompanyProfileCalls += 1;
-    return const CompanyProfile(
-      id: 1,
-      companyName: 'Paper ERP',
-      mobile: '9999999999',
-      businessDescription: 'Packaging and paper conversion',
-      address: 'Pune',
-      stateCode: '27',
-      gstin: '27ABCDE1234F1Z5',
-      logoUrl: '',
-      signatureLabel: 'Ops Admin',
-    );
+    return _companyProfile;
   }
 
   @override
   Future<List<DeliveryChallan>> getChallans({
+    ChallanType? type,
     DeliveryChallanStatus? status,
     String search = '',
     DateTime? dateFrom,
@@ -2269,16 +2519,48 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
     int? orderId,
   }) async {
     getChallansCalls += 1;
-    return const <DeliveryChallan>[];
+    final query = search.trim().toLowerCase();
+    return _challans
+        .where((challan) {
+          if (type != null && challan.type != type) {
+            return false;
+          }
+          if (status != null && challan.status != status) {
+            return false;
+          }
+          if (orderId != null && challan.orderId != orderId) {
+            return false;
+          }
+          if (dateFrom != null && challan.date.isBefore(dateFrom)) {
+            return false;
+          }
+          if (dateTo != null && challan.date.isAfter(dateTo)) {
+            return false;
+          }
+          if (query.isEmpty) {
+            return true;
+          }
+          final haystack = <String>[
+            challan.challanNo,
+            challan.orderNo,
+            challan.customerName,
+            challan.vendorName,
+            challan.sourceReference,
+            challan.location,
+          ].join(' ').toLowerCase();
+          return haystack.contains(query);
+        })
+        .toList(growable: false);
   }
 
   @override
-  Future<List<DeliveryChallan>> getOrderChallans(int orderId) async =>
-      const <DeliveryChallan>[];
+  Future<List<DeliveryChallan>> getOrderChallans(int orderId) async => _challans
+      .where((challan) => challan.orderId == orderId)
+      .toList(growable: false);
 
   @override
   Future<DeliveryChallan> getChallan(int id) async {
-    throw UnimplementedError();
+    return _challans.firstWhere((challan) => challan.id == id);
   }
 
   @override
@@ -2311,8 +2593,10 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
   Future<void> recordPrint(int id) async {}
 
   @override
-  Future<CompanyProfile> updateCompanyProfile(CompanyProfile profile) async =>
-      profile;
+  Future<CompanyProfile> updateCompanyProfile(CompanyProfile profile) async {
+    _companyProfile = profile;
+    return profile;
+  }
 }
 
 class TrackingInventoryRepository extends FakeInventoryRepository {
@@ -2468,6 +2752,7 @@ void main() {
     FakeGroupRepository? groupRepository,
     FakeUnitRepository? unitRepository,
     FakeClientRepository? clientRepository,
+    VendorRepository? vendorRepository,
     FakeItemRepository? itemRepository,
     FakeOrderRepository? orderRepository,
     DeliveryChallanRepository? deliveryChallanRepository,
@@ -2486,6 +2771,7 @@ void main() {
         groupRepository: groupRepository ?? FakeGroupRepository(),
         unitRepository: unitRepository ?? FakeUnitRepository(),
         clientRepository: clientRepository ?? FakeClientRepository(),
+        vendorRepository: vendorRepository ?? FakeVendorRepository(),
         deliveryChallanRepository:
             deliveryChallanRepository ?? FakeDeliveryChallanRepository(),
         itemRepository: itemRepository ?? FakeItemRepository(),
@@ -2519,6 +2805,15 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  Future<void> openVendorsScreen(WidgetTester tester) async {
+    final context = tester.element(find.byType(Scaffold).first);
+    context.read<NavigationProvider>().select(
+      'configurator_vendors',
+      skipTransition: true,
+    );
+    await tester.pumpAndSettle();
+  }
+
   Future<void> openGroupsScreen(WidgetTester tester) async {
     final context = tester.element(find.byType(Scaffold).first);
     context.read<NavigationProvider>().select(
@@ -2541,6 +2836,15 @@ void main() {
     final context = tester.element(find.byType(Scaffold).first);
     context.read<NavigationProvider>().select(
       'configurator_items',
+      skipTransition: true,
+    );
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> openChallansScreen(WidgetTester tester) async {
+    final context = tester.element(find.byType(Scaffold).first);
+    context.read<NavigationProvider>().select(
+      'delivery_challans',
       skipTransition: true,
     );
     await tester.pumpAndSettle();
@@ -2758,6 +3062,105 @@ void main() {
     expect(context.read<NavigationProvider>().selectedKey, 'delivery_challans');
   });
 
+  testWidgets(
+    'challans hub exposes explicit delivery and reception create flows',
+    (tester) async {
+      await pumpApp(tester, viewSize: const Size(1440, 900));
+      await openChallansScreen(tester);
+
+      expect(find.text('Create Reception'), findsWidgets);
+      expect(find.text('Create Delivery'), findsWidgets);
+
+      await tester.tap(find.text('Create Reception').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Create Reception Challan'), findsOneWidget);
+      expect(find.text('Vendor'), findsOneWidget);
+      expect(find.text('Select order'), findsNothing);
+
+      await tester.tap(find.byTooltip('Close'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Create Delivery').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Create Delivery Challan'), findsOneWidget);
+      expect(find.text('Select order'), findsOneWidget);
+      expect(find.text('Vendor'), findsNothing);
+    },
+  );
+
+  testWidgets('challans type filter separates reception and delivery rows', (
+    tester,
+  ) async {
+    final challanRepository = FakeDeliveryChallanRepository(
+      seedChallans: <DeliveryChallan>[
+        DeliveryChallan(
+          id: 1,
+          type: ChallanType.delivery,
+          orderId: 10,
+          orderNo: 'ORD-10',
+          challanNo: 'DC-00001',
+          date: DateTime(2026, 5, 11),
+          location: 'Dispatch Bay',
+          customerName: 'Acme Packaging',
+          customerGstin: '27AAAAA0000A1Z5',
+          vendorId: null,
+          vendorName: '',
+          vendorGstin: '',
+          sourceReference: '',
+          companyProfileSnapshot: null,
+          notes: '',
+          status: DeliveryChallanStatus.draft,
+          items: const <DeliveryChallanItem>[],
+          itemsCount: 1,
+          createdAt: DateTime(2026, 5, 11),
+          updatedAt: DateTime(2026, 5, 11),
+        ),
+        DeliveryChallan(
+          id: 2,
+          type: ChallanType.reception,
+          orderId: null,
+          orderNo: '',
+          challanNo: 'RC-00001',
+          date: DateTime(2026, 5, 11),
+          location: 'Inbound Dock',
+          customerName: '',
+          customerGstin: '',
+          vendorId: 3,
+          vendorName: 'Supplier A',
+          vendorGstin: '27ABCDE1234F1Z5',
+          sourceReference: 'GRN-101',
+          companyProfileSnapshot: null,
+          notes: '',
+          status: DeliveryChallanStatus.issued,
+          items: const <DeliveryChallanItem>[],
+          itemsCount: 1,
+          createdAt: DateTime(2026, 5, 11),
+          updatedAt: DateTime(2026, 5, 11),
+        ),
+      ],
+    );
+
+    await pumpApp(
+      tester,
+      viewSize: const Size(1440, 900),
+      deliveryChallanRepository: challanRepository,
+    );
+    await openChallansScreen(tester);
+
+    expect(find.text('DC-00001'), findsOneWidget);
+    expect(find.text('RC-00001'), findsOneWidget);
+
+    await tester.tap(find.text('Reception').first);
+    await tester.pumpAndSettle();
+    expect(find.text('RC-00001'), findsOneWidget);
+    expect(find.text('DC-00001'), findsNothing);
+
+    await tester.tap(find.text('Delivery').first);
+    await tester.pumpAndSettle();
+    expect(find.text('DC-00001'), findsOneWidget);
+    expect(find.text('RC-00001'), findsNothing);
+  });
+
   testWidgets('ctrl and command n open the new order editor', (tester) async {
     await pumpApp(tester, viewSize: const Size(1440, 900));
 
@@ -2871,6 +3274,21 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Material Scan'), findsWidgets);
+  });
+
+  testWidgets('inventory stock actions open reception challan editor', (
+    tester,
+  ) async {
+    await pumpApp(tester, viewSize: const Size(1440, 900));
+
+    await tester.tap(find.text('Stock Actions ▾'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create Reception Challan'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Create Reception Challan'), findsOneWidget);
+    expect(find.text('Vendor'), findsOneWidget);
+    expect(find.text('Select order'), findsNothing);
   });
 
   testWidgets(
@@ -3741,11 +4159,13 @@ void main() {
     await tester.tap(find.text('Add Group'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Parent group'), findsOneWidget);
-    expect(find.text('Unit of group'), findsOneWidget);
+    expect(find.text('Parent Group'), findsWidgets);
+    expect(find.text('Group Unit'), findsWidgets);
+    expect(find.text('Structure & Properties'), findsNothing);
+    expect(find.text('Seed Items'), findsNothing);
 
     await tester.enterText(
-      find.widgetWithText(TextFormField, 'Group name'),
+      find.widgetWithText(TextFormField, 'Enter group name'),
       'Brown',
     );
 
@@ -3766,10 +4186,8 @@ void main() {
     await tester.tap(find.text('Kilogram (Kg)').last);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(ElevatedButton, 'Create Group'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
     await tester.pumpAndSettle();
-
-    expect(find.text('Brown'), findsOneWidget);
 
     final groups = await groupRepository.getGroups();
     final created = groups.where((group) => group.name == 'Brown').single;
@@ -3831,7 +4249,7 @@ void main() {
     await tester.tap(find.text('Edit').first);
     await tester.pumpAndSettle();
 
-    expect(find.text('Parent: Paper'), findsOneWidget);
+    expect(find.text('Under: Paper'), findsOneWidget);
     expect(find.text('Unit: Sheet (Sheet)'), findsOneWidget);
   });
 
@@ -3902,6 +4320,40 @@ void main() {
         .single;
     expect(created.alias, 'Northwind');
     expect(created.gstNumber, '29ABCDE1234F1Z5');
+  });
+
+  testWidgets('clients editor uses normalized popup shell on narrow screens', (
+    tester,
+  ) async {
+    await pumpApp(tester, viewSize: const Size(430, 900));
+
+    await openClientsScreen(tester);
+    final context = tester.element(find.byType(Scaffold).first);
+    ClientsScreen.openEditor(context);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Identity'), findsOneWidget);
+    expect(find.text('Address & Preview'), findsOneWidget);
+    expect(find.text('Cancel'), findsOneWidget);
+    expect(find.byTooltip('Close'), findsOneWidget);
+    expect(
+      find.textContaining('billing identity your team will reuse'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('vendors editor uses normalized popup shell', (tester) async {
+    await pumpApp(tester, vendorRepository: FakeVendorRepository());
+
+    await openVendorsScreen(tester);
+    final context = tester.element(find.byType(Scaffold).first);
+    VendorsScreen.openEditor(context);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Vendor Identity'), findsOneWidget);
+    expect(find.text('Contacts & Address'), findsOneWidget);
+    expect(find.text('Cancel'), findsOneWidget);
+    expect(find.byTooltip('Close'), findsOneWidget);
   });
 
   testWidgets('items screen shows seeded and archived items', (tester) async {
@@ -4280,7 +4732,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.tap(
-        find.byKey(const ValueKey<String>('inventory-create-group-parent')),
+        find.byKey(const ValueKey<String>('groups-parent-field')),
       );
       await tester.pumpAndSettle();
       await tester.tap(find.text('Paper').last);
@@ -4339,15 +4791,13 @@ void main() {
         'Seeded Group',
       );
 
-      await tester.tap(
-        find.byKey(const ValueKey<String>('inventory-create-group-unit')),
-      );
+      await tester.tap(find.byKey(const ValueKey<String>('groups-unit-field')));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Kilogram (Kg)').last);
       await tester.pumpAndSettle();
 
       await tester.tap(
-        find.byKey(const ValueKey<String>('inventory-create-group-seed-item')),
+        find.byKey(const ValueKey<String>('masters-group-seed-items')),
       );
       await tester.pumpAndSettle();
       await tester.tap(find.text('Profile Rod - 10').last);
@@ -4406,15 +4856,13 @@ void main() {
         'Masked Group',
       );
 
-      await tester.tap(
-        find.byKey(const ValueKey<String>('inventory-create-group-unit')),
-      );
+      await tester.tap(find.byKey(const ValueKey<String>('groups-unit-field')));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Kilogram (Kg)').last);
       await tester.pumpAndSettle();
 
       await tester.tap(
-        find.byKey(const ValueKey<String>('inventory-create-group-parent')),
+        find.byKey(const ValueKey<String>('groups-parent-field')),
       );
       await tester.pumpAndSettle();
       await tester.tap(find.text('Paper').last);
@@ -4441,6 +4889,192 @@ void main() {
       );
     },
   );
+
+  testWidgets('inventory sets drill down filters items to set membership', (
+    tester,
+  ) async {
+    final repository = FakeInventoryRepository(
+      seedMaterials: <MaterialRecord>[
+        MaterialRecord(
+          id: 1,
+          barcode: 'ITEM-1-17',
+          name: 'Switch Action Dolly Stock A',
+          type: 'Item',
+          grade: '',
+          thickness: '',
+          supplier: 'Warehouse',
+          location: 'Rack A',
+          createdAt: DateTime(2024),
+          kind: 'child',
+          parentBarcode: null,
+          numberOfChildren: 0,
+          linkedChildBarcodes: const <String>[],
+          scanCount: 0,
+          linkedItemId: 1,
+          linkedVariationLeafNodeId: 17,
+          displayStock: '2 pcs',
+          createdBy: 'Demo Admin',
+          workflowStatus: 'notStarted',
+        ),
+        MaterialRecord(
+          id: 2,
+          barcode: 'ITEM-1-18',
+          name: 'Switch Action Dolly Stock B',
+          type: 'Item',
+          grade: '',
+          thickness: '',
+          supplier: 'Warehouse',
+          location: 'Rack B',
+          createdAt: DateTime(2024),
+          kind: 'child',
+          parentBarcode: null,
+          numberOfChildren: 0,
+          linkedChildBarcodes: const <String>[],
+          scanCount: 0,
+          linkedItemId: 1,
+          linkedVariationLeafNodeId: 18,
+          displayStock: '2 pcs',
+          createdBy: 'Demo Admin',
+          workflowStatus: 'notStarted',
+        ),
+        MaterialRecord(
+          id: 3,
+          barcode: 'ITEM-2-9',
+          name: 'Glue Compound Stock',
+          type: 'Item',
+          grade: '',
+          thickness: '',
+          supplier: 'Warehouse',
+          location: 'Rack C',
+          createdAt: DateTime(2024),
+          kind: 'child',
+          parentBarcode: null,
+          numberOfChildren: 0,
+          linkedChildBarcodes: const <String>[],
+          scanCount: 0,
+          linkedItemId: 2,
+          linkedVariationLeafNodeId: 9,
+          displayStock: '5 pcs',
+          createdBy: 'Demo Admin',
+          workflowStatus: 'notStarted',
+        ),
+      ],
+      seedSets: <InventorySetDefinition>[
+        InventorySetDefinition(
+          id: 1,
+          name: 'Starter Pack',
+          totalItemCount: 7,
+          createdAt: DateTime(2024),
+          updatedAt: DateTime(2024),
+          lines: const <InventorySetLineDefinition>[
+            InventorySetLineDefinition(
+              id: 1,
+              itemId: 1,
+              variationLeafNodeId: 17,
+              quantity: 2,
+              position: 0,
+              itemName: 'Switch Action Dolly',
+              itemDisplayName: 'Switch Action Dolly - 1',
+              variationPathLabel:
+                  '5 Amp 11+1 Brass 1 Way Dolly Without Plating',
+              variationPathNodeIds: <int>[2, 4, 11, 13, 15, 17],
+            ),
+            InventorySetLineDefinition(
+              id: 2,
+              itemId: 2,
+              variationLeafNodeId: 9,
+              quantity: 5,
+              position: 1,
+              itemName: 'Glue Compound',
+              itemDisplayName: 'Glue Compound - 1',
+              variationPathLabel: 'Fast Cure',
+              variationPathNodeIds: <int>[9],
+            ),
+          ],
+        ),
+      ],
+    );
+    await pumpApp(tester, repository: repository);
+
+    await tester.tap(find.text('Sets').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Starter Pack'), findsOneWidget);
+    expect(find.text('7 items'), findsOneWidget);
+
+    await tester.tap(find.text('Starter Pack'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Viewing items in Starter Pack'), findsOneWidget);
+    expect(find.text('Switch Action Dolly - 1'), findsWidgets);
+    expect(find.text('Glue Compound - 1'), findsWidgets);
+    expect(find.text('Luxury Pump Bottle - 100'), findsNothing);
+    expect(
+      find.textContaining('Without Plating', findRichText: true),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('With Plating', findRichText: true),
+      findsNothing,
+    );
+    expect(find.text('2 in set'), findsOneWidget);
+    expect(find.text('5 in set'), findsOneWidget);
+
+    await tester.tap(find.text('Clear'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Viewing items in Starter Pack'), findsNothing);
+    expect(find.text('Luxury Pump Bottle - 100'), findsWidgets);
+  });
+
+  testWidgets('set row actions open set menu without navigating into items', (
+    tester,
+  ) async {
+    final repository = FakeInventoryRepository(
+      seedSets: <InventorySetDefinition>[
+        InventorySetDefinition(
+          id: 1,
+          name: 'Bottle Set',
+          totalItemCount: 2,
+          createdAt: DateTime(2024),
+          updatedAt: DateTime(2024),
+          lines: const <InventorySetLineDefinition>[
+            InventorySetLineDefinition(
+              id: 1,
+              itemId: 3,
+              variationLeafNodeId: 40,
+              quantity: 2,
+              position: 0,
+              itemName: 'Luxury Pump Bottle',
+              itemDisplayName: 'Luxury Pump Bottle - 100',
+              variationPathLabel: 'PET Amber Gloss Gold Left Lock',
+              variationPathNodeIds: <int>[28, 30, 38, 40],
+            ),
+          ],
+        ),
+      ],
+    );
+    await pumpApp(tester, repository: repository);
+
+    await tester.tap(find.text('Sets').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Bottle Set'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('inventory-row-actions-SET-1')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Viewing items in Bottle Set'), findsNothing);
+    expect(find.text('Edit'), findsWidgets);
+    expect(find.text('Delete'), findsWidgets);
+
+    await tester.tap(find.text('Edit').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Edit Set'), findsOneWidget);
+  });
 
   testWidgets('scan lookups increment trace count', (tester) async {
     await pumpApp(tester);

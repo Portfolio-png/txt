@@ -5,6 +5,7 @@ import '../../domain/create_parent_material_input.dart';
 import '../../domain/effective_group_schema.dart';
 import '../../domain/group_property_draft.dart';
 import '../../domain/inventory_control_tower.dart';
+import '../../domain/inventory_set_definition.dart';
 import '../../domain/material_activity_event.dart';
 import '../../domain/material_control_tower_detail.dart';
 import '../../domain/material_group_configuration.dart';
@@ -31,8 +32,10 @@ class InventoryProvider extends ChangeNotifier {
   final Map<String, List<MaterialActivityEvent>> _activityByBarcode = {};
   final Map<String, MaterialControlTowerDetail> _detailByBarcode = {};
   InventoryHealthSnapshot _healthSnapshot = const InventoryHealthSnapshot();
+  List<InventorySetDefinition> _sets = const [];
 
   List<MaterialRecord> get materials => _materials;
+  List<InventorySetDefinition> get sets => _sets;
   MaterialRecord? get selectedMaterial => _selectedMaterial;
   bool get isLoading => _isLoading;
   bool get isSaving => _isSaving;
@@ -61,6 +64,7 @@ class InventoryProvider extends ChangeNotifier {
       await _repository.init();
       await _repository.seedIfEmpty();
       await _reloadMaterials();
+      await _reloadSets();
       await loadInventoryHealth(silent: true);
       if (_materials.isNotEmpty) {
         _selectedMaterial = _materials.first;
@@ -84,6 +88,7 @@ class InventoryProvider extends ChangeNotifier {
     try {
       await _repository.init();
       await _reloadMaterials();
+      await _reloadSets();
       await loadInventoryHealth(silent: true);
       if (_selectedMaterial != null) {
         _selectedMaterial = _materials
@@ -463,6 +468,44 @@ class InventoryProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> saveSet(SaveInventorySetInput input) async {
+    _isSaving = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await _repository.saveSet(input);
+      await _reloadSets();
+    } catch (error) {
+      _errorMessage = _friendlyError(
+        fallback: 'Failed to save set.',
+        error: error,
+      );
+    } finally {
+      _isSaving = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> deleteSet(int setId) async {
+    _isSaving = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await _repository.deleteSet(setId);
+      await _reloadSets();
+    } catch (error) {
+      _errorMessage = _friendlyError(
+        fallback: 'Failed to delete set.',
+        error: error,
+      );
+    } finally {
+      _isSaving = false;
+      notifyListeners();
+    }
+  }
+
   void clearError() {
     if (_errorMessage == null) {
       return;
@@ -484,6 +527,10 @@ class InventoryProvider extends ChangeNotifier {
 
   Future<void> _reloadMaterials() async {
     _materials = await _repository.getAllMaterials();
+  }
+
+  Future<void> _reloadSets() async {
+    _sets = await _repository.getSets();
   }
 
   void _upsertMaterial(MaterialRecord record) {

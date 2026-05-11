@@ -7,6 +7,7 @@ import '../../domain/create_parent_material_input.dart';
 import '../../domain/effective_group_schema.dart';
 import '../../domain/group_property_draft.dart';
 import '../../domain/inventory_control_tower.dart';
+import '../../domain/inventory_set_definition.dart';
 import '../../domain/material_activity_event.dart';
 import '../../domain/material_control_tower_detail.dart';
 import '../../domain/material_group_configuration.dart';
@@ -29,6 +30,8 @@ class ApiInventoryRepository implements InventoryRepository {
   static final List<MaterialDto> _mockMaterials = <MaterialDto>[];
   static final Map<String, MaterialGroupConfiguration> _mockGroupConfigs =
       <String, MaterialGroupConfiguration>{};
+  static final List<InventorySetDefinition> _mockSets =
+      <InventorySetDefinition>[];
   static bool _mockSeeded = false;
   static int _mockNextId = 1;
 
@@ -281,6 +284,124 @@ class ApiInventoryRepository implements InventoryRepository {
         MaterialGroupConfiguration(
           inheritanceEnabled: materialResponse.material!.inheritanceEnabled,
         );
+  }
+
+  @override
+  Future<List<InventorySetDefinition>> getSets() async {
+    if (useMockResponses) {
+      _seedMockStoreIfNeeded();
+      return _mockSets.toList(growable: false)
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    }
+
+    final uri = Uri.parse('$baseUrl/api/inventory/sets');
+    final response = await _client.get(uri);
+    final payload = _decodeJson(response.body) as Map<String, dynamic>? ?? {};
+    final parsed = InventorySetsListResponse.fromJson(payload);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !parsed.success) {
+      throw InventoryApiException(
+        parsed.error ?? 'Failed to fetch inventory sets.',
+      );
+    }
+    return parsed.sets.map((set) => set.toDomain()).toList(growable: false);
+  }
+
+  @override
+  Future<InventorySetDefinition> saveSet(SaveInventorySetInput input) async {
+    if (useMockResponses) {
+      _seedMockStoreIfNeeded();
+      final mergedLines = _mergeSetLines(input.lines);
+      final now = DateTime.now();
+      final existingIndex = input.id == null
+          ? -1
+          : _mockSets.indexWhere((set) => set.id == input.id);
+      final resolvedLines = mergedLines
+          .map((line) {
+            final itemDto = _mockMaterials
+                .where((material) => material.linkedItemId == line.itemId)
+                .firstOrNull;
+            return InventorySetLineDefinition(
+              id: line.position + 1,
+              itemId: line.itemId,
+              variationLeafNodeId: line.variationLeafNodeId,
+              quantity: line.quantity,
+              position: line.position,
+              itemName: line.itemName.isEmpty
+                  ? (itemDto?.name ?? '')
+                  : line.itemName,
+              itemDisplayName: line.itemDisplayName.isEmpty
+                  ? (itemDto?.name ?? '')
+                  : line.itemDisplayName,
+              variationPathLabel: line.variationPathLabel,
+              variationPathNodeIds: line.variationPathNodeIds,
+            );
+          })
+          .toList(growable: false);
+      final next = InventorySetDefinition(
+        id: existingIndex >= 0 ? _mockSets[existingIndex].id : _mockNextId++,
+        name: input.name.trim(),
+        totalItemCount: resolvedLines.fold<int>(
+          0,
+          (sum, line) => sum + line.quantity,
+        ),
+        createdAt: existingIndex >= 0
+            ? _mockSets[existingIndex].createdAt
+            : now,
+        updatedAt: now,
+        lines: resolvedLines,
+      );
+      if (existingIndex >= 0) {
+        _mockSets[existingIndex] = next;
+      } else {
+        _mockSets.add(next);
+      }
+      return next;
+    }
+
+    final uri = Uri.parse(
+      input.id == null
+          ? '$baseUrl/api/inventory/sets'
+          : '$baseUrl/api/inventory/sets/${input.id}',
+    );
+    final response = input.id == null
+        ? await _client.post(
+            uri,
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode(_saveSetBody(input)),
+          )
+        : await _client.patch(
+            uri,
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode(_saveSetBody(input)),
+          );
+    final payload = _decodeJson(response.body) as Map<String, dynamic>? ?? {};
+    final parsed = InventorySetResponse.fromJson(payload);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !parsed.success ||
+        parsed.set == null) {
+      throw InventoryApiException(parsed.error ?? 'Failed to save set.');
+    }
+    return parsed.set!.toDomain();
+  }
+
+  @override
+  Future<void> deleteSet(int setId) async {
+    if (useMockResponses) {
+      _mockSets.removeWhere((set) => set.id == setId);
+      return;
+    }
+
+    final uri = Uri.parse('$baseUrl/api/inventory/sets/$setId');
+    final response = await _client.delete(uri);
+    final payload = _decodeJson(response.body) as Map<String, dynamic>? ?? {};
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw InventoryApiException(
+        payload['error'] as String? ?? 'Failed to delete set.',
+      );
+    }
   }
 
   @override
@@ -1376,6 +1497,46 @@ class ApiInventoryRepository implements InventoryRepository {
         .replaceAll(RegExp(r'[^\x20-\x7E]'), '')
         .trim()
         .toUpperCase();
+  }
+
+  List<SaveInventorySetLineInput> _mergeSetLines(
+    List<SaveInventorySetLineInput> lines,
+  ) {
+    final merged = <String, SaveInventorySetLineInput>{};
+    for (final line in lines) {
+      final key = '${line.itemId}:${line.variationLeafNodeId}';
+      final existing = merged[key];
+      merged[key] = SaveInventorySetLineInput(
+        itemId: line.itemId,
+        variationLeafNodeId: line.variationLeafNodeId,
+        quantity: (existing?.quantity ?? 0) + line.quantity,
+        position: existing?.position ?? line.position,
+        itemName: existing?.itemName ?? line.itemName,
+        itemDisplayName: existing?.itemDisplayName ?? line.itemDisplayName,
+        variationPathLabel:
+            existing?.variationPathLabel ?? line.variationPathLabel,
+        variationPathNodeIds:
+            existing?.variationPathNodeIds ?? line.variationPathNodeIds,
+      );
+    }
+    return merged.values.toList(growable: false)
+      ..sort((a, b) => a.position.compareTo(b.position));
+  }
+
+  Map<String, Object?> _saveSetBody(SaveInventorySetInput input) {
+    return {
+      'name': input.name.trim(),
+      'lines': _mergeSetLines(input.lines)
+          .map(
+            (line) => {
+              'itemId': line.itemId,
+              'variationLeafNodeId': line.variationLeafNodeId,
+              'quantity': line.quantity,
+              'position': line.position,
+            },
+          )
+          .toList(growable: false),
+    };
   }
 
   Future<MaterialRecord> _linkMutation(

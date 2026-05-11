@@ -64,6 +64,7 @@ class GroupsScreen extends StatelessWidget {
       context,
       group: group,
       initialName: initialName,
+      createMode: StructuredGroupEditorCreateMode.groupsOnly,
     );
   }
 }

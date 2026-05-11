@@ -5,6 +5,7 @@ import '../../domain/effective_group_schema.dart';
 import '../../domain/group_property_draft.dart';
 import '../../domain/material_activity_event.dart';
 import '../../domain/inventory_control_tower.dart';
+import '../../domain/inventory_set_definition.dart';
 import '../../domain/material_control_tower_detail.dart';
 import '../../domain/material_group_configuration.dart';
 import '../../domain/material_record.dart';
@@ -1382,6 +1383,183 @@ class MaterialsListResponse {
       'success': success,
       'materials': materials.map((material) => material.toJson()).toList(),
     };
+  }
+}
+
+class InventorySetLineDto {
+  const InventorySetLineDto({
+    required this.id,
+    required this.itemId,
+    required this.variationLeafNodeId,
+    required this.quantity,
+    required this.position,
+    required this.itemName,
+    required this.itemDisplayName,
+    required this.variationPathLabel,
+    required this.variationPathNodeIds,
+  });
+
+  final int? id;
+  final int itemId;
+  final int variationLeafNodeId;
+  final int quantity;
+  final int position;
+  final String itemName;
+  final String itemDisplayName;
+  final String variationPathLabel;
+  final List<int> variationPathNodeIds;
+
+  factory InventorySetLineDto.fromJson(Map<String, dynamic> json) {
+    return InventorySetLineDto(
+      id: (json['id'] as num?)?.toInt(),
+      itemId: (json['itemId'] as num?)?.toInt() ?? 0,
+      variationLeafNodeId: (json['variationLeafNodeId'] as num?)?.toInt() ?? 0,
+      quantity: (json['quantity'] as num?)?.toInt() ?? 0,
+      position: (json['position'] as num?)?.toInt() ?? 0,
+      itemName: json['itemName'] as String? ?? '',
+      itemDisplayName: json['itemDisplayName'] as String? ?? '',
+      variationPathLabel: json['variationPathLabel'] as String? ?? '',
+      variationPathNodeIds:
+          (json['variationPathNodeIds'] as List<dynamic>? ?? const <dynamic>[])
+              .map((value) => (value as num).toInt())
+              .toList(growable: false),
+    );
+  }
+
+  InventorySetLineDefinition toDomain() {
+    return InventorySetLineDefinition(
+      id: id,
+      itemId: itemId,
+      variationLeafNodeId: variationLeafNodeId,
+      quantity: quantity,
+      position: position,
+      itemName: itemName,
+      itemDisplayName: itemDisplayName,
+      variationPathLabel: variationPathLabel,
+      variationPathNodeIds: variationPathNodeIds,
+    );
+  }
+
+  factory InventorySetLineDto.fromDomain(InventorySetLineDefinition line) {
+    return InventorySetLineDto(
+      id: line.id,
+      itemId: line.itemId,
+      variationLeafNodeId: line.variationLeafNodeId,
+      quantity: line.quantity,
+      position: line.position,
+      itemName: line.itemName,
+      itemDisplayName: line.itemDisplayName,
+      variationPathLabel: line.variationPathLabel,
+      variationPathNodeIds: line.variationPathNodeIds,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'itemId': itemId,
+      'variationLeafNodeId': variationLeafNodeId,
+      'quantity': quantity,
+      'position': position,
+      'itemName': itemName,
+      'itemDisplayName': itemDisplayName,
+      'variationPathLabel': variationPathLabel,
+      'variationPathNodeIds': variationPathNodeIds,
+    };
+  }
+}
+
+class InventorySetDto {
+  const InventorySetDto({
+    required this.id,
+    required this.name,
+    required this.totalItemCount,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.lines,
+  });
+
+  final int id;
+  final String name;
+  final int totalItemCount;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final List<InventorySetLineDto> lines;
+
+  factory InventorySetDto.fromJson(Map<String, dynamic> json) {
+    return InventorySetDto(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      name: json['name'] as String? ?? '',
+      totalItemCount: (json['totalItemCount'] as num?)?.toInt() ?? 0,
+      createdAt:
+          DateTime.tryParse(json['createdAt'] as String? ?? '') ??
+          DateTime.now(),
+      updatedAt:
+          DateTime.tryParse(json['updatedAt'] as String? ?? '') ??
+          DateTime.now(),
+      lines: (json['lines'] as List<dynamic>? ?? const <dynamic>[])
+          .map(
+            (item) =>
+                InventorySetLineDto.fromJson(item as Map<String, dynamic>),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  InventorySetDefinition toDomain() {
+    return InventorySetDefinition(
+      id: id,
+      name: name,
+      totalItemCount: totalItemCount,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      lines: lines.map((line) => line.toDomain()).toList(growable: false),
+    );
+  }
+}
+
+class InventorySetsListResponse {
+  const InventorySetsListResponse({
+    required this.success,
+    required this.sets,
+    this.error,
+  });
+
+  final bool success;
+  final List<InventorySetDto> sets;
+  final String? error;
+
+  factory InventorySetsListResponse.fromJson(Map<String, dynamic> json) {
+    return InventorySetsListResponse(
+      success: json['success'] as bool? ?? false,
+      sets: (json['sets'] as List<dynamic>? ?? const <dynamic>[])
+          .map((item) => InventorySetDto.fromJson(item as Map<String, dynamic>))
+          .toList(growable: false),
+      error: json['error'] as String?,
+    );
+  }
+}
+
+class InventorySetResponse {
+  const InventorySetResponse({
+    required this.success,
+    required this.set,
+    this.error,
+  });
+
+  final bool success;
+  final InventorySetDto? set;
+  final String? error;
+
+  factory InventorySetResponse.fromJson(Map<String, dynamic> json) {
+    final setJson = json['set'];
+    return InventorySetResponse(
+      success: json['success'] as bool? ?? false,
+      set: setJson is Map<String, dynamic>
+          ? InventorySetDto.fromJson(setJson)
+          : null,
+      error: json['error'] as String?,
+    );
   }
 }
 

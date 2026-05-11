@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_empty_state.dart';
-import '../../../../core/widgets/app_section_title.dart';
+import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/widgets/soft_master_data.dart';
 import '../../../../core/widgets/soft_primitives.dart';
 import '../../domain/client_definition.dart';
@@ -56,31 +56,11 @@ class ClientsScreen extends StatelessWidget {
     BuildContext context, {
     ClientDefinition? client,
   }) {
-    final isNarrow = MediaQuery.of(context).size.width < 900;
-    final body = _ClientEditorSheet(client: client);
-    if (isNarrow) {
-      return showModalBottomSheet<ClientDefinition?>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (context) => Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-          ),
-          child: body,
-        ),
-      );
-    }
-
-    return showDialog<ClientDefinition?>(
-      context: context,
-      builder: (context) => Dialog(
-        insetPadding: const EdgeInsets.all(32),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 640),
-          child: body,
-        ),
-      ),
+    return showErpFormDialog<ClientDefinition?>(
+      context,
+      maxWidth: 760,
+      maxHeight: 760,
+      child: _ClientEditorSheet(client: client),
     );
   }
 
@@ -283,48 +263,27 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
   Widget build(BuildContext context) {
     final provider = context.watch<ClientsProvider>();
     final title = widget.client == null ? 'Create Client' : 'Edit Client';
-    return Material(
-      color: Colors.white,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: SingleChildScrollView(
-            child: Form(
-              key: _formKey,
+    final banner =
+        _localError ??
+        (provider.isSaving == false ? provider.errorMessage : null);
+    return Form(
+      key: _formKey,
+      child: ErpFormScaffold(
+        title: title,
+        subtitle:
+            'Capture the billing identity your team will reuse across orders and transaction documents.',
+        errorBanner: banner == null
+            ? null
+            : ErpFormMessageBanner(message: banner, isError: true),
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ErpDialogSectionCard(
+              title: 'Identity',
+              subtitle:
+                  'Store the core legal and shorthand naming your operators and billing flows reuse.',
               child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: AppSectionTitle(
-                          title: title,
-                          subtitle:
-                              'Capture the billing identity your team will reuse across orders and transaction documents.',
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.of(context).maybePop(),
-                        icon: const Icon(Icons.close),
-                      ),
-                    ],
-                  ),
-                  if (_localError != null) ...[
-                    const SizedBox(height: 12),
-                    _ClientsMessageBanner(message: _localError!, isError: true),
-                  ],
-                  if (provider.errorMessage != null &&
-                      provider.isSaving == false) ...[
-                    const SizedBox(height: 12),
-                    _ClientsMessageBanner(
-                      message: provider.errorMessage!,
-                      isError: true,
-                    ),
-                  ],
-                  const SizedBox(height: 16),
                   _ClientTextField(
                     controller: _nameController,
                     label: 'Name',
@@ -345,7 +304,17 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
                     required: false,
                     textCapitalization: TextCapitalization.characters,
                   ),
-                  const SizedBox(height: 12),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            ErpDialogSectionCard(
+              title: 'Address & Preview',
+              subtitle:
+                  'Keep the billing address close to the final record preview so mistakes are visible before save.',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   _ClientTextField(
                     controller: _addressController,
                     label: 'Address',
@@ -362,7 +331,7 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
                     ),
                     address: _addressController.text.trim(),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                   _ClientWarningText(
                     warning: provider
                         .checkDuplicate(
@@ -372,44 +341,41 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
                         )
                         .warning,
                   ),
-                  const SizedBox(height: 20),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: [
-                      AppButton(
-                        label: widget.client == null
-                            ? 'Create Client'
-                            : 'Save Changes',
-                        isLoading: provider.isSaving,
-                        onPressed: () => _submit(context),
-                      ),
-                      if (widget.client != null)
-                        AppButton(
-                          label: widget.client!.isArchived
-                              ? 'Restore'
-                              : 'Archive',
-                          variant: AppButtonVariant.secondary,
-                          isLoading: provider.isSaving,
-                          onPressed: () async {
-                            final result = widget.client!.isArchived
-                                ? await provider.restoreClient(
-                                    widget.client!.id,
-                                  )
-                                : await provider.archiveClient(
-                                    widget.client!.id,
-                                  );
-                            if (context.mounted && result != null) {
-                              Navigator.of(context).pop(result);
-                            }
-                          },
-                        ),
-                    ],
-                  ),
                 ],
               ),
             ),
-          ),
+          ],
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            AppButton(
+              label: 'Cancel',
+              variant: AppButtonVariant.secondary,
+              onPressed: () => Navigator.of(context).maybePop(),
+            ),
+            if (widget.client != null)
+              AppButton(
+                label: widget.client!.isArchived ? 'Restore' : 'Archive',
+                variant: AppButtonVariant.secondary,
+                isLoading: provider.isSaving,
+                onPressed: () async {
+                  final result = widget.client!.isArchived
+                      ? await provider.restoreClient(widget.client!.id)
+                      : await provider.archiveClient(widget.client!.id);
+                  if (context.mounted && result != null) {
+                    Navigator.of(context).pop(result);
+                  }
+                },
+              ),
+            AppButton(
+              label: widget.client == null ? 'Create Client' : 'Save Changes',
+              isLoading: provider.isSaving,
+              onPressed: () => _submit(context),
+            ),
+          ],
         ),
       ),
     );
@@ -622,23 +588,6 @@ class _ClientsMessageBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: isError ? const Color(0xFFFEF2F2) : const Color(0xFFECFDF5),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: isError ? const Color(0xFFFECACA) : const Color(0xFFA7F3D0),
-        ),
-      ),
-      child: Text(
-        message,
-        style: TextStyle(
-          color: isError ? const Color(0xFFB91C1C) : const Color(0xFF047857),
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
+    return ErpFormMessageBanner(message: message, isError: isError);
   }
 }

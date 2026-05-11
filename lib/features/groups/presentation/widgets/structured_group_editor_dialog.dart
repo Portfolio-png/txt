@@ -23,19 +23,24 @@ class StructuredGroupEditorDialog extends StatefulWidget {
     super.key,
     this.group,
     this.initialName = '',
+    this.createMode = StructuredGroupEditorCreateMode.groupsOnly,
   });
 
   final GroupDefinition? group;
   final String initialName;
+  final StructuredGroupEditorCreateMode createMode;
 
   static Future<GroupDefinition?> open(
     BuildContext context, {
     GroupDefinition? group,
     String initialName = '',
+    StructuredGroupEditorCreateMode createMode =
+        StructuredGroupEditorCreateMode.groupsOnly,
   }) {
     final body = StructuredGroupEditorDialog(
       group: group,
       initialName: initialName,
+      createMode: createMode,
     );
     final isNarrow = MediaQuery.of(context).size.width < 900;
     if (isNarrow) {
@@ -66,6 +71,8 @@ class StructuredGroupEditorDialog extends StatefulWidget {
   State<StructuredGroupEditorDialog> createState() =>
       _StructuredGroupEditorDialogState();
 }
+
+enum StructuredGroupEditorCreateMode { groupsOnly, inventoryBacked }
 
 class _StructuredGroupEditorDialogState
     extends State<StructuredGroupEditorDialog> {
@@ -219,6 +226,9 @@ class _StructuredGroupEditorDialogState
     final inheritedDrafts = _activeInheritedPropertyDrafts();
     final seedDrafts = _enabledSeedPropertyDrafts();
     final manualDrafts = _manualPropertyDrafts.values.toList(growable: false);
+    final supportsStructuredGovernance =
+        widget.createMode == StructuredGroupEditorCreateMode.inventoryBacked ||
+        (_isEditMode && _linkedMaterial != null);
 
     return Material(
       color: Colors.white,
@@ -256,7 +266,9 @@ class _StructuredGroupEditorDialogState
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Define the group, assign its unit, and optionally seed it with items or properties.',
+                            supportsStructuredGovernance
+                                ? 'Define the group, assign its unit, and optionally seed it with items or properties.'
+                                : 'Define the group, assign its parent, and set the master unit.',
                             style: _inventoryInterStyle(
                               color: const Color(0xFF6B7280),
                               size: 13,
@@ -305,87 +317,96 @@ class _StructuredGroupEditorDialogState
                             ),
                           ),
                           const SizedBox(height: 16),
-                          SearchableSelectField<int?>(
-                            tapTargetKey: const ValueKey<String>(
-                              'masters-group-parent',
-                            ),
-                            value:
-                                groups.any(
-                                  (group) => group.id == _selectedParentGroupId,
-                                )
-                                ? _selectedParentGroupId
-                                : null,
-                            decoration: _selectDecoration(
-                              label: 'Parent Group',
-                              helper:
-                                  'Primary means this group is a top-level inventory group.',
-                            ),
-                            dialogTitle: 'Parent Group',
-                            searchHintText: 'Search group',
-                            options: [
-                              const SearchableSelectOption<int?>(
-                                value: null,
-                                label: 'Primary',
+                          KeyedSubtree(
+                            key: const ValueKey<String>('groups-parent-field'),
+                            child: SearchableSelectField<int?>(
+                              tapTargetKey: const ValueKey<String>(
+                                'masters-group-parent',
                               ),
-                              ...groups
-                                  .where(
-                                    (group) => group.id != widget.group?.id,
+                              value:
+                                  groups.any(
+                                    (group) =>
+                                        group.id == _selectedParentGroupId,
                                   )
-                                  .map(
-                                    (group) => SearchableSelectOption<int?>(
-                                      value: group.id,
-                                      label: group.name,
+                                  ? _selectedParentGroupId
+                                  : null,
+                              decoration: _selectDecoration(
+                                label: 'Parent Group',
+                                helper:
+                                    'Primary means this group is a top-level inventory group.',
+                              ),
+                              dialogTitle: 'Parent Group',
+                              searchHintText: 'Search group',
+                              options: [
+                                const SearchableSelectOption<int?>(
+                                  value: null,
+                                  label: 'Primary',
+                                ),
+                                ...groups
+                                    .where(
+                                      (group) => group.id != widget.group?.id,
+                                    )
+                                    .map(
+                                      (group) => SearchableSelectOption<int?>(
+                                        value: group.id,
+                                        label: group.name,
+                                      ),
                                     ),
-                                  ),
-                            ],
-                            onChanged: _setSelectedParentGroup,
+                              ],
+                              onChanged: _setSelectedParentGroup,
+                            ),
                           ),
                           const SizedBox(height: 16),
-                          SearchableSelectField<int>(
-                            tapTargetKey: const ValueKey<String>(
-                              'masters-group-unit',
+                          KeyedSubtree(
+                            key: const ValueKey<String>('groups-unit-field'),
+                            child: SearchableSelectField<int>(
+                              tapTargetKey: const ValueKey<String>(
+                                'masters-group-unit',
+                              ),
+                              value:
+                                  units.any(
+                                    (unit) => unit.id == _selectedUnitId,
+                                  )
+                                  ? _selectedUnitId
+                                  : selectedUnit?.id,
+                              decoration: _selectDecoration(
+                                label: 'Group Unit',
+                                helper:
+                                    'Required. If the unit is missing, create it here and continue.',
+                              ),
+                              dialogTitle: 'Group Unit',
+                              searchHintText: 'Search unit',
+                              onCreateOption: (query) async {
+                                final created = await UnitsScreen.openEditor(
+                                  context,
+                                  initialName: query,
+                                );
+                                if (!context.mounted || created == null) {
+                                  return null;
+                                }
+                                return SearchableSelectOption<int>(
+                                  value: created.id,
+                                  label: created.displayLabel,
+                                );
+                              },
+                              createOptionLabelBuilder: (query) =>
+                                  'Create unit "$query"',
+                              options: units
+                                  .map(
+                                    (unit) => SearchableSelectOption<int>(
+                                      value: unit.id,
+                                      label: unit.displayLabel,
+                                    ),
+                                  )
+                                  .toList(growable: false),
+                              onChanged: (value) {
+                                setState(() {
+                                  _selectedUnitId = value;
+                                });
+                              },
+                              validator: (value) =>
+                                  value == null ? 'Required' : null,
                             ),
-                            value:
-                                units.any((unit) => unit.id == _selectedUnitId)
-                                ? _selectedUnitId
-                                : selectedUnit?.id,
-                            decoration: _selectDecoration(
-                              label: 'Group Unit',
-                              helper:
-                                  'Required. If the unit is missing, create it here and continue.',
-                            ),
-                            dialogTitle: 'Group Unit',
-                            searchHintText: 'Search unit',
-                            onCreateOption: (query) async {
-                              final created = await UnitsScreen.openEditor(
-                                context,
-                                initialName: query,
-                              );
-                              if (!context.mounted || created == null) {
-                                return null;
-                              }
-                              return SearchableSelectOption<int>(
-                                value: created.id,
-                                label: created.displayLabel,
-                              );
-                            },
-                            createOptionLabelBuilder: (query) =>
-                                'Create unit "$query"',
-                            options: units
-                                .map(
-                                  (unit) => SearchableSelectOption<int>(
-                                    value: unit.id,
-                                    label: unit.displayLabel,
-                                  ),
-                                )
-                                .toList(growable: false),
-                            onChanged: (value) {
-                              setState(() {
-                                _selectedUnitId = value;
-                              });
-                            },
-                            validator: (value) =>
-                                value == null ? 'Required' : null,
                           ),
                           const SizedBox(height: 18),
                           Container(
@@ -760,10 +781,12 @@ class _StructuredGroupEditorDialogState
                       ],
                     );
 
-                    final compositionCard = _CreateGroupSurfaceCard(
-                      title: 'Structure & Properties',
-                      child: compositionBody,
-                    );
+                    final compositionCard = supportsStructuredGovernance
+                        ? _CreateGroupSurfaceCard(
+                            title: 'Structure & Properties',
+                            child: compositionBody,
+                          )
+                        : null;
 
                     return SingleChildScrollView(
                       padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
@@ -772,16 +795,20 @@ class _StructuredGroupEditorDialogState
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 detailsCard,
-                                const SizedBox(height: 18),
-                                compositionCard,
+                                if (compositionCard != null) ...[
+                                  const SizedBox(height: 18),
+                                  compositionCard,
+                                ],
                               ],
                             )
                           : Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Expanded(child: detailsCard),
-                                const SizedBox(width: 18),
-                                Expanded(child: compositionCard),
+                                if (compositionCard != null) ...[
+                                  const SizedBox(width: 18),
+                                  Expanded(child: compositionCard),
+                                ],
                               ],
                             ),
                     );
@@ -898,6 +925,27 @@ class _StructuredGroupEditorDialogState
     GroupDefinition? savedGroup;
 
     if (!_isEditMode) {
+      if (widget.createMode == StructuredGroupEditorCreateMode.groupsOnly) {
+        savedGroup = await groupsProvider.createGroup(
+          CreateGroupInput(
+            name: _nameController.text.trim(),
+            parentGroupId: _selectedParentGroupId,
+            unitId: _selectedUnitId!,
+          ),
+        );
+        if (savedGroup == null) {
+          return;
+        }
+        await groupsProvider.refresh();
+        await itemsProvider.refresh();
+        savedGroup = groupsProvider.findById(savedGroup.id) ?? savedGroup;
+        if (!context.mounted) {
+          return;
+        }
+        Navigator.of(context).pop(savedGroup);
+        return;
+      }
+
       await inventoryProvider.addParentMaterial(
         CreateParentMaterialInput(
           name: _nameController.text.trim(),

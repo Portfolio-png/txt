@@ -31,6 +31,9 @@ import 'features/production_pipelines/data/repositories/pipeline_run_repository.
 import 'features/units/data/repositories/api_unit_repository.dart';
 import 'features/units/data/repositories/unit_repository.dart';
 import 'features/units/presentation/providers/units_provider.dart';
+import 'features/vendors/data/repositories/api_vendor_repository.dart';
+import 'features/vendors/data/repositories/vendor_repository.dart';
+import 'features/vendors/presentation/providers/vendors_provider.dart';
 
 const _isDemoMode = bool.fromEnvironment(
   'PAPER_DEMO_MODE',
@@ -65,6 +68,7 @@ class MyApp extends StatelessWidget {
     this.unitRepository,
     this.clientRepository,
     this.deliveryChallanRepository,
+    this.vendorRepository,
     this.itemRepository,
     this.orderRepository,
     this.pipelineRunRepository,
@@ -77,6 +81,7 @@ class MyApp extends StatelessWidget {
   final UnitRepository? unitRepository;
   final ClientRepository? clientRepository;
   final DeliveryChallanRepository? deliveryChallanRepository;
+  final VendorRepository? vendorRepository;
   final ItemRepository? itemRepository;
   final OrderRepository? orderRepository;
   final PipelineRunRepository? pipelineRunRepository;
@@ -128,6 +133,11 @@ class MyApp extends StatelessWidget {
           create: (context) =>
               clientRepository ??
               _buildClientRepository(context.read<AuthProvider>()),
+        ),
+        Provider<VendorRepository>(
+          create: (context) =>
+              vendorRepository ??
+              _buildVendorRepository(context.read<AuthProvider>()),
         ),
         Provider<ItemRepository>(
           create: (context) =>
@@ -188,6 +198,14 @@ class MyApp extends StatelessWidget {
                 ..initialize(),
           update: (context, repository, previous) =>
               previous ?? ClientsProvider(repository: repository)
+                ..initialize(),
+        ),
+        ChangeNotifierProxyProvider<VendorRepository, VendorsProvider>(
+          create: (context) =>
+              VendorsProvider(repository: context.read<VendorRepository>())
+                ..initialize(),
+          update: (context, repository, previous) =>
+              previous ?? VendorsProvider(repository: repository)
                 ..initialize(),
         ),
         ChangeNotifierProxyProvider<ItemRepository, ItemsProvider>(
@@ -260,6 +278,14 @@ class MyApp extends StatelessWidget {
     );
   }
 
+  VendorRepository _buildVendorRepository(AuthProvider auth) {
+    return ApiVendorRepository(
+      client: _authClient(auth),
+      baseUrl: _apiBaseUrl,
+      useMockResponses: _effectiveDemoMode,
+    );
+  }
+
   ItemRepository _buildItemRepository(AuthProvider auth) {
     return ApiItemRepository(
       client: _authClient(auth),
@@ -325,6 +351,7 @@ class _AuthGateState extends State<_AuthGate> {
         context.read<UnitsProvider>().refresh(),
         context.read<GroupsProvider>().refresh(),
         context.read<ClientsProvider>().refresh(),
+        context.read<VendorsProvider>().refresh(),
         context.read<ItemsProvider>().refresh(),
         context.read<DeliveryChallanProvider>().refresh(),
       ]);

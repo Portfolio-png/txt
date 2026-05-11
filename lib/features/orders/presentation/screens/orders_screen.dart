@@ -8,8 +8,9 @@ import 'dart:math' as math;
 
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
-import '../../../../core/widgets/searchable_select.dart';
+import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/widgets/page_container.dart';
+import '../../../../core/widgets/searchable_select.dart';
 import '../../../../core/widgets/soft_primitives.dart';
 import '../../../../app/shell/navigation_provider.dart';
 import '../../../clients/domain/client_definition.dart';
@@ -51,40 +52,15 @@ class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
 
   static Future<void> openEditor(BuildContext context) {
-    final isNarrow = MediaQuery.of(context).size.width < 900;
-    final body = const _OrderEditorSheet();
-    if (isNarrow) {
-      return showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (context) => Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-          ),
-          child: body,
-        ),
-      );
-    }
-
-    return showDialog<void>(
-      context: context,
-      builder: (context) {
-        final size = MediaQuery.of(context).size;
-        final dialogWidth = math.min(1499.0, size.width - 32);
-        final dialogHeight = math.min(873.0, size.height - 40);
-        return Dialog(
-          insetPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 20,
-          ),
-          child: SizedBox(
-            width: dialogWidth,
-            height: dialogHeight,
-            child: body,
-          ),
-        );
-      },
+    return showErpFormDialog<void>(
+      context,
+      maxWidth: 1499,
+      maxHeight: 873,
+      child: const _OrderEditorSheet(),
+      desktopInsetPadding: const EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 20,
+      ),
     );
   }
 
@@ -1948,6 +1924,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
         .items
         .where((item) => !item.isArchived)
         .toList(growable: false);
+    final ordersProvider = context.watch<OrdersProvider>();
     final canSubmit = clients.isNotEmpty && items.isNotEmpty;
     final canUseFooterActions = canSubmit && !_isUploadingPoDocuments;
 
@@ -1957,192 +1934,154 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
           _submit(context, clients, items);
         }
       }),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: SoftErpTheme.border),
-        ),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.max,
-            children: [
-              SizedBox(
-                height: 64,
-                child: LayoutBuilder(
+      child: Form(
+        key: _formKey,
+        child: ErpFormScaffold(
+          title: 'Create New Order',
+          subtitle:
+              'Capture the customer, item lines, and purchase-order context in the same workspace your team already uses.',
+          bodyScrollable: false,
+          bodyPadding: const EdgeInsets.fromLTRB(36, 18, 36, 22),
+          errorBanner:
+              ordersProvider.errorMessage != null && !ordersProvider.isSaving
+              ? ErpFormMessageBanner(
+                  message: ordersProvider.errorMessage!,
+                  isError: true,
+                )
+              : null,
+          headerActions: Builder(
+            builder: (context) {
+              final compactActions = MediaQuery.of(context).size.width < 1280;
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _OrderHeaderActionButton(
+                    icon: Icons.print_outlined,
+                    label: 'Print',
+                    compact: compactActions,
+                    onTap: _handlePrintOrder,
+                  ),
+                  const SizedBox(width: 8),
+                  _OrderHeaderActionButton(
+                    icon: Icons.upload_file_outlined,
+                    label: 'Upload PO',
+                    compact: compactActions,
+                    isActive: _showUploadPanel,
+                    onTap: _toggleUploadPanel,
+                  ),
+                ],
+              );
+            },
+          ),
+          body: !canSubmit
+              ? _DependencyMessage(
+                  hasClients: clients.isNotEmpty,
+                  hasItems: items.isNotEmpty,
+                )
+              : LayoutBuilder(
                   builder: (context, constraints) {
-                    final compactActions = constraints.maxWidth < 1080;
-                    return Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Center(
-                          child: Text(
-                            'Create New Order',
-                            style: Theme.of(context).textTheme.titleSmall
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: SoftErpTheme.textPrimary,
-                                ),
-                          ),
-                        ),
-                        Positioned(
-                          right: 24,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _OrderHeaderActionButton(
-                                icon: Icons.print_outlined,
-                                label: 'Print',
-                                compact: compactActions,
-                                onTap: _handlePrintOrder,
-                              ),
-                              const SizedBox(width: 8),
-                              _OrderHeaderActionButton(
-                                icon: Icons.upload_file_outlined,
-                                label: 'Upload PO',
-                                compact: compactActions,
-                                isActive: _showUploadPanel,
-                                onTap: _toggleUploadPanel,
-                              ),
+                    final isCompact = constraints.maxWidth < 720;
+                    final detailsPanel = _buildOrderDetailsPanel(
+                      context,
+                      clients,
+                    );
+                    final itemsPanel = _buildOrderItemsPanel(
+                      context,
+                      items,
+                      isCompact: isCompact,
+                    );
+                    final uploadPanel = _OrderUploadPanel(
+                      onClose: _toggleUploadPanel,
+                      onAddDocument: _handleAddDocument,
+                      documents: _poDocuments,
+                      recentFiles: _recentPoFiles,
+                      onRemoveDocument: _removePoDocument,
+                      onRetryDocument: _retryPoDocument,
+                      onUseRecentFile: _addCachedPoFile,
+                    );
+                    final canShowUploadColumn =
+                        _renderUploadPanel && constraints.maxWidth >= 980;
+                    final showStackedUploadPanel =
+                        _renderUploadPanel &&
+                        !isCompact &&
+                        !canShowUploadColumn;
+                    if (isCompact) {
+                      return SingleChildScrollView(
+                        child: Column(
+                          children: [
+                            detailsPanel,
+                            const SizedBox(height: 10),
+                            itemsPanel,
+                            if (_renderUploadPanel) ...[
+                              const SizedBox(height: 10),
+                              uploadPanel,
                             ],
-                          ),
+                          ],
                         ),
-                      ],
+                      );
+                    }
+                    if (showStackedUploadPanel) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Expanded(flex: 4, child: detailsPanel),
+                                const SizedBox(width: 14),
+                                Expanded(flex: 9, child: itemsPanel),
+                              ],
+                            ),
+                          ),
+                          _AnimatedOrderStackedUploadSlot(
+                            visible: _showUploadPanel,
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 14),
+                              child: uploadPanel,
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+                    return _AnimatedOrderEditorColumns(
+                      showUploadPanel: _showUploadPanel,
+                      renderUploadPanel: _renderUploadPanel,
+                      detailsPanel: detailsPanel,
+                      itemsPanel: itemsPanel,
+                      uploadPanel: uploadPanel,
                     );
                   },
                 ),
+          footer: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              _OrderEditorFooterButton(
+                label: 'Cancel',
+                onPressed: () => Navigator.of(context).pop(),
               ),
-              const Divider(height: 1, color: SoftErpTheme.border),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(36, 18, 36, 22),
-                  child: !canSubmit
-                      ? _DependencyMessage(
-                          hasClients: clients.isNotEmpty,
-                          hasItems: items.isNotEmpty,
-                        )
-                      : LayoutBuilder(
-                          builder: (context, constraints) {
-                            final isCompact = constraints.maxWidth < 720;
-                            final detailsPanel = _buildOrderDetailsPanel(
-                              context,
-                              clients,
-                            );
-                            final itemsPanel = _buildOrderItemsPanel(
-                              context,
-                              items,
-                              isCompact: isCompact,
-                            );
-                            final uploadPanel = _OrderUploadPanel(
-                              onClose: _toggleUploadPanel,
-                              onAddDocument: _handleAddDocument,
-                              documents: _poDocuments,
-                              recentFiles: _recentPoFiles,
-                              onRemoveDocument: _removePoDocument,
-                              onRetryDocument: _retryPoDocument,
-                              onUseRecentFile: _addCachedPoFile,
-                            );
-                            final canShowUploadColumn =
-                                _renderUploadPanel &&
-                                constraints.maxWidth >= 980;
-                            final showStackedUploadPanel =
-                                _renderUploadPanel &&
-                                !isCompact &&
-                                !canShowUploadColumn;
-                            if (isCompact) {
-                              return Column(
-                                children: [
-                                  detailsPanel,
-                                  const SizedBox(height: 10),
-                                  itemsPanel,
-                                  if (_renderUploadPanel) ...[
-                                    const SizedBox(height: 10),
-                                    uploadPanel,
-                                  ],
-                                ],
-                              );
-                            }
-                            if (showStackedUploadPanel) {
-                              return SizedBox(
-                                height: 860,
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    Expanded(
-                                      child: Row(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.stretch,
-                                        children: [
-                                          Expanded(
-                                            flex: 4,
-                                            child: detailsPanel,
-                                          ),
-                                          const SizedBox(width: 14),
-                                          Expanded(flex: 9, child: itemsPanel),
-                                        ],
-                                      ),
-                                    ),
-                                    _AnimatedOrderStackedUploadSlot(
-                                      visible: _showUploadPanel,
-                                      child: Padding(
-                                        padding: const EdgeInsets.only(top: 14),
-                                        child: uploadPanel,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }
-                            return _AnimatedOrderEditorColumns(
-                              showUploadPanel: _showUploadPanel,
-                              renderUploadPanel: _renderUploadPanel,
-                              detailsPanel: detailsPanel,
-                              itemsPanel: itemsPanel,
-                              uploadPanel: uploadPanel,
-                            );
-                          },
-                        ),
-                ),
+              const SizedBox(width: 10),
+              _OrderEditorFooterButton(
+                key: const ValueKey<String>('orders-editor-save-draft'),
+                label: 'Save Draft',
+                onPressed: canUseFooterActions
+                    ? () => _submit(
+                        context,
+                        clients,
+                        items,
+                        statusOverride: OrderStatus.draft,
+                        successMessage: 'Draft saved successfully.',
+                      )
+                    : null,
               ),
-              const Divider(height: 1, color: SoftErpTheme.border),
-              Container(
-                width: double.infinity,
-                height: 82,
-                padding: const EdgeInsets.fromLTRB(32, 16, 28, 20),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    _OrderEditorFooterButton(
-                      label: 'Cancel',
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
-                    const SizedBox(width: 10),
-                    _OrderEditorFooterButton(
-                      key: const ValueKey<String>('orders-editor-save-draft'),
-                      label: 'Save Draft',
-                      onPressed: canUseFooterActions
-                          ? () => _submit(
-                              context,
-                              clients,
-                              items,
-                              statusOverride: OrderStatus.draft,
-                              successMessage: 'Draft saved successfully.',
-                            )
-                          : null,
-                    ),
-                    const SizedBox(width: 10),
-                    _OrderEditorFooterButton(
-                      key: const ValueKey<String>('orders-editor-create-order'),
-                      label: 'Save',
-                      isPrimary: true,
-                      onPressed: canUseFooterActions
-                          ? () => _submit(context, clients, items)
-                          : null,
-                    ),
-                  ],
-                ),
+              const SizedBox(width: 10),
+              _OrderEditorFooterButton(
+                key: const ValueKey<String>('orders-editor-create-order'),
+                label: 'Save',
+                isPrimary: true,
+                onPressed: canUseFooterActions
+                    ? () => _submit(context, clients, items)
+                    : null,
               ),
             ],
           ),
@@ -4168,7 +4107,7 @@ class _OrderDetailsModalState extends State<_OrderDetailsModal> {
                     child: Row(
                       children: [
                         _OrderDetailActionButton(
-                          label: 'View Delivery Challans',
+                          label: 'View Challans',
                           onPressed: () =>
                               _viewDeliveryChallans(context, order),
                         ),

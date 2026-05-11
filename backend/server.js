@@ -1425,6 +1425,20 @@ function rowToGroupDto(row) {
   };
 }
 
+function rowToInventorySetDto(row, lines = []) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: row.id,
+    name: row.name || '',
+    totalItemCount: Number(row.total_item_count || 0),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lines,
+  };
+}
+
 function rowToClientDto(row) {
   if (!row) {
     return null;
@@ -1436,6 +1450,27 @@ function rowToClientDto(row) {
     alias: row.alias || '',
     gstNumber: row.gst_number || '',
     address: row.address || '',
+    isArchived: Boolean(row.is_archived),
+    usageCount: row.usage_count || 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToVendorDto(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    name: row.name || '',
+    alias: row.alias || '',
+    gstNumber: row.gst_number || '',
+    address: row.address || '',
+    contactName: row.contact_name || '',
+    phone: row.phone || '',
+    email: row.email || '',
     isArchived: Boolean(row.is_archived),
     usageCount: row.usage_count || 0,
     createdAt: row.created_at,
@@ -2116,6 +2151,9 @@ async function initDb() {
       reason_code TEXT,
       reference_type TEXT,
       reference_id TEXT,
+      source_challan_id INTEGER,
+      source_challan_type TEXT,
+      source_challan_line_id INTEGER,
       actor TEXT DEFAULT '',
       lot_code TEXT DEFAULT '',
       created_at TEXT NOT NULL
@@ -2198,6 +2236,22 @@ async function initDb() {
   `);
 
   await run(`
+    CREATE TABLE IF NOT EXISTS vendors (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      alias TEXT DEFAULT '',
+      gst_number TEXT DEFAULT '',
+      address TEXT DEFAULT '',
+      contact_name TEXT DEFAULT '',
+      phone TEXT DEFAULT '',
+      email TEXT DEFAULT '',
+      is_archived INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
     CREATE TABLE IF NOT EXISTS company_profiles (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       company_name TEXT NOT NULL,
@@ -2272,14 +2326,47 @@ async function initDb() {
   );
 
   await run(`
+    CREATE TABLE IF NOT EXISTS inventory_sets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS inventory_set_lines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      set_id INTEGER NOT NULL REFERENCES inventory_sets(id) ON DELETE CASCADE,
+      item_id INTEGER NOT NULL REFERENCES items(id),
+      variation_leaf_node_id INTEGER REFERENCES item_variation_nodes(id),
+      quantity INTEGER NOT NULL DEFAULT 1,
+      position INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(set_id, item_id, variation_leaf_node_id)
+    )
+  `);
+  await run(
+    'CREATE INDEX IF NOT EXISTS idx_inventory_set_lines_set_id ON inventory_set_lines(set_id)',
+  );
+  await run(
+    'CREATE INDEX IF NOT EXISTS idx_inventory_set_lines_item_id ON inventory_set_lines(item_id)',
+  );
+
+  await run(`
     CREATE TABLE IF NOT EXISTS delivery_challans (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      type TEXT NOT NULL DEFAULT 'delivery',
       order_id INTEGER REFERENCES orders(id),
       order_no TEXT DEFAULT '',
       challan_no TEXT NOT NULL UNIQUE,
       date TEXT NOT NULL,
+      location TEXT DEFAULT '',
       customer_name TEXT NOT NULL DEFAULT '',
       customer_gstin TEXT DEFAULT '',
+      vendor_id INTEGER REFERENCES vendors(id),
+      vendor_name TEXT DEFAULT '',
+      vendor_gstin TEXT DEFAULT '',
+      source_reference TEXT DEFAULT '',
       company_profile_snapshot TEXT,
       notes TEXT DEFAULT '',
       status TEXT NOT NULL DEFAULT 'draft',
@@ -2296,6 +2383,7 @@ async function initDb() {
       challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
       order_item_id INTEGER,
       item_id INTEGER,
+      variation_leaf_node_id INTEGER NOT NULL DEFAULT 0,
       line_no INTEGER NOT NULL DEFAULT 1,
       particulars TEXT NOT NULL DEFAULT '',
       hsn_code TEXT DEFAULT '',
@@ -2497,11 +2585,37 @@ async function initDb() {
 
   await ensureColumnExists('delivery_challans', 'order_id', 'INTEGER');
   await ensureColumnExists('delivery_challans', 'order_no', "TEXT DEFAULT ''");
+  await ensureColumnExists('delivery_challans', 'type', "TEXT NOT NULL DEFAULT 'delivery'");
+  await ensureColumnExists('delivery_challans', 'location', "TEXT DEFAULT ''");
+  await ensureColumnExists('delivery_challans', 'vendor_id', 'INTEGER');
+  await ensureColumnExists('delivery_challans', 'vendor_name', "TEXT DEFAULT ''");
+  await ensureColumnExists('delivery_challans', 'vendor_gstin', "TEXT DEFAULT ''");
+  await ensureColumnExists('delivery_challans', 'source_reference', "TEXT DEFAULT ''");
   await ensureColumnExists('delivery_challan_items', 'order_item_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'item_id', 'INTEGER');
+  await ensureColumnExists('delivery_challan_items', 'variation_leaf_node_id', 'INTEGER NOT NULL DEFAULT 0');
   await ensureDeliveryChallanItemNumericColumns();
+  await ensureInventorySetLineNullableLeafReference();
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_order_id ON delivery_challans(order_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_vendor_id ON delivery_challans(vendor_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_type ON delivery_challans(type)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_items_challan_id ON delivery_challan_items(challan_id)');
+
+  // Foreign key indexes for production scaling on materials
+  await run('CREATE INDEX IF NOT EXISTS idx_materials_linked_group_id ON materials(linked_group_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_materials_linked_item_id ON materials(linked_item_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_materials_parent_barcode ON materials(parent_barcode)');
+
+  // Indexes for health dashboard and inventory status filtering
+  await run('CREATE INDEX IF NOT EXISTS idx_materials_inventory_state ON materials(inventory_state)');
+  await run('CREATE INDEX IF NOT EXISTS idx_materials_stock_quantities ON materials(on_hand_qty, available_to_promise_qty, reserved_qty)');
+  await run('CREATE INDEX IF NOT EXISTS idx_inventory_movements_health_query ON inventory_movements(movement_type, created_at)');
+  await run('CREATE INDEX IF NOT EXISTS idx_inventory_alerts_is_open ON inventory_alerts(is_open)');
+
+  // Inventory Sets indexes
+  await run('CREATE INDEX IF NOT EXISTS idx_inventory_sets_name ON inventory_sets(name)');
+  await run('CREATE INDEX IF NOT EXISTS idx_inventory_set_lines_set_id ON inventory_set_lines(set_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_inventory_set_lines_item_lookup ON inventory_set_lines(item_id, variation_leaf_node_id)');
 
   await ensureColumnExists('orders', 'updated_at', "TEXT NOT NULL DEFAULT ''");
   await run(`
@@ -2573,6 +2687,11 @@ async function initDb() {
   await ensureColumnExists('materials', 'linked_group_id', 'INTEGER');
   await ensureColumnExists('materials', 'linked_item_id', 'INTEGER');
   await ensureColumnExists('materials', 'linked_variation_leaf_node_id', 'INTEGER');
+  await run('CREATE INDEX IF NOT EXISTS idx_materials_item_variation_lookup ON materials(linked_item_id, linked_variation_leaf_node_id)');
+  await ensureColumnExists('inventory_movements', 'source_challan_id', 'INTEGER');
+  await ensureColumnExists('inventory_movements', 'source_challan_type', 'TEXT');
+  await ensureColumnExists('inventory_movements', 'source_challan_line_id', 'INTEGER');
+  await run('CREATE INDEX IF NOT EXISTS idx_inventory_movements_source_challan ON inventory_movements(source_challan_id, source_challan_type)');
   await ensureColumnExists('materials', 'location', "TEXT DEFAULT ''");
   await ensureColumnExists('materials', 'group_mode', 'TEXT');
   await ensureColumnExists(
@@ -2650,6 +2769,13 @@ async function initDb() {
   await ensureColumnExists('auth_sessions', 'user_agent', "TEXT DEFAULT ''");
   await ensureColumnExists('auth_sessions', 'revoked_reason', "TEXT DEFAULT ''");
   await ensureColumnExists('delete_requests', 'reviewed_note', "TEXT DEFAULT ''");
+  await ensureColumnExists('vendors', 'alias', "TEXT DEFAULT ''");
+  await ensureColumnExists('vendors', 'gst_number', "TEXT DEFAULT ''");
+  await ensureColumnExists('vendors', 'address', "TEXT DEFAULT ''");
+  await ensureColumnExists('vendors', 'contact_name', "TEXT DEFAULT ''");
+  await ensureColumnExists('vendors', 'phone', "TEXT DEFAULT ''");
+  await ensureColumnExists('vendors', 'email', "TEXT DEFAULT ''");
+  await ensureColumnExists('vendors', 'is_archived', 'INTEGER NOT NULL DEFAULT 0');
   await run("UPDATE materials SET updated_at = created_at WHERE updated_at IS NULL");
   await seedRolePermissions();
   await seedPermissionTemplates();
@@ -2864,6 +2990,65 @@ async function ensureDeliveryChallanItemNumericColumns() {
       FROM delivery_challan_items_legacy
     `);
     await run('DROP TABLE delivery_challan_items_legacy');
+    await run('COMMIT');
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
+}
+
+async function ensureInventorySetLineNullableLeafReference() {
+  const columns = await all('PRAGMA table_info(inventory_set_lines)');
+  if (!columns.length) {
+    return;
+  }
+  const leafColumn = columns.find((column) => column.name === 'variation_leaf_node_id');
+  const isNotNull = Number(leafColumn?.notnull || 0) === 1;
+  if (!isNotNull) {
+    return;
+  }
+
+  console.log('Migrating inventory_set_lines: allowing NULL variation_leaf_node_id for base items');
+  await run('BEGIN TRANSACTION');
+  try {
+    await run('ALTER TABLE inventory_set_lines RENAME TO inventory_set_lines_legacy');
+    await run(`
+      CREATE TABLE inventory_set_lines (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        set_id INTEGER NOT NULL REFERENCES inventory_sets(id) ON DELETE CASCADE,
+        item_id INTEGER NOT NULL REFERENCES items(id),
+        variation_leaf_node_id INTEGER REFERENCES item_variation_nodes(id),
+        quantity INTEGER NOT NULL DEFAULT 1,
+        position INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(set_id, item_id, variation_leaf_node_id)
+      )
+    `);
+    await run(`
+      INSERT INTO inventory_set_lines (
+        id, set_id, item_id, variation_leaf_node_id, quantity, position
+      )
+      SELECT
+        id,
+        set_id,
+        item_id,
+        CASE
+          WHEN variation_leaf_node_id = 0 THEN NULL
+          ELSE variation_leaf_node_id
+        END,
+        quantity,
+        position
+      FROM inventory_set_lines_legacy
+    `);
+    await run('DROP TABLE inventory_set_lines_legacy');
+    await run(
+      'CREATE INDEX IF NOT EXISTS idx_inventory_set_lines_set_id ON inventory_set_lines(set_id)',
+    );
+    await run(
+      'CREATE INDEX IF NOT EXISTS idx_inventory_set_lines_item_id ON inventory_set_lines(item_id)',
+    );
+    await run(
+      'CREATE INDEX IF NOT EXISTS idx_inventory_set_lines_item_lookup ON inventory_set_lines(item_id, variation_leaf_node_id)',
+    );
     await run('COMMIT');
   } catch (error) {
     await run('ROLLBACK');
@@ -3929,6 +4114,131 @@ async function ensureDemoClientsPresent() {
   }
 }
 
+async function getVendorRowById(id) {
+  return get(
+    `
+    SELECT
+      vendors.*,
+      (SELECT COUNT(*) FROM delivery_challans WHERE delivery_challans.vendor_id = vendors.id) AS usage_count
+    FROM vendors
+    WHERE vendors.id = ?
+    `,
+    [id],
+  );
+}
+
+async function getVendorsWithUsage() {
+  return all(`
+    SELECT
+      vendors.*,
+      (SELECT COUNT(*) FROM delivery_challans WHERE delivery_challans.vendor_id = vendors.id) AS usage_count
+    FROM vendors
+    ORDER BY vendors.is_archived ASC, LOWER(vendors.name) ASC, vendors.id ASC
+  `);
+}
+
+async function findVendorDuplicate({ name, gstNumber = '', excludeId = null }) {
+  const rows = await all('SELECT id, name, gst_number FROM vendors');
+  const normalizedName = normalizePartyValue(name);
+  const normalizedGst = normalizeGstNumber(gstNumber);
+  return rows.find((row) => {
+    if (excludeId != null && row.id === excludeId) {
+      return false;
+    }
+    const sameName = normalizePartyValue(row.name) === normalizedName;
+    const sameGst =
+      normalizedGst &&
+      normalizeGstNumber(row.gst_number || '') === normalizedGst;
+    return sameName || Boolean(sameGst);
+  }) || null;
+}
+
+async function saveVendor({
+  name,
+  alias = '',
+  gstNumber = '',
+  address = '',
+  contactName = '',
+  phone = '',
+  email = '',
+  id = null,
+}) {
+  const trimmedName = String(name || '').trim();
+  const trimmedAlias = String(alias || '').trim();
+  const trimmedAddress = String(address || '').trim();
+  const trimmedContactName = String(contactName || '').trim();
+  const trimmedPhone = String(phone || '').trim();
+  const trimmedEmail = String(email || '').trim();
+  const trimmedGstNumber = normalizeGstNumber(gstNumber);
+  if (!trimmedName) {
+    const error = new Error('Vendor name is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const duplicate = await findVendorDuplicate({
+    name: trimmedName,
+    gstNumber: trimmedGstNumber,
+    excludeId: id,
+  });
+  if (duplicate) {
+    const error = new Error('A vendor with the same name or GST number already exists.');
+    error.statusCode = 409;
+    throw error;
+  }
+
+  const now = new Date().toISOString();
+  if (id == null) {
+    const result = await run(
+      `
+      INSERT INTO vendors (
+        name, alias, gst_number, address, contact_name, phone, email, is_archived, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+      `,
+      [
+        trimmedName,
+        trimmedAlias,
+        trimmedGstNumber,
+        trimmedAddress,
+        trimmedContactName,
+        trimmedPhone,
+        trimmedEmail,
+        now,
+        now,
+      ],
+    );
+    return getVendorRowById(result.lastID);
+  }
+
+  const existing = await getVendorRowById(id);
+  if (!existing) {
+    const error = new Error('Vendor not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  await run(
+    `
+    UPDATE vendors
+    SET name = ?, alias = ?, gst_number = ?, address = ?, contact_name = ?, phone = ?, email = ?, updated_at = ?
+    WHERE id = ?
+    `,
+    [
+      trimmedName,
+      trimmedAlias,
+      trimmedGstNumber,
+      trimmedAddress,
+      trimmedContactName,
+      trimmedPhone,
+      trimmedEmail,
+      now,
+      id,
+    ],
+  );
+  return getVendorRowById(id);
+}
+
 const DEFAULT_COMPANY_PROFILE = Object.freeze({
   companyName: 'Shree Ganesh Metal Works',
   mobile: '9324041030',
@@ -4057,6 +4367,7 @@ async function saveCompanyProfile(input = {}) {
 }
 
 const DELIVERY_CHALLAN_STATUSES = new Set(['draft', 'issued', 'cancelled']);
+const CHALLAN_TYPES = new Set(['delivery', 'reception']);
 
 function parseJsonObject(value, fallback = null) {
   if (!value) {
@@ -4070,6 +4381,11 @@ function parseJsonObject(value, fallback = null) {
   } catch (_) {
     return fallback;
   }
+}
+
+function normalizeChallanType(value, fallback = 'delivery') {
+  const normalized = String(value || fallback).trim().toLowerCase();
+  return CHALLAN_TYPES.has(normalized) ? normalized : fallback;
 }
 
 async function getDeliveryChallanItems(challanId) {
@@ -4094,6 +4410,7 @@ function rowToDeliveryChallanItemDto(row) {
     challan_id: row.challan_id,
     order_item_id: row.order_item_id || null,
     item_id: row.item_id || null,
+    variation_leaf_node_id: Number(row.variation_leaf_node_id || 0),
     line_no: Number(row.line_no || 0),
     particulars: row.particulars || '',
     hsn_code: row.hsn_code || '',
@@ -4108,12 +4425,18 @@ async function rowToDeliveryChallanDto(row, { includeItems = true } = {}) {
   const items = includeItems ? await getDeliveryChallanItems(row.id) : [];
   return {
     id: row.id,
+    type: normalizeChallanType(row.type),
     order_id: row.order_id || null,
     order_no: row.order_no || '',
     challan_no: row.challan_no || '',
     date: row.date || '',
+    location: row.location || '',
     customer_name: row.customer_name || '',
     customer_gstin: row.customer_gstin || '',
+    vendor_id: row.vendor_id || null,
+    vendor_name: row.vendor_name || '',
+    vendor_gstin: row.vendor_gstin || '',
+    source_reference: row.source_reference || '',
     company_profile_snapshot: parseJsonObject(row.company_profile_snapshot, null),
     notes: row.notes || '',
     status: row.status || 'draft',
@@ -4126,19 +4449,22 @@ async function rowToDeliveryChallanDto(row, { includeItems = true } = {}) {
   };
 }
 
-async function generateChallanNumber() {
+async function generateChallanNumber(type = 'delivery') {
+  const normalizedType = normalizeChallanType(type);
+  const prefix = normalizedType === 'reception' ? 'RC' : 'DC';
   const row = await get(
     `
     SELECT challan_no
     FROM delivery_challans
-    WHERE challan_no LIKE 'DC-%'
+    WHERE challan_no LIKE ?
     ORDER BY id DESC
     LIMIT 1
     `,
+    [`${prefix}-%`],
   );
   const match = String(row?.challan_no || '').match(/(\d+)$/);
   const next = match ? Number(match[1]) + 1 : 1;
-  return `DC-${String(next).padStart(5, '0')}`;
+  return `${prefix}-${String(next).padStart(5, '0')}`;
 }
 
 function normalizeChallanDate(value) {
@@ -4176,9 +4502,14 @@ function normalizeDeliveryChallanItems(items = []) {
     .map((item, index) => ({
       orderItemId: Number(item.orderItemId ?? item.order_item_id ?? 0) || null,
       itemId: Number(item.itemId ?? item.item_id ?? 0) || null,
+      variationLeafNodeId:
+        Number(item.variationLeafNodeId ?? item.variation_leaf_node_id ?? 0) || 0,
       lineNo: Number(item.lineNo ?? item.line_no ?? index + 1) || index + 1,
       particulars: String(item.particulars || '').trim(),
       hsnCode: String(item.hsnCode ?? item.hsn_code ?? '').trim(),
+      variationPathLabel: String(
+        item.variationPathLabel ?? item.variation_path_label ?? '',
+      ).trim(),
       quantityPcs: String(item.quantityPcs ?? item.quantity_pcs ?? '').trim(),
       weight: String(item.weight || '').trim(),
     }))
@@ -4198,13 +4529,31 @@ async function getDeliveryChallanRowById(id) {
   return get('SELECT * FROM delivery_challans WHERE id = ?', [Number(id)]);
 }
 
-async function listDeliveryChallans({ status, search, dateFrom, dateTo, orderId } = {}) {
+async function listDeliveryChallans({
+  status,
+  type,
+  search,
+  dateFrom,
+  dateTo,
+  orderId,
+  vendorId,
+} = {}) {
   const where = [];
   const params = [];
+  const normalizedType = type ? normalizeChallanType(type, '') : '';
+  if (normalizedType) {
+    where.push('dc.type = ?');
+    params.push(normalizedType);
+  }
   const normalizedOrderId = Number(orderId || 0);
   if (Number.isInteger(normalizedOrderId) && normalizedOrderId > 0) {
     where.push('dc.order_id = ?');
     params.push(normalizedOrderId);
+  }
+  const normalizedVendorId = Number(vendorId || 0);
+  if (Number.isInteger(normalizedVendorId) && normalizedVendorId > 0) {
+    where.push('dc.vendor_id = ?');
+    params.push(normalizedVendorId);
   }
   if (status && DELIVERY_CHALLAN_STATUSES.has(status)) {
     where.push('dc.status = ?');
@@ -4212,8 +4561,22 @@ async function listDeliveryChallans({ status, search, dateFrom, dateTo, orderId 
   }
   const normalizedSearch = String(search || '').trim().toLowerCase();
   if (normalizedSearch) {
-    where.push('(LOWER(dc.challan_no) LIKE ? OR LOWER(dc.order_no) LIKE ? OR LOWER(dc.customer_name) LIKE ?)');
-    params.push(`%${normalizedSearch}%`, `%${normalizedSearch}%`, `%${normalizedSearch}%`);
+    where.push(`
+      (
+        LOWER(dc.challan_no) LIKE ?
+        OR LOWER(dc.order_no) LIKE ?
+        OR LOWER(dc.customer_name) LIKE ?
+        OR LOWER(dc.vendor_name) LIKE ?
+        OR LOWER(dc.source_reference) LIKE ?
+      )
+    `);
+    params.push(
+      `%${normalizedSearch}%`,
+      `%${normalizedSearch}%`,
+      `%${normalizedSearch}%`,
+      `%${normalizedSearch}%`,
+      `%${normalizedSearch}%`,
+    );
   }
   if (dateFrom) {
     where.push('date(dc.date) >= date(?)');
@@ -4262,9 +4625,124 @@ function orderItemSnapshotFromOrder(order) {
   return {
     orderItemId: Number(order.id),
     itemId: order.item_id || null,
+    variationLeafNodeId: Number(order.variation_leaf_node_id || 0),
+    variationPathLabel: variationLabel,
     particulars: variationLabel ? `${itemName} - ${variationLabel}` : itemName,
     hsnCode: '',
   };
+}
+
+async function getVendorForChallan(vendorId) {
+  const vendor = await getVendorRowById(Number(vendorId));
+  if (!vendor || vendor.is_archived) {
+    const error = new Error('Select an active vendor before saving reception challan.');
+    error.statusCode = 400;
+    throw error;
+  }
+  return vendor;
+}
+
+async function getItemSelectionSnapshot(itemId, variationLeafNodeId) {
+  const selection = await resolveOrderVariationSelection({
+    itemId,
+    variationLeafNodeId,
+    variationPathNodeIds: [],
+    status: 'notStarted',
+  });
+  return {
+    item: selection.item,
+    itemId: selection.item.id,
+    variationLeafNodeId: selection.variationLeafNodeId,
+    variationPathLabel: selection.variationPathLabel,
+    particulars: selection.variationPathLabel
+      ? `${selection.item.display_name || selection.item.name} - ${selection.variationPathLabel}`
+      : (selection.item.display_name || selection.item.name || ''),
+  };
+}
+
+async function findMaterialByItemSelection(itemId, variationLeafNodeId) {
+  if (Number(variationLeafNodeId || 0) > 0) {
+    const exact = await get(
+      `
+      SELECT *
+      FROM materials
+      WHERE linked_item_id = ?
+        AND linked_variation_leaf_node_id = ?
+      ORDER BY id ASC
+      LIMIT 1
+      `,
+      [itemId, variationLeafNodeId],
+    );
+    if (exact) {
+      return exact;
+    }
+  }
+  const base = await get(
+    `
+    SELECT *
+    FROM materials
+    WHERE linked_item_id = ?
+      AND COALESCE(linked_variation_leaf_node_id, 0) = 0
+    ORDER BY id ASC
+    LIMIT 1
+    `,
+    [itemId],
+  );
+  if (base) {
+    return base;
+  }
+  return get(
+    `
+    SELECT *
+    FROM materials
+    WHERE linked_item_id = ?
+    ORDER BY id ASC
+    LIMIT 1
+    `,
+    [itemId],
+  );
+}
+
+function generateStandaloneMaterialBarcode() {
+  return `MAT-${Date.now()}-${Math.floor(Math.random() * 100000)
+    .toString()
+    .padStart(5, '0')}`;
+}
+
+async function ensureMaterialForItemSelection({ itemId, variationLeafNodeId = 0, actor = null }) {
+  const existing = await findMaterialByItemSelection(itemId, variationLeafNodeId);
+  if (existing) {
+    return existing;
+  }
+  const snapshot = await getItemSelectionSnapshot(itemId, variationLeafNodeId);
+  const unit = snapshot.item.unit_id ? await getUnitRowById(snapshot.item.unit_id) : null;
+  const now = new Date().toISOString();
+  const barcode = generateStandaloneMaterialBarcode();
+  await run(
+    `
+    INSERT INTO materials (
+      barcode, name, type, grade, thickness, supplier, location, unit_id, unit, notes,
+      group_mode, inheritance_enabled, created_at, kind, parent_barcode, number_of_children,
+      linked_child_barcodes, scan_count, linked_group_id, linked_item_id, linked_variation_leaf_node_id,
+      display_stock, created_by, workflow_status, material_class, inventory_state, procurement_state,
+      traceability_mode, on_hand_qty, reserved_qty, available_to_promise_qty, incoming_qty,
+      linked_order_count, linked_pipeline_count, pending_alert_count, updated_at, last_scanned_at
+    ) VALUES (?, ?, 'Item', '', '', '', '', ?, ?, '', NULL, 0, ?, 'standalone', NULL, 0, '[]', 0, NULL, ?, ?, ?, ?, 'notStarted', 'finished_good', 'available', 'not_ordered', 'bulk', 0, 0, 0, 0, 0, 0, 0, ?, NULL)
+    `,
+    [
+      barcode,
+      snapshot.particulars || snapshot.item.display_name || snapshot.item.name,
+      unit?.id || snapshot.item.unit_id || null,
+      unit?.symbol || '',
+      now,
+      snapshot.item.id,
+      snapshot.variationLeafNodeId > 0 ? snapshot.variationLeafNodeId : null,
+      unit?.symbol ? `0 ${unit.symbol}` : '0',
+      actor?.name || actor || 'System',
+      now,
+    ],
+  );
+  return getMaterialRowByBarcode(barcode);
 }
 
 async function logDeliveryChallanActivity(challanId, activityType, actor, details = {}) {
@@ -4341,16 +4819,39 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
     throw error;
   }
 
+  const challanType = normalizeChallanType(
+    input.type ?? input.challanType ?? input.challan_type ?? existing?.type ?? 'delivery',
+  );
   const orderId = Number(input.orderId ?? input.order_id ?? existing?.order_id ?? 0);
-  if (!Number.isInteger(orderId) || orderId <= 0) {
-    const error = new Error('Select an order before saving delivery challan.');
-    error.statusCode = 400;
-    throw error;
+  const vendorId = Number(input.vendorId ?? input.vendor_id ?? existing?.vendor_id ?? 0);
+  const location = String(input.location ?? existing?.location ?? '').trim();
+  const sourceReference = String(
+    input.sourceReference ?? input.source_reference ?? existing?.source_reference ?? '',
+  ).trim();
+  let order = null;
+  let orderSnapshot = null;
+  let vendor = null;
+  if (challanType === 'delivery') {
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      const error = new Error('Select an order before saving delivery challan.');
+      error.statusCode = 400;
+      throw error;
+    }
+    order = await getOrderForDeliveryChallan(orderId);
+    orderSnapshot = orderItemSnapshotFromOrder(order);
+  } else {
+    if (!Number.isInteger(vendorId) || vendorId <= 0) {
+      const error = new Error('Select a vendor before saving reception challan.');
+      error.statusCode = 400;
+      throw error;
+    }
+    vendor = await getVendorForChallan(vendorId);
   }
-  const order = await getOrderForDeliveryChallan(orderId);
-  const orderSnapshot = orderItemSnapshotFromOrder(order);
   const challanNo = String(
-    existing?.challan_no ?? input.challanNo ?? input.challan_no ?? (await generateChallanNumber()),
+    existing?.challan_no ??
+        input.challanNo ??
+        input.challan_no ??
+        (await generateChallanNumber(challanType)),
   ).trim();
   if (!challanNo) {
     const error = new Error('Challan number is required.');
@@ -4368,31 +4869,64 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
   }
 
   const date = normalizeChallanDate(input.date ?? existing?.date);
-  const customerName = String(order.client_name || '').trim();
-  const customerGstin = String(order.client_gstin || '').trim();
-  const orderNo = String(order.order_no || '').trim();
+  const customerName = challanType === 'delivery'
+    ? String(order.client_name || '').trim()
+    : '';
+  const customerGstin = challanType === 'delivery'
+    ? String(order.client_gstin || '').trim()
+    : '';
+  const vendorName = challanType === 'reception'
+    ? String(vendor.name || '').trim()
+    : '';
+  const vendorGstin = challanType === 'reception'
+    ? String(vendor.gst_number || '').trim()
+    : '';
+  const orderNo = challanType === 'delivery' ? String(order.order_no || '').trim() : '';
   const notes = String(input.notes ?? existing?.notes ?? '').trim();
-  const items = normalizeDeliveryChallanItems(input.items || []).map((item) => {
-    const orderItemId = item.orderItemId || Number(order.id);
-    const itemId = item.itemId || order.item_id || null;
-    if (orderItemId !== Number(order.id)) {
-      const error = new Error('Selected challan item does not belong to the selected order.');
-      error.statusCode = 400;
-      throw error;
+  const persistedOrderId = challanType === 'delivery' ? orderId : null;
+  const persistedVendorId = challanType === 'reception' ? vendor.id : null;
+  const normalizedItems = normalizeDeliveryChallanItems(input.items || []);
+  const items = [];
+  for (const item of normalizedItems) {
+    if (challanType === 'delivery') {
+      const orderItemId = item.orderItemId || Number(order.id);
+      const itemId = item.itemId || order.item_id || null;
+      if (orderItemId !== Number(order.id)) {
+        const error = new Error('Selected challan item does not belong to the selected order.');
+        error.statusCode = 400;
+        throw error;
+      }
+      if (itemId && Number(itemId) !== Number(order.item_id || 0)) {
+        const error = new Error('Selected challan item does not match the selected order item.');
+        error.statusCode = 400;
+        throw error;
+      }
+      items.push({
+        ...item,
+        orderItemId,
+        itemId,
+        variationLeafNodeId: orderSnapshot.variationLeafNodeId,
+        particulars: orderSnapshot.particulars,
+        hsnCode: orderSnapshot.hsnCode,
+      });
+    } else {
+      if (!Number.isInteger(item.itemId) || item.itemId <= 0) {
+        const error = new Error('Each reception challan row must select an item.');
+        error.statusCode = 400;
+        throw error;
+      }
+      const snapshot = await getItemSelectionSnapshot(item.itemId, item.variationLeafNodeId);
+      items.push({
+        ...item,
+        orderItemId: null,
+        itemId: snapshot.itemId,
+        variationLeafNodeId: snapshot.variationLeafNodeId,
+        particulars: snapshot.particulars,
+        variationPathLabel: snapshot.variationPathLabel,
+        hsnCode: item.hsnCode,
+      });
     }
-    if (itemId && Number(itemId) !== Number(order.item_id || 0)) {
-      const error = new Error('Selected challan item does not match the selected order item.');
-      error.statusCode = 400;
-      throw error;
-    }
-    return {
-      ...item,
-      orderItemId,
-      itemId,
-      particulars: orderSnapshot.particulars,
-      hsnCode: orderSnapshot.hsnCode,
-    };
-  });
+  }
   const now = new Date().toISOString();
 
   await run('BEGIN TRANSACTION');
@@ -4402,17 +4936,24 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
       await run(
         `
         UPDATE delivery_challans
-        SET order_id = ?, order_no = ?, challan_no = ?, date = ?, customer_name = ?, customer_gstin = ?,
-            notes = ?, updated_by = ?, updated_at = ?
+        SET type = ?, order_id = ?, order_no = ?, challan_no = ?, date = ?, location = ?,
+            customer_name = ?, customer_gstin = ?, vendor_id = ?, vendor_name = ?, vendor_gstin = ?,
+            source_reference = ?, notes = ?, updated_by = ?, updated_at = ?
         WHERE id = ?
         `,
         [
-          orderId,
+          challanType,
+          persistedOrderId,
           orderNo,
           challanNo,
           date,
+          location,
           customerName,
           customerGstin,
+          persistedVendorId,
+          vendorName,
+          vendorGstin,
+          sourceReference,
           notes,
           actor?.id || null,
           now,
@@ -4424,18 +4965,25 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
       const result = await run(
         `
         INSERT INTO delivery_challans (
-          order_id, order_no, challan_no, date, customer_name, customer_gstin, notes, status,
+          type, order_id, order_no, challan_no, date, location, customer_name, customer_gstin,
+          vendor_id, vendor_name, vendor_gstin, source_reference, notes, status,
           created_by, updated_by, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)
         `,
         [
-          orderId,
+          challanType,
+          persistedOrderId,
           orderNo,
           challanNo,
           date,
+          location,
           customerName,
           customerGstin,
+          persistedVendorId,
+          vendorName,
+          vendorGstin,
+          sourceReference,
           notes,
           actor?.id || null,
           actor?.id || null,
@@ -4450,14 +4998,14 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
       await run(
         `
         INSERT INTO delivery_challan_items (
-          challan_id, order_item_id, item_id, line_no, particulars, hsn_code, quantity_pcs, weight, created_at, updated_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          challan_id, order_item_id, item_id, variation_leaf_node_id, line_no, particulars, hsn_code, quantity_pcs, weight, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           challanId,
           item.orderItemId,
           item.itemId,
+          item.variationLeafNodeId || 0,
           item.lineNo,
           item.particulars,
           item.hsnCode,
@@ -4471,6 +5019,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
 
     await logDeliveryChallanActivity(challanId, existing ? 'challan_edited' : 'challan_created', actor, {
       challanNo,
+      type: challanType,
       itemCount: items.length,
     });
     const saved = await getDeliveryChallanRowById(challanId);
@@ -4494,13 +5043,23 @@ async function issueDeliveryChallan(id, actor = null) {
     error.statusCode = 400;
     throw error;
   }
-  if (!existing.order_id) {
+  if (!String(existing.location || '').trim()) {
+    const error = new Error('Select a location before issuing challan.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (normalizeChallanType(existing.type) === 'delivery' && !existing.order_id) {
     const error = new Error('Select an order before issuing challan.');
     error.statusCode = 400;
     throw error;
   }
-  if (!String(existing.customer_name || '').trim()) {
+  if (normalizeChallanType(existing.type) === 'delivery' && !String(existing.customer_name || '').trim()) {
     const error = new Error('Customer name is required before issuing challan.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (normalizeChallanType(existing.type) === 'reception' && !existing.vendor_id) {
+    const error = new Error('Vendor is required before issuing reception challan.');
     error.statusCode = 400;
     throw error;
   }
@@ -4528,16 +5087,63 @@ async function issueDeliveryChallan(id, actor = null) {
   }
   const profile = rowToCompanyProfileDto(await getActiveCompanyProfile());
   const now = new Date().toISOString();
-  await run(
-    `
-    UPDATE delivery_challans
-    SET status = 'issued', company_profile_snapshot = ?, updated_by = ?, updated_at = ?
-    WHERE id = ?
-    `,
-    [JSON.stringify(profile), actor?.id || null, now, id],
-  );
+  await run('BEGIN TRANSACTION');
+  try {
+    for (const item of items) {
+      const quantity = Number(item.quantity_pcs);
+      const weight = Number(item.weight);
+      const movementQty = Number.isFinite(quantity) && quantity > 0 ? quantity : weight;
+      const material = normalizeChallanType(existing.type) === 'reception'
+        ? await ensureMaterialForItemSelection({
+            itemId: Number(item.item_id || 0),
+            variationLeafNodeId: Number(item.variation_leaf_node_id || 0),
+            actor,
+          })
+        : await findMaterialByItemSelection(
+            Number(item.item_id || 0),
+            Number(item.variation_leaf_node_id || 0),
+          );
+      if (!material) {
+        const error = new Error('No inventory material is linked to one or more challan items.');
+        error.statusCode = 409;
+        throw error;
+      }
+      await applyInventoryMovementCore(
+        {
+          barcode: material.barcode,
+          movementType: normalizeChallanType(existing.type) === 'reception' ? 'receive' : 'issue',
+          qty: movementQty,
+          toLocationId: String(existing.location || '').trim(),
+          reasonCode: normalizeChallanType(existing.type) === 'reception'
+            ? 'reception_challan_issue'
+            : 'delivery_challan_issue',
+          referenceType: 'challan',
+          referenceId: existing.challan_no,
+          sourceChallanId: existing.id,
+          sourceChallanType: normalizeChallanType(existing.type),
+          sourceChallanLineId: item.id,
+          actor,
+          lotCode: material.barcode,
+        },
+        { useTransaction: false },
+      );
+    }
+    await run(
+      `
+      UPDATE delivery_challans
+      SET status = 'issued', company_profile_snapshot = ?, updated_by = ?, updated_at = ?
+      WHERE id = ?
+      `,
+      [JSON.stringify(profile), actor?.id || null, now, id],
+    );
+    await run('COMMIT');
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
   await logDeliveryChallanActivity(id, 'challan_issued', actor, {
     challanNo: existing.challan_no,
+    type: normalizeChallanType(existing.type),
     companyProfileId: profile?.id || null,
   });
   return getDeliveryChallanRowById(id);
@@ -4554,12 +5160,52 @@ async function cancelDeliveryChallan(id, actor = null) {
     return existing;
   }
   const now = new Date().toISOString();
-  await run(
-    "UPDATE delivery_challans SET status = 'cancelled', updated_by = ?, updated_at = ? WHERE id = ?",
-    [actor?.id || null, now, id],
-  );
+  await run('BEGIN TRANSACTION');
+  try {
+    if (existing.status === 'issued') {
+      const movementRows = await all(
+        `
+        SELECT *
+        FROM inventory_movements
+        WHERE source_challan_id = ? AND source_challan_type = ?
+        ORDER BY created_at ASC, id ASC
+        `,
+        [existing.id, normalizeChallanType(existing.type)],
+      );
+      for (const movement of movementRows) {
+        const reverseType = movement.movement_type === 'receive' ? 'issue' : 'receive';
+        await applyInventoryMovementCore(
+          {
+            barcode: movement.material_barcode,
+            movementType: reverseType,
+            qty: Number(movement.qty || 0),
+            toLocationId: movement.to_location_id || existing.location || 'MAIN',
+            fromLocationId: movement.from_location_id || null,
+            reasonCode: 'challan_cancel_reversal',
+            referenceType: 'challan-reversal',
+            referenceId: existing.challan_no,
+            sourceChallanId: existing.id,
+            sourceChallanType: normalizeChallanType(existing.type),
+            sourceChallanLineId: movement.source_challan_line_id || null,
+            actor,
+            lotCode: movement.lot_code || movement.material_barcode,
+          },
+          { useTransaction: false },
+        );
+      }
+    }
+    await run(
+      "UPDATE delivery_challans SET status = 'cancelled', updated_by = ?, updated_at = ? WHERE id = ?",
+      [actor?.id || null, now, id],
+    );
+    await run('COMMIT');
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
   await logDeliveryChallanActivity(id, 'challan_cancelled', actor, {
     challanNo: existing.challan_no,
+    type: normalizeChallanType(existing.type),
     previousStatus: existing.status,
   });
   return getDeliveryChallanRowById(id);
@@ -7566,6 +8212,280 @@ async function getEffectiveSchema(groupId) {
   };
 }
 
+function mergeInventorySetLines(lines = []) {
+  const merged = new Map();
+  for (const [index, rawLine] of (Array.isArray(lines) ? lines : []).entries()) {
+    const itemId = Number(rawLine?.itemId || 0);
+    const variationLeafNodeId = Number(rawLine?.variationLeafNodeId || 0);
+    const quantity = Math.trunc(Number(rawLine?.quantity || 0));
+    const position = Number.isFinite(Number(rawLine?.position))
+      ? Number(rawLine.position)
+      : index;
+    if (!Number.isInteger(itemId) || itemId <= 0) {
+      const error = new Error(`Set line ${index + 1} requires a valid item.`);
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!Number.isInteger(variationLeafNodeId) || variationLeafNodeId < 0) {
+      const error = new Error(`Set line ${index + 1} requires a valid variation path.`);
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      const error = new Error(`Set line ${index + 1} requires quantity greater than 0.`);
+      error.statusCode = 400;
+      throw error;
+    }
+    const key = `${itemId}:${variationLeafNodeId}`;
+    const existing = merged.get(key);
+    merged.set(key, {
+      itemId,
+      variationLeafNodeId,
+      quantity: (existing?.quantity || 0) + quantity,
+      position: existing?.position ?? position,
+    });
+  }
+  return [...merged.values()].sort((a, b) => a.position - b.position);
+}
+
+async function getInventorySetLineDtos(setId) {
+  const rows = await all(
+    `
+    SELECT
+      lines.*,
+      items.name AS item_name,
+      items.display_name AS item_display_name
+    FROM inventory_set_lines lines
+    INNER JOIN items ON items.id = lines.item_id
+    WHERE lines.set_id = ?
+    ORDER BY lines.position ASC, lines.id ASC
+    `,
+    [setId],
+  );
+  const lines = [];
+  for (const row of rows) {
+    const itemTree = await getItemVariationTree(Number(row.item_id));
+    const selection = activeValueSelectionForLeaf(
+      itemTree,
+      Number(row.variation_leaf_node_id),
+    );
+    lines.push({
+      id: row.id,
+      itemId: Number(row.item_id || 0),
+      variationLeafNodeId: Number(row.variation_leaf_node_id || 0),
+      quantity: Number(row.quantity || 0),
+      position: Number(row.position || 0),
+      itemName: row.item_name || '',
+      itemDisplayName: row.item_display_name || row.item_name || '',
+      variationPathLabel: selection ? buildVariationPathLabel(selection.segments) : 'Base item',
+      variationPathNodeIds: selection?.nodeIds || [],
+    });
+  }
+  return lines;
+}
+
+async function getInventorySetById(setId) {
+  const row = await get(
+    `
+    SELECT
+      inventory_sets.*,
+      COALESCE((
+        SELECT SUM(quantity)
+        FROM inventory_set_lines
+        WHERE inventory_set_lines.set_id = inventory_sets.id
+      ), 0) AS total_item_count
+    FROM inventory_sets
+    WHERE inventory_sets.id = ?
+    `,
+    [setId],
+  );
+  if (!row) {
+    return null;
+  }
+  return rowToInventorySetDto(row, await getInventorySetLineDtos(row.id));
+}
+
+async function getInventorySets() {
+  const rows = await all(
+    `
+    SELECT
+      inventory_sets.*,
+      COALESCE((
+        SELECT SUM(quantity)
+        FROM inventory_set_lines
+        WHERE inventory_set_lines.set_id = inventory_sets.id
+      ), 0) AS total_item_count
+    FROM inventory_sets
+    ORDER BY LOWER(inventory_sets.name) ASC, inventory_sets.id ASC
+    `,
+  );
+  const sets = [];
+  for (const row of rows) {
+    sets.push(await getInventorySetById(row.id));
+  }
+  return sets.filter(Boolean);
+}
+
+async function validateInventorySetLine(line) {
+  const itemId = Number(line.itemId || 0);
+  const variationLeafNodeId = Number(line.variationLeafNodeId || 0);
+  const quantity = Math.trunc(Number(line.quantity || 0));
+  if (!Number.isInteger(itemId) || itemId <= 0) {
+    const error = new Error('Each set line requires a valid item.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!Number.isInteger(variationLeafNodeId) || variationLeafNodeId < 0) {
+    const error = new Error('Each set line requires a valid variation path.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!Number.isInteger(quantity) || quantity <= 0) {
+    const error = new Error('Each set line requires quantity greater than 0.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const item = await getItemRowById(itemId);
+  if (!item || item.is_archived) {
+    const error = new Error('Selected item is not available.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const itemTree = await getItemVariationTree(itemId);
+  const hasOrderableLeaves = activeTopLevelVariationProperties(itemTree).some((propertyNode) =>
+    activeChildrenForNode(propertyNode).some((child) => String(child.kind) === 'value'),
+  );
+  if (variationLeafNodeId === 0) {
+    if (hasOrderableLeaves) {
+      const error = new Error('Each set line requires a valid variation path.');
+      error.statusCode = 400;
+      throw error;
+    }
+    return {
+      itemId,
+      variationLeafNodeId: 0,
+      quantity,
+      position: Number(line.position || 0),
+    };
+  }
+  const leafNode = await get(
+    `
+    SELECT id, item_id, kind, is_archived
+    FROM item_variation_nodes
+    WHERE id = ?
+    `,
+    [variationLeafNodeId],
+  );
+  if (
+    !leafNode ||
+    Number(leafNode.item_id) !== itemId ||
+    String(leafNode.kind || '') !== 'value' ||
+    Number(leafNode.is_archived || 0) === 1
+  ) {
+    const error = new Error('Selected variation path is not valid for this item.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const selection = activeValueSelectionForLeaf(
+    itemTree,
+    variationLeafNodeId,
+  );
+  if (!selection) {
+    const error = new Error('Selected variation path is incomplete for this item.');
+    error.statusCode = 400;
+    throw error;
+  }
+  return {
+    itemId,
+    variationLeafNodeId,
+    quantity,
+    position: Number(line.position || 0),
+  };
+}
+
+async function saveInventorySet(payload = {}) {
+  const id = payload.id == null ? null : Number(payload.id);
+  const name = String(payload.name || '').trim();
+  if (!name) {
+    const error = new Error('Set name is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const mergedLines = mergeInventorySetLines(payload.lines || []);
+  if (mergedLines.length === 0) {
+    const error = new Error('Add at least one item to the set.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const validatedLines = [];
+  for (const [index, line] of mergedLines.entries()) {
+    validatedLines.push(
+      await validateInventorySetLine({
+        ...line,
+        position: index,
+      }),
+    );
+  }
+  const now = new Date().toISOString();
+  await run('BEGIN');
+  try {
+    let setId = id;
+    if (setId == null) {
+      const result = await run(
+        'INSERT INTO inventory_sets (name, created_at, updated_at) VALUES (?, ?, ?)',
+        [name, now, now],
+      );
+      setId = result.lastID;
+    } else {
+      const existing = await get(
+        'SELECT id FROM inventory_sets WHERE id = ?',
+        [setId],
+      );
+      if (!existing) {
+        const error = new Error('Set not found.');
+        error.statusCode = 404;
+        throw error;
+      }
+      await run(
+        'UPDATE inventory_sets SET name = ?, updated_at = ? WHERE id = ?',
+        [name, now, setId],
+      );
+      await run('DELETE FROM inventory_set_lines WHERE set_id = ?', [setId]);
+    }
+    for (const line of validatedLines) {
+      await run(
+        `
+        INSERT INTO inventory_set_lines (
+          set_id, item_id, variation_leaf_node_id, quantity, position
+        ) VALUES (?, ?, ?, ?, ?)
+        `,
+        [
+          setId,
+          line.itemId,
+          line.variationLeafNodeId === 0 ? null : line.variationLeafNodeId,
+          line.quantity,
+          line.position,
+        ],
+      );
+    }
+    await run('COMMIT');
+    return getInventorySetById(setId);
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
+}
+
+async function deleteInventorySet(setId) {
+  const normalizedSetId = Number(setId);
+  if (!Number.isInteger(normalizedSetId) || normalizedSetId <= 0) {
+    const error = new Error('Valid set id is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+  await run('DELETE FROM inventory_sets WHERE id = ?', [normalizedSetId]);
+}
+
 function normalizeGroupUnitGovernance(rawUnit) {
   const unitId = Number(rawUnit?.unitId);
   if (!Number.isInteger(unitId) || unitId <= 0) {
@@ -8225,7 +9145,8 @@ async function getInventoryHealthSummary() {
   const incomingTodayCount = Number(
     (
       await get(
-        "SELECT COUNT(*) AS count FROM inventory_movements WHERE movement_type = 'receive' AND datetime(created_at) >= datetime('now', '-1 day')",
+        "SELECT COUNT(*) AS count FROM inventory_movements WHERE movement_type = 'receive' AND created_at >= ?",
+        [new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()],
       )
     )?.count || 0,
   );
@@ -8250,7 +9171,7 @@ async function getInventoryHealthSummary() {
   };
 }
 
-async function applyInventoryMovement(payload) {
+async function applyInventoryMovementCore(payload, { useTransaction = true } = {}) {
   const barcode = normalizeBarcode(payload?.barcode || '');
   const movementType = normalizeMovementType(payload?.movementType || 'adjust');
   const qty = Number(payload?.qty || 0);
@@ -8274,6 +9195,15 @@ async function applyInventoryMovement(payload) {
   const toLocationId = String(payload?.toLocationId || '').trim() || defaultLocationId;
   const lotCode = String(payload?.lotCode || '').trim() || barcode;
   const actor = normalizeActorLabel(payload?.actor, 'Demo Admin');
+  const sourceChallanId = payload?.sourceChallanId == null
+    ? null
+    : Number(payload.sourceChallanId || 0) || null;
+  const sourceChallanType = payload?.sourceChallanType == null
+    ? null
+    : normalizeChallanType(payload.sourceChallanType, '');
+  const sourceChallanLineId = payload?.sourceChallanLineId == null
+    ? null
+    : Number(payload.sourceChallanLineId || 0) || null;
 
   if (movementType === 'transfer' && !fromLocationId) {
     const error = new Error('fromLocationId is required for transfer movements.');
@@ -8281,7 +9211,9 @@ async function applyInventoryMovement(payload) {
     throw error;
   }
 
-  await run('BEGIN TRANSACTION');
+  if (useTransaction) {
+    await run('BEGIN TRANSACTION');
+  }
   try {
     if (movementType === 'receive') {
       await upsertInventoryStockPosition({
@@ -8403,8 +9335,9 @@ async function applyInventoryMovement(payload) {
       `
       INSERT INTO inventory_movements (
         id, material_barcode, movement_type, qty, from_location_id, to_location_id,
-        reason_code, reference_type, reference_id, actor, lot_code, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        reason_code, reference_type, reference_id, source_challan_id, source_challan_type,
+        source_challan_line_id, actor, lot_code, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         movementId,
@@ -8416,6 +9349,9 @@ async function applyInventoryMovement(payload) {
         String(payload?.reasonCode || '').trim() || null,
         String(payload?.referenceType || '').trim() || null,
         String(payload?.referenceId || '').trim() || null,
+        sourceChallanId,
+        sourceChallanType || null,
+        sourceChallanLineId,
         actor,
         lotCode,
         now,
@@ -8431,13 +9367,21 @@ async function applyInventoryMovement(payload) {
       actor,
       createdAt: now,
     });
-    await run('COMMIT');
+    if (useTransaction) {
+      await run('COMMIT');
+    }
   } catch (error) {
-    await run('ROLLBACK');
+    if (useTransaction) {
+      await run('ROLLBACK');
+    }
     throw error;
   }
 
   return getMaterialControlTowerDetail(material.barcode);
+}
+
+async function applyInventoryMovement(payload) {
+  return applyInventoryMovementCore(payload, { useTransaction: true });
 }
 
 async function updateMaterialGroupConfiguration(barcode, payload) {
@@ -10626,22 +11570,27 @@ app.post(
   },
 );
 
-app.get('/api/delivery-challans', requirePermission('config.read'), async (req, res) => {
+const handleListChallans = async (req, res) => {
   try {
     const challans = await listDeliveryChallans({
+      type: String(req.query.type || '').trim(),
       status: String(req.query.status || '').trim(),
       search: String(req.query.search || '').trim(),
       dateFrom: String(req.query.date_from || req.query.dateFrom || '').trim(),
       dateTo: String(req.query.date_to || req.query.dateTo || '').trim(),
       orderId: req.query.order_id || req.query.orderId,
+      vendorId: req.query.vendor_id || req.query.vendorId,
     });
     res.json({ success: true, data: challans, error: null });
   } catch (error) {
     res.status(500).json({ success: false, data: [], message: error.message, error: error.message });
   }
-});
+};
 
-app.post('/api/delivery-challans', requirePermission('config.write'), async (req, res) => {
+app.get('/api/challans', requirePermission('config.read'), handleListChallans);
+app.get('/api/delivery-challans', requirePermission('config.read'), handleListChallans);
+
+const handleCreateChallan = async (req, res) => {
   try {
     const challan = await saveDeliveryChallan(req.body || {}, actorFromRequest(req), req);
     res.status(201).json({
@@ -10657,7 +11606,10 @@ app.post('/api/delivery-challans', requirePermission('config.write'), async (req
       error: error.message,
     });
   }
-});
+};
+
+app.post('/api/challans', requirePermission('config.write'), handleCreateChallan);
+app.post('/api/delivery-challans', requirePermission('config.write'), handleCreateChallan);
 
 app.get('/api/orders/:orderId/delivery-challans', requirePermission('config.read'), async (req, res) => {
   try {
@@ -10671,7 +11623,7 @@ app.get('/api/orders/:orderId/delivery-challans', requirePermission('config.read
       });
       return;
     }
-    const challans = await listDeliveryChallans({ orderId });
+    const challans = await listDeliveryChallans({ orderId, type: 'delivery' });
     res.json({ success: true, data: challans, error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({
@@ -10683,15 +11635,15 @@ app.get('/api/orders/:orderId/delivery-challans', requirePermission('config.read
   }
 });
 
-app.get('/api/delivery-challans/:id', requirePermission('config.read'), async (req, res) => {
+const handleGetChallan = async (req, res) => {
   try {
     const challan = await getDeliveryChallanRowById(Number(req.params.id));
     if (!challan) {
       res.status(404).json({
         success: false,
         data: null,
-        message: 'Delivery challan not found.',
-        error: 'Delivery challan not found.',
+        message: 'Challan not found.',
+        error: 'Challan not found.',
       });
       return;
     }
@@ -10699,9 +11651,12 @@ app.get('/api/delivery-challans/:id', requirePermission('config.read'), async (r
   } catch (error) {
     res.status(500).json({ success: false, data: null, message: error.message, error: error.message });
   }
-});
+};
 
-app.put('/api/delivery-challans/:id', requirePermission('config.write'), async (req, res) => {
+app.get('/api/challans/:id', requirePermission('config.read'), handleGetChallan);
+app.get('/api/delivery-challans/:id', requirePermission('config.read'), handleGetChallan);
+
+const handleUpdateChallan = async (req, res) => {
   try {
     const challan = await saveDeliveryChallan(
       { ...(req.body || {}), id: Number(req.params.id) },
@@ -10717,9 +11672,12 @@ app.put('/api/delivery-challans/:id', requirePermission('config.write'), async (
       error: error.message,
     });
   }
-});
+};
 
-app.post('/api/delivery-challans/:id/issue', requirePermission('config.write'), async (req, res) => {
+app.put('/api/challans/:id', requirePermission('config.write'), handleUpdateChallan);
+app.put('/api/delivery-challans/:id', requirePermission('config.write'), handleUpdateChallan);
+
+const handleIssueChallan = async (req, res) => {
   try {
     const challan = await issueDeliveryChallan(Number(req.params.id), actorFromRequest(req));
     res.json({ success: true, data: await rowToDeliveryChallanDto(challan), error: null });
@@ -10731,9 +11689,12 @@ app.post('/api/delivery-challans/:id/issue', requirePermission('config.write'), 
       error: error.message,
     });
   }
-});
+};
 
-app.post('/api/delivery-challans/:id/cancel', requirePermission('config.write'), async (req, res) => {
+app.post('/api/challans/:id/issue', requirePermission('config.write'), handleIssueChallan);
+app.post('/api/delivery-challans/:id/issue', requirePermission('config.write'), handleIssueChallan);
+
+const handleCancelChallan = async (req, res) => {
   try {
     const challan = await cancelDeliveryChallan(Number(req.params.id), actorFromRequest(req));
     res.json({ success: true, data: await rowToDeliveryChallanDto(challan), error: null });
@@ -10745,17 +11706,20 @@ app.post('/api/delivery-challans/:id/cancel', requirePermission('config.write'),
       error: error.message,
     });
   }
-});
+};
 
-app.post('/api/delivery-challans/:id/print', requirePermission('config.write'), async (req, res) => {
+app.post('/api/challans/:id/cancel', requirePermission('config.write'), handleCancelChallan);
+app.post('/api/delivery-challans/:id/cancel', requirePermission('config.write'), handleCancelChallan);
+
+const handlePrintChallan = async (req, res) => {
   try {
     const challan = await getDeliveryChallanRowById(Number(req.params.id));
     if (!challan) {
       res.status(404).json({
         success: false,
         data: null,
-        message: 'Delivery challan not found.',
-        error: 'Delivery challan not found.',
+        message: 'Challan not found.',
+        error: 'Challan not found.',
       });
       return;
     }
@@ -10771,9 +11735,12 @@ app.post('/api/delivery-challans/:id/print', requirePermission('config.write'), 
       error: error.message,
     });
   }
-});
+};
 
-app.delete('/api/delivery-challans/:id', requirePermission('config.write'), async (req, res) => {
+app.post('/api/challans/:id/print', requirePermission('config.write'), handlePrintChallan);
+app.post('/api/delivery-challans/:id/print', requirePermission('config.write'), handlePrintChallan);
+
+const handleDeleteChallan = async (req, res) => {
   try {
     await deleteDraftDeliveryChallan(Number(req.params.id), actorFromRequest(req));
     res.json({ success: true, data: null, error: null });
@@ -10785,7 +11752,10 @@ app.delete('/api/delivery-challans/:id', requirePermission('config.write'), asyn
       error: error.message,
     });
   }
-});
+};
+
+app.delete('/api/challans/:id', requirePermission('config.write'), handleDeleteChallan);
+app.delete('/api/delivery-challans/:id', requirePermission('config.write'), handleDeleteChallan);
 
 app.get('/api/orders', requirePermission('config.read'), async (req, res) => {
   try {
@@ -11202,6 +12172,76 @@ app.patch('/api/clients/:id/restore', requirePermission('config.write'), async (
   }
 });
 
+app.get('/api/vendors', requirePermission('config.read'), async (_req, res) => {
+  try {
+    const rows = await getVendorsWithUsage();
+    res.json({ success: true, vendors: rows.map(rowToVendorDto), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, vendors: [], error: error.message });
+  }
+});
+
+app.post('/api/vendors', requirePermission('config.write'), async (req, res) => {
+  try {
+    const vendor = await saveVendor(req.body || {});
+    res.status(201).json({ success: true, vendor: rowToVendorDto(vendor), error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, vendor: null, error: error.message });
+  }
+});
+
+app.patch('/api/vendors/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    const vendor = await saveVendor({
+      ...(req.body || {}),
+      id: Number(req.params.id),
+    });
+    res.json({ success: true, vendor: rowToVendorDto(vendor), error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, vendor: null, error: error.message });
+  }
+});
+
+app.patch('/api/vendors/:id/archive', requirePermission('config.write'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const existing = await getVendorRowById(id);
+    if (!existing) {
+      res.status(404).json({ success: false, vendor: null, error: 'Vendor not found.' });
+      return;
+    }
+    if ((existing.usage_count || 0) > 0) {
+      res.status(409).json({ success: false, vendor: null, error: 'Used vendors cannot be archived.' });
+      return;
+    }
+    await run('UPDATE vendors SET is_archived = 1, updated_at = ? WHERE id = ?', [
+      new Date().toISOString(),
+      id,
+    ]);
+    res.json({ success: true, vendor: rowToVendorDto(await getVendorRowById(id)), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, vendor: null, error: error.message });
+  }
+});
+
+app.patch('/api/vendors/:id/restore', requirePermission('config.write'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const existing = await getVendorRowById(id);
+    if (!existing) {
+      res.status(404).json({ success: false, vendor: null, error: 'Vendor not found.' });
+      return;
+    }
+    await run('UPDATE vendors SET is_archived = 0, updated_at = ? WHERE id = ?', [
+      new Date().toISOString(),
+      id,
+    ]);
+    res.json({ success: true, vendor: rowToVendorDto(await getVendorRowById(id)), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, vendor: null, error: error.message });
+  }
+});
+
 app.get('/api/items', requirePermission('config.read'), async (req, res) => {
   try {
     const rows = await getItemsWithUsage();
@@ -11209,6 +12249,61 @@ app.get('/api/items', requirePermission('config.read'), async (req, res) => {
     res.json({ success: true, items, error: null });
   } catch (error) {
     res.status(500).json({ success: false, items: [], error: error.message });
+  }
+});
+
+app.get('/api/inventory/sets', requirePermission('inventory.read'), async (_req, res) => {
+  try {
+    const sets = await getInventorySets();
+    res.json({ success: true, sets, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      sets: [],
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/inventory/sets', requirePermission('inventory.create'), async (req, res) => {
+  try {
+    const set = await saveInventorySet(req.body || {});
+    res.status(201).json({ success: true, set, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      set: null,
+      error: error.message,
+    });
+  }
+});
+
+app.patch('/api/inventory/sets/:id', requirePermission('inventory.update'), async (req, res) => {
+  try {
+    const set = await saveInventorySet({
+      ...(req.body || {}),
+      id: Number(req.params.id),
+    });
+    res.json({ success: true, set, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      set: null,
+      error: error.message,
+    });
+  }
+});
+
+app.delete('/api/inventory/sets/:id', requirePermission('inventory.delete'), async (req, res) => {
+  try {
+    await deleteInventorySet(Number(req.params.id));
+    res.json({ success: true, set: null, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      set: null,
+      error: error.message,
+    });
   }
 });
 
@@ -11954,6 +13049,9 @@ async function clearAllData() {
     await run('DELETE FROM run_barcode_inputs');
     await run('DELETE FROM pipeline_runs');
     await run('DELETE FROM pipeline_templates');
+    await run('DELETE FROM delivery_challan_activity_log');
+    await run('DELETE FROM delivery_challan_items');
+    await run('DELETE FROM delivery_challans');
     await run('DELETE FROM orders');
     await run('DELETE FROM item_variation_values');
     await run('DELETE FROM item_variations');
@@ -11972,6 +13070,7 @@ async function clearAllData() {
     await run('DELETE FROM materials');
     await run('DELETE FROM item_unit_conversions');
     await run('DELETE FROM items');
+    await run('DELETE FROM vendors');
     await run('DELETE FROM clients');
     await run('DELETE FROM company_profiles');
     await run('DELETE FROM groups');
@@ -12049,6 +13148,7 @@ module.exports = {
   saveItem,
   saveOrder,
   saveCompanyProfile,
+  saveVendor,
   getActiveCompanyProfile,
   saveDeliveryChallan,
   issueDeliveryChallan,
@@ -12076,18 +13176,21 @@ module.exports = {
   getUnitsWithUsage,
   getGroupsWithUsage,
   getClientsWithUsage,
+  getVendorsWithUsage,
   getItemsWithUsage,
   createParentWithChildren,
   getMaterialRowByBarcode,
   getEffectiveSchema,
   getItemPropertySchema,
   applyInventoryMovement,
+  ensureMaterialForItemSelection,
   linkMaterialRecordToGroup,
   linkMaterialRecordToItem,
   unlinkMaterialRecord,
   getMaterialGroupGovernance,
   updateMaterialGroupConfiguration,
   rowToClientDto,
+  rowToVendorDto,
   rowToOrderDto,
   rowToPoDocumentDto,
   rowToItemDto,

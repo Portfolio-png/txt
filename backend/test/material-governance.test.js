@@ -217,6 +217,18 @@ test('effective schema applies discarded inherited keys and item save snapshots 
       variationTree: [
         {
           kind: 'property',
+          name: 'Density',
+          children: [
+            {
+              kind: 'value',
+              name: '120',
+              displayName: 'Density: 120',
+              children: [],
+            },
+          ],
+        },
+        {
+          kind: 'property',
           name: 'Finish',
           children: [
             {
