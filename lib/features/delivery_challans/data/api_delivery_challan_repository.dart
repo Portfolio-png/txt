@@ -171,9 +171,16 @@ class ApiChallanRepository implements ChallanRepository {
         id: _mockNextId++,
         type: input.type,
         orderId: input.orderId,
-        orderNo: 'Order ${input.orderId}',
-        challanNo:
-            '${input.type == ChallanType.reception ? 'RC' : 'DC'}-${_mockNextId.toString().padLeft(5, '0')}',
+        orderIds: input.orderIds,
+        orderNo: input.orderIds.isEmpty
+            ? 'Order ${input.orderId}'
+            : 'Order ${input.orderIds.first}',
+        orderNos: input.orderIds
+            .map((id) => 'Order $id')
+            .toList(growable: false),
+        challanNo: input.challanNo.trim().isEmpty
+            ? '${input.type == ChallanType.reception ? 'RC' : 'DC'}-${_mockNextId.toString().padLeft(5, '0')}'
+            : input.challanNo.trim(),
         date: input.date,
         location: input.location,
         customerName: '',
@@ -213,7 +220,9 @@ class ApiChallanRepository implements ChallanRepository {
         id: current.id,
         type: input.type,
         orderId: input.orderId,
+        orderIds: input.orderIds,
         orderNo: current.orderNo,
+        orderNos: current.orderNos,
         challanNo: current.challanNo,
         date: input.date,
         location: input.location,
@@ -288,7 +297,9 @@ class ApiChallanRepository implements ChallanRepository {
         id: current.id,
         type: current.type,
         orderId: current.orderId,
+        orderIds: current.orderIds,
         orderNo: current.orderNo,
+        orderNos: current.orderNos,
         challanNo: current.challanNo,
         date: current.date,
         location: current.location,

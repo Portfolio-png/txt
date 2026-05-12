@@ -2576,28 +2576,12 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
           _quickCreateItemForLine(context, lineIndex: index, name: query),
       createOptionLabelBuilder: (query) => 'Create item "$query"',
       onChanged: (value) {
-        var shouldOpenVariationSelector = false;
         setState(() {
           line.selectedItemId = value;
           final latestItems = context.read<ItemsProvider>().items;
           final item = _selectedItemForLine(latestItems, value);
           _syncVariationSelectionForLine(line, item);
-          shouldOpenVariationSelector =
-              item != null && item.topLevelProperties.isNotEmpty;
         });
-        if (shouldOpenVariationSelector) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) {
-              return;
-            }
-            final latestItems = context.read<ItemsProvider>().items;
-            _openVariationPathSelectorForLine(
-              context,
-              items: latestItems,
-              lineIndex: index,
-            );
-          });
-        }
       },
       validator: (value) {
         if (value == null) {

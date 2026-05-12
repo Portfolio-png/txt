@@ -457,3 +457,159 @@ test('reception challans reject archived vendors and list filters stay scoped', 
     await backend.closeDb();
   }
 });
+
+test('delivery challans allow unique manual numbers and reject duplicates', async () => {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-delivery-manual-no-'));
+  process.env.DB_PATH = path.join(tempDir, 'paper.db');
+
+  delete require.cache[require.resolve('../server.js')];
+  const backend = require('../server.js');
+  try {
+    await backend.resetAndSeedDemoData();
+    const actor = { id: 1, name: 'Manual No Tester', role: 'admin' };
+    const order = (await backend.getOrders())[0];
+
+    const created = await backend.saveDeliveryChallan(
+      {
+        challan_no: '  DC-MANUAL-001  ',
+        order_id: order.id,
+        order_ids: [order.id],
+        date: '2026-05-04',
+        location: 'Dispatch Bay',
+        items: [
+          {
+            order_item_id: order.id,
+            quantity_pcs: '5',
+            weight: '',
+          },
+        ],
+      },
+      actor,
+      { user: actor },
+    );
+    assert.equal(created.challan_no, 'DC-MANUAL-001');
+
+    await assert.rejects(
+      () =>
+        backend.saveDeliveryChallan(
+          {
+            challan_no: 'DC-MANUAL-001',
+            order_id: order.id,
+            order_ids: [order.id],
+            date: '2026-05-05',
+            location: 'Dispatch Bay',
+            items: [
+              {
+                order_item_id: order.id,
+                quantity_pcs: '2',
+                weight: '',
+              },
+            ],
+          },
+          actor,
+          { user: actor },
+        ),
+      /Challan number \[DC-MANUAL-001\] is already in use\./,
+    );
+  } finally {
+    await backend.closeDb();
+  }
+});
+
+test('delivery challans support multiple selected orders from the same client', async () => {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-delivery-multi-order-'));
+  process.env.DB_PATH = path.join(tempDir, 'paper.db');
+
+  delete require.cache[require.resolve('../server.js')];
+  const backend = require('../server.js');
+  try {
+    await backend.resetAndSeedDemoData();
+    const actor = { id: 1, name: 'Multi Order Tester', role: 'admin' };
+    const orders = await backend.getOrders();
+    const byClient = new Map();
+    for (const order of orders) {
+      const clientId = Number(order.client_id || 0);
+      const existing = byClient.get(clientId) || [];
+      existing.push(order);
+      byClient.set(clientId, existing);
+    }
+    const orderGroup = [...byClient.values()].find((group) => group.length >= 2);
+    assert.ok(orderGroup, 'expected at least two seeded orders for the same client');
+    const selectedOrders = orderGroup.slice(0, 2);
+
+    const created = await backend.saveDeliveryChallan(
+      {
+        order_id: selectedOrders[0].id,
+        order_ids: selectedOrders.map((order) => order.id),
+        date: '2026-05-06',
+        location: 'Dispatch Bay',
+        items: selectedOrders.map((order, index) => ({
+          order_item_id: order.id,
+          item_id: order.item_id,
+          variation_leaf_node_id: order.variation_leaf_node_id || 0,
+          quantity_pcs: String(index + 1),
+          weight: '',
+        })),
+      },
+      actor,
+      { user: actor },
+    );
+
+    assert.equal(created.customer_name, selectedOrders[0].client_name);
+
+    const storedLinks = await backend.all(
+      'SELECT order_id FROM delivery_challan_orders WHERE challan_id = ? ORDER BY order_id ASC',
+      [created.id],
+    );
+    assert.deepEqual(
+      storedLinks.map((row) => Number(row.order_id)),
+      selectedOrders.map((order) => order.id).sort((a, b) => a - b),
+    );
+  } finally {
+    await backend.closeDb();
+  }
+});
+
+test('delivery challans reject mixed-client multi-order selections', async () => {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-delivery-mixed-client-'));
+  process.env.DB_PATH = path.join(tempDir, 'paper.db');
+
+  delete require.cache[require.resolve('../server.js')];
+  const backend = require('../server.js');
+  try {
+    await backend.resetAndSeedDemoData();
+    const actor = { id: 1, name: 'Mixed Client Tester', role: 'admin' };
+    const orders = await backend.getOrders();
+    const first = orders[0];
+    const second = orders.find(
+      (order) => Number(order.client_id || 0) !== Number(first.client_id || 0),
+    );
+    assert.ok(second, 'expected seeded orders from a different client');
+
+    await assert.rejects(
+      () =>
+        backend.saveDeliveryChallan(
+          {
+            order_id: first.id,
+            order_ids: [first.id, second.id],
+            date: '2026-05-06',
+            location: 'Dispatch Bay',
+            items: [
+              {
+                order_item_id: first.id,
+                item_id: first.item_id,
+                variation_leaf_node_id: first.variation_leaf_node_id || 0,
+                quantity_pcs: '1',
+                weight: '',
+              },
+            ],
+          },
+          actor,
+          { user: actor },
+        ),
+      /Delivery challans can only include orders from the same client\./,
+    );
+  } finally {
+    await backend.closeDb();
+  }
+});

@@ -41,7 +41,9 @@ typedef DeliveryChallanRepository = ChallanRepository;
 class ChallanDraftInput {
   const ChallanDraftInput({
     required this.type,
+    required this.challanNo,
     required this.orderId,
+    required this.orderIds,
     required this.vendorId,
     required this.date,
     required this.location,
@@ -51,7 +53,9 @@ class ChallanDraftInput {
   });
 
   final ChallanType type;
+  final String challanNo;
   final int orderId;
+  final List<int> orderIds;
   final int vendorId;
   final DateTime date;
   final String location;
@@ -62,7 +66,9 @@ class ChallanDraftInput {
   Map<String, dynamic> toJson() {
     return {
       'type': type.name,
+      'challan_no': challanNo.trim(),
       if (orderId > 0) 'order_id': orderId,
+      if (orderIds.isNotEmpty) 'order_ids': orderIds,
       if (vendorId > 0) 'vendor_id': vendorId,
       'date': date.toIso8601String().substring(0, 10),
       'location': location.trim(),

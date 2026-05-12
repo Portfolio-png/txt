@@ -56,6 +56,23 @@ enum _InventorySortColumn { name, id, stock, activity, createdBy, status }
 
 const _inventoryHoverColor = SoftErpTheme.accentSurface;
 
+Color _inventoryGroupBackgroundColor(int depth) {
+  if (depth <= 0) {
+    return SoftErpTheme.cardSurface.withValues(alpha: 0.96);
+  }
+  if (depth == 1) {
+    return const Color(0xFFFBFBFE);
+  }
+  if (depth == 2) {
+    return SoftErpTheme.cardSurfaceAlt;
+  }
+  return SoftErpTheme.sectionSurface;
+}
+
+Color _inventoryGroupTextColor(int depth) {
+  return SoftErpTheme.textPrimary;
+}
+
 enum _InventoryStockAction { receptionChallan, transfer, adjust }
 
 enum _InventoryQuickCreateAction { group, item, set }
@@ -4166,14 +4183,19 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
 
   @override
   Widget build(BuildContext context) {
-    final baseColor = widget.isStriped
-        ? const Color(0xFFF9FBFF).withValues(alpha: 0.8)
-        : SoftErpTheme.cardSurface.withValues(alpha: 0.8);
+    final isGroupView = widget.viewMode == _InventoryViewMode.groups;
+    final hierarchyBaseColor = isGroupView
+        ? _inventoryGroupBackgroundColor(widget.entry.depth)
+        : null;
+    final baseColor =
+        hierarchyBaseColor ??
+        (widget.isStriped
+            ? const Color(0xFFF9FBFF).withValues(alpha: 0.8)
+            : SoftErpTheme.cardSurface.withValues(alpha: 0.8));
     const hoverColor = Color(0xFFFFFFFF);
     final selectedColor = widget.entry.depth == 0 && widget.entry.isExpanded
         ? const Color(0xFFF2EFFF)
         : const Color(0xFFF1F5FF);
-    final isGroupView = widget.viewMode == _InventoryViewMode.groups;
     final isSetView = widget.viewMode == _InventoryViewMode.sets;
 
     return MouseRegion(
@@ -4489,10 +4511,22 @@ class _InventoryNameCell extends StatelessWidget {
   Widget build(BuildContext context) {
     final title = entry.displayName ?? record.name;
     final metadata = entry.displayMetadata ?? _metadataText(record);
+    final titleColor = _inventoryGroupTextColor(entry.depth);
+    final metadataColor = SoftErpTheme.textSecondary;
+    final hierarchyIndent = math.min(entry.depth * metrics.treeIndent, 48.0);
+    final hierarchyDecoration = entry.depth >= 2
+        ? BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.74),
+            borderRadius: BorderRadius.circular(12),
+            border: const Border(
+              left: BorderSide(color: SoftErpTheme.borderStrong, width: 4),
+            ),
+          )
+        : null;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        SizedBox(width: entry.depth * metrics.treeIndent),
+        SizedBox(width: hierarchyIndent),
         if (entry.canExpand)
           InkWell(
             onTap: onExpandToggle,
@@ -4505,7 +4539,7 @@ class _InventoryNameCell extends StatelessWidget {
               child: Icon(
                 Icons.keyboard_arrow_right_rounded,
                 size: metrics.chevronSize,
-                color: const Color(0xFF5A6271),
+                color: SoftErpTheme.textSecondary,
               ),
             ),
           )
@@ -4513,100 +4547,106 @@ class _InventoryNameCell extends StatelessWidget {
           SizedBox(width: metrics.chevronSize),
         SizedBox(width: metrics.nameGap),
         Expanded(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Tooltip(
-                message: title,
-                waitDuration: const Duration(milliseconds: 500),
-                child: Row(
-                  children: [
-                    if (isPinned) ...[
-                      const Icon(
-                        Icons.push_pin_rounded,
-                        size: 12,
-                        color: SoftErpTheme.accentDark,
-                      ),
-                      const SizedBox(width: 6),
-                    ],
-                    Expanded(
-                      child: Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: _inventoryManropeStyle(
-                          color: const Color(0xFF2F2F2F),
-                          size: metrics.bodyFontSize,
-                          weight: entry.depth == 0
-                              ? FontWeight.w500
-                              : FontWeight.w400,
+          child: Container(
+            padding: hierarchyDecoration == null
+                ? EdgeInsets.zero
+                : const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: hierarchyDecoration,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Tooltip(
+                  message: title,
+                  waitDuration: const Duration(milliseconds: 500),
+                  child: Row(
+                    children: [
+                      if (isPinned) ...[
+                        const Icon(
+                          Icons.push_pin_rounded,
+                          size: 12,
+                          color: SoftErpTheme.accentDark,
                         ),
-                      ),
-                    ),
-                    if (entry.directItemCount != null) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE8EDFF),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(color: const Color(0xFFD5DCF8)),
-                        ),
+                        const SizedBox(width: 6),
+                      ],
+                      Expanded(
                         child: Text(
-                          '${entry.directItemCount} items',
-                          style: _inventorySegoeStyle(
-                            color: SoftErpTheme.accentDark,
-                            size: math.max(10, metrics.bodyFontSize - 4),
-                            weight: FontWeight.w600,
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: _inventoryManropeStyle(
+                            color: titleColor,
+                            size: metrics.bodyFontSize,
+                            weight: entry.canExpand
+                                ? FontWeight.w700
+                                : FontWeight.w400,
                           ),
                         ),
                       ),
-                    ],
-                    if (entry.setQuantity != null) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF6F4FF),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(color: const Color(0xFFD9CCFF)),
-                        ),
-                        child: Text(
-                          '${entry.setQuantity} in set',
-                          style: _inventorySegoeStyle(
-                            color: SoftErpTheme.accentDark,
-                            size: math.max(10, metrics.bodyFontSize - 4),
-                            weight: FontWeight.w600,
+                      if (entry.directItemCount != null) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: SoftErpTheme.accentSoft,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: const Color(0xFFD5DCF8)),
+                          ),
+                          child: Text(
+                            '${entry.directItemCount} items',
+                            style: _inventorySegoeStyle(
+                              color: SoftErpTheme.accentDark,
+                              size: math.max(10, metrics.bodyFontSize - 4),
+                              weight: FontWeight.w600,
+                            ),
                           ),
                         ),
-                      ),
+                      ],
+                      if (entry.setQuantity != null) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF6F4FF),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: const Color(0xFFD9CCFF)),
+                          ),
+                          child: Text(
+                            '${entry.setQuantity} in set',
+                            style: _inventorySegoeStyle(
+                              color: SoftErpTheme.accentDark,
+                              size: math.max(10, metrics.bodyFontSize - 4),
+                              weight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 3),
-              Tooltip(
-                message: metadata,
-                waitDuration: const Duration(milliseconds: 500),
-                child: Text(
-                  metadata,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: _inventorySegoeStyle(
-                    color: const Color(0xFF7B8392),
-                    size: math.max(11, metrics.bodyFontSize - 3),
-                    weight: FontWeight.w400,
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 3),
+                Tooltip(
+                  message: metadata,
+                  waitDuration: const Duration(milliseconds: 500),
+                  child: Text(
+                    metadata,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: _inventorySegoeStyle(
+                      color: metadataColor,
+                      size: math.max(11, metrics.bodyFontSize - 3),
+                      weight: FontWeight.w400,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ],

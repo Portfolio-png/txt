@@ -2886,9 +2886,24 @@ void main() {
 
   Future<void> selectOpenVariationPath(
     WidgetTester tester, {
+    required String itemLabel,
     required List<String> variationValues,
   }) async {
     await openVariationPathSelector(tester);
+    if (find
+        .widgetWithText(TextField, 'Search variation path')
+        .evaluate()
+        .isNotEmpty) {
+      final optionLabel = '$itemLabel • ${variationValues.join(' | ')}';
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Search variation path'),
+        variationValues.last,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(optionLabel).last);
+      await tester.pumpAndSettle();
+      return;
+    }
     for (final value in variationValues) {
       final selectValueField = find
           .byWidgetPredicate(
@@ -2927,6 +2942,7 @@ void main() {
 
     await selectOpenVariationPath(
       tester,
+      itemLabel: itemLabel,
       variationValues:
           variationValues ??
           <String>[
@@ -2948,10 +2964,30 @@ void main() {
 
   Future<void> changeOpenVariationValue(
     WidgetTester tester, {
+    required String itemLabel,
     required String currentValue,
     required String newValue,
   }) async {
     await openVariationPathSelector(tester);
+    if (find
+        .widgetWithText(TextField, 'Search variation path')
+        .evaluate()
+        .isNotEmpty) {
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Search variation path'),
+        newValue,
+      );
+      await tester.pumpAndSettle();
+      final currentSegments = currentValue == 'Without Plating'
+          ? <String>['5 Amp', '11+1', 'Brass', '1 Way', 'Dolly']
+          : <String>[];
+      final optionLabel = currentSegments.isEmpty
+          ? '$itemLabel • $newValue'
+          : '$itemLabel • ${[...currentSegments, newValue].join(' | ')}';
+      await tester.tap(find.text(optionLabel).last);
+      await tester.pumpAndSettle();
+      return;
+    }
     final currentValueField = find
         .ancestor(
           of: find.text(currentValue).last,
@@ -3083,7 +3119,7 @@ void main() {
       await tester.tap(find.text('Create Delivery').first);
       await tester.pumpAndSettle();
       expect(find.text('Create Delivery Challan'), findsOneWidget);
-      expect(find.text('Select order'), findsOneWidget);
+      expect(find.text('Find Order...'), findsOneWidget);
       expect(find.text('Vendor'), findsNothing);
     },
   );
@@ -3097,7 +3133,9 @@ void main() {
           id: 1,
           type: ChallanType.delivery,
           orderId: 10,
+          orderIds: const <int>[10],
           orderNo: 'ORD-10',
+          orderNos: const <String>['ORD-10'],
           challanNo: 'DC-00001',
           date: DateTime(2026, 5, 11),
           location: 'Dispatch Bay',
@@ -3119,7 +3157,9 @@ void main() {
           id: 2,
           type: ChallanType.reception,
           orderId: null,
+          orderIds: const <int>[],
           orderNo: '',
+          orderNos: const <String>[],
           challanNo: 'RC-00001',
           date: DateTime(2026, 5, 11),
           location: 'Inbound Dock',
@@ -3159,6 +3199,98 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('DC-00001'), findsOneWidget);
     expect(find.text('RC-00001'), findsNothing);
+  });
+
+  testWidgets('reception challan item selection uses variation path popup', (
+    tester,
+  ) async {
+    await pumpApp(tester, viewSize: const Size(1440, 900));
+    await openChallansScreen(tester);
+
+    await tester.tap(find.text('Create Reception').first);
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey<String>('challan-reception-item-0')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('challan-reception-item-0')),
+      warnIfMissed: false,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Switch Action Dolly - 1').last);
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey<String>('challan-reception-variation-0')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('challan-reception-variation-0')),
+      warnIfMissed: false,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Select Variation Path'), findsOneWidget);
+    expect(find.text('Action Dolly Amp'), findsWidgets);
+  });
+
+  testWidgets('delivery challan variation opens same popup in read only mode', (
+    tester,
+  ) async {
+    final seededOrder = OrderEntry(
+      id: 101,
+      orderNo: 'ORD-101',
+      clientId: 1,
+      clientName: 'Acme Packaging Pvt. Ltd.',
+      poNumber: 'PO-101',
+      clientCode: 'Client Patti',
+      itemId: 1,
+      itemName: 'Switch Action Dolly - 1',
+      variationLeafNodeId: 17,
+      variationPathLabel:
+          '5 Amp / 11+1 / Brass / 1 Way / Dolly / Without Plating',
+      variationPathNodeIds: const <int>[2, 4, 11, 13, 15, 17],
+      quantity: 25,
+      status: OrderStatus.draft,
+      createdAt: DateTime(2026, 5, 12),
+      startDate: DateTime(2026, 5, 12),
+      endDate: DateTime(2026, 5, 15),
+    );
+    await pumpApp(
+      tester,
+      viewSize: const Size(1440, 900),
+      orderRepository: FakeOrderRepository(
+        seedOrders: <OrderEntry>[seededOrder],
+      ),
+    );
+    await openChallansScreen(tester);
+
+    await tester.tap(find.text('Create Delivery').first);
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Find Order...'),
+      'ORD-101',
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.text('ORD-101 - Acme Packaging Pvt. Ltd. - 2026-05-12').last,
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey<String>('challan-delivery-variation-0')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('challan-delivery-variation-0')),
+      warnIfMissed: false,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Select Variation Path'), findsOneWidget);
+    expect(find.text('Apply Path'), findsNothing);
+    expect(find.text('Close'), findsOneWidget);
   });
 
   testWidgets('ctrl and command n open the new order editor', (tester) async {
@@ -3634,6 +3766,7 @@ void main() {
 
     await changeOpenVariationValue(
       tester,
+      itemLabel: 'Switch Action Dolly - 1',
       currentValue: 'Without Plating',
       newValue: 'With Plating',
     );

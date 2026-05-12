@@ -2396,6 +2396,15 @@ async function initDb() {
   `);
 
   await run(`
+    CREATE TABLE IF NOT EXISTS delivery_challan_orders (
+      challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (challan_id, order_id)
+    )
+  `);
+
+  await run(`
     CREATE TABLE IF NOT EXISTS delivery_challan_activity_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
@@ -2411,6 +2420,8 @@ async function initDb() {
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_status ON delivery_challans(status)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_date ON delivery_challans(date)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_items_challan_id ON delivery_challan_items(challan_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_challan_id ON delivery_challan_orders(challan_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_order_id ON delivery_challan_orders(order_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_activity_challan_id_created_at ON delivery_challan_activity_log(challan_id, created_at)');
 
   await run(`
@@ -2596,11 +2607,21 @@ async function initDb() {
   await ensureColumnExists('delivery_challan_items', 'item_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'variation_leaf_node_id', 'INTEGER NOT NULL DEFAULT 0');
   await ensureDeliveryChallanItemNumericColumns();
+  await run(`
+    CREATE TABLE IF NOT EXISTS delivery_challan_orders (
+      challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (challan_id, order_id)
+    )
+  `);
   await ensureInventorySetLineNullableLeafReference();
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_order_id ON delivery_challans(order_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_vendor_id ON delivery_challans(vendor_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_type ON delivery_challans(type)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_items_challan_id ON delivery_challan_items(challan_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_challan_id ON delivery_challan_orders(challan_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_order_id ON delivery_challan_orders(order_id)');
 
   // Foreign key indexes for production scaling on materials
   await run('CREATE INDEX IF NOT EXISTS idx_materials_linked_group_id ON materials(linked_group_id)');
@@ -4404,6 +4425,45 @@ async function getDeliveryChallanItems(challanId) {
   );
 }
 
+async function getDeliveryChallanOrderIds(challanId) {
+  const rows = await all(
+    `
+    SELECT order_id
+    FROM delivery_challan_orders
+    WHERE challan_id = ?
+    ORDER BY order_id ASC
+    `,
+    [challanId],
+  );
+  return rows
+    .map((row) => Number(row.order_id || 0))
+    .filter((value) => Number.isInteger(value) && value > 0);
+}
+
+async function getOrderRowsByIds(orderIds = []) {
+  const normalizedOrderIds = [
+    ...new Set(
+      orderIds
+        .map((value) => Number(value || 0))
+        .filter((value) => Number.isInteger(value) && value > 0),
+    ),
+  ];
+  if (normalizedOrderIds.length === 0) {
+    return [];
+  }
+  const placeholders = normalizedOrderIds.map(() => '?').join(', ');
+  return all(
+    `
+    SELECT o.*, c.gst_number AS client_gstin
+    FROM orders o
+    LEFT JOIN clients c ON c.id = o.client_id
+    WHERE o.id IN (${placeholders})
+    ORDER BY datetime(o.created_at) DESC, o.id DESC
+    `,
+    normalizedOrderIds,
+  );
+}
+
 function rowToDeliveryChallanItemDto(row) {
   const formatMeasure = (value) => {
     const numeric = Number(value);
@@ -4427,11 +4487,25 @@ function rowToDeliveryChallanItemDto(row) {
 
 async function rowToDeliveryChallanDto(row, { includeItems = true } = {}) {
   const items = includeItems ? await getDeliveryChallanItems(row.id) : [];
+  let orderIds = await getDeliveryChallanOrderIds(row.id);
+  if (orderIds.length === 0 && Number(row.order_id || 0) > 0) {
+    orderIds = [Number(row.order_id || 0)];
+  }
+  const orderRows = await getOrderRowsByIds(orderIds);
+  const orderNos = [
+    ...new Set(
+      orderRows
+        .map((order) => String(order.order_no || '').trim())
+        .filter(Boolean),
+    ),
+  ];
   return {
     id: row.id,
     type: normalizeChallanType(row.type),
     order_id: row.order_id || null,
+    order_ids: orderIds,
     order_no: row.order_no || '',
+    order_nos: orderNos,
     challan_no: row.challan_no || '',
     date: row.date || '',
     location: row.location || '',
@@ -4551,7 +4625,18 @@ async function listDeliveryChallans({
   }
   const normalizedOrderId = Number(orderId || 0);
   if (Number.isInteger(normalizedOrderId) && normalizedOrderId > 0) {
-    where.push('dc.order_id = ?');
+    where.push(`
+      (
+        dc.order_id = ?
+        OR EXISTS (
+          SELECT 1
+          FROM delivery_challan_orders dco
+          WHERE dco.challan_id = dc.id
+            AND dco.order_id = ?
+        )
+      )
+    `);
+    params.push(normalizedOrderId);
     params.push(normalizedOrderId);
   }
   const normalizedVendorId = Number(vendorId || 0);
@@ -4621,6 +4706,44 @@ async function getOrderForDeliveryChallan(orderId) {
     throw error;
   }
   return order;
+}
+
+function normalizeDeliveryChallanOrderIds(input = {}, existing = null) {
+  const candidates = Array.isArray(input.orderIds)
+    ? input.orderIds
+    : Array.isArray(input.order_ids)
+    ? input.order_ids
+    : [];
+  const normalized = [
+    ...new Set(
+      candidates
+        .map((value) => Number(value || 0))
+        .filter((value) => Number.isInteger(value) && value > 0),
+    ),
+  ];
+  const legacyOrderId = Number(
+    input.orderId ?? input.order_id ?? existing?.order_id ?? 0,
+  );
+  if (normalized.length === 0 && Number.isInteger(legacyOrderId) && legacyOrderId > 0) {
+    return [legacyOrderId];
+  }
+  return normalized;
+}
+
+async function getOrdersForDeliveryChallan(orderIds) {
+  const orders = await getOrderRowsByIds(orderIds);
+  if (orders.length !== orderIds.length) {
+    const error = new Error('One or more selected orders could not be found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  const uniqueClientIds = [...new Set(orders.map((order) => Number(order.client_id || 0)))];
+  if (uniqueClientIds.length !== 1) {
+    const error = new Error('Delivery challans can only include orders from the same client.');
+    error.statusCode = 400;
+    throw error;
+  }
+  return orders;
 }
 
 function orderItemSnapshotFromOrder(order) {
@@ -4790,35 +4913,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
     throw error;
   }
   if (existing && existing.status !== 'draft') {
-    const requestedChallanNo = String(
-      input.challanNo ?? input.challan_no ?? existing.challan_no,
-    ).trim();
     const error = new Error('Only draft challans can be edited.');
-    if (
-      existing.status === 'issued' &&
-      requestedChallanNo &&
-      requestedChallanNo !== existing.challan_no
-    ) {
-      assertCanChangeIssuedChallanNo(req || {}, existing, requestedChallanNo);
-      const duplicate = await get(
-        'SELECT id FROM delivery_challans WHERE LOWER(TRIM(challan_no)) = LOWER(TRIM(?)) AND id != ?',
-        [requestedChallanNo, id],
-      );
-      if (duplicate) {
-        error.message = 'Challan number already exists.';
-        error.statusCode = 409;
-        throw error;
-      }
-      await run(
-        'UPDATE delivery_challans SET challan_no = ?, updated_by = ?, updated_at = ? WHERE id = ?',
-        [requestedChallanNo, actor?.id || null, new Date().toISOString(), id],
-      );
-      await logDeliveryChallanActivity(id, 'challan_number_changed', actor, {
-        previousChallanNo: existing.challan_no,
-        challanNo: requestedChallanNo,
-      });
-      return getDeliveryChallanRowById(id);
-    }
     error.statusCode = 400;
     throw error;
   }
@@ -4826,23 +4921,29 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
   const challanType = normalizeChallanType(
     input.type ?? input.challanType ?? input.challan_type ?? existing?.type ?? 'delivery',
   );
-  const orderId = Number(input.orderId ?? input.order_id ?? existing?.order_id ?? 0);
+  const orderIds = challanType === 'delivery'
+    ? normalizeDeliveryChallanOrderIds(input, existing)
+    : [];
   const vendorId = Number(input.vendorId ?? input.vendor_id ?? existing?.vendor_id ?? 0);
   const location = String(input.location ?? existing?.location ?? '').trim();
   const sourceReference = String(
     input.sourceReference ?? input.source_reference ?? existing?.source_reference ?? '',
   ).trim();
-  let order = null;
-  let orderSnapshot = null;
+  let orders = [];
+  let firstOrder = null;
+  let orderSnapshotsById = new Map();
   let vendor = null;
   if (challanType === 'delivery') {
-    if (!Number.isInteger(orderId) || orderId <= 0) {
-      const error = new Error('Select an order before saving delivery challan.');
+    if (orderIds.length == 0) {
+      const error = new Error('Select at least one order before saving delivery challan.');
       error.statusCode = 400;
       throw error;
     }
-    order = await getOrderForDeliveryChallan(orderId);
-    orderSnapshot = orderItemSnapshotFromOrder(order);
+    orders = await getOrdersForDeliveryChallan(orderIds);
+    firstOrder = orders[0] || null;
+    orderSnapshotsById = new Map(
+      orders.map((order) => [Number(order.id), orderItemSnapshotFromOrder(order)]),
+    );
   } else {
     if (!Number.isInteger(vendorId) || vendorId <= 0) {
       const error = new Error('Select a vendor before saving reception challan.');
@@ -4851,33 +4952,26 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
     }
     vendor = await getVendorForChallan(vendorId);
   }
-  const challanNo = String(
-    existing?.challan_no ??
-        input.challanNo ??
-        input.challan_no ??
-        (await generateChallanNumber(challanType)),
+  const requestedChallanNo = String(
+    input.challanNo ?? input.challan_no ?? '',
   ).trim();
-  if (!challanNo) {
-    const error = new Error('Challan number is required.');
-    error.statusCode = 400;
-    throw error;
-  }
+  const challanNo = requestedChallanNo || await generateChallanNumber(challanType);
   const duplicate = await get(
     'SELECT id FROM delivery_challans WHERE LOWER(TRIM(challan_no)) = LOWER(TRIM(?)) AND id != ?',
     [challanNo, id || 0],
   );
   if (duplicate) {
-    const error = new Error('Challan number already exists.');
+    const error = new Error(`Challan number [${challanNo}] is already in use.`);
     error.statusCode = 409;
     throw error;
   }
 
   const date = normalizeChallanDate(input.date ?? existing?.date);
   const customerName = challanType === 'delivery'
-    ? String(order.client_name || '').trim()
+    ? String(firstOrder?.client_name || '').trim()
     : '';
   const customerGstin = challanType === 'delivery'
-    ? String(order.client_gstin || '').trim()
+    ? String(firstOrder?.client_gstin || '').trim()
     : '';
   const vendorName = challanType === 'reception'
     ? String(vendor.name || '').trim()
@@ -4885,23 +4979,44 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
   const vendorGstin = challanType === 'reception'
     ? String(vendor.gst_number || '').trim()
     : '';
-  const orderNo = challanType === 'delivery' ? String(order.order_no || '').trim() : '';
+  const orderNo = challanType === 'delivery'
+    ? [...new Set(orders.map((order) => String(order.order_no || '').trim()).filter(Boolean))].join(', ')
+    : '';
   const notes = String(input.notes ?? existing?.notes ?? '').trim();
-  const persistedOrderId = challanType === 'delivery' ? orderId : null;
+  const persistedOrderId = challanType === 'delivery' ? (orderIds[0] || null) : null;
   const persistedVendorId = challanType === 'reception' ? vendor.id : null;
   const normalizedItems = normalizeDeliveryChallanItems(input.items || []);
   const items = [];
   for (const item of normalizedItems) {
     if (challanType === 'delivery') {
-      const orderItemId = item.orderItemId || Number(order.id);
-      const itemId = item.itemId || order.item_id || null;
-      if (orderItemId !== Number(order.id)) {
+      const orderItemId = Number(item.orderItemId || 0);
+      if (!Number.isInteger(orderItemId) || orderItemId <= 0) {
+        const error = new Error('Each delivery challan row must reference one of the selected orders.');
+        error.statusCode = 400;
+        throw error;
+      }
+      const selectedOrder = orders.find((order) => Number(order.id) === orderItemId);
+      if (!selectedOrder) {
         const error = new Error('Selected challan item does not belong to the selected order.');
         error.statusCode = 400;
         throw error;
       }
-      if (itemId && Number(itemId) !== Number(order.item_id || 0)) {
+      const orderSnapshot = orderSnapshotsById.get(orderItemId);
+      const itemId = item.itemId || selectedOrder.item_id || null;
+      if (itemId && Number(itemId) !== Number(selectedOrder.item_id || 0)) {
         const error = new Error('Selected challan item does not match the selected order item.');
+        error.statusCode = 400;
+        throw error;
+      }
+      const requestedVariationLeafNodeId = Number(item.variationLeafNodeId || 0);
+      const orderVariationLeafNodeId = Number(
+        orderSnapshot?.variationLeafNodeId || 0,
+      );
+      if (
+        requestedVariationLeafNodeId > 0 &&
+        requestedVariationLeafNodeId !== orderVariationLeafNodeId
+      ) {
+        const error = new Error('Selected challan variation does not match the selected order item.');
         error.statusCode = 400;
         throw error;
       }
@@ -4909,9 +5024,10 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
         ...item,
         orderItemId,
         itemId,
-        variationLeafNodeId: orderSnapshot.variationLeafNodeId,
-        particulars: orderSnapshot.particulars,
-        hsnCode: orderSnapshot.hsnCode,
+        variationLeafNodeId: orderVariationLeafNodeId,
+        particulars: orderSnapshot?.particulars || item.particulars,
+        variationPathLabel: orderSnapshot?.variationPathLabel || item.variationPathLabel,
+        hsnCode: orderSnapshot?.hsnCode || item.hsnCode,
       });
     } else {
       if (!Number.isInteger(item.itemId) || item.itemId <= 0) {
@@ -4965,6 +5081,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
         ],
       );
       await run('DELETE FROM delivery_challan_items WHERE challan_id = ?', [challanId]);
+      await run('DELETE FROM delivery_challan_orders WHERE challan_id = ?', [challanId]);
     } else {
       const result = await run(
         `
@@ -4996,6 +5113,18 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
         ],
       );
       challanId = result.lastID;
+    }
+
+    if (challanType === 'delivery') {
+      for (const orderId of orderIds) {
+        await run(
+          `
+          INSERT INTO delivery_challan_orders (challan_id, order_id, created_at)
+          VALUES (?, ?, ?)
+          `,
+          [challanId, orderId, now],
+        );
+      }
     }
 
     for (const item of items) {
@@ -5052,10 +5181,13 @@ async function issueDeliveryChallan(id, actor = null) {
     error.statusCode = 400;
     throw error;
   }
-  if (normalizeChallanType(existing.type) === 'delivery' && !existing.order_id) {
-    const error = new Error('Select an order before issuing challan.');
-    error.statusCode = 400;
-    throw error;
+  if (normalizeChallanType(existing.type) === 'delivery') {
+    const orderIds = await getDeliveryChallanOrderIds(id);
+    if (orderIds.length === 0 && !existing.order_id) {
+      const error = new Error('Select at least one order before issuing challan.');
+      error.statusCode = 400;
+      throw error;
+    }
   }
   if (normalizeChallanType(existing.type) === 'delivery' && !String(existing.customer_name || '').trim()) {
     const error = new Error('Customer name is required before issuing challan.');

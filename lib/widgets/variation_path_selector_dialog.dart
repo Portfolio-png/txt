@@ -31,13 +31,13 @@ class VariationPathSelectionResult {
   final ItemVariationNodeDefinition? leaf;
 }
 
-typedef VariationValueCreator = Future<QuickCreateVariationValueResult?>
-    Function({
-  required ItemDefinition item,
-  required int propertyNodeId,
-  required String propertyLabel,
-  required String valueName,
-});
+typedef VariationValueCreator =
+    Future<QuickCreateVariationValueResult?> Function({
+      required ItemDefinition item,
+      required int propertyNodeId,
+      required String propertyLabel,
+      required String valueName,
+    });
 
 class VariationPathSelectorDialog extends StatefulWidget {
   const VariationPathSelectorDialog({
@@ -45,13 +45,15 @@ class VariationPathSelectorDialog extends StatefulWidget {
     required this.item,
     required this.initialRootPropertyId,
     required this.initialValueNodeIds,
-    required this.onCreateValue,
+    this.onCreateValue,
+    this.readOnly = false,
   });
 
   final ItemDefinition item;
   final int? initialRootPropertyId;
   final List<int> initialValueNodeIds;
-  final VariationValueCreator onCreateValue;
+  final VariationValueCreator? onCreateValue;
+  final bool readOnly;
 
   @override
   State<VariationPathSelectorDialog> createState() =>
@@ -81,8 +83,9 @@ class _VariationPathSelectorDialogState
     final steps = _allVariationSteps();
     final selectedLeaf = _resolveLeafFromSelection();
     final totalSelectableSteps = steps.length;
-    final selectedStepCount =
-        steps.where((step) => step.selectedValueId != null).length;
+    final selectedStepCount = steps
+        .where((step) => step.selectedValueId != null)
+        .length;
 
     return Padding(
       padding: const EdgeInsets.all(22),
@@ -98,15 +101,15 @@ class _VariationPathSelectorDialogState
                     Text(
                       'Select Variation Path',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     const SizedBox(height: 6),
                     Text(
                       _item.displayName,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: SoftErpTheme.textSecondary,
-                          ),
+                        color: SoftErpTheme.textSecondary,
+                      ),
                     ),
                   ],
                 ),
@@ -123,9 +126,9 @@ class _VariationPathSelectorDialogState
                 child: Text(
                   '$selectedStepCount out of $totalSelectableSteps selected',
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: SoftErpTheme.accent,
-                        fontWeight: FontWeight.w800,
-                      ),
+                    color: SoftErpTheme.accent,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -149,9 +152,11 @@ class _VariationPathSelectorDialogState
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    for (var stepIndex = 0;
-                        stepIndex < steps.length;
-                        stepIndex++) ...[
+                    for (
+                      var stepIndex = 0;
+                      stepIndex < steps.length;
+                      stepIndex++
+                    ) ...[
                       _buildStepRow(
                         title: _variationStepTitle(steps[stepIndex]),
                         isComplete: steps[stepIndex].selectedValueId != null,
@@ -179,13 +184,13 @@ class _VariationPathSelectorDialogState
                   ? 'Complete the path by selecting each property.'
                   : _selectionSummaryLabel(),
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: selectedLeaf == null
-                        ? SoftErpTheme.textSecondary
-                        : SoftErpTheme.textPrimary,
-                    fontWeight: selectedLeaf == null
-                        ? FontWeight.w500
-                        : FontWeight.w700,
-                  ),
+                color: selectedLeaf == null
+                    ? SoftErpTheme.textSecondary
+                    : SoftErpTheme.textPrimary,
+                fontWeight: selectedLeaf == null
+                    ? FontWeight.w500
+                    : FontWeight.w700,
+              ),
             ),
           ),
           const SizedBox(height: 20),
@@ -195,14 +200,15 @@ class _VariationPathSelectorDialogState
             runSpacing: 10,
             children: [
               AppButton(
-                label: 'Cancel',
+                label: widget.readOnly ? 'Close' : 'Cancel',
                 variant: AppButtonVariant.secondary,
                 onPressed: () => Navigator.of(context).pop(),
               ),
-              AppButton(
-                label: 'Apply Path',
-                onPressed: selectedLeaf == null ? null : _submit,
-              ),
+              if (!widget.readOnly)
+                AppButton(
+                  label: 'Apply Path',
+                  onPressed: selectedLeaf == null ? null : _submit,
+                ),
             ],
           ),
         ],
@@ -218,6 +224,7 @@ class _VariationPathSelectorDialogState
       key: fieldKey,
       tapTargetKey: fieldKey,
       value: step.selectedValueId,
+      fieldEnabled: !widget.readOnly,
       decoration: const InputDecoration(
         hintText: 'Select value',
         filled: true,
@@ -229,37 +236,41 @@ class _VariationPathSelectorDialogState
           ? 'Variation Value'
           : step.property.name.trim(),
       searchHintText: 'Search value',
-      createOptionLabelBuilder: (query) => 'Create value "$query"',
-      onCreateOption: (query) async {
-        final result = await widget.onCreateValue(
-          item: _item,
-          propertyNodeId: step.property.id,
-          propertyLabel: step.property.name.trim().isEmpty
-              ? 'Property ${step.property.id}'
-              : step.property.name.trim(),
-          valueName: query,
-        );
-        if (!mounted || result == null) {
-          return null;
-        }
-        setState(() {
-          _item = result.item;
-          final refreshedProperty = _findNodeById(
-            result.item.variationTree,
-            step.property.id,
-          );
-          _replaceSelectionUnderProperty(
-            refreshedProperty ?? step.property,
-            result.selectedValueNodeIds,
-          );
-        });
-        return SearchableSelectOption<int>(
-          value: result.createdValueNode.id,
-          label: result.createdValueNode.name.trim().isEmpty
-              ? result.createdValueNode.displayName
-              : result.createdValueNode.name.trim(),
-        );
-      },
+      createOptionLabelBuilder: widget.readOnly || widget.onCreateValue == null
+          ? null
+          : (query) => 'Create value "$query"',
+      onCreateOption: widget.readOnly || widget.onCreateValue == null
+          ? null
+          : (query) async {
+              final result = await widget.onCreateValue!(
+                item: _item,
+                propertyNodeId: step.property.id,
+                propertyLabel: step.property.name.trim().isEmpty
+                    ? 'Property ${step.property.id}'
+                    : step.property.name.trim(),
+                valueName: query,
+              );
+              if (!mounted || result == null) {
+                return null;
+              }
+              setState(() {
+                _item = result.item;
+                final refreshedProperty = _findNodeById(
+                  result.item.variationTree,
+                  step.property.id,
+                );
+                _replaceSelectionUnderProperty(
+                  refreshedProperty ?? step.property,
+                  result.selectedValueNodeIds,
+                );
+              });
+              return SearchableSelectOption<int>(
+                value: result.createdValueNode.id,
+                label: result.createdValueNode.name.trim().isEmpty
+                    ? result.createdValueNode.displayName
+                    : result.createdValueNode.name.trim(),
+              );
+            },
       options: step.values
           .map(
             (value) => SearchableSelectOption<int>(
@@ -315,9 +326,9 @@ class _VariationPathSelectorDialogState
               Text(
                 title,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: SoftErpTheme.textPrimary,
-                      fontWeight: FontWeight.w800,
-                    ),
+                  color: SoftErpTheme.textPrimary,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
               if (!isComplete) ...[
                 const SizedBox(width: 6),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -11,6 +12,7 @@ import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/widgets/page_container.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../../core/widgets/soft_primitives.dart';
+import '../../../../widgets/variation_path_selector_dialog.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
 import '../../../inventory/presentation/providers/inventory_provider.dart';
 import '../../../items/domain/item_definition.dart';
@@ -649,7 +651,9 @@ class _ChallanEditor extends StatefulWidget {
 }
 
 class _ChallanEditorState extends State<_ChallanEditor> {
+  late final TextEditingController _challanNumberController;
   late final TextEditingController _orderSearchController;
+  late final FocusNode _orderSearchFocusNode;
   late final TextEditingController _dateController;
   late final TextEditingController _customerController;
   late final TextEditingController _gstinController;
@@ -658,28 +662,28 @@ class _ChallanEditorState extends State<_ChallanEditor> {
   late final TextEditingController _notesController;
   late List<_ItemDraft> _items;
   late ChallanType _selectedType;
-  OrderEntry? _selectedOrder;
+  late List<OrderEntry> _selectedOrders;
   int? _selectedVendorId;
   String? _validationError;
+  String _debouncedOrderQuery = '';
+  Timer? _orderSearchDebounce;
 
   DeliveryChallan? get _source => widget.challan ?? widget.sourceForDuplicate;
   bool get _editingExisting => widget.challan != null;
   bool get _canEdit => widget.challan?.isDraft ?? true;
   bool get _isReception => _selectedType == ChallanType.reception;
-  _OrderItemOption? get _selectedOrderOption => _selectedOrder == null
-      ? null
-      : _OrderItemOption.fromOrder(_selectedOrder!);
+  OrderEntry? get _primarySelectedOrder =>
+      _selectedOrders.isEmpty ? null : _selectedOrders.first;
+  List<_OrderItemOption> get _selectedOrderOptions =>
+      _selectedOrders.map(_OrderItemOption.fromOrder).toList(growable: false);
 
-  OrderEntry? _findOrder(int? orderId) {
-    if (orderId == null) {
-      return null;
-    }
-    for (final order in context.read<OrdersProvider>().orders) {
-      if (order.id == orderId) {
-        return order;
-      }
-    }
-    return null;
+  List<OrderEntry> _findOrders(Iterable<int> orderIds) {
+    final ids = orderIds.toSet();
+    return context
+        .read<OrdersProvider>()
+        .orders
+        .where((order) => ids.contains(order.id))
+        .toList(growable: false);
   }
 
   String _gstinForOrder(OrderEntry? order) {
@@ -695,12 +699,78 @@ class _ChallanEditorState extends State<_ChallanEditor> {
   }
 
   void _applySelectedOrderSnapshots() {
-    final order = _selectedOrder;
+    final order = _primarySelectedOrder;
     if (order == null) {
+      _customerController.clear();
+      _gstinController.clear();
       return;
     }
     _customerController.text = order.clientName;
     _gstinController.text = _gstinForOrder(order);
+  }
+
+  List<OrderEntry> _eligibleOrders() {
+    final clientId = _primarySelectedOrder?.clientId;
+    return context
+        .read<OrdersProvider>()
+        .orders
+        .where((order) {
+          if (order.status == OrderStatus.completed) {
+            return false;
+          }
+          if (_selectedOrders.any((selected) => selected.id == order.id)) {
+            return false;
+          }
+          if (clientId != null && order.clientId != clientId) {
+            return false;
+          }
+          return true;
+        })
+        .toList(growable: false);
+  }
+
+  bool _isOrderEligible(OrderEntry order) {
+    if (order.status == OrderStatus.completed) {
+      return false;
+    }
+    if (_selectedOrders.any((selected) => selected.id == order.id)) {
+      return false;
+    }
+    final clientId = _primarySelectedOrder?.clientId;
+    if (clientId != null && order.clientId != clientId) {
+      return false;
+    }
+    return true;
+  }
+
+  void _handleOrderSearchChanged() {
+    _orderSearchDebounce?.cancel();
+    _orderSearchDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _debouncedOrderQuery = _orderSearchController.text.trim().toLowerCase();
+      });
+    });
+  }
+
+  void _resetDeliveryItemsForSelectedOrders() {
+    final selectedOrderIds = _selectedOrders.map((order) => order.id).toSet();
+    _items = _items
+        .where((item) {
+          return item.orderItemId == null ||
+              selectedOrderIds.contains(item.orderItemId);
+        })
+        .toList(growable: true);
+    if (_items.isEmpty) {
+      _items = [
+        if (_selectedOrderOptions.isNotEmpty)
+          _ItemDraft.fromOrderOption(_selectedOrderOptions.first)
+        else
+          _ItemDraft.blank(1),
+      ];
+    }
   }
 
   @override
@@ -708,9 +778,22 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     super.initState();
     final source = _source;
     _selectedType = widget.initialType ?? source?.type ?? ChallanType.delivery;
-    _selectedOrder = widget.initialOrder ?? _findOrder(source?.orderId);
+    final initialOrderIds = source?.orderIds.isNotEmpty == true
+        ? source!.orderIds
+        : [
+            if (widget.initialOrder != null)
+              widget.initialOrder!.id
+            else if (source?.orderId != null)
+              source!.orderId!,
+          ];
+    _selectedOrders = _findOrders(initialOrderIds);
     _selectedVendorId = source?.vendorId;
+    _challanNumberController = TextEditingController(
+      text: source?.challanNo ?? '',
+    );
     _orderSearchController = TextEditingController();
+    _orderSearchFocusNode = FocusNode();
+    _orderSearchController.addListener(_handleOrderSearchChanged);
     _dateController = TextEditingController(
       text: _date(source?.date ?? DateTime.now()),
     );
@@ -727,13 +810,22 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     _notesController = TextEditingController(text: source?.notes ?? '');
     _items = (source?.items.isNotEmpty ?? false)
         ? source!.items.map(_ItemDraft.fromItem).toList()
-        : [_ItemDraft.fromOrderOption(_selectedOrderOption)];
+        : [
+            if (_selectedOrderOptions.isNotEmpty)
+              _ItemDraft.fromOrderOption(_selectedOrderOptions.first)
+            else
+              _ItemDraft.blank(1),
+          ];
     _applySelectedOrderSnapshots();
   }
 
   @override
   void dispose() {
+    _challanNumberController.dispose();
+    _orderSearchController.removeListener(_handleOrderSearchChanged);
     _orderSearchController.dispose();
+    _orderSearchDebounce?.cancel();
+    _orderSearchFocusNode.dispose();
     _dateController.dispose();
     _customerController.dispose();
     _gstinController.dispose();
@@ -753,6 +845,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
               : 'Create Delivery Challan');
     final issueLabel = _isReception ? 'Issue Reception' : 'Issue Delivery';
     final errorText = _validationError ?? provider.errorMessage;
+    final challanNumberWarningText = _manualChallanWarningText();
     return ErpFormScaffold(
       title: editorTitle,
       subtitle: _isReception
@@ -772,13 +865,26 @@ class _ChallanEditorState extends State<_ChallanEditor> {
               children: [
                 Row(
                   children: [
-                    Expanded(child: _challanNumberDisplay()),
+                    Expanded(child: _challanNumberField()),
                     const SizedBox(width: 12),
                     Expanded(
                       child: _field('Date', _dateController, enabled: _canEdit),
                     ),
                   ],
                 ),
+                if (challanNumberWarningText != null) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      challanNumberWarningText,
+                      style: const TextStyle(
+                        color: SoftErpTheme.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 _typeSelector(),
                 const SizedBox(height: 12),
@@ -840,12 +946,12 @@ class _ChallanEditorState extends State<_ChallanEditor> {
                 : 'Dispatch Line Items',
             subtitle: _isReception
                 ? 'Lock each row to an exact item variation and quantity before issuing stock into the warehouse.'
-                : 'Review the order-linked dispatch rows and quantities before issuing the challan.',
+                : 'Review the selected order-linked dispatch rows and quantities before issuing the challan.',
             child: _ItemsEditor(
               isReception: _isReception,
               enabled: _canEdit,
               items: _items,
-              orderOption: _selectedOrderOption,
+              orderOptions: _selectedOrderOptions,
               onChanged: () => setState(() {
                 _validationError = null;
               }),
@@ -929,28 +1035,32 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     );
   }
 
-  Widget _challanNumberDisplay() {
-    final value =
-        _editingExisting && (widget.challan?.challanNo.isNotEmpty ?? false)
-        ? widget.challan!.challanNo
-        : 'Will be generated on save';
-    return InputDecorator(
+  Widget _challanNumberField() {
+    return TextField(
+      controller: _challanNumberController,
+      enabled: _canEdit,
       decoration: InputDecoration(
         labelText: 'Challan No.',
+        hintText: 'Leave empty to auto-generate',
         filled: true,
-        fillColor: const Color(0xFFF7F8FC),
+        fillColor: _canEdit ? Colors.white : const Color(0xFFF7F8FC),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
       ),
-      child: Text(
-        value,
-        style: TextStyle(
-          color: _editingExisting
-              ? SoftErpTheme.textPrimary
-              : SoftErpTheme.textSecondary,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
     );
+  }
+
+  String? _manualChallanWarningText() {
+    final manualValue = _challanNumberController.text.trim();
+    if (manualValue.isEmpty) {
+      return null;
+    }
+    final expectedPrefix = _selectedType == ChallanType.reception
+        ? 'RC-'
+        : 'DC-';
+    if (manualValue.toUpperCase().startsWith(expectedPrefix)) {
+      return null;
+    }
+    return 'Manual challan numbers usually start with $expectedPrefix. This is a warning only; unique values are still allowed.';
   }
 
   Widget _typeSelector() {
@@ -981,7 +1091,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
                   _sourceReferenceController.text = '';
                   _applySelectedOrderSnapshots();
                 } else {
-                  _selectedOrder = null;
+                  _selectedOrders = <OrderEntry>[];
                   _orderSearchController.clear();
                   _customerController.clear();
                   _gstinController.clear();
@@ -992,25 +1102,6 @@ class _ChallanEditorState extends State<_ChallanEditor> {
   }
 
   Widget _orderSelector(BuildContext context) {
-    final orders = context.watch<OrdersProvider>().orders;
-    final query = _orderSearchController.text.trim().toLowerCase();
-    final filtered = query.isEmpty
-        ? orders
-        : orders
-              .where(
-                (order) =>
-                    order.orderNo.toLowerCase().contains(query) ||
-                    order.clientName.toLowerCase().contains(query) ||
-                    order.itemName.toLowerCase().contains(query),
-              )
-              .toList(growable: false);
-    final selectedOrderStillVisible =
-        _selectedOrder == null ||
-        filtered.any((order) => order.id == _selectedOrder!.id);
-    final dropdownOrders = selectedOrderStillVisible
-        ? filtered
-        : <OrderEntry>[_selectedOrder!, ...filtered];
-
     return SoftSurface(
       padding: const EdgeInsets.all(12),
       elevated: false,
@@ -1018,77 +1109,126 @@ class _ChallanEditorState extends State<_ChallanEditor> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Order',
+            'Orders',
             style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
           ),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _orderSearchController,
-                  enabled: _canEdit,
-                  onChanged: (_) => setState(() {}),
-                  decoration: InputDecoration(
-                    labelText: 'Search orders',
-                    prefixIcon: const Icon(Icons.search_rounded),
-                    filled: true,
-                    fillColor: Colors.white,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
+          RawAutocomplete<OrderEntry>(
+            textEditingController: _orderSearchController,
+            focusNode: _orderSearchFocusNode,
+            displayStringForOption: _orderOptionLabel,
+            optionsBuilder: (textEditingValue) {
+              final eligible = _eligibleOrders();
+              if (_debouncedOrderQuery.isEmpty) {
+                return eligible.take(12);
+              }
+              return eligible
+                  .where((order) {
+                    return _orderOptionLabel(
+                      order,
+                    ).toLowerCase().contains(_debouncedOrderQuery);
+                  })
+                  .take(12);
+            },
+            onSelected: (order) {
+              if (!_isOrderEligible(order)) {
+                setState(() {
+                  _validationError =
+                      'The selected order is no longer eligible for this challan.';
+                });
+                return;
+              }
+              setState(() {
+                _selectedOrders = [..._selectedOrders, order];
+                _validationError = null;
+                _debouncedOrderQuery = '';
+                _orderSearchController.clear();
+                _resetDeliveryItemsForSelectedOrders();
+                _applySelectedOrderSnapshots();
+              });
+              _orderSearchFocusNode.requestFocus();
+            },
+            fieldViewBuilder:
+                (context, controller, focusNode, onFieldSubmitted) {
+                  return TextField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    enabled: _canEdit,
+                    decoration: InputDecoration(
+                      labelText: 'Find Order...',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onSubmitted: (_) => onFieldSubmitted(),
+                  );
+                },
+            optionsViewBuilder: (context, onSelected, options) {
+              return Align(
+                alignment: Alignment.topLeft,
+                child: Material(
+                  elevation: 8,
+                  borderRadius: BorderRadius.circular(12),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxWidth: 720,
+                      maxHeight: 280,
+                    ),
+                    child: ListView(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      shrinkWrap: true,
+                      children: options
+                          .map(
+                            (order) => ListTile(
+                              dense: true,
+                              title: Text(_orderOptionLabel(order)),
+                              subtitle: Text(order.clientName),
+                              onTap: () => onSelected(order),
+                            ),
+                          )
+                          .toList(growable: false),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 2,
-                child: DropdownButtonFormField<int>(
-                  key: ValueKey<int?>(_selectedOrder?.id),
-                  initialValue: _selectedOrder?.id,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    labelText: 'Select order',
-                    filled: true,
-                    fillColor: Colors.white,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  items: dropdownOrders
-                      .map(
-                        (order) => DropdownMenuItem<int>(
-                          value: order.id,
-                          child: Text(
-                            _orderOptionLabel(order),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      )
-                      .toList(growable: false),
-                  onChanged: _canEdit
-                      ? (value) {
-                          OrderEntry? selected;
-                          for (final order in orders) {
-                            if (order.id == value) {
-                              selected = order;
-                              break;
-                            }
-                          }
-                          setState(() {
-                            _selectedOrder = selected;
-                            _validationError = null;
-                            _items = [
-                              _ItemDraft.fromOrderOption(_selectedOrderOption),
-                            ];
-                            _applySelectedOrderSnapshots();
-                          });
-                        }
-                      : null,
-                ),
-              ),
-            ],
+              );
+            },
           ),
+          if (_selectedOrders.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _selectedOrders
+                  .map((order) {
+                    return InputChip(
+                      label: Text(_orderOptionLabel(order)),
+                      onDeleted: !_canEdit
+                          ? null
+                          : () {
+                              setState(() {
+                                _selectedOrders = _selectedOrders
+                                    .where(
+                                      (selected) => selected.id != order.id,
+                                    )
+                                    .toList(growable: false);
+                                _validationError = null;
+                                _resetDeliveryItemsForSelectedOrders();
+                                _applySelectedOrderSnapshots();
+                              });
+                            },
+                    );
+                  })
+                  .toList(growable: false),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Client locked to ${_selectedOrders.first.clientName} for this challan.',
+              style: const TextStyle(color: SoftErpTheme.textSecondary),
+            ),
+          ],
         ],
       ),
     );
@@ -1132,11 +1272,16 @@ class _ChallanEditorState extends State<_ChallanEditor> {
   }
 
   DeliveryChallanDraftInput _input() {
+    final orderIds = _selectedType == ChallanType.delivery
+        ? _selectedOrders.map((order) => order.id).toList(growable: false)
+        : const <int>[];
     return DeliveryChallanDraftInput(
       type: _selectedType,
+      challanNo: _challanNumberController.text.trim(),
       orderId: _selectedType == ChallanType.delivery
-          ? (_selectedOrder?.id ?? _source?.orderId ?? 0)
+          ? (orderIds.isEmpty ? (_source?.orderId ?? 0) : orderIds.first)
           : 0,
+      orderIds: orderIds,
       vendorId: _selectedType == ChallanType.reception
           ? (_selectedVendorId ?? _source?.vendorId ?? 0)
           : 0,
@@ -1170,9 +1315,9 @@ class _ChallanEditorState extends State<_ChallanEditor> {
       });
       return;
     }
-    if (!_isReception && (_selectedOrder?.id ?? _source?.orderId ?? 0) <= 0) {
+    if (!_isReception && _selectedOrders.isEmpty) {
       setState(() {
-        _validationError = 'Select an order before saving challan.';
+        _validationError = 'Select at least one order before saving challan.';
       });
       return;
     }
@@ -1187,9 +1332,9 @@ class _ChallanEditorState extends State<_ChallanEditor> {
   Future<void> _issue() async {
     final provider = context.read<DeliveryChallanProvider>();
     final input = _input();
-    if (_selectedType == ChallanType.delivery && input.orderId <= 0) {
+    if (_selectedType == ChallanType.delivery && input.orderIds.isEmpty) {
       setState(() {
-        _validationError = 'Select an order before saving challan.';
+        _validationError = 'Select at least one order before saving challan.';
       });
       return;
     }
@@ -1264,30 +1409,23 @@ class _ItemsEditor extends StatelessWidget {
     required this.isReception,
     required this.items,
     required this.enabled,
-    required this.orderOption,
+    required this.orderOptions,
     required this.onChanged,
   });
 
   final bool isReception;
   final List<_ItemDraft> items;
   final bool enabled;
-  final _OrderItemOption? orderOption;
+  final List<_OrderItemOption> orderOptions;
   final VoidCallback onChanged;
 
   @override
   Widget build(BuildContext context) {
-    final selectableReferences = isReception
-        ? _buildSelectableReferences(
-            context
-                .watch<ItemsProvider>()
-                .items
-                .where((item) => !item.isArchived)
-                .toList(growable: false),
-          )
-        : const <_SelectableReceptionReference>[];
-    final selectableReferenceByKey = {
-      for (final reference in selectableReferences) reference.key: reference,
-    };
+    final availableItems = context
+        .watch<ItemsProvider>()
+        .items
+        .where((item) => !item.isArchived)
+        .toList(growable: false);
     return SoftSurface(
       padding: const EdgeInsets.all(12),
       elevated: false,
@@ -1303,9 +1441,13 @@ class _ItemsEditor extends StatelessWidget {
                 ),
               ),
               TextButton.icon(
-                onPressed: enabled && (isReception || orderOption != null)
+                onPressed: enabled && (isReception || orderOptions.isNotEmpty)
                     ? () {
-                        items.add(_ItemDraft.blank(items.length + 1));
+                        items.add(
+                          !isReception && orderOptions.isNotEmpty
+                              ? _ItemDraft.fromOrderOption(orderOptions.first)
+                              : _ItemDraft.blank(items.length + 1),
+                        );
                         onChanged();
                       }
                     : null,
@@ -1315,11 +1457,11 @@ class _ItemsEditor extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          if (!isReception && orderOption == null) ...[
+          if (!isReception && orderOptions.isEmpty) ...[
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 8),
               child: Text(
-                'Select an order first.',
+                'Select at least one order first.',
                 style: TextStyle(color: SoftErpTheme.textSecondary),
               ),
             ),
@@ -1330,10 +1472,9 @@ class _ItemsEditor extends StatelessWidget {
                     context,
                     entry.key,
                     entry.value,
-                    selectableReferences,
-                    selectableReferenceByKey,
+                    availableItems,
                   )
-                : _buildDeliveryRow(entry.key, entry.value),
+                : _buildDeliveryRow(context, entry.key, entry.value),
             const SizedBox(height: 8),
           ],
         ],
@@ -1341,77 +1482,97 @@ class _ItemsEditor extends StatelessWidget {
     );
   }
 
-  Widget _buildDeliveryRow(int index, _ItemDraft draft) {
-    return Row(
+  Widget _buildDeliveryRow(BuildContext context, int index, _ItemDraft draft) {
+    return Column(
       children: [
-        SizedBox(width: 28, child: Text('${index + 1}.')),
-        Expanded(
-          flex: 5,
-          child: DropdownButtonFormField<int>(
-            key: ValueKey<String>(
-              '$index-${draft.orderItemId}-${orderOption?.orderItemId}',
-            ),
-            initialValue: draft.orderItemId,
-            isExpanded: true,
-            decoration: InputDecoration(
-              labelText: 'Particulars',
-              isDense: true,
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            items: [
-              if (orderOption != null)
-                DropdownMenuItem<int>(
-                  value: orderOption!.orderItemId,
-                  child: Text(
-                    orderOption!.label,
-                    overflow: TextOverflow.ellipsis,
+        Row(
+          children: [
+            SizedBox(width: 28, child: Text('${index + 1}.')),
+            Expanded(
+              flex: 5,
+              child: DropdownButtonFormField<int>(
+                key: ValueKey<String>(
+                  '$index-${draft.orderItemId}-${orderOptions.length}',
+                ),
+                initialValue: draft.orderItemId,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: 'Particulars',
+                  isDense: true,
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-            ],
-            onChanged: enabled && orderOption != null
-                ? (value) {
-                    draft.applyOrderOption(orderOption);
-                    onChanged();
-                  }
-                : null,
-          ),
+                items: orderOptions
+                    .map(
+                      (orderOption) => DropdownMenuItem<int>(
+                        value: orderOption.orderItemId,
+                        child: Text(
+                          orderOption.label,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(growable: false),
+                onChanged: enabled && orderOptions.isNotEmpty
+                    ? (value) {
+                        _OrderItemOption? selectedOption;
+                        for (final option in orderOptions) {
+                          if (option.orderItemId == value) {
+                            selectedOption = option;
+                            break;
+                          }
+                        }
+                        draft.applyOrderOption(selectedOption);
+                        onChanged();
+                      }
+                    : null,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              flex: 2,
+              child: _readonlyItemField(draft.hsnCode, 'HSN Code'),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              flex: 2,
+              child: _itemField(
+                draft.quantityPcs,
+                'Qty / Pcs',
+                enabled && orderOptions.isNotEmpty,
+                (value) => draft.quantityPcs = value,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              flex: 2,
+              child: _itemField(
+                draft.weight,
+                'Weight',
+                enabled && orderOptions.isNotEmpty,
+                (value) => draft.weight = value,
+              ),
+            ),
+            IconButton(
+              tooltip: 'Remove row',
+              onPressed: enabled && items.length > 1
+                  ? () {
+                      items.removeAt(index);
+                      onChanged();
+                    }
+                  : null,
+              icon: const Icon(Icons.remove_circle_outline),
+            ),
+          ],
         ),
-        const SizedBox(width: 8),
-        Expanded(flex: 2, child: _readonlyItemField(draft.hsnCode, 'HSN Code')),
-        const SizedBox(width: 8),
-        Expanded(
-          flex: 2,
-          child: _itemField(
-            draft.quantityPcs,
-            'Qty / Pcs',
-            enabled && orderOption != null,
-            (value) => draft.quantityPcs = value,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          flex: 2,
-          child: _itemField(
-            draft.weight,
-            'Weight',
-            enabled && orderOption != null,
-            (value) => draft.weight = value,
-          ),
-        ),
-        IconButton(
-          tooltip: 'Remove row',
-          onPressed: enabled && items.length > 1
-              ? () {
-                  items.removeAt(index);
-                  onChanged();
-                }
-              : null,
-          icon: const Icon(Icons.remove_circle_outline),
-        ),
+        if (draft.itemId != null &&
+            draft.variationPathLabel.trim().isNotEmpty) ...[
+          const SizedBox(height: 10),
+          _buildDeliveryVariationPathField(context, index, draft),
+        ],
       ],
     );
   }
@@ -1420,12 +1581,20 @@ class _ItemsEditor extends StatelessWidget {
     BuildContext context,
     int index,
     _ItemDraft draft,
-    List<_SelectableReceptionReference> selectableReferences,
-    Map<String, _SelectableReceptionReference> selectableReferenceByKey,
+    List<ItemDefinition> availableItems,
   ) {
-    final selectedReference = draft.selectionKey == null
-        ? null
-        : selectableReferenceByKey[draft.selectionKey!];
+    final selectedItem = availableItems
+        .where((item) => item.id == draft.itemId)
+        .firstOrNull;
+    final itemOptions = availableItems
+        .map(
+          (item) => SearchableSelectOption<int>(
+            value: item.id,
+            label: item.displayName,
+            searchText: '${item.displayName} ${item.alias} ${item.name}',
+          ),
+        )
+        .toList(growable: false);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -1440,15 +1609,15 @@ class _ItemsEditor extends StatelessWidget {
               SizedBox(width: 28, child: Text('${index + 1}.')),
               Expanded(
                 flex: 6,
-                child: SearchableSelectField<String?>(
+                child: SearchableSelectField<int>(
+                  key: ValueKey<String>('challan-reception-item-$index'),
                   tapTargetKey: ValueKey<String>(
                     'challan-reception-item-$index',
                   ),
-                  value: draft.selectionKey,
-                  dialogTitle: 'Select Item Variation',
-                  searchHintText: 'Search item or variation path',
+                  value: draft.itemId,
+                  fieldEnabled: enabled,
                   decoration: InputDecoration(
-                    labelText: 'Item + Variation',
+                    labelText: 'Item',
                     isDense: true,
                     filled: true,
                     fillColor: Colors.white,
@@ -1456,21 +1625,14 @@ class _ItemsEditor extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  options: selectableReferences
-                      .map(
-                        (reference) => SearchableSelectOption<String?>(
-                          value: reference.key,
-                          label: reference.optionLabel,
-                          searchText: reference.searchText,
-                        ),
-                      )
-                      .toList(growable: false),
-                  fieldEnabled: enabled,
-                  onChanged: (value) {
-                    final reference = value == null
-                        ? null
-                        : selectableReferenceByKey[value];
-                    draft.applyReceptionReference(reference);
+                  dialogTitle: 'Select Item',
+                  searchHintText: 'Search item',
+                  options: itemOptions,
+                  onChanged: (itemId) {
+                    final item = availableItems
+                        .where((candidate) => candidate.id == itemId)
+                        .firstOrNull;
+                    draft.applyReceptionItem(item);
                     onChanged();
                   },
                 ),
@@ -1497,29 +1659,13 @@ class _ItemsEditor extends StatelessWidget {
               ),
             ],
           ),
-          if (selectedReference != null) ...[
+          if (selectedItem != null) ...[
             const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  SoftPill(
-                    label: selectedReference.itemLabel,
-                    foreground: const Color(0xFF4338CA),
-                    background: const Color(0xFFEEF2FF),
-                    borderColor: const Color(0xFFC7D2FE),
-                  ),
-                  if (selectedReference.variationPathLabel.isNotEmpty)
-                    SoftPill(
-                      label: selectedReference.variationPathLabel,
-                      foreground: const Color(0xFF7C2D12),
-                      background: const Color(0xFFFFF7ED),
-                      borderColor: const Color(0xFFFED7AA),
-                    ),
-                ],
-              ),
+            _buildReceptionVariationPathField(
+              context,
+              index,
+              draft,
+              selectedItem,
             ),
           ],
         ],
@@ -1527,64 +1673,243 @@ class _ItemsEditor extends StatelessWidget {
     );
   }
 
-  List<_SelectableReceptionReference> _buildSelectableReferences(
-    List<ItemDefinition> items,
+  Widget _buildReceptionVariationPathField(
+    BuildContext context,
+    int index,
+    _ItemDraft draft,
+    ItemDefinition item,
   ) {
-    final references = <_SelectableReceptionReference>[];
-    for (final item in items) {
-      final roots = item.variationTree
-          .where((node) => !node.isArchived)
-          .toList();
-      if (roots.isEmpty) {
-        references.add(
-          _SelectableReceptionReference(
-            itemId: item.id,
-            variationLeafNodeId: 0,
-            itemLabel: item.displayName,
-            variationPathLabel: '',
-          ),
-        );
-        continue;
-      }
-      final leafs = _leafSelections(item);
-      references.addAll(leafs);
+    if (item.topLevelProperties.isEmpty) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: SoftPill(
+          label: 'No variation required',
+          foreground: SoftErpTheme.textSecondary,
+          background: SoftErpTheme.cardSurfaceAlt,
+          borderColor: SoftErpTheme.border,
+        ),
+      );
     }
-    return references;
+    final hasSelectedPath =
+        draft.variationLeafNodeId > 0 ||
+        draft.variationPathLabel.trim().isNotEmpty;
+    final label = hasSelectedPath
+        ? draft.variationPathLabel
+        : 'Select variation path';
+    return InkWell(
+      key: ValueKey<String>('challan-reception-variation-$index'),
+      onTap: enabled
+          ? () async {
+              final result = await _openVariationSelector(
+                context,
+                item: item,
+                initialLeafId: draft.variationLeafNodeId,
+                readOnly: false,
+              );
+              if (result == null) {
+                return;
+              }
+              draft.applyReceptionVariationSelection(
+                result.item,
+                result.valueNodeIds,
+                result.leaf,
+                _variationSelectionLabel(result.item, result.valueNodeIds),
+              );
+              onChanged();
+            }
+          : null,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: hasSelectedPath ? SoftErpTheme.accentSoft : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: hasSelectedPath
+                ? const Color(0xFFDAD4FF)
+                : SoftErpTheme.border,
+          ),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.route_rounded,
+              size: 17,
+              color: SoftErpTheme.textSecondary,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: hasSelectedPath
+                      ? SoftErpTheme.accentDark
+                      : SoftErpTheme.textSecondary,
+                  fontWeight: FontWeight.w700,
+                  decoration: TextDecoration.underline,
+                  decorationColor: hasSelectedPath
+                      ? SoftErpTheme.accentDark
+                      : SoftErpTheme.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
-  List<_SelectableReceptionReference> _leafSelections(ItemDefinition item) {
-    final references = <_SelectableReceptionReference>[];
-    void walk(List<ItemVariationNodeDefinition> nodes, List<String> segments) {
-      for (final node in nodes.where((node) => !node.isArchived)) {
-        if (node.kind == ItemVariationNodeKind.value) {
-          final nextSegments = [...segments, node.displayName];
-          final nextChildren = node.children
-              .where((child) => !child.isArchived)
-              .toList();
-          final childProperties = nextChildren
-              .where((child) => child.kind == ItemVariationNodeKind.property)
-              .toList();
-          if (childProperties.isEmpty) {
-            references.add(
-              _SelectableReceptionReference(
-                itemId: item.id,
-                variationLeafNodeId: node.id,
-                itemLabel: item.displayName,
-                variationPathLabel: nextSegments.join(' | '),
+  Widget _buildDeliveryVariationPathField(
+    BuildContext context,
+    int index,
+    _ItemDraft draft,
+  ) {
+    final item = context
+        .read<ItemsProvider>()
+        .items
+        .where((candidate) => candidate.id == draft.itemId)
+        .firstOrNull;
+    if (item == null || draft.variationPathLabel.trim().isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return InkWell(
+      key: ValueKey<String>('challan-delivery-variation-$index'),
+      onTap: () {
+        _openVariationSelector(
+          context,
+          item: item,
+          initialLeafId: draft.variationLeafNodeId,
+          readOnly: true,
+        );
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: SoftErpTheme.cardSurface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: SoftErpTheme.border),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.route_rounded,
+              size: 17,
+              color: SoftErpTheme.textSecondary,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                draft.variationPathLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: SoftErpTheme.textPrimary,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            );
-          }
-          for (final property in childProperties) {
-            walk(property.children, nextSegments);
-          }
-        } else {
-          walk(node.children, segments);
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<VariationPathSelectionResult?> _openVariationSelector(
+    BuildContext context, {
+    required ItemDefinition item,
+    required int initialLeafId,
+    required bool readOnly,
+  }) {
+    return showDialog<VariationPathSelectionResult>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 680, maxHeight: 760),
+          child: VariationPathSelectorDialog(
+            item: item,
+            initialRootPropertyId: null,
+            initialValueNodeIds: initialLeafId <= 0
+                ? const <int>[]
+                : _valueNodeIdsForLeaf(item, initialLeafId),
+            onCreateValue: null,
+            readOnly: readOnly,
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<int> _valueNodeIdsForLeaf(ItemDefinition item, int leafId) {
+    final path = <ItemVariationNodeDefinition>[];
+
+    bool visit(ItemVariationNodeDefinition node) {
+      path.add(node);
+      if (node.id == leafId) {
+        return true;
+      }
+      for (final child in node.activeChildren) {
+        if (visit(child)) {
+          return true;
         }
       }
+      path.removeLast();
+      return false;
     }
 
-    walk(item.variationTree, const []);
-    return references;
+    for (final root in item.topLevelProperties) {
+      if (visit(root)) {
+        break;
+      }
+      path.clear();
+    }
+
+    return path
+        .where((node) => node.kind == ItemVariationNodeKind.value)
+        .map((node) => node.id)
+        .toList(growable: false);
+  }
+
+  String _variationSelectionLabel(ItemDefinition item, List<int> valueNodeIds) {
+    if (valueNodeIds.isEmpty) {
+      return '';
+    }
+    final selectedValueIds = valueNodeIds.toSet();
+    final segments = <String>[];
+    for (final root in item.topLevelProperties) {
+      ItemVariationNodeDefinition currentProperty = root;
+      while (true) {
+        final selectedValue = currentProperty.activeChildren
+            .where((node) => node.kind == ItemVariationNodeKind.value)
+            .where((node) => selectedValueIds.contains(node.id))
+            .firstOrNull;
+        if (selectedValue == null) {
+          break;
+        }
+        final propertyName = currentProperty.name.trim();
+        final valueName = selectedValue.name.trim().isEmpty
+            ? selectedValue.displayName.trim()
+            : selectedValue.name.trim();
+        if (propertyName.isNotEmpty || valueName.isNotEmpty) {
+          segments.add(
+            valueName.isEmpty ? propertyName : '$propertyName: $valueName',
+          );
+        }
+        final nextProperty = selectedValue.activeChildren
+            .where((node) => node.kind == ItemVariationNodeKind.property)
+            .firstOrNull;
+        if (nextProperty == null) {
+          break;
+        }
+        currentProperty = nextProperty;
+      }
+    }
+    return segments.join(' / ');
   }
 
   Widget _itemField(
@@ -1671,7 +1996,6 @@ class _ItemDraft {
     this.variationPathLabel = '',
     this.quantityPcs = '',
     this.weight = '',
-    this.selectionKey,
   });
 
   int? orderItemId;
@@ -1682,7 +2006,6 @@ class _ItemDraft {
   String variationPathLabel;
   String quantityPcs;
   String weight;
-  String? selectionKey;
 
   factory _ItemDraft.blank(int lineNo) => _ItemDraft();
 
@@ -1707,9 +2030,6 @@ class _ItemDraft {
       variationPathLabel: item.variationPathLabel,
       quantityPcs: item.quantityPcs,
       weight: item.weight,
-      selectionKey: item.itemId == null
-          ? null
-          : '${item.itemId}::${item.variationLeafNodeId}',
     );
   }
 
@@ -1720,19 +2040,31 @@ class _ItemDraft {
     particulars = option?.particulars ?? '';
     hsnCode = option?.hsnCode ?? '';
     variationPathLabel = option?.variationPathLabel ?? '';
-    selectionKey = option == null
-        ? null
-        : '${option.itemId}::${option.variationLeafNodeId}';
   }
 
-  void applyReceptionReference(_SelectableReceptionReference? reference) {
-    itemId = reference?.itemId;
+  void applyReceptionItem(ItemDefinition? item) {
+    itemId = item?.id;
     orderItemId = null;
-    variationLeafNodeId = reference?.variationLeafNodeId ?? 0;
-    particulars = reference?.optionLabel ?? '';
-    variationPathLabel = reference?.variationPathLabel ?? '';
     hsnCode = '';
-    selectionKey = reference?.key;
+    variationLeafNodeId = 0;
+    variationPathLabel = '';
+    particulars = item?.displayName ?? '';
+  }
+
+  void applyReceptionVariationSelection(
+    ItemDefinition item,
+    List<int> valueNodeIds,
+    ItemVariationNodeDefinition? leaf,
+    String label,
+  ) {
+    itemId = item.id;
+    orderItemId = null;
+    variationLeafNodeId = leaf?.id ?? 0;
+    variationPathLabel = label;
+    particulars = label.trim().isEmpty
+        ? item.displayName
+        : '${item.displayName} - $label';
+    hsnCode = '';
   }
 
   DeliveryChallanItem toItem(int lineNo) {
@@ -1754,6 +2086,7 @@ class _ItemDraft {
 class _OrderItemOption {
   const _OrderItemOption({
     required this.orderItemId,
+    required this.orderNo,
     required this.itemId,
     required this.variationLeafNodeId,
     required this.particulars,
@@ -1763,6 +2096,7 @@ class _OrderItemOption {
   });
 
   final int orderItemId;
+  final String orderNo;
   final int itemId;
   final int variationLeafNodeId;
   final String particulars;
@@ -1777,6 +2111,7 @@ class _OrderItemOption {
         : '${order.itemName.trim()} - $variation';
     return _OrderItemOption(
       orderItemId: order.id,
+      orderNo: order.orderNo,
       itemId: order.itemId,
       variationLeafNodeId: order.variationLeafNodeId,
       particulars: particulars,
@@ -1788,28 +2123,11 @@ class _OrderItemOption {
 
   String get label {
     final qty = quantity > 0 ? ' • Ordered $quantity' : '';
-    return '$particulars$qty';
+    final orderLabel = orderNo.trim().isEmpty
+        ? ''
+        : ' — Order ${orderNo.trim()}';
+    return '$particulars$orderLabel$qty';
   }
-}
-
-class _SelectableReceptionReference {
-  const _SelectableReceptionReference({
-    required this.itemId,
-    required this.variationLeafNodeId,
-    required this.itemLabel,
-    required this.variationPathLabel,
-  });
-
-  final int itemId;
-  final int variationLeafNodeId;
-  final String itemLabel;
-  final String variationPathLabel;
-
-  String get key => '$itemId::$variationLeafNodeId';
-  String get optionLabel => variationPathLabel.isEmpty
-      ? itemLabel
-      : '$itemLabel • $variationPathLabel';
-  String get searchText => '$itemLabel $variationPathLabel';
 }
 
 class _CompanyProfileEditor extends StatefulWidget {

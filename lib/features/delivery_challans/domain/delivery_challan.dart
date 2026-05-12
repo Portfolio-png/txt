@@ -182,7 +182,9 @@ class DeliveryChallan {
     required this.id,
     required this.type,
     required this.orderId,
+    required this.orderIds,
     required this.orderNo,
+    required this.orderNos,
     required this.challanNo,
     required this.date,
     required this.location,
@@ -204,7 +206,9 @@ class DeliveryChallan {
   final int id;
   final ChallanType type;
   final int? orderId;
+  final List<int> orderIds;
   final String orderNo;
+  final List<String> orderNos;
   final String challanNo;
   final DateTime date;
   final String location;
@@ -244,7 +248,21 @@ class DeliveryChallan {
             'delivery',
       ),
       orderId: json['orderId'] as int? ?? json['order_id'] as int?,
+      orderIds:
+          (json['orderIds'] as List<dynamic>? ??
+                  json['order_ids'] as List<dynamic>? ??
+                  const <dynamic>[])
+              .map((value) => value as int? ?? 0)
+              .where((value) => value > 0)
+              .toList(growable: false),
       orderNo: json['orderNo'] as String? ?? json['order_no'] as String? ?? '',
+      orderNos:
+          (json['orderNos'] as List<dynamic>? ??
+                  json['order_nos'] as List<dynamic>? ??
+                  const <dynamic>[])
+              .map((value) => value.toString())
+              .where((value) => value.trim().isNotEmpty)
+              .toList(growable: false),
       challanNo:
           json['challanNo'] as String? ?? json['challan_no'] as String? ?? '',
       date: DateTime.tryParse(json['date'] as String? ?? '') ?? DateTime.now(),
@@ -288,7 +306,9 @@ class DeliveryChallan {
       id: id,
       type: type,
       orderId: orderId,
+      orderIds: orderIds,
       orderNo: orderNo,
+      orderNos: orderNos,
       challanNo: challanNo,
       date: date,
       location: location,
