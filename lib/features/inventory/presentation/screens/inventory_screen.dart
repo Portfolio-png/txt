@@ -23,6 +23,7 @@ import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../groups/presentation/screens/groups_screen.dart';
 import '../../../groups/presentation/widgets/structured_group_editor_dialog.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../delivery_challans/presentation/providers/delivery_challan_provider.dart';
 import '../../../delivery_challans/presentation/screens/delivery_challan_screen.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/providers/items_provider.dart';
@@ -312,7 +313,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                           });
                         },
                         onCreateReceptionChallan: () =>
-                            DeliveryChallanScreen.openReceptionEditor(context),
+                            ChallanScreen.openReceptionEditor(context),
                         onTransferStock: () => _openMovementComposer(
                           movementType: InventoryMovementType.transfer,
                         ),
@@ -2254,7 +2255,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   String _movementTypeLabel(InventoryMovementType type) {
     switch (type) {
       case InventoryMovementType.receive:
-        return 'Receive';
+        return 'Manual Receive';
       case InventoryMovementType.issue:
         return 'Issue';
       case InventoryMovementType.transfer:
@@ -2543,6 +2544,18 @@ class _InventoryMovementComposerDialogState
       );
       return;
     }
+    if (widget.movementType == InventoryMovementType.receive &&
+        (_normalized(_referenceTypeController.text) == null ||
+            _normalized(_referenceIdController.text) == null)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Manual receive requires both a reference type and reference id.',
+          ),
+        ),
+      );
+      return;
+    }
 
     final qty = double.parse(_qtyController.text.trim());
     Navigator.of(context).pop(
@@ -2570,7 +2583,7 @@ class _InventoryMovementComposerDialogState
   String _movementTypeLabel(InventoryMovementType type) {
     switch (type) {
       case InventoryMovementType.receive:
-        return 'Receive';
+        return 'Manual Receive';
       case InventoryMovementType.issue:
         return 'Issue';
       case InventoryMovementType.transfer:
@@ -4283,7 +4296,11 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
     if (value.displayStock.trim().isNotEmpty) {
       return value.displayStock;
     }
-    return '1000 Pieces';
+    final unit = value.unit.trim();
+    if (unit.isNotEmpty) {
+      return '0 $unit';
+    }
+    return '0';
   }
 }
 
@@ -4436,7 +4453,7 @@ class _InventoryInlineRowActions extends StatelessWidget {
                       if (showBothQuick) ...[
                         const SizedBox(width: 6),
                         _InventoryQuickHintButton(
-                          label: 'Receive',
+                          label: 'Manual Receive',
                           onTap: onReceive,
                         ),
                       ],
@@ -4941,6 +4958,18 @@ class _InventoryDetailSheet extends StatelessWidget {
                         child: _InventoryMovementTimeline(
                           movements: movements,
                           fallbackUnit: material.unit,
+                          onOpenChallan: (challanId) async {
+                            final challan = await context
+                                .read<DeliveryChallanProvider>()
+                                .loadChallan(challanId);
+                            if (!context.mounted || challan == null) {
+                              return;
+                            }
+                            await ChallanScreen.openEditor(
+                              context,
+                              challan: challan,
+                            );
+                          },
                         ),
                       ),
                     ],
@@ -5442,10 +5471,12 @@ class _InventoryMovementTimeline extends StatelessWidget {
   const _InventoryMovementTimeline({
     required this.movements,
     required this.fallbackUnit,
+    this.onOpenChallan,
   });
 
   final List<InventoryMovement> movements;
   final String fallbackUnit;
+  final ValueChanged<int>? onOpenChallan;
 
   @override
   Widget build(BuildContext context) {
@@ -5486,21 +5517,68 @@ class _InventoryMovementTimeline extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          _movementTitle(movement.movementType),
-                          style: const TextStyle(
-                            color: Color(0xFF2F2F2F),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _movementTitle(movement.movementType),
+                                style: const TextStyle(
+                                  color: Color(0xFF2F2F2F),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            if (movement.movementType ==
+                                    InventoryMovementType.receive &&
+                                movement.sourceChallanId != null)
+                              InkWell(
+                                onTap: onOpenChallan == null
+                                    ? null
+                                    : () => onOpenChallan!(
+                                        movement.sourceChallanId!,
+                                      ),
+                                borderRadius: BorderRadius.circular(999),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFEAF2FF),
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(
+                                      color: const Color(0xFFB2CAFA),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'Open Challan',
+                                    style: TextStyle(
+                                      color: Color(0xFF1F4DBA),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '${_formatQty(movement.qty)} ${fallbackUnit.ifEmpty('Units')} • ${movement.reasonCode?.ifEmpty('No reason') ?? 'No reason'}',
+                          '${_formatQty(movement.primaryQty > 0 ? movement.primaryQty : movement.qty)} ${_movementUnitLabel(movement, fallbackUnit)} • ${movement.reasonCode?.ifEmpty('No reason') ?? 'No reason'}',
                           style: const TextStyle(
                             color: Color(0xFF717B8C),
                             fontSize: 12,
                             fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _movementProvenanceLabel(movement),
+                          style: const TextStyle(
+                            color: Color(0xFF8C93A1),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ],
@@ -5573,6 +5651,30 @@ String _formatTimelineDate(DateTime value) {
   final hour = value.hour.toString().padLeft(2, '0');
   final minute = value.minute.toString().padLeft(2, '0');
   return '$day-$month $hour:$minute';
+}
+
+String _movementUnitLabel(InventoryMovement movement, String fallbackUnit) {
+  final explicit = movement.uom.trim();
+  if (explicit.isNotEmpty && explicit.toLowerCase() != 'units') {
+    return explicit;
+  }
+  return fallbackUnit.ifEmpty('Units');
+}
+
+String _movementProvenanceLabel(InventoryMovement movement) {
+  final sourceLabel = movement.sourceLabel?.trim() ?? '';
+  if (sourceLabel.isNotEmpty) {
+    return '$sourceLabel • ${movement.actor.ifEmpty('System')}';
+  }
+  final referenceType = movement.referenceType?.trim() ?? '';
+  final referenceId = movement.referenceId?.trim() ?? '';
+  if (referenceType.isNotEmpty && referenceId.isNotEmpty) {
+    return '$referenceType $referenceId • ${movement.actor.ifEmpty('System')}';
+  }
+  if (referenceType.isNotEmpty) {
+    return '$referenceType • ${movement.actor.ifEmpty('System')}';
+  }
+  return 'Manual • ${movement.actor.ifEmpty('System')}';
 }
 
 String _formatQty(double value) {

@@ -75,11 +75,50 @@ test('delivery challans create issue and preserve company profile snapshot', asy
       movementType: 'receive',
       qty: 50,
       toLocationId: 'Dispatch Bay',
+      referenceType: 'manual-receipt',
+      referenceId: 'SEED-RECEIVE-1',
       actor,
     });
 
+    const preIssuePosition = await backend.get(
+      `
+      SELECT on_hand_qty
+      FROM inventory_stock_positions
+      WHERE material_barcode = ? AND location_id = ? AND lot_code = ?
+      `,
+      [material.barcode, 'Dispatch Bay', material.barcode],
+    );
+    assert.equal(Number(preIssuePosition?.on_hand_qty || 0), 50);
+
     const issued = await backend.issueDeliveryChallan(created.id, actor);
     assert.equal(issued.status, 'issued');
+
+    const issuedMovement = await backend.get(
+      `
+      SELECT *
+      FROM inventory_movements
+      WHERE source_challan_id = ? AND source_challan_type = 'delivery'
+      ORDER BY created_at ASC, id ASC
+      LIMIT 1
+      `,
+      [created.id],
+    );
+    assert.ok(issuedMovement, 'expected delivery issue movement');
+    assert.equal(issuedMovement.movement_type, 'issue');
+    assert.equal(issuedMovement.reference_type, 'challan');
+    assert.equal(issuedMovement.reference_id, String(created.id));
+    assert.equal(Number(issuedMovement.primary_qty || 0), 10);
+    assert.equal(String(issuedMovement.uom || ''), 'pcs');
+
+    const issuedPosition = await backend.get(
+      `
+      SELECT on_hand_qty
+      FROM inventory_stock_positions
+      WHERE material_barcode = ? AND location_id = ? AND lot_code = ?
+      `,
+      [material.barcode, 'Dispatch Bay', material.barcode],
+    );
+    assert.equal(Number(issuedPosition?.on_hand_qty || 0), 40);
 
     await backend.saveCompanyProfile({
       company_name: 'Changed Company',
@@ -92,6 +131,29 @@ test('delivery challans create issue and preserve company profile snapshot', asy
     );
     const snapshot = JSON.parse(issuedRow.company_profile_snapshot);
     assert.equal(snapshot.company_name, 'Shree Ganesh Metal Works');
+
+    const cancelled = await backend.cancelDeliveryChallan(created.id, actor);
+    assert.equal(cancelled.status, 'cancelled');
+
+    const reversedPosition = await backend.get(
+      `
+      SELECT on_hand_qty
+      FROM inventory_stock_positions
+      WHERE material_barcode = ? AND location_id = ? AND lot_code = ?
+      `,
+      [material.barcode, 'Dispatch Bay', material.barcode],
+    );
+    assert.equal(Number(reversedPosition?.on_hand_qty || 0), 50);
+
+    const deliveryMovementCount = await backend.get(
+      `
+      SELECT COUNT(*) AS count
+      FROM inventory_movements
+      WHERE source_challan_id = ? AND source_challan_type = 'delivery'
+      `,
+      [created.id],
+    );
+    assert.equal(Number(deliveryMovementCount?.count || 0), 2);
 
     const empty = await backend.saveDeliveryChallan(
       { order_id: order.id, date: '2026-05-04', location: 'Dispatch Bay', items: [] },
@@ -198,6 +260,25 @@ test('reception challans issue and cancel with vendor-linked stock provenance', 
       'expected reception challan in type-filtered list',
     );
 
+    const materialBeforeIssue = await backend.ensureMaterialForItemSelection({
+      itemId: seededOrder.item_id,
+      variationLeafNodeId: seededOrder.variation_leaf_node_id || 0,
+      actor,
+    });
+    assert.equal(Number(materialBeforeIssue.on_hand_qty || 0), 0);
+    assert.equal(Number(materialBeforeIssue.available_to_promise_qty || 0), 0);
+    assert.equal(Number(materialBeforeIssue.reserved_qty || 0), 0);
+
+    const preIssuePositionCount = await backend.get(
+      `
+      SELECT COUNT(*) AS count
+      FROM inventory_stock_positions
+      WHERE material_barcode = ?
+      `,
+      [materialBeforeIssue.barcode],
+    );
+    assert.equal(Number(preIssuePositionCount?.count || 0), 0);
+
     const issued = await backend.issueDeliveryChallan(created.id, actor);
     assert.equal(issued.status, 'issued');
 
@@ -215,7 +296,9 @@ test('reception challans issue and cancel with vendor-linked stock provenance', 
     assert.ok(material, 'expected linked material after reception issue');
     assert.equal(movement.movement_type, 'receive');
     assert.equal(movement.reference_type, 'challan');
-    assert.equal(movement.reference_id, created.challan_no);
+    assert.equal(movement.reference_id, String(created.id));
+    assert.equal(Number(movement.primary_qty || 0), 25);
+    assert.equal(String(movement.uom || ''), 'pcs');
 
     const issuedPosition = await backend.get(
       `
@@ -249,6 +332,18 @@ test('reception challans issue and cancel with vendor-linked stock provenance', 
       [created.id],
     );
     assert.equal(Number(reversalCount.count || 0), 2);
+
+    await assert.rejects(
+      () =>
+        backend.applyInventoryMovement({
+          barcode: material.barcode,
+          movementType: 'receive',
+          qty: 5,
+          toLocationId: location,
+          actor,
+        }),
+      /Receive movements require challan provenance or a manual reference/,
+    );
   } finally {
     await backend.closeDb();
   }

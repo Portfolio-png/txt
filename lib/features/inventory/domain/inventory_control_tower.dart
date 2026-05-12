@@ -9,12 +9,7 @@ enum InventoryState {
   archived,
 }
 
-enum ProcurementState {
-  notOrdered,
-  ordered,
-  receivedPartial,
-  receivedComplete,
-}
+enum ProcurementState { notOrdered, ordered, receivedPartial, receivedComplete }
 
 enum TraceabilityMode { lotTracked, serialTracked, bulk }
 
@@ -62,11 +57,17 @@ class InventoryMovement {
     required this.materialBarcode,
     required this.movementType,
     required this.qty,
+    required this.primaryQty,
+    required this.uom,
     required this.fromLocationId,
     required this.toLocationId,
     required this.reasonCode,
     required this.referenceType,
     required this.referenceId,
+    required this.sourceChallanId,
+    required this.sourceChallanType,
+    required this.sourceChallanLineId,
+    required this.sourceLabel,
     required this.actor,
     required this.createdAt,
   });
@@ -75,11 +76,17 @@ class InventoryMovement {
   final String materialBarcode;
   final InventoryMovementType movementType;
   final double qty;
+  final double primaryQty;
+  final String uom;
   final String? fromLocationId;
   final String? toLocationId;
   final String? reasonCode;
   final String? referenceType;
   final String? referenceId;
+  final int? sourceChallanId;
+  final String? sourceChallanType;
+  final int? sourceChallanLineId;
+  final String? sourceLabel;
   final String actor;
   final DateTime createdAt;
 }

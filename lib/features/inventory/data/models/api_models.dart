@@ -450,11 +450,17 @@ class InventoryMovementDto {
     required this.materialBarcode,
     required this.movementType,
     required this.qty,
+    required this.primaryQty,
+    required this.uom,
     required this.fromLocationId,
     required this.toLocationId,
     required this.reasonCode,
     required this.referenceType,
     required this.referenceId,
+    required this.sourceChallanId,
+    required this.sourceChallanType,
+    required this.sourceChallanLineId,
+    required this.sourceLabel,
     required this.actor,
     required this.createdAt,
   });
@@ -463,11 +469,17 @@ class InventoryMovementDto {
   final String materialBarcode;
   final String movementType;
   final double qty;
+  final double primaryQty;
+  final String uom;
   final String? fromLocationId;
   final String? toLocationId;
   final String? reasonCode;
   final String? referenceType;
   final String? referenceId;
+  final int? sourceChallanId;
+  final String? sourceChallanType;
+  final int? sourceChallanLineId;
+  final String? sourceLabel;
   final String actor;
   final DateTime createdAt;
 
@@ -477,11 +489,27 @@ class InventoryMovementDto {
       materialBarcode: json['materialBarcode'] as String? ?? '',
       movementType: json['movementType'] as String? ?? 'adjust',
       qty: (json['qty'] as num?)?.toDouble() ?? 0,
+      primaryQty:
+          (json['primaryQty'] as num?)?.toDouble() ??
+          (json['primary_qty'] as num?)?.toDouble() ??
+          (json['qty'] as num?)?.toDouble() ??
+          0,
+      uom: json['uom'] as String? ?? '',
       fromLocationId: json['fromLocationId'] as String?,
       toLocationId: json['toLocationId'] as String?,
       reasonCode: json['reasonCode'] as String?,
       referenceType: json['referenceType'] as String?,
       referenceId: json['referenceId'] as String?,
+      sourceChallanId:
+          json['sourceChallanId'] as int? ?? json['source_challan_id'] as int?,
+      sourceChallanType:
+          json['sourceChallanType'] as String? ??
+          json['source_challan_type'] as String?,
+      sourceChallanLineId:
+          json['sourceChallanLineId'] as int? ??
+          json['source_challan_line_id'] as int?,
+      sourceLabel:
+          json['sourceLabel'] as String? ?? json['source_label'] as String?,
       actor: json['actor'] as String? ?? '',
       createdAt:
           DateTime.tryParse(json['createdAt'] as String? ?? '') ??
@@ -495,11 +523,17 @@ class InventoryMovementDto {
       materialBarcode: materialBarcode,
       movementType: _movementTypeFromWire(movementType),
       qty: qty,
+      primaryQty: primaryQty,
+      uom: uom,
       fromLocationId: fromLocationId,
       toLocationId: toLocationId,
       reasonCode: reasonCode,
       referenceType: referenceType,
       referenceId: referenceId,
+      sourceChallanId: sourceChallanId,
+      sourceChallanType: sourceChallanType,
+      sourceChallanLineId: sourceChallanLineId,
+      sourceLabel: sourceLabel,
       actor: actor,
       createdAt: createdAt,
     );

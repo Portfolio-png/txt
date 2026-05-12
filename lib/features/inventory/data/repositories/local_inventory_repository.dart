@@ -531,8 +531,8 @@ class LocalInventoryRepository implements InventoryRepository {
         linkedGroupId: null,
         linkedItemId: null,
         displayStock: input.unit.trim().isEmpty
-            ? '${input.numberOfChildren * 100} Pieces'
-            : '${input.numberOfChildren * 100} ${input.unit.trim()}',
+            ? '0'
+            : '0 ${input.unit.trim()}',
         createdBy: 'Demo Admin',
         workflowStatus: 'inProgress',
         updatedAt: now,
@@ -587,8 +587,8 @@ class LocalInventoryRepository implements InventoryRepository {
           linkedGroupId: null,
           linkedItemId: null,
           displayStock: input.unit.trim().isEmpty
-              ? '100 Pieces'
-              : '100 ${input.unit.trim()}',
+              ? '0'
+              : '0 ${input.unit.trim()}',
           createdBy: 'Demo Admin',
           workflowStatus: 'notStarted',
           updatedAt: now,
@@ -1163,11 +1163,17 @@ class LocalInventoryRepository implements InventoryRepository {
             materialBarcode: event.barcode,
             movementType: InventoryMovementType.adjust,
             qty: 0,
+            primaryQty: 0,
+            uom: material.unit,
             fromLocationId: null,
             toLocationId: material.location,
             reasonCode: event.type,
             referenceType: null,
             referenceId: null,
+            sourceChallanId: null,
+            sourceChallanType: null,
+            sourceChallanLineId: null,
+            sourceLabel: null,
             actor: event.actor,
             createdAt: event.createdAt,
           ),

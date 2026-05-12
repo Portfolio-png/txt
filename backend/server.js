@@ -1322,11 +1322,10 @@ function rowToMaterialDto(row) {
   }
 
   const unitLabel = String(row.unit || '').trim();
-  const childCount = Number(row.number_of_children || 0);
   const displayStock = String(row.display_stock || '').trim() ||
     (unitLabel
-      ? `${Math.max(childCount, 1) * 100} ${unitLabel}`
-      : `${Math.max(childCount, 1) * 100} Pieces`);
+      ? `${Number(row.on_hand_qty || 0)} ${unitLabel}`
+      : `${Number(row.on_hand_qty || 0)}`);
 
   return {
     id: row.id,
@@ -2146,6 +2145,8 @@ async function initDb() {
       material_barcode TEXT NOT NULL,
       movement_type TEXT NOT NULL,
       qty REAL NOT NULL,
+      primary_qty REAL,
+      uom TEXT,
       from_location_id TEXT,
       to_location_id TEXT,
       reason_code TEXT,
@@ -2688,9 +2689,12 @@ async function initDb() {
   await ensureColumnExists('materials', 'linked_item_id', 'INTEGER');
   await ensureColumnExists('materials', 'linked_variation_leaf_node_id', 'INTEGER');
   await run('CREATE INDEX IF NOT EXISTS idx_materials_item_variation_lookup ON materials(linked_item_id, linked_variation_leaf_node_id)');
+  await ensureColumnExists('inventory_movements', 'primary_qty', 'REAL');
+  await ensureColumnExists('inventory_movements', 'uom', 'TEXT');
   await ensureColumnExists('inventory_movements', 'source_challan_id', 'INTEGER');
   await ensureColumnExists('inventory_movements', 'source_challan_type', 'TEXT');
   await ensureColumnExists('inventory_movements', 'source_challan_line_id', 'INTEGER');
+  await backfillInventoryMovementQuantitySemantics();
   await run('CREATE INDEX IF NOT EXISTS idx_inventory_movements_source_challan ON inventory_movements(source_challan_id, source_challan_type)');
   await ensureColumnExists('materials', 'location', "TEXT DEFAULT ''");
   await ensureColumnExists('materials', 'group_mode', 'TEXT');
@@ -2883,17 +2887,10 @@ async function backfillInventoryLedgerForMaterials({
       [material.barcode],
     );
     const hasPosition = Number(positionCountRow?.count || 0) > 0;
+    // Never infer stock for a material that has no movements or stock positions.
+    // Inventory must remain document/movement driven.
     if (!hasPosition && inferMissingPositions) {
-      const inferredOnHand = Number(material.number_of_children || 0) > 0
-        ? Number(material.number_of_children || 0) * 100
-        : 100;
-      await upsertInventoryStockPosition({
-        materialBarcode: material.barcode,
-        locationId: String(material.location || '').trim() || 'MAIN',
-        lotCode: material.barcode,
-        unitId: material.unit_id || null,
-        onHandDelta: inferredOnHand,
-      });
+      // Legacy flag retained for compatibility, but intentionally no-op now.
     }
     await recomputeMaterialInventorySummary(material.barcode);
   }
@@ -2995,6 +2992,34 @@ async function ensureDeliveryChallanItemNumericColumns() {
     await run('ROLLBACK');
     throw error;
   }
+}
+
+async function backfillInventoryMovementQuantitySemantics() {
+  const columns = await all('PRAGMA table_info(inventory_movements)');
+  if (!columns.length) {
+    return;
+  }
+
+  const hasPrimaryQty = columns.some((column) => column.name === 'primary_qty');
+  const hasUom = columns.some((column) => column.name === 'uom');
+  if (!hasPrimaryQty || !hasUom) {
+    return;
+  }
+
+  await run(
+    `
+    UPDATE inventory_movements
+    SET primary_qty = COALESCE(primary_qty, qty)
+    WHERE primary_qty IS NULL
+    `,
+  );
+  await run(
+    `
+    UPDATE inventory_movements
+    SET uom = COALESCE(NULLIF(TRIM(uom), ''), 'units')
+    WHERE uom IS NULL OR TRIM(uom) = ''
+    `,
+  );
 }
 
 async function ensureInventorySetLineNullableLeafReference() {
@@ -3346,9 +3371,6 @@ async function createParentWithChildren(payload) {
     (_, index) => generateChildBarcode(parentBarcode, index + 1),
   );
   const createdAt = new Date().toISOString();
-  const parentDisplayStock = resolvedUnit.unit
-    ? `${Number(payload.numberOfChildren || 0) * 100} ${resolvedUnit.unit}`
-    : `${Number(payload.numberOfChildren || 0) * 100} Pieces`;
 
   await run('BEGIN TRANSACTION');
   try {
@@ -3387,7 +3409,7 @@ async function createParentWithChildren(payload) {
         Number(payload.numberOfChildren || 0),
         JSON.stringify(childBarcodes),
         linkedGroupId,
-        parentDisplayStock,
+        resolvedUnit.unit ? `0 ${resolvedUnit.unit}` : '0',
         actor,
         'inProgress',
         createdAt,
@@ -3420,7 +3442,7 @@ async function createParentWithChildren(payload) {
           createdAt,
           parentBarcode,
           JSON.stringify([]),
-          resolvedUnit.unit ? `100 ${resolvedUnit.unit}` : '100 Pieces',
+          resolvedUnit.unit ? `0 ${resolvedUnit.unit}` : '0',
           actor,
           'notStarted',
           createdAt,
@@ -3446,24 +3468,6 @@ async function createParentWithChildren(payload) {
     });
 
     await persistMaterialGroupGovernance(parentResult.lastID, payload, createdAt);
-    await upsertInventoryStockPosition({
-      materialBarcode: parentBarcode,
-      locationId: String(payload.location || '').trim() || 'MAIN',
-      lotCode: parentBarcode,
-      unitId: resolvedUnit.unitId,
-      onHandDelta: Number(payload.numberOfChildren || 0) * 100,
-      now: createdAt,
-    });
-    for (const childBarcode of childBarcodes) {
-      await upsertInventoryStockPosition({
-        materialBarcode: childBarcode,
-        locationId: String(payload.location || '').trim() || 'MAIN',
-        lotCode: childBarcode,
-        unitId: resolvedUnit.unitId,
-        onHandDelta: 100,
-        now: createdAt,
-      });
-    }
     await recomputeMaterialInventorySummary(parentBarcode, createdAt);
     for (const childBarcode of childBarcodes) {
       await recomputeMaterialInventorySummary(childBarcode, createdAt);
@@ -5093,6 +5097,7 @@ async function issueDeliveryChallan(id, actor = null) {
       const quantity = Number(item.quantity_pcs);
       const weight = Number(item.weight);
       const movementQty = Number.isFinite(quantity) && quantity > 0 ? quantity : weight;
+      const movementUom = Number.isFinite(quantity) && quantity > 0 ? 'pcs' : 'weight';
       const material = normalizeChallanType(existing.type) === 'reception'
         ? await ensureMaterialForItemSelection({
             itemId: Number(item.item_id || 0),
@@ -5113,12 +5118,14 @@ async function issueDeliveryChallan(id, actor = null) {
           barcode: material.barcode,
           movementType: normalizeChallanType(existing.type) === 'reception' ? 'receive' : 'issue',
           qty: movementQty,
+          primaryQty: movementQty,
+          uom: movementUom,
           toLocationId: String(existing.location || '').trim(),
           reasonCode: normalizeChallanType(existing.type) === 'reception'
             ? 'reception_challan_issue'
             : 'delivery_challan_issue',
           referenceType: 'challan',
-          referenceId: existing.challan_no,
+          referenceId: String(existing.id),
           sourceChallanId: existing.id,
           sourceChallanType: normalizeChallanType(existing.type),
           sourceChallanLineId: item.id,
@@ -5179,11 +5186,13 @@ async function cancelDeliveryChallan(id, actor = null) {
             barcode: movement.material_barcode,
             movementType: reverseType,
             qty: Number(movement.qty || 0),
+            primaryQty: Number(movement.primary_qty || movement.qty || 0),
+            uom: String(movement.uom || '').trim() || 'units',
             toLocationId: movement.to_location_id || existing.location || 'MAIN',
             fromLocationId: movement.from_location_id || null,
             reasonCode: 'challan_cancel_reversal',
             referenceType: 'challan-reversal',
-            referenceId: existing.challan_no,
+            referenceId: String(existing.id),
             sourceChallanId: existing.id,
             sourceChallanType: normalizeChallanType(existing.type),
             sourceChallanLineId: movement.source_challan_line_id || null,
@@ -8970,6 +8979,7 @@ async function recomputeMaterialInventorySummary(materialBarcode, now = new Date
     SET on_hand_qty = ?,
         reserved_qty = ?,
         available_to_promise_qty = ?,
+        display_stock = ?,
         material_class = ?,
         inventory_state = ?,
         procurement_state = ?,
@@ -8984,6 +8994,9 @@ async function recomputeMaterialInventorySummary(materialBarcode, now = new Date
       onHand,
       reserved,
       availableToPromise,
+      String(material.unit || '').trim()
+        ? `${Number(onHand)} ${String(material.unit || '').trim()}`
+        : `${Number(onHand)}`,
       materialClass,
       inventoryState,
       procurementState,
@@ -9048,6 +9061,28 @@ async function getMaterialControlTowerDetail(barcode) {
     `,
     [material.barcode],
   );
+  const challanIds = [
+    ...new Set(
+      movementRows
+        .map((row) => Number(row.source_challan_id || 0))
+        .filter((id) => Number.isFinite(id) && id > 0),
+    ),
+  ];
+  const challanById = new Map();
+  if (challanIds.length > 0) {
+    const placeholders = challanIds.map(() => '?').join(', ');
+    const challanRows = await all(
+      `
+      SELECT id, challan_no, type
+      FROM delivery_challans
+      WHERE id IN (${placeholders})
+      `,
+      challanIds,
+    );
+    for (const row of challanRows) {
+      challanById.set(Number(row.id), row);
+    }
+  }
   const reservationRows = await all(
     `
     SELECT *
@@ -9101,11 +9136,32 @@ async function getMaterialControlTowerDetail(barcode) {
       materialBarcode: row.material_barcode || '',
       movementType: row.movement_type || 'adjust',
       qty: Number(row.qty || 0),
+      primaryQty: Number(row.primary_qty || row.qty || 0),
+      uom: String(row.uom || '').trim(),
       fromLocationId: row.from_location_id || null,
       toLocationId: row.to_location_id || null,
       reasonCode: row.reason_code || null,
       referenceType: row.reference_type || null,
       referenceId: row.reference_id || null,
+      sourceChallanId: row.source_challan_id == null ? null : Number(row.source_challan_id || 0),
+      sourceChallanType: row.source_challan_type || null,
+      sourceChallanLineId: row.source_challan_line_id == null ? null : Number(row.source_challan_line_id || 0),
+      sourceLabel: (() => {
+        const linkedChallan = challanById.get(Number(row.source_challan_id || 0));
+        if (linkedChallan) {
+          const typeLabel = normalizeChallanType(linkedChallan.type) === 'reception' ? 'Reception' : 'Delivery';
+          return `${typeLabel} Challan ${linkedChallan.challan_no || `#${linkedChallan.id}`}`;
+        }
+        const referenceType = String(row.reference_type || '').trim();
+        const referenceId = String(row.reference_id || '').trim();
+        if (referenceType && referenceId) {
+          return `${referenceType} ${referenceId}`;
+        }
+        if (referenceType) {
+          return referenceType;
+        }
+        return null;
+      })(),
       actor: row.actor || '',
       createdAt: row.created_at,
     })),
@@ -9204,9 +9260,23 @@ async function applyInventoryMovementCore(payload, { useTransaction = true } = {
   const sourceChallanLineId = payload?.sourceChallanLineId == null
     ? null
     : Number(payload.sourceChallanLineId || 0) || null;
+  const referenceType = String(payload?.referenceType || '').trim() || null;
+  const referenceId = String(payload?.referenceId || '').trim() || null;
+  const primaryQty = Number(payload?.primaryQty || qty);
+  const uom = String(payload?.uom || '').trim() || String(material.unit || '').trim() || 'units';
+  const hasChallanProvenance =
+    sourceChallanId != null &&
+    !!sourceChallanType &&
+    sourceChallanLineId != null;
+  const hasManualProvenance = !!referenceType && !!referenceId;
 
   if (movementType === 'transfer' && !fromLocationId) {
     const error = new Error('fromLocationId is required for transfer movements.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (movementType === 'receive' && !hasChallanProvenance && !hasManualProvenance) {
+    const error = new Error('Receive movements require challan provenance or a manual reference.');
     error.statusCode = 400;
     throw error;
   }
@@ -9334,21 +9404,23 @@ async function applyInventoryMovementCore(payload, { useTransaction = true } = {
     await run(
       `
       INSERT INTO inventory_movements (
-        id, material_barcode, movement_type, qty, from_location_id, to_location_id,
+        id, material_barcode, movement_type, qty, primary_qty, uom, from_location_id, to_location_id,
         reason_code, reference_type, reference_id, source_challan_id, source_challan_type,
         source_challan_line_id, actor, lot_code, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         movementId,
         material.barcode,
         movementType,
         qty,
+        primaryQty,
+        uom,
         fromLocationId,
         toLocationId,
         String(payload?.reasonCode || '').trim() || null,
-        String(payload?.referenceType || '').trim() || null,
-        String(payload?.referenceId || '').trim() || null,
+        referenceType,
+        referenceId,
         sourceChallanId,
         sourceChallanType || null,
         sourceChallanLineId,
@@ -9363,7 +9435,7 @@ async function applyInventoryMovementCore(payload, { useTransaction = true } = {
       barcode: material.barcode,
       type: movementType,
       label: 'Inventory movement posted',
-      description: `${movementType} ${qty.toFixed(2)} ${material.unit || 'units'}.`,
+      description: `${movementType} ${primaryQty.toFixed(2)} ${uom}.`,
       actor,
       createdAt: now,
     });
@@ -9442,8 +9514,8 @@ async function createChildMaterial(parentBarcode, payload) {
   const childBarcode = generateChildBarcode(parent.barcode, nextIndex);
   const createdAt = new Date().toISOString();
   const childDisplayStock = String(parent.unit || '').trim()
-    ? `100 ${String(parent.unit || '').trim()}`
-    : '100 Pieces';
+    ? `0 ${String(parent.unit || '').trim()}`
+    : '0';
 
   await run(
     `
@@ -9491,15 +9563,6 @@ async function createChildMaterial(parentBarcode, payload) {
     actor,
     createdAt,
   });
-
-  await upsertInventoryStockPosition({
-    materialBarcode: childBarcode,
-    locationId: String(parent.location || '').trim() || 'MAIN',
-    lotCode: childBarcode,
-    unitId: parent.unit_id || null,
-    onHandDelta: 100,
-    now: createdAt,
-  });
   await recomputeMaterialInventorySummary(childBarcode, createdAt);
   await recomputeMaterialInventorySummary(parent.barcode, createdAt);
 
@@ -9518,8 +9581,8 @@ async function updateMaterialRecord(barcode, payload) {
   const existingDisplayStock = String(existing.display_stock || '').trim();
   const nextDisplayStock = existingDisplayStock || (
     resolvedUnit.unit
-      ? `${Math.max(Number(existing.number_of_children || 0), 1) * 100} ${resolvedUnit.unit}`
-      : `${Math.max(Number(existing.number_of_children || 0), 1) * 100} Pieces`
+      ? `${Number(existing.on_hand_qty || 0)} ${resolvedUnit.unit}`
+      : `${Number(existing.on_hand_qty || 0)}`
   );
   await run(
     `

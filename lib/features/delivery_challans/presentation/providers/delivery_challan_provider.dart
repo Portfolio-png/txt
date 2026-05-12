@@ -3,11 +3,11 @@ import 'package:flutter/material.dart';
 import '../../data/delivery_challan_repository.dart';
 import '../../domain/delivery_challan.dart';
 
-class DeliveryChallanProvider extends ChangeNotifier {
-  DeliveryChallanProvider({required DeliveryChallanRepository repository})
+class ChallanProvider extends ChangeNotifier {
+  ChallanProvider({required ChallanRepository repository})
     : _repository = repository;
 
-  final DeliveryChallanRepository _repository;
+  final ChallanRepository _repository;
 
   List<DeliveryChallan> _challans = const <DeliveryChallan>[];
   CompanyProfile? _companyProfile;
@@ -164,7 +164,7 @@ class DeliveryChallanProvider extends ChangeNotifier {
   }
 
   void _logError(Object error) {
-    if (error is DeliveryChallanApiException &&
+    if (error is ChallanApiException &&
         error.debugMessage != null &&
         error.debugMessage!.isNotEmpty) {
       debugPrint(
@@ -174,3 +174,5 @@ class DeliveryChallanProvider extends ChangeNotifier {
     }
   }
 }
+
+typedef DeliveryChallanProvider = ChallanProvider;

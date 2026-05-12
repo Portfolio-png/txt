@@ -401,7 +401,7 @@ class _ShellContentSwitcher extends StatelessWidget {
               'production_pipelines' => const ProductionPipelinesScreen(),
               'pm' => const PMScreen(),
               'orders' => const OrdersScreen(),
-              'delivery_challans' => const DeliveryChallanScreen(),
+              'delivery_challans' => const ChallanScreen(),
               'configurator' => const _ModulePlaceholder(
                 title: 'Configurator',
                 description:

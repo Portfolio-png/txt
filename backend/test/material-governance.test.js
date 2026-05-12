@@ -70,6 +70,28 @@ test('group governance persists and can be updated without recreating material',
     assert.ok(materialRow, 'expected created parent material row');
     assert.equal(materialRow.group_mode, 'item_group_authoring');
     assert.equal(materialRow.inheritance_enabled, 1);
+    assert.equal(Number(materialRow.on_hand_qty || 0), 0);
+    assert.equal(Number(materialRow.reserved_qty || 0), 0);
+    assert.equal(Number(materialRow.available_to_promise_qty || 0), 0);
+
+    const createdPositions = await backend.all(
+      `
+      SELECT *
+      FROM inventory_stock_positions
+      WHERE material_barcode = ?
+         OR material_barcode IN (
+           SELECT barcode
+           FROM materials
+           WHERE parent_barcode = ?
+         )
+      `,
+      [created.barcode, created.barcode],
+    );
+    assert.equal(
+      createdPositions.length,
+      0,
+      'newly created materials should not receive stock positions automatically',
+    );
 
     const initialConfig = await backend.getMaterialGroupGovernance(materialRow.id);
     assert.deepEqual(initialConfig.selectedItemIds, selectedItemIds);

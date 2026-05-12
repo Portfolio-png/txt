@@ -1,6 +1,6 @@
 import '../domain/delivery_challan.dart';
 
-abstract class DeliveryChallanRepository {
+abstract class ChallanRepository {
   Future<void> init();
 
   Future<CompanyProfile> getCompanyProfile();
@@ -36,8 +36,10 @@ abstract class DeliveryChallanRepository {
   Future<void> recordPrint(int id);
 }
 
-class DeliveryChallanDraftInput {
-  const DeliveryChallanDraftInput({
+typedef DeliveryChallanRepository = ChallanRepository;
+
+class ChallanDraftInput {
+  const ChallanDraftInput({
     required this.type,
     required this.orderId,
     required this.vendorId,
@@ -83,8 +85,10 @@ class DeliveryChallanDraftInput {
   }
 }
 
-class DeliveryChallanApiException implements Exception {
-  const DeliveryChallanApiException(this.message, {this.debugMessage});
+typedef DeliveryChallanDraftInput = ChallanDraftInput;
+
+class ChallanApiException implements Exception {
+  const ChallanApiException(this.message, {this.debugMessage});
 
   final String message;
   final String? debugMessage;
@@ -92,3 +96,5 @@ class DeliveryChallanApiException implements Exception {
   @override
   String toString() => message;
 }
+
+typedef DeliveryChallanApiException = ChallanApiException;

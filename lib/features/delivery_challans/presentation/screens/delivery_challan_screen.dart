@@ -12,6 +12,7 @@ import '../../../../core/widgets/page_container.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../../core/widgets/soft_primitives.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
+import '../../../inventory/presentation/providers/inventory_provider.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../orders/domain/order_entry.dart';
@@ -21,8 +22,26 @@ import '../../data/delivery_challan_repository.dart';
 import '../../domain/delivery_challan.dart';
 import '../providers/delivery_challan_provider.dart';
 
-class DeliveryChallanScreen extends StatefulWidget {
-  const DeliveryChallanScreen({super.key});
+class ChallanScreen extends StatefulWidget {
+  const ChallanScreen({super.key});
+
+  static Future<void> openEditor(
+    BuildContext context, {
+    DeliveryChallan? challan,
+    DeliveryChallan? sourceForDuplicate,
+    OrderEntry? initialOrder,
+    ChallanType? initialType,
+    String? initialLocation,
+  }) {
+    return _showChallanEditor(
+      context,
+      challan: challan,
+      sourceForDuplicate: sourceForDuplicate,
+      initialOrder: initialOrder,
+      initialType: initialType,
+      initialLocation: initialLocation,
+    );
+  }
 
   static Future<void> openEditorForOrder(
     BuildContext context,
@@ -47,7 +66,7 @@ class DeliveryChallanScreen extends StatefulWidget {
   }
 
   @override
-  State<DeliveryChallanScreen> createState() => _DeliveryChallanScreenState();
+  State<ChallanScreen> createState() => _ChallanScreenState();
 }
 
 Future<void> _showChallanEditor(
@@ -99,7 +118,7 @@ Future<void> _openPrintPreviewFromContext(
   );
 }
 
-class _DeliveryChallanScreenState extends State<DeliveryChallanScreen> {
+class _ChallanScreenState extends State<ChallanScreen> {
   final TextEditingController _searchController = TextEditingController();
 
   @override
@@ -209,7 +228,10 @@ class _DeliveryChallanScreenState extends State<DeliveryChallanScreen> {
 
   Future<void> _cancel(BuildContext context, DeliveryChallan challan) async {
     final provider = context.read<DeliveryChallanProvider>();
-    await provider.cancelChallan(challan.id);
+    final cancelled = await provider.cancelChallan(challan.id);
+    if (cancelled != null && context.mounted) {
+      await context.read<InventoryProvider>().refresh();
+    }
   }
 
   Future<void> _delete(BuildContext context, DeliveryChallan challan) async {
@@ -860,7 +882,12 @@ class _ChallanEditorState extends State<_ChallanEditor> {
             onPressed: widget.challan == null || widget.challan!.isCancelled
                 ? null
                 : () async {
-                    await provider.cancelChallan(widget.challan!.id);
+                    final cancelled = await provider.cancelChallan(
+                      widget.challan!.id,
+                    );
+                    if (cancelled != null && context.mounted) {
+                      await context.read<InventoryProvider>().refresh();
+                    }
                     if (context.mounted) Navigator.of(context).pop();
                   },
           ),
@@ -1212,13 +1239,20 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     setState(() {
       _validationError = null;
     });
+    final inventoryProvider = context.read<InventoryProvider>();
     final saved = _editingExisting
         ? await provider.updateChallan(widget.challan!.id, input)
         : await provider.createChallan(input);
     if (saved == null) {
       return;
     }
-    await provider.issueChallan(saved.id);
+    final issued = await provider.issueChallan(saved.id);
+    if (issued == null) {
+      return;
+    }
+    if (mounted) {
+      await inventoryProvider.refresh();
+    }
     if (mounted) {
       Navigator.of(context).pop();
     }

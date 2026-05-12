@@ -4195,7 +4195,7 @@ class _OrderDetailsModalState extends State<_OrderDetailsModal> {
     BuildContext context,
     OrderEntry order,
   ) async {
-    await DeliveryChallanScreen.openEditorForOrder(context, order);
+    await ChallanScreen.openEditorForOrder(context, order);
   }
 
   Future<void> _viewDeliveryChallans(

@@ -6,8 +6,8 @@ import 'package:http/http.dart' as http;
 import '../domain/delivery_challan.dart';
 import 'delivery_challan_repository.dart';
 
-class ApiDeliveryChallanRepository implements DeliveryChallanRepository {
-  ApiDeliveryChallanRepository({
+class ApiChallanRepository implements ChallanRepository {
+  ApiChallanRepository({
     http.Client? client,
     this.baseUrl = 'http://localhost:18080',
     this.useMockResponses = false,
@@ -463,3 +463,5 @@ class ApiDeliveryChallanRepository implements DeliveryChallanRepository {
   static String _dateOnly(DateTime value) =>
       value.toIso8601String().substring(0, 10);
 }
+
+typedef ApiDeliveryChallanRepository = ApiChallanRepository;
