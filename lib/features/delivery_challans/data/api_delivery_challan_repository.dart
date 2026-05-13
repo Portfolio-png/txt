@@ -396,6 +396,9 @@ class ApiChallanRepository implements ChallanRepository {
         rotationDegrees: input.rotationDegrees,
         globalOffsetXmm: input.globalOffsetXmm,
         globalOffsetYmm: input.globalOffsetYmm,
+        stockSize: input.stockSize,
+        paperSize: input.paperSize,
+        nUpLayout: input.nUpLayout,
         isActive: input.isActive,
         mappings: input.mappings,
       );
@@ -439,6 +442,9 @@ class ApiChallanRepository implements ChallanRepository {
         rotationDegrees: input.rotationDegrees,
         globalOffsetXmm: input.globalOffsetXmm,
         globalOffsetYmm: input.globalOffsetYmm,
+        stockSize: input.stockSize,
+        paperSize: input.paperSize,
+        nUpLayout: input.nUpLayout,
         isActive: input.isActive,
         mappings: input.mappings,
       );
@@ -625,6 +631,16 @@ class ApiChallanRepository implements ChallanRepository {
       queryParameters: <String, String>{
         'mode': mode,
         if (templateId != null) 'templateId': '$templateId',
+      },
+    );
+  }
+
+  @override
+  Uri templateTestPrintUri({required int templateId, required String mode}) {
+    return Uri.parse('$baseUrl/api/challan-templates/test-print').replace(
+      queryParameters: <String, String>{
+        'templateId': '$templateId',
+        'mode': mode,
       },
     );
   }

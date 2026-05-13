@@ -1,10 +1,12 @@
-import 'dart:typed_data';
+import 'dart:math' as math;
 
 import 'package:crypto/crypto.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -42,6 +44,9 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
   double _rotationDegrees = 0;
   double _globalOffsetXmm = 0;
   double _globalOffsetYmm = 0;
+  String _stockSize = 'A4';
+  String _paperSize = 'A4';
+  int _nUpLayout = 1;
   bool _showGrid = false;
   bool _showScaleCheck = false;
   double _screenScale = 1;
@@ -50,6 +55,8 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
   bool _isSaving = false;
   String? _selectedFieldKey;
   String? _selectedMappingFieldKey;
+  Set<String> _selectedMappingFieldKeys = <String>{};
+  List<_GuideLine> _activeGuides = const <_GuideLine>[];
   String? _error;
 
   static const _fields = <_TemplateField>[
@@ -123,11 +130,18 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     _rotationDegrees = template.rotationDegrees;
     _globalOffsetXmm = template.globalOffsetXmm;
     _globalOffsetYmm = template.globalOffsetYmm;
+    _stockSize = template.stockSize;
+    _paperSize = template.paperSize;
+    _nUpLayout = template.nUpLayout;
     _mappings = template.mappings.toList();
     _selectedMappingFieldKey = _mappings.isEmpty
         ? null
         : _mappings.first.fieldKey;
+    _selectedMappingFieldKeys = _selectedMappingFieldKey == null
+        ? <String>{}
+        : <String>{_selectedMappingFieldKey!};
     _selectedFieldKey = null;
+    _activeGuides = const <_GuideLine>[];
   }
 
   void _startNewTemplate() {
@@ -145,11 +159,16 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       _rotationDegrees = 0;
       _globalOffsetXmm = 0;
       _globalOffsetYmm = 0;
+      _stockSize = 'A4';
+      _paperSize = 'A4';
+      _nUpLayout = 1;
       _showScaleCheck = false;
       _screenScale = 1;
       _mappings = <ChallanTemplateMapping>[];
       _selectedFieldKey = null;
       _selectedMappingFieldKey = null;
+      _selectedMappingFieldKeys = <String>{};
+      _activeGuides = const <_GuideLine>[];
       _error = null;
     });
   }
@@ -375,42 +394,86 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
             ),
           ),
           if (_showScaleCheck)
-            _NumberSlider(
+            _DecimalInputField(
               label: 'Screen Scale',
               value: _screenScale,
               min: 0.5,
               max: 1.5,
-              divisions: 100,
               suffix: 'x',
-              onChanged: (value) => setState(() => _screenScale = value),
+              onSubmitted: (value) => setState(() => _screenScale = value),
             ),
-          _NumberSlider(
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: _stockSize,
+            decoration: const InputDecoration(labelText: 'Stock Size'),
+            items: const [
+              DropdownMenuItem(value: 'A5', child: Text('A5')),
+              DropdownMenuItem(value: 'A4', child: Text('A4')),
+              DropdownMenuItem(value: 'A3', child: Text('A3')),
+            ],
+            onChanged: (value) => setState(() => _stockSize = value ?? 'A4'),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: _paperSize,
+            decoration: const InputDecoration(labelText: 'Paper Size'),
+            items: const [
+              DropdownMenuItem(value: 'A5', child: Text('A5')),
+              DropdownMenuItem(value: 'A4', child: Text('A4')),
+              DropdownMenuItem(value: 'A3', child: Text('A3')),
+            ],
+            onChanged: (value) => setState(() => _paperSize = value ?? 'A4'),
+          ),
+          const SizedBox(height: 12),
+          SegmentedButton<int>(
+            selected: {_nUpLayout},
+            segments: const [
+              ButtonSegment(value: 1, label: Text('1-Up')),
+              ButtonSegment(value: 2, label: Text('2-Up')),
+              ButtonSegment(value: 4, label: Text('4-Up')),
+            ],
+            onSelectionChanged: (value) =>
+                setState(() => _nUpLayout = value.first),
+          ),
+          const SizedBox(height: 12),
+          _DecimalInputField(
             label: 'Rotate',
             value: _rotationDegrees,
             min: -5,
             max: 5,
-            divisions: 20,
             suffix: 'deg',
-            onChanged: (value) => setState(() => _rotationDegrees = value),
+            onSubmitted: (value) => setState(() => _rotationDegrees = value),
           ),
-          _NumberSlider(
+          _DecimalInputField(
             label: 'X Offset',
             value: _globalOffsetXmm,
             min: -20,
             max: 20,
-            divisions: 80,
             suffix: 'mm',
-            onChanged: (value) => setState(() => _globalOffsetXmm = value),
+            onSubmitted: (value) => setState(() => _globalOffsetXmm = value),
           ),
-          _NumberSlider(
+          _DecimalInputField(
             label: 'Y Offset',
             value: _globalOffsetYmm,
             min: -20,
             max: 20,
-            divisions: 80,
             suffix: 'mm',
-            onChanged: (value) => setState(() => _globalOffsetYmm = value),
+            onSubmitted: (value) => setState(() => _globalOffsetYmm = value),
           ),
+          const SizedBox(height: 14),
+          AppButton(
+            label: 'Print Test Page',
+            icon: Icons.print_outlined,
+            variant: AppButtonVariant.secondary,
+            onPressed:
+                _selectedTemplate?.id != null &&
+                    (_selectedTemplate?.id ?? 0) > 0 &&
+                    _layoutValidity.isValid
+                ? _openTestPrint
+                : null,
+          ),
+          const SizedBox(height: 12),
+          _TemplateLayoutHint(validity: _layoutValidity),
         ],
       ),
     );
@@ -421,15 +484,18 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       padding: const EdgeInsets.all(16),
       child: Center(
         child: AspectRatio(
-          aspectRatio: _canvasWidth > 0 && _canvasHeight > 0
-              ? _canvasWidth / _canvasHeight
-              : 210 / 297,
+          aspectRatio:
+              _templateInstanceMm().width / _templateInstanceMm().height,
           child: LayoutBuilder(
             builder: (context, constraints) {
               return GestureDetector(
                 onTapDown: (details) {
                   final key = _selectedFieldKey;
                   if (key == null) {
+                    setState(() {
+                      _selectedMappingFieldKey = null;
+                      _selectedMappingFieldKeys = <String>{};
+                    });
                     return;
                   }
                   final x = (details.localPosition.dx / constraints.maxWidth)
@@ -457,46 +523,65 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
                     ),
                     if (_showGrid) const _CentimeterGrid(),
                     if (_showScaleCheck) _ScaleCheckSquare(scale: _screenScale),
-                    for (final mapping in _mappings)
-                      Positioned(
-                        left: mapping.xPercent * constraints.maxWidth,
-                        top: mapping.yPercent * constraints.maxHeight,
-                        child: _MappedCanvasElement(
-                          mapping: mapping,
-                          label: _displayTextForMapping(mapping),
-                          canvasWidth: constraints.maxWidth,
-                          canvasHeight: constraints.maxHeight,
-                          localImageBytes: mapping.assetObjectKey.isEmpty
-                              ? null
-                              : _localStampBytesByObjectKey[mapping
-                                    .assetObjectKey],
-                          imageUrl: mapping.assetImageUrl,
-                          selected:
-                              _selectedMappingFieldKey == mapping.fieldKey,
-                          showBoundingBox: _showBoundingBoxes,
-                          onTap: () => setState(
-                            () => _selectedMappingFieldKey = mapping.fieldKey,
+                    if (_activeGuides.isNotEmpty)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: CustomPaint(
+                            painter: _GuideLinesPainter(
+                              guides: _activeGuides,
+                              canvasWidth: constraints.maxWidth,
+                              canvasHeight: constraints.maxHeight,
+                            ),
                           ),
-                          onDrag: (delta) {
-                            final nextX =
-                                ((mapping.xPercent * constraints.maxWidth +
-                                            delta.dx) /
-                                        constraints.maxWidth)
-                                    .clamp(0.0, 1.0);
-                            final nextY =
-                                ((mapping.yPercent * constraints.maxHeight +
-                                            delta.dy) /
-                                        constraints.maxHeight)
-                                    .clamp(0.0, 1.0);
-                            _updateMapping(
-                              mapping.fieldKey,
-                              mapping.copyWith(
-                                xPercent: nextX,
-                                yPercent: nextY,
-                              ),
-                            );
-                          },
                         ),
+                      ),
+                    for (final mapping in _mappings)
+                      Builder(
+                        builder: (context) {
+                          final rect = _mappingRect(
+                            mapping,
+                            constraints.maxWidth,
+                            constraints.maxHeight,
+                          );
+                          return Positioned(
+                            left: rect.left,
+                            top: rect.top,
+                            child: _MappedCanvasElement(
+                              mapping: mapping,
+                              label: _displayTextForMapping(mapping),
+                              canvasWidth: constraints.maxWidth,
+                              canvasHeight: constraints.maxHeight,
+                              boxWidth: rect.width,
+                              boxHeight: rect.height,
+                              localImageBytes: mapping.assetObjectKey.isEmpty
+                                  ? null
+                                  : _localStampBytesByObjectKey[mapping
+                                        .assetObjectKey],
+                              imageUrl: mapping.assetImageUrl,
+                              selected: _selectedMappingFieldKeys.contains(
+                                mapping.fieldKey,
+                              ),
+                              showBoundingBox: _showBoundingBoxes,
+                              onTap: () => _selectMapping(mapping.fieldKey),
+                              onDrag: (delta) => _moveMappingByDelta(
+                                mapping,
+                                delta,
+                                constraints.maxWidth,
+                                constraints.maxHeight,
+                              ),
+                              onDragEnd: _clearGuides,
+                              onResize: (handle, delta) =>
+                                  _resizeMappingByDelta(
+                                    mapping,
+                                    handle,
+                                    delta,
+                                    constraints.maxWidth,
+                                    constraints.maxHeight,
+                                  ),
+                              onResizeEnd: _clearGuides,
+                            ),
+                          );
+                        },
                       ),
                   ],
                 ),
@@ -572,6 +657,15 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
                 .toList(),
           ),
           const SizedBox(height: 18),
+          if (_selectedMappingFieldKeys.length > 1) ...[
+            AppButton(
+              label: 'Align Top',
+              icon: Icons.align_vertical_top_rounded,
+              variant: AppButtonVariant.secondary,
+              onPressed: _alignSelectedTop,
+            ),
+            const SizedBox(height: 12),
+          ],
           if (selected == null)
             const Text(
               'Select a placed field to edit font and table settings.',
@@ -586,6 +680,10 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
 
   Widget _buildMappingProperties(ChallanTemplateMapping mapping) {
     final field = _fieldForKey(mapping.fieldKey);
+    final isImage = mapping.fieldType.toUpperCase() == 'IMAGE';
+    final isStatic = mapping.fieldType.toUpperCase() == 'STATIC';
+    final isTableField = field?.isTable ?? false;
+    final isTableOwner = mapping.fieldKey == 'item_particulars';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -631,11 +729,14 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
                     : mapping.fieldValue,
               ),
             );
-            setState(() => _selectedMappingFieldKey = nextKey);
+            setState(() {
+              _selectedMappingFieldKey = nextKey;
+              _selectedMappingFieldKeys = {nextKey};
+            });
           },
         ),
         const SizedBox(height: 12),
-        if (mapping.fieldType.toUpperCase() == 'IMAGE') ...[
+        if (isImage) ...[
           Text(
             mapping.assetObjectKey.isEmpty
                 ? 'No image uploaded.'
@@ -643,62 +744,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
             style: const TextStyle(color: SoftErpTheme.textSecondary),
           ),
           const SizedBox(height: 12),
-          _NumberSlider(
-            label: 'Image Width',
-            value: mapping.imageWidthMm,
-            min: 2,
-            max: 120,
-            divisions: 59,
-            suffix: 'mm',
-            onChanged: (value) {
-              final ratio =
-                  mapping.assetWidthPx > 0 && mapping.assetHeightPx > 0
-                  ? mapping.assetHeightPx / mapping.assetWidthPx
-                  : mapping.imageHeightMm / mapping.imageWidthMm;
-              _updateMapping(
-                mapping.fieldKey,
-                mapping.copyWith(
-                  imageWidthMm: value,
-                  imageHeightMm: mapping.lockAspectRatio
-                      ? value * ratio
-                      : mapping.imageHeightMm,
-                ),
-              );
-            },
-          ),
-          _NumberSlider(
-            label: 'Image Height',
-            value: mapping.imageHeightMm,
-            min: 2,
-            max: 120,
-            divisions: 59,
-            suffix: 'mm',
-            onChanged: (value) {
-              final ratio =
-                  mapping.assetWidthPx > 0 && mapping.assetHeightPx > 0
-                  ? mapping.assetWidthPx / mapping.assetHeightPx
-                  : mapping.imageWidthMm / mapping.imageHeightMm;
-              _updateMapping(
-                mapping.fieldKey,
-                mapping.copyWith(
-                  imageHeightMm: value,
-                  imageWidthMm: mapping.lockAspectRatio
-                      ? value * ratio
-                      : mapping.imageWidthMm,
-                ),
-              );
-            },
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            value: mapping.lockAspectRatio,
-            onChanged: (value) => _updateMapping(
-              mapping.fieldKey,
-              mapping.copyWith(lockAspectRatio: value),
-            ),
-            title: const Text('Lock Aspect Ratio'),
-          ),
-        ] else if (mapping.fieldType.toUpperCase() == 'STATIC')
+        ] else if (isStatic)
           TextField(
             decoration: const InputDecoration(labelText: 'Static Text'),
             minLines: 1,
@@ -734,10 +780,13 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
                 mapping.fieldKey,
                 mapping.copyWith(fieldKey: value, fieldType: 'DYNAMIC'),
               );
-              setState(() => _selectedMappingFieldKey = value);
+              setState(() {
+                _selectedMappingFieldKey = value;
+                _selectedMappingFieldKeys = {value};
+              });
             },
           ),
-        if (mapping.fieldType.toUpperCase() != 'IMAGE') ...[
+        if (!isImage) ...[
           const SizedBox(height: 12),
           Text(
             'Sample: ${_displayTextForMapping(mapping)}',
@@ -745,33 +794,108 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
           ),
         ],
         const SizedBox(height: 12),
-        if (mapping.fieldType.toUpperCase() != 'IMAGE')
-          _NumberSlider(
+        _DecimalInputField(
+          label: 'Width',
+          value: mapping.widthMm,
+          min: 2,
+          max: 210,
+          suffix: 'mm',
+          onSubmitted: (value) {
+            if (isImage) {
+              final ratio =
+                  mapping.assetWidthPx > 0 && mapping.assetHeightPx > 0
+                  ? mapping.assetHeightPx / mapping.assetWidthPx
+                  : mapping.heightMm / math.max(mapping.widthMm, 1);
+              _updateMapping(
+                mapping.fieldKey,
+                mapping.copyWith(
+                  widthMm: value,
+                  heightMm: mapping.lockAspectRatio
+                      ? value * ratio
+                      : mapping.heightMm,
+                  imageWidthMm: value,
+                  imageHeightMm: mapping.lockAspectRatio
+                      ? value * ratio
+                      : mapping.imageHeightMm,
+                ),
+              );
+              return;
+            }
+            _updateMapping(
+              mapping.fieldKey,
+              mapping.copyWith(widthMm: value, maxWidthMm: value),
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+        _DecimalInputField(
+          label: 'Height',
+          value: mapping.heightMm,
+          min: 2,
+          max: 297,
+          suffix: 'mm',
+          onSubmitted: (value) {
+            if (isImage) {
+              final ratio =
+                  mapping.assetWidthPx > 0 && mapping.assetHeightPx > 0
+                  ? mapping.assetWidthPx / mapping.assetHeightPx
+                  : mapping.widthMm / math.max(mapping.heightMm, 1);
+              _updateMapping(
+                mapping.fieldKey,
+                mapping.copyWith(
+                  heightMm: value,
+                  widthMm: mapping.lockAspectRatio
+                      ? value * ratio
+                      : mapping.widthMm,
+                  imageHeightMm: value,
+                  imageWidthMm: mapping.lockAspectRatio
+                      ? value * ratio
+                      : mapping.imageWidthMm,
+                ),
+              );
+              return;
+            }
+            _updateMapping(mapping.fieldKey, mapping.copyWith(heightMm: value));
+          },
+        ),
+        if (isImage)
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: mapping.lockAspectRatio,
+            onChanged: (value) => _updateMapping(
+              mapping.fieldKey,
+              mapping.copyWith(lockAspectRatio: value),
+            ),
+            title: const Text('Lock Aspect Ratio'),
+          ),
+        if (!isImage) ...[
+          const SizedBox(height: 12),
+          _DecimalInputField(
             label: 'Font Size',
             value: mapping.fontSize,
-            min: 8,
-            max: 16,
-            divisions: 8,
+            min: 6,
+            max: 32,
             suffix: 'pt',
-            onChanged: (value) => _updateMapping(
+            onSubmitted: (value) => _updateMapping(
               mapping.fieldKey,
               mapping.copyWith(fontSize: value),
             ),
           ),
-        if (mapping.fieldType.toUpperCase() != 'IMAGE')
-          _NumberSlider(
+          const SizedBox(height: 12),
+          _DecimalInputField(
             label: 'Letter Spacing',
             value: mapping.letterSpacing,
             min: -2,
             max: 6,
-            divisions: 16,
             suffix: '',
-            onChanged: (value) => _updateMapping(
+            onSubmitted: (value) => _updateMapping(
               mapping.fieldKey,
               mapping.copyWith(letterSpacing: value),
             ),
           ),
-        if (mapping.fieldType.toUpperCase() != 'IMAGE')
+        ],
+        if (!isImage) const SizedBox(height: 12),
+        if (!isImage)
           TextField(
             decoration: const InputDecoration(labelText: 'Max Characters'),
             keyboardType: TextInputType.number,
@@ -784,23 +908,22 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
               mapping.copyWith(maxChars: int.tryParse(value) ?? 0),
             ),
           ),
-        if (mapping.fieldType.toUpperCase() != 'IMAGE') ...[
+        if (!isImage) ...[
           const SizedBox(height: 12),
-          _NumberSlider(
+          _DecimalInputField(
             label: 'Max Width',
             value: mapping.maxWidthMm,
             min: 5,
             max: 210,
-            divisions: 41,
             suffix: 'mm',
-            onChanged: (value) => _updateMapping(
+            onSubmitted: (value) => _updateMapping(
               mapping.fieldKey,
-              mapping.copyWith(maxWidthMm: value),
+              mapping.copyWith(maxWidthMm: value, widthMm: value),
             ),
           ),
         ],
         const SizedBox(height: 12),
-        if (mapping.fieldType.toUpperCase() != 'IMAGE')
+        if (!isImage)
           DropdownButtonFormField<String>(
             initialValue: mapping.alignment,
             decoration: const InputDecoration(labelText: 'Alignment'),
@@ -815,7 +938,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
             ),
           ),
         const SizedBox(height: 12),
-        if (mapping.fieldType.toUpperCase() != 'IMAGE')
+        if (!isImage)
           DropdownButtonFormField<String>(
             initialValue: _normalizedTextColor(mapping.textColor),
             decoration: const InputDecoration(labelText: 'Text Color'),
@@ -830,7 +953,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
             ),
           ),
         const SizedBox(height: 12),
-        if (mapping.fieldType.toUpperCase() != 'IMAGE')
+        if (!isImage)
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             value: mapping.fontWeight == 'bold',
@@ -840,43 +963,90 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
             ),
             title: const Text('Bold'),
           ),
-        if (mapping.fieldType.toUpperCase() != 'STATIC' &&
-            (field?.isTable ?? false))
+        if (isTableOwner)
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _NumberSlider(
+              _DecimalInputField(
+                label: 'Table Height',
+                value: mapping.tableHeightMm,
+                min: 5,
+                max: 240,
+                suffix: 'mm',
+                onSubmitted: (value) => _updateMapping(
+                  mapping.fieldKey,
+                  mapping.copyWith(
+                    tableHeightMm: value,
+                    heightMm: math.max(mapping.heightMm, value),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              _DecimalInputField(
                 label: 'Row Pitch',
                 value: mapping.rowHeightMm,
                 min: 2,
                 max: 20,
-                divisions: 18,
                 suffix: 'mm',
-                onChanged: (value) => _updateMapping(
+                onSubmitted: (value) => _updateMapping(
                   mapping.fieldKey,
                   mapping.copyWith(rowHeightMm: value),
                 ),
               ),
-              _NumberSlider(
-                label: 'Max Rows',
-                value: mapping.maxRows.toDouble(),
-                min: 0,
-                max: 40,
-                divisions: 40,
-                suffix: '',
-                onChanged: (value) => _updateMapping(
+              const SizedBox(height: 12),
+              _DecimalInputField(
+                label: 'Min Font Size',
+                value: mapping.minFontSize,
+                min: 6,
+                max: 32,
+                suffix: 'pt',
+                onSubmitted: (value) => _updateMapping(
                   mapping.fieldKey,
-                  mapping.copyWith(maxRows: value.round()),
+                  mapping.copyWith(minFontSize: value),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                decoration: const InputDecoration(labelText: 'Min Rows'),
+                keyboardType: TextInputType.number,
+                controller: TextEditingController(text: '${mapping.minRows}')
+                  ..selection = TextSelection.collapsed(
+                    offset: '${mapping.minRows}'.length,
+                  ),
+                onSubmitted: (value) => _updateMapping(
+                  mapping.fieldKey,
+                  mapping.copyWith(minRows: int.tryParse(value) ?? 0),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                decoration: const InputDecoration(labelText: 'Max Rows'),
+                keyboardType: TextInputType.number,
+                controller: TextEditingController(text: '${mapping.maxRows}')
+                  ..selection = TextSelection.collapsed(
+                    offset: '${mapping.maxRows}'.length,
+                  ),
+                onSubmitted: (value) => _updateMapping(
+                  mapping.fieldKey,
+                  mapping.copyWith(maxRows: int.tryParse(value) ?? 0),
                 ),
               ),
               const Text(
-                '0 means unlimited. If exceeded, the PDF continues on page 2.',
+                'The item table owns shared pagination, blank rows, and shrink-to-fit behavior.',
                 style: TextStyle(
                   color: SoftErpTheme.textSecondary,
                   fontSize: 12,
                 ),
               ),
             ],
+          ),
+        if (isTableField && !isTableOwner)
+          const Padding(
+            padding: EdgeInsets.only(top: 4),
+            child: Text(
+              'Row pitch, table height, and min/max rows are controlled by Item Particulars.',
+              style: TextStyle(color: SoftErpTheme.textSecondary, fontSize: 12),
+            ),
           ),
         const SizedBox(height: 12),
         AppButton(
@@ -889,6 +1059,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
                   .where((entry) => entry.fieldKey != mapping.fieldKey)
                   .toList();
               _selectedMappingFieldKey = null;
+              _selectedMappingFieldKeys = <String>{};
             });
           },
         ),
@@ -973,6 +1144,10 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       });
       return;
     }
+    if (!_layoutValidity.isValid) {
+      setState(() => _error = _layoutValidity.message);
+      return;
+    }
     setState(() {
       _isSaving = true;
       _error = null;
@@ -991,6 +1166,9 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
         rotationDegrees: _rotationDegrees,
         globalOffsetXmm: _globalOffsetXmm,
         globalOffsetYmm: _globalOffsetYmm,
+        stockSize: _stockSize,
+        paperSize: _paperSize,
+        nUpLayout: _nUpLayout,
         isActive: true,
         mappings: _mappings,
       ),
@@ -1026,6 +1204,8 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
                   assetImageUrl: null,
                   assetWidthPx: 0,
                   assetHeightPx: 0,
+                  widthMm: fieldKey == 'item_particulars' ? 120 : 80,
+                  heightMm: fieldKey == 'item_particulars' ? 60 : 12,
                   imageWidthMm: 35,
                   imageHeightMm: 20,
                   lockAspectRatio: true,
@@ -1037,14 +1217,18 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
                   textColor: 'black',
                   letterSpacing: 0,
                   maxChars: 0,
-                  maxWidthMm: 80,
+                  maxWidthMm: fieldKey == 'item_particulars' ? 120 : 80,
+                  minFontSize: 6,
+                  minRows: 0,
                   maxRows: 0,
+                  tableHeightMm: 60,
                   rowHeightMm: 6,
                 ))
             .copyWith(xPercent: xPercent, yPercent: yPercent);
     _updateMapping(fieldKey, mapping);
     setState(() {
       _selectedMappingFieldKey = fieldKey;
+      _selectedMappingFieldKeys = {fieldKey};
       _selectedFieldKey = null;
     });
   }
@@ -1061,6 +1245,8 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       assetImageUrl: null,
       assetWidthPx: 0,
       assetHeightPx: 0,
+      widthMm: 80,
+      heightMm: 14,
       imageWidthMm: 35,
       imageHeightMm: 20,
       lockAspectRatio: true,
@@ -1073,12 +1259,16 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       letterSpacing: 0,
       maxChars: 0,
       maxWidthMm: 80,
+      minFontSize: 6,
+      minRows: 0,
       maxRows: 0,
+      tableHeightMm: 60,
       rowHeightMm: 6,
     );
     setState(() {
       _mappings = [..._mappings, mapping];
       _selectedMappingFieldKey = fieldKey;
+      _selectedMappingFieldKeys = {fieldKey};
       _selectedFieldKey = null;
     });
   }
@@ -1153,6 +1343,8 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
         assetImageUrl: null,
         assetWidthPx: stamp.canvasWidth,
         assetHeightPx: stamp.canvasHeight,
+        widthMm: 35,
+        heightMm: 35 * aspectRatio,
         imageWidthMm: 35,
         imageHeightMm: 35 * aspectRatio,
         lockAspectRatio: true,
@@ -1165,13 +1357,17 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
         letterSpacing: 0,
         maxChars: 0,
         maxWidthMm: 80,
+        minFontSize: 6,
+        minRows: 0,
         maxRows: 0,
+        tableHeightMm: 60,
         rowHeightMm: 6,
       );
       setState(() {
         _localStampBytesByObjectKey[stamp.objectKey] = bytes;
         _mappings = [..._mappings, mapping];
         _selectedMappingFieldKey = fieldKey;
+        _selectedMappingFieldKeys = {fieldKey};
         _selectedFieldKey = null;
       });
     } catch (error) {
@@ -1299,6 +1495,343 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     }
     return 'image/jpeg';
   }
+
+  _TemplateLayoutValidity get _layoutValidity =>
+      _resolveTemplateLayout(_stockSize, _paperSize, _nUpLayout);
+
+  Size _templateInstanceMm() {
+    final resolved = _layoutValidity.resolvedStockFrameMm;
+    return Size(resolved.width, resolved.height);
+  }
+
+  Rect _mappingRect(
+    ChallanTemplateMapping mapping,
+    double canvasWidth,
+    double canvasHeight,
+  ) {
+    final instance = _templateInstanceMm();
+    final width = (mapping.widthMm / instance.width * canvasWidth).clamp(
+      20.0,
+      canvasWidth,
+    );
+    final height = (mapping.heightMm / instance.height * canvasHeight).clamp(
+      20.0,
+      canvasHeight,
+    );
+    return Rect.fromLTWH(
+      (mapping.xPercent * canvasWidth).clamp(
+        0.0,
+        math.max(0.0, canvasWidth - width),
+      ),
+      (mapping.yPercent * canvasHeight).clamp(
+        0.0,
+        math.max(0.0, canvasHeight - height),
+      ),
+      width,
+      height,
+    );
+  }
+
+  void _selectMapping(String fieldKey) {
+    final pressedKeys = HardwareKeyboard.instance.logicalKeysPressed;
+    final shiftPressed =
+        pressedKeys.contains(LogicalKeyboardKey.shiftLeft) ||
+        pressedKeys.contains(LogicalKeyboardKey.shiftRight);
+    setState(() {
+      _selectedMappingFieldKey = fieldKey;
+      if (shiftPressed) {
+        if (_selectedMappingFieldKeys.contains(fieldKey)) {
+          _selectedMappingFieldKeys = {
+            for (final key in _selectedMappingFieldKeys)
+              if (key != fieldKey) key,
+          };
+        } else {
+          _selectedMappingFieldKeys = {..._selectedMappingFieldKeys, fieldKey};
+        }
+      } else {
+        _selectedMappingFieldKeys = {fieldKey};
+      }
+      _selectedFieldKey = null;
+    });
+  }
+
+  void _moveMappingByDelta(
+    ChallanTemplateMapping mapping,
+    Offset delta,
+    double canvasWidth,
+    double canvasHeight,
+  ) {
+    final rect = _mappingRect(mapping, canvasWidth, canvasHeight);
+    final nextRect = rect.shift(delta);
+    final nextLeft = nextRect.left
+        .clamp(0.0, math.max(0.0, canvasWidth - rect.width))
+        .toDouble();
+    final nextTop = nextRect.top
+        .clamp(0.0, math.max(0.0, canvasHeight - rect.height))
+        .toDouble();
+    final snapped = _applySnapGuides(
+      mapping: mapping,
+      candidate: Rect.fromLTWH(nextLeft, nextTop, rect.width, rect.height),
+      canvasWidth: canvasWidth,
+      canvasHeight: canvasHeight,
+    );
+    _updateMapping(
+      mapping.fieldKey,
+      mapping.copyWith(
+        xPercent: snapped.left / canvasWidth,
+        yPercent: snapped.top / canvasHeight,
+      ),
+    );
+  }
+
+  void _resizeMappingByDelta(
+    ChallanTemplateMapping mapping,
+    _ResizeHandle handle,
+    Offset delta,
+    double canvasWidth,
+    double canvasHeight,
+  ) {
+    final instance = _templateInstanceMm();
+    final rect = _mappingRect(mapping, canvasWidth, canvasHeight);
+    var left = rect.left;
+    var top = rect.top;
+    var right = rect.right;
+    var bottom = rect.bottom;
+    if (handle.affectsLeft) {
+      left += delta.dx;
+    }
+    if (handle.affectsRight) {
+      right += delta.dx;
+    }
+    if (handle.affectsTop) {
+      top += delta.dy;
+    }
+    if (handle.affectsBottom) {
+      bottom += delta.dy;
+    }
+    var width = math.max(20.0, right - left);
+    var height = math.max(20.0, bottom - top);
+    if (mapping.fieldType.toUpperCase() == 'IMAGE' && mapping.lockAspectRatio) {
+      final ratio = mapping.heightMm / math.max(mapping.widthMm, 0.1);
+      if (handle.affectsLeft || handle.affectsRight) {
+        height = width * ratio;
+      } else {
+        width = height / math.max(ratio, 0.01);
+      }
+    }
+    left = left.clamp(0.0, math.max(0.0, canvasWidth - width));
+    top = top.clamp(0.0, math.max(0.0, canvasHeight - height));
+    final snapped = _applySnapGuides(
+      mapping: mapping,
+      candidate: Rect.fromLTWH(left, top, width, height),
+      canvasWidth: canvasWidth,
+      canvasHeight: canvasHeight,
+    );
+    final widthMm = (snapped.width / canvasWidth) * instance.width;
+    final heightMm = (snapped.height / canvasHeight) * instance.height;
+    _updateMapping(
+      mapping.fieldKey,
+      mapping.copyWith(
+        xPercent: snapped.left / canvasWidth,
+        yPercent: snapped.top / canvasHeight,
+        widthMm: widthMm,
+        heightMm: heightMm,
+        maxWidthMm: mapping.fieldType.toUpperCase() == 'IMAGE'
+            ? mapping.maxWidthMm
+            : widthMm,
+        imageWidthMm: mapping.fieldType.toUpperCase() == 'IMAGE'
+            ? widthMm
+            : mapping.imageWidthMm,
+        imageHeightMm: mapping.fieldType.toUpperCase() == 'IMAGE'
+            ? heightMm
+            : mapping.imageHeightMm,
+        tableHeightMm: mapping.fieldKey == 'item_particulars'
+            ? heightMm
+            : mapping.tableHeightMm,
+      ),
+    );
+  }
+
+  Rect _applySnapGuides({
+    required ChallanTemplateMapping mapping,
+    required Rect candidate,
+    required double canvasWidth,
+    required double canvasHeight,
+  }) {
+    const snapMm = 2.0;
+    final instance = _templateInstanceMm();
+    final xTolerance = (snapMm / instance.width) * canvasWidth;
+    final yTolerance = (snapMm / instance.height) * canvasHeight;
+    double left = candidate.left;
+    double top = candidate.top;
+    final guides = <_GuideLine>[];
+    final candidateX = <double>[
+      candidate.left,
+      candidate.center.dx,
+      candidate.right,
+    ];
+    final candidateY = <double>[
+      candidate.top,
+      candidate.center.dy,
+      candidate.bottom,
+    ];
+    for (final other in _mappings) {
+      if (other.fieldKey == mapping.fieldKey) {
+        continue;
+      }
+      final rect = _mappingRect(other, canvasWidth, canvasHeight);
+      final otherX = <double>[rect.left, rect.center.dx, rect.right];
+      final otherY = <double>[rect.top, rect.center.dy, rect.bottom];
+      for (final x in otherX) {
+        for (final candidateValue in candidateX) {
+          if ((candidateValue - x).abs() <= xTolerance) {
+            left += x - candidateValue;
+            guides.add(_GuideLine.vertical(x / canvasWidth));
+            break;
+          }
+        }
+      }
+      for (final y in otherY) {
+        for (final candidateValue in candidateY) {
+          if ((candidateValue - y).abs() <= yTolerance) {
+            top += y - candidateValue;
+            guides.add(_GuideLine.horizontal(y / canvasHeight));
+            break;
+          }
+        }
+      }
+    }
+    final snapped = Rect.fromLTWH(left, top, candidate.width, candidate.height);
+    final dedupedGuides = <String, _GuideLine>{};
+    for (final guide in guides) {
+      final key = '${guide.axis.name}:${guide.percent.toStringAsFixed(4)}';
+      dedupedGuides[key] = guide;
+    }
+    setState(
+      () => _activeGuides = dedupedGuides.values.toList(growable: false),
+    );
+    return Rect.fromLTWH(
+      snapped.left.clamp(0.0, math.max(0.0, canvasWidth - snapped.width)),
+      snapped.top.clamp(0.0, math.max(0.0, canvasHeight - snapped.height)),
+      snapped.width,
+      snapped.height,
+    );
+  }
+
+  void _alignSelectedTop() {
+    if (_selectedMappingFieldKeys.length < 2 ||
+        _selectedMappingFieldKey == null) {
+      return;
+    }
+    final anchor = _mappingForField(_selectedMappingFieldKey);
+    if (anchor == null) {
+      return;
+    }
+    setState(() {
+      _mappings = [
+        for (final mapping in _mappings)
+          _selectedMappingFieldKeys.contains(mapping.fieldKey)
+              ? mapping.copyWith(yPercent: anchor.yPercent)
+              : mapping,
+      ];
+      _activeGuides = const <_GuideLine>[];
+    });
+  }
+
+  Future<void> _openTestPrint() async {
+    if (!_layoutValidity.isValid) {
+      setState(() => _error = _layoutValidity.message);
+      return;
+    }
+    final provider = context.read<DeliveryChallanProvider>();
+    final templateId = _selectedTemplate?.id ?? 0;
+    if (templateId <= 0) {
+      return;
+    }
+    final mode = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Print Test Page'),
+        content: const Text('Choose preview mode for the test print.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop('digital'),
+            child: const Text('Digital'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop('overprint'),
+            child: const Text('Overprint'),
+          ),
+        ],
+      ),
+    );
+    if (mode == null) {
+      return;
+    }
+    final uri = provider.repository.templateTestPrintUri(
+      templateId: templateId,
+      mode: mode,
+    );
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  void _clearGuides() {
+    if (_activeGuides.isEmpty) {
+      return;
+    }
+    setState(() => _activeGuides = const <_GuideLine>[]);
+  }
+
+  _TemplateLayoutValidity _resolveTemplateLayout(
+    String stockSize,
+    String paperSize,
+    int nUpLayout,
+  ) {
+    final sheet = _paperSizeDimensionsMm(paperSize);
+    final stock = _paperSizeDimensionsMm(stockSize);
+    final slot = switch (nUpLayout) {
+      2 => Size(sheet.width, sheet.height / 2),
+      4 => Size(sheet.width / 2, sheet.height / 2),
+      _ => sheet,
+    };
+    if (stock.width <= slot.width && stock.height <= slot.height) {
+      return _TemplateLayoutValidity(
+        isValid: true,
+        resolvedStockFrameMm: stock,
+        message:
+            '$stockSize stock on $paperSize sheet at $nUpLayout-up. Frame ${stock.width.toStringAsFixed(1)} x ${stock.height.toStringAsFixed(1)} mm.',
+      );
+    }
+    if (stock.height <= slot.width && stock.width <= slot.height) {
+      return _TemplateLayoutValidity(
+        isValid: true,
+        resolvedStockFrameMm: Size(stock.height, stock.width),
+        message:
+            '$stockSize stock auto-rotates to fit $paperSize sheet at $nUpLayout-up. Frame ${stock.height.toStringAsFixed(1)} x ${stock.width.toStringAsFixed(1)} mm.',
+      );
+    }
+    return _TemplateLayoutValidity(
+      isValid: false,
+      resolvedStockFrameMm: stock,
+      message:
+          '$stockSize stock does not fit on $paperSize sheet at $nUpLayout-up.',
+    );
+  }
+
+  Size _paperSizeDimensionsMm(String size) {
+    switch (size.toUpperCase()) {
+      case 'A3':
+        return const Size(297, 420);
+      case 'A5':
+        return const Size(148.5, 210);
+      default:
+        return const Size(210, 297);
+    }
+  }
 }
 
 class _TemplateField {
@@ -1315,78 +1848,37 @@ class _MappedCanvasElement extends StatelessWidget {
     required this.label,
     required this.canvasWidth,
     required this.canvasHeight,
+    required this.boxWidth,
+    required this.boxHeight,
     required this.localImageBytes,
     required this.imageUrl,
     required this.selected,
     required this.showBoundingBox,
     required this.onTap,
     required this.onDrag,
+    required this.onDragEnd,
+    required this.onResize,
+    required this.onResizeEnd,
   });
 
   final ChallanTemplateMapping mapping;
   final String label;
   final double canvasWidth;
   final double canvasHeight;
+  final double boxWidth;
+  final double boxHeight;
   final Uint8List? localImageBytes;
   final String? imageUrl;
   final bool selected;
   final bool showBoundingBox;
   final VoidCallback onTap;
   final ValueChanged<Offset> onDrag;
+  final VoidCallback onDragEnd;
+  final void Function(_ResizeHandle handle, Offset delta) onResize;
+  final VoidCallback onResizeEnd;
 
   @override
   Widget build(BuildContext context) {
-    if (mapping.fieldType.toUpperCase() == 'IMAGE') {
-      final width = (mapping.imageWidthMm / 210 * canvasWidth).clamp(
-        20.0,
-        canvasWidth,
-      );
-      final height = (mapping.imageHeightMm / 297 * canvasHeight).clamp(
-        20.0,
-        canvasHeight,
-      );
-      return GestureDetector(
-        onTap: onTap,
-        onPanUpdate: (details) => onDrag(details.delta),
-        child: Container(
-          width: width,
-          height: height,
-          decoration: BoxDecoration(
-            color: selected
-                ? SoftErpTheme.accent.withValues(alpha: 0.06)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(
-              color: selected
-                  ? SoftErpTheme.accent
-                  : showBoundingBox
-                  ? SoftErpTheme.border
-                  : Colors.transparent,
-              width: selected ? 1.6 : 1,
-            ),
-          ),
-          child: localImageBytes != null
-              ? Image.memory(localImageBytes!, fit: BoxFit.contain)
-              : (imageUrl != null && imageUrl!.isNotEmpty
-                    ? Image.network(imageUrl!, fit: BoxFit.contain)
-                    : Center(
-                        child: Text(
-                          label,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: SoftErpTheme.textSecondary,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      )),
-        ),
-      );
-    }
-    final width = (mapping.maxWidthMm / 210 * canvasWidth).clamp(
-      28.0,
-      canvasWidth,
-    );
     final scale = canvasWidth / 595.28;
     final textColor = switch (mapping.textColor.toLowerCase()) {
       'blue' => const Color(0xFF1D4ED8),
@@ -1396,9 +1888,11 @@ class _MappedCanvasElement extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       onPanUpdate: (details) => onDrag(details.delta),
+      onPanEnd: (_) => onDragEnd(),
+      onPanCancel: onDragEnd,
       child: Container(
-        width: width,
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+        width: boxWidth,
+        height: boxHeight,
         decoration: BoxDecoration(
           color: selected
               ? SoftErpTheme.accent.withValues(alpha: 0.10)
@@ -1413,27 +1907,161 @@ class _MappedCanvasElement extends StatelessWidget {
             width: selected ? 1.6 : 1,
           ),
         ),
-        child: Text(
-          label,
-          maxLines: 4,
-          overflow: TextOverflow.visible,
-          textAlign: switch (mapping.alignment) {
-            'center' => TextAlign.center,
-            'right' => TextAlign.right,
-            _ => TextAlign.left,
-          },
-          style: TextStyle(
-            color: textColor,
-            fontSize: (mapping.fontSize * scale).clamp(6.0, 30.0),
-            fontWeight: mapping.fontWeight == 'bold'
-                ? FontWeight.w800
-                : FontWeight.w500,
-            letterSpacing: mapping.letterSpacing * scale,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fill(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+                child: mapping.fieldType.toUpperCase() == 'IMAGE'
+                    ? (localImageBytes != null
+                          ? Image.memory(localImageBytes!, fit: BoxFit.contain)
+                          : (imageUrl != null && imageUrl!.isNotEmpty
+                                ? Image.network(imageUrl!, fit: BoxFit.contain)
+                                : Center(
+                                    child: Text(
+                                      label,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: SoftErpTheme.textSecondary,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  )))
+                    : Align(
+                        alignment: switch (mapping.alignment) {
+                          'center' => Alignment.topCenter,
+                          'right' => Alignment.topRight,
+                          _ => Alignment.topLeft,
+                        },
+                        child: Text(
+                          label,
+                          maxLines: 6,
+                          overflow: TextOverflow.visible,
+                          textAlign: switch (mapping.alignment) {
+                            'center' => TextAlign.center,
+                            'right' => TextAlign.right,
+                            _ => TextAlign.left,
+                          },
+                          style: TextStyle(
+                            color: textColor,
+                            fontSize: (mapping.fontSize * scale).clamp(
+                              6.0,
+                              30.0,
+                            ),
+                            fontWeight: mapping.fontWeight == 'bold'
+                                ? FontWeight.w800
+                                : FontWeight.w500,
+                            letterSpacing: mapping.letterSpacing * scale,
+                          ),
+                        ),
+                      ),
+              ),
+            ),
+            if (selected)
+              ..._ResizeHandle.values.map(
+                (handle) => _ResizeHandleWidget(
+                  handle: handle,
+                  onDrag: (delta) => onResize(handle, delta),
+                  onDragEnd: onResizeEnd,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+enum _ResizeHandle {
+  topLeft(true, false, true, false),
+  topCenter(false, false, true, false),
+  topRight(false, true, true, false),
+  centerLeft(true, false, false, false),
+  centerRight(false, true, false, false),
+  bottomLeft(true, false, false, true),
+  bottomCenter(false, false, false, true),
+  bottomRight(false, true, false, true);
+
+  const _ResizeHandle(
+    this.affectsLeft,
+    this.affectsRight,
+    this.affectsTop,
+    this.affectsBottom,
+  );
+
+  final bool affectsLeft;
+  final bool affectsRight;
+  final bool affectsTop;
+  final bool affectsBottom;
+}
+
+class _ResizeHandleWidget extends StatelessWidget {
+  const _ResizeHandleWidget({
+    required this.handle,
+    required this.onDrag,
+    required this.onDragEnd,
+  });
+
+  final _ResizeHandle handle;
+  final ValueChanged<Offset> onDrag;
+  final VoidCallback onDragEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    final position = switch (handle) {
+      _ResizeHandle.topLeft => const _HandlePosition(left: -6, top: -6),
+      _ResizeHandle.topCenter => const _HandlePosition(top: -6),
+      _ResizeHandle.topRight => const _HandlePosition(right: -6, top: -6),
+      _ResizeHandle.centerLeft => const _HandlePosition(left: -6),
+      _ResizeHandle.centerRight => const _HandlePosition(right: -6),
+      _ResizeHandle.bottomLeft => const _HandlePosition(left: -6, bottom: -6),
+      _ResizeHandle.bottomCenter => const _HandlePosition(bottom: -6),
+      _ResizeHandle.bottomRight => const _HandlePosition(right: -6, bottom: -6),
+    };
+    return Positioned(
+      left: position.left,
+      right: position.right,
+      top: position.top,
+      bottom: position.bottom,
+      child: Align(
+        alignment: switch (handle) {
+          _ResizeHandle.topLeft => Alignment.topLeft,
+          _ResizeHandle.topCenter => Alignment.topCenter,
+          _ResizeHandle.topRight => Alignment.topRight,
+          _ResizeHandle.centerLeft => Alignment.centerLeft,
+          _ResizeHandle.centerRight => Alignment.centerRight,
+          _ResizeHandle.bottomLeft => Alignment.bottomLeft,
+          _ResizeHandle.bottomCenter => Alignment.bottomCenter,
+          _ResizeHandle.bottomRight => Alignment.bottomRight,
+        },
+        child: GestureDetector(
+          onPanUpdate: (details) => onDrag(details.delta),
+          onPanEnd: (_) => onDragEnd(),
+          onPanCancel: onDragEnd,
+          child: Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+              color: SoftErpTheme.accent,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.white, width: 1.4),
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+class _HandlePosition {
+  const _HandlePosition({this.left, this.right, this.top, this.bottom});
+
+  final double? left;
+  final double? right;
+  final double? top;
+  final double? bottom;
 }
 
 class _CentimeterGrid extends StatelessWidget {
@@ -1499,39 +2127,160 @@ class _CentimeterGridPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class _NumberSlider extends StatelessWidget {
-  const _NumberSlider({
+class _GuideLine {
+  const _GuideLine._(this.axis, this.percent);
+
+  const _GuideLine.vertical(double percent) : this._(Axis.vertical, percent);
+
+  const _GuideLine.horizontal(double percent)
+    : this._(Axis.horizontal, percent);
+
+  final Axis axis;
+  final double percent;
+}
+
+class _TemplateLayoutValidity {
+  const _TemplateLayoutValidity({
+    required this.isValid,
+    required this.resolvedStockFrameMm,
+    required this.message,
+  });
+
+  final bool isValid;
+  final Size resolvedStockFrameMm;
+  final String message;
+}
+
+class _TemplateLayoutHint extends StatelessWidget {
+  const _TemplateLayoutHint({required this.validity});
+
+  final _TemplateLayoutValidity validity;
+
+  @override
+  Widget build(BuildContext context) {
+    final background = validity.isValid
+        ? const Color(0xFFF0F7F4)
+        : const Color(0xFFFFF1F0);
+    final border = validity.isValid
+        ? const Color(0xFFB7D6C2)
+        : const Color(0xFFF3B4AF);
+    final foreground = validity.isValid
+        ? const Color(0xFF1F5C3F)
+        : const Color(0xFF9F1D18);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: border),
+      ),
+      child: Text(
+        validity.message,
+        style: TextStyle(
+          color: foreground,
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+}
+
+class _GuideLinesPainter extends CustomPainter {
+  const _GuideLinesPainter({
+    required this.guides,
+    required this.canvasWidth,
+    required this.canvasHeight,
+  });
+
+  final List<_GuideLine> guides;
+  final double canvasWidth;
+  final double canvasHeight;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFF8B5CF6)
+      ..strokeWidth = 1.2;
+    for (final guide in guides) {
+      if (guide.axis == Axis.vertical) {
+        _drawDashedLine(
+          canvas,
+          Offset(guide.percent * canvasWidth, 0),
+          Offset(guide.percent * canvasWidth, canvasHeight),
+          paint,
+        );
+      } else {
+        _drawDashedLine(
+          canvas,
+          Offset(0, guide.percent * canvasHeight),
+          Offset(canvasWidth, guide.percent * canvasHeight),
+          paint,
+        );
+      }
+    }
+  }
+
+  void _drawDashedLine(Canvas canvas, Offset start, Offset end, Paint paint) {
+    const dash = 6.0;
+    const gap = 4.0;
+    final total = (end - start).distance;
+    final direction = (end - start) / total;
+    var drawn = 0.0;
+    while (drawn < total) {
+      final currentStart = start + direction * drawn;
+      final currentEnd = start + direction * math.min(drawn + dash, total);
+      canvas.drawLine(currentStart, currentEnd, paint);
+      drawn += dash + gap;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _GuideLinesPainter oldDelegate) =>
+      oldDelegate.guides != guides;
+}
+
+class _DecimalInputField extends StatelessWidget {
+  const _DecimalInputField({
     required this.label,
     required this.value,
     required this.min,
     required this.max,
-    required this.divisions,
     required this.suffix,
-    required this.onChanged,
+    required this.onSubmitted,
   });
 
   final String label;
   final double value;
   final double min;
   final double max;
-  final int divisions;
   final String suffix;
-  final ValueChanged<double> onChanged;
+  final ValueChanged<double> onSubmitted;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('$label: ${value.toStringAsFixed(1)}$suffix'),
-        Slider(
-          value: value.clamp(min, max).toDouble(),
-          min: min,
-          max: max,
-          divisions: divisions,
-          onChanged: onChanged,
-        ),
-      ],
+    final controller = TextEditingController(
+      text: value == value.roundToDouble()
+          ? value.toStringAsFixed(0)
+          : value.toStringAsFixed(1),
+    );
+    controller.selection = TextSelection.collapsed(
+      offset: controller.text.length,
+    );
+    return TextFormField(
+      controller: controller,
+      decoration: InputDecoration(
+        labelText:
+            '$label [Range: ${min.toStringAsFixed(min == min.roundToDouble() ? 0 : 1)} - ${max.toStringAsFixed(max == max.roundToDouble() ? 0 : 1)}]${suffix.isEmpty ? '' : ' $suffix'}',
+      ),
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      onFieldSubmitted: (input) {
+        final parsed = double.tryParse(input.trim());
+        if (parsed == null) {
+          return;
+        }
+        onSubmitted(parsed.clamp(min, max).toDouble());
+      },
     );
   }
 }

@@ -275,13 +275,18 @@ const db = new sqlite3.Database(DB_PATH, (error) => {
   console.log(`SQLite database opened at ${DB_PATH}`);
 });
 
-process.on('uncaughtException', (error) => {
-  console.error('Uncaught exception:', error);
-});
+const PROCESS_HANDLER_GUARD = '__paperProcessHandlersRegistered';
+if (!globalThis[PROCESS_HANDLER_GUARD]) {
+  process.on('uncaughtException', (error) => {
+    console.error('Uncaught exception:', error);
+  });
 
-process.on('unhandledRejection', (error) => {
-  console.error('Unhandled rejection:', error);
-});
+  process.on('unhandledRejection', (error) => {
+    console.error('Unhandled rejection:', error);
+  });
+
+  globalThis[PROCESS_HANDLER_GUARD] = true;
+}
 
 function resolveJwtSecret() {
   const configured = String(process.env.PAPER_JWT_SECRET || '').trim();
@@ -2452,6 +2457,9 @@ async function initDb() {
       rotation_degrees REAL NOT NULL DEFAULT 0,
       global_offset_x_mm REAL NOT NULL DEFAULT 0,
       global_offset_y_mm REAL NOT NULL DEFAULT 0,
+      stock_size TEXT NOT NULL DEFAULT 'A4',
+      paper_size TEXT NOT NULL DEFAULT 'A4',
+      n_up_layout INTEGER NOT NULL DEFAULT 1,
       is_active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -2468,6 +2476,8 @@ async function initDb() {
       asset_object_key TEXT NOT NULL DEFAULT '',
       asset_width_px INTEGER NOT NULL DEFAULT 0,
       asset_height_px INTEGER NOT NULL DEFAULT 0,
+      width_mm REAL NOT NULL DEFAULT 80,
+      height_mm REAL NOT NULL DEFAULT 12,
       image_width_mm REAL NOT NULL DEFAULT 35,
       image_height_mm REAL NOT NULL DEFAULT 20,
       lock_aspect_ratio INTEGER NOT NULL DEFAULT 1,
@@ -2480,7 +2490,10 @@ async function initDb() {
       letter_spacing REAL NOT NULL DEFAULT 0,
       max_chars INTEGER NOT NULL DEFAULT 0,
       max_width_mm REAL NOT NULL DEFAULT 80,
+      min_font_size REAL NOT NULL DEFAULT 6,
+      min_rows INTEGER NOT NULL DEFAULT 0,
       max_rows INTEGER NOT NULL DEFAULT 0,
+      table_height_mm REAL NOT NULL DEFAULT 60,
       row_height_mm REAL NOT NULL DEFAULT 6,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -2723,18 +2736,26 @@ async function initDb() {
   await ensureColumnExists('challan_templates', 'rotation_degrees', 'REAL NOT NULL DEFAULT 0');
   await ensureColumnExists('challan_templates', 'global_offset_x_mm', 'REAL NOT NULL DEFAULT 0');
   await ensureColumnExists('challan_templates', 'global_offset_y_mm', 'REAL NOT NULL DEFAULT 0');
+  await ensureColumnExists('challan_templates', 'stock_size', "TEXT NOT NULL DEFAULT 'A4'");
+  await ensureColumnExists('challan_templates', 'paper_size', "TEXT NOT NULL DEFAULT 'A4'");
+  await ensureColumnExists('challan_templates', 'n_up_layout', 'INTEGER NOT NULL DEFAULT 1');
   await ensureColumnExists('challan_templates', 'is_active', 'INTEGER NOT NULL DEFAULT 1');
   await ensureColumnExists('challan_template_mappings', 'field_type', "TEXT NOT NULL DEFAULT 'DYNAMIC'");
   await ensureColumnExists('challan_template_mappings', 'field_value', "TEXT NOT NULL DEFAULT ''");
   await ensureColumnExists('challan_template_mappings', 'asset_object_key', "TEXT NOT NULL DEFAULT ''");
   await ensureColumnExists('challan_template_mappings', 'asset_width_px', 'INTEGER NOT NULL DEFAULT 0');
   await ensureColumnExists('challan_template_mappings', 'asset_height_px', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumnExists('challan_template_mappings', 'width_mm', 'REAL NOT NULL DEFAULT 80');
+  await ensureColumnExists('challan_template_mappings', 'height_mm', 'REAL NOT NULL DEFAULT 12');
   await ensureColumnExists('challan_template_mappings', 'image_width_mm', 'REAL NOT NULL DEFAULT 35');
   await ensureColumnExists('challan_template_mappings', 'image_height_mm', 'REAL NOT NULL DEFAULT 20');
   await ensureColumnExists('challan_template_mappings', 'lock_aspect_ratio', 'INTEGER NOT NULL DEFAULT 1');
   await ensureColumnExists('challan_template_mappings', 'text_color', "TEXT NOT NULL DEFAULT 'black'");
   await ensureColumnExists('challan_template_mappings', 'max_width_mm', 'REAL NOT NULL DEFAULT 80');
+  await ensureColumnExists('challan_template_mappings', 'min_font_size', 'REAL NOT NULL DEFAULT 6');
+  await ensureColumnExists('challan_template_mappings', 'min_rows', 'INTEGER NOT NULL DEFAULT 0');
   await ensureColumnExists('challan_template_mappings', 'max_rows', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumnExists('challan_template_mappings', 'table_height_mm', 'REAL NOT NULL DEFAULT 60');
   await run('CREATE INDEX IF NOT EXISTS idx_challan_templates_party ON challan_templates(party_type, party_id, challan_type, is_active)');
   await run('CREATE INDEX IF NOT EXISTS idx_challan_template_mappings_template_id ON challan_template_mappings(template_id)');
 
@@ -4624,6 +4645,18 @@ function rowToChallanTemplateMappingDto(row) {
     assetImageUrl: row.asset_image_url || null,
     assetWidthPx: Number(row.asset_width_px || 0),
     assetHeightPx: Number(row.asset_height_px || 0),
+    widthMm: Number(
+      row.width_mm ||
+        (String(row.field_type || 'DYNAMIC').toUpperCase() === 'IMAGE'
+          ? row.image_width_mm || 35
+          : row.max_width_mm || 80),
+    ),
+    heightMm: Number(
+      row.height_mm ||
+        (String(row.field_type || 'DYNAMIC').toUpperCase() === 'IMAGE'
+          ? row.image_height_mm || 20
+          : 12),
+    ),
     imageWidthMm: Number(row.image_width_mm || 35),
     imageHeightMm: Number(row.image_height_mm || 20),
     lockAspectRatio: Number(row.lock_aspect_ratio ?? 1) === 1,
@@ -4636,7 +4669,10 @@ function rowToChallanTemplateMappingDto(row) {
     letterSpacing: Number(row.letter_spacing || 0),
     maxChars: Number(row.max_chars || 0),
     maxWidthMm: Number(row.max_width_mm || 80),
+    minFontSize: Number(row.min_font_size || 6),
+    minRows: Number(row.min_rows || 0),
     maxRows: Number(row.max_rows || 0),
+    tableHeightMm: Number(row.table_height_mm || 60),
     rowHeightMm: Number(row.row_height_mm || 6),
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null,
@@ -4702,6 +4738,9 @@ async function rowToChallanTemplateDto(row, { includeMappings = true } = {}) {
     rotationDegrees: Number(row.rotation_degrees || 0),
     globalOffsetXmm: Number(row.global_offset_x_mm || 0),
     globalOffsetYmm: Number(row.global_offset_y_mm || 0),
+    stockSize: row.stock_size || row.paper_size || 'A4',
+    paperSize: row.paper_size || 'A4',
+    nUpLayout: Number(row.n_up_layout || 1),
     isActive: Number(row.is_active || 0) === 1,
     mappings: mappedDtos,
     createdAt: row.created_at || null,
@@ -4891,6 +4930,21 @@ function normalizeTemplateFieldType(value) {
   return 'DYNAMIC';
 }
 
+function normalizeTemplatePaperSize(value) {
+  const normalized = String(value || 'A4').trim().toUpperCase();
+  return ['A3', 'A4', 'A5'].includes(normalized) ? normalized : 'A4';
+}
+
+function normalizeTemplateStockSize(value, fallback = 'A4') {
+  const normalized = String(value || fallback).trim().toUpperCase();
+  return ['A3', 'A4', 'A5'].includes(normalized) ? normalized : fallback;
+}
+
+function normalizeTemplateNUpLayout(value) {
+  const numeric = Math.round(Number(value || 1));
+  return [1, 2, 4].includes(numeric) ? numeric : 1;
+}
+
 function normalizeTemplateTextColor(value) {
   const normalized = String(value || 'black').trim().toLowerCase();
   return ['black', 'blue', 'red'].includes(normalized) ? normalized : 'black';
@@ -4945,6 +4999,24 @@ function normalizeChallanTemplateMappings(mappings = []) {
               0,
             ),
           ),
+        ),
+        widthMm: normalizeTemplateNumber(
+          mapping?.widthMm ??
+            mapping?.width_mm ??
+            (fieldType === 'IMAGE'
+              ? mapping?.imageWidthMm ?? mapping?.image_width_mm
+              : mapping?.maxWidthMm ?? mapping?.max_width_mm),
+          fieldType === 'IMAGE' ? 35 : 80,
+          { min: 2, max: 210 },
+        ),
+        heightMm: normalizeTemplateNumber(
+          mapping?.heightMm ??
+            mapping?.height_mm ??
+            (fieldType === 'IMAGE'
+              ? mapping?.imageHeightMm ?? mapping?.image_height_mm
+              : 12),
+          fieldType === 'IMAGE' ? 20 : 12,
+          { min: 2, max: 297 },
         ),
         imageWidthMm: normalizeTemplateNumber(
           mapping?.imageWidthMm ?? mapping?.image_width_mm,
@@ -5007,6 +5079,20 @@ function normalizeChallanTemplateMappings(mappings = []) {
           80,
           { min: 5, max: 210 },
         ),
+        minFontSize: normalizeTemplateNumber(
+          mapping?.minFontSize ?? mapping?.min_font_size,
+          6,
+          { min: 6, max: 32 },
+        ),
+        minRows: Math.max(
+          0,
+          Math.round(
+            normalizeTemplateNumber(
+              mapping?.minRows ?? mapping?.min_rows,
+              0,
+            ),
+          ),
+        ),
         maxRows: Math.max(
           0,
           Math.round(
@@ -5015,6 +5101,11 @@ function normalizeChallanTemplateMappings(mappings = []) {
               0,
             ),
           ),
+        ),
+        tableHeightMm: normalizeTemplateNumber(
+          mapping?.tableHeightMm ?? mapping?.table_height_mm,
+          60,
+          { min: 5, max: 297 },
         ),
         rowHeightMm: normalizeTemplateNumber(
           mapping?.rowHeightMm ?? mapping?.row_height_mm,
@@ -5091,6 +5182,16 @@ async function saveChallanTemplate(input = {}, id = null) {
     0,
     { min: -50, max: 50 },
   );
+  const paperSize = normalizeTemplatePaperSize(
+    input.paperSize ?? input.paper_size,
+  );
+  const stockSize = normalizeTemplateStockSize(
+    input.stockSize ?? input.stock_size,
+    paperSize,
+  );
+  const nUpLayout = normalizeTemplateNUpLayout(
+    input.nUpLayout ?? input.n_up_layout,
+  );
   const isActive = input.isActive ?? input.is_active ?? true;
   const mappings = normalizeChallanTemplateMappings(input.mappings || []);
 
@@ -5109,6 +5210,7 @@ async function saveChallanTemplate(input = {}, id = null) {
     error.statusCode = 400;
     throw error;
   }
+  validateTemplateSheetLayout({ stockSize, paperSize, nUpLayout });
 
   const partyRow = partyType === 'client'
     ? await get('SELECT id FROM clients WHERE id = ? AND is_archived = 0', [partyId])
@@ -5136,7 +5238,7 @@ async function saveChallanTemplate(input = {}, id = null) {
         SET name = ?, party_type = ?, party_id = ?, challan_type = ?,
             background_object_key = ?, canvas_width = ?, canvas_height = ?,
             rotation_degrees = ?, global_offset_x_mm = ?, global_offset_y_mm = ?,
-            is_active = ?, updated_at = ?
+            stock_size = ?, paper_size = ?, n_up_layout = ?, is_active = ?, updated_at = ?
         WHERE id = ?
         `,
         [
@@ -5150,6 +5252,9 @@ async function saveChallanTemplate(input = {}, id = null) {
           rotationDegrees,
           globalOffsetXmm,
           globalOffsetYmm,
+          stockSize,
+          paperSize,
+          nUpLayout,
           isActive ? 1 : 0,
           now,
           templateId,
@@ -5164,8 +5269,8 @@ async function saveChallanTemplate(input = {}, id = null) {
         INSERT INTO challan_templates (
           name, party_type, party_id, challan_type, background_object_key,
           canvas_width, canvas_height, rotation_degrees, global_offset_x_mm,
-          global_offset_y_mm, is_active, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          global_offset_y_mm, stock_size, paper_size, n_up_layout, is_active, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           name,
@@ -5178,6 +5283,9 @@ async function saveChallanTemplate(input = {}, id = null) {
           rotationDegrees,
           globalOffsetXmm,
           globalOffsetYmm,
+          stockSize,
+          paperSize,
+          nUpLayout,
           isActive ? 1 : 0,
           now,
           now,
@@ -5207,11 +5315,12 @@ async function saveChallanTemplate(input = {}, id = null) {
         `
         INSERT INTO challan_template_mappings (
           template_id, field_type, field_key, field_value, asset_object_key,
-          asset_width_px, asset_height_px, image_width_mm, image_height_mm,
+          asset_width_px, asset_height_px, width_mm, height_mm, image_width_mm, image_height_mm,
           lock_aspect_ratio, x_percent, y_percent, font_size, font_weight,
           alignment, text_color, letter_spacing, max_chars, max_width_mm,
-          max_rows, row_height_mm, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          min_font_size, min_rows, max_rows, table_height_mm, row_height_mm,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           templateId,
@@ -5221,6 +5330,8 @@ async function saveChallanTemplate(input = {}, id = null) {
           mapping.assetObjectKey,
           mapping.assetWidthPx,
           mapping.assetHeightPx,
+          mapping.widthMm,
+          mapping.heightMm,
           mapping.imageWidthMm,
           mapping.imageHeightMm,
           mapping.lockAspectRatio ? 1 : 0,
@@ -5233,7 +5344,10 @@ async function saveChallanTemplate(input = {}, id = null) {
           mapping.letterSpacing,
           mapping.maxChars,
           mapping.maxWidthMm,
+          mapping.minFontSize,
+          mapping.minRows,
           mapping.maxRows,
+          mapping.tableHeightMm,
           mapping.rowHeightMm,
           now,
           now,
@@ -5360,6 +5474,107 @@ function mmToPdfPoints(value) {
   return Number(value || 0) * 72 / 25.4;
 }
 
+function paperSizeMmForTemplate(value) {
+  const normalized = normalizeTemplatePaperSize(value);
+  if (normalized === 'A3') {
+    return { widthMm: 297, heightMm: 420 };
+  }
+  if (normalized === 'A5') {
+    return { widthMm: 148.5, heightMm: 210 };
+  }
+  return { widthMm: 210, heightMm: 297 };
+}
+
+function slotFramesForTemplate(paperSize, nUpLayout) {
+  const page = paperSizeMmForTemplate(paperSize);
+  if (Number(nUpLayout || 1) === 2) {
+    return [
+      { xMm: 0, yMm: 0, widthMm: page.widthMm, heightMm: page.heightMm / 2 },
+      {
+        xMm: 0,
+        yMm: page.heightMm / 2,
+        widthMm: page.widthMm,
+        heightMm: page.heightMm / 2,
+      },
+    ];
+  }
+  if (Number(nUpLayout || 1) === 4) {
+    return [
+      { xMm: 0, yMm: 0, widthMm: page.widthMm / 2, heightMm: page.heightMm / 2 },
+      {
+        xMm: page.widthMm / 2,
+        yMm: 0,
+        widthMm: page.widthMm / 2,
+        heightMm: page.heightMm / 2,
+      },
+      {
+        xMm: 0,
+        yMm: page.heightMm / 2,
+        widthMm: page.widthMm / 2,
+        heightMm: page.heightMm / 2,
+      },
+      {
+        xMm: page.widthMm / 2,
+        yMm: page.heightMm / 2,
+        widthMm: page.widthMm / 2,
+        heightMm: page.heightMm / 2,
+      },
+    ];
+  }
+  return [{ xMm: 0, yMm: 0, widthMm: page.widthMm, heightMm: page.heightMm }];
+}
+
+function resolveStockFrameForSlot(stockSize, slot) {
+  const stock = paperSizeMmForTemplate(stockSize);
+  if (stock.widthMm <= slot.widthMm && stock.heightMm <= slot.heightMm) {
+    return {
+      widthMm: stock.widthMm,
+      heightMm: stock.heightMm,
+      rotated: false,
+    };
+  }
+  if (stock.heightMm <= slot.widthMm && stock.widthMm <= slot.heightMm) {
+    return {
+      widthMm: stock.heightMm,
+      heightMm: stock.widthMm,
+      rotated: true,
+    };
+  }
+  return null;
+}
+
+function validateTemplateSheetLayout({ stockSize, paperSize, nUpLayout }) {
+  const slots = slotFramesForTemplate(paperSize, nUpLayout);
+  const resolved = resolveStockFrameForSlot(stockSize, slots[0]);
+  if (!resolved) {
+    const error = new Error(
+      `Stock size ${stockSize} does not fit on ${paperSize} with ${nUpLayout}-up layout.`,
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+  return {
+    page: paperSizeMmForTemplate(paperSize),
+    slots,
+    stockFrame: resolved,
+  };
+}
+
+function layoutFramesForTemplate({ stockSize, paperSize, nUpLayout }) {
+  const layout = validateTemplateSheetLayout({ stockSize, paperSize, nUpLayout });
+  return {
+    page: layout.page,
+    frames: layout.slots.map((slot) => ({
+      xMm: slot.xMm + (slot.widthMm - layout.stockFrame.widthMm) / 2,
+      yMm: slot.yMm + (slot.heightMm - layout.stockFrame.heightMm) / 2,
+      widthMm: layout.stockFrame.widthMm,
+      heightMm: layout.stockFrame.heightMm,
+    })),
+    rotatedStock: layout.stockFrame.rotated,
+    slots: layout.slots,
+  };
+}
+
 function templateValue(source, camelKey, snakeKey, fallback = null) {
   if (!source) {
     return fallback;
@@ -5395,8 +5610,89 @@ async function buildChallanTemplateSnapshot(templateRow) {
     rotationDegrees: dto.rotationDegrees,
     globalOffsetXmm: dto.globalOffsetXmm,
     globalOffsetYmm: dto.globalOffsetYmm,
+    stockSize: dto.stockSize,
+    paperSize: dto.paperSize,
+    nUpLayout: dto.nUpLayout,
     mappings: dto.mappings,
     snapshottedAt: new Date().toISOString(),
+  };
+}
+
+function templateBoxWidthMm(mapping, frameWidthMm) {
+  return normalizeTemplateNumber(
+    templateValue(
+      mapping,
+      'widthMm',
+      'width_mm',
+      templateValue(mapping, 'fieldType', 'field_type', 'DYNAMIC') === 'IMAGE'
+        ? templateNumberValue(mapping, 'imageWidthMm', 'image_width_mm', 35)
+        : templateNumberValue(mapping, 'maxWidthMm', 'max_width_mm', 80),
+    ),
+    frameWidthMm,
+    { min: 2, max: frameWidthMm },
+  );
+}
+
+function templateBoxHeightMm(mapping, frameHeightMm) {
+  return normalizeTemplateNumber(
+    templateValue(
+      mapping,
+      'heightMm',
+      'height_mm',
+      templateValue(mapping, 'fieldType', 'field_type', 'DYNAMIC') === 'IMAGE'
+        ? templateNumberValue(mapping, 'imageHeightMm', 'image_height_mm', 20)
+        : 12,
+    ),
+    frameHeightMm,
+    { min: 2, max: frameHeightMm },
+  );
+}
+
+function buildTemplateTestChallanDto() {
+  return {
+    id: 0,
+    type: 'delivery',
+    order_id: null,
+    order_ids: [],
+    order_no: 'SAMPLE-ORDER-001',
+    order_nos: ['SAMPLE-ORDER-001'],
+    client_id: 0,
+    challan_no: 'DC-TEST-0001',
+    date: 'DD/MM/YYYY',
+    location: 'Sample Warehouse',
+    customer_name: 'SAMPLE ENTERPRISE PVT LTD',
+    customer_gstin: '27ABCDE1234F1Z5',
+    vendor_id: null,
+    vendor_name: '',
+    vendor_gstin: '',
+    source_reference: 'TEST-PRINT',
+    company_profile_snapshot: null,
+    notes: 'Sample preview for alignment calibration.',
+    status: 'draft',
+    created_by: null,
+    updated_by: null,
+    created_at: null,
+    updated_at: null,
+    items: [
+      {
+        particulars: 'SAMPLE PRODUCT DESCRIPTION 101',
+        hsn_code: '1234',
+        quantity_pcs: '9,999',
+        weight: '120.50',
+      },
+      {
+        particulars: 'SAMPLE PRODUCT DESCRIPTION 202 WITH LONGER WRAP TEXT',
+        hsn_code: '5678',
+        quantity_pcs: '240',
+        weight: '18.25',
+      },
+      {
+        particulars: 'SAMPLE PRODUCT DESCRIPTION 303',
+        hsn_code: '9101',
+        quantity_pcs: '75',
+        weight: '8.00',
+      },
+    ],
   };
 }
 
@@ -5405,11 +5701,12 @@ async function generateChallanTemplatePdf({
   templateRow,
   templateSnapshot = null,
   mode = 'digital',
+  challanDtoOverride = null,
 }) {
   const normalizedMode = String(mode || 'digital').trim().toLowerCase() === 'overprint'
     ? 'overprint'
     : 'digital';
-  const challanDto = await rowToDeliveryChallanDto(challanRow);
+  const challanDto = challanDtoOverride || await rowToDeliveryChallanDto(challanRow);
   const templateSource = templateSnapshot || templateRow;
   const mappings = templateSnapshot
     ? (Array.isArray(templateSnapshot.mappings) ? templateSnapshot.mappings : [])
@@ -5422,10 +5719,23 @@ async function generateChallanTemplatePdf({
         `,
         [templateRow.id],
       );
-  const pageWidth = mmToPdfPoints(210);
-  const pageHeight = mmToPdfPoints(297);
+  const paperSize = templateValue(templateSource, 'paperSize', 'paper_size', 'A4');
+  const stockSize = templateValue(
+    templateSource,
+    'stockSize',
+    'stock_size',
+    paperSize,
+  );
+  const nUpLayout = normalizeTemplateNUpLayout(
+    templateValue(templateSource, 'nUpLayout', 'n_up_layout', 1),
+  );
+  const layout = layoutFramesForTemplate({ stockSize, paperSize, nUpLayout });
+  const pageSize = layout.page;
+  const frames = layout.frames;
+  const pageWidth = mmToPdfPoints(pageSize.widthMm);
+  const pageHeight = mmToPdfPoints(pageSize.heightMm);
   const doc = new PDFDocument({
-    size: 'A4',
+    size: [pageWidth, pageHeight],
     margin: 0,
     autoFirstPage: false,
   });
@@ -5439,99 +5749,132 @@ async function generateChallanTemplatePdf({
   const fields = challanTemplateScalarFields(challanDto);
   const items = Array.isArray(challanDto.items) ? challanDto.items : [];
   const tableFields = new Set(['item_particulars', 'hsn', 'qty_pcs', 'weight']);
-  const maxRows = mappings.reduce((limit, mapping) => {
-    if (!tableFields.has(String(templateValue(mapping, 'fieldKey', 'field_key', '')))) {
-      return limit;
-    }
-    const value = templateNumberValue(mapping, 'maxRows', 'max_rows', 0);
-    return value > 0 ? Math.max(limit, value) : limit;
-  }, 0);
-  const pageCount = maxRows > 0 ? Math.max(1, Math.ceil(items.length / maxRows)) : 1;
+  const tableFrame = mappings.find(
+    (mapping) => String(templateValue(mapping, 'fieldKey', 'field_key', '')) === 'item_particulars',
+  );
+  const frameRowPitchMm = templateNumberValue(tableFrame, 'rowHeightMm', 'row_height_mm', 6);
+  const frameTableHeightMm = templateNumberValue(tableFrame, 'tableHeightMm', 'table_height_mm', 60);
+  const frameMinRows = Math.max(
+    0,
+    Math.round(templateNumberValue(tableFrame, 'minRows', 'min_rows', 0)),
+  );
+  const explicitMaxRows = Math.max(
+    0,
+    Math.round(templateNumberValue(tableFrame, 'maxRows', 'max_rows', 0)),
+  );
+  const computedRows = frameRowPitchMm > 0
+    ? Math.max(1, Math.floor(frameTableHeightMm / frameRowPitchMm))
+    : Math.max(1, explicitMaxRows || items.length || 1);
+  const rowsPerPage = explicitMaxRows > 0 ? Math.min(explicitMaxRows, computedRows) : computedRows;
+  const pageCount = Math.max(1, Math.ceil(Math.max(items.length, frameMinRows, 1) / rowsPerPage));
 
-  const drawPage = async (pageIndex) => {
-    doc.addPage({ size: 'A4', margin: 0 });
-    if (normalizedMode === 'digital') {
-      const backgroundKey = templateValue(
-        templateSource,
-        'backgroundObjectKey',
-        'background_object_key',
-        '',
-      );
-      const background = await readS3ObjectBuffer(backgroundKey);
-      doc.save();
-      doc.opacity(0.3);
-      const rotation = templateNumberValue(templateSource, 'rotationDegrees', 'rotation_degrees', 0);
-      if (rotation) {
-        doc.rotate(rotation, { origin: [pageWidth / 2, pageHeight / 2] });
-      }
-      doc.image(background, 0, 0, { width: pageWidth, height: pageHeight });
-      doc.restore();
-      doc.opacity(1);
+  const drawCutGuides = () => {
+    if (layout.slots.length <= 1) {
+      return;
+    }
+    doc.save();
+    doc.dash(4, { space: 4 });
+    doc.lineWidth(0.7).strokeColor('#8B5CF6').opacity(0.35);
+    if (nUpLayout === 2) {
+      const y = mmToPdfPoints(layout.slots[1].yMm);
+      doc.moveTo(0, y).lineTo(pageWidth, y).stroke();
+    } else if (nUpLayout === 4) {
+      const x = mmToPdfPoints(layout.slots[1].xMm);
+      const y = mmToPdfPoints(layout.slots[2].yMm);
+      doc.moveTo(x, 0).lineTo(x, pageHeight).stroke();
+      doc.moveTo(0, y).lineTo(pageWidth, y).stroke();
+    }
+    doc.undash();
+    doc.restore();
+  };
+
+  const drawSingleChallan = async (pageItems, frame) => {
+    const backgroundKey = templateValue(
+      templateSource,
+      'backgroundObjectKey',
+      'background_object_key',
+      '',
+    );
+    if (normalizedMode === 'digital' && backgroundKey) {
+      try {
+        const background = await readS3ObjectBuffer(backgroundKey);
+        doc.save();
+        doc.opacity(0.3);
+        doc.image(background, mmToPdfPoints(frame.xMm), mmToPdfPoints(frame.yMm), {
+          width: mmToPdfPoints(frame.widthMm),
+          height: mmToPdfPoints(frame.heightMm),
+        });
+        doc.restore();
+      } catch (_) {}
     }
 
-    const pageItems = maxRows > 0
-      ? items.slice(pageIndex * maxRows, pageIndex * maxRows + maxRows)
-      : items;
     for (const mapping of mappings) {
       const fieldKey = String(templateValue(mapping, 'fieldKey', 'field_key', ''));
       const fieldType = String(templateValue(mapping, 'fieldType', 'field_type', 'DYNAMIC')).toUpperCase();
-      const x = mmToPdfPoints(
-        templateNumberValue(mapping, 'xPercent', 'x_percent', 0) * 210 +
-          templateNumberValue(templateSource, 'globalOffsetXmm', 'global_offset_x_mm', 0),
-      );
-      const baseY = mmToPdfPoints(
-        templateNumberValue(mapping, 'yPercent', 'y_percent', 0) * 297 +
-          templateNumberValue(templateSource, 'globalOffsetYmm', 'global_offset_y_mm', 0),
-      );
+      const xMm =
+        frame.xMm +
+        templateNumberValue(mapping, 'xPercent', 'x_percent', 0) * frame.widthMm +
+        templateNumberValue(templateSource, 'globalOffsetXmm', 'global_offset_x_mm', 0);
+      const yMm =
+        frame.yMm +
+        templateNumberValue(mapping, 'yPercent', 'y_percent', 0) * frame.heightMm +
+        templateNumberValue(templateSource, 'globalOffsetYmm', 'global_offset_y_mm', 0);
+      const widthMm = templateBoxWidthMm(mapping, frame.widthMm);
+      const heightMm = templateBoxHeightMm(mapping, frame.heightMm);
       if (fieldType === 'IMAGE') {
-        if (pageIndex > 0) {
-          continue;
-        }
         const objectKey = String(templateValue(mapping, 'assetObjectKey', 'asset_object_key', '') || '');
         if (!objectKey) {
           continue;
         }
-        const asset = await readS3ObjectBuffer(objectKey);
-        doc.image(asset, x, baseY, {
-          width: mmToPdfPoints(templateNumberValue(mapping, 'imageWidthMm', 'image_width_mm', 35)),
-          height: mmToPdfPoints(templateNumberValue(mapping, 'imageHeightMm', 'image_height_mm', 20)),
-        });
+        try {
+          const asset = await readS3ObjectBuffer(objectKey);
+          doc.image(asset, mmToPdfPoints(xMm), mmToPdfPoints(yMm), {
+            width: mmToPdfPoints(widthMm),
+            height: mmToPdfPoints(heightMm),
+          });
+        } catch (_) {}
         continue;
       }
+
       const fontSize = templateNumberValue(mapping, 'fontSize', 'font_size', 10);
+      const minFontSize = templateNumberValue(mapping, 'minFontSize', 'min_font_size', 6);
       const fontName = String(templateValue(mapping, 'fontWeight', 'font_weight', '')).toLowerCase() === 'bold'
         ? 'Helvetica-Bold'
         : 'Helvetica';
       const alignment = templateValue(mapping, 'alignment', 'alignment', 'left');
-      const align = ['left', 'center', 'right'].includes(alignment)
-        ? alignment
-        : 'left';
-      const maxWidth = mmToPdfPoints(templateNumberValue(mapping, 'maxWidthMm', 'max_width_mm', 80));
+      const align = ['left', 'center', 'right'].includes(alignment) ? alignment : 'left';
+      const rowPitchMm = templateNumberValue(mapping, 'rowHeightMm', 'row_height_mm', frameRowPitchMm);
+      const fitFontSize = tableFields.has(fieldKey)
+        ? Math.max(minFontSize, Math.min(fontSize, Math.max(minFontSize, rowPitchMm * 2.2)))
+        : fontSize;
       const textOptions = {
-        width: maxWidth,
+        width: mmToPdfPoints(widthMm),
+        height: mmToPdfPoints(heightMm),
         align,
         characterSpacing: templateNumberValue(mapping, 'letterSpacing', 'letter_spacing', 0),
         lineBreak: true,
       };
-      doc.font(fontName).fontSize(fontSize).fillColor(
+      doc.font(fontName).fontSize(fitFontSize).fillColor(
         pdfColorForTemplate(templateValue(mapping, 'textColor', 'text_color', 'black')),
       );
       if (tableFields.has(fieldKey)) {
-        const rowHeight = mmToPdfPoints(templateNumberValue(mapping, 'rowHeightMm', 'row_height_mm', 6));
-        pageItems.forEach((item, index) => {
+        const rowHeight = mmToPdfPoints(rowPitchMm);
+        const rowCount = Math.max(pageItems.length, frameMinRows);
+        for (let index = 0; index < rowCount; index += 1) {
+          const item = pageItems[index];
+          const value = item
+            ? truncateTemplateText(
+                itemTableValueForField(fieldKey, item),
+                templateNumberValue(mapping, 'maxChars', 'max_chars', 0),
+              )
+            : '';
           doc.text(
-            truncateTemplateText(
-              itemTableValueForField(fieldKey, item),
-              templateNumberValue(mapping, 'maxChars', 'max_chars', 0),
-            ),
-            x,
-            baseY + index * rowHeight,
+            value,
+            mmToPdfPoints(xMm),
+            mmToPdfPoints(yMm) + index * rowHeight,
             textOptions,
           );
-        });
-        continue;
-      }
-      if (pageIndex > 0) {
+        }
         continue;
       }
       const text = fieldType === 'STATIC'
@@ -5539,15 +5882,20 @@ async function generateChallanTemplatePdf({
         : fields[fieldKey] || '';
       doc.text(
         truncateTemplateText(text, templateNumberValue(mapping, 'maxChars', 'max_chars', 0)),
-        x,
-        baseY,
+        mmToPdfPoints(xMm),
+        mmToPdfPoints(yMm),
         textOptions,
       );
     }
   };
 
   for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
-    await drawPage(pageIndex);
+    doc.addPage({ size: [pageWidth, pageHeight], margin: 0 });
+    const pageItems = items.slice(pageIndex * rowsPerPage, pageIndex * rowsPerPage + rowsPerPage);
+    for (const frame of frames) {
+      await drawSingleChallan(pageItems, frame);
+    }
+    drawCutGuides();
   }
   doc.end();
   return finished;
@@ -13444,6 +13792,61 @@ app.post('/api/challan-templates/stamp-upload-complete', requirePermission('conf
   }
 });
 
+async function handleChallanTemplateTestPrint(req, res) {
+  try {
+    const templateId = Number(
+      req.body?.templateId ||
+        req.body?.template_id ||
+        req.query.templateId ||
+        req.query.template_id ||
+        0,
+    );
+    if (!templateId) {
+      res.status(400).json({
+        success: false,
+        message: 'Template id is required.',
+        error: 'Template id is required.',
+      });
+      return;
+    }
+    const template = await getChallanTemplateRowById(templateId);
+    if (!template) {
+      res.status(404).json({
+        success: false,
+        message: 'Challan template not found.',
+        error: 'Challan template not found.',
+      });
+      return;
+    }
+    const buffer = await generateChallanTemplatePdf({
+      challanRow: null,
+      challanDtoOverride: buildTemplateTestChallanDto(),
+      templateRow: template,
+      mode: req.body?.mode || req.query.mode,
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="challan-template-test-${templateId}.pdf"`,
+    );
+    res.send(buffer);
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message,
+      error: error.message,
+    });
+  }
+}
+
+app.post('/api/challan-templates/test-print', requirePermission('config.read'), async (req, res) => {
+  await handleChallanTemplateTestPrint(req, res);
+});
+
+app.get('/api/challan-templates/test-print', requirePermission('config.read'), async (req, res) => {
+  await handleChallanTemplateTestPrint(req, res);
+});
+
 app.get('/api/challans/:id/print-template-preview', requirePermission('config.read'), async (req, res) => {
   try {
     const challan = await getDeliveryChallanRowById(Number(req.params.id));
@@ -14896,6 +15299,7 @@ module.exports = {
   deleteChallanTemplate,
   createChallanTemplateUploadIntent,
   completeChallanTemplateUpload,
+  buildTemplateTestChallanDto,
   generateChallanTemplatePdf,
   createPoUploadIntent,
   completePoUpload,

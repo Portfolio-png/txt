@@ -79,6 +79,8 @@ abstract class ChallanRepository {
     int? templateId,
     required String mode,
   });
+
+  Uri templateTestPrintUri({required int templateId, required String mode});
 }
 
 typedef DeliveryChallanRepository = ChallanRepository;

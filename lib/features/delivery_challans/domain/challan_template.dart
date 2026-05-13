@@ -20,6 +20,8 @@ class ChallanTemplateMapping {
     required this.assetImageUrl,
     required this.assetWidthPx,
     required this.assetHeightPx,
+    required this.widthMm,
+    required this.heightMm,
     required this.imageWidthMm,
     required this.imageHeightMm,
     required this.lockAspectRatio,
@@ -32,7 +34,10 @@ class ChallanTemplateMapping {
     required this.letterSpacing,
     required this.maxChars,
     required this.maxWidthMm,
+    required this.minFontSize,
+    required this.minRows,
     required this.maxRows,
+    required this.tableHeightMm,
     required this.rowHeightMm,
   });
 
@@ -45,6 +50,8 @@ class ChallanTemplateMapping {
   final String? assetImageUrl;
   final int assetWidthPx;
   final int assetHeightPx;
+  final double widthMm;
+  final double heightMm;
   final double imageWidthMm;
   final double imageHeightMm;
   final bool lockAspectRatio;
@@ -57,7 +64,10 @@ class ChallanTemplateMapping {
   final double letterSpacing;
   final int maxChars;
   final double maxWidthMm;
+  final double minFontSize;
+  final int minRows;
   final int maxRows;
+  final double tableHeightMm;
   final double rowHeightMm;
 
   ChallanTemplateMapping copyWith({
@@ -70,6 +80,8 @@ class ChallanTemplateMapping {
     String? assetImageUrl,
     int? assetWidthPx,
     int? assetHeightPx,
+    double? widthMm,
+    double? heightMm,
     double? imageWidthMm,
     double? imageHeightMm,
     bool? lockAspectRatio,
@@ -82,7 +94,10 @@ class ChallanTemplateMapping {
     double? letterSpacing,
     int? maxChars,
     double? maxWidthMm,
+    double? minFontSize,
+    int? minRows,
     int? maxRows,
+    double? tableHeightMm,
     double? rowHeightMm,
   }) {
     return ChallanTemplateMapping(
@@ -95,6 +110,8 @@ class ChallanTemplateMapping {
       assetImageUrl: assetImageUrl ?? this.assetImageUrl,
       assetWidthPx: assetWidthPx ?? this.assetWidthPx,
       assetHeightPx: assetHeightPx ?? this.assetHeightPx,
+      widthMm: widthMm ?? this.widthMm,
+      heightMm: heightMm ?? this.heightMm,
       imageWidthMm: imageWidthMm ?? this.imageWidthMm,
       imageHeightMm: imageHeightMm ?? this.imageHeightMm,
       lockAspectRatio: lockAspectRatio ?? this.lockAspectRatio,
@@ -107,12 +124,29 @@ class ChallanTemplateMapping {
       letterSpacing: letterSpacing ?? this.letterSpacing,
       maxChars: maxChars ?? this.maxChars,
       maxWidthMm: maxWidthMm ?? this.maxWidthMm,
+      minFontSize: minFontSize ?? this.minFontSize,
+      minRows: minRows ?? this.minRows,
       maxRows: maxRows ?? this.maxRows,
+      tableHeightMm: tableHeightMm ?? this.tableHeightMm,
       rowHeightMm: rowHeightMm ?? this.rowHeightMm,
     );
   }
 
   factory ChallanTemplateMapping.fromJson(Map<String, dynamic> json) {
+    final fieldType =
+        (json['fieldType'] as String? ??
+                json['field_type'] as String? ??
+                'DYNAMIC')
+            .toUpperCase();
+    final imageWidthMm =
+        (json['imageWidthMm'] as num? ?? json['image_width_mm'] as num? ?? 35)
+            .toDouble();
+    final imageHeightMm =
+        (json['imageHeightMm'] as num? ?? json['image_height_mm'] as num? ?? 20)
+            .toDouble();
+    final maxWidthMm =
+        (json['maxWidthMm'] as num? ?? json['max_width_mm'] as num? ?? 80)
+            .toDouble();
     return ChallanTemplateMapping(
       id: json['id'] as int? ?? 0,
       templateId:
@@ -136,14 +170,18 @@ class ChallanTemplateMapping {
           json['assetWidthPx'] as int? ?? json['asset_width_px'] as int? ?? 0,
       assetHeightPx:
           json['assetHeightPx'] as int? ?? json['asset_height_px'] as int? ?? 0,
-      imageWidthMm:
-          (json['imageWidthMm'] as num? ?? json['image_width_mm'] as num? ?? 35)
+      widthMm:
+          (json['widthMm'] as num? ??
+                  json['width_mm'] as num? ??
+                  (fieldType == 'IMAGE' ? imageWidthMm : maxWidthMm))
               .toDouble(),
-      imageHeightMm:
-          (json['imageHeightMm'] as num? ??
-                  json['image_height_mm'] as num? ??
-                  20)
+      heightMm:
+          (json['heightMm'] as num? ??
+                  json['height_mm'] as num? ??
+                  (fieldType == 'IMAGE' ? imageHeightMm : 12))
               .toDouble(),
+      imageWidthMm: imageWidthMm,
+      imageHeightMm: imageHeightMm,
       lockAspectRatio:
           json['lockAspectRatio'] as bool? ??
           ((json['lock_aspect_ratio'] as num? ?? 1).toInt() == 1),
@@ -166,10 +204,17 @@ class ChallanTemplateMapping {
           (json['letterSpacing'] as num? ?? json['letter_spacing'] as num? ?? 0)
               .toDouble(),
       maxChars: json['maxChars'] as int? ?? json['max_chars'] as int? ?? 0,
-      maxWidthMm:
-          (json['maxWidthMm'] as num? ?? json['max_width_mm'] as num? ?? 80)
+      maxWidthMm: maxWidthMm,
+      minFontSize:
+          (json['minFontSize'] as num? ?? json['min_font_size'] as num? ?? 6)
               .toDouble(),
+      minRows: json['minRows'] as int? ?? json['min_rows'] as int? ?? 0,
       maxRows: json['maxRows'] as int? ?? json['max_rows'] as int? ?? 0,
+      tableHeightMm:
+          (json['tableHeightMm'] as num? ??
+                  json['table_height_mm'] as num? ??
+                  60)
+              .toDouble(),
       rowHeightMm:
           (json['rowHeightMm'] as num? ?? json['row_height_mm'] as num? ?? 6)
               .toDouble(),
@@ -187,6 +232,8 @@ class ChallanTemplateMapping {
       'assetImageUrl': assetImageUrl,
       'assetWidthPx': assetWidthPx,
       'assetHeightPx': assetHeightPx,
+      'widthMm': widthMm,
+      'heightMm': heightMm,
       'imageWidthMm': imageWidthMm,
       'imageHeightMm': imageHeightMm,
       'lockAspectRatio': lockAspectRatio,
@@ -199,7 +246,10 @@ class ChallanTemplateMapping {
       'letterSpacing': letterSpacing,
       'maxChars': maxChars,
       'maxWidthMm': maxWidthMm,
+      'minFontSize': minFontSize,
+      'minRows': minRows,
       'maxRows': maxRows,
+      'tableHeightMm': tableHeightMm,
       'rowHeightMm': rowHeightMm,
     };
   }
@@ -219,6 +269,9 @@ class ChallanTemplate {
     required this.rotationDegrees,
     required this.globalOffsetXmm,
     required this.globalOffsetYmm,
+    required this.stockSize,
+    required this.paperSize,
+    required this.nUpLayout,
     required this.isActive,
     required this.mappings,
   });
@@ -235,6 +288,9 @@ class ChallanTemplate {
   final double rotationDegrees;
   final double globalOffsetXmm;
   final double globalOffsetYmm;
+  final String stockSize;
+  final String paperSize;
+  final int nUpLayout;
   final bool isActive;
   final List<ChallanTemplateMapping> mappings;
 
@@ -275,6 +331,15 @@ class ChallanTemplate {
                   json['global_offset_y_mm'] as num? ??
                   0)
               .toDouble(),
+      stockSize:
+          json['stockSize'] as String? ??
+          json['stock_size'] as String? ??
+          json['paperSize'] as String? ??
+          json['paper_size'] as String? ??
+          'A4',
+      paperSize:
+          json['paperSize'] as String? ?? json['paper_size'] as String? ?? 'A4',
+      nUpLayout: json['nUpLayout'] as int? ?? json['n_up_layout'] as int? ?? 1,
       isActive:
           json['isActive'] as bool? ??
           ((json['is_active'] as num? ?? 1).toInt() == 1),
@@ -301,6 +366,9 @@ class ChallanTemplateInput {
     required this.rotationDegrees,
     required this.globalOffsetXmm,
     required this.globalOffsetYmm,
+    required this.stockSize,
+    required this.paperSize,
+    required this.nUpLayout,
     required this.isActive,
     required this.mappings,
   });
@@ -315,6 +383,9 @@ class ChallanTemplateInput {
   final double rotationDegrees;
   final double globalOffsetXmm;
   final double globalOffsetYmm;
+  final String stockSize;
+  final String paperSize;
+  final int nUpLayout;
   final bool isActive;
   final List<ChallanTemplateMapping> mappings;
 
@@ -330,6 +401,9 @@ class ChallanTemplateInput {
       'rotationDegrees': rotationDegrees,
       'globalOffsetXmm': globalOffsetXmm,
       'globalOffsetYmm': globalOffsetYmm,
+      'stockSize': stockSize,
+      'paperSize': paperSize,
+      'nUpLayout': nUpLayout,
       'isActive': isActive,
       'mappings': mappings.map((mapping) => mapping.toJson()).toList(),
     };

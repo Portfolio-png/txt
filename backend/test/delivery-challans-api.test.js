@@ -627,12 +627,17 @@ test('challan templates persist mappings and generate overprint pdf', async () =
       backgroundObjectKey: 'templates/active.png',
       canvasWidth: 1240,
       canvasHeight: 1754,
+      stockSize: 'A5',
+      paperSize: 'A4',
+      nUpLayout: 2,
       mappings: [
         {
           fieldKey: 'challan_no',
           xPercent: 0.1,
           yPercent: 0.1,
           fontSize: 10,
+          widthMm: 55,
+          heightMm: 16,
         },
         {
           fieldType: 'STATIC',
@@ -644,13 +649,20 @@ test('challan templates persist mappings and generate overprint pdf', async () =
           alignment: 'center',
           textColor: 'blue',
           maxWidthMm: 52,
+          widthMm: 52,
+          heightMm: 16,
         },
         {
           fieldKey: 'item_particulars',
           xPercent: 0.08,
           yPercent: 0.4,
           fontSize: 9,
+          widthMm: 120,
+          heightMm: 60,
+          minFontSize: 6,
+          minRows: 2,
           maxRows: 1,
+          tableHeightMm: 60,
           rowHeightMm: 7,
         },
       ],
@@ -665,6 +677,9 @@ test('challan templates persist mappings and generate overprint pdf', async () =
     const activeTemplate = templates.find((template) => template.id === second.id);
     assert.equal(oldTemplate.isActive, false);
     assert.equal(activeTemplate.isActive, true);
+    assert.equal(activeTemplate.stockSize, 'A5');
+    assert.equal(activeTemplate.paperSize, 'A4');
+    assert.equal(activeTemplate.nUpLayout, 2);
     assert.equal(activeTemplate.mappings.length, 3);
     const staticMapping = activeTemplate.mappings.find(
       (mapping) => mapping.fieldKey === 'static_authorized_signatory',
@@ -673,9 +688,14 @@ test('challan templates persist mappings and generate overprint pdf', async () =
     assert.equal(staticMapping.fieldValue, 'Authorized Signatory');
     assert.equal(staticMapping.textColor, 'blue');
     assert.equal(staticMapping.maxWidthMm, 52);
+    assert.equal(staticMapping.widthMm, 52);
     assert.equal(
       activeTemplate.mappings.find((mapping) => mapping.fieldKey === 'item_particulars').maxRows,
       1,
+    );
+    assert.equal(
+      activeTemplate.mappings.find((mapping) => mapping.fieldKey === 'item_particulars').minRows,
+      2,
     );
 
     const templateRow = await backend.get(
@@ -686,6 +706,160 @@ test('challan templates persist mappings and generate overprint pdf', async () =
       challanRow: challan,
       templateRow,
       mode: 'overprint',
+    });
+    assert.ok(Buffer.isBuffer(pdf));
+    assert.equal(pdf.slice(0, 4).toString(), '%PDF');
+
+    const testPrint = await backend.generateChallanTemplatePdf({
+      challanRow: null,
+      challanDtoOverride: {
+        ...backend.buildTemplateTestChallanDto(),
+      },
+      templateRow,
+      mode: 'digital',
+    });
+    assert.ok(Buffer.isBuffer(testPrint));
+    assert.equal(testPrint.slice(0, 4).toString(), '%PDF');
+  } finally {
+    await backend.closeDb();
+  }
+});
+
+test('challan templates reject stock and sheet combinations that do not fit', async () => {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-challan-template-invalid-layout-'));
+  process.env.DB_PATH = path.join(tempDir, 'paper.db');
+
+  delete require.cache[require.resolve('../server.js')];
+  const backend = require('../server.js');
+  try {
+    await backend.resetAndSeedDemoData();
+    const order = (await backend.getOrders())[0];
+    await assert.rejects(
+      () =>
+        backend.saveChallanTemplate({
+          name: 'Invalid Layout',
+          partyType: 'client',
+          partyId: order.client_id,
+          challanType: 'delivery',
+          backgroundObjectKey: 'templates/invalid.png',
+          canvasWidth: 1240,
+          canvasHeight: 1754,
+          stockSize: 'A3',
+          paperSize: 'A4',
+          nUpLayout: 2,
+          mappings: [
+            {
+              fieldKey: 'challan_no',
+              xPercent: 0.1,
+              yPercent: 0.1,
+              fontSize: 10,
+            },
+          ],
+        }),
+      /does not fit on A4 with 2-up layout/i,
+    );
+  } finally {
+    await backend.closeDb();
+  }
+});
+
+test('challan templates default stock size to paper size for older payloads', async () => {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-challan-template-stock-fallback-'));
+  process.env.DB_PATH = path.join(tempDir, 'paper.db');
+
+  delete require.cache[require.resolve('../server.js')];
+  const backend = require('../server.js');
+  try {
+    await backend.resetAndSeedDemoData();
+    const order = (await backend.getOrders())[0];
+    const template = await backend.saveChallanTemplate({
+      name: 'Fallback Layout',
+      partyType: 'client',
+      partyId: order.client_id,
+      challanType: 'delivery',
+      backgroundObjectKey: 'templates/fallback.png',
+      canvasWidth: 1240,
+      canvasHeight: 1754,
+      paperSize: 'A4',
+      nUpLayout: 1,
+      mappings: [
+        {
+          fieldKey: 'challan_no',
+          xPercent: 0.1,
+          yPercent: 0.1,
+          fontSize: 10,
+        },
+      ],
+    });
+
+    assert.equal(template.paperSize, 'A4');
+    assert.equal(template.stockSize, 'A4');
+    assert.equal(template.nUpLayout, 1);
+
+    const templateRow = await backend.get(
+      'SELECT * FROM challan_templates WHERE id = ?',
+      [template.id],
+    );
+    assert.equal(templateRow.paper_size, 'A4');
+    assert.equal(templateRow.stock_size, 'A4');
+  } finally {
+    await backend.closeDb();
+  }
+});
+
+test('challan templates render A4 stock on A3 sheet at 2-up', async () => {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-challan-template-a4-on-a3-'));
+  process.env.DB_PATH = path.join(tempDir, 'paper.db');
+
+  delete require.cache[require.resolve('../server.js')];
+  const backend = require('../server.js');
+  try {
+    await backend.resetAndSeedDemoData();
+    const order = (await backend.getOrders())[0];
+    const template = await backend.saveChallanTemplate({
+      name: 'A4 on A3 Layout',
+      partyType: 'client',
+      partyId: order.client_id,
+      challanType: 'delivery',
+      backgroundObjectKey: 'templates/a4-on-a3.png',
+      canvasWidth: 1240,
+      canvasHeight: 1754,
+      stockSize: 'A4',
+      paperSize: 'A3',
+      nUpLayout: 2,
+      mappings: [
+        {
+          fieldKey: 'challan_no',
+          xPercent: 0.1,
+          yPercent: 0.1,
+          fontSize: 10,
+        },
+        {
+          fieldKey: 'item_particulars',
+          xPercent: 0.08,
+          yPercent: 0.4,
+          fontSize: 9,
+          widthMm: 120,
+          heightMm: 60,
+          tableHeightMm: 60,
+          rowHeightMm: 7,
+        },
+      ],
+    });
+
+    assert.equal(template.stockSize, 'A4');
+    assert.equal(template.paperSize, 'A3');
+    assert.equal(template.nUpLayout, 2);
+
+    const templateRow = await backend.get(
+      'SELECT * FROM challan_templates WHERE id = ?',
+      [template.id],
+    );
+    const pdf = await backend.generateChallanTemplatePdf({
+      challanRow: null,
+      challanDtoOverride: backend.buildTemplateTestChallanDto(),
+      templateRow,
+      mode: 'digital',
     });
     assert.ok(Buffer.isBuffer(pdf));
     assert.equal(pdf.slice(0, 4).toString(), '%PDF');
@@ -714,6 +888,9 @@ test('issued challans freeze template snapshots and image mappings persist', asy
       backgroundObjectKey: 'templates/snapshot.png',
       canvasWidth: 1240,
       canvasHeight: 1754,
+      stockSize: 'A4',
+      paperSize: 'A3',
+      nUpLayout: 2,
       mappings: [
         {
           fieldType: 'DYNAMIC',
@@ -784,6 +961,9 @@ test('issued challans freeze template snapshots and image mappings persist', asy
     );
     const snapshot = JSON.parse(issuedRow.template_snapshot_json);
     assert.equal(snapshot.name, 'Snapshot Layout');
+    assert.equal(snapshot.stockSize, 'A4');
+    assert.equal(snapshot.paperSize, 'A3');
+    assert.equal(snapshot.nUpLayout, 2);
     assert.equal(snapshot.mappings.length, 2);
     assert.equal(snapshot.mappings[0].xPercent, 0.12);
     assert.equal(snapshot.mappings[1].fieldType, 'IMAGE');

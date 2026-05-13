@@ -2661,6 +2661,10 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
   }) => Uri.parse('https://mock.local/challans/$challanId/$mode');
 
   @override
+  Uri templateTestPrintUri({required int templateId, required String mode}) =>
+      Uri.parse('https://mock.local/templates/$templateId/$mode');
+
+  @override
   Future<CompanyProfile> updateCompanyProfile(CompanyProfile profile) async {
     _companyProfile = profile;
     return profile;
