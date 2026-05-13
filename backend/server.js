@@ -9,7 +9,9 @@ const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const cors = require('cors');
 const crypto = require('crypto');
 const fs = require('fs');
+const { imageSize } = require('image-size');
 const path = require('path');
+const PDFDocument = require('pdfkit');
 const sqlite3 = require('sqlite3').verbose();
 
 try {
@@ -38,6 +40,8 @@ const S3_UPLOAD_PREFIXES = Object.freeze({
   ITEM_IMAGE: 'masters/items/',
   ORDER_PO: 'orders/po-docs/',
   DELIVERY_CHALLAN: 'logistics/challans/',
+  CHALLAN_TEMPLATE_BACKGROUND: 'logistics/challan-templates/',
+  CHALLAN_TEMPLATE_STAMP: 'logistics/challan-template-stamps/',
 });
 const COMMON_WEAK_PASSWORDS = new Set([
   'password',
@@ -2155,6 +2159,7 @@ async function initDb() {
       source_challan_id INTEGER,
       source_challan_type TEXT,
       source_challan_line_id INTEGER,
+      reverses_movement_id TEXT,
       actor TEXT DEFAULT '',
       lot_code TEXT DEFAULT '',
       created_at TEXT NOT NULL
@@ -2369,6 +2374,7 @@ async function initDb() {
       vendor_gstin TEXT DEFAULT '',
       source_reference TEXT DEFAULT '',
       company_profile_snapshot TEXT,
+      template_snapshot_json TEXT,
       notes TEXT DEFAULT '',
       status TEXT NOT NULL DEFAULT 'draft',
       created_by INTEGER REFERENCES users(id),
@@ -2383,6 +2389,7 @@ async function initDb() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
       order_item_id INTEGER,
+      production_run_id INTEGER,
       item_id INTEGER,
       variation_leaf_node_id INTEGER NOT NULL DEFAULT 0,
       line_no INTEGER NOT NULL DEFAULT 1,
@@ -2417,12 +2424,99 @@ async function initDb() {
     )
   `);
 
+  await run(`
+    CREATE TABLE IF NOT EXISTS challan_template_upload_sessions (
+      id TEXT PRIMARY KEY,
+      file_name TEXT NOT NULL,
+      content_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL DEFAULT 0,
+      sha256 TEXT NOT NULL,
+      object_key TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      completed_at TEXT
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS challan_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      party_type TEXT NOT NULL,
+      party_id INTEGER NOT NULL,
+      challan_type TEXT NOT NULL,
+      background_object_key TEXT NOT NULL,
+      canvas_width INTEGER NOT NULL,
+      canvas_height INTEGER NOT NULL,
+      rotation_degrees REAL NOT NULL DEFAULT 0,
+      global_offset_x_mm REAL NOT NULL DEFAULT 0,
+      global_offset_y_mm REAL NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS challan_template_mappings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      template_id INTEGER NOT NULL REFERENCES challan_templates(id) ON DELETE CASCADE,
+      field_type TEXT NOT NULL DEFAULT 'DYNAMIC',
+      field_key TEXT NOT NULL,
+      field_value TEXT NOT NULL DEFAULT '',
+      asset_object_key TEXT NOT NULL DEFAULT '',
+      asset_width_px INTEGER NOT NULL DEFAULT 0,
+      asset_height_px INTEGER NOT NULL DEFAULT 0,
+      image_width_mm REAL NOT NULL DEFAULT 35,
+      image_height_mm REAL NOT NULL DEFAULT 20,
+      lock_aspect_ratio INTEGER NOT NULL DEFAULT 1,
+      x_percent REAL NOT NULL,
+      y_percent REAL NOT NULL,
+      font_size REAL NOT NULL DEFAULT 10,
+      font_weight TEXT NOT NULL DEFAULT 'normal',
+      alignment TEXT NOT NULL DEFAULT 'left',
+      text_color TEXT NOT NULL DEFAULT 'black',
+      letter_spacing REAL NOT NULL DEFAULT 0,
+      max_chars INTEGER NOT NULL DEFAULT 0,
+      max_width_mm REAL NOT NULL DEFAULT 80,
+      max_rows INTEGER NOT NULL DEFAULT 0,
+      row_height_mm REAL NOT NULL DEFAULT 6,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(template_id, field_key)
+    )
+  `);
+
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_status ON delivery_challans(status)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_date ON delivery_challans(date)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_items_challan_id ON delivery_challan_items(challan_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_challan_id ON delivery_challan_orders(challan_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_order_id ON delivery_challan_orders(order_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_activity_challan_id_created_at ON delivery_challan_activity_log(challan_id, created_at)');
+  await run('CREATE INDEX IF NOT EXISTS idx_challan_template_upload_sessions_sha256 ON challan_template_upload_sessions(sha256)');
+  await run('CREATE INDEX IF NOT EXISTS idx_challan_templates_party ON challan_templates(party_type, party_id, challan_type, is_active)');
+  await run('CREATE INDEX IF NOT EXISTS idx_challan_template_mappings_template_id ON challan_template_mappings(template_id)');
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS production_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_code TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'completed',
+      completed_at TEXT,
+      item_id INTEGER NOT NULL REFERENCES items(id),
+      variation_leaf_node_id INTEGER NOT NULL DEFAULT 0,
+      variation_path_label TEXT DEFAULT '',
+      output_quantity REAL NOT NULL DEFAULT 0,
+      uom TEXT DEFAULT 'pcs',
+      location TEXT DEFAULT '',
+      source_metadata_json TEXT DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_production_runs_status ON production_runs(status, completed_at)');
+  await run('CREATE INDEX IF NOT EXISTS idx_production_runs_item ON production_runs(item_id, variation_leaf_node_id)');
 
   await run(`
     CREATE TABLE IF NOT EXISTS orders (
@@ -2603,10 +2697,14 @@ async function initDb() {
   await ensureColumnExists('delivery_challans', 'vendor_name', "TEXT DEFAULT ''");
   await ensureColumnExists('delivery_challans', 'vendor_gstin', "TEXT DEFAULT ''");
   await ensureColumnExists('delivery_challans', 'source_reference', "TEXT DEFAULT ''");
+  await ensureColumnExists('delivery_challans', 'template_snapshot_json', 'TEXT');
   await ensureColumnExists('delivery_challan_items', 'order_item_id', 'INTEGER');
+  await ensureColumnExists('delivery_challan_items', 'production_run_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'item_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'variation_leaf_node_id', 'INTEGER NOT NULL DEFAULT 0');
   await ensureDeliveryChallanItemNumericColumns();
+  await ensureColumnExists('delivery_challan_items', 'production_run_id', 'INTEGER');
+  await ensureColumnExists('delivery_challan_items', 'variation_leaf_node_id', 'INTEGER NOT NULL DEFAULT 0');
   await run(`
     CREATE TABLE IF NOT EXISTS delivery_challan_orders (
       challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
@@ -2622,6 +2720,23 @@ async function initDb() {
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_items_challan_id ON delivery_challan_items(challan_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_challan_id ON delivery_challan_orders(challan_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_order_id ON delivery_challan_orders(order_id)');
+  await ensureColumnExists('challan_templates', 'rotation_degrees', 'REAL NOT NULL DEFAULT 0');
+  await ensureColumnExists('challan_templates', 'global_offset_x_mm', 'REAL NOT NULL DEFAULT 0');
+  await ensureColumnExists('challan_templates', 'global_offset_y_mm', 'REAL NOT NULL DEFAULT 0');
+  await ensureColumnExists('challan_templates', 'is_active', 'INTEGER NOT NULL DEFAULT 1');
+  await ensureColumnExists('challan_template_mappings', 'field_type', "TEXT NOT NULL DEFAULT 'DYNAMIC'");
+  await ensureColumnExists('challan_template_mappings', 'field_value', "TEXT NOT NULL DEFAULT ''");
+  await ensureColumnExists('challan_template_mappings', 'asset_object_key', "TEXT NOT NULL DEFAULT ''");
+  await ensureColumnExists('challan_template_mappings', 'asset_width_px', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumnExists('challan_template_mappings', 'asset_height_px', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumnExists('challan_template_mappings', 'image_width_mm', 'REAL NOT NULL DEFAULT 35');
+  await ensureColumnExists('challan_template_mappings', 'image_height_mm', 'REAL NOT NULL DEFAULT 20');
+  await ensureColumnExists('challan_template_mappings', 'lock_aspect_ratio', 'INTEGER NOT NULL DEFAULT 1');
+  await ensureColumnExists('challan_template_mappings', 'text_color', "TEXT NOT NULL DEFAULT 'black'");
+  await ensureColumnExists('challan_template_mappings', 'max_width_mm', 'REAL NOT NULL DEFAULT 80');
+  await ensureColumnExists('challan_template_mappings', 'max_rows', 'INTEGER NOT NULL DEFAULT 0');
+  await run('CREATE INDEX IF NOT EXISTS idx_challan_templates_party ON challan_templates(party_type, party_id, challan_type, is_active)');
+  await run('CREATE INDEX IF NOT EXISTS idx_challan_template_mappings_template_id ON challan_template_mappings(template_id)');
 
   // Foreign key indexes for production scaling on materials
   await run('CREATE INDEX IF NOT EXISTS idx_materials_linked_group_id ON materials(linked_group_id)');
@@ -2715,6 +2830,7 @@ async function initDb() {
   await ensureColumnExists('inventory_movements', 'source_challan_id', 'INTEGER');
   await ensureColumnExists('inventory_movements', 'source_challan_type', 'TEXT');
   await ensureColumnExists('inventory_movements', 'source_challan_line_id', 'INTEGER');
+  await ensureColumnExists('inventory_movements', 'reverses_movement_id', 'TEXT');
   await backfillInventoryMovementQuantitySemantics();
   await run('CREATE INDEX IF NOT EXISTS idx_inventory_movements_source_challan ON inventory_movements(source_challan_id, source_challan_type)');
   await ensureColumnExists('materials', 'location', "TEXT DEFAULT ''");
@@ -2889,6 +3005,7 @@ async function ensureDemoDataset() {
   await ensureDemoGroupsPresent();
   await ensureDemoItemsPresent();
   await ensureDemoOrdersPresent();
+  await ensureDemoProductionRunsPresent();
   await ensureDemoMaterialsPresent();
   await backfillInventoryLedgerForMaterials({
     inferMissingPositions: SEED_DEMO_DATA_ON_BOOT,
@@ -2958,6 +3075,8 @@ async function ensureDeliveryChallanItemNumericColumns() {
 
   const quantityColumn = columns.find((column) => column.name === 'quantity_pcs');
   const weightColumn = columns.find((column) => column.name === 'weight');
+  const hasProductionRunId = columns.some((column) => column.name === 'production_run_id');
+  const hasVariationLeafNodeId = columns.some((column) => column.name === 'variation_leaf_node_id');
   const normalizedType = (column) => String(column?.type || '').trim().toUpperCase();
   if (normalizedType(quantityColumn) === 'REAL' && normalizedType(weightColumn) === 'REAL') {
     return;
@@ -2972,7 +3091,9 @@ async function ensureDeliveryChallanItemNumericColumns() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
         order_item_id INTEGER,
+        production_run_id INTEGER,
         item_id INTEGER,
+        variation_leaf_node_id INTEGER NOT NULL DEFAULT 0,
         line_no INTEGER NOT NULL DEFAULT 1,
         particulars TEXT NOT NULL DEFAULT '',
         hsn_code TEXT DEFAULT '',
@@ -2984,14 +3105,16 @@ async function ensureDeliveryChallanItemNumericColumns() {
     `);
     await run(`
       INSERT INTO delivery_challan_items (
-        id, challan_id, order_item_id, item_id, line_no, particulars, hsn_code,
+        id, challan_id, order_item_id, production_run_id, item_id, variation_leaf_node_id, line_no, particulars, hsn_code,
         quantity_pcs, weight, created_at, updated_at
       )
       SELECT
         id,
         challan_id,
         order_item_id,
+        ${hasProductionRunId ? 'production_run_id' : 'NULL'},
         item_id,
+        ${hasVariationLeafNodeId ? 'variation_leaf_node_id' : '0'},
         line_no,
         particulars,
         hsn_code,
@@ -4473,15 +4596,116 @@ function rowToDeliveryChallanItemDto(row) {
     id: row.id,
     challan_id: row.challan_id,
     order_item_id: row.order_item_id || null,
+    production_run_id: row.production_run_id || null,
     item_id: row.item_id || null,
     variation_leaf_node_id: Number(row.variation_leaf_node_id || 0),
     line_no: Number(row.line_no || 0),
     particulars: row.particulars || '',
     hsn_code: row.hsn_code || '',
+    variation_path_label: row.variation_path_label || '',
     quantity_pcs: formatMeasure(row.quantity_pcs),
     weight: formatMeasure(row.weight),
     created_at: row.created_at || null,
     updated_at: row.updated_at || null,
+  };
+}
+
+function rowToChallanTemplateMappingDto(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: row.id,
+    templateId: row.template_id,
+    fieldType: row.field_type || 'DYNAMIC',
+    fieldKey: row.field_key || '',
+    fieldValue: row.field_value || '',
+    assetObjectKey: row.asset_object_key || '',
+    assetImageUrl: row.asset_image_url || null,
+    assetWidthPx: Number(row.asset_width_px || 0),
+    assetHeightPx: Number(row.asset_height_px || 0),
+    imageWidthMm: Number(row.image_width_mm || 35),
+    imageHeightMm: Number(row.image_height_mm || 20),
+    lockAspectRatio: Number(row.lock_aspect_ratio ?? 1) === 1,
+    xPercent: Number(row.x_percent || 0),
+    yPercent: Number(row.y_percent || 0),
+    fontSize: Number(row.font_size || 10),
+    fontWeight: row.font_weight || 'normal',
+    alignment: row.alignment || 'left',
+    textColor: row.text_color || 'black',
+    letterSpacing: Number(row.letter_spacing || 0),
+    maxChars: Number(row.max_chars || 0),
+    maxWidthMm: Number(row.max_width_mm || 80),
+    maxRows: Number(row.max_rows || 0),
+    rowHeightMm: Number(row.row_height_mm || 6),
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+  };
+}
+
+async function rowToChallanTemplateDto(row, { includeMappings = true } = {}) {
+  if (!row) {
+    return null;
+  }
+  const mappings = includeMappings
+    ? await all(
+        `
+        SELECT *
+        FROM challan_template_mappings
+        WHERE template_id = ?
+        ORDER BY id ASC
+        `,
+        [row.id],
+      )
+    : [];
+  let backgroundImageUrl = null;
+  let backgroundImageUrlExpiresAt = null;
+  if (row.background_object_key) {
+    try {
+      const payload = await assetReadUrlPayload(row.background_object_key);
+      backgroundImageUrl = payload.readUrl;
+      backgroundImageUrlExpiresAt = payload.expiresAt;
+    } catch (_) {
+      backgroundImageUrl = null;
+      backgroundImageUrlExpiresAt = null;
+    }
+  }
+  const mappedDtos = [];
+  for (const mapping of mappings) {
+    let assetImageUrl = null;
+    if (mapping.asset_object_key) {
+      try {
+        const payload = await assetReadUrlPayload(mapping.asset_object_key);
+        assetImageUrl = payload.readUrl;
+      } catch (_) {
+        assetImageUrl = null;
+      }
+    }
+    mappedDtos.push(
+      rowToChallanTemplateMappingDto({
+        ...mapping,
+        asset_image_url: assetImageUrl,
+      }),
+    );
+  }
+  return {
+    id: row.id,
+    name: row.name || '',
+    partyType: row.party_type || '',
+    partyId: Number(row.party_id || 0),
+    challanType: normalizeChallanType(row.challan_type),
+    backgroundObjectKey: row.background_object_key || '',
+    backgroundImageUrl,
+    backgroundImageUrlExpiresAt,
+    canvasWidth: Number(row.canvas_width || 0),
+    canvasHeight: Number(row.canvas_height || 0),
+    rotationDegrees: Number(row.rotation_degrees || 0),
+    globalOffsetXmm: Number(row.global_offset_x_mm || 0),
+    globalOffsetYmm: Number(row.global_offset_y_mm || 0),
+    isActive: Number(row.is_active || 0) === 1,
+    mappings: mappedDtos,
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
   };
 }
 
@@ -4496,9 +4720,10 @@ async function rowToDeliveryChallanDto(row, { includeItems = true } = {}) {
     ...new Set(
       orderRows
         .map((order) => String(order.order_no || '').trim())
-        .filter(Boolean),
+      .filter(Boolean),
     ),
   ];
+  const clientId = Number(orderRows[0]?.client_id || 0) || null;
   return {
     id: row.id,
     type: normalizeChallanType(row.type),
@@ -4506,6 +4731,7 @@ async function rowToDeliveryChallanDto(row, { includeItems = true } = {}) {
     order_ids: orderIds,
     order_no: row.order_no || '',
     order_nos: orderNos,
+    client_id: clientId,
     challan_no: row.challan_no || '',
     date: row.date || '',
     location: row.location || '',
@@ -4545,6 +4771,27 @@ async function generateChallanNumber(type = 'delivery') {
   return `${prefix}-${String(next).padStart(5, '0')}`;
 }
 
+async function challanNumberWarning(challanNo, type = 'delivery') {
+  const normalized = String(challanNo || '').trim().toUpperCase();
+  const prefix = normalizeChallanType(type) === 'reception' ? 'RC' : 'DC';
+  const match = normalized.match(new RegExp(`^${prefix}-(\\d+)$`));
+  if (!match) {
+    return null;
+  }
+  const manualSequence = Number(match[1]);
+  const next = await generateChallanNumber(type);
+  const nextMatch = next.match(/(\d+)$/);
+  const nextSequence = nextMatch ? Number(nextMatch[1]) : 0;
+  if (manualSequence > 0 && nextSequence > 0 && manualSequence < nextSequence) {
+    return {
+      code: 'manual_sequence_overlap',
+      message: `Manual challan number ${challanNo} is inside the generated ${prefix} sequence. Suggested next number: ${next}.`,
+      suggestedChallanNo: next,
+    };
+  }
+  return null;
+}
+
 function normalizeChallanDate(value) {
   const input = String(value || '').trim();
   if (!input) {
@@ -4579,6 +4826,7 @@ function normalizeDeliveryChallanItems(items = []) {
   return items
     .map((item, index) => ({
       orderItemId: Number(item.orderItemId ?? item.order_item_id ?? 0) || null,
+      productionRunId: Number(item.productionRunId ?? item.production_run_id ?? 0) || null,
       itemId: Number(item.itemId ?? item.item_id ?? 0) || null,
       variationLeafNodeId:
         Number(item.variationLeafNodeId ?? item.variation_leaf_node_id ?? 0) || 0,
@@ -4598,6 +4846,7 @@ function normalizeDeliveryChallanItems(items = []) {
         item.quantityPcs ||
         item.weight ||
         item.orderItemId ||
+        item.productionRunId ||
         item.itemId,
     )
     .map((item, index) => ({ ...item, lineNo: index + 1 }));
@@ -4605,6 +4854,703 @@ function normalizeDeliveryChallanItems(items = []) {
 
 async function getDeliveryChallanRowById(id) {
   return get('SELECT * FROM delivery_challans WHERE id = ?', [Number(id)]);
+}
+
+function normalizeTemplatePartyType(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'client' || normalized === 'vendor') {
+    return normalized;
+  }
+  const error = new Error('Template party type must be client or vendor.');
+  error.statusCode = 400;
+  throw error;
+}
+
+function normalizeTemplateNumber(value, fallback, { min = null, max = null } = {}) {
+  const numeric = Number(value ?? fallback);
+  const normalized = Number.isFinite(numeric) ? numeric : fallback;
+  if (min != null && normalized < min) {
+    return min;
+  }
+  if (max != null && normalized > max) {
+    return max;
+  }
+  return normalized;
+}
+
+function normalizeTemplateAlignment(value) {
+  const normalized = String(value || 'left').trim().toLowerCase();
+  return ['left', 'center', 'right'].includes(normalized) ? normalized : 'left';
+}
+
+function normalizeTemplateFieldType(value) {
+  const normalized = String(value || 'DYNAMIC').trim().toUpperCase();
+  if (normalized === 'STATIC' || normalized === 'IMAGE') {
+    return normalized;
+  }
+  return 'DYNAMIC';
+}
+
+function normalizeTemplateTextColor(value) {
+  const normalized = String(value || 'black').trim().toLowerCase();
+  return ['black', 'blue', 'red'].includes(normalized) ? normalized : 'black';
+}
+
+function normalizeTemplateFieldKey(value) {
+  return String(value || '')
+    .trim()
+    .replace(/[^\w.:-]/g, '_')
+    .slice(0, 80);
+}
+
+function normalizeChallanTemplateMappings(mappings = []) {
+  if (!Array.isArray(mappings)) {
+    return [];
+  }
+  const seen = new Set();
+  return mappings
+    .map((mapping) => {
+      const fieldType = normalizeTemplateFieldType(
+        mapping?.fieldType ?? mapping?.field_type,
+      );
+      const fieldKey = normalizeTemplateFieldKey(
+        mapping?.fieldKey ?? mapping?.field_key,
+      );
+      if (!fieldKey || seen.has(fieldKey)) {
+        return null;
+      }
+      seen.add(fieldKey);
+      return {
+        fieldType,
+        fieldKey,
+        fieldValue: String(mapping?.fieldValue ?? mapping?.field_value ?? '')
+          .trim()
+          .slice(0, 1000),
+        assetObjectKey: String(mapping?.assetObjectKey ?? mapping?.asset_object_key ?? '')
+          .trim(),
+        assetWidthPx: Math.max(
+          0,
+          Math.round(
+            normalizeTemplateNumber(
+              mapping?.assetWidthPx ?? mapping?.asset_width_px,
+              0,
+            ),
+          ),
+        ),
+        assetHeightPx: Math.max(
+          0,
+          Math.round(
+            normalizeTemplateNumber(
+              mapping?.assetHeightPx ?? mapping?.asset_height_px,
+              0,
+            ),
+          ),
+        ),
+        imageWidthMm: normalizeTemplateNumber(
+          mapping?.imageWidthMm ?? mapping?.image_width_mm,
+          35,
+          { min: 2, max: 210 },
+        ),
+        imageHeightMm: normalizeTemplateNumber(
+          mapping?.imageHeightMm ?? mapping?.image_height_mm,
+          20,
+          { min: 2, max: 297 },
+        ),
+        lockAspectRatio: parseBooleanEnv(
+          mapping?.lockAspectRatio ?? mapping?.lock_aspect_ratio ?? true,
+          true,
+        ),
+        xPercent: normalizeTemplateNumber(
+          mapping?.xPercent ?? mapping?.x_percent,
+          0,
+          { min: 0, max: 1 },
+        ),
+        yPercent: normalizeTemplateNumber(
+          mapping?.yPercent ?? mapping?.y_percent,
+          0,
+          { min: 0, max: 1 },
+        ),
+        fontSize: normalizeTemplateNumber(
+          mapping?.fontSize ?? mapping?.font_size,
+          10,
+          { min: 8, max: 16 },
+        ),
+        fontWeight: String(
+          mapping?.fontWeight ?? mapping?.font_weight ?? 'normal',
+        )
+          .trim()
+          .toLowerCase() === 'bold'
+          ? 'bold'
+          : 'normal',
+        alignment: normalizeTemplateAlignment(
+          mapping?.alignment ?? mapping?.textAlign ?? mapping?.text_align,
+        ),
+        textColor: normalizeTemplateTextColor(
+          mapping?.textColor ?? mapping?.text_color,
+        ),
+        letterSpacing: normalizeTemplateNumber(
+          mapping?.letterSpacing ?? mapping?.letter_spacing,
+          0,
+          { min: -2, max: 6 },
+        ),
+        maxChars: Math.max(
+          0,
+          Math.round(
+            normalizeTemplateNumber(
+              mapping?.maxChars ?? mapping?.max_chars,
+              0,
+            ),
+          ),
+        ),
+        maxWidthMm: normalizeTemplateNumber(
+          mapping?.maxWidthMm ?? mapping?.max_width_mm,
+          80,
+          { min: 5, max: 210 },
+        ),
+        maxRows: Math.max(
+          0,
+          Math.round(
+            normalizeTemplateNumber(
+              mapping?.maxRows ?? mapping?.max_rows,
+              0,
+            ),
+          ),
+        ),
+        rowHeightMm: normalizeTemplateNumber(
+          mapping?.rowHeightMm ?? mapping?.row_height_mm,
+          6,
+          { min: 2, max: 20 },
+        ),
+      };
+    })
+    .filter(Boolean);
+}
+
+async function listChallanTemplates({
+  partyType = '',
+  partyId = null,
+  challanType = '',
+  activeOnly = false,
+} = {}) {
+  const where = [];
+  const params = [];
+  if (partyType) {
+    where.push('party_type = ?');
+    params.push(normalizeTemplatePartyType(partyType));
+  }
+  const normalizedPartyId = Number(partyId || 0);
+  if (Number.isInteger(normalizedPartyId) && normalizedPartyId > 0) {
+    where.push('party_id = ?');
+    params.push(normalizedPartyId);
+  }
+  if (challanType) {
+    where.push('challan_type = ?');
+    params.push(normalizeChallanType(challanType));
+  }
+  if (activeOnly) {
+    where.push('is_active = 1');
+  }
+  const rows = await all(
+    `
+    SELECT *
+    FROM challan_templates
+    ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+    ORDER BY is_active DESC, datetime(updated_at) DESC, id DESC
+    `,
+    params,
+  );
+  return Promise.all(rows.map((row) => rowToChallanTemplateDto(row)));
+}
+
+async function getChallanTemplateRowById(id) {
+  return get('SELECT * FROM challan_templates WHERE id = ?', [Number(id)]);
+}
+
+async function saveChallanTemplate(input = {}, id = null) {
+  const name = String(input.name || '').trim();
+  const partyType = normalizeTemplatePartyType(input.partyType ?? input.party_type);
+  const partyId = Number(input.partyId ?? input.party_id ?? 0);
+  const challanType = normalizeChallanType(input.challanType ?? input.challan_type);
+  const backgroundObjectKey = String(
+    input.backgroundObjectKey ?? input.background_object_key ?? '',
+  ).trim();
+  const canvasWidth = Math.round(Number(input.canvasWidth ?? input.canvas_width ?? 0));
+  const canvasHeight = Math.round(Number(input.canvasHeight ?? input.canvas_height ?? 0));
+  const rotationDegrees = normalizeTemplateNumber(
+    input.rotationDegrees ?? input.rotation_degrees,
+    0,
+    { min: -5, max: 5 },
+  );
+  const globalOffsetXmm = normalizeTemplateNumber(
+    input.globalOffsetXmm ?? input.global_offset_x_mm,
+    0,
+    { min: -50, max: 50 },
+  );
+  const globalOffsetYmm = normalizeTemplateNumber(
+    input.globalOffsetYmm ?? input.global_offset_y_mm,
+    0,
+    { min: -50, max: 50 },
+  );
+  const isActive = input.isActive ?? input.is_active ?? true;
+  const mappings = normalizeChallanTemplateMappings(input.mappings || []);
+
+  if (!name) {
+    const error = new Error('Template name is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!Number.isInteger(partyId) || partyId <= 0) {
+    const error = new Error('Template party is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!backgroundObjectKey || !canvasWidth || !canvasHeight) {
+    const error = new Error('Template background scan is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const partyRow = partyType === 'client'
+    ? await get('SELECT id FROM clients WHERE id = ? AND is_archived = 0', [partyId])
+    : await get('SELECT id FROM vendors WHERE id = ? AND is_archived = 0', [partyId]);
+  if (!partyRow) {
+    const error = new Error('Template party does not exist or is archived.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const now = new Date().toISOString();
+  await run('BEGIN TRANSACTION');
+  try {
+    let templateId = Number(id || 0);
+    if (templateId > 0) {
+      const existing = await getChallanTemplateRowById(templateId);
+      if (!existing) {
+        const error = new Error('Challan template not found.');
+        error.statusCode = 404;
+        throw error;
+      }
+      await run(
+        `
+        UPDATE challan_templates
+        SET name = ?, party_type = ?, party_id = ?, challan_type = ?,
+            background_object_key = ?, canvas_width = ?, canvas_height = ?,
+            rotation_degrees = ?, global_offset_x_mm = ?, global_offset_y_mm = ?,
+            is_active = ?, updated_at = ?
+        WHERE id = ?
+        `,
+        [
+          name,
+          partyType,
+          partyId,
+          challanType,
+          backgroundObjectKey,
+          canvasWidth,
+          canvasHeight,
+          rotationDegrees,
+          globalOffsetXmm,
+          globalOffsetYmm,
+          isActive ? 1 : 0,
+          now,
+          templateId,
+        ],
+      );
+      await run('DELETE FROM challan_template_mappings WHERE template_id = ?', [
+        templateId,
+      ]);
+    } else {
+      const result = await run(
+        `
+        INSERT INTO challan_templates (
+          name, party_type, party_id, challan_type, background_object_key,
+          canvas_width, canvas_height, rotation_degrees, global_offset_x_mm,
+          global_offset_y_mm, is_active, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        [
+          name,
+          partyType,
+          partyId,
+          challanType,
+          backgroundObjectKey,
+          canvasWidth,
+          canvasHeight,
+          rotationDegrees,
+          globalOffsetXmm,
+          globalOffsetYmm,
+          isActive ? 1 : 0,
+          now,
+          now,
+        ],
+      );
+      templateId = result.lastID;
+    }
+
+    if (isActive) {
+      await run(
+        `
+        UPDATE challan_templates
+        SET is_active = 0, updated_at = ?
+        WHERE id != ? AND party_type = ? AND party_id = ? AND challan_type = ?
+        `,
+        [now, templateId, partyType, partyId, challanType],
+      );
+    }
+
+    for (const mapping of mappings) {
+      if (mapping.fieldType === 'IMAGE' && !mapping.assetObjectKey) {
+        const error = new Error('Image template mappings require an uploaded stamp asset.');
+        error.statusCode = 400;
+        throw error;
+      }
+      await run(
+        `
+        INSERT INTO challan_template_mappings (
+          template_id, field_type, field_key, field_value, asset_object_key,
+          asset_width_px, asset_height_px, image_width_mm, image_height_mm,
+          lock_aspect_ratio, x_percent, y_percent, font_size, font_weight,
+          alignment, text_color, letter_spacing, max_chars, max_width_mm,
+          max_rows, row_height_mm, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        [
+          templateId,
+          mapping.fieldType,
+          mapping.fieldKey,
+          mapping.fieldValue,
+          mapping.assetObjectKey,
+          mapping.assetWidthPx,
+          mapping.assetHeightPx,
+          mapping.imageWidthMm,
+          mapping.imageHeightMm,
+          mapping.lockAspectRatio ? 1 : 0,
+          mapping.xPercent,
+          mapping.yPercent,
+          mapping.fontSize,
+          mapping.fontWeight,
+          mapping.alignment,
+          mapping.textColor,
+          mapping.letterSpacing,
+          mapping.maxChars,
+          mapping.maxWidthMm,
+          mapping.maxRows,
+          mapping.rowHeightMm,
+          now,
+          now,
+        ],
+      );
+    }
+    await run('COMMIT');
+    return rowToChallanTemplateDto(await getChallanTemplateRowById(templateId));
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
+}
+
+async function deleteChallanTemplate(id) {
+  const existing = await getChallanTemplateRowById(id);
+  if (!existing) {
+    const error = new Error('Challan template not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  await run('DELETE FROM challan_templates WHERE id = ?', [Number(id)]);
+}
+
+async function getTemplatePartyForChallan(challanRow) {
+  const type = normalizeChallanType(challanRow?.type);
+  if (type === 'reception') {
+    const vendorId = Number(challanRow?.vendor_id || 0);
+    return vendorId > 0 ? { partyType: 'vendor', partyId: vendorId } : null;
+  }
+  let orderIds = await getDeliveryChallanOrderIds(challanRow.id);
+  if (orderIds.length === 0 && Number(challanRow.order_id || 0) > 0) {
+    orderIds = [Number(challanRow.order_id || 0)];
+  }
+  const orders = await getOrderRowsByIds(orderIds);
+  const clientId = Number(orders[0]?.client_id || 0);
+  return clientId > 0 ? { partyType: 'client', partyId: clientId } : null;
+}
+
+async function findActiveChallanTemplateForChallan(challanRow) {
+  const party = await getTemplatePartyForChallan(challanRow);
+  if (!party) {
+    return null;
+  }
+  return get(
+    `
+    SELECT *
+    FROM challan_templates
+    WHERE party_type = ?
+      AND party_id = ?
+      AND challan_type = ?
+      AND is_active = 1
+    ORDER BY datetime(updated_at) DESC, id DESC
+    LIMIT 1
+    `,
+    [party.partyType, party.partyId, normalizeChallanType(challanRow.type)],
+  );
+}
+
+function truncateTemplateText(value, maxChars) {
+  const text = String(value ?? '');
+  const limit = Number(maxChars || 0);
+  if (!Number.isInteger(limit) || limit <= 0 || text.length <= limit) {
+    return text;
+  }
+  return text.slice(0, limit);
+}
+
+function challanTemplateScalarFields(challanDto) {
+  const isReception = challanDto.type === 'reception';
+  const items = Array.isArray(challanDto.items) ? challanDto.items : [];
+  const totalPcs = items.reduce((sum, item) => sum + Number(item.quantity_pcs || 0), 0);
+  const totalWeight = items.reduce((sum, item) => sum + Number(item.weight || 0), 0);
+  const totalQty = totalPcs > 0
+    ? `${totalPcs} pcs`
+    : totalWeight > 0
+    ? `${totalWeight} weight`
+    : '0';
+  return {
+    challan_no: challanDto.challan_no || '',
+    date: challanDto.date || '',
+    party_name: isReception
+      ? challanDto.vendor_name || ''
+      : challanDto.customer_name || '',
+    gstin: isReception
+      ? challanDto.vendor_gstin || ''
+      : challanDto.customer_gstin || '',
+    location: challanDto.location || '',
+    source_ref: isReception
+      ? challanDto.source_reference || ''
+      : (challanDto.order_nos || []).join(', ') || challanDto.order_no || '',
+    total_qty: totalQty,
+    notes: challanDto.notes || '',
+  };
+}
+
+function itemTableValueForField(fieldKey, item) {
+  switch (fieldKey) {
+    case 'item_particulars':
+      return item.particulars || '';
+    case 'hsn':
+      return item.hsn_code || '';
+    case 'qty_pcs':
+      return item.quantity_pcs || '';
+    case 'weight':
+      return item.weight || '';
+    default:
+      return '';
+  }
+}
+
+function pdfColorForTemplate(value) {
+  switch (String(value || '').trim().toLowerCase()) {
+    case 'blue':
+      return '#1D4ED8';
+    case 'red':
+      return '#B91C1C';
+    default:
+      return 'black';
+  }
+}
+
+function mmToPdfPoints(value) {
+  return Number(value || 0) * 72 / 25.4;
+}
+
+function templateValue(source, camelKey, snakeKey, fallback = null) {
+  if (!source) {
+    return fallback;
+  }
+  if (source[camelKey] != null) {
+    return source[camelKey];
+  }
+  if (source[snakeKey] != null) {
+    return source[snakeKey];
+  }
+  return fallback;
+}
+
+function templateNumberValue(source, camelKey, snakeKey, fallback = 0) {
+  const value = Number(templateValue(source, camelKey, snakeKey, fallback));
+  return Number.isFinite(value) ? value : fallback;
+}
+
+async function buildChallanTemplateSnapshot(templateRow) {
+  if (!templateRow) {
+    return null;
+  }
+  const dto = await rowToChallanTemplateDto(templateRow);
+  return {
+    id: dto.id,
+    name: dto.name,
+    partyType: dto.partyType,
+    partyId: dto.partyId,
+    challanType: dto.challanType,
+    backgroundObjectKey: dto.backgroundObjectKey,
+    canvasWidth: dto.canvasWidth,
+    canvasHeight: dto.canvasHeight,
+    rotationDegrees: dto.rotationDegrees,
+    globalOffsetXmm: dto.globalOffsetXmm,
+    globalOffsetYmm: dto.globalOffsetYmm,
+    mappings: dto.mappings,
+    snapshottedAt: new Date().toISOString(),
+  };
+}
+
+async function generateChallanTemplatePdf({
+  challanRow,
+  templateRow,
+  templateSnapshot = null,
+  mode = 'digital',
+}) {
+  const normalizedMode = String(mode || 'digital').trim().toLowerCase() === 'overprint'
+    ? 'overprint'
+    : 'digital';
+  const challanDto = await rowToDeliveryChallanDto(challanRow);
+  const templateSource = templateSnapshot || templateRow;
+  const mappings = templateSnapshot
+    ? (Array.isArray(templateSnapshot.mappings) ? templateSnapshot.mappings : [])
+    : await all(
+        `
+        SELECT *
+        FROM challan_template_mappings
+        WHERE template_id = ?
+        ORDER BY id ASC
+        `,
+        [templateRow.id],
+      );
+  const pageWidth = mmToPdfPoints(210);
+  const pageHeight = mmToPdfPoints(297);
+  const doc = new PDFDocument({
+    size: 'A4',
+    margin: 0,
+    autoFirstPage: false,
+  });
+  const chunks = [];
+  doc.on('data', (chunk) => chunks.push(chunk));
+  const finished = new Promise((resolve, reject) => {
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+  });
+
+  const fields = challanTemplateScalarFields(challanDto);
+  const items = Array.isArray(challanDto.items) ? challanDto.items : [];
+  const tableFields = new Set(['item_particulars', 'hsn', 'qty_pcs', 'weight']);
+  const maxRows = mappings.reduce((limit, mapping) => {
+    if (!tableFields.has(String(templateValue(mapping, 'fieldKey', 'field_key', '')))) {
+      return limit;
+    }
+    const value = templateNumberValue(mapping, 'maxRows', 'max_rows', 0);
+    return value > 0 ? Math.max(limit, value) : limit;
+  }, 0);
+  const pageCount = maxRows > 0 ? Math.max(1, Math.ceil(items.length / maxRows)) : 1;
+
+  const drawPage = async (pageIndex) => {
+    doc.addPage({ size: 'A4', margin: 0 });
+    if (normalizedMode === 'digital') {
+      const backgroundKey = templateValue(
+        templateSource,
+        'backgroundObjectKey',
+        'background_object_key',
+        '',
+      );
+      const background = await readS3ObjectBuffer(backgroundKey);
+      doc.save();
+      doc.opacity(0.3);
+      const rotation = templateNumberValue(templateSource, 'rotationDegrees', 'rotation_degrees', 0);
+      if (rotation) {
+        doc.rotate(rotation, { origin: [pageWidth / 2, pageHeight / 2] });
+      }
+      doc.image(background, 0, 0, { width: pageWidth, height: pageHeight });
+      doc.restore();
+      doc.opacity(1);
+    }
+
+    const pageItems = maxRows > 0
+      ? items.slice(pageIndex * maxRows, pageIndex * maxRows + maxRows)
+      : items;
+    for (const mapping of mappings) {
+      const fieldKey = String(templateValue(mapping, 'fieldKey', 'field_key', ''));
+      const fieldType = String(templateValue(mapping, 'fieldType', 'field_type', 'DYNAMIC')).toUpperCase();
+      const x = mmToPdfPoints(
+        templateNumberValue(mapping, 'xPercent', 'x_percent', 0) * 210 +
+          templateNumberValue(templateSource, 'globalOffsetXmm', 'global_offset_x_mm', 0),
+      );
+      const baseY = mmToPdfPoints(
+        templateNumberValue(mapping, 'yPercent', 'y_percent', 0) * 297 +
+          templateNumberValue(templateSource, 'globalOffsetYmm', 'global_offset_y_mm', 0),
+      );
+      if (fieldType === 'IMAGE') {
+        if (pageIndex > 0) {
+          continue;
+        }
+        const objectKey = String(templateValue(mapping, 'assetObjectKey', 'asset_object_key', '') || '');
+        if (!objectKey) {
+          continue;
+        }
+        const asset = await readS3ObjectBuffer(objectKey);
+        doc.image(asset, x, baseY, {
+          width: mmToPdfPoints(templateNumberValue(mapping, 'imageWidthMm', 'image_width_mm', 35)),
+          height: mmToPdfPoints(templateNumberValue(mapping, 'imageHeightMm', 'image_height_mm', 20)),
+        });
+        continue;
+      }
+      const fontSize = templateNumberValue(mapping, 'fontSize', 'font_size', 10);
+      const fontName = String(templateValue(mapping, 'fontWeight', 'font_weight', '')).toLowerCase() === 'bold'
+        ? 'Helvetica-Bold'
+        : 'Helvetica';
+      const alignment = templateValue(mapping, 'alignment', 'alignment', 'left');
+      const align = ['left', 'center', 'right'].includes(alignment)
+        ? alignment
+        : 'left';
+      const maxWidth = mmToPdfPoints(templateNumberValue(mapping, 'maxWidthMm', 'max_width_mm', 80));
+      const textOptions = {
+        width: maxWidth,
+        align,
+        characterSpacing: templateNumberValue(mapping, 'letterSpacing', 'letter_spacing', 0),
+        lineBreak: true,
+      };
+      doc.font(fontName).fontSize(fontSize).fillColor(
+        pdfColorForTemplate(templateValue(mapping, 'textColor', 'text_color', 'black')),
+      );
+      if (tableFields.has(fieldKey)) {
+        const rowHeight = mmToPdfPoints(templateNumberValue(mapping, 'rowHeightMm', 'row_height_mm', 6));
+        pageItems.forEach((item, index) => {
+          doc.text(
+            truncateTemplateText(
+              itemTableValueForField(fieldKey, item),
+              templateNumberValue(mapping, 'maxChars', 'max_chars', 0),
+            ),
+            x,
+            baseY + index * rowHeight,
+            textOptions,
+          );
+        });
+        continue;
+      }
+      if (pageIndex > 0) {
+        continue;
+      }
+      const text = fieldType === 'STATIC'
+        ? templateValue(mapping, 'fieldValue', 'field_value', '') || ''
+        : fields[fieldKey] || '';
+      doc.text(
+        truncateTemplateText(text, templateNumberValue(mapping, 'maxChars', 'max_chars', 0)),
+        x,
+        baseY,
+        textOptions,
+      );
+    }
+  };
+
+  for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+    await drawPage(pageIndex);
+  }
+  doc.end();
+  return finished;
 }
 
 async function listDeliveryChallans({
@@ -4785,6 +5731,140 @@ async function getItemSelectionSnapshot(itemId, variationLeafNodeId) {
       ? `${selection.item.display_name || selection.item.name} - ${selection.variationPathLabel}`
       : (selection.item.display_name || selection.item.name || ''),
   };
+}
+
+function rowToProductionRunDto(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: Number(row.id || 0),
+    runCode: row.run_code || '',
+    status: row.status || '',
+    completedAt: row.completed_at || null,
+    itemId: Number(row.item_id || 0),
+    itemName: row.item_name || '',
+    variationLeafNodeId: Number(row.variation_leaf_node_id || 0),
+    variationPathLabel: row.variation_path_label || '',
+    outputQuantity: Number(row.output_quantity || 0),
+    uom: row.uom || 'pcs',
+    location: row.location || '',
+  };
+}
+
+async function listCompletedProductionRuns({ search = '', limit = 25 } = {}) {
+  const normalizedSearch = String(search || '').trim().toLowerCase();
+  const params = [];
+  let searchSql = '';
+  if (normalizedSearch) {
+    searchSql = `
+      AND (
+        LOWER(pr.run_code) LIKE ?
+        OR LOWER(i.display_name) LIKE ?
+        OR LOWER(i.name) LIKE ?
+        OR LOWER(pr.variation_path_label) LIKE ?
+      )
+    `;
+    params.push(
+      `%${normalizedSearch}%`,
+      `%${normalizedSearch}%`,
+      `%${normalizedSearch}%`,
+      `%${normalizedSearch}%`,
+    );
+  }
+  params.push(Math.min(Math.max(Number(limit || 25), 1), 100));
+  const rows = await all(
+    `
+    SELECT pr.*, COALESCE(i.display_name, i.name, '') AS item_name
+    FROM production_runs pr
+    INNER JOIN items i ON i.id = pr.item_id
+    WHERE pr.status = 'completed'
+      AND COALESCE(i.is_archived, 0) = 0
+      ${searchSql}
+    ORDER BY datetime(pr.completed_at) DESC, pr.id DESC
+    LIMIT ?
+    `,
+    params,
+  );
+  return rows.map(rowToProductionRunDto);
+}
+
+async function ensureDemoProductionRunsPresent() {
+  const existing = await get('SELECT COUNT(*) AS count FROM production_runs');
+  if (Number(existing?.count || 0) > 0) {
+    return;
+  }
+  const orders = await getOrders();
+  const seeds = orders
+    .filter((order) => Number(order.item_id || 0) > 0)
+    .slice(0, 6);
+  if (seeds.length === 0) {
+    return;
+  }
+  const now = new Date().toISOString();
+  for (let index = 0; index < seeds.length; index += 1) {
+    const order = seeds[index];
+    await run(
+      `
+      INSERT INTO production_runs (
+        run_code, status, completed_at, item_id, variation_leaf_node_id,
+        variation_path_label, output_quantity, uom, location,
+        source_metadata_json, created_at, updated_at
+      ) VALUES (?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        `RUN-${String(index + 1).padStart(4, '0')}`,
+        now,
+        Number(order.item_id || 0),
+        Number(order.variation_leaf_node_id || 0),
+        String(order.variation_path_label || ''),
+        Math.max(Number(order.quantity || 0), 1),
+        'pcs',
+        'Production Output',
+        JSON.stringify({
+          orderId: order.id,
+          orderNo: order.order_no,
+        }),
+        now,
+        now,
+      ],
+    );
+  }
+}
+
+async function getProductionRunRowById(id) {
+  return get(
+    `
+    SELECT pr.*, COALESCE(i.display_name, i.name, '') AS item_name
+    FROM production_runs pr
+    INNER JOIN items i ON i.id = pr.item_id
+    WHERE pr.id = ?
+    `,
+    [Number(id || 0)],
+  );
+}
+
+async function validateProductionRunForChallanLine(runId, item) {
+  if (!runId) {
+    return null;
+  }
+  const run = await getProductionRunRowById(runId);
+  if (!run || run.status !== 'completed') {
+    const error = new Error('Selected production run is not completed or no longer exists.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (Number(run.item_id || 0) !== Number(item.itemId || 0)) {
+    const error = new Error('Selected production run item does not match the challan line item.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (Number(run.variation_leaf_node_id || 0) !== Number(item.variationLeafNodeId || 0)) {
+    const error = new Error('Selected production run variation does not match the challan line variation.');
+    error.statusCode = 400;
+    throw error;
+  }
+  return run;
 }
 
 async function findMaterialByItemSelection(itemId, variationLeafNodeId) {
@@ -4989,6 +6069,24 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
   const items = [];
   for (const item of normalizedItems) {
     if (challanType === 'delivery') {
+      if (item.productionRunId) {
+        const snapshot = await getItemSelectionSnapshot(item.itemId, item.variationLeafNodeId);
+        const run = await validateProductionRunForChallanLine(item.productionRunId, {
+          itemId: snapshot.itemId,
+          variationLeafNodeId: snapshot.variationLeafNodeId,
+        });
+        items.push({
+          ...item,
+          orderItemId: item.orderItemId || null,
+          productionRunId: run.id,
+          itemId: snapshot.itemId,
+          variationLeafNodeId: snapshot.variationLeafNodeId,
+          particulars: item.particulars || snapshot.particulars,
+          variationPathLabel: item.variationPathLabel || snapshot.variationPathLabel,
+          hsnCode: item.hsnCode,
+        });
+        continue;
+      }
       const orderItemId = Number(item.orderItemId || 0);
       if (!Number.isInteger(orderItemId) || orderItemId <= 0) {
         const error = new Error('Each delivery challan row must reference one of the selected orders.');
@@ -5023,6 +6121,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
       items.push({
         ...item,
         orderItemId,
+        productionRunId: null,
         itemId,
         variationLeafNodeId: orderVariationLeafNodeId,
         particulars: orderSnapshot?.particulars || item.particulars,
@@ -5131,12 +6230,14 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
       await run(
         `
         INSERT INTO delivery_challan_items (
-          challan_id, order_item_id, item_id, variation_leaf_node_id, line_no, particulars, hsn_code, quantity_pcs, weight, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          challan_id, order_item_id, production_run_id, item_id, variation_leaf_node_id,
+          line_no, particulars, hsn_code, quantity_pcs, weight, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           challanId,
           item.orderItemId,
+          item.productionRunId || null,
           item.itemId,
           item.variationLeafNodeId || 0,
           item.lineNo,
@@ -5220,8 +6321,18 @@ async function issueDeliveryChallan(id, actor = null) {
       error.statusCode = 400;
       throw error;
     }
+    if (normalizeChallanType(existing.type) === 'delivery' && item.production_run_id) {
+      await validateProductionRunForChallanLine(item.production_run_id, {
+        itemId: item.item_id,
+        variationLeafNodeId: item.variation_leaf_node_id,
+      });
+    }
   }
   const profile = rowToCompanyProfileDto(await getActiveCompanyProfile());
+  const activeTemplate = await findActiveChallanTemplateForChallan(existing);
+  const templateSnapshot = activeTemplate
+    ? await buildChallanTemplateSnapshot(activeTemplate)
+    : null;
   const now = new Date().toISOString();
   await run('BEGIN TRANSACTION');
   try {
@@ -5270,10 +6381,17 @@ async function issueDeliveryChallan(id, actor = null) {
     await run(
       `
       UPDATE delivery_challans
-      SET status = 'issued', company_profile_snapshot = ?, updated_by = ?, updated_at = ?
+      SET status = 'issued', company_profile_snapshot = ?, template_snapshot_json = ?,
+          updated_by = ?, updated_at = ?
       WHERE id = ?
       `,
-      [JSON.stringify(profile), actor?.id || null, now, id],
+      [
+        JSON.stringify(profile),
+        templateSnapshot ? JSON.stringify(templateSnapshot) : null,
+        actor?.id || null,
+        now,
+        id,
+      ],
     );
     await run('COMMIT');
   } catch (error) {
@@ -5323,11 +6441,12 @@ async function cancelDeliveryChallan(id, actor = null) {
             toLocationId: movement.to_location_id || existing.location || 'MAIN',
             fromLocationId: movement.from_location_id || null,
             reasonCode: 'challan_cancel_reversal',
-            referenceType: 'challan-reversal',
+            referenceType: 'challan-cancellation',
             referenceId: String(existing.id),
             sourceChallanId: existing.id,
             sourceChallanType: normalizeChallanType(existing.type),
             sourceChallanLineId: movement.source_challan_line_id || null,
+            reversesMovementId: movement.id,
             actor,
             lotCode: movement.lot_code || movement.material_barcode,
           },
@@ -5390,12 +6509,25 @@ const ALLOWED_ASSET_CONTENT_TYPES = new Set([
   'image/webp',
 ]);
 
+const ALLOWED_CHALLAN_TEMPLATE_CONTENT_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+]);
+
 function normalizePoFileName(fileName) {
   const baseName = path.basename(String(fileName || '').trim());
   return baseName
     .replace(/[^\w.\- ()]/g, '_')
     .replace(/_+/g, '_')
     .slice(0, 160) || 'purchase-order';
+}
+
+function normalizeChallanTemplateFileName(fileName) {
+  const baseName = path.basename(String(fileName || '').trim());
+  return baseName
+    .replace(/[^\w.\- ()]/g, '_')
+    .replace(/_+/g, '_')
+    .slice(0, 160) || 'challan-template';
 }
 
 function normalizeUploadType(uploadType) {
@@ -5545,6 +6677,70 @@ function assertValidAssetUploadInput({
   };
 }
 
+function assertValidChallanTemplateUploadInput({
+  uploadType,
+  fileName,
+  contentType,
+  sizeBytes,
+  sha256,
+}) {
+  const normalizedUploadType = normalizeUploadType(uploadType);
+  const normalizedContentType = String(contentType || '').toLowerCase().trim();
+  const normalizedSize = Number(sizeBytes || 0);
+  const normalizedSha = String(sha256 || '').toLowerCase().trim();
+  const normalizedName = normalizeChallanTemplateFileName(fileName);
+
+  if (
+    normalizedUploadType !== 'CHALLAN_TEMPLATE_BACKGROUND' &&
+    normalizedUploadType !== 'CHALLAN_TEMPLATE_STAMP'
+  ) {
+    const error = new Error(
+      'Challan template uploads must declare a supported challan template upload type.',
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+  if (
+    normalizedUploadType === 'CHALLAN_TEMPLATE_STAMP' &&
+    normalizedContentType !== 'image/png'
+  ) {
+    const error = new Error('Challan stamps and signatures must be transparent PNG files.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (
+    normalizedUploadType === 'CHALLAN_TEMPLATE_BACKGROUND' &&
+    !ALLOWED_CHALLAN_TEMPLATE_CONTENT_TYPES.has(normalizedContentType)
+  ) {
+    const error = new Error('Only PNG, JPG, and JPEG template scans are allowed.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!Number.isFinite(normalizedSize) || normalizedSize <= 0) {
+    const error = new Error('File size must be greater than zero.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (normalizedSize > 15 * 1024 * 1024) {
+    const error = new Error('Challan template scans must be 15 MB or smaller.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!/^[a-f0-9]{64}$/.test(normalizedSha)) {
+    const error = new Error('A valid SHA-256 file hash is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    uploadType: normalizedUploadType,
+    fileName: normalizedName,
+    contentType: normalizedContentType,
+    sizeBytes: Math.round(normalizedSize),
+    sha256: normalizedSha,
+  };
+}
+
 function getS3Config() {
   const endpoint = String(process.env.S3_ENDPOINT || '').trim().replace(/\/+$/, '');
   return {
@@ -5644,6 +6840,21 @@ async function assertS3ObjectExists(objectKey) {
     error.statusCode = 400;
     throw error;
   }
+}
+
+async function readS3ObjectBuffer(objectKey) {
+  const config = assertS3Configured();
+  const result = await getS3Client().send(
+    new GetObjectCommand({
+      Bucket: config.bucket,
+      Key: objectKey,
+    }),
+  );
+  const chunks = [];
+  for await (const chunk of result.Body) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
 }
 
 async function createPoUploadIntent(input) {
@@ -5752,6 +6963,93 @@ async function completePoUpload({ uploadSessionId, objectKey }) {
     session.sha256,
   ]);
   return rowToPoDocumentDto(document);
+}
+
+async function createChallanTemplateUploadIntent(input) {
+  const normalized = assertValidChallanTemplateUploadInput(input || {});
+  const objectKey = buildS3ObjectKey({
+    uploadType: normalized.uploadType,
+    fileName: normalized.fileName,
+    sha256: normalized.sha256,
+  });
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
+  const uploadSessionId = `challan-template-upload-${now.getTime()}-${crypto
+    .randomBytes(8)
+    .toString('hex')}`;
+  await run(
+    `
+    INSERT INTO challan_template_upload_sessions (
+      id, file_name, content_type, size_bytes, sha256, object_key, status, expires_at, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+    `,
+    [
+      uploadSessionId,
+      normalized.fileName,
+      normalized.contentType,
+      normalized.sizeBytes,
+      normalized.sha256,
+      objectKey,
+      expiresAt,
+      now.toISOString(),
+    ],
+  );
+
+  return {
+    uploadSessionId,
+    objectKey,
+    uploadUrl: await presignS3Url({
+      method: 'PUT',
+      objectKey,
+      contentType: normalized.contentType,
+      expiresSeconds: 900,
+    }),
+    expiresAt,
+    headers: {
+      'Content-Type': normalized.contentType,
+    },
+  };
+}
+
+async function completeChallanTemplateUpload({ uploadSessionId, objectKey }) {
+  const session = await get(
+    'SELECT * FROM challan_template_upload_sessions WHERE id = ?',
+    [uploadSessionId],
+  );
+  if (!session || session.object_key !== objectKey) {
+    const error = new Error('Upload session not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  if (new Date(session.expires_at).getTime() < Date.now()) {
+    const error = new Error('Upload session expired.');
+    error.statusCode = 410;
+    throw error;
+  }
+  await assertS3ObjectExists(session.object_key);
+  const buffer = await readS3ObjectBuffer(session.object_key);
+  const dimensions = imageSize(buffer);
+  if (!dimensions.width || !dimensions.height) {
+    const error = new Error('Uploaded template scan dimensions could not be read.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const now = new Date().toISOString();
+  await run(
+    "UPDATE challan_template_upload_sessions SET status = 'completed', completed_at = ? WHERE id = ?",
+    [now, uploadSessionId],
+  );
+  return {
+    uploadSessionId,
+    objectKey: session.object_key,
+    fileName: session.file_name,
+    contentType: session.content_type,
+    sizeBytes: Number(session.size_bytes || 0),
+    canvasWidth: Number(dimensions.width || 0),
+    canvasHeight: Number(dimensions.height || 0),
+    uploadedAt: now,
+  };
 }
 
 async function linkPoDocumentsToOrder(orderId, documentIds = []) {
@@ -9278,10 +10576,14 @@ async function getMaterialControlTowerDetail(barcode) {
       sourceChallanId: row.source_challan_id == null ? null : Number(row.source_challan_id || 0),
       sourceChallanType: row.source_challan_type || null,
       sourceChallanLineId: row.source_challan_line_id == null ? null : Number(row.source_challan_line_id || 0),
+      reversesMovementId: row.reverses_movement_id || null,
       sourceLabel: (() => {
         const linkedChallan = challanById.get(Number(row.source_challan_id || 0));
         if (linkedChallan) {
           const typeLabel = normalizeChallanType(linkedChallan.type) === 'reception' ? 'Reception' : 'Delivery';
+          if (row.reverses_movement_id || row.reference_type === 'challan-cancellation') {
+            return `Cancellation of ${typeLabel} Challan ${linkedChallan.challan_no || `#${linkedChallan.id}`}`;
+          }
           return `${typeLabel} Challan ${linkedChallan.challan_no || `#${linkedChallan.id}`}`;
         }
         const referenceType = String(row.reference_type || '').trim();
@@ -9392,6 +10694,7 @@ async function applyInventoryMovementCore(payload, { useTransaction = true } = {
   const sourceChallanLineId = payload?.sourceChallanLineId == null
     ? null
     : Number(payload.sourceChallanLineId || 0) || null;
+  const reversesMovementId = String(payload?.reversesMovementId || '').trim() || null;
   const referenceType = String(payload?.referenceType || '').trim() || null;
   const referenceId = String(payload?.referenceId || '').trim() || null;
   const primaryQty = Number(payload?.primaryQty || qty);
@@ -9538,8 +10841,8 @@ async function applyInventoryMovementCore(payload, { useTransaction = true } = {
       INSERT INTO inventory_movements (
         id, material_barcode, movement_type, qty, primary_qty, uom, from_location_id, to_location_id,
         reason_code, reference_type, reference_id, source_challan_id, source_challan_type,
-        source_challan_line_id, actor, lot_code, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        source_challan_line_id, reverses_movement_id, actor, lot_code, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         movementId,
@@ -9556,6 +10859,7 @@ async function applyInventoryMovementCore(payload, { useTransaction = true } = {
         sourceChallanId,
         sourceChallanType || null,
         sourceChallanLineId,
+        reversesMovementId,
         actor,
         lotCode,
         now,
@@ -11788,9 +13092,14 @@ app.get('/api/delivery-challans', requirePermission('config.read'), handleListCh
 const handleCreateChallan = async (req, res) => {
   try {
     const challan = await saveDeliveryChallan(req.body || {}, actorFromRequest(req), req);
+    const warning = await challanNumberWarning(
+      req.body?.challanNo ?? req.body?.challan_no,
+      challan.type,
+    );
     res.status(201).json({
       success: true,
       data: await rowToDeliveryChallanDto(challan),
+      warnings: warning ? [warning] : [],
       error: null,
     });
   } catch (error) {
@@ -11858,7 +13167,16 @@ const handleUpdateChallan = async (req, res) => {
       actorFromRequest(req),
       req,
     );
-    res.json({ success: true, data: await rowToDeliveryChallanDto(challan), error: null });
+    const warning = await challanNumberWarning(
+      req.body?.challanNo ?? req.body?.challan_no,
+      challan.type,
+    );
+    res.json({
+      success: true,
+      data: await rowToDeliveryChallanDto(challan),
+      warnings: warning ? [warning] : [],
+      error: null,
+    });
   } catch (error) {
     res.status(error.statusCode || 500).json({
       success: false,
@@ -11906,6 +13224,24 @@ const handleCancelChallan = async (req, res) => {
 app.post('/api/challans/:id/cancel', requirePermission('config.write'), handleCancelChallan);
 app.post('/api/delivery-challans/:id/cancel', requirePermission('config.write'), handleCancelChallan);
 
+app.get('/api/production-runs/completed', requirePermission('config.read'), async (req, res) => {
+  try {
+    const runs = await listCompletedProductionRuns({
+      search: req.query.search || req.query.q || '',
+      limit: req.query.limit || 25,
+    });
+    res.json({ success: true, data: runs, productionRuns: runs, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      data: [],
+      productionRuns: [],
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
 const handlePrintChallan = async (req, res) => {
   try {
     const challan = await getDeliveryChallanRowById(Number(req.params.id));
@@ -11951,6 +13287,210 @@ const handleDeleteChallan = async (req, res) => {
 
 app.delete('/api/challans/:id', requirePermission('config.write'), handleDeleteChallan);
 app.delete('/api/delivery-challans/:id', requirePermission('config.write'), handleDeleteChallan);
+
+app.get('/api/challan-templates', requirePermission('config.read'), async (req, res) => {
+  try {
+    const templates = await listChallanTemplates({
+      partyType: req.query.partyType || req.query.party_type || '',
+      partyId: req.query.partyId || req.query.party_id,
+      challanType: req.query.challanType || req.query.challan_type || '',
+      activeOnly: parseBooleanEnv(req.query.activeOnly || req.query.active_only, false),
+    });
+    res.json({ success: true, templates, data: templates, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      templates: [],
+      data: [],
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
+app.get('/api/challan-templates/:id', requirePermission('config.read'), async (req, res) => {
+  try {
+    const template = await getChallanTemplateRowById(Number(req.params.id));
+    if (!template) {
+      res.status(404).json({
+        success: false,
+        template: null,
+        data: null,
+        message: 'Challan template not found.',
+        error: 'Challan template not found.',
+      });
+      return;
+    }
+    const dto = await rowToChallanTemplateDto(template);
+    res.json({ success: true, template: dto, data: dto, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      template: null,
+      data: null,
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/challan-templates', requirePermission('config.write'), async (req, res) => {
+  try {
+    const template = await saveChallanTemplate(req.body || {});
+    res.status(201).json({ success: true, template, data: template, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      template: null,
+      data: null,
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
+app.patch('/api/challan-templates/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    const template = await saveChallanTemplate(req.body || {}, Number(req.params.id));
+    res.json({ success: true, template, data: template, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      template: null,
+      data: null,
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
+app.delete('/api/challan-templates/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    await deleteChallanTemplate(Number(req.params.id));
+    res.json({ success: true, data: null, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      data: null,
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/challan-templates/upload-intent', requirePermission('config.write'), async (req, res) => {
+  try {
+    const upload = await createChallanTemplateUploadIntent({
+      ...(req.body || {}),
+      uploadType: 'CHALLAN_TEMPLATE_BACKGROUND',
+    });
+    res.status(201).json({ success: true, upload, data: upload, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      upload: null,
+      data: null,
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/challan-templates/upload-complete', requirePermission('config.write'), async (req, res) => {
+  try {
+    const background = await completeChallanTemplateUpload(req.body || {});
+    res.json({ success: true, background, data: background, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      background: null,
+      data: null,
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/challan-templates/stamp-upload-intent', requirePermission('config.write'), async (req, res) => {
+  try {
+    const upload = await createChallanTemplateUploadIntent({
+      ...(req.body || {}),
+      uploadType: 'CHALLAN_TEMPLATE_STAMP',
+    });
+    res.status(201).json({ success: true, upload, data: upload, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      upload: null,
+      data: null,
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/challan-templates/stamp-upload-complete', requirePermission('config.write'), async (req, res) => {
+  try {
+    const stamp = await completeChallanTemplateUpload(req.body || {});
+    res.json({ success: true, stamp, data: stamp, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      stamp: null,
+      data: null,
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
+app.get('/api/challans/:id/print-template-preview', requirePermission('config.read'), async (req, res) => {
+  try {
+    const challan = await getDeliveryChallanRowById(Number(req.params.id));
+    if (!challan) {
+      res.status(404).json({
+        success: false,
+        message: 'Challan not found.',
+        error: 'Challan not found.',
+      });
+      return;
+    }
+    const snapshot = parseJsonObject(challan.template_snapshot_json, null);
+    const useSnapshot = challan.status !== 'draft' && snapshot;
+    const templateId = Number(req.query.templateId || req.query.template_id || 0);
+    const template = useSnapshot
+      ? null
+      : templateId > 0
+      ? await getChallanTemplateRowById(templateId)
+      : await findActiveChallanTemplateForChallan(challan);
+    if (!useSnapshot && !template) {
+      res.status(404).json({
+        success: false,
+        message: 'Matching challan template not found.',
+        error: 'Matching challan template not found.',
+      });
+      return;
+    }
+    const buffer = await generateChallanTemplatePdf({
+      challanRow: challan,
+      templateRow: template,
+      templateSnapshot: useSnapshot ? snapshot : null,
+      mode: req.query.mode,
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${String(challan.challan_no || 'challan').replace(/[^a-zA-Z0-9_.-]/g, '_')}-${String(req.query.mode || 'digital')}.pdf"`,
+    );
+    res.send(buffer);
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
 
 app.get('/api/orders', requirePermission('config.read'), async (req, res) => {
   try {
@@ -13350,6 +14890,13 @@ module.exports = {
   cancelDeliveryChallan,
   deleteDraftDeliveryChallan,
   listDeliveryChallans,
+  listChallanTemplates,
+  listCompletedProductionRuns,
+  saveChallanTemplate,
+  deleteChallanTemplate,
+  createChallanTemplateUploadIntent,
+  completeChallanTemplateUpload,
+  generateChallanTemplatePdf,
   createPoUploadIntent,
   completePoUpload,
   createAssetUploadIntent,

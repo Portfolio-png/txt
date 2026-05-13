@@ -1,6 +1,9 @@
 import '../domain/delivery_challan.dart';
+import '../domain/challan_template.dart';
 
 abstract class ChallanRepository {
+  String? get lastWarningMessage;
+
   Future<void> init();
 
   Future<CompanyProfile> getCompanyProfile();
@@ -34,6 +37,48 @@ abstract class ChallanRepository {
   Future<void> deleteChallan(int id);
 
   Future<void> recordPrint(int id);
+
+  Future<List<CompletedProductionRun>> getCompletedProductionRuns({
+    String search = '',
+    int limit = 25,
+  });
+
+  Future<List<ChallanTemplate>> getTemplates({
+    ChallanTemplatePartyType? partyType,
+    int? partyId,
+    ChallanType? challanType,
+    bool activeOnly = false,
+  });
+
+  Future<ChallanTemplate> createTemplate(ChallanTemplateInput input);
+
+  Future<ChallanTemplate> updateTemplate(int id, ChallanTemplateInput input);
+
+  Future<void> deleteTemplate(int id);
+
+  Future<ChallanTemplateUploadTarget> createTemplateUploadIntent(
+    ChallanTemplateUploadIntentInput input,
+  );
+
+  Future<ChallanTemplateBackground> completeTemplateUpload({
+    required String uploadSessionId,
+    required String objectKey,
+  });
+
+  Future<ChallanTemplateUploadTarget> createTemplateStampUploadIntent(
+    ChallanTemplateUploadIntentInput input,
+  );
+
+  Future<ChallanTemplateBackground> completeTemplateStampUpload({
+    required String uploadSessionId,
+    required String objectKey,
+  });
+
+  Uri templatePreviewUri({
+    required int challanId,
+    int? templateId,
+    required String mode,
+  });
 }
 
 typedef DeliveryChallanRepository = ChallanRepository;
@@ -78,9 +123,12 @@ class ChallanDraftInput {
           .map(
             (item) => {
               if (item.orderItemId != null) 'order_item_id': item.orderItemId,
+              if (item.productionRunId != null)
+                'production_run_id': item.productionRunId,
               if (item.itemId != null) 'item_id': item.itemId,
               'variation_leaf_node_id': item.variationLeafNodeId,
               'particulars': item.particulars,
+              'hsn_code': item.hsnCode,
               'variation_path_label': item.variationPathLabel,
               'quantity_pcs': item.quantityPcs.trim(),
               'weight': item.weight.trim(),

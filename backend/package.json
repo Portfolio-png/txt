@@ -15,9 +15,13 @@
     "cleanup:security": "node ./scripts/cleanup-security-data.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1045.0",
+    "@aws-sdk/s3-request-presigner": "^3.1045.0",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
+    "image-size": "^2.0.2",
+    "pdfkit": "^0.18.0",
     "sqlite3": "^5.1.7"
   }
 }

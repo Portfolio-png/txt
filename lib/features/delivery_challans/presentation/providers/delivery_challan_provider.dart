@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/delivery_challan_repository.dart';
+import '../../domain/challan_template.dart';
 import '../../domain/delivery_challan.dart';
 
 class ChallanProvider extends ChangeNotifier {
@@ -30,6 +31,8 @@ class ChallanProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isSaving => _isSaving;
   String? get errorMessage => _errorMessage;
+  String? get warningMessage => _repository.lastWarningMessage;
+  ChallanRepository get repository => _repository;
 
   Future<void> initialize() async {
     if (_initialized) {
@@ -138,6 +141,99 @@ class ChallanProvider extends ChangeNotifier {
   }
 
   Future<void> recordPrint(int id) => _repository.recordPrint(id);
+
+  Future<List<CompletedProductionRun>> loadCompletedProductionRuns({
+    String search = '',
+    int limit = 25,
+  }) async {
+    try {
+      return await _repository.getCompletedProductionRuns(
+        search: search,
+        limit: limit,
+      );
+    } catch (error) {
+      _logError(error);
+      _errorMessage = error.toString();
+      notifyListeners();
+      return const <CompletedProductionRun>[];
+    }
+  }
+
+  Future<List<ChallanTemplate>> loadTemplates({
+    ChallanTemplatePartyType? partyType,
+    int? partyId,
+    ChallanType? challanType,
+    bool activeOnly = false,
+  }) async {
+    try {
+      return await _repository.getTemplates(
+        partyType: partyType,
+        partyId: partyId,
+        challanType: challanType,
+        activeOnly: activeOnly,
+      );
+    } catch (error) {
+      _logError(error);
+      _errorMessage = error.toString();
+      notifyListeners();
+      return const <ChallanTemplate>[];
+    }
+  }
+
+  Future<ChallanTemplate?> saveTemplate({
+    int? id,
+    required ChallanTemplateInput input,
+  }) async {
+    return _save(() async {
+      if (id == null || id <= 0) {
+        return _repository.createTemplate(input);
+      }
+      return _repository.updateTemplate(id, input);
+    });
+  }
+
+  Future<void> deleteTemplate(int id) async {
+    await _save(() async {
+      await _repository.deleteTemplate(id);
+      return null;
+    });
+  }
+
+  Future<ChallanTemplateUploadTarget?> createTemplateUploadIntent(
+    ChallanTemplateUploadIntentInput input,
+  ) async {
+    return _save(() => _repository.createTemplateUploadIntent(input));
+  }
+
+  Future<ChallanTemplateBackground?> completeTemplateUpload({
+    required String uploadSessionId,
+    required String objectKey,
+  }) async {
+    return _save(
+      () => _repository.completeTemplateUpload(
+        uploadSessionId: uploadSessionId,
+        objectKey: objectKey,
+      ),
+    );
+  }
+
+  Future<ChallanTemplateUploadTarget?> createTemplateStampUploadIntent(
+    ChallanTemplateUploadIntentInput input,
+  ) async {
+    return _save(() => _repository.createTemplateStampUploadIntent(input));
+  }
+
+  Future<ChallanTemplateBackground?> completeTemplateStampUpload({
+    required String uploadSessionId,
+    required String objectKey,
+  }) async {
+    return _save(
+      () => _repository.completeTemplateStampUpload(
+        uploadSessionId: uploadSessionId,
+        objectKey: objectKey,
+      ),
+    );
+  }
 
   Future<DeliveryChallan?> _saveChallan(
     Future<DeliveryChallan> Function() action,

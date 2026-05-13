@@ -102,6 +102,7 @@ class DeliveryChallanItem {
   const DeliveryChallanItem({
     required this.id,
     required this.orderItemId,
+    required this.productionRunId,
     required this.itemId,
     required this.variationLeafNodeId,
     required this.lineNo,
@@ -114,6 +115,7 @@ class DeliveryChallanItem {
 
   final int id;
   final int? orderItemId;
+  final int? productionRunId;
   final int? itemId;
   final int variationLeafNodeId;
   final int lineNo;
@@ -127,6 +129,7 @@ class DeliveryChallanItem {
     return DeliveryChallanItem(
       id: 0,
       orderItemId: null,
+      productionRunId: null,
       itemId: null,
       variationLeafNodeId: 0,
       lineNo: lineNo,
@@ -142,6 +145,8 @@ class DeliveryChallanItem {
     return DeliveryChallanItem(
       id: json['id'] as int? ?? 0,
       orderItemId: json['orderItemId'] as int? ?? json['order_item_id'] as int?,
+      productionRunId:
+          json['productionRunId'] as int? ?? json['production_run_id'] as int?,
       itemId: json['itemId'] as int? ?? json['item_id'] as int?,
       variationLeafNodeId:
           json['variationLeafNodeId'] as int? ??
@@ -166,6 +171,7 @@ class DeliveryChallanItem {
     return {
       'line_no': lineNo,
       if (orderItemId != null) 'order_item_id': orderItemId,
+      if (productionRunId != null) 'production_run_id': productionRunId,
       if (itemId != null) 'item_id': itemId,
       'variation_leaf_node_id': variationLeafNodeId,
       'particulars': particulars,
@@ -177,12 +183,77 @@ class DeliveryChallanItem {
   }
 }
 
+class CompletedProductionRun {
+  const CompletedProductionRun({
+    required this.id,
+    required this.runCode,
+    required this.status,
+    required this.completedAt,
+    required this.itemId,
+    required this.itemName,
+    required this.variationLeafNodeId,
+    required this.variationPathLabel,
+    required this.outputQuantity,
+    required this.uom,
+    required this.location,
+  });
+
+  final int id;
+  final String runCode;
+  final String status;
+  final DateTime? completedAt;
+  final int itemId;
+  final String itemName;
+  final int variationLeafNodeId;
+  final String variationPathLabel;
+  final double outputQuantity;
+  final String uom;
+  final String location;
+
+  String get displayLabel {
+    final variation = variationPathLabel.trim();
+    return variation.isEmpty
+        ? '$runCode - $itemName'
+        : '$runCode - $itemName - $variation';
+  }
+
+  factory CompletedProductionRun.fromJson(Map<String, dynamic> json) {
+    return CompletedProductionRun(
+      id: json['id'] as int? ?? 0,
+      runCode: json['runCode'] as String? ?? json['run_code'] as String? ?? '',
+      status: json['status'] as String? ?? '',
+      completedAt: DateTime.tryParse(
+        json['completedAt'] as String? ?? json['completed_at'] as String? ?? '',
+      ),
+      itemId: json['itemId'] as int? ?? json['item_id'] as int? ?? 0,
+      itemName:
+          json['itemName'] as String? ?? json['item_name'] as String? ?? '',
+      variationLeafNodeId:
+          json['variationLeafNodeId'] as int? ??
+          json['variation_leaf_node_id'] as int? ??
+          0,
+      variationPathLabel:
+          json['variationPathLabel'] as String? ??
+          json['variation_path_label'] as String? ??
+          '',
+      outputQuantity:
+          (json['outputQuantity'] as num? ??
+                  json['output_quantity'] as num? ??
+                  0)
+              .toDouble(),
+      uom: json['uom'] as String? ?? 'pcs',
+      location: json['location'] as String? ?? '',
+    );
+  }
+}
+
 class DeliveryChallan {
   const DeliveryChallan({
     required this.id,
     required this.type,
     required this.orderId,
     required this.orderIds,
+    required this.clientId,
     required this.orderNo,
     required this.orderNos,
     required this.challanNo,
@@ -207,6 +278,7 @@ class DeliveryChallan {
   final ChallanType type;
   final int? orderId;
   final List<int> orderIds;
+  final int? clientId;
   final String orderNo;
   final List<String> orderNos;
   final String challanNo;
@@ -255,6 +327,7 @@ class DeliveryChallan {
               .map((value) => value as int? ?? 0)
               .where((value) => value > 0)
               .toList(growable: false),
+      clientId: json['clientId'] as int? ?? json['client_id'] as int?,
       orderNo: json['orderNo'] as String? ?? json['order_no'] as String? ?? '',
       orderNos:
           (json['orderNos'] as List<dynamic>? ??
@@ -307,6 +380,7 @@ class DeliveryChallan {
       type: type,
       orderId: orderId,
       orderIds: orderIds,
+      clientId: clientId,
       orderNo: orderNo,
       orderNos: orderNos,
       challanNo: challanNo,

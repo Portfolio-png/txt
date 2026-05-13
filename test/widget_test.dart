@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:paper/app/shell/navigation_provider.dart';
 import 'package:paper/features/auth/presentation/providers/auth_provider.dart';
 import 'package:paper/features/delivery_challans/data/delivery_challan_repository.dart';
+import 'package:paper/features/delivery_challans/domain/challan_template.dart';
 import 'package:paper/features/delivery_challans/domain/delivery_challan.dart';
 import 'package:paper/features/groups/data/repositories/group_repository.dart';
 import 'package:paper/features/groups/domain/group_definition.dart';
@@ -2501,6 +2502,9 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
   );
 
   @override
+  String? get lastWarningMessage => null;
+
+  @override
   Future<void> init() async {}
 
   @override
@@ -2591,6 +2595,70 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
 
   @override
   Future<void> recordPrint(int id) async {}
+
+  @override
+  Future<List<CompletedProductionRun>> getCompletedProductionRuns({
+    String search = '',
+    int limit = 25,
+  }) async => const <CompletedProductionRun>[];
+
+  @override
+  Future<List<ChallanTemplate>> getTemplates({
+    ChallanTemplatePartyType? partyType,
+    int? partyId,
+    ChallanType? challanType,
+    bool activeOnly = false,
+  }) async => const <ChallanTemplate>[];
+
+  @override
+  Future<ChallanTemplate> createTemplate(ChallanTemplateInput input) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<ChallanTemplate> updateTemplate(int id, ChallanTemplateInput input) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> deleteTemplate(int id) async {}
+
+  @override
+  Future<ChallanTemplateUploadTarget> createTemplateUploadIntent(
+    ChallanTemplateUploadIntentInput input,
+  ) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<ChallanTemplateBackground> completeTemplateUpload({
+    required String uploadSessionId,
+    required String objectKey,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<ChallanTemplateUploadTarget> createTemplateStampUploadIntent(
+    ChallanTemplateUploadIntentInput input,
+  ) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<ChallanTemplateBackground> completeTemplateStampUpload({
+    required String uploadSessionId,
+    required String objectKey,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Uri templatePreviewUri({
+    required int challanId,
+    int? templateId,
+    required String mode,
+  }) => Uri.parse('https://mock.local/challans/$challanId/$mode');
 
   @override
   Future<CompanyProfile> updateCompanyProfile(CompanyProfile profile) async {
@@ -3134,6 +3202,7 @@ void main() {
           type: ChallanType.delivery,
           orderId: 10,
           orderIds: const <int>[10],
+          clientId: 1,
           orderNo: 'ORD-10',
           orderNos: const <String>['ORD-10'],
           challanNo: 'DC-00001',
@@ -3158,6 +3227,7 @@ void main() {
           type: ChallanType.reception,
           orderId: null,
           orderIds: const <int>[],
+          clientId: null,
           orderNo: '',
           orderNos: const <String>[],
           challanNo: 'RC-00001',

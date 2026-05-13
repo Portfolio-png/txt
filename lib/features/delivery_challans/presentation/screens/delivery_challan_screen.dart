@@ -23,8 +23,10 @@ import '../../../orders/domain/order_entry.dart';
 import '../../../orders/presentation/providers/orders_provider.dart';
 import '../../../vendors/presentation/providers/vendors_provider.dart';
 import '../../data/delivery_challan_repository.dart';
+import '../../domain/challan_template.dart';
 import '../../domain/delivery_challan.dart';
 import '../providers/delivery_challan_provider.dart';
+import 'challan_template_mapping_screen.dart';
 
 const MethodChannel _nativePrintingChannel = MethodChannel(
   'paper/native_printing',
@@ -128,6 +130,7 @@ Future<void> _openPrintPreviewFromContext(
 
 class _ChallanScreenState extends State<ChallanScreen> {
   final TextEditingController _searchController = TextEditingController();
+  bool _showTemplates = false;
 
   @override
   void dispose() {
@@ -147,48 +150,58 @@ class _ChallanScreenState extends State<ChallanScreen> {
             onCreateReception: () =>
                 _openEditor(context, initialType: ChallanType.reception),
             onEditProfile: () => _openCompanyProfile(context),
+            onOpenTemplates: () => setState(() => _showTemplates = true),
           ),
           const SizedBox(height: 16),
-          _Filters(
-            searchController: _searchController,
-            type: provider.typeFilter,
-            status: provider.statusFilter,
-            orderFilterId: provider.orderFilterId,
-            onSearch: provider.setSearchQuery,
-            onTypeChanged: provider.setTypeFilter,
-            onStatusChanged: provider.setStatusFilter,
-            onClearOrderFilter: () => provider.setOrderFilter(null),
-          ),
-          const SizedBox(height: 14),
-          Expanded(
-            child: SoftSurface(
-              clipContent: true,
-              padding: EdgeInsets.zero,
-              child: provider.isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : provider.challans.isEmpty
-                  ? _EmptyState(
-                      onCreateDelivery: () => _openEditor(context),
-                      onCreateReception: () => _openEditor(
-                        context,
-                        initialType: ChallanType.reception,
-                      ),
-                    )
-                  : _ChallanTable(
-                      challans: provider.challans,
-                      onOpen: (challan) =>
-                          _openEditor(context, challan: challan),
-                      onPrint: (challan) => _openPrintPreview(context, challan),
-                      onDuplicate: (challan) => _openEditor(
-                        context,
-                        challan: challan,
-                        duplicate: true,
-                      ),
-                      onCancel: (challan) => _cancel(context, challan),
-                      onDelete: (challan) => _delete(context, challan),
-                    ),
+          if (_showTemplates)
+            Expanded(
+              child: TemplateMappingScreen(
+                onBack: () => setState(() => _showTemplates = false),
+              ),
+            )
+          else ...[
+            _Filters(
+              searchController: _searchController,
+              type: provider.typeFilter,
+              status: provider.statusFilter,
+              orderFilterId: provider.orderFilterId,
+              onSearch: provider.setSearchQuery,
+              onTypeChanged: provider.setTypeFilter,
+              onStatusChanged: provider.setStatusFilter,
+              onClearOrderFilter: () => provider.setOrderFilter(null),
             ),
-          ),
+            const SizedBox(height: 14),
+            Expanded(
+              child: SoftSurface(
+                clipContent: true,
+                padding: EdgeInsets.zero,
+                child: provider.isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : provider.challans.isEmpty
+                    ? _EmptyState(
+                        onCreateDelivery: () => _openEditor(context),
+                        onCreateReception: () => _openEditor(
+                          context,
+                          initialType: ChallanType.reception,
+                        ),
+                      )
+                    : _ChallanTable(
+                        challans: provider.challans,
+                        onOpen: (challan) =>
+                            _openEditor(context, challan: challan),
+                        onPrint: (challan) =>
+                            _openPrintPreview(context, challan),
+                        onDuplicate: (challan) => _openEditor(
+                          context,
+                          challan: challan,
+                          duplicate: true,
+                        ),
+                        onCancel: (challan) => _cancel(context, challan),
+                        onDelete: (challan) => _delete(context, challan),
+                      ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -252,11 +265,13 @@ class _Header extends StatelessWidget {
     required this.onCreateDelivery,
     required this.onCreateReception,
     required this.onEditProfile,
+    required this.onOpenTemplates,
   });
 
   final VoidCallback onCreateDelivery;
   final VoidCallback onCreateReception;
   final VoidCallback onEditProfile;
+  final VoidCallback onOpenTemplates;
 
   @override
   Widget build(BuildContext context) {
@@ -290,6 +305,12 @@ class _Header extends StatelessWidget {
           icon: Icons.apartment_outlined,
           variant: AppButtonVariant.secondary,
           onPressed: onEditProfile,
+        ),
+        AppButton(
+          label: 'Templates',
+          icon: Icons.dashboard_customize_outlined,
+          variant: AppButtonVariant.secondary,
+          onPressed: onOpenTemplates,
         ),
         AppButton(
           label: 'Create Reception',
@@ -673,6 +694,8 @@ class _ChallanEditorState extends State<_ChallanEditor> {
   String? _validationError;
   String _debouncedOrderQuery = '';
   Timer? _orderSearchDebounce;
+  List<CompletedProductionRun> _completedProductionRuns =
+      const <CompletedProductionRun>[];
 
   DeliveryChallan? get _source => widget.challan ?? widget.sourceForDuplicate;
   bool get _editingExisting => widget.challan != null;
@@ -765,7 +788,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     final selectedOrderIds = _selectedOrders.map((order) => order.id).toSet();
     _items = _items
         .where((item) {
-          return item.orderItemId == null ||
+          return item.orderItemId != null &&
               selectedOrderIds.contains(item.orderItemId);
         })
         .toList(growable: true);
@@ -823,6 +846,9 @@ class _ChallanEditorState extends State<_ChallanEditor> {
               _ItemDraft.blank(1),
           ];
     _applySelectedOrderSnapshots();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadCompletedProductionRuns();
+    });
   }
 
   @override
@@ -841,6 +867,18 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     super.dispose();
   }
 
+  Future<void> _loadCompletedProductionRuns() async {
+    final runs = await context
+        .read<DeliveryChallanProvider>()
+        .loadCompletedProductionRuns(limit: 100);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _completedProductionRuns = runs;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<DeliveryChallanProvider>();
@@ -851,7 +889,8 @@ class _ChallanEditorState extends State<_ChallanEditor> {
               : 'Create Delivery Challan');
     final issueLabel = _isReception ? 'Issue Reception' : 'Issue Delivery';
     final errorText = _validationError ?? provider.errorMessage;
-    final challanNumberWarningText = _manualChallanWarningText();
+    final challanNumberWarningText =
+        provider.warningMessage ?? _manualChallanWarningText();
     return ErpFormScaffold(
       title: editorTitle,
       subtitle: _isReception
@@ -958,6 +997,13 @@ class _ChallanEditorState extends State<_ChallanEditor> {
               enabled: _canEdit,
               items: _items,
               orderOptions: _selectedOrderOptions,
+              productionRuns: _completedProductionRuns,
+              onProductionRunPicked: (run) {
+                if (_locationController.text.trim().isEmpty &&
+                    run.location.trim().isNotEmpty) {
+                  _locationController.text = run.location.trim();
+                }
+              },
               onChanged: () => setState(() {
                 _validationError = null;
               }),
@@ -1321,9 +1367,12 @@ class _ChallanEditorState extends State<_ChallanEditor> {
       });
       return;
     }
-    if (!_isReception && _selectedOrders.isEmpty) {
+    if (!_isReception &&
+        _selectedOrders.isEmpty &&
+        !_items.any((item) => item.productionRunId != null)) {
       setState(() {
-        _validationError = 'Select at least one order before saving challan.';
+        _validationError =
+            'Select at least one order or pull a completed production run before saving challan.';
       });
       return;
     }
@@ -1338,9 +1387,12 @@ class _ChallanEditorState extends State<_ChallanEditor> {
   Future<void> _issue() async {
     final provider = context.read<DeliveryChallanProvider>();
     final input = _input();
-    if (_selectedType == ChallanType.delivery && input.orderIds.isEmpty) {
+    if (_selectedType == ChallanType.delivery &&
+        input.orderIds.isEmpty &&
+        !input.items.any((item) => item.productionRunId != null)) {
       setState(() {
-        _validationError = 'Select at least one order before saving challan.';
+        _validationError =
+            'Select at least one order or pull a completed production run before saving challan.';
       });
       return;
     }
@@ -1365,7 +1417,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     if (_selectedType == ChallanType.delivery) {
       if (input.items.any(
         (item) =>
-            item.orderItemId == null ||
+            (item.orderItemId == null && item.productionRunId == null) ||
             (item.quantityPcs.trim().isEmpty && item.weight.trim().isEmpty),
       )) {
         setState(() {
@@ -1416,6 +1468,8 @@ class _ItemsEditor extends StatelessWidget {
     required this.items,
     required this.enabled,
     required this.orderOptions,
+    required this.productionRuns,
+    required this.onProductionRunPicked,
     required this.onChanged,
   });
 
@@ -1423,6 +1477,8 @@ class _ItemsEditor extends StatelessWidget {
   final List<_ItemDraft> items;
   final bool enabled;
   final List<_OrderItemOption> orderOptions;
+  final List<CompletedProductionRun> productionRuns;
+  final ValueChanged<CompletedProductionRun> onProductionRunPicked;
   final VoidCallback onChanged;
 
   @override
@@ -1491,6 +1547,74 @@ class _ItemsEditor extends StatelessWidget {
   Widget _buildDeliveryRow(BuildContext context, int index, _ItemDraft draft) {
     return Column(
       children: [
+        Row(
+          children: [
+            const SizedBox(width: 28),
+            Expanded(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: !enabled
+                          ? null
+                          : () async {
+                              final selected =
+                                  await showSearchableSelectDialog<int>(
+                                    context: context,
+                                    title: 'Pull from Production',
+                                    searchHintText:
+                                        'Search by run, item, or variation',
+                                    options: productionRuns
+                                        .map(
+                                          (run) => SearchableSelectOption<int>(
+                                            value: run.id,
+                                            label: run.displayLabel,
+                                            searchText:
+                                                '${run.runCode} ${run.itemName} ${run.variationPathLabel} ${run.location}',
+                                          ),
+                                        )
+                                        .toList(growable: false),
+                                  );
+                              if (selected == null) {
+                                return;
+                              }
+                              final run = productionRuns
+                                  .where((entry) => entry.id == selected.value)
+                                  .firstOrNull;
+                              if (run == null) {
+                                return;
+                              }
+                              draft.applyProductionRun(run);
+                              onProductionRunPicked(run);
+                              onChanged();
+                            },
+                      icon: const Icon(Icons.factory_outlined, size: 18),
+                      label: const Text('Pull from Production'),
+                    ),
+                    if (draft.productionRunId != null)
+                      InputChip(
+                        label: Text(
+                          draft.productionRunLabel.trim().isEmpty
+                              ? 'Run #${draft.productionRunId}'
+                              : draft.productionRunLabel,
+                        ),
+                        onDeleted: !enabled
+                            ? null
+                            : () {
+                                draft.clearProductionRun();
+                                onChanged();
+                              },
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
         Row(
           children: [
             SizedBox(width: 28, child: Text('${index + 1}.')),
@@ -1995,21 +2119,25 @@ class _ErrorBanner extends StatelessWidget {
 class _ItemDraft {
   _ItemDraft({
     this.orderItemId,
+    this.productionRunId,
     this.itemId,
     this.variationLeafNodeId = 0,
     this.particulars = '',
     this.hsnCode = '',
     this.variationPathLabel = '',
+    this.productionRunLabel = '',
     this.quantityPcs = '',
     this.weight = '',
   });
 
   int? orderItemId;
+  int? productionRunId;
   int? itemId;
   int variationLeafNodeId;
   String particulars;
   String hsnCode;
   String variationPathLabel;
+  String productionRunLabel;
   String quantityPcs;
   String weight;
 
@@ -2018,6 +2146,7 @@ class _ItemDraft {
   factory _ItemDraft.fromOrderOption(_OrderItemOption? option) {
     return _ItemDraft(
       orderItemId: option?.orderItemId,
+      productionRunId: null,
       itemId: option?.itemId,
       variationLeafNodeId: option?.variationLeafNodeId ?? 0,
       particulars: option?.particulars ?? '',
@@ -2029,11 +2158,15 @@ class _ItemDraft {
   factory _ItemDraft.fromItem(DeliveryChallanItem item) {
     return _ItemDraft(
       orderItemId: item.orderItemId,
+      productionRunId: item.productionRunId,
       itemId: item.itemId,
       variationLeafNodeId: item.variationLeafNodeId,
       particulars: item.particulars,
       hsnCode: item.hsnCode,
       variationPathLabel: item.variationPathLabel,
+      productionRunLabel: item.productionRunId == null
+          ? ''
+          : 'Run #${item.productionRunId}',
       quantityPcs: item.quantityPcs,
       weight: item.weight,
     );
@@ -2041,19 +2174,23 @@ class _ItemDraft {
 
   void applyOrderOption(_OrderItemOption? option) {
     orderItemId = option?.orderItemId;
-    itemId = option?.itemId;
-    variationLeafNodeId = option?.variationLeafNodeId ?? 0;
-    particulars = option?.particulars ?? '';
-    hsnCode = option?.hsnCode ?? '';
-    variationPathLabel = option?.variationPathLabel ?? '';
+    if (productionRunId == null) {
+      itemId = option?.itemId;
+      variationLeafNodeId = option?.variationLeafNodeId ?? 0;
+      particulars = option?.particulars ?? '';
+      hsnCode = option?.hsnCode ?? '';
+      variationPathLabel = option?.variationPathLabel ?? '';
+    }
   }
 
   void applyReceptionItem(ItemDefinition? item) {
     itemId = item?.id;
     orderItemId = null;
+    productionRunId = null;
     hsnCode = '';
     variationLeafNodeId = 0;
     variationPathLabel = '';
+    productionRunLabel = '';
     particulars = item?.displayName ?? '';
   }
 
@@ -2065,18 +2202,44 @@ class _ItemDraft {
   ) {
     itemId = item.id;
     orderItemId = null;
+    productionRunId = null;
     variationLeafNodeId = leaf?.id ?? 0;
     variationPathLabel = label;
+    productionRunLabel = '';
     particulars = label.trim().isEmpty
         ? item.displayName
         : '${item.displayName} - $label';
     hsnCode = '';
   }
 
+  void applyProductionRun(CompletedProductionRun run) {
+    orderItemId = null;
+    productionRunId = run.id;
+    itemId = run.itemId;
+    variationLeafNodeId = run.variationLeafNodeId;
+    variationPathLabel = run.variationPathLabel;
+    productionRunLabel = run.displayLabel;
+    particulars = run.variationPathLabel.trim().isEmpty
+        ? run.itemName
+        : '${run.itemName} - ${run.variationPathLabel}';
+    hsnCode = '';
+    if (run.outputQuantity > 0) {
+      quantityPcs = run.outputQuantity.truncateToDouble() == run.outputQuantity
+          ? run.outputQuantity.toStringAsFixed(0)
+          : run.outputQuantity.toStringAsFixed(2);
+    }
+  }
+
+  void clearProductionRun() {
+    productionRunId = null;
+    productionRunLabel = '';
+  }
+
   DeliveryChallanItem toItem(int lineNo) {
     return DeliveryChallanItem(
       id: 0,
       orderItemId: orderItemId,
+      productionRunId: productionRunId,
       itemId: itemId,
       variationLeafNodeId: variationLeafNodeId,
       lineNo: lineNo,
@@ -2283,55 +2446,275 @@ class _CompanyProfileEditorState extends State<_CompanyProfileEditor> {
   }
 }
 
-class _PrintPreview extends StatelessWidget {
+class _PrintPreview extends StatefulWidget {
   const _PrintPreview({required this.challan});
 
   final DeliveryChallan challan;
 
   @override
+  State<_PrintPreview> createState() => _PrintPreviewState();
+}
+
+class _PrintPreviewState extends State<_PrintPreview> {
+  late final Future<List<ChallanTemplate>> _templatesFuture;
+  ChallanTemplate? _activeTemplateOverride;
+  bool _isNudgingTemplate = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _templatesFuture = _loadMatchingTemplates();
+  }
+
+  Future<List<ChallanTemplate>> _loadMatchingTemplates() {
+    final partyId = widget.challan.isReception
+        ? widget.challan.vendorId
+        : widget.challan.clientId;
+    if (partyId == null || partyId <= 0) {
+      return Future.value(const <ChallanTemplate>[]);
+    }
+    return context.read<DeliveryChallanProvider>().loadTemplates(
+      partyType: widget.challan.isReception
+          ? ChallanTemplatePartyType.vendor
+          : ChallanTemplatePartyType.client,
+      partyId: partyId,
+      challanType: widget.challan.type,
+      activeOnly: true,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final provider = context.watch<DeliveryChallanProvider>();
     final profile =
-        challan.companyProfileSnapshot ??
+        widget.challan.companyProfileSnapshot ??
         provider.companyProfile ??
         CompanyProfile.empty();
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(18, 14, 10, 10),
-          child: Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Print Preview',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+    return FutureBuilder<List<ChallanTemplate>>(
+      future: _templatesFuture,
+      builder: (context, snapshot) {
+        final loadedTemplate =
+            (snapshot.data ?? const <ChallanTemplate>[]).isEmpty
+            ? null
+            : (snapshot.data ?? const <ChallanTemplate>[]).first;
+        final template = _activeTemplateOverride ?? loadedTemplate;
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 14, 10, 10),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Print Preview',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  if (template != null) ...[
+                    AppButton(
+                      label: 'Digital Preview',
+                      icon: Icons.picture_as_pdf_outlined,
+                      variant: AppButtonVariant.secondary,
+                      onPressed: () =>
+                          _openTemplatePdf(context, template, 'digital'),
+                    ),
+                    const SizedBox(width: 8),
+                    AppButton(
+                      label: 'Overprint',
+                      icon: Icons.print_outlined,
+                      onPressed: () =>
+                          _openTemplatePdf(context, template, 'overprint'),
+                    ),
+                  ] else
+                    AppButton(
+                      label: 'Print',
+                      icon: Icons.print_outlined,
+                      onPressed: () async {
+                        await _launchPrintDialog(widget.challan, profile);
+                      },
+                    ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            if (template != null)
+              _TemplateNudgeBar(
+                template: template,
+                isSaving: _isNudgingTemplate,
+                onNudge: _nudgeTemplate,
+              ),
+            const Divider(height: 1),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Center(
+                  child: _ChallanDocument(
+                    challan: widget.challan,
+                    profile: profile,
+                  ),
                 ),
               ),
-              AppButton(
-                label: 'Print',
-                icon: Icons.print_outlined,
-                onPressed: () async {
-                  await _launchPrintDialog(challan, profile);
-                },
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                onPressed: () => Navigator.of(context).pop(),
-                icon: const Icon(Icons.close_rounded),
-              ),
-            ],
-          ),
-        ),
-        const Divider(height: 1),
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Center(
-              child: _ChallanDocument(challan: challan, profile: profile),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _openTemplatePdf(
+    BuildContext context,
+    ChallanTemplate template,
+    String mode,
+  ) async {
+    final provider = context.read<DeliveryChallanProvider>();
+    final uri = provider.repository.templatePreviewUri(
+      challanId: widget.challan.id,
+      templateId: template.id,
+      mode: mode,
+    );
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    await provider.recordPrint(widget.challan.id);
+  }
+
+  Future<void> _nudgeTemplate(
+    ChallanTemplate template,
+    double deltaXmm,
+    double deltaYmm,
+  ) async {
+    if (_isNudgingTemplate) {
+      return;
+    }
+    setState(() => _isNudgingTemplate = true);
+    final provider = context.read<DeliveryChallanProvider>();
+    final saved = await provider.saveTemplate(
+      id: template.id,
+      input: ChallanTemplateInput(
+        name: template.name,
+        partyType: template.partyType,
+        partyId: template.partyId,
+        challanType: template.challanType,
+        backgroundObjectKey: template.backgroundObjectKey,
+        canvasWidth: template.canvasWidth,
+        canvasHeight: template.canvasHeight,
+        rotationDegrees: template.rotationDegrees,
+        globalOffsetXmm: template.globalOffsetXmm + deltaXmm,
+        globalOffsetYmm: template.globalOffsetYmm + deltaYmm,
+        isActive: template.isActive,
+        mappings: template.mappings,
+      ),
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isNudgingTemplate = false;
+      if (saved != null) {
+        _activeTemplateOverride = saved;
+      }
+    });
+  }
+}
+
+class _TemplateNudgeBar extends StatelessWidget {
+  const _TemplateNudgeBar({
+    required this.template,
+    required this.isSaving,
+    required this.onNudge,
+  });
+
+  final ChallanTemplate template;
+  final bool isSaving;
+  final Future<void> Function(
+    ChallanTemplate template,
+    double deltaXmm,
+    double deltaYmm,
+  )
+  onNudge;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 8, 18, 10),
+      color: SoftErpTheme.cardSurfaceAlt,
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text(
+            'Template: ${template.name}',
+            style: const TextStyle(
+              color: SoftErpTheme.textPrimary,
+              fontWeight: FontWeight.w800,
             ),
           ),
-        ),
-      ],
+          Text(
+            'Offset X ${template.globalOffsetXmm.toStringAsFixed(1)}mm, '
+            'Y ${template.globalOffsetYmm.toStringAsFixed(1)}mm',
+            style: const TextStyle(color: SoftErpTheme.textSecondary),
+          ),
+          const SizedBox(width: 6),
+          _NudgeButton(
+            label: 'Left',
+            icon: Icons.keyboard_arrow_left_rounded,
+            isSaving: isSaving,
+            onPressed: () => onNudge(template, -0.5, 0),
+          ),
+          _NudgeButton(
+            label: 'Right',
+            icon: Icons.keyboard_arrow_right_rounded,
+            isSaving: isSaving,
+            onPressed: () => onNudge(template, 0.5, 0),
+          ),
+          _NudgeButton(
+            label: 'Up',
+            icon: Icons.keyboard_arrow_up_rounded,
+            isSaving: isSaving,
+            onPressed: () => onNudge(template, 0, -0.5),
+          ),
+          _NudgeButton(
+            label: 'Down',
+            icon: Icons.keyboard_arrow_down_rounded,
+            isSaving: isSaving,
+            onPressed: () => onNudge(template, 0, 0.5),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NudgeButton extends StatelessWidget {
+  const _NudgeButton({
+    required this.label,
+    required this.icon,
+    required this.isSaving,
+    required this.onPressed,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool isSaving;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: isSaving ? null : onPressed,
+      icon: Icon(icon, size: 18),
+      label: Text(label),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: SoftErpTheme.textPrimary,
+        side: const BorderSide(color: SoftErpTheme.border),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
     );
   }
 }

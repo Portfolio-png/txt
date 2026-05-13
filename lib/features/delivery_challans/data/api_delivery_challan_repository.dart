@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../domain/challan_template.dart';
 import '../domain/delivery_challan.dart';
 import 'delivery_challan_repository.dart';
 
@@ -30,7 +31,15 @@ class ApiChallanRepository implements ChallanRepository {
     signatureLabel: '',
   );
   static final List<DeliveryChallan> _mockChallans = <DeliveryChallan>[];
+  static final List<ChallanTemplate> _mockTemplates = <ChallanTemplate>[];
+  static final Map<String, ChallanTemplateUploadIntentInput>
+  _mockTemplateUploads = <String, ChallanTemplateUploadIntentInput>{};
   static int _mockNextId = 1;
+  static int _mockNextTemplateId = 1;
+  String? _lastWarningMessage;
+
+  @override
+  String? get lastWarningMessage => _lastWarningMessage;
 
   @override
   Future<void> init() async {}
@@ -166,12 +175,14 @@ class ApiChallanRepository implements ChallanRepository {
 
   @override
   Future<DeliveryChallan> createChallan(DeliveryChallanDraftInput input) async {
+    _lastWarningMessage = null;
     if (useMockResponses) {
       final created = DeliveryChallan(
         id: _mockNextId++,
         type: input.type,
         orderId: input.orderId,
         orderIds: input.orderIds,
+        clientId: null,
         orderNo: input.orderIds.isEmpty
             ? 'Order ${input.orderId}'
             : 'Order ${input.orderIds.first}',
@@ -213,6 +224,7 @@ class ApiChallanRepository implements ChallanRepository {
     int id,
     DeliveryChallanDraftInput input,
   ) async {
+    _lastWarningMessage = null;
     if (useMockResponses) {
       final index = _mockChallans.indexWhere((challan) => challan.id == id);
       final current = _mockChallans[index];
@@ -221,6 +233,7 @@ class ApiChallanRepository implements ChallanRepository {
         type: input.type,
         orderId: input.orderId,
         orderIds: input.orderIds,
+        clientId: current.clientId,
         orderNo: current.orderNo,
         orderNos: current.orderNos,
         challanNo: current.challanNo,
@@ -282,7 +295,338 @@ class ApiChallanRepository implements ChallanRepository {
     if (useMockResponses) {
       return;
     }
-    return;
+    final uri = Uri.parse('$baseUrl/api/challans/$id/print');
+    final response = await _sendRequest(method: 'POST', uri: uri);
+    _decodeApiResponse(
+      method: 'POST',
+      uri: uri,
+      response: response,
+      fallback: 'Failed to record challan print.',
+    );
+  }
+
+  @override
+  Future<List<CompletedProductionRun>> getCompletedProductionRuns({
+    String search = '',
+    int limit = 25,
+  }) async {
+    if (useMockResponses) {
+      return const <CompletedProductionRun>[];
+    }
+    final uri = Uri.parse('$baseUrl/api/production-runs/completed').replace(
+      queryParameters: <String, String>{
+        if (search.trim().isNotEmpty) 'search': search.trim(),
+        'limit': '$limit',
+      },
+    );
+    final response = await _sendRequest(method: 'GET', uri: uri);
+    final payload = _decodeApiResponse(
+      method: 'GET',
+      uri: uri,
+      response: response,
+      fallback: 'Failed to fetch completed production runs.',
+    );
+    return (_dataList(payload, 'productionRuns'))
+        .map(
+          (item) =>
+              CompletedProductionRun.fromJson(item as Map<String, dynamic>),
+        )
+        .toList(growable: false);
+  }
+
+  @override
+  Future<List<ChallanTemplate>> getTemplates({
+    ChallanTemplatePartyType? partyType,
+    int? partyId,
+    ChallanType? challanType,
+    bool activeOnly = false,
+  }) async {
+    if (useMockResponses) {
+      return _mockTemplates
+          .where((template) {
+            if (partyType != null && template.partyType != partyType) {
+              return false;
+            }
+            if (partyId != null && template.partyId != partyId) {
+              return false;
+            }
+            if (challanType != null && template.challanType != challanType) {
+              return false;
+            }
+            if (activeOnly && !template.isActive) {
+              return false;
+            }
+            return true;
+          })
+          .toList(growable: false);
+    }
+    final uri = Uri.parse('$baseUrl/api/challan-templates').replace(
+      queryParameters: <String, String>{
+        if (partyType != null) 'partyType': partyType.name,
+        if (partyId != null) 'partyId': '$partyId',
+        if (challanType != null) 'challanType': challanType.name,
+        if (activeOnly) 'activeOnly': 'true',
+      },
+    );
+    final response = await _sendRequest(method: 'GET', uri: uri);
+    final payload = _decodeApiResponse(
+      method: 'GET',
+      uri: uri,
+      response: response,
+      fallback: 'Failed to fetch challan templates.',
+    );
+    return _dataList(payload, 'templates')
+        .map((item) => ChallanTemplate.fromJson(item as Map<String, dynamic>))
+        .toList(growable: false);
+  }
+
+  @override
+  Future<ChallanTemplate> createTemplate(ChallanTemplateInput input) async {
+    if (useMockResponses) {
+      final template = ChallanTemplate(
+        id: _mockNextTemplateId++,
+        name: input.name,
+        partyType: input.partyType,
+        partyId: input.partyId,
+        challanType: input.challanType,
+        backgroundObjectKey: input.backgroundObjectKey,
+        backgroundImageUrl: null,
+        canvasWidth: input.canvasWidth,
+        canvasHeight: input.canvasHeight,
+        rotationDegrees: input.rotationDegrees,
+        globalOffsetXmm: input.globalOffsetXmm,
+        globalOffsetYmm: input.globalOffsetYmm,
+        isActive: input.isActive,
+        mappings: input.mappings,
+      );
+      if (template.isActive) {
+        _mockTemplates.removeWhere(
+          (entry) =>
+              entry.partyType == template.partyType &&
+              entry.partyId == template.partyId &&
+              entry.challanType == template.challanType &&
+              entry.isActive,
+        );
+      }
+      _mockTemplates.add(template);
+      return template;
+    }
+    return _sendTemplate(
+      method: 'POST',
+      uri: Uri.parse('$baseUrl/api/challan-templates'),
+      input: input,
+      fallback: 'Failed to create challan template.',
+    );
+  }
+
+  @override
+  Future<ChallanTemplate> updateTemplate(
+    int id,
+    ChallanTemplateInput input,
+  ) async {
+    if (useMockResponses) {
+      final index = _mockTemplates.indexWhere((template) => template.id == id);
+      final updated = ChallanTemplate(
+        id: id,
+        name: input.name,
+        partyType: input.partyType,
+        partyId: input.partyId,
+        challanType: input.challanType,
+        backgroundObjectKey: input.backgroundObjectKey,
+        backgroundImageUrl: null,
+        canvasWidth: input.canvasWidth,
+        canvasHeight: input.canvasHeight,
+        rotationDegrees: input.rotationDegrees,
+        globalOffsetXmm: input.globalOffsetXmm,
+        globalOffsetYmm: input.globalOffsetYmm,
+        isActive: input.isActive,
+        mappings: input.mappings,
+      );
+      if (index >= 0) {
+        _mockTemplates[index] = updated;
+      } else {
+        _mockTemplates.add(updated);
+      }
+      return updated;
+    }
+    return _sendTemplate(
+      method: 'PATCH',
+      uri: Uri.parse('$baseUrl/api/challan-templates/$id'),
+      input: input,
+      fallback: 'Failed to update challan template.',
+    );
+  }
+
+  @override
+  Future<void> deleteTemplate(int id) async {
+    if (useMockResponses) {
+      _mockTemplates.removeWhere((template) => template.id == id);
+      return;
+    }
+    final uri = Uri.parse('$baseUrl/api/challan-templates/$id');
+    final response = await _sendRequest(method: 'DELETE', uri: uri);
+    _decodeApiResponse(
+      method: 'DELETE',
+      uri: uri,
+      response: response,
+      fallback: 'Failed to delete challan template.',
+    );
+  }
+
+  @override
+  Future<ChallanTemplateUploadTarget> createTemplateUploadIntent(
+    ChallanTemplateUploadIntentInput input,
+  ) async {
+    if (useMockResponses) {
+      final sessionId =
+          'template-upload-${DateTime.now().microsecondsSinceEpoch}';
+      _mockTemplateUploads[sessionId] = input;
+      return ChallanTemplateUploadTarget(
+        uploadSessionId: sessionId,
+        objectKey: 'mock/challan-templates/$sessionId-${input.fileName}',
+        uploadUrl: Uri.parse('https://mock.local/$sessionId'),
+        headers: const <String, String>{},
+      );
+    }
+    final uri = Uri.parse('$baseUrl/api/challan-templates/upload-intent');
+    final response = await _sendRequest(
+      method: 'POST',
+      uri: uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'fileName': input.fileName,
+        'contentType': input.contentType,
+        'sizeBytes': input.sizeBytes,
+        'sha256': input.sha256,
+      }),
+    );
+    final payload = _decodeApiResponse(
+      method: 'POST',
+      uri: uri,
+      response: response,
+      fallback: 'Failed to prepare challan template upload.',
+    );
+    return ChallanTemplateUploadTarget.fromJson(_dataObject(payload, 'upload'));
+  }
+
+  @override
+  Future<ChallanTemplateBackground> completeTemplateUpload({
+    required String uploadSessionId,
+    required String objectKey,
+  }) async {
+    if (useMockResponses) {
+      _mockTemplateUploads.remove(uploadSessionId);
+      return ChallanTemplateBackground(
+        objectKey: objectKey,
+        canvasWidth: 1240,
+        canvasHeight: 1754,
+      );
+    }
+    final uri = Uri.parse('$baseUrl/api/challan-templates/upload-complete');
+    final response = await _sendRequest(
+      method: 'POST',
+      uri: uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'uploadSessionId': uploadSessionId,
+        'objectKey': objectKey,
+      }),
+    );
+    final payload = _decodeApiResponse(
+      method: 'POST',
+      uri: uri,
+      response: response,
+      fallback: 'Failed to complete challan template upload.',
+    );
+    return ChallanTemplateBackground.fromJson(
+      _dataObject(payload, 'background'),
+    );
+  }
+
+  @override
+  Future<ChallanTemplateUploadTarget> createTemplateStampUploadIntent(
+    ChallanTemplateUploadIntentInput input,
+  ) async {
+    if (useMockResponses) {
+      final sessionId =
+          'template-stamp-upload-${DateTime.now().microsecondsSinceEpoch}';
+      _mockTemplateUploads[sessionId] = input;
+      return ChallanTemplateUploadTarget(
+        uploadSessionId: sessionId,
+        objectKey: 'mock/challan-template-stamps/$sessionId-${input.fileName}',
+        uploadUrl: Uri.parse('https://mock.local/$sessionId'),
+        headers: const <String, String>{},
+      );
+    }
+    final uri = Uri.parse('$baseUrl/api/challan-templates/stamp-upload-intent');
+    final response = await _sendRequest(
+      method: 'POST',
+      uri: uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'fileName': input.fileName,
+        'contentType': input.contentType,
+        'sizeBytes': input.sizeBytes,
+        'sha256': input.sha256,
+      }),
+    );
+    final payload = _decodeApiResponse(
+      method: 'POST',
+      uri: uri,
+      response: response,
+      fallback: 'Failed to prepare stamp upload.',
+    );
+    return ChallanTemplateUploadTarget.fromJson(_dataObject(payload, 'upload'));
+  }
+
+  @override
+  Future<ChallanTemplateBackground> completeTemplateStampUpload({
+    required String uploadSessionId,
+    required String objectKey,
+  }) async {
+    if (useMockResponses) {
+      _mockTemplateUploads.remove(uploadSessionId);
+      return ChallanTemplateBackground(
+        objectKey: objectKey,
+        canvasWidth: 800,
+        canvasHeight: 320,
+      );
+    }
+    final uri = Uri.parse(
+      '$baseUrl/api/challan-templates/stamp-upload-complete',
+    );
+    final response = await _sendRequest(
+      method: 'POST',
+      uri: uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'uploadSessionId': uploadSessionId,
+        'objectKey': objectKey,
+      }),
+    );
+    final payload = _decodeApiResponse(
+      method: 'POST',
+      uri: uri,
+      response: response,
+      fallback: 'Failed to complete stamp upload.',
+    );
+    return ChallanTemplateBackground.fromJson(_dataObject(payload, 'stamp'));
+  }
+
+  @override
+  Uri templatePreviewUri({
+    required int challanId,
+    int? templateId,
+    required String mode,
+  }) {
+    return Uri.parse(
+      '$baseUrl/api/challans/$challanId/print-template-preview',
+    ).replace(
+      queryParameters: <String, String>{
+        'mode': mode,
+        if (templateId != null) 'templateId': '$templateId',
+      },
+    );
   }
 
   Future<DeliveryChallan> _statusAction(
@@ -298,6 +642,7 @@ class ApiChallanRepository implements ChallanRepository {
         type: current.type,
         orderId: current.orderId,
         orderIds: current.orderIds,
+        clientId: current.clientId,
         orderNo: current.orderNo,
         orderNos: current.orderNos,
         challanNo: current.challanNo,
@@ -354,7 +699,29 @@ class ApiChallanRepository implements ChallanRepository {
       response: response,
       fallback: fallback,
     );
+    _lastWarningMessage = _extractWarningMessage(payload);
     return DeliveryChallan.fromJson(_dataObject(payload, 'challan'));
+  }
+
+  Future<ChallanTemplate> _sendTemplate({
+    required String method,
+    required Uri uri,
+    required ChallanTemplateInput input,
+    required String fallback,
+  }) async {
+    final response = await _sendRequest(
+      method: method,
+      uri: uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode(input.toJson()),
+    );
+    final payload = _decodeApiResponse(
+      method: method,
+      uri: uri,
+      response: response,
+      fallback: fallback,
+    );
+    return ChallanTemplate.fromJson(_dataObject(payload, 'template'));
   }
 
   Future<http.Response> _sendRequest({
@@ -458,6 +825,17 @@ class ApiChallanRepository implements ChallanRepository {
   ) {
     final data = payload['data'] ?? payload[legacyKey];
     return data is List<dynamic> ? data : const [];
+  }
+
+  static String? _extractWarningMessage(Map<String, dynamic> payload) {
+    final warnings = payload['warnings'];
+    if (warnings is List && warnings.isNotEmpty) {
+      final first = warnings.first;
+      if (first is String && first.trim().isNotEmpty) {
+        return first.trim();
+      }
+    }
+    return null;
   }
 
   static void _logRequest(
