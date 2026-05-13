@@ -1,8 +1,52 @@
 #include "flutter_window.h"
 
+#include <commdlg.h>
+#include <flutter/standard_method_codec.h>
+
 #include <optional>
 
 #include "flutter/generated_plugin_registrant.h"
+
+namespace {
+
+void FreePrintDialogHandles(const PRINTDLGW& dialog) {
+  if (dialog.hDC != nullptr) {
+    ::DeleteDC(dialog.hDC);
+  }
+  if (dialog.hDevMode != nullptr) {
+    ::GlobalFree(dialog.hDevMode);
+  }
+  if (dialog.hDevNames != nullptr) {
+    ::GlobalFree(dialog.hDevNames);
+  }
+}
+
+bool ShowWindowsPrintDialog(HWND owner, DWORD* error_code) {
+  PRINTDLGW dialog = {};
+  dialog.lStructSize = sizeof(dialog);
+  dialog.hwndOwner = owner;
+  dialog.Flags = PD_ALLPAGES | PD_HIDEPRINTTOFILE | PD_NOSELECTION |
+                 PD_NOPAGENUMS | PD_RETURNDC |
+                 PD_USEDEVMODECOPIESANDCOLLATE;
+  dialog.nMinPage = 1;
+  dialog.nMaxPage = 1;
+  dialog.nFromPage = 1;
+  dialog.nToPage = 1;
+  dialog.nCopies = 1;
+
+  const BOOL accepted = ::PrintDlgW(&dialog);
+  FreePrintDialogHandles(dialog);
+
+  if (accepted) {
+    *error_code = 0;
+    return true;
+  }
+
+  *error_code = ::CommDlgExtendedError();
+  return false;
+}
+
+}  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -25,6 +69,36 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+
+  native_printing_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(), "paper/native_printing",
+          &flutter::StandardMethodCodec::GetInstance());
+  native_printing_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        if (call.method_name() != "showPrintDialog") {
+          result->NotImplemented();
+          return;
+        }
+
+        DWORD error_code = 0;
+        const bool accepted =
+            ShowWindowsPrintDialog(GetHandle(), &error_code);
+        if (accepted) {
+          result->Success(flutter::EncodableValue(true));
+          return;
+        }
+        if (error_code == 0) {
+          result->Success(flutter::EncodableValue(false));
+          return;
+        }
+        result->Error("PRINT_DIALOG_FAILED",
+                      "Windows could not open the print dialog.",
+                      flutter::EncodableValue(static_cast<int>(error_code)));
+      });
+
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -40,6 +114,8 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  native_printing_channel_.reset();
+
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

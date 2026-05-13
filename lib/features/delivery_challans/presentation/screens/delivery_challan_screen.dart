@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -23,6 +25,10 @@ import '../../../vendors/presentation/providers/vendors_provider.dart';
 import '../../data/delivery_challan_repository.dart';
 import '../../domain/delivery_challan.dart';
 import '../providers/delivery_challan_provider.dart';
+
+const MethodChannel _nativePrintingChannel = MethodChannel(
+  'paper/native_printing',
+);
 
 class ChallanScreen extends StatefulWidget {
   const ChallanScreen({super.key});
@@ -2305,7 +2311,7 @@ class _PrintPreview extends StatelessWidget {
                 label: 'Print',
                 icon: Icons.print_outlined,
                 onPressed: () async {
-                  await _launchPrintHtml(challan, profile);
+                  await _launchPrintDialog(challan, profile);
                 },
               ),
               const SizedBox(width: 8),
@@ -2547,6 +2553,33 @@ class _ChallanDocument extends StatelessWidget {
           )
           .toList(growable: false),
     );
+  }
+}
+
+Future<void> _launchPrintDialog(
+  DeliveryChallan challan,
+  CompanyProfile profile,
+) async {
+  final windowsDialogResult = await _showWindowsPrintDialog();
+  if (windowsDialogResult != null) {
+    return;
+  }
+
+  await _launchPrintHtml(challan, profile);
+}
+
+Future<bool?> _showWindowsPrintDialog() async {
+  if (kIsWeb || defaultTargetPlatform != TargetPlatform.windows) {
+    return null;
+  }
+
+  try {
+    return await _nativePrintingChannel.invokeMethod<bool>('showPrintDialog') ??
+        false;
+  } on MissingPluginException {
+    return null;
+  } on PlatformException {
+    return null;
   }
 }
 
