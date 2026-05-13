@@ -898,26 +898,29 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
 
   Future<void> _pickAndUploadBackground() async {
     final provider = context.read<DeliveryChallanProvider>();
-    final file = await openFile(
-      acceptedTypeGroups: const [
-        XTypeGroup(
-          label: 'Images',
-          extensions: ['png', 'jpg', 'jpeg'],
-          mimeTypes: ['image/png', 'image/jpeg'],
-        ),
-      ],
-    );
-    if (file == null) {
-      return;
-    }
-    final bytes = await file.readAsBytes();
-    final digest = sha256.convert(bytes).toString();
-    final contentType = _contentTypeForName(file.name);
-    setState(() {
-      _isSaving = true;
-      _error = null;
-    });
     try {
+      final file = await _pickFileWithFallback(
+        primary: const [
+          XTypeGroup(
+            label: 'Images',
+            extensions: ['png', 'jpg', 'jpeg'],
+            mimeTypes: ['image/png', 'image/jpeg'],
+          ),
+        ],
+        fallback: const [
+          XTypeGroup(label: 'Images', extensions: ['png', 'jpg', 'jpeg']),
+        ],
+      );
+      if (file == null) {
+        return;
+      }
+      final bytes = await file.readAsBytes();
+      final digest = sha256.convert(bytes).toString();
+      final contentType = _contentTypeForName(file.name);
+      setState(() {
+        _isSaving = true;
+        _error = null;
+      });
       final intent = await provider.createTemplateUploadIntent(
         ChallanTemplateUploadIntentInput(
           fileName: file.name,
@@ -1082,25 +1085,28 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
 
   Future<void> _pickAndUploadStamp() async {
     final provider = context.read<DeliveryChallanProvider>();
-    final file = await openFile(
-      acceptedTypeGroups: const [
-        XTypeGroup(
-          label: 'Transparent PNG',
-          extensions: ['png'],
-          mimeTypes: ['image/png'],
-        ),
-      ],
-    );
-    if (file == null) {
-      return;
-    }
-    final bytes = await file.readAsBytes();
-    final digest = sha256.convert(bytes).toString();
-    setState(() {
-      _isSaving = true;
-      _error = null;
-    });
     try {
+      final file = await _pickFileWithFallback(
+        primary: const [
+          XTypeGroup(
+            label: 'Transparent PNG',
+            extensions: ['png'],
+            mimeTypes: ['image/png'],
+          ),
+        ],
+        fallback: const [
+          XTypeGroup(label: 'Transparent PNG', extensions: ['png']),
+        ],
+      );
+      if (file == null) {
+        return;
+      }
+      final bytes = await file.readAsBytes();
+      final digest = sha256.convert(bytes).toString();
+      setState(() {
+        _isSaving = true;
+        _error = null;
+      });
       final intent = await provider.createTemplateStampUploadIntent(
         ChallanTemplateUploadIntentInput(
           fileName: file.name,
@@ -1174,6 +1180,17 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       if (mounted) {
         setState(() => _isSaving = false);
       }
+    }
+  }
+
+  Future<XFile?> _pickFileWithFallback({
+    required List<XTypeGroup> primary,
+    required List<XTypeGroup> fallback,
+  }) async {
+    try {
+      return await openFile(acceptedTypeGroups: primary);
+    } catch (_) {
+      return openFile(acceptedTypeGroups: fallback);
     }
   }
 
