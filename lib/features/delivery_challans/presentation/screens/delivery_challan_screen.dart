@@ -2560,7 +2560,7 @@ Future<void> _launchPrintDialog(
   DeliveryChallan challan,
   CompanyProfile profile,
 ) async {
-  final windowsDialogResult = await _showWindowsPrintDialog();
+  final windowsDialogResult = await _showWindowsPrintDialog(challan, profile);
   if (windowsDialogResult != null) {
     return;
   }
@@ -2568,19 +2568,67 @@ Future<void> _launchPrintDialog(
   await _launchPrintHtml(challan, profile);
 }
 
-Future<bool?> _showWindowsPrintDialog() async {
+Future<bool?> _showWindowsPrintDialog(
+  DeliveryChallan challan,
+  CompanyProfile profile,
+) async {
   if (kIsWeb || defaultTargetPlatform != TargetPlatform.windows) {
     return null;
   }
 
   try {
-    return await _nativePrintingChannel.invokeMethod<bool>('showPrintDialog') ??
+    return await _nativePrintingChannel.invokeMethod<bool>(
+          'showPrintDialog',
+          _nativePrintPayload(challan, profile),
+        ) ??
         false;
   } on MissingPluginException {
     return null;
   } on PlatformException {
     return null;
   }
+}
+
+Map<String, Object> _nativePrintPayload(
+  DeliveryChallan challan,
+  CompanyProfile profile,
+) {
+  final isReception = challan.isReception;
+  final signatureLabel = profile.signatureLabel.isEmpty
+      ? 'Checked by / Authorized Signatory'
+      : profile.signatureLabel;
+  return {
+    'docTitle': isReception ? 'RECEPTION CHALLAN' : 'DELIVERY CHALLAN',
+    'companyName': profile.companyName,
+    'mobile': profile.mobile,
+    'businessDescription': profile.businessDescription,
+    'address': profile.address,
+    'partyLabel': isReception ? 'Vendor' : 'M/s',
+    'partyName': isReception ? challan.vendorName : challan.customerName,
+    'partyGstin': isReception ? challan.vendorGstin : challan.customerGstin,
+    'location': challan.location,
+    'referenceLabel': isReception ? 'Source Ref.' : 'Challan No.',
+    'referenceValue': isReception
+        ? (challan.sourceReference.trim().isEmpty
+              ? challan.challanNo
+              : challan.sourceReference)
+        : challan.challanNo,
+    'challanNo': challan.challanNo,
+    'date': _date(challan.date),
+    'stateCode': profile.stateCode,
+    'gstin': profile.gstin,
+    'signatureLabel': signatureLabel,
+    'items': challan.items
+        .map(
+          (item) => {
+            'particulars': item.particulars,
+            'hsnCode': item.hsnCode,
+            'quantityPcs': item.quantityPcs,
+            'weight': item.weight,
+          },
+        )
+        .toList(growable: false),
+  };
 }
 
 Future<void> _launchPrintHtml(
