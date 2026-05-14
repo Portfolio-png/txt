@@ -1,11 +1,11 @@
 import 'delivery_challan.dart';
 
-enum ChallanTemplatePartyType { client, vendor }
+enum ChallanTemplatePartyType { generic, client, vendor }
 
 ChallanTemplatePartyType challanTemplatePartyTypeFromName(String value) {
   return ChallanTemplatePartyType.values.firstWhere(
     (type) => type.name == value.toLowerCase(),
-    orElse: () => ChallanTemplatePartyType.client,
+    orElse: () => ChallanTemplatePartyType.generic,
   );
 }
 

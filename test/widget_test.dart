@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -26,7 +28,10 @@ import 'package:paper/features/inventory/presentation/screens/inventory_screen.d
 import 'package:paper/features/clients/data/repositories/client_repository.dart';
 import 'package:paper/features/clients/domain/client_definition.dart';
 import 'package:paper/features/clients/domain/client_inputs.dart';
+import 'package:paper/features/clients/presentation/providers/clients_provider.dart';
 import 'package:paper/features/clients/presentation/screens/clients_screen.dart';
+import 'package:paper/features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
+import 'package:paper/features/delivery_challans/presentation/screens/challan_template_mapping_screen.dart';
 import 'package:paper/features/items/data/repositories/item_repository.dart';
 import 'package:paper/features/items/domain/item_asset.dart';
 import 'package:paper/features/items/domain/item_definition.dart';
@@ -42,8 +47,11 @@ import 'package:paper/features/units/domain/unit_inputs.dart';
 import 'package:paper/features/vendors/data/repositories/vendor_repository.dart';
 import 'package:paper/features/vendors/domain/vendor_definition.dart';
 import 'package:paper/features/vendors/domain/vendor_inputs.dart';
+import 'package:paper/features/vendors/presentation/providers/vendors_provider.dart';
 import 'package:paper/features/vendors/presentation/screens/vendors_screen.dart';
 import 'package:paper/main.dart';
+
+void _noop() {}
 
 class FakeInventoryRepository extends InventoryRepository {
   FakeInventoryRepository({
@@ -2479,8 +2487,10 @@ class FakeOrderRepository extends OrderRepository {
 class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
   FakeDeliveryChallanRepository({
     List<DeliveryChallan>? seedChallans,
+    List<ChallanTemplate>? seedTemplates,
     CompanyProfile? companyProfile,
-  }) : _challans = List<DeliveryChallan>.from(seedChallans ?? const []) {
+  }) : _challans = List<DeliveryChallan>.from(seedChallans ?? const []),
+       _templates = List<ChallanTemplate>.from(seedTemplates ?? const []) {
     if (companyProfile != null) {
       _companyProfile = companyProfile;
     }
@@ -2489,6 +2499,7 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
   int getChallansCalls = 0;
   int getCompanyProfileCalls = 0;
   final List<DeliveryChallan> _challans;
+  final List<ChallanTemplate> _templates;
   CompanyProfile _companyProfile = const CompanyProfile(
     id: 1,
     companyName: 'Paper ERP',
@@ -2608,16 +2619,82 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
     int? partyId,
     ChallanType? challanType,
     bool activeOnly = false,
-  }) async => const <ChallanTemplate>[];
+  }) async => _templates
+      .where((template) {
+        if (partyType != null && template.partyType != partyType) {
+          return false;
+        }
+        if (partyId != null && template.partyId != partyId) {
+          return false;
+        }
+        if (challanType != null && template.challanType != challanType) {
+          return false;
+        }
+        if (activeOnly && !template.isActive) {
+          return false;
+        }
+        return true;
+      })
+      .toList(growable: false);
 
   @override
-  Future<ChallanTemplate> createTemplate(ChallanTemplateInput input) {
-    throw UnimplementedError();
+  Future<ChallanTemplate> createTemplate(ChallanTemplateInput input) async {
+    final created = ChallanTemplate(
+      id: _templates.isEmpty
+          ? 1
+          : (_templates.map((template) => template.id).reduce(math.max) + 1),
+      name: input.name,
+      partyType: input.partyType,
+      partyId: input.partyId,
+      challanType: input.challanType,
+      backgroundObjectKey: input.backgroundObjectKey,
+      backgroundImageUrl: '',
+      canvasWidth: input.canvasWidth,
+      canvasHeight: input.canvasHeight,
+      rotationDegrees: input.rotationDegrees,
+      globalOffsetXmm: input.globalOffsetXmm,
+      globalOffsetYmm: input.globalOffsetYmm,
+      stockSize: input.stockSize,
+      paperSize: input.paperSize,
+      nUpLayout: input.nUpLayout,
+      isActive: input.isActive,
+      mappings: input.mappings,
+    );
+    _templates.add(created);
+    return created;
   }
 
   @override
-  Future<ChallanTemplate> updateTemplate(int id, ChallanTemplateInput input) {
-    throw UnimplementedError();
+  Future<ChallanTemplate> updateTemplate(
+    int id,
+    ChallanTemplateInput input,
+  ) async {
+    final index = _templates.indexWhere((template) => template.id == id);
+    final updated = ChallanTemplate(
+      id: id,
+      name: input.name,
+      partyType: input.partyType,
+      partyId: input.partyId,
+      challanType: input.challanType,
+      backgroundObjectKey: input.backgroundObjectKey,
+      backgroundImageUrl: '',
+      canvasWidth: input.canvasWidth,
+      canvasHeight: input.canvasHeight,
+      rotationDegrees: input.rotationDegrees,
+      globalOffsetXmm: input.globalOffsetXmm,
+      globalOffsetYmm: input.globalOffsetYmm,
+      stockSize: input.stockSize,
+      paperSize: input.paperSize,
+      nUpLayout: input.nUpLayout,
+      isActive: input.isActive,
+      mappings: input.mappings,
+    );
+    if (index >= 0) {
+      _templates[index] = updated;
+    } else {
+      _templates.add(updated);
+    }
+    return updated;
   }
 
   @override
@@ -3274,6 +3351,100 @@ void main() {
     expect(find.text('DC-00001'), findsOneWidget);
     expect(find.text('RC-00001'), findsNothing);
   });
+
+  testWidgets(
+    'challan templates use fixed layout blocks and a single items area block',
+    (tester) async {
+      final challanRepository = FakeDeliveryChallanRepository(
+        seedTemplates: <ChallanTemplate>[
+          ChallanTemplate(
+            id: 1,
+            name: 'Client Template',
+            partyType: ChallanTemplatePartyType.generic,
+            partyId: 0,
+            challanType: ChallanType.delivery,
+            backgroundObjectKey: 'templates/client.png',
+            backgroundImageUrl: '',
+            canvasWidth: 1240,
+            canvasHeight: 1754,
+            rotationDegrees: 0,
+            globalOffsetXmm: 0,
+            globalOffsetYmm: 0,
+            stockSize: 'A4',
+            paperSize: 'A4',
+            nUpLayout: 1,
+            isActive: true,
+            mappings: const <ChallanTemplateMapping>[
+              ChallanTemplateMapping(
+                id: 1,
+                templateId: 1,
+                fieldType: 'DYNAMIC',
+                fieldKey: 'item_particulars',
+                fieldValue: '',
+                assetObjectKey: '',
+                assetImageUrl: null,
+                assetWidthPx: 0,
+                assetHeightPx: 0,
+                widthMm: 150,
+                heightMm: 70,
+                imageWidthMm: 35,
+                imageHeightMm: 20,
+                lockAspectRatio: true,
+                xPercent: 0.08,
+                yPercent: 0.36,
+                fontSize: 10,
+                fontWeight: 'normal',
+                alignment: 'left',
+                textColor: 'black',
+                letterSpacing: 0,
+                maxChars: 0,
+                maxWidthMm: 37.5,
+                minFontSize: 6,
+                minRows: 0,
+                maxRows: 11,
+                tableHeightMm: 70,
+                rowHeightMm: 6,
+              ),
+            ],
+          ),
+        ],
+      );
+      tester.view.physicalSize = const Size(1440, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<ClientsProvider>(
+              create: (_) =>
+                  ClientsProvider(repository: FakeClientRepository()),
+            ),
+            ChangeNotifierProvider<VendorsProvider>(
+              create: (_) =>
+                  VendorsProvider(repository: FakeVendorRepository()),
+            ),
+            ChangeNotifierProvider<DeliveryChallanProvider>(
+              create: (_) =>
+                  DeliveryChallanProvider(repository: challanRepository),
+            ),
+          ],
+          child: const MaterialApp(
+            home: Scaffold(body: TemplateMappingScreen(onBack: _noop)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Challan Templates'), findsOneWidget);
+      expect(find.text('Layout Blocks'), findsOneWidget);
+      expect(find.text('Field'), findsOneWidget);
+      expect(find.text('Delete Block'), findsOneWidget);
+      expect(find.text('Placed'), findsOneWidget);
+      expect(find.text('Advanced Freedom'), findsOneWidget);
+    },
+  );
 
   testWidgets('reception challan item selection uses variation path popup', (
     tester,

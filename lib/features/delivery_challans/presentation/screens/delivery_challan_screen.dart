@@ -2467,17 +2467,8 @@ class _PrintPreviewState extends State<_PrintPreview> {
   }
 
   Future<List<ChallanTemplate>> _loadMatchingTemplates() {
-    final partyId = widget.challan.isReception
-        ? widget.challan.vendorId
-        : widget.challan.clientId;
-    if (partyId == null || partyId <= 0) {
-      return Future.value(const <ChallanTemplate>[]);
-    }
     return context.read<DeliveryChallanProvider>().loadTemplates(
-      partyType: widget.challan.isReception
-          ? ChallanTemplatePartyType.vendor
-          : ChallanTemplatePartyType.client,
-      partyId: partyId,
+      partyType: ChallanTemplatePartyType.generic,
       challanType: widget.challan.type,
       activeOnly: true,
     );
@@ -2598,7 +2589,9 @@ class _PrintPreviewState extends State<_PrintPreview> {
       input: ChallanTemplateInput(
         name: template.name,
         partyType: template.partyType,
-        partyId: template.partyId,
+        partyId: template.partyType == ChallanTemplatePartyType.generic
+            ? 0
+            : template.partyId,
         challanType: template.challanType,
         backgroundObjectKey: template.backgroundObjectKey,
         canvasWidth: template.canvasWidth,

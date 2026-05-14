@@ -4897,10 +4897,10 @@ async function getDeliveryChallanRowById(id) {
 
 function normalizeTemplatePartyType(value) {
   const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'client' || normalized === 'vendor') {
+  if (normalized === 'client' || normalized === 'vendor' || normalized === 'generic') {
     return normalized;
   }
-  const error = new Error('Template party type must be client or vendor.');
+  const error = new Error('Template party type must be client, vendor, or generic.');
   error.statusCode = 400;
   throw error;
 }
@@ -4932,12 +4932,12 @@ function normalizeTemplateFieldType(value) {
 
 function normalizeTemplatePaperSize(value) {
   const normalized = String(value || 'A4').trim().toUpperCase();
-  return ['A3', 'A4', 'A5'].includes(normalized) ? normalized : 'A4';
+  return ['A3', 'A4', 'A5', 'A6'].includes(normalized) ? normalized : 'A4';
 }
 
 function normalizeTemplateStockSize(value, fallback = 'A4') {
   const normalized = String(value || fallback).trim().toUpperCase();
-  return ['A3', 'A4', 'A5'].includes(normalized) ? normalized : fallback;
+  return ['A3', 'A4', 'A5', 'A6'].includes(normalized) ? normalized : fallback;
 }
 
 function normalizeTemplateNUpLayout(value) {
@@ -5159,7 +5159,9 @@ async function getChallanTemplateRowById(id) {
 
 async function saveChallanTemplate(input = {}, id = null) {
   const name = String(input.name || '').trim();
-  const partyType = normalizeTemplatePartyType(input.partyType ?? input.party_type);
+  const partyType = normalizeTemplatePartyType(
+    input.partyType ?? input.party_type ?? 'generic',
+  );
   const partyId = Number(input.partyId ?? input.party_id ?? 0);
   const challanType = normalizeChallanType(input.challanType ?? input.challan_type);
   const backgroundObjectKey = String(
@@ -5200,7 +5202,10 @@ async function saveChallanTemplate(input = {}, id = null) {
     error.statusCode = 400;
     throw error;
   }
-  if (!Number.isInteger(partyId) || partyId <= 0) {
+  if (
+    partyType !== 'generic' &&
+    (!Number.isInteger(partyId) || partyId <= 0)
+  ) {
     const error = new Error('Template party is required.');
     error.statusCode = 400;
     throw error;
@@ -5212,13 +5217,15 @@ async function saveChallanTemplate(input = {}, id = null) {
   }
   validateTemplateSheetLayout({ stockSize, paperSize, nUpLayout });
 
-  const partyRow = partyType === 'client'
-    ? await get('SELECT id FROM clients WHERE id = ? AND is_archived = 0', [partyId])
-    : await get('SELECT id FROM vendors WHERE id = ? AND is_archived = 0', [partyId]);
-  if (!partyRow) {
-    const error = new Error('Template party does not exist or is archived.');
-    error.statusCode = 400;
-    throw error;
+  if (partyType !== 'generic') {
+    const partyRow = partyType === 'client'
+      ? await get('SELECT id FROM clients WHERE id = ? AND is_archived = 0', [partyId])
+      : await get('SELECT id FROM vendors WHERE id = ? AND is_archived = 0', [partyId]);
+    if (!partyRow) {
+      const error = new Error('Template party does not exist or is archived.');
+      error.statusCode = 400;
+      throw error;
+    }
   }
 
   const now = new Date().toISOString();
@@ -5244,7 +5251,7 @@ async function saveChallanTemplate(input = {}, id = null) {
         [
           name,
           partyType,
-          partyId,
+          partyType === 'generic' ? 0 : partyId,
           challanType,
           backgroundObjectKey,
           canvasWidth,
@@ -5275,7 +5282,7 @@ async function saveChallanTemplate(input = {}, id = null) {
         [
           name,
           partyType,
-          partyId,
+          partyType === 'generic' ? 0 : partyId,
           challanType,
           backgroundObjectKey,
           canvasWidth,
@@ -5301,7 +5308,7 @@ async function saveChallanTemplate(input = {}, id = null) {
         SET is_active = 0, updated_at = ?
         WHERE id != ? AND party_type = ? AND party_id = ? AND challan_type = ?
         `,
-        [now, templateId, partyType, partyId, challanType],
+        [now, templateId, partyType, partyType === 'generic' ? 0 : partyId, challanType],
       );
     }
 
@@ -5388,6 +5395,22 @@ async function getTemplatePartyForChallan(challanRow) {
 }
 
 async function findActiveChallanTemplateForChallan(challanRow) {
+  const genericTemplate = await get(
+    `
+    SELECT *
+    FROM challan_templates
+    WHERE party_type = 'generic'
+      AND party_id = 0
+      AND challan_type = ?
+      AND is_active = 1
+    ORDER BY datetime(updated_at) DESC, id DESC
+    LIMIT 1
+    `,
+    [normalizeChallanType(challanRow.type)],
+  );
+  if (genericTemplate) {
+    return genericTemplate;
+  }
   const party = await getTemplatePartyForChallan(challanRow);
   if (!party) {
     return null;
@@ -5478,6 +5501,9 @@ function paperSizeMmForTemplate(value) {
   const normalized = normalizeTemplatePaperSize(value);
   if (normalized === 'A3') {
     return { widthMm: 297, heightMm: 420 };
+  }
+  if (normalized === 'A6') {
+    return { widthMm: 105, heightMm: 148.5 };
   }
   if (normalized === 'A5') {
     return { widthMm: 148.5, heightMm: 210 };
@@ -5619,15 +5645,19 @@ async function buildChallanTemplateSnapshot(templateRow) {
 }
 
 function templateBoxWidthMm(mapping, frameWidthMm) {
+  const isTableOwner =
+    String(templateValue(mapping, 'fieldKey', 'field_key', '')) === 'item_particulars';
   return normalizeTemplateNumber(
-    templateValue(
-      mapping,
-      'widthMm',
-      'width_mm',
-      templateValue(mapping, 'fieldType', 'field_type', 'DYNAMIC') === 'IMAGE'
-        ? templateNumberValue(mapping, 'imageWidthMm', 'image_width_mm', 35)
-        : templateNumberValue(mapping, 'maxWidthMm', 'max_width_mm', 80),
-    ),
+    isTableOwner
+      ? templateNumberValue(mapping, 'maxWidthMm', 'max_width_mm', 80)
+      : templateValue(
+          mapping,
+          'widthMm',
+          'width_mm',
+          templateValue(mapping, 'fieldType', 'field_type', 'DYNAMIC') === 'IMAGE'
+            ? templateNumberValue(mapping, 'imageWidthMm', 'image_width_mm', 35)
+            : templateNumberValue(mapping, 'maxWidthMm', 'max_width_mm', 80),
+        ),
     frameWidthMm,
     { min: 2, max: frameWidthMm },
   );
@@ -5660,14 +5690,14 @@ function buildTemplateTestChallanDto() {
     challan_no: 'DC-TEST-0001',
     date: 'DD/MM/YYYY',
     location: 'Sample Warehouse',
-    customer_name: 'SAMPLE ENTERPRISE PVT LTD',
+    customer_name: 'John Doe',
     customer_gstin: '27ABCDE1234F1Z5',
     vendor_id: null,
     vendor_name: '',
     vendor_gstin: '',
     source_reference: 'TEST-PRINT',
     company_profile_snapshot: null,
-    notes: 'Sample preview for alignment calibration.',
+    notes: 'Sample preview for block alignment.',
     status: 'draft',
     created_by: null,
     updated_by: null,
