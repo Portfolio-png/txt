@@ -5678,7 +5678,46 @@ function templateBoxHeightMm(mapping, frameHeightMm) {
   );
 }
 
-function buildTemplateTestChallanDto() {
+function buildTemplateTestChallanDto(itemCount = 3) {
+  const normalizedItemCount = Math.max(1, Math.min(200, Math.round(Number(itemCount) || 3)));
+  const sampleCatalog = [
+    {
+      particulars: 'SAMPLE PRODUCT DESCRIPTION 101',
+      hsnCode: '1234',
+      quantityPcs: '9,999',
+      weight: '120.50',
+    },
+    {
+      particulars: 'SAMPLE PRODUCT DESCRIPTION 202 WITH LONGER WRAP TEXT',
+      hsnCode: '5678',
+      quantityPcs: '240',
+      weight: '18.25',
+    },
+    {
+      particulars: 'SAMPLE PRODUCT DESCRIPTION 303',
+      hsnCode: '9101',
+      quantityPcs: '75',
+      weight: '8.00',
+    },
+    {
+      particulars: 'SAMPLE PRODUCT DESCRIPTION 404 EXTRA LONG TEXT FOR ROW FIT CHECKING',
+      hsnCode: '1112',
+      quantityPcs: '1,250',
+      weight: '42.75',
+    },
+  ];
+  const items = Array.from({ length: normalizedItemCount }, (_, index) => {
+    const sample = sampleCatalog[index % sampleCatalog.length];
+    return {
+      particulars:
+        normalizedItemCount <= sampleCatalog.length
+          ? sample.particulars
+          : `${sample.particulars} #${String(index + 1).padStart(2, '0')}`,
+      hsn_code: sample.hsnCode,
+      quantity_pcs: sample.quantityPcs,
+      weight: sample.weight,
+    };
+  });
   return {
     id: 0,
     type: 'delivery',
@@ -5703,26 +5742,7 @@ function buildTemplateTestChallanDto() {
     updated_by: null,
     created_at: null,
     updated_at: null,
-    items: [
-      {
-        particulars: 'SAMPLE PRODUCT DESCRIPTION 101',
-        hsn_code: '1234',
-        quantity_pcs: '9,999',
-        weight: '120.50',
-      },
-      {
-        particulars: 'SAMPLE PRODUCT DESCRIPTION 202 WITH LONGER WRAP TEXT',
-        hsn_code: '5678',
-        quantity_pcs: '240',
-        weight: '18.25',
-      },
-      {
-        particulars: 'SAMPLE PRODUCT DESCRIPTION 303',
-        hsn_code: '9101',
-        quantity_pcs: '75',
-        weight: '8.00',
-      },
-    ],
+    items,
   };
 }
 
@@ -13839,6 +13859,13 @@ async function handleChallanTemplateTestPrint(req, res) {
       });
       return;
     }
+    const itemCount = Number(
+      req.body?.itemCount ||
+        req.body?.item_count ||
+        req.query.itemCount ||
+        req.query.item_count ||
+        3,
+    );
     const template = await getChallanTemplateRowById(templateId);
     if (!template) {
       res.status(404).json({
@@ -13850,7 +13877,7 @@ async function handleChallanTemplateTestPrint(req, res) {
     }
     const buffer = await generateChallanTemplatePdf({
       challanRow: null,
-      challanDtoOverride: buildTemplateTestChallanDto(),
+      challanDtoOverride: buildTemplateTestChallanDto(itemCount),
       templateRow: template,
       mode: req.body?.mode || req.query.mode,
     });

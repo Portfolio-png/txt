@@ -1,10 +1,12 @@
+import 'dart:io' show File, Platform;
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -14,6 +16,10 @@ import '../../../../core/widgets/soft_primitives.dart';
 import '../../domain/challan_template.dart';
 import '../../domain/delivery_challan.dart';
 import '../providers/delivery_challan_provider.dart';
+
+const MethodChannel _nativePrintingChannel = MethodChannel(
+  'paper/native_printing',
+);
 
 class TemplateMappingScreen extends StatefulWidget {
   const TemplateMappingScreen({super.key, required this.onBack});
@@ -518,16 +524,45 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
             ],
           ),
           const SizedBox(height: 14),
-          AppButton(
-            label: 'Test Print',
-            icon: Icons.print_outlined,
-            variant: AppButtonVariant.secondary,
-            onPressed:
-                _selectedTemplate?.id != null &&
-                    (_selectedTemplate?.id ?? 0) > 0 &&
-                    _layoutValidity.isValid
-                ? _openTestPrint
-                : null,
+          Text(
+            'Test item counts',
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: SoftErpTheme.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Send either a single item or a full table to the system print dialog.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: SoftErpTheme.textSecondary),
+          ),
+          const SizedBox(height: 10),
+          Column(
+            children: [
+              AppButton(
+                label: '1 Item',
+                variant: AppButtonVariant.secondary,
+                onPressed:
+                    _selectedTemplate?.id != null &&
+                        (_selectedTemplate?.id ?? 0) > 0 &&
+                        _layoutValidity.isValid
+                    ? () => _openTestPrint(itemCount: 1)
+                    : null,
+              ),
+              const SizedBox(height: 10),
+              AppButton(
+                label: 'Full Table',
+                variant: AppButtonVariant.secondary,
+                onPressed:
+                    _selectedTemplate?.id != null &&
+                        (_selectedTemplate?.id ?? 0) > 0 &&
+                        _layoutValidity.isValid
+                    ? () => _openTestPrint(itemCount: _testPrintMaxItemCount)
+                    : null,
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           _TemplateLayoutHint(validity: _layoutValidity),
@@ -1533,7 +1568,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     _updateMapping(mapping.fieldKey, nextMapping);
   }
 
-  Future<void> _openTestPrint() async {
+  Future<void> _openTestPrint({required int itemCount}) async {
     if (!_layoutValidity.isValid) {
       setState(() => _error = _layoutValidity.message);
       return;
@@ -1546,8 +1581,50 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     final uri = provider.repository.templateTestPrintUri(
       templateId: templateId,
       mode: 'digital',
+      itemCount: itemCount,
     );
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final handled = await _printPdfFromUri(
+      uri,
+      fallbackFileName: 'challan-template-test-$itemCount-items.pdf',
+    );
+    if (!handled) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Future<bool> _printPdfFromUri(
+    Uri uri, {
+    required String fallbackFileName,
+  }) async {
+    try {
+      final response = await http.get(uri);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception(
+          'Failed to fetch test print PDF (${response.statusCode}).',
+        );
+      }
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/$fallbackFileName');
+      await file.writeAsBytes(response.bodyBytes, flush: true);
+
+      if (Platform.isMacOS) {
+        final printed =
+            await _nativePrintingChannel.invokeMethod<bool>('printPdfFile', {
+              'filePath': file.path,
+            }) ??
+            false;
+        return printed;
+      }
+    } on MissingPluginException {
+      return false;
+    } on PlatformException catch (error) {
+      setState(() => _error = error.message ?? error.code);
+      return false;
+    } catch (error) {
+      setState(() => _error = error.toString());
+      return false;
+    }
+    return false;
   }
 
   void _finishElementGesture() {}
@@ -1644,6 +1721,18 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
   int _computedTableMaxRows(ChallanTemplateMapping owner) {
     final pitch = math.max(owner.rowHeightMm, 0.1);
     return math.max(1, (owner.tableHeightMm / pitch).floor());
+  }
+
+  int get _testPrintMaxItemCount {
+    final owner = _mappingForField(_tableOwnerKey);
+    if (owner == null) {
+      return 1;
+    }
+    final computedRows = _computedTableMaxRows(owner);
+    if (owner.maxRows <= 0) {
+      return computedRows;
+    }
+    return math.max(1, math.min(owner.maxRows, computedRows));
   }
 
   void _toggleTableColumn(String fieldKey, bool enabled) {

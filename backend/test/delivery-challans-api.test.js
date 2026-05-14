@@ -713,13 +713,26 @@ test('challan templates persist mappings and generate overprint pdf', async () =
     const testPrint = await backend.generateChallanTemplatePdf({
       challanRow: null,
       challanDtoOverride: {
-        ...backend.buildTemplateTestChallanDto(),
+        ...backend.buildTemplateTestChallanDto(1),
       },
       templateRow,
       mode: 'digital',
     });
     assert.ok(Buffer.isBuffer(testPrint));
     assert.equal(testPrint.slice(0, 4).toString(), '%PDF');
+
+    const maxPrint = await backend.generateChallanTemplatePdf({
+      challanRow: null,
+      challanDtoOverride: {
+        ...backend.buildTemplateTestChallanDto(8),
+      },
+      templateRow,
+      mode: 'digital',
+    });
+    assert.ok(Buffer.isBuffer(maxPrint));
+    assert.equal(maxPrint.slice(0, 4).toString(), '%PDF');
+    assert.equal(backend.buildTemplateTestChallanDto(1).items.length, 1);
+    assert.equal(backend.buildTemplateTestChallanDto(8).items.length, 8);
   } finally {
     await backend.closeDb();
   }

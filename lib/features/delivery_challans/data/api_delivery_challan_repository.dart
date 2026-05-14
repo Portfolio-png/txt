@@ -636,11 +636,16 @@ class ApiChallanRepository implements ChallanRepository {
   }
 
   @override
-  Uri templateTestPrintUri({required int templateId, required String mode}) {
+  Uri templateTestPrintUri({
+    required int templateId,
+    required String mode,
+    int? itemCount,
+  }) {
     return Uri.parse('$baseUrl/api/challan-templates/test-print').replace(
       queryParameters: <String, String>{
         'templateId': '$templateId',
         'mode': mode,
+        if (itemCount != null) 'itemCount': '$itemCount',
       },
     );
   }
