@@ -3396,7 +3396,8 @@ void main() {
                 templateId: 1,
                 fieldType: 'TABLE',
                 fieldKey: 'item_particulars',
-                fieldValue: '{"columns":["hsn","qty_pcs","weight"]}',
+                fieldValue:
+                    '{"columns":[{"fieldKey":"item_particulars","xMm":0},{"fieldKey":"hsn","xMm":72},{"fieldKey":"qty_pcs","xMm":102},{"fieldKey":"weight","xMm":124}]}',
                 assetObjectKey: '',
                 assetImageUrl: null,
                 assetWidthPx: 0,

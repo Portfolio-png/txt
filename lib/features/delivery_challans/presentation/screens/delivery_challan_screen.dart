@@ -1703,6 +1703,13 @@ class _ItemsEditor extends StatelessWidget {
           const SizedBox(height: 10),
           _buildDeliveryVariationPathField(context, index, draft),
         ],
+        const SizedBox(height: 8),
+        _itemField(
+          draft.note,
+          'Line note',
+          enabled,
+          (value) => draft.note = value,
+        ),
       ],
     );
   }
@@ -1798,6 +1805,13 @@ class _ItemsEditor extends StatelessWidget {
               selectedItem,
             ),
           ],
+          const SizedBox(height: 8),
+          _itemField(
+            draft.note,
+            'Line note',
+            enabled,
+            (value) => draft.note = value,
+          ),
         ],
       ),
     );
@@ -2126,6 +2140,7 @@ class _ItemDraft {
     this.hsnCode = '',
     this.variationPathLabel = '',
     this.productionRunLabel = '',
+    this.note = '',
     this.quantityPcs = '',
     this.weight = '',
   });
@@ -2138,6 +2153,7 @@ class _ItemDraft {
   String hsnCode;
   String variationPathLabel;
   String productionRunLabel;
+  String note;
   String quantityPcs;
   String weight;
 
@@ -2167,6 +2183,7 @@ class _ItemDraft {
       productionRunLabel: item.productionRunId == null
           ? ''
           : 'Run #${item.productionRunId}',
+      note: item.note,
       quantityPcs: item.quantityPcs,
       weight: item.weight,
     );
@@ -2246,6 +2263,7 @@ class _ItemDraft {
       particulars: particulars,
       hsnCode: hsnCode,
       variationPathLabel: variationPathLabel,
+      note: note,
       quantityPcs: quantityPcs,
       weight: weight,
     );
@@ -2854,7 +2872,9 @@ class _ChallanDocument extends StatelessWidget {
                 ], header: true),
                 ...challan.items.map(
                   (item) => _tableRow([
-                    item.particulars,
+                    item.note.trim().isEmpty
+                        ? item.particulars
+                        : '${item.particulars}\n${item.note}',
                     item.hsnCode,
                     item.quantityPcs,
                     item.weight,
@@ -3002,6 +3022,7 @@ Map<String, Object> _nativePrintPayload(
           (item) => {
             'particulars': item.particulars,
             'hsnCode': item.hsnCode,
+            'note': item.note,
             'quantityPcs': item.quantityPcs,
             'weight': item.weight,
           },
@@ -3037,7 +3058,7 @@ String _printHtml(DeliveryChallan challan, CompanyProfile profile) {
   final rows = [
     ...challan.items.map(
       (item) =>
-          '<tr><td>${e(item.particulars)}</td><td>${e(item.hsnCode)}</td><td>${e(item.quantityPcs)}</td><td>${e(item.weight)}</td></tr>',
+          '<tr><td>${e(item.particulars)}${item.note.trim().isEmpty ? '' : '<br><small><em>${e(item.note)}</em></small>'}</td><td>${e(item.hsnCode)}</td><td>${e(item.quantityPcs)}</td><td>${e(item.weight)}</td></tr>',
     ),
     for (var i = challan.items.length; i < 9; i++)
       '<tr><td></td><td></td><td></td><td></td></tr>',

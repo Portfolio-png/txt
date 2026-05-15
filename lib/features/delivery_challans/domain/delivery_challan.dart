@@ -109,6 +109,7 @@ class DeliveryChallanItem {
     required this.particulars,
     required this.hsnCode,
     required this.variationPathLabel,
+    required this.note,
     required this.quantityPcs,
     required this.weight,
   });
@@ -122,6 +123,7 @@ class DeliveryChallanItem {
   final String particulars;
   final String hsnCode;
   final String variationPathLabel;
+  final String note;
   final String quantityPcs;
   final String weight;
 
@@ -136,6 +138,7 @@ class DeliveryChallanItem {
       particulars: '',
       hsnCode: '',
       variationPathLabel: '',
+      note: '',
       quantityPcs: '',
       weight: '',
     );
@@ -159,6 +162,11 @@ class DeliveryChallanItem {
           json['variationPathLabel'] as String? ??
           json['variation_path_label'] as String? ??
           '',
+      note:
+          json['note'] as String? ??
+          json['lineNote'] as String? ??
+          json['line_note'] as String? ??
+          '',
       quantityPcs:
           json['quantityPcs'] as String? ??
           json['quantity_pcs'] as String? ??
@@ -177,6 +185,7 @@ class DeliveryChallanItem {
       'particulars': particulars,
       'hsn_code': hsnCode,
       'variation_path_label': variationPathLabel,
+      'note': note,
       'quantity_pcs': quantityPcs,
       'weight': weight,
     };

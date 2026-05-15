@@ -21,6 +21,10 @@ test('delivery challans create issue and preserve company profile snapshot', asy
       challanItemColumns.find((column) => column.name === 'weight')?.type,
       'REAL',
     );
+    assert.ok(
+      challanItemColumns.some((column) => column.name === 'note'),
+      'expected delivery challan line note column',
+    );
     const actor = { id: 1, name: 'Delivery Tester', role: 'admin' };
 
     const profile = await backend.getActiveCompanyProfile();
@@ -40,6 +44,7 @@ test('delivery challans create issue and preserve company profile snapshot', asy
             order_item_id: order.id,
             quantity_pcs: '10',
             weight: '2.5',
+            note: 'Dispatch after QC clearance',
           },
         ],
       },
@@ -64,6 +69,11 @@ test('delivery challans create issue and preserve company profile snapshot', asy
     );
     assert.equal(Number(aggregated.total_qty || 0), 10);
     assert.equal(Number(aggregated.total_weight || 0), 2.5);
+    const savedLine = await backend.get(
+      'SELECT note FROM delivery_challan_items WHERE challan_id = ? LIMIT 1',
+      [created.id],
+    );
+    assert.equal(savedLine.note, 'Dispatch after QC clearance');
 
     const material = await backend.ensureMaterialForItemSelection({
       itemId: order.item_id,
@@ -655,7 +665,16 @@ test('challan templates persist mappings and generate overprint pdf', async () =
         {
           fieldType: 'TABLE',
           fieldKey: 'item_particulars',
-          fieldValue: JSON.stringify({ columns: ['hsn', 'qty_pcs', 'weight'] }),
+          fieldValue: JSON.stringify({
+            columns: [
+              { fieldKey: 'item_particulars', xMm: 0 },
+              { fieldKey: 'hsn', xMm: 72 },
+              { fieldKey: 'qty_pcs', xMm: 102 },
+              { fieldKey: 'weight', xMm: 124 },
+              { fieldKey: 'note', xMm: 0 },
+            ],
+            printNotes: true,
+          }),
           xMm: 12,
           yMm: 84,
           xPercent: 0.08,
@@ -705,7 +724,10 @@ test('challan templates persist mappings and generate overprint pdf', async () =
       (mapping) => mapping.fieldKey === 'item_particulars',
     );
     assert.equal(tableMapping.fieldType, 'TABLE');
-    assert.deepEqual(JSON.parse(tableMapping.fieldValue).columns, ['hsn', 'qty_pcs', 'weight']);
+    assert.deepEqual(
+      JSON.parse(tableMapping.fieldValue).columns.map((column) => column.fieldKey),
+      ['item_particulars', 'hsn', 'qty_pcs', 'weight', 'note'],
+    );
     assert.equal(tableMapping.xMm, 12);
     assert.equal(tableMapping.yMm, 84);
 
@@ -747,7 +769,16 @@ test('challan templates persist mappings and generate overprint pdf', async () =
         ? {
             ...mapping,
             fieldType: 'TABLE',
-            fieldValue: JSON.stringify({ columns: ['hsn', 'qty_pcs', 'weight'] }),
+            fieldValue: JSON.stringify({
+              columns: [
+                { fieldKey: 'item_particulars', xMm: 0 },
+                { fieldKey: 'hsn', xMm: 72 },
+                { fieldKey: 'qty_pcs', xMm: 102 },
+                { fieldKey: 'weight', xMm: 124 },
+                { fieldKey: 'note', xMm: 0 },
+              ],
+              printNotes: true,
+            }),
           }
         : mapping,
     );
@@ -883,7 +914,14 @@ test('challan templates render A4 stock on A3 sheet at 2-up', async () => {
         {
           fieldType: 'TABLE',
           fieldKey: 'item_particulars',
-          fieldValue: JSON.stringify({ columns: ['hsn', 'qty_pcs', 'weight'] }),
+          fieldValue: JSON.stringify({
+            columns: [
+              { fieldKey: 'item_particulars', xMm: 0 },
+              { fieldKey: 'hsn', xMm: 72 },
+              { fieldKey: 'qty_pcs', xMm: 102 },
+              { fieldKey: 'weight', xMm: 124 },
+            ],
+          }),
           xMm: 16,
           yMm: 118,
           xPercent: 0.08,

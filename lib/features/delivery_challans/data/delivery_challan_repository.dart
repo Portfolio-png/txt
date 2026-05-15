@@ -147,6 +147,7 @@ class ChallanDraftInput {
               'particulars': item.particulars,
               'hsn_code': item.hsnCode,
               'variation_path_label': item.variationPathLabel,
+              'note': item.note.trim(),
               'quantity_pcs': item.quantityPcs.trim(),
               'weight': item.weight.trim(),
             },

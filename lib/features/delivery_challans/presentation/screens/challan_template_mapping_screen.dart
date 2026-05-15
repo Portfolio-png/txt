@@ -67,6 +67,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     'hsn',
     'qty_pcs',
     'weight',
+    'note',
   ];
   static const String _tableOwnerKey = 'item_particulars';
   static const String _headerOwnerKey = 'challan_no';
@@ -182,6 +183,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       hiddenFromPalette: true,
     ),
     _TemplateField('weight', 'Weight', isTable: true, hiddenFromPalette: true),
+    _TemplateField('note', 'Note', isTable: true, hiddenFromPalette: true),
   ];
 
   @override
@@ -734,6 +736,9 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
                                   : _localStampBytesByObjectKey[mapping
                                         .assetObjectKey],
                               imageUrl: mapping.assetImageUrl,
+                              tableRails: mapping.fieldKey == _tableOwnerKey
+                                  ? _tableRailConfigsForOwner(mapping)
+                                  : const <_TableRailConfig>[],
                               selected: _selectedMappingFieldKeys.contains(
                                 mapping.fieldKey,
                               ),
@@ -755,6 +760,12 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
                                     constraints.maxHeight,
                                   ),
                               onResizeEnd: _finishElementGesture,
+                              onRailDrag: (fieldKey, deltaMm) =>
+                                  _moveTableRailByDelta(
+                                    mapping,
+                                    fieldKey,
+                                    deltaMm,
+                                  ),
                             ),
                           );
                         },
@@ -1100,6 +1111,28 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
                 title: const Text('Weight'),
                 onChanged: (value) =>
                     _toggleTableColumn('weight', value ?? false),
+              ),
+              CheckboxListTile(
+                value: _isTableColumnEnabled('note'),
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text('Line Note'),
+                subtitle: const Text('Prints below the item name.'),
+                onChanged: (value) =>
+                    _toggleTableColumn('note', value ?? false),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Column Rails',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Drag the vertical rails inside the table block to match the paper columns.',
+                style: TextStyle(
+                  color: SoftErpTheme.textSecondary,
+                  fontSize: 12,
+                ),
               ),
               const SizedBox(height: 8),
               _DecimalInputField(
@@ -1533,6 +1566,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
           if (_isTableColumnEnabled('hsn')) 'HSN',
           if (_isTableColumnEnabled('qty_pcs')) 'Qty',
           if (_isTableColumnEnabled('weight')) 'Weight',
+          if (_isTableColumnEnabled('note')) 'Note',
         ];
         return '${block.label}\n${columns.join(' • ')}';
       }
@@ -1570,6 +1604,8 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
         return '120';
       case 'weight':
         return '48.5';
+      case 'note':
+        return 'Packed in export-grade bundles';
       default:
         return _labelForField(mapping.fieldKey);
     }
@@ -1978,6 +2014,16 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     ChallanTemplateMapping owner, {
     List<ChallanTemplateMapping>? source,
   }) {
+    return _tableRailConfigsForOwner(owner, source: source)
+        .map((rail) => rail.fieldKey)
+        .where((fieldKey) => fieldKey != _tableOwnerKey)
+        .toList(growable: false);
+  }
+
+  List<_TableRailConfig> _tableRailConfigsForOwner(
+    ChallanTemplateMapping owner, {
+    List<ChallanTemplateMapping>? source,
+  }) {
     final raw = owner.fieldValue.trim();
     if (raw.isNotEmpty) {
       try {
@@ -1986,32 +2032,173 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
             ? decoded['columns']
             : null;
         if (columns is List) {
-          return columns
-              .map((column) => '$column'.trim())
-              .where(_tableColumnKeys.contains)
+          final rails = columns
+              .map((column) => _parseTableRail(column, owner.widthMm))
+              .whereType<_TableRailConfig>()
               .toList(growable: false);
+          if (rails.isNotEmpty) {
+            return _normalizeTableRails(rails, owner.widthMm);
+          }
         }
       } catch (_) {
         // Legacy templates used separate hidden companion mappings.
       }
     }
     final fallbackSource = source ?? _mappings;
-    return _tableColumnKeys
-        .where(
-          (fieldKey) =>
-              fallbackSource.any((entry) => entry.fieldKey == fieldKey),
+    final fields = <String>[
+      _tableOwnerKey,
+      ..._tableColumnKeys.where(
+        (fieldKey) => fallbackSource.any((entry) => entry.fieldKey == fieldKey),
+      ),
+    ];
+    return _normalizeTableRails(
+      fields
+          .map(
+            (fieldKey) => _TableRailConfig(
+              fieldKey: fieldKey,
+              xMm: _defaultTableRailX(fieldKey, owner.widthMm),
+            ),
+          )
+          .toList(growable: false),
+      owner.widthMm,
+    );
+  }
+
+  _TableRailConfig? _parseTableRail(Object? rawColumn, double tableWidthMm) {
+    if (rawColumn is String) {
+      final fieldKey = rawColumn.trim();
+      if (fieldKey != _tableOwnerKey && !_tableColumnKeys.contains(fieldKey)) {
+        return null;
+      }
+      return _TableRailConfig(
+        fieldKey: fieldKey,
+        xMm: _defaultTableRailX(fieldKey, tableWidthMm),
+      );
+    }
+    if (rawColumn is Map<String, dynamic>) {
+      final fieldKey =
+          '${rawColumn['fieldKey'] ?? rawColumn['field_key'] ?? ''}'.trim();
+      if (fieldKey != _tableOwnerKey && !_tableColumnKeys.contains(fieldKey)) {
+        return null;
+      }
+      final xMm = (rawColumn['xMm'] as num? ?? rawColumn['x_mm'] as num?)
+          ?.toDouble();
+      return _TableRailConfig(
+        fieldKey: fieldKey,
+        xMm: xMm ?? _defaultTableRailX(fieldKey, tableWidthMm),
+      );
+    }
+    return null;
+  }
+
+  List<_TableRailConfig> _normalizeTableRails(
+    List<_TableRailConfig> rails,
+    double tableWidthMm,
+  ) {
+    final normalized = <_TableRailConfig>[];
+    void addRail(String fieldKey, double xMm) {
+      if (normalized.any((rail) => rail.fieldKey == fieldKey)) {
+        return;
+      }
+      normalized.add(
+        _TableRailConfig(
+          fieldKey: fieldKey,
+          xMm: xMm.clamp(0.0, tableWidthMm).toDouble(),
+        ),
+      );
+    }
+
+    final itemRail = rails
+        .where((rail) => rail.fieldKey == _tableOwnerKey)
+        .firstOrNull;
+    addRail(_tableOwnerKey, itemRail?.xMm ?? 0);
+    for (final fieldKey in _tableColumnKeys) {
+      final rail = rails
+          .where((entry) => entry.fieldKey == fieldKey)
+          .firstOrNull;
+      if (rail != null) {
+        addRail(fieldKey, rail.xMm);
+      }
+    }
+    return normalized;
+  }
+
+  double _defaultTableRailX(String fieldKey, double widthMm) {
+    return switch (fieldKey) {
+      _tableOwnerKey => 0,
+      'hsn' => widthMm * 0.58,
+      'qty_pcs' => widthMm * 0.76,
+      'weight' => widthMm * 0.88,
+      'note' => 0,
+      _ => 0,
+    };
+  }
+
+  String _tableFieldValueForRails(List<_TableRailConfig> rails) {
+    return jsonEncode(<String, dynamic>{
+      'columns':
+          _normalizeTableRails(
+                rails,
+                _mappingForField(_tableOwnerKey)?.widthMm ?? 150,
+              )
+              .map(
+                (rail) => <String, dynamic>{
+                  'fieldKey': rail.fieldKey,
+                  'xMm': double.parse(rail.xMm.toStringAsFixed(2)),
+                },
+              )
+              .toList(growable: false),
+      'printNotes': rails.any((rail) => rail.fieldKey == 'note'),
+    });
+  }
+
+  void _moveTableRailByDelta(
+    ChallanTemplateMapping owner,
+    String fieldKey,
+    double deltaMm,
+  ) {
+    final rails = _tableRailConfigsForOwner(owner)
+        .map(
+          (rail) => rail.fieldKey == fieldKey
+              ? _TableRailConfig(
+                  fieldKey: rail.fieldKey,
+                  xMm: (rail.xMm + deltaMm)
+                      .clamp(0.0, owner.widthMm)
+                      .toDouble(),
+                )
+              : rail,
         )
         .toList(growable: false);
+    _updateMapping(
+      owner.fieldKey,
+      owner.copyWith(fieldValue: _tableFieldValueForRails(rails)),
+    );
   }
 
   String _tableFieldValueForColumns(List<String> columns) {
-    final normalized = <String>[];
+    final owner = _mappingForField(_tableOwnerKey);
+    final currentRails = owner == null
+        ? const <_TableRailConfig>[]
+        : _tableRailConfigsForOwner(owner);
+    final nextRails = <_TableRailConfig>[];
+    _TableRailConfig railFor(String fieldKey) {
+      return currentRails
+              .where((rail) => rail.fieldKey == fieldKey)
+              .firstOrNull ??
+          _TableRailConfig(
+            fieldKey: fieldKey,
+            xMm: _defaultTableRailX(fieldKey, owner?.widthMm ?? 150),
+          );
+    }
+
+    nextRails.add(railFor(_tableOwnerKey));
     for (final column in columns) {
-      if (_tableColumnKeys.contains(column) && !normalized.contains(column)) {
-        normalized.add(column);
+      if (_tableColumnKeys.contains(column) &&
+          !nextRails.any((rail) => rail.fieldKey == column)) {
+        nextRails.add(railFor(column));
       }
     }
-    return jsonEncode(<String, dynamic>{'columns': normalized});
+    return _tableFieldValueForRails(nextRails);
   }
 
   int _computedTableMaxRows(ChallanTemplateMapping owner) {
@@ -2409,6 +2596,13 @@ class _TemplateField {
   final bool hiddenFromPalette;
 }
 
+class _TableRailConfig {
+  const _TableRailConfig({required this.fieldKey, required this.xMm});
+
+  final String fieldKey;
+  final double xMm;
+}
+
 class _MappedCanvasElement extends StatelessWidget {
   const _MappedCanvasElement({
     required this.mapping,
@@ -2419,6 +2613,7 @@ class _MappedCanvasElement extends StatelessWidget {
     required this.boxHeight,
     required this.localImageBytes,
     required this.imageUrl,
+    required this.tableRails,
     required this.selected,
     required this.showBoundingBox,
     required this.onTap,
@@ -2426,6 +2621,7 @@ class _MappedCanvasElement extends StatelessWidget {
     required this.onDragEnd,
     required this.onResize,
     required this.onResizeEnd,
+    required this.onRailDrag,
   });
 
   final ChallanTemplateMapping mapping;
@@ -2436,6 +2632,7 @@ class _MappedCanvasElement extends StatelessWidget {
   final double boxHeight;
   final Uint8List? localImageBytes;
   final String? imageUrl;
+  final List<_TableRailConfig> tableRails;
   final bool selected;
   final bool showBoundingBox;
   final VoidCallback onTap;
@@ -2443,6 +2640,7 @@ class _MappedCanvasElement extends StatelessWidget {
   final VoidCallback onDragEnd;
   final void Function(_ResizeHandle handle, Offset delta) onResize;
   final VoidCallback onResizeEnd;
+  final void Function(String fieldKey, double deltaMm) onRailDrag;
 
   @override
   Widget build(BuildContext context) {
@@ -2534,6 +2732,103 @@ class _MappedCanvasElement extends StatelessWidget {
                   onDragEnd: onResizeEnd,
                 ),
               ),
+            if (selected && tableRails.isNotEmpty)
+              ...tableRails.map(
+                (rail) => _TableRailHandle(
+                  rail: rail,
+                  tableWidthMm: mapping.widthMm,
+                  boxWidth: boxWidth,
+                  boxHeight: boxHeight,
+                  onDrag: (deltaMm) => onRailDrag(rail.fieldKey, deltaMm),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TableRailHandle extends StatelessWidget {
+  const _TableRailHandle({
+    required this.rail,
+    required this.tableWidthMm,
+    required this.boxWidth,
+    required this.boxHeight,
+    required this.onDrag,
+  });
+
+  final _TableRailConfig rail;
+  final double tableWidthMm;
+  final double boxWidth;
+  final double boxHeight;
+  final ValueChanged<double> onDrag;
+
+  @override
+  Widget build(BuildContext context) {
+    final left = tableWidthMm <= 0
+        ? 0.0
+        : (rail.xMm / tableWidthMm * boxWidth).clamp(0.0, boxWidth).toDouble();
+    final label = switch (rail.fieldKey) {
+      'item_particulars' => 'Name',
+      'hsn' => 'HSN',
+      'qty_pcs' => 'Qty',
+      'weight' => 'Weight',
+      'note' => 'Note',
+      _ => rail.fieldKey,
+    };
+    return Positioned(
+      left: left - 10,
+      top: 0,
+      width: 20,
+      height: boxHeight,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragUpdate: (details) {
+          if (boxWidth <= 0 || tableWidthMm <= 0) {
+            return;
+          }
+          onDrag(details.delta.dx / boxWidth * tableWidthMm);
+        },
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Center(
+              child: Container(
+                width: 2,
+                height: boxHeight,
+                decoration: BoxDecoration(
+                  color: SoftErpTheme.accent.withValues(alpha: 0.78),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+            Positioned(
+              top: -22,
+              left: -18,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                  color: SoftErpTheme.accent,
+                  borderRadius: BorderRadius.circular(999),
+                  boxShadow: [
+                    BoxShadow(
+                      color: SoftErpTheme.accent.withValues(alpha: 0.18),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),

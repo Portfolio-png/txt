@@ -2400,6 +2400,7 @@ async function initDb() {
       line_no INTEGER NOT NULL DEFAULT 1,
       particulars TEXT NOT NULL DEFAULT '',
       hsn_code TEXT DEFAULT '',
+      note TEXT DEFAULT '',
       quantity_pcs REAL NOT NULL DEFAULT 0,
       weight REAL NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
@@ -2720,9 +2721,11 @@ async function initDb() {
   await ensureColumnExists('delivery_challan_items', 'production_run_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'item_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'variation_leaf_node_id', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumnExists('delivery_challan_items', 'note', "TEXT DEFAULT ''");
   await ensureDeliveryChallanItemNumericColumns();
   await ensureColumnExists('delivery_challan_items', 'production_run_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'variation_leaf_node_id', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumnExists('delivery_challan_items', 'note', "TEXT DEFAULT ''");
   await run(`
     CREATE TABLE IF NOT EXISTS delivery_challan_orders (
       challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
@@ -3108,6 +3111,7 @@ async function ensureDeliveryChallanItemNumericColumns() {
   const weightColumn = columns.find((column) => column.name === 'weight');
   const hasProductionRunId = columns.some((column) => column.name === 'production_run_id');
   const hasVariationLeafNodeId = columns.some((column) => column.name === 'variation_leaf_node_id');
+  const hasNote = columns.some((column) => column.name === 'note');
   const normalizedType = (column) => String(column?.type || '').trim().toUpperCase();
   if (normalizedType(quantityColumn) === 'REAL' && normalizedType(weightColumn) === 'REAL') {
     return;
@@ -3128,6 +3132,7 @@ async function ensureDeliveryChallanItemNumericColumns() {
         line_no INTEGER NOT NULL DEFAULT 1,
         particulars TEXT NOT NULL DEFAULT '',
         hsn_code TEXT DEFAULT '',
+        note TEXT DEFAULT '',
         quantity_pcs REAL NOT NULL DEFAULT 0,
         weight REAL NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
@@ -3137,7 +3142,7 @@ async function ensureDeliveryChallanItemNumericColumns() {
     await run(`
       INSERT INTO delivery_challan_items (
         id, challan_id, order_item_id, production_run_id, item_id, variation_leaf_node_id, line_no, particulars, hsn_code,
-        quantity_pcs, weight, created_at, updated_at
+        note, quantity_pcs, weight, created_at, updated_at
       )
       SELECT
         id,
@@ -3149,6 +3154,7 @@ async function ensureDeliveryChallanItemNumericColumns() {
         line_no,
         particulars,
         hsn_code,
+        ${hasNote ? 'note' : "''"},
         CASE
           WHEN TRIM(COALESCE(quantity_pcs, '')) = '' THEN 0
           ELSE CAST(quantity_pcs AS REAL)
@@ -4633,6 +4639,7 @@ function rowToDeliveryChallanItemDto(row) {
     line_no: Number(row.line_no || 0),
     particulars: row.particulars || '',
     hsn_code: row.hsn_code || '',
+    note: row.note || '',
     variation_path_label: row.variation_path_label || '',
     quantity_pcs: formatMeasure(row.quantity_pcs),
     weight: formatMeasure(row.weight),
@@ -4884,6 +4891,7 @@ function normalizeDeliveryChallanItems(items = []) {
       lineNo: Number(item.lineNo ?? item.line_no ?? index + 1) || index + 1,
       particulars: String(item.particulars || '').trim(),
       hsnCode: String(item.hsnCode ?? item.hsn_code ?? '').trim(),
+      note: String(item.note ?? item.lineNote ?? item.line_note ?? '').trim(),
       variationPathLabel: String(
         item.variationPathLabel ?? item.variation_path_label ?? '',
       ).trim(),
@@ -4894,6 +4902,7 @@ function normalizeDeliveryChallanItems(items = []) {
       (item) =>
         item.particulars ||
         item.hsnCode ||
+        item.note ||
         item.quantityPcs ||
         item.weight ||
         item.orderItemId ||
@@ -5501,6 +5510,8 @@ function itemTableValueForField(fieldKey, item) {
       return item.quantity_pcs || '';
     case 'weight':
       return item.weight || '';
+    case 'note':
+      return item.note || '';
     default:
       return '';
   }
@@ -5712,20 +5723,84 @@ function templateCoordinateMm(mapping, axis, frameSizeMm) {
 }
 
 function parseTemplateTableColumns(tableFrame, mappings = []) {
-  const allowed = new Set(['hsn', 'qty_pcs', 'weight']);
+  const allowed = new Set(['item_particulars', 'hsn', 'qty_pcs', 'weight', 'note']);
+  const defaultXByField = {
+    item_particulars: 0,
+    hsn: 72,
+    qty_pcs: 102,
+    weight: 124,
+    note: 0,
+  };
+  const normalizeColumn = (column, index) => {
+    if (typeof column === 'string') {
+      const fieldKey = column.trim();
+      if (!allowed.has(fieldKey)) {
+        return null;
+      }
+      return {
+        fieldKey,
+        xMm: Number(defaultXByField[fieldKey] ?? index * 30),
+      };
+    }
+    if (!column || typeof column !== 'object') {
+      return null;
+    }
+    const fieldKey = String(column.fieldKey || column.field_key || '').trim();
+    if (!allowed.has(fieldKey)) {
+      return null;
+    }
+    return {
+      fieldKey,
+      xMm: normalizeTemplateNumber(column.xMm ?? column.x_mm, defaultXByField[fieldKey] ?? 0, {
+        min: 0,
+        max: 420,
+      }),
+    };
+  };
   const raw = String(templateValue(tableFrame, 'fieldValue', 'field_value', '') || '').trim();
+  let columns = [];
   if (raw) {
     try {
       const decoded = JSON.parse(raw);
-      const columns = Array.isArray(decoded?.columns) ? decoded.columns : [];
-      return columns
-        .map((column) => String(column || '').trim())
-        .filter((column) => allowed.has(column));
+      columns = Array.isArray(decoded?.columns)
+        ? decoded.columns.map(normalizeColumn).filter(Boolean)
+        : [];
     } catch (_) {}
   }
-  return mappings
-    .map((mapping) => String(templateValue(mapping, 'fieldKey', 'field_key', '') || '').trim())
-    .filter((fieldKey) => allowed.has(fieldKey));
+  if (!columns.length) {
+    columns = mappings
+      .map((mapping, index) =>
+        normalizeColumn(
+          String(templateValue(mapping, 'fieldKey', 'field_key', '') || '').trim(),
+          index,
+        ),
+      )
+      .filter(Boolean);
+  }
+  if (!columns.some((column) => column.fieldKey === 'item_particulars')) {
+    columns.unshift({ fieldKey: 'item_particulars', xMm: 0 });
+  }
+  const seen = new Set();
+  return columns.filter((column) => {
+    if (seen.has(column.fieldKey)) {
+      return false;
+    }
+    seen.add(column.fieldKey);
+    return true;
+  });
+}
+
+function templateTablePrintNotes(tableFrame) {
+  const raw = String(templateValue(tableFrame, 'fieldValue', 'field_value', '') || '').trim();
+  if (!raw) {
+    return false;
+  }
+  try {
+    const decoded = JSON.parse(raw);
+    return decoded?.printNotes === true;
+  } catch (_) {
+    return false;
+  }
 }
 
 function drawTableBlock({
@@ -5735,6 +5810,7 @@ function drawTableBlock({
   xMm,
   yMm,
   widthMm,
+  tableHeightMm,
   rowPitchMm,
   minRows,
   fontName,
@@ -5743,9 +5819,19 @@ function drawTableBlock({
   textColor,
   letterSpacing,
   columns,
+  displayId,
+  printNotes,
 }) {
-  const normalizedColumns = ['item_particulars', ...columns];
-  const columnWidthMm = widthMm / Math.max(1, normalizedColumns.length);
+  const normalizedColumns = (columns.length
+    ? columns
+    : [{ fieldKey: 'item_particulars', xMm: 0 }])
+    .map((column) => ({
+      fieldKey: column.fieldKey,
+      xMm: normalizeTemplateNumber(column.xMm, 0, { min: 0, max: widthMm }),
+    }));
+  const sortedColumns = [...normalizedColumns].sort((left, right) => left.xMm - right.xMm);
+  const noteColumn = normalizedColumns.find((column) => column.fieldKey === 'note');
+  const printableColumns = normalizedColumns.filter((column) => column.fieldKey !== 'note');
   const rowHeight = mmToPdfPoints(rowPitchMm);
   const rowCount = Math.max(pageItems.length, minRows);
   const fitFontSize = Math.max(
@@ -5755,8 +5841,20 @@ function drawTableBlock({
   doc.font(fontName).fontSize(fitFontSize).fillColor(textColor);
   for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
     const item = pageItems[rowIndex];
-    for (let columnIndex = 0; columnIndex < normalizedColumns.length; columnIndex += 1) {
-      const fieldKey = normalizedColumns[columnIndex];
+    const currentY = yMm + rowIndex * rowPitchMm;
+    for (const column of printableColumns) {
+      const fieldKey = column.fieldKey;
+      const columnIndex = sortedColumns.findIndex((entry) => entry.fieldKey === fieldKey);
+      const nextColumn = sortedColumns
+        .slice(columnIndex + 1)
+        .find((entry) => entry.fieldKey !== 'note');
+      const columnWidthMm = Math.max(
+        6,
+        Math.min(
+          widthMm - column.xMm,
+          (nextColumn ? nextColumn.xMm : widthMm) - column.xMm,
+        ),
+      );
       const value = item
         ? truncateTemplateText(
             itemTableValueForField(fieldKey, item),
@@ -5766,8 +5864,8 @@ function drawTableBlock({
       const align = fieldKey === 'item_particulars' ? 'left' : 'center';
       doc.text(
         value,
-        mmToPdfPoints(xMm + columnIndex * columnWidthMm),
-        mmToPdfPoints(yMm) + rowIndex * rowHeight,
+        mmToPdfPoints(xMm + column.xMm),
+        mmToPdfPoints(currentY),
         {
           width: mmToPdfPoints(columnWidthMm),
           height: rowHeight,
@@ -5777,6 +5875,43 @@ function drawTableBlock({
         },
       );
     }
+    const note = item ? String(item.note || '').trim() : '';
+    if (printNotes && noteColumn && note) {
+      const noteWidthMm = Math.max(12, widthMm - noteColumn.xMm);
+      doc
+        .font('Helvetica-Oblique')
+        .fontSize(Math.max(6, fitFontSize - 2))
+        .fillColor('#4B5563')
+        .text(
+          truncateTemplateText(note, templateNumberValue(mapping, 'maxChars', 'max_chars', 0)),
+          mmToPdfPoints(xMm + noteColumn.xMm),
+          mmToPdfPoints(currentY + Math.min(rowPitchMm * 0.46, 4)),
+          {
+            width: mmToPdfPoints(noteWidthMm),
+            height: rowHeight / 2,
+            align: 'left',
+            characterSpacing: letterSpacing,
+            lineBreak: true,
+          },
+        )
+        .font(fontName)
+        .fontSize(fitFontSize)
+        .fillColor(textColor);
+    }
+  }
+  if (displayId) {
+    const idY = yMm + Math.min(tableHeightMm, rowCount * rowPitchMm + 2);
+    doc
+      .font('Helvetica')
+      .fontSize(6)
+      .fillColor('#6B7280')
+      .text(displayId, mmToPdfPoints(xMm + 5), mmToPdfPoints(idY), {
+        width: mmToPdfPoints(Math.max(20, widthMm - 5)),
+        lineBreak: false,
+      })
+      .font(fontName)
+      .fontSize(fitFontSize)
+      .fillColor(textColor);
   }
 }
 
@@ -5788,24 +5923,28 @@ function buildTemplateTestChallanDto(itemCount = 3) {
       hsnCode: '1234',
       quantityPcs: '9,999',
       weight: '120.50',
+      note: 'Packed in export-grade bundles',
     },
     {
       particulars: 'SAMPLE PRODUCT DESCRIPTION 202 WITH LONGER WRAP TEXT',
       hsnCode: '5678',
       quantityPcs: '240',
       weight: '18.25',
+      note: 'Check shade before dispatch',
     },
     {
       particulars: 'SAMPLE PRODUCT DESCRIPTION 303',
       hsnCode: '9101',
       quantityPcs: '75',
       weight: '8.00',
+      note: 'Short supply accepted by party',
     },
     {
       particulars: 'SAMPLE PRODUCT DESCRIPTION 404 EXTRA LONG TEXT FOR ROW FIT CHECKING',
       hsnCode: '1112',
       quantityPcs: '1,250',
       weight: '42.75',
+      note: 'Handle carefully',
     },
   ];
   const items = Array.from({ length: normalizedItemCount }, (_, index) => {
@@ -5818,6 +5957,7 @@ function buildTemplateTestChallanDto(itemCount = 3) {
       hsn_code: sample.hsnCode,
       quantity_pcs: sample.quantityPcs,
       weight: sample.weight,
+      note: sample.note,
     };
   });
   return {
@@ -5829,6 +5969,7 @@ function buildTemplateTestChallanDto(itemCount = 3) {
     order_nos: ['SAMPLE-ORDER-001'],
     client_id: 0,
     challan_no: 'DC-TEST-0001',
+    display_id: 'ID: 00000',
     date: 'DD/MM/YYYY',
     location: 'Sample Warehouse',
     customer_name: 'John Doe',
@@ -5900,11 +6041,13 @@ async function generateChallanTemplatePdf({
 
   const fields = challanTemplateScalarFields(challanDto);
   const items = Array.isArray(challanDto.items) ? challanDto.items : [];
+  const displayId = `ID: ${String(challanDto.id || challanRow?.id || 0).padStart(5, '0')}`;
   const tableFrame = mappings.find(
     (mapping) => String(templateValue(mapping, 'fieldKey', 'field_key', '')) === 'item_particulars',
   );
   const tableFields = new Set(['item_particulars', 'hsn', 'qty_pcs', 'weight']);
   const tableColumns = parseTemplateTableColumns(tableFrame, mappings);
+  const tablePrintNotes = templateTablePrintNotes(tableFrame);
   const frameRowPitchMm = templateNumberValue(tableFrame, 'rowHeightMm', 'row_height_mm', 6);
   const frameTableHeightMm = templateNumberValue(tableFrame, 'tableHeightMm', 'table_height_mm', 60);
   const frameMinRows = Math.max(
@@ -5987,6 +6130,7 @@ async function generateChallanTemplatePdf({
           xMm,
           yMm,
           widthMm,
+          tableHeightMm: templateNumberValue(mapping, 'tableHeightMm', 'table_height_mm', frameTableHeightMm),
           rowPitchMm: templateNumberValue(mapping, 'rowHeightMm', 'row_height_mm', frameRowPitchMm),
           minRows: frameMinRows,
           fontName,
@@ -5995,6 +6139,8 @@ async function generateChallanTemplatePdf({
           textColor: pdfColorForTemplate(templateValue(mapping, 'textColor', 'text_color', 'black')),
           letterSpacing: templateNumberValue(mapping, 'letterSpacing', 'letter_spacing', 0),
           columns: tableColumns,
+          displayId,
+          printNotes: tablePrintNotes,
         });
         continue;
       }
@@ -6739,8 +6885,8 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
         `
         INSERT INTO delivery_challan_items (
           challan_id, order_item_id, production_run_id, item_id, variation_leaf_node_id,
-          line_no, particulars, hsn_code, quantity_pcs, weight, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          line_no, particulars, hsn_code, note, quantity_pcs, weight, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           challanId,
@@ -6751,6 +6897,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
           item.lineNo,
           item.particulars,
           item.hsnCode,
+          item.note,
           normalizeDeliveryChallanMeasure(item.quantityPcs, 'challan quantity'),
           normalizeDeliveryChallanMeasure(item.weight, 'challan weight'),
           now,
