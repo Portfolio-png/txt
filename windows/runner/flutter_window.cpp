@@ -458,7 +458,16 @@ bool PrintPdfFileWithSystemHandler(HWND owner, const std::wstring& file_path,
   execute_info.nShow = SW_HIDE;
 
   if (!::ShellExecuteExW(&execute_info)) {
-    *error_code = ::GetLastError();
+    const DWORD shell_error = ::GetLastError();
+    const HINSTANCE chooser_result = ::ShellExecuteW(
+        owner, nullptr, L"rundll32.exe",
+        (L"shell32.dll,OpenAs_RunDLL " + QuoteShellArgument(file_path)).c_str(),
+        nullptr, SW_SHOWNORMAL);
+    if (reinterpret_cast<INT_PTR>(chooser_result) > 32) {
+      *error_code = 0;
+      return true;
+    }
+    *error_code = shell_error;
     return false;
   }
 
