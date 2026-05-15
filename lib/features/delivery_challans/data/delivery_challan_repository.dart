@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../domain/delivery_challan.dart';
 import '../domain/challan_template.dart';
 
@@ -83,6 +85,12 @@ abstract class ChallanRepository {
   });
 
   Uri templateTestPrintUri({
+    required int templateId,
+    required String mode,
+    int? itemCount,
+  });
+
+  Future<Uint8List> fetchTemplateTestPrintPdf({
     required int templateId,
     required String mode,
     int? itemCount,

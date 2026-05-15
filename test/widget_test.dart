@@ -1,5 +1,4 @@
 import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -2638,6 +2637,10 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
       .toList(growable: false);
 
   @override
+  Future<List<ChallanTemplateScan>> getTemplateScans({int limit = 24}) async =>
+      const <ChallanTemplateScan>[];
+
+  @override
   Future<ChallanTemplate> createTemplate(ChallanTemplateInput input) async {
     final created = ChallanTemplate(
       id: _templates.isEmpty
@@ -2745,6 +2748,13 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
   }) => Uri.parse(
     'https://mock.local/templates/$templateId/$mode${itemCount != null ? '?itemCount=$itemCount' : ''}',
   );
+
+  @override
+  Future<Uint8List> fetchTemplateTestPrintPdf({
+    required int templateId,
+    required String mode,
+    int? itemCount,
+  }) async => Uint8List.fromList(<int>[37, 80, 68, 70]);
 
   @override
   Future<CompanyProfile> updateCompanyProfile(CompanyProfile profile) async {

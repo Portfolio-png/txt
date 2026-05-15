@@ -1,5 +1,4 @@
 import 'dart:convert';
-
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
@@ -387,9 +386,9 @@ class ApiChallanRepository implements ChallanRepository {
     if (useMockResponses) {
       return _mockTemplateScans.take(limit).toList(growable: false);
     }
-    final uri = Uri.parse('$baseUrl/api/challan-templates/scans').replace(
-      queryParameters: <String, String>{'limit': '$limit'},
-    );
+    final uri = Uri.parse(
+      '$baseUrl/api/challan-templates/scans',
+    ).replace(queryParameters: <String, String>{'limit': '$limit'});
     final response = await _sendRequest(method: 'GET', uri: uri);
     final payload = _decodeApiResponse(
       method: 'GET',
@@ -692,6 +691,28 @@ class ApiChallanRepository implements ChallanRepository {
         if (itemCount != null) 'itemCount': '$itemCount',
       },
     );
+  }
+
+  @override
+  Future<Uint8List> fetchTemplateTestPrintPdf({
+    required int templateId,
+    required String mode,
+    int? itemCount,
+  }) async {
+    final uri = templateTestPrintUri(
+      templateId: templateId,
+      mode: mode,
+      itemCount: itemCount,
+    );
+    final response = await _sendRequest(method: 'GET', uri: uri);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw DeliveryChallanApiException(
+        'Failed to fetch test print PDF (${response.statusCode}).',
+        debugMessage:
+            'PDF fetch failed for GET $uri. Status: ${response.statusCode}.',
+      );
+    }
+    return response.bodyBytes;
   }
 
   Future<DeliveryChallan> _statusAction(

@@ -1694,16 +1694,18 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     if (templateId <= 0) {
       return;
     }
-    final uri = provider.repository.templateTestPrintUri(
+    final handled = await _printPdfFromRepository(
+      provider: provider,
       templateId: templateId,
-      mode: 'digital',
       itemCount: itemCount,
-    );
-    final handled = await _printPdfFromUri(
-      uri,
       fallbackFileName: 'challan-template-test-$itemCount-items.pdf',
     );
     if (!handled && !Platform.isWindows && !Platform.isMacOS) {
+      final uri = provider.repository.templateTestPrintUri(
+        templateId: templateId,
+        mode: 'digital',
+        itemCount: itemCount,
+      );
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
@@ -1729,20 +1731,21 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     });
   }
 
-  Future<bool> _printPdfFromUri(
-    Uri uri, {
+  Future<bool> _printPdfFromRepository({
+    required DeliveryChallanProvider provider,
+    required int templateId,
+    required int itemCount,
     required String fallbackFileName,
   }) async {
     try {
-      final response = await http.get(uri);
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception(
-          'Failed to fetch test print PDF (${response.statusCode}).',
-        );
-      }
+      final bytes = await provider.repository.fetchTemplateTestPrintPdf(
+        templateId: templateId,
+        mode: 'digital',
+        itemCount: itemCount,
+      );
       final tempDir = await getTemporaryDirectory();
       final file = File('${tempDir.path}/$fallbackFileName');
-      await file.writeAsBytes(response.bodyBytes, flush: true);
+      await file.writeAsBytes(bytes, flush: true);
 
       if (Platform.isWindows || Platform.isMacOS) {
         final printed =
