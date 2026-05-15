@@ -69,6 +69,12 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     'weight',
     'note',
   ];
+  static const List<String> _tablePrintableFieldOrder = <String>[
+    'item_particulars',
+    'hsn',
+    'qty_pcs',
+    'weight',
+  ];
   static const String _tableOwnerKey = 'item_particulars';
   static const String _headerOwnerKey = 'challan_no';
   static const List<_TemplateBlockSpec> _blocks = <_TemplateBlockSpec>[
@@ -1128,7 +1134,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
               ),
               const SizedBox(height: 4),
               const Text(
-                'Drag the vertical rails inside the table block to match the paper columns.',
+                'Drag the column labels inside the table block to align printed column starts.',
                 style: TextStyle(
                   color: SoftErpTheme.textSecondary,
                   fontSize: 12,
@@ -2138,6 +2144,46 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     return normalized;
   }
 
+  double _clampTableRailX(
+    List<_TableRailConfig> rails,
+    String fieldKey,
+    double requestedX,
+    double tableWidthMm,
+  ) {
+    if (fieldKey == _tableOwnerKey || fieldKey == 'note') {
+      return requestedX.clamp(0.0, tableWidthMm).toDouble();
+    }
+    const minGapMm = 6.0;
+    final activeOrder = _tablePrintableFieldOrder
+        .where((key) => rails.any((rail) => rail.fieldKey == key))
+        .toList(growable: false);
+    final index = activeOrder.indexOf(fieldKey);
+    if (index == -1) {
+      return requestedX.clamp(0.0, tableWidthMm).toDouble();
+    }
+    final previousKey = index > 0 ? activeOrder[index - 1] : null;
+    final nextKey = index < activeOrder.length - 1
+        ? activeOrder[index + 1]
+        : null;
+    final previousX = previousKey == null
+        ? 0.0
+        : rails
+                  .where((rail) => rail.fieldKey == previousKey)
+                  .firstOrNull
+                  ?.xMm ??
+              0.0;
+    final nextX = nextKey == null
+        ? tableWidthMm
+        : rails.where((rail) => rail.fieldKey == nextKey).firstOrNull?.xMm ??
+              tableWidthMm;
+    return requestedX
+        .clamp(
+          previousX + minGapMm,
+          math.max(previousX + minGapMm, nextX - minGapMm),
+        )
+        .toDouble();
+  }
+
   double _defaultTableRailX(String fieldKey, double widthMm) {
     return switch (fieldKey) {
       _tableOwnerKey => 0,
@@ -2183,17 +2229,22 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     String fieldKey,
     double deltaMm,
   ) {
-    final rails = _tableRailConfigsForOwner(owner)
-        .map(
-          (rail) => rail.fieldKey == fieldKey
-              ? _TableRailConfig(
-                  fieldKey: rail.fieldKey,
-                  xMm: (rail.xMm + deltaMm)
-                      .clamp(0.0, owner.widthMm)
-                      .toDouble(),
-                )
-              : rail,
-        )
+    final currentRails = _tableRailConfigsForOwner(owner);
+    final rails = currentRails
+        .map((rail) {
+          if (rail.fieldKey != fieldKey) {
+            return rail;
+          }
+          return _TableRailConfig(
+            fieldKey: rail.fieldKey,
+            xMm: _clampTableRailX(
+              currentRails,
+              fieldKey,
+              rail.xMm + deltaMm,
+              owner.widthMm,
+            ),
+          );
+        })
         .toList(growable: false);
     _updateMapping(
       owner.fieldKey,
@@ -2206,15 +2257,17 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     String fieldKey,
     double xMm,
   ) {
-    final rails = _tableRailConfigsForOwner(owner)
-        .map(
-          (rail) => rail.fieldKey == fieldKey
-              ? _TableRailConfig(
-                  fieldKey: rail.fieldKey,
-                  xMm: xMm.clamp(0.0, owner.widthMm).toDouble(),
-                )
-              : rail,
-        )
+    final currentRails = _tableRailConfigsForOwner(owner);
+    final rails = currentRails
+        .map((rail) {
+          if (rail.fieldKey != fieldKey) {
+            return rail;
+          }
+          return _TableRailConfig(
+            fieldKey: rail.fieldKey,
+            xMm: _clampTableRailX(currentRails, fieldKey, xMm, owner.widthMm),
+          );
+        })
         .toList(growable: false);
     _updateMapping(
       owner.fieldKey,
@@ -2692,6 +2745,23 @@ class _MappedCanvasElement extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scale = canvasWidth / 595.28;
+    final printableRails = tableRails
+        .where((rail) => rail.fieldKey != 'note')
+        .toList(growable: false);
+    double columnWidthFor(_TableRailConfig rail) {
+      final activeRails = rail.fieldKey == 'note' ? tableRails : printableRails;
+      final index = activeRails.indexWhere(
+        (entry) => entry.fieldKey == rail.fieldKey,
+      );
+      if (index == -1) {
+        return 0;
+      }
+      final nextX = index < activeRails.length - 1
+          ? activeRails[index + 1].xMm
+          : mapping.widthMm;
+      return math.max(0, nextX - rail.xMm);
+    }
+
     final textColor = switch (mapping.textColor.toLowerCase()) {
       'blue' => const Color(0xFF1D4ED8),
       'red' => const Color(0xFFB91C1C),
@@ -2791,14 +2861,13 @@ class _MappedCanvasElement extends StatelessWidget {
                 ),
               ),
             if (selected && tableRails.isNotEmpty)
-              ...tableRails.map(
-                (rail) => _TableRailHandle(
-                  rail: rail,
-                  tableWidthMm: mapping.widthMm,
-                  boxWidth: boxWidth,
-                  boxHeight: boxHeight,
-                  onDrag: (deltaMm) => onRailDrag(rail.fieldKey, deltaMm),
-                ),
+              _TableColumnRailOverlay(
+                tableRails: tableRails,
+                tableWidthMm: mapping.widthMm,
+                boxWidth: boxWidth,
+                boxHeight: boxHeight,
+                columnWidthFor: columnWidthFor,
+                onDrag: onRailDrag,
               ),
             if (selected)
               ...const [
@@ -2819,118 +2888,144 @@ class _MappedCanvasElement extends StatelessWidget {
   }
 }
 
-class _TableRailHandle extends StatelessWidget {
-  const _TableRailHandle({
-    required this.rail,
+class _TableColumnRailOverlay extends StatelessWidget {
+  const _TableColumnRailOverlay({
+    required this.tableRails,
     required this.tableWidthMm,
     required this.boxWidth,
     required this.boxHeight,
+    required this.columnWidthFor,
     required this.onDrag,
   });
 
-  final _TableRailConfig rail;
+  final List<_TableRailConfig> tableRails;
   final double tableWidthMm;
   final double boxWidth;
   final double boxHeight;
-  final ValueChanged<double> onDrag;
+  final double Function(_TableRailConfig rail) columnWidthFor;
+  final void Function(String fieldKey, double deltaMm) onDrag;
 
   @override
   Widget build(BuildContext context) {
-    final left = tableWidthMm <= 0
-        ? 0.0
-        : (rail.xMm / tableWidthMm * boxWidth).clamp(0.0, boxWidth).toDouble();
-    const tagWidth = 72.0;
-    final maxTagLeft = math.max(0.0, boxWidth - tagWidth);
-    final tagLeft = (left - tagWidth / 2).clamp(0.0, maxTagLeft).toDouble();
-    final lineLeft = (left - tagLeft).clamp(0.0, tagWidth).toDouble();
-    final label = switch (rail.fieldKey) {
-      'item_particulars' => 'Name',
-      'hsn' => 'HSN',
-      'qty_pcs' => 'Qty',
-      'weight' => 'Weight',
-      'note' => 'Note',
-      _ => rail.fieldKey,
-    };
-    return Positioned(
-      left: tagLeft,
-      top: 0,
-      width: tagWidth,
-      height: boxHeight,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.resizeColumn,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onHorizontalDragUpdate: (details) {
-            if (boxWidth <= 0 || tableWidthMm <= 0) {
-              return;
-            }
-            onDrag(details.delta.dx / boxWidth * tableWidthMm);
-          },
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Positioned(
-                left: lineLeft - 1,
-                top: 28,
-                bottom: 0,
-                child: Container(
-                  width: 2,
-                  decoration: BoxDecoration(
-                    color: SoftErpTheme.accent.withValues(alpha: 0.78),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                ),
-              ),
-              Positioned(
-                left: lineLeft - 5,
-                top: 24,
-                child: Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: SoftErpTheme.accent,
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: Colors.white, width: 1.2),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 4,
-                left: 0,
-                right: 0,
-                child: Container(
-                  alignment: Alignment.center,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 7,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: SoftErpTheme.accent,
-                    borderRadius: BorderRadius.circular(999),
-                    boxShadow: [
-                      BoxShadow(
-                        color: SoftErpTheme.accent.withValues(alpha: 0.18),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
+    final printableRails = tableRails
+        .where((rail) => rail.fieldKey != 'note')
+        .toList(growable: false);
+    if (printableRails.isEmpty || tableWidthMm <= 0 || boxWidth <= 0) {
+      return const SizedBox.shrink();
+    }
+    final children = <Widget>[];
+    for (var index = 0; index < printableRails.length; index += 1) {
+      final rail = printableRails[index];
+      final startPx = (rail.xMm / tableWidthMm * boxWidth)
+          .clamp(0.0, boxWidth)
+          .toDouble();
+      final nextX = index < printableRails.length - 1
+          ? printableRails[index + 1].xMm
+          : tableWidthMm;
+      final endPx = (nextX / tableWidthMm * boxWidth)
+          .clamp(startPx, boxWidth)
+          .toDouble();
+      final visualWidth = math.max(34.0, endPx - startPx);
+      final left = math.min(startPx, math.max(0.0, boxWidth - visualWidth));
+      final columnWidthMm = columnWidthFor(rail);
+      final baseLabel = switch (rail.fieldKey) {
+        'item_particulars' => 'Name',
+        'hsn' => 'HSN',
+        'qty_pcs' => 'Qty',
+        'weight' => 'Weight',
+        _ => rail.fieldKey,
+      };
+      final widthLabel = columnWidthMm >= 10
+          ? columnWidthMm.toStringAsFixed(0)
+          : columnWidthMm.toStringAsFixed(1);
+      children.add(
+        Positioned(
+          left: left,
+          top: 0,
+          width: visualWidth,
+          height: boxHeight,
+          child: MouseRegion(
+            cursor: SystemMouseCursors.resizeColumn,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onHorizontalDragUpdate: (details) {
+                onDrag(
+                  rail.fieldKey,
+                  details.delta.dx / boxWidth * tableWidthMm,
+                );
+              },
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned(
+                    left: (startPx - left).clamp(0.0, visualWidth).toDouble(),
+                    top: 28,
+                    bottom: 0,
+                    child: Container(
+                      width: 2,
+                      decoration: BoxDecoration(
+                        color: SoftErpTheme.accent.withValues(alpha: 0.78),
+                        borderRadius: BorderRadius.circular(999),
                       ),
-                    ],
-                  ),
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                ),
+                  Positioned(
+                    top: 4,
+                    left: 2,
+                    right: 2,
+                    child: Container(
+                      alignment: Alignment.center,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: SoftErpTheme.accent,
+                        borderRadius: BorderRadius.circular(999),
+                        boxShadow: [
+                          BoxShadow(
+                            color: SoftErpTheme.accent.withValues(alpha: 0.18),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Text(
+                        '$baseLabel  $widthLabel mm',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: (startPx - left - 5)
+                        .clamp(0.0, visualWidth - 10)
+                        .toDouble(),
+                    top: 24,
+                    child: Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: SoftErpTheme.accent,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: Colors.white, width: 1.2),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
-      ),
+      );
+    }
+    return Positioned.fill(
+      child: Stack(clipBehavior: Clip.none, children: children),
     );
   }
 }
