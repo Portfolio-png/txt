@@ -25,6 +25,8 @@ class ChallanTemplateMapping {
     required this.imageWidthMm,
     required this.imageHeightMm,
     required this.lockAspectRatio,
+    required this.xMm,
+    required this.yMm,
     required this.xPercent,
     required this.yPercent,
     required this.fontSize,
@@ -55,6 +57,8 @@ class ChallanTemplateMapping {
   final double imageWidthMm;
   final double imageHeightMm;
   final bool lockAspectRatio;
+  final double xMm;
+  final double yMm;
   final double xPercent;
   final double yPercent;
   final double fontSize;
@@ -85,6 +89,8 @@ class ChallanTemplateMapping {
     double? imageWidthMm,
     double? imageHeightMm,
     bool? lockAspectRatio,
+    double? xMm,
+    double? yMm,
     double? xPercent,
     double? yPercent,
     double? fontSize,
@@ -115,6 +121,8 @@ class ChallanTemplateMapping {
       imageWidthMm: imageWidthMm ?? this.imageWidthMm,
       imageHeightMm: imageHeightMm ?? this.imageHeightMm,
       lockAspectRatio: lockAspectRatio ?? this.lockAspectRatio,
+      xMm: xMm ?? this.xMm,
+      yMm: yMm ?? this.yMm,
       xPercent: xPercent ?? this.xPercent,
       yPercent: yPercent ?? this.yPercent,
       fontSize: fontSize ?? this.fontSize,
@@ -185,6 +193,8 @@ class ChallanTemplateMapping {
       lockAspectRatio:
           json['lockAspectRatio'] as bool? ??
           ((json['lock_aspect_ratio'] as num? ?? 1).toInt() == 1),
+      xMm: (json['xMm'] as num? ?? json['x_mm'] as num? ?? 0).toDouble(),
+      yMm: (json['yMm'] as num? ?? json['y_mm'] as num? ?? 0).toDouble(),
       xPercent: (json['xPercent'] as num? ?? json['x_percent'] as num? ?? 0)
           .toDouble(),
       yPercent: (json['yPercent'] as num? ?? json['y_percent'] as num? ?? 0)
@@ -237,6 +247,8 @@ class ChallanTemplateMapping {
       'imageWidthMm': imageWidthMm,
       'imageHeightMm': imageHeightMm,
       'lockAspectRatio': lockAspectRatio,
+      'xMm': xMm,
+      'yMm': yMm,
       'xPercent': xPercent,
       'yPercent': yPercent,
       'fontSize': fontSize,

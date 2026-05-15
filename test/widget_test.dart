@@ -3394,9 +3394,9 @@ void main() {
               ChallanTemplateMapping(
                 id: 1,
                 templateId: 1,
-                fieldType: 'DYNAMIC',
+                fieldType: 'TABLE',
                 fieldKey: 'item_particulars',
-                fieldValue: '',
+                fieldValue: '{"columns":["hsn","qty_pcs","weight"]}',
                 assetObjectKey: '',
                 assetImageUrl: null,
                 assetWidthPx: 0,
@@ -3406,6 +3406,8 @@ void main() {
                 imageWidthMm: 35,
                 imageHeightMm: 20,
                 lockAspectRatio: true,
+                xMm: 16.8,
+                yMm: 106.92,
                 xPercent: 0.08,
                 yPercent: 0.36,
                 fontSize: 10,
@@ -3459,6 +3461,7 @@ void main() {
       expect(find.text('Delete Block'), findsOneWidget);
       expect(find.text('Placed'), findsOneWidget);
       expect(find.text('Advanced Freedom'), findsOneWidget);
+      expect(find.text('Table Block'), findsWidgets);
     },
   );
 

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io' show File, Platform;
 import 'dart:math' as math;
 
@@ -152,7 +153,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     ),
     _TemplateBlockSpec(
       ownerFieldKey: _tableOwnerKey,
-      label: 'Items Area',
+      label: 'Table Block',
       description: 'Particulars with auto-layout columns',
       companionFieldKeys: _tableColumnKeys,
       defaultXPercent: 0.08,
@@ -438,6 +439,12 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
                 label: 'Full Page',
                 stockSize: 'A4',
                 paperSize: 'A4',
+                nUpLayout: 1,
+              ),
+              _presetButton(
+                label: 'A5 Sheet',
+                stockSize: 'A5',
+                paperSize: 'A5',
                 nUpLayout: 1,
               ),
               _presetButton(
@@ -798,7 +805,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
           ),
           const SizedBox(height: 6),
           const Text(
-            'Choose a field from the dropdown, then add or remove it. Items Area stays as one table block.',
+            'Choose a field from the dropdown, then add or remove it. The item lines stay as one table block.',
             style: TextStyle(color: SoftErpTheme.textSecondary),
           ),
           const SizedBox(height: 10),
@@ -901,6 +908,8 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     final isImage = mapping.fieldType.toUpperCase() == 'IMAGE';
     final isStatic = mapping.fieldType.toUpperCase() == 'STATIC';
     final isTableOwner = mapping.fieldKey == _tableOwnerKey;
+    final mappingOffset = _mappingOffsetMm(mapping);
+    final instance = _templateInstanceMm();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -948,10 +957,38 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
           const SizedBox(height: 12),
         ],
         _DecimalInputField(
+          label: 'X',
+          value: mappingOffset.dx,
+          min: 0,
+          max: instance.width,
+          suffix: 'mm',
+          onSubmitted: (value) {
+            _updateMapping(
+              mapping.fieldKey,
+              _withMmPosition(mapping, xMm: value),
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+        _DecimalInputField(
+          label: 'Y',
+          value: mappingOffset.dy,
+          min: 0,
+          max: instance.height,
+          suffix: 'mm',
+          onSubmitted: (value) {
+            _updateMapping(
+              mapping.fieldKey,
+              _withMmPosition(mapping, yMm: value),
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+        _DecimalInputField(
           label: 'Width',
           value: mapping.widthMm,
           min: 2,
-          max: 210,
+          max: instance.width,
           suffix: 'mm',
           onSubmitted: (value) {
             if (isImage) {
@@ -985,7 +1022,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
           label: 'Height',
           value: mapping.heightMm,
           min: 2,
-          max: 297,
+          max: instance.height,
           suffix: 'mm',
           onSubmitted: (value) {
             if (isImage) {
@@ -1113,7 +1150,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
                 ),
               ),
               const Text(
-                'Drag one Items Area block and the checked columns will auto-layout inside it.',
+                'Drag one table block and the checked columns will auto-layout inside it.',
                 style: TextStyle(
                   color: SoftErpTheme.textSecondary,
                   fontSize: 12,
@@ -1366,6 +1403,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
 
   void _addStaticText() {
     final fieldKey = _newStaticFieldKey();
+    final instance = _templateInstanceMm();
     final mapping = ChallanTemplateMapping(
       id: 0,
       templateId: _selectedTemplate?.id ?? 0,
@@ -1381,6 +1419,8 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       imageWidthMm: 35,
       imageHeightMm: 20,
       lockAspectRatio: true,
+      xMm: 0.12 * instance.width,
+      yMm: 0.82 * instance.height,
       xPercent: 0.12,
       yPercent: 0.82,
       fontSize: 10,
@@ -1571,6 +1611,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     double canvasHeight,
   ) {
     final instance = _templateInstanceMm();
+    final offsetMm = _mappingOffsetMm(mapping);
     final width = (mapping.widthMm / instance.width * canvasWidth).clamp(
       20.0,
       canvasWidth,
@@ -1580,16 +1621,47 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       canvasHeight,
     );
     return Rect.fromLTWH(
-      (mapping.xPercent * canvasWidth).clamp(
+      (offsetMm.dx / instance.width * canvasWidth).clamp(
         0.0,
         math.max(0.0, canvasWidth - width),
       ),
-      (mapping.yPercent * canvasHeight).clamp(
+      (offsetMm.dy / instance.height * canvasHeight).clamp(
         0.0,
         math.max(0.0, canvasHeight - height),
       ),
       width,
       height,
+    );
+  }
+
+  Offset _mappingOffsetMm(ChallanTemplateMapping mapping) {
+    final instance = _templateInstanceMm();
+    final x = mapping.xMm > 0 || mapping.xPercent == 0
+        ? mapping.xMm
+        : mapping.xPercent * instance.width;
+    final y = mapping.yMm > 0 || mapping.yPercent == 0
+        ? mapping.yMm
+        : mapping.yPercent * instance.height;
+    return Offset(
+      x.clamp(0.0, instance.width).toDouble(),
+      y.clamp(0.0, instance.height).toDouble(),
+    );
+  }
+
+  ChallanTemplateMapping _withMmPosition(
+    ChallanTemplateMapping mapping, {
+    double? xMm,
+    double? yMm,
+  }) {
+    final instance = _templateInstanceMm();
+    final current = _mappingOffsetMm(mapping);
+    final nextX = (xMm ?? current.dx).clamp(0.0, instance.width).toDouble();
+    final nextY = (yMm ?? current.dy).clamp(0.0, instance.height).toDouble();
+    return mapping.copyWith(
+      xMm: nextX,
+      yMm: nextY,
+      xPercent: instance.width <= 0 ? 0 : nextX / instance.width,
+      yPercent: instance.height <= 0 ? 0 : nextY / instance.height,
     );
   }
 
@@ -1618,9 +1690,11 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     final nextTop = nextRect.top
         .clamp(0.0, math.max(0.0, canvasHeight - rect.height))
         .toDouble();
-    final nextMapping = mapping.copyWith(
-      xPercent: nextLeft / canvasWidth,
-      yPercent: nextTop / canvasHeight,
+    final instance = _templateInstanceMm();
+    final nextMapping = _withMmPosition(
+      mapping,
+      xMm: nextLeft / canvasWidth * instance.width,
+      yMm: nextTop / canvasHeight * instance.height,
     );
     _updateMapping(mapping.fieldKey, nextMapping);
   }
@@ -1664,23 +1738,25 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     top = top.clamp(0.0, math.max(0.0, canvasHeight - height));
     final widthMm = (width / canvasWidth) * instance.width;
     final heightMm = (height / canvasHeight) * instance.height;
-    final nextMapping = mapping.copyWith(
-      xPercent: left / canvasWidth,
-      yPercent: top / canvasHeight,
-      widthMm: widthMm,
-      heightMm: heightMm,
-      maxWidthMm: mapping.fieldType.toUpperCase() == 'IMAGE'
-          ? mapping.maxWidthMm
-          : widthMm,
-      imageWidthMm: mapping.fieldType.toUpperCase() == 'IMAGE'
-          ? widthMm
-          : mapping.imageWidthMm,
-      imageHeightMm: mapping.fieldType.toUpperCase() == 'IMAGE'
-          ? heightMm
-          : mapping.imageHeightMm,
-      tableHeightMm: mapping.fieldKey == 'item_particulars'
-          ? heightMm
-          : mapping.tableHeightMm,
+    final nextMapping = _withMmPosition(
+      mapping.copyWith(
+        widthMm: widthMm,
+        heightMm: heightMm,
+        maxWidthMm: mapping.fieldType.toUpperCase() == 'IMAGE'
+            ? mapping.maxWidthMm
+            : widthMm,
+        imageWidthMm: mapping.fieldType.toUpperCase() == 'IMAGE'
+            ? widthMm
+            : mapping.imageWidthMm,
+        imageHeightMm: mapping.fieldType.toUpperCase() == 'IMAGE'
+            ? heightMm
+            : mapping.imageHeightMm,
+        tableHeightMm: mapping.fieldKey == 'item_particulars'
+            ? heightMm
+            : mapping.tableHeightMm,
+      ),
+      xMm: left / canvasWidth * instance.width,
+      yMm: top / canvasHeight * instance.height,
     );
     _updateMapping(mapping.fieldKey, nextMapping);
   }
@@ -1721,19 +1797,13 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       await _openTestPrint(itemCount: _testPrintMaxItemCount);
       return;
     }
-    var printMappings = List<ChallanTemplateMapping>.from(_mappings);
-    for (final fieldKey in _tableColumnKeys) {
-      if (!printMappings.any((entry) => entry.fieldKey == fieldKey)) {
-        printMappings = [
-          ...printMappings,
-          _buildStructuredBlockCompanion(fieldKey, owner),
-        ];
-      }
-    }
-    printMappings = _syncStructuredBlockMappings(
+    final printMappings = _syncStructuredBlockMappings(
       _requireBlock(_tableOwnerKey),
-      owner,
-      printMappings,
+      owner.copyWith(
+        fieldType: 'TABLE',
+        fieldValue: _tableFieldValueForColumns(_tableColumnKeys),
+      ),
+      _mappings,
     );
     await _openTestPrint(
       itemCount: _testPrintMaxItemCount,
@@ -1851,9 +1921,9 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       case 'A3':
         return const Size(297, 420);
       case 'A5':
-        return const Size(148.5, 210);
+        return const Size(148, 210);
       case 'A6':
-        return const Size(105, 148.5);
+        return const Size(105, 148);
       default:
         return const Size(210, 297);
     }
@@ -1896,8 +1966,53 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       )
       .toList(growable: false);
 
-  bool _isTableColumnEnabled(String fieldKey) =>
-      _mappingForField(fieldKey) != null;
+  bool _isTableColumnEnabled(String fieldKey) {
+    final owner = _mappingForField(_tableOwnerKey);
+    if (owner == null) {
+      return false;
+    }
+    return _tableColumnsForOwner(owner).contains(fieldKey);
+  }
+
+  List<String> _tableColumnsForOwner(
+    ChallanTemplateMapping owner, {
+    List<ChallanTemplateMapping>? source,
+  }) {
+    final raw = owner.fieldValue.trim();
+    if (raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        final columns = decoded is Map<String, dynamic>
+            ? decoded['columns']
+            : null;
+        if (columns is List) {
+          return columns
+              .map((column) => '$column'.trim())
+              .where(_tableColumnKeys.contains)
+              .toList(growable: false);
+        }
+      } catch (_) {
+        // Legacy templates used separate hidden companion mappings.
+      }
+    }
+    final fallbackSource = source ?? _mappings;
+    return _tableColumnKeys
+        .where(
+          (fieldKey) =>
+              fallbackSource.any((entry) => entry.fieldKey == fieldKey),
+        )
+        .toList(growable: false);
+  }
+
+  String _tableFieldValueForColumns(List<String> columns) {
+    final normalized = <String>[];
+    for (final column in columns) {
+      if (_tableColumnKeys.contains(column) && !normalized.contains(column)) {
+        normalized.add(column);
+      }
+    }
+    return jsonEncode(<String, dynamic>{'columns': normalized});
+  }
 
   int _computedTableMaxRows(ChallanTemplateMapping owner) {
     final pitch = math.max(owner.rowHeightMm, 0.1);
@@ -1922,16 +2037,15 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       return;
     }
     setState(() {
-      if (!enabled) {
-        _mappings = _mappings
-            .where((entry) => entry.fieldKey != fieldKey)
-            .toList();
-      } else if (_mappingForField(fieldKey) == null) {
-        _mappings.add(_buildStructuredBlockCompanion(fieldKey, owner));
+      final columns = _tableColumnsForOwner(owner).toList();
+      if (enabled && !columns.contains(fieldKey)) {
+        columns.add(fieldKey);
+      } else if (!enabled) {
+        columns.remove(fieldKey);
       }
       _mappings = _syncStructuredBlockMappings(
         _requireBlock(_tableOwnerKey),
-        owner,
+        owner.copyWith(fieldValue: _tableFieldValueForColumns(columns)),
         _mappings,
       );
     });
@@ -1963,7 +2077,9 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
   List<ChallanTemplateMapping> _normalizeStructuredMappings(
     List<ChallanTemplateMapping> mappings,
   ) {
-    var next = List<ChallanTemplateMapping>.from(mappings);
+    var next = mappings
+        .map((mapping) => _withMmPosition(mapping))
+        .toList(growable: true);
     for (final block in _blocks) {
       ChallanTemplateMapping? owner;
       for (final entry in next) {
@@ -2001,34 +2117,23 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       }
       next.add(entry);
     }
+    final enabledCompanionFieldKeys = block.isTable
+        ? _tableColumnsForOwner(owner, source: source)
+        : block.companionFieldKeys;
     final normalizedOwner = owner.copyWith(
-      fieldType: 'DYNAMIC',
+      fieldType: block.isTable ? 'TABLE' : 'DYNAMIC',
       fieldKey: block.ownerFieldKey,
-      maxWidthMm: block.isTable
-          ? owner.widthMm /
-                math.max(
-                  1,
-                  1 +
-                      block.companionFieldKeys
-                          .where(
-                            (fieldKey) => source.any(
-                              (entry) => entry.fieldKey == fieldKey,
-                            ),
-                          )
-                          .length,
-                )
-          : owner.widthMm,
+      fieldValue: block.isTable
+          ? _tableFieldValueForColumns(enabledCompanionFieldKeys)
+          : owner.fieldValue,
+      maxWidthMm: block.isTable ? owner.widthMm : owner.widthMm,
       tableHeightMm: block.isTable ? owner.heightMm : owner.tableHeightMm,
       maxRows: block.isTable ? _computedTableMaxRows(owner) : owner.maxRows,
     );
     next.add(normalizedOwner);
-    final enabledCompanionFieldKeys = block.isTable
-        ? block.companionFieldKeys
-              .where(
-                (fieldKey) => source.any((entry) => entry.fieldKey == fieldKey),
-              )
-              .toList(growable: false)
-        : block.companionFieldKeys;
+    if (block.isTable) {
+      return next;
+    }
     for (final fieldKey in block.companionFieldKeys) {
       final enabled =
           !block.isTable || enabledCompanionFieldKeys.contains(fieldKey);
@@ -2070,6 +2175,8 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       imageWidthMm: 35,
       imageHeightMm: 20,
       lockAspectRatio: true,
+      xMm: owner.xMm,
+      yMm: owner.yMm,
       xPercent: owner.xPercent,
       yPercent: owner.yPercent,
       fontSize: owner.fontSize,
@@ -2137,12 +2244,15 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       _blocks.expand((block) => block.companionFieldKeys).toSet();
 
   ChallanTemplateMapping _defaultOwnerMapping(_TemplateBlockSpec block) {
+    final instance = _templateInstanceMm();
     return ChallanTemplateMapping(
       id: 0,
       templateId: _selectedTemplate?.id ?? 0,
-      fieldType: 'DYNAMIC',
+      fieldType: block.isTable ? 'TABLE' : 'DYNAMIC',
       fieldKey: block.ownerFieldKey,
-      fieldValue: '',
+      fieldValue: block.isTable
+          ? _tableFieldValueForColumns(_tableColumnKeys)
+          : '',
       assetObjectKey: '',
       assetImageUrl: null,
       assetWidthPx: 0,
@@ -2152,6 +2262,8 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       imageWidthMm: 35,
       imageHeightMm: 20,
       lockAspectRatio: true,
+      xMm: block.defaultXPercent * instance.width,
+      yMm: block.defaultYPercent * instance.height,
       xPercent: block.defaultXPercent,
       yPercent: block.defaultYPercent,
       fontSize: 10,
@@ -2175,6 +2287,12 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
   ) {
     final base = _defaultOwnerMapping(block);
     return base.copyWith(
+      fieldType: block.isTable ? 'TABLE' : seed.fieldType,
+      fieldValue: block.isTable
+          ? _tableFieldValueForColumns(_tableColumnsForOwner(seed))
+          : seed.fieldValue,
+      xMm: _mappingOffsetMm(seed).dx,
+      yMm: _mappingOffsetMm(seed).dy,
       xPercent: seed.xPercent,
       yPercent: seed.yPercent,
       widthMm: seed.widthMm > 0 ? seed.widthMm : base.widthMm,
@@ -2204,6 +2322,8 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     return companion.copyWith(
       fieldType: 'DYNAMIC',
       fieldKey: companion.fieldKey,
+      xMm: frame.left,
+      yMm: frame.top,
       xPercent: frame.left / _templateInstanceMm().width,
       yPercent: frame.top / _templateInstanceMm().height,
       widthMm: frame.width,
@@ -2228,9 +2348,9 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     String fieldKey,
     List<String> enabledCompanionFieldKeys,
   ) {
-    final instance = _templateInstanceMm();
-    final left = owner.xPercent * instance.width;
-    final top = owner.yPercent * instance.height;
+    final offset = _mappingOffsetMm(owner);
+    final left = offset.dx;
+    final top = offset.dy;
     if (block.isTable) {
       final enabledColumns = <String>[
         _tableOwnerKey,
@@ -2742,7 +2862,7 @@ InputDecoration _editorInputDecoration({
   );
 }
 
-class _DecimalInputField extends StatelessWidget {
+class _DecimalInputField extends StatefulWidget {
   const _DecimalInputField({
     required this.label,
     required this.value,
@@ -2760,30 +2880,65 @@ class _DecimalInputField extends StatelessWidget {
   final ValueChanged<double> onSubmitted;
 
   @override
+  State<_DecimalInputField> createState() => _DecimalInputFieldState();
+}
+
+class _DecimalInputFieldState extends State<_DecimalInputField> {
+  late final TextEditingController _controller;
+  bool _isEditing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: _format(widget.value));
+  }
+
+  @override
+  void didUpdateWidget(covariant _DecimalInputField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_isEditing && oldWidget.value != widget.value) {
+      _controller.text = _format(widget.value);
+      _controller.selection = TextSelection.collapsed(
+        offset: _controller.text.length,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  String _format(double value) {
+    return value == value.roundToDouble()
+        ? value.toStringAsFixed(0)
+        : value.toStringAsFixed(1);
+  }
+
+  void _commit(String input, {bool finishEditing = false}) {
+    final parsed = double.tryParse(input.trim());
+    if (parsed != null) {
+      widget.onSubmitted(parsed.clamp(widget.min, widget.max).toDouble());
+    }
+    if (finishEditing) {
+      setState(() => _isEditing = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final controller = TextEditingController(
-      text: value == value.roundToDouble()
-          ? value.toStringAsFixed(0)
-          : value.toStringAsFixed(1),
-    );
-    controller.selection = TextSelection.collapsed(
-      offset: controller.text.length,
-    );
     return TextFormField(
-      controller: controller,
+      controller: _controller,
       decoration: _editorInputDecoration(
-        label: label,
+        label: widget.label,
         helper:
-            'Range: ${min.toStringAsFixed(min == min.roundToDouble() ? 0 : 1)} - ${max.toStringAsFixed(max == max.roundToDouble() ? 0 : 1)}${suffix.isEmpty ? '' : ' $suffix'}',
+            'Range: ${widget.min.toStringAsFixed(widget.min == widget.min.roundToDouble() ? 0 : 1)} - ${widget.max.toStringAsFixed(widget.max == widget.max.roundToDouble() ? 0 : 1)}${widget.suffix.isEmpty ? '' : ' ${widget.suffix}'}',
       ),
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      onFieldSubmitted: (input) {
-        final parsed = double.tryParse(input.trim());
-        if (parsed == null) {
-          return;
-        }
-        onSubmitted(parsed.clamp(min, max).toDouble());
-      },
+      onTap: () => setState(() => _isEditing = true),
+      onChanged: (input) => _commit(input),
+      onFieldSubmitted: (input) => _commit(input, finishEditing: true),
     );
   }
 }

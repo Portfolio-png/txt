@@ -653,7 +653,11 @@ test('challan templates persist mappings and generate overprint pdf', async () =
           heightMm: 16,
         },
         {
+          fieldType: 'TABLE',
           fieldKey: 'item_particulars',
+          fieldValue: JSON.stringify({ columns: ['hsn', 'qty_pcs', 'weight'] }),
+          xMm: 12,
+          yMm: 84,
           xPercent: 0.08,
           yPercent: 0.4,
           fontSize: 9,
@@ -697,6 +701,13 @@ test('challan templates persist mappings and generate overprint pdf', async () =
       activeTemplate.mappings.find((mapping) => mapping.fieldKey === 'item_particulars').minRows,
       2,
     );
+    const tableMapping = activeTemplate.mappings.find(
+      (mapping) => mapping.fieldKey === 'item_particulars',
+    );
+    assert.equal(tableMapping.fieldType, 'TABLE');
+    assert.deepEqual(JSON.parse(tableMapping.fieldValue).columns, ['hsn', 'qty_pcs', 'weight']);
+    assert.equal(tableMapping.xMm, 12);
+    assert.equal(tableMapping.yMm, 84);
 
     const templateRow = await backend.get(
       'SELECT * FROM challan_templates WHERE id = ?',
@@ -731,22 +742,15 @@ test('challan templates persist mappings and generate overprint pdf', async () =
     });
     assert.ok(Buffer.isBuffer(maxPrint));
     assert.equal(maxPrint.slice(0, 4).toString(), '%PDF');
-    const fullTableMappings = [
-      ...activeTemplate.mappings,
-      {
-        ...activeTemplate.mappings.find((mapping) => mapping.fieldKey === 'item_particulars'),
-        fieldKey: 'hsn',
-        alignment: 'center',
-      },
-      {
-        ...activeTemplate.mappings.find((mapping) => mapping.fieldKey === 'item_particulars'),
-        fieldKey: 'qty_pcs',
-      },
-      {
-        ...activeTemplate.mappings.find((mapping) => mapping.fieldKey === 'item_particulars'),
-        fieldKey: 'weight',
-      },
-    ];
+    const fullTableMappings = activeTemplate.mappings.map((mapping) =>
+      mapping.fieldKey === 'item_particulars'
+        ? {
+            ...mapping,
+            fieldType: 'TABLE',
+            fieldValue: JSON.stringify({ columns: ['hsn', 'qty_pcs', 'weight'] }),
+          }
+        : mapping,
+    );
     const overridePrint = await backend.generateChallanTemplatePdf({
       challanRow: null,
       challanDtoOverride: {
@@ -877,7 +881,11 @@ test('challan templates render A4 stock on A3 sheet at 2-up', async () => {
           fontSize: 10,
         },
         {
+          fieldType: 'TABLE',
           fieldKey: 'item_particulars',
+          fieldValue: JSON.stringify({ columns: ['hsn', 'qty_pcs', 'weight'] }),
+          xMm: 16,
+          yMm: 118,
           xPercent: 0.08,
           yPercent: 0.4,
           fontSize: 9,

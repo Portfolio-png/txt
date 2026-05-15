@@ -2484,6 +2484,8 @@ async function initDb() {
       image_width_mm REAL NOT NULL DEFAULT 35,
       image_height_mm REAL NOT NULL DEFAULT 20,
       lock_aspect_ratio INTEGER NOT NULL DEFAULT 1,
+      x_mm REAL NOT NULL DEFAULT 0,
+      y_mm REAL NOT NULL DEFAULT 0,
       x_percent REAL NOT NULL,
       y_percent REAL NOT NULL,
       font_size REAL NOT NULL DEFAULT 10,
@@ -2756,6 +2758,8 @@ async function initDb() {
   await ensureColumnExists('challan_template_mappings', 'image_width_mm', 'REAL NOT NULL DEFAULT 35');
   await ensureColumnExists('challan_template_mappings', 'image_height_mm', 'REAL NOT NULL DEFAULT 20');
   await ensureColumnExists('challan_template_mappings', 'lock_aspect_ratio', 'INTEGER NOT NULL DEFAULT 1');
+  await ensureColumnExists('challan_template_mappings', 'x_mm', 'REAL NOT NULL DEFAULT 0');
+  await ensureColumnExists('challan_template_mappings', 'y_mm', 'REAL NOT NULL DEFAULT 0');
   await ensureColumnExists('challan_template_mappings', 'text_color', "TEXT NOT NULL DEFAULT 'black'");
   await ensureColumnExists('challan_template_mappings', 'max_width_mm', 'REAL NOT NULL DEFAULT 80');
   await ensureColumnExists('challan_template_mappings', 'min_font_size', 'REAL NOT NULL DEFAULT 6');
@@ -4666,6 +4670,8 @@ function rowToChallanTemplateMappingDto(row) {
     imageWidthMm: Number(row.image_width_mm || 35),
     imageHeightMm: Number(row.image_height_mm || 20),
     lockAspectRatio: Number(row.lock_aspect_ratio ?? 1) === 1,
+    xMm: Number(row.x_mm || 0),
+    yMm: Number(row.y_mm || 0),
     xPercent: Number(row.x_percent || 0),
     yPercent: Number(row.y_percent || 0),
     fontSize: Number(row.font_size || 10),
@@ -4930,7 +4936,7 @@ function normalizeTemplateAlignment(value) {
 
 function normalizeTemplateFieldType(value) {
   const normalized = String(value || 'DYNAMIC').trim().toUpperCase();
-  if (normalized === 'STATIC' || normalized === 'IMAGE') {
+  if (normalized === 'STATIC' || normalized === 'IMAGE' || normalized === 'TABLE') {
     return normalized;
   }
   return 'DYNAMIC';
@@ -5013,7 +5019,7 @@ function normalizeChallanTemplateMappings(mappings = []) {
               ? mapping?.imageWidthMm ?? mapping?.image_width_mm
               : mapping?.maxWidthMm ?? mapping?.max_width_mm),
           fieldType === 'IMAGE' ? 35 : 80,
-          { min: 2, max: 210 },
+          { min: 2, max: 420 },
         ),
         heightMm: normalizeTemplateNumber(
           mapping?.heightMm ??
@@ -5022,21 +5028,31 @@ function normalizeChallanTemplateMappings(mappings = []) {
               ? mapping?.imageHeightMm ?? mapping?.image_height_mm
               : 12),
           fieldType === 'IMAGE' ? 20 : 12,
-          { min: 2, max: 297 },
+          { min: 2, max: 420 },
         ),
         imageWidthMm: normalizeTemplateNumber(
           mapping?.imageWidthMm ?? mapping?.image_width_mm,
           35,
-          { min: 2, max: 210 },
+          { min: 2, max: 420 },
         ),
         imageHeightMm: normalizeTemplateNumber(
           mapping?.imageHeightMm ?? mapping?.image_height_mm,
           20,
-          { min: 2, max: 297 },
+          { min: 2, max: 420 },
         ),
         lockAspectRatio: parseBooleanEnv(
           mapping?.lockAspectRatio ?? mapping?.lock_aspect_ratio ?? true,
           true,
+        ),
+        xMm: normalizeTemplateNumber(
+          mapping?.xMm ?? mapping?.x_mm,
+          0,
+          { min: 0, max: 420 },
+        ),
+        yMm: normalizeTemplateNumber(
+          mapping?.yMm ?? mapping?.y_mm,
+          0,
+          { min: 0, max: 420 },
         ),
         xPercent: normalizeTemplateNumber(
           mapping?.xPercent ?? mapping?.x_percent,
@@ -5051,7 +5067,7 @@ function normalizeChallanTemplateMappings(mappings = []) {
         fontSize: normalizeTemplateNumber(
           mapping?.fontSize ?? mapping?.font_size,
           10,
-          { min: 8, max: 16 },
+          { min: 6, max: 32 },
         ),
         fontWeight: String(
           mapping?.fontWeight ?? mapping?.font_weight ?? 'normal',
@@ -5329,11 +5345,11 @@ async function saveChallanTemplate(input = {}, id = null) {
         INSERT INTO challan_template_mappings (
           template_id, field_type, field_key, field_value, asset_object_key,
           asset_width_px, asset_height_px, width_mm, height_mm, image_width_mm, image_height_mm,
-          lock_aspect_ratio, x_percent, y_percent, font_size, font_weight,
+          lock_aspect_ratio, x_mm, y_mm, x_percent, y_percent, font_size, font_weight,
           alignment, text_color, letter_spacing, max_chars, max_width_mm,
           min_font_size, min_rows, max_rows, table_height_mm, row_height_mm,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           templateId,
@@ -5348,6 +5364,8 @@ async function saveChallanTemplate(input = {}, id = null) {
           mapping.imageWidthMm,
           mapping.imageHeightMm,
           mapping.lockAspectRatio ? 1 : 0,
+          mapping.xMm,
+          mapping.yMm,
           mapping.xPercent,
           mapping.yPercent,
           mapping.fontSize,
@@ -5509,10 +5527,10 @@ function paperSizeMmForTemplate(value) {
     return { widthMm: 297, heightMm: 420 };
   }
   if (normalized === 'A6') {
-    return { widthMm: 105, heightMm: 148.5 };
+    return { widthMm: 105, heightMm: 148 };
   }
   if (normalized === 'A5') {
-    return { widthMm: 148.5, heightMm: 210 };
+    return { widthMm: 148, heightMm: 210 };
   }
   return { widthMm: 210, heightMm: 297 };
 }
@@ -5651,19 +5669,15 @@ async function buildChallanTemplateSnapshot(templateRow) {
 }
 
 function templateBoxWidthMm(mapping, frameWidthMm) {
-  const isTableOwner =
-    String(templateValue(mapping, 'fieldKey', 'field_key', '')) === 'item_particulars';
   return normalizeTemplateNumber(
-    isTableOwner
-      ? templateNumberValue(mapping, 'maxWidthMm', 'max_width_mm', 80)
-      : templateValue(
-          mapping,
-          'widthMm',
-          'width_mm',
-          templateValue(mapping, 'fieldType', 'field_type', 'DYNAMIC') === 'IMAGE'
-            ? templateNumberValue(mapping, 'imageWidthMm', 'image_width_mm', 35)
-            : templateNumberValue(mapping, 'maxWidthMm', 'max_width_mm', 80),
-        ),
+    templateValue(
+      mapping,
+      'widthMm',
+      'width_mm',
+      templateValue(mapping, 'fieldType', 'field_type', 'DYNAMIC') === 'IMAGE'
+        ? templateNumberValue(mapping, 'imageWidthMm', 'image_width_mm', 35)
+        : templateNumberValue(mapping, 'maxWidthMm', 'max_width_mm', 80),
+    ),
     frameWidthMm,
     { min: 2, max: frameWidthMm },
   );
@@ -5682,6 +5696,88 @@ function templateBoxHeightMm(mapping, frameHeightMm) {
     frameHeightMm,
     { min: 2, max: frameHeightMm },
   );
+}
+
+function templateCoordinateMm(mapping, axis, frameSizeMm) {
+  const mmKey = axis === 'x' ? 'xMm' : 'yMm';
+  const mmSnakeKey = axis === 'x' ? 'x_mm' : 'y_mm';
+  const percentKey = axis === 'x' ? 'xPercent' : 'yPercent';
+  const percentSnakeKey = axis === 'x' ? 'x_percent' : 'y_percent';
+  const mmValue = templateNumberValue(mapping, mmKey, mmSnakeKey, 0);
+  const percentValue = templateNumberValue(mapping, percentKey, percentSnakeKey, 0);
+  if (mmValue > 0 || percentValue === 0) {
+    return normalizeTemplateNumber(mmValue, 0, { min: 0, max: frameSizeMm });
+  }
+  return normalizeTemplateNumber(percentValue, 0, { min: 0, max: 1 }) * frameSizeMm;
+}
+
+function parseTemplateTableColumns(tableFrame, mappings = []) {
+  const allowed = new Set(['hsn', 'qty_pcs', 'weight']);
+  const raw = String(templateValue(tableFrame, 'fieldValue', 'field_value', '') || '').trim();
+  if (raw) {
+    try {
+      const decoded = JSON.parse(raw);
+      const columns = Array.isArray(decoded?.columns) ? decoded.columns : [];
+      return columns
+        .map((column) => String(column || '').trim())
+        .filter((column) => allowed.has(column));
+    } catch (_) {}
+  }
+  return mappings
+    .map((mapping) => String(templateValue(mapping, 'fieldKey', 'field_key', '') || '').trim())
+    .filter((fieldKey) => allowed.has(fieldKey));
+}
+
+function drawTableBlock({
+  doc,
+  mapping,
+  pageItems,
+  xMm,
+  yMm,
+  widthMm,
+  rowPitchMm,
+  minRows,
+  fontName,
+  fontSize,
+  minFontSize,
+  textColor,
+  letterSpacing,
+  columns,
+}) {
+  const normalizedColumns = ['item_particulars', ...columns];
+  const columnWidthMm = widthMm / Math.max(1, normalizedColumns.length);
+  const rowHeight = mmToPdfPoints(rowPitchMm);
+  const rowCount = Math.max(pageItems.length, minRows);
+  const fitFontSize = Math.max(
+    minFontSize,
+    Math.min(fontSize, Math.max(minFontSize, rowPitchMm * 2.2)),
+  );
+  doc.font(fontName).fontSize(fitFontSize).fillColor(textColor);
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+    const item = pageItems[rowIndex];
+    for (let columnIndex = 0; columnIndex < normalizedColumns.length; columnIndex += 1) {
+      const fieldKey = normalizedColumns[columnIndex];
+      const value = item
+        ? truncateTemplateText(
+            itemTableValueForField(fieldKey, item),
+            templateNumberValue(mapping, 'maxChars', 'max_chars', 0),
+          )
+        : '';
+      const align = fieldKey === 'item_particulars' ? 'left' : 'center';
+      doc.text(
+        value,
+        mmToPdfPoints(xMm + columnIndex * columnWidthMm),
+        mmToPdfPoints(yMm) + rowIndex * rowHeight,
+        {
+          width: mmToPdfPoints(columnWidthMm),
+          height: rowHeight,
+          align,
+          characterSpacing: letterSpacing,
+          lineBreak: true,
+        },
+      );
+    }
+  }
 }
 
 function buildTemplateTestChallanDto(itemCount = 3) {
@@ -5804,10 +5900,11 @@ async function generateChallanTemplatePdf({
 
   const fields = challanTemplateScalarFields(challanDto);
   const items = Array.isArray(challanDto.items) ? challanDto.items : [];
-  const tableFields = new Set(['item_particulars', 'hsn', 'qty_pcs', 'weight']);
   const tableFrame = mappings.find(
     (mapping) => String(templateValue(mapping, 'fieldKey', 'field_key', '')) === 'item_particulars',
   );
+  const tableFields = new Set(['item_particulars', 'hsn', 'qty_pcs', 'weight']);
+  const tableColumns = parseTemplateTableColumns(tableFrame, mappings);
   const frameRowPitchMm = templateNumberValue(tableFrame, 'rowHeightMm', 'row_height_mm', 6);
   const frameTableHeightMm = templateNumberValue(tableFrame, 'tableHeightMm', 'table_height_mm', 60);
   const frameMinRows = Math.max(
@@ -5869,14 +5966,41 @@ async function generateChallanTemplatePdf({
       const fieldType = String(templateValue(mapping, 'fieldType', 'field_type', 'DYNAMIC')).toUpperCase();
       const xMm =
         frame.xMm +
-        templateNumberValue(mapping, 'xPercent', 'x_percent', 0) * frame.widthMm +
+        templateCoordinateMm(mapping, 'x', frame.widthMm) +
         templateNumberValue(templateSource, 'globalOffsetXmm', 'global_offset_x_mm', 0);
       const yMm =
         frame.yMm +
-        templateNumberValue(mapping, 'yPercent', 'y_percent', 0) * frame.heightMm +
+        templateCoordinateMm(mapping, 'y', frame.heightMm) +
         templateNumberValue(templateSource, 'globalOffsetYmm', 'global_offset_y_mm', 0);
       const widthMm = templateBoxWidthMm(mapping, frame.widthMm);
       const heightMm = templateBoxHeightMm(mapping, frame.heightMm);
+      if (fieldKey === 'item_particulars' || fieldType === 'TABLE') {
+        const fontSize = templateNumberValue(mapping, 'fontSize', 'font_size', 10);
+        const minFontSize = templateNumberValue(mapping, 'minFontSize', 'min_font_size', 6);
+        const fontName = String(templateValue(mapping, 'fontWeight', 'font_weight', '')).toLowerCase() === 'bold'
+          ? 'Helvetica-Bold'
+          : 'Helvetica';
+        drawTableBlock({
+          doc,
+          mapping,
+          pageItems,
+          xMm,
+          yMm,
+          widthMm,
+          rowPitchMm: templateNumberValue(mapping, 'rowHeightMm', 'row_height_mm', frameRowPitchMm),
+          minRows: frameMinRows,
+          fontName,
+          fontSize,
+          minFontSize,
+          textColor: pdfColorForTemplate(templateValue(mapping, 'textColor', 'text_color', 'black')),
+          letterSpacing: templateNumberValue(mapping, 'letterSpacing', 'letter_spacing', 0),
+          columns: tableColumns,
+        });
+        continue;
+      }
+      if (tableFields.has(fieldKey)) {
+        continue;
+      }
       if (fieldType === 'IMAGE') {
         const objectKey = String(templateValue(mapping, 'assetObjectKey', 'asset_object_key', '') || '');
         if (!objectKey) {
@@ -5913,26 +6037,6 @@ async function generateChallanTemplatePdf({
       doc.font(fontName).fontSize(fitFontSize).fillColor(
         pdfColorForTemplate(templateValue(mapping, 'textColor', 'text_color', 'black')),
       );
-      if (tableFields.has(fieldKey)) {
-        const rowHeight = mmToPdfPoints(rowPitchMm);
-        const rowCount = Math.max(pageItems.length, frameMinRows);
-        for (let index = 0; index < rowCount; index += 1) {
-          const item = pageItems[index];
-          const value = item
-            ? truncateTemplateText(
-                itemTableValueForField(fieldKey, item),
-                templateNumberValue(mapping, 'maxChars', 'max_chars', 0),
-              )
-            : '';
-          doc.text(
-            value,
-            mmToPdfPoints(xMm),
-            mmToPdfPoints(yMm) + index * rowHeight,
-            textOptions,
-          );
-        }
-        continue;
-      }
       const text = fieldType === 'STATIC'
         ? templateValue(mapping, 'fieldValue', 'field_value', '') || ''
         : fields[fieldKey] || '';
@@ -13971,10 +14075,11 @@ app.post('/api/challan-templates/stamp-upload-complete', requirePermission('conf
 async function handleChallanTemplateTestPrint(req, res) {
   try {
     const templateId = Number(
-      req.body?.templateId ||
+        req.body?.templateId ||
         req.body?.template_id ||
         req.query.templateId ||
         req.query.template_id ||
+        req.params?.id ||
         0,
     );
     if (!templateId) {
@@ -14037,6 +14142,10 @@ app.post('/api/challan-templates/test-print', requirePermission('config.read'), 
 });
 
 app.get('/api/challan-templates/test-print', requirePermission('config.read'), async (req, res) => {
+  await handleChallanTemplateTestPrint(req, res);
+});
+
+app.get('/api/templates/:id/test-print', requirePermission('config.read'), async (req, res) => {
   await handleChallanTemplateTestPrint(req, res);
 });
 
