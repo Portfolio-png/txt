@@ -1134,6 +1134,21 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
                   fontSize: 12,
                 ),
               ),
+              const SizedBox(height: 10),
+              ..._tableRailConfigsForOwner(mapping).map(
+                (rail) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _DecimalInputField(
+                    label: '${_tableRailLabel(rail.fieldKey)} X',
+                    value: rail.xMm,
+                    min: 0,
+                    max: mapping.widthMm,
+                    suffix: 'mm',
+                    onSubmitted: (value) =>
+                        _setTableRailX(mapping, rail.fieldKey, value),
+                  ),
+                ),
+              ),
               const SizedBox(height: 8),
               _DecimalInputField(
                 label: 'Table Height',
@@ -2134,6 +2149,17 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     };
   }
 
+  String _tableRailLabel(String fieldKey) {
+    return switch (fieldKey) {
+      _tableOwnerKey => 'Name',
+      'hsn' => 'HSN',
+      'qty_pcs' => 'Qty',
+      'weight' => 'Weight',
+      'note' => 'Note',
+      _ => fieldKey,
+    };
+  }
+
   String _tableFieldValueForRails(List<_TableRailConfig> rails) {
     return jsonEncode(<String, dynamic>{
       'columns':
@@ -2165,6 +2191,27 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
                   xMm: (rail.xMm + deltaMm)
                       .clamp(0.0, owner.widthMm)
                       .toDouble(),
+                )
+              : rail,
+        )
+        .toList(growable: false);
+    _updateMapping(
+      owner.fieldKey,
+      owner.copyWith(fieldValue: _tableFieldValueForRails(rails)),
+    );
+  }
+
+  void _setTableRailX(
+    ChallanTemplateMapping owner,
+    String fieldKey,
+    double xMm,
+  ) {
+    final rails = _tableRailConfigsForOwner(owner)
+        .map(
+          (rail) => rail.fieldKey == fieldKey
+              ? _TableRailConfig(
+                  fieldKey: rail.fieldKey,
+                  xMm: xMm.clamp(0.0, owner.widthMm).toDouble(),
                 )
               : rail,
         )
@@ -2778,12 +2825,12 @@ class _TableRailHandle extends StatelessWidget {
       _ => rail.fieldKey,
     };
     return Positioned(
-      left: left - 10,
+      left: left - 12,
       top: 0,
-      width: 20,
+      width: 24,
       height: boxHeight,
       child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
+        behavior: HitTestBehavior.opaque,
         onHorizontalDragUpdate: (details) {
           if (boxWidth <= 0 || tableWidthMm <= 0) {
             return;
@@ -2962,14 +3009,17 @@ class _ResizeHandleWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final position = switch (handle) {
-      _ResizeHandle.topLeft => const _HandlePosition(left: -6, top: -6),
-      _ResizeHandle.topCenter => const _HandlePosition(top: -6),
-      _ResizeHandle.topRight => const _HandlePosition(right: -6, top: -6),
-      _ResizeHandle.centerLeft => const _HandlePosition(left: -6),
-      _ResizeHandle.centerRight => const _HandlePosition(right: -6),
-      _ResizeHandle.bottomLeft => const _HandlePosition(left: -6, bottom: -6),
-      _ResizeHandle.bottomCenter => const _HandlePosition(bottom: -6),
-      _ResizeHandle.bottomRight => const _HandlePosition(right: -6, bottom: -6),
+      _ResizeHandle.topLeft => const _HandlePosition(left: -12, top: -12),
+      _ResizeHandle.topCenter => const _HandlePosition(top: -12),
+      _ResizeHandle.topRight => const _HandlePosition(right: -12, top: -12),
+      _ResizeHandle.centerLeft => const _HandlePosition(left: -12),
+      _ResizeHandle.centerRight => const _HandlePosition(right: -12),
+      _ResizeHandle.bottomLeft => const _HandlePosition(left: -12, bottom: -12),
+      _ResizeHandle.bottomCenter => const _HandlePosition(bottom: -12),
+      _ResizeHandle.bottomRight => const _HandlePosition(
+        right: -12,
+        bottom: -12,
+      ),
     };
     return Positioned(
       left: position.left,
@@ -2988,16 +3038,23 @@ class _ResizeHandleWidget extends StatelessWidget {
           _ResizeHandle.bottomRight => Alignment.bottomRight,
         },
         child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onPanUpdate: (details) => onDrag(details.delta),
           onPanEnd: (_) => onDragEnd(),
           onPanCancel: onDragEnd,
-          child: Container(
-            width: 12,
-            height: 12,
-            decoration: BoxDecoration(
-              color: SoftErpTheme.accent,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: Colors.white, width: 1.4),
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: Center(
+              child: Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: SoftErpTheme.accent,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.white, width: 1.4),
+                ),
+              ),
             ),
           ),
         ),

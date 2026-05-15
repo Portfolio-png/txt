@@ -5880,12 +5880,12 @@ function drawTableBlock({
       const noteWidthMm = Math.max(12, widthMm - noteColumn.xMm);
       doc
         .font('Helvetica-Oblique')
-        .fontSize(Math.max(6, fitFontSize - 2))
+        .fontSize(7)
         .fillColor('#4B5563')
         .text(
           truncateTemplateText(note, templateNumberValue(mapping, 'maxChars', 'max_chars', 0)),
           mmToPdfPoints(xMm + noteColumn.xMm),
-          mmToPdfPoints(currentY + Math.min(rowPitchMm * 0.46, 4)),
+          mmToPdfPoints(currentY + 4),
           {
             width: mmToPdfPoints(noteWidthMm),
             height: rowHeight / 2,
@@ -5969,7 +5969,7 @@ function buildTemplateTestChallanDto(itemCount = 3) {
     order_nos: ['SAMPLE-ORDER-001'],
     client_id: 0,
     challan_no: 'DC-TEST-0001',
-    display_id: 'ID: 00000',
+    display_id: 'REF: 00000',
     date: 'DD/MM/YYYY',
     location: 'Sample Warehouse',
     customer_name: 'John Doe',
@@ -6041,11 +6041,11 @@ async function generateChallanTemplatePdf({
 
   const fields = challanTemplateScalarFields(challanDto);
   const items = Array.isArray(challanDto.items) ? challanDto.items : [];
-  const displayId = `ID: ${String(challanDto.id || challanRow?.id || 0).padStart(5, '0')}`;
+  const displayId = `REF: ${String(challanDto.id || challanRow?.id || 0).padStart(5, '0')}`;
   const tableFrame = mappings.find(
     (mapping) => String(templateValue(mapping, 'fieldKey', 'field_key', '')) === 'item_particulars',
   );
-  const tableFields = new Set(['item_particulars', 'hsn', 'qty_pcs', 'weight']);
+  const tableFields = new Set(['item_particulars', 'hsn', 'qty_pcs', 'weight', 'note']);
   const tableColumns = parseTemplateTableColumns(tableFrame, mappings);
   const tablePrintNotes = templateTablePrintNotes(tableFrame);
   const frameRowPitchMm = templateNumberValue(tableFrame, 'rowHeightMm', 'row_height_mm', 6);
