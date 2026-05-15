@@ -1587,7 +1587,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       uri,
       fallbackFileName: 'challan-template-test-$itemCount-items.pdf',
     );
-    if (!handled) {
+    if (!handled && !Platform.isWindows && !Platform.isMacOS) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
@@ -1607,7 +1607,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       final file = File('${tempDir.path}/$fallbackFileName');
       await file.writeAsBytes(response.bodyBytes, flush: true);
 
-      if (Platform.isMacOS) {
+      if (Platform.isWindows || Platform.isMacOS) {
         final printed =
             await _nativePrintingChannel.invokeMethod<bool>('printPdfFile', {
               'filePath': file.path,

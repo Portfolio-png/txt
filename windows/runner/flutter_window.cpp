@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <commdlg.h>
 #include <flutter/standard_method_codec.h>
+#include <shellapi.h>
 
 #include <optional>
 #include <string>
@@ -39,6 +40,12 @@ struct ChallanPrintData {
   std::vector<ChallanPrintItem> items;
 };
 
+struct SelectedPrinter {
+  std::wstring name;
+  std::wstring driver;
+  std::wstring port;
+};
+
 std::wstring Utf8ToWide(const std::string& value) {
   if (value.empty()) {
     return L"";
@@ -65,6 +72,15 @@ std::wstring GetString(const flutter::EncodableMap& map, const char* key) {
 
   const auto value = std::get_if<std::string>(&it->second);
   return value == nullptr ? L"" : Utf8ToWide(*value);
+}
+
+std::wstring GetArgumentString(const flutter::EncodableValue* arguments,
+                               const char* key) {
+  const auto map = std::get_if<flutter::EncodableMap>(arguments);
+  if (map == nullptr) {
+    return L"";
+  }
+  return GetString(*map, key);
 }
 
 ChallanPrintData PrintDataFromArguments(
@@ -352,6 +368,107 @@ void FreePrintDialogHandles(const PRINTDLGW& dialog) {
   }
 }
 
+std::wstring QuoteShellArgument(const std::wstring& value) {
+  std::wstring quoted = L"\"";
+  int trailing_backslashes = 0;
+  for (const wchar_t ch : value) {
+    if (ch == L'\\') {
+      ++trailing_backslashes;
+      quoted.push_back(ch);
+      continue;
+    }
+    if (ch == L'"') {
+      quoted.append(trailing_backslashes + 1, L'\\');
+    }
+    trailing_backslashes = 0;
+    quoted.push_back(ch);
+  }
+  quoted.append(trailing_backslashes, L'\\');
+  quoted.push_back(L'"');
+  return quoted;
+}
+
+bool SelectedPrinterFromDialog(const PRINTDLGW& dialog,
+                               SelectedPrinter* printer) {
+  if (dialog.hDevNames == nullptr || printer == nullptr) {
+    return false;
+  }
+
+  const auto dev_names =
+      static_cast<DEVNAMES*>(::GlobalLock(dialog.hDevNames));
+  if (dev_names == nullptr) {
+    return false;
+  }
+
+  const auto base = reinterpret_cast<const wchar_t*>(dev_names);
+  printer->driver = base + dev_names->wDriverOffset;
+  printer->name = base + dev_names->wDeviceOffset;
+  printer->port = base + dev_names->wOutputOffset;
+  ::GlobalUnlock(dialog.hDevNames);
+  return !printer->name.empty();
+}
+
+bool PrintPdfFileWithSystemHandler(HWND owner, const std::wstring& file_path,
+                                   DWORD* error_code) {
+  if (file_path.empty() || ::GetFileAttributesW(file_path.c_str()) ==
+                               INVALID_FILE_ATTRIBUTES) {
+    *error_code = ERROR_FILE_NOT_FOUND;
+    return false;
+  }
+
+  PRINTDLGW dialog = {};
+  dialog.lStructSize = sizeof(dialog);
+  dialog.hwndOwner = owner;
+  dialog.Flags = PD_ALLPAGES | PD_HIDEPRINTTOFILE | PD_NOSELECTION |
+                 PD_NOPAGENUMS | PD_RETURNDC |
+                 PD_USEDEVMODECOPIESANDCOLLATE;
+  dialog.nMinPage = 1;
+  dialog.nMaxPage = 1;
+  dialog.nFromPage = 1;
+  dialog.nToPage = 1;
+  dialog.nCopies = 1;
+
+  const BOOL accepted = ::PrintDlgW(&dialog);
+  if (!accepted) {
+    FreePrintDialogHandles(dialog);
+    *error_code = ::CommDlgExtendedError();
+    return false;
+  }
+
+  SelectedPrinter printer;
+  const bool has_printer = SelectedPrinterFromDialog(dialog, &printer);
+  FreePrintDialogHandles(dialog);
+  if (!has_printer) {
+    *error_code = ERROR_INVALID_PRINTER_NAME;
+    return false;
+  }
+
+  const std::wstring parameters =
+      QuoteShellArgument(printer.name) + L" " +
+      QuoteShellArgument(printer.driver) + L" " +
+      QuoteShellArgument(printer.port);
+
+  SHELLEXECUTEINFOW execute_info = {};
+  execute_info.cbSize = sizeof(execute_info);
+  execute_info.fMask = SEE_MASK_NOCLOSEPROCESS;
+  execute_info.hwnd = owner;
+  execute_info.lpVerb = L"printto";
+  execute_info.lpFile = file_path.c_str();
+  execute_info.lpParameters = parameters.c_str();
+  execute_info.nShow = SW_HIDE;
+
+  if (!::ShellExecuteExW(&execute_info)) {
+    *error_code = ::GetLastError();
+    return false;
+  }
+
+  if (execute_info.hProcess != nullptr) {
+    ::CloseHandle(execute_info.hProcess);
+  }
+  *error_code = 0;
+  return true;
+}
+
 bool ShowWindowsPrintDialog(HWND owner, const ChallanPrintData& data,
                             DWORD* error_code) {
   PRINTDLGW dialog = {};
@@ -413,26 +530,45 @@ bool FlutterWindow::OnCreate() {
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
              std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
                  result) {
-        if (call.method_name() != "showPrintDialog") {
-          result->NotImplemented();
+        if (call.method_name() == "showPrintDialog") {
+          const auto data = PrintDataFromArguments(call.arguments());
+          DWORD error_code = 0;
+          const bool accepted =
+              ShowWindowsPrintDialog(GetHandle(), data, &error_code);
+          if (accepted) {
+            result->Success(flutter::EncodableValue(true));
+            return;
+          }
+          if (error_code == 0) {
+            result->Success(flutter::EncodableValue(false));
+            return;
+          }
+          result->Error("PRINT_DIALOG_FAILED",
+                        "Windows could not open the print dialog.",
+                        flutter::EncodableValue(static_cast<int>(error_code)));
           return;
         }
 
-        const auto data = PrintDataFromArguments(call.arguments());
-        DWORD error_code = 0;
-        const bool accepted =
-            ShowWindowsPrintDialog(GetHandle(), data, &error_code);
-        if (accepted) {
-          result->Success(flutter::EncodableValue(true));
+        if (call.method_name() == "printPdfFile") {
+          DWORD error_code = 0;
+          const bool printed = PrintPdfFileWithSystemHandler(
+              GetHandle(), GetArgumentString(call.arguments(), "filePath"),
+              &error_code);
+          if (printed) {
+            result->Success(flutter::EncodableValue(true));
+            return;
+          }
+          if (error_code == 0) {
+            result->Success(flutter::EncodableValue(false));
+            return;
+          }
+          result->Error("PDF_PRINT_FAILED",
+                        "Windows could not send the PDF to the selected printer.",
+                        flutter::EncodableValue(static_cast<int>(error_code)));
           return;
         }
-        if (error_code == 0) {
-          result->Success(flutter::EncodableValue(false));
-          return;
-        }
-        result->Error("PRINT_DIALOG_FAILED",
-                      "Windows could not open the print dialog.",
-                      flutter::EncodableValue(static_cast<int>(error_code)));
+
+        result->NotImplemented();
       });
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
