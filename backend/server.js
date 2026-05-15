@@ -14001,10 +14001,20 @@ async function handleChallanTemplateTestPrint(req, res) {
       });
       return;
     }
+    const mappingOverride = Array.isArray(req.body?.mappings)
+      ? req.body.mappings
+      : null;
+    const templateSnapshot = mappingOverride
+      ? {
+          ...(await rowToChallanTemplateDto(template)),
+          mappings: mappingOverride,
+        }
+      : null;
     const buffer = await generateChallanTemplatePdf({
       challanRow: null,
       challanDtoOverride: buildTemplateTestChallanDto(itemCount),
-      templateRow: template,
+      templateRow: templateSnapshot ? null : template,
+      templateSnapshot,
       mode: req.body?.mode || req.query.mode,
     });
     res.setHeader('Content-Type', 'application/pdf');

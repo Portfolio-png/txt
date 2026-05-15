@@ -698,7 +698,32 @@ class ApiChallanRepository implements ChallanRepository {
     required int templateId,
     required String mode,
     int? itemCount,
+    List<ChallanTemplateMapping>? mappings,
   }) async {
+    if (mappings != null) {
+      final response = await _sendRequest(
+        method: 'POST',
+        uri: Uri.parse('$baseUrl/api/challan-templates/test-print'),
+        headers: const {'Content-Type': 'application/json'},
+        body: jsonEncode(<String, dynamic>{
+          'templateId': templateId,
+          'mode': mode,
+          'itemCount': itemCount,
+          'mappings': mappings
+              .map((mapping) => mapping.toJson())
+              .toList(growable: false),
+        }),
+      );
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw DeliveryChallanApiException(
+          'Failed to fetch test print PDF (${response.statusCode}).',
+          debugMessage:
+              'PDF fetch failed for template $templateId with mapping override. Status: ${response.statusCode}.',
+        );
+      }
+      return response.bodyBytes;
+    }
+
     final uri = templateTestPrintUri(
       templateId: templateId,
       mode: mode,

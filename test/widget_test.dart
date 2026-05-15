@@ -2754,6 +2754,7 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
     required int templateId,
     required String mode,
     int? itemCount,
+    List<ChallanTemplateMapping>? mappings,
   }) async => Uint8List.fromList(<int>[37, 80, 68, 70]);
 
   @override

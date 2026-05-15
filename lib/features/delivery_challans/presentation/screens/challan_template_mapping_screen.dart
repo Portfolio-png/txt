@@ -565,7 +565,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
                     _selectedTemplate?.id != null &&
                         (_selectedTemplate?.id ?? 0) > 0 &&
                         _layoutValidity.isValid
-                    ? () => _openTestPrint(itemCount: _testPrintMaxItemCount)
+                    ? _openFullTableTestPrint
                     : null,
               ),
             ],
@@ -1685,7 +1685,10 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     _updateMapping(mapping.fieldKey, nextMapping);
   }
 
-  Future<void> _openTestPrint({required int itemCount}) async {
+  Future<void> _openTestPrint({
+    required int itemCount,
+    List<ChallanTemplateMapping>? mappingsOverride,
+  }) async {
     if (!_layoutValidity.isValid) {
       setState(() => _error = _layoutValidity.message);
       return;
@@ -1699,6 +1702,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       provider: provider,
       templateId: templateId,
       itemCount: itemCount,
+      mappingsOverride: mappingsOverride,
       fallbackFileName: 'challan-template-test-$itemCount-items.pdf',
     );
     if (!handled && !Platform.isWindows && !Platform.isMacOS) {
@@ -1709,6 +1713,32 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       );
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
+  }
+
+  Future<void> _openFullTableTestPrint() async {
+    final owner = _mappingForField(_tableOwnerKey);
+    if (owner == null) {
+      await _openTestPrint(itemCount: _testPrintMaxItemCount);
+      return;
+    }
+    var printMappings = List<ChallanTemplateMapping>.from(_mappings);
+    for (final fieldKey in _tableColumnKeys) {
+      if (!printMappings.any((entry) => entry.fieldKey == fieldKey)) {
+        printMappings = [
+          ...printMappings,
+          _buildStructuredBlockCompanion(fieldKey, owner),
+        ];
+      }
+    }
+    printMappings = _syncStructuredBlockMappings(
+      _requireBlock(_tableOwnerKey),
+      owner,
+      printMappings,
+    );
+    await _openTestPrint(
+      itemCount: _testPrintMaxItemCount,
+      mappingsOverride: printMappings,
+    );
   }
 
   Future<void> _loadUploadedScans() async {
@@ -1736,6 +1766,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     required DeliveryChallanProvider provider,
     required int templateId,
     required int itemCount,
+    List<ChallanTemplateMapping>? mappingsOverride,
     required String fallbackFileName,
   }) async {
     try {
@@ -1743,6 +1774,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
         templateId: templateId,
         mode: 'digital',
         itemCount: itemCount,
+        mappings: mappingsOverride,
       );
       final tempDir = await getTemporaryDirectory();
       final file = File('${tempDir.path}/$fallbackFileName');

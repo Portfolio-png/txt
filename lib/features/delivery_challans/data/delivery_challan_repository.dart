@@ -94,6 +94,7 @@ abstract class ChallanRepository {
     required int templateId,
     required String mode,
     int? itemCount,
+    List<ChallanTemplateMapping>? mappings,
   });
 }
 

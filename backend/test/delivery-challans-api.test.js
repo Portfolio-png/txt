@@ -731,6 +731,35 @@ test('challan templates persist mappings and generate overprint pdf', async () =
     });
     assert.ok(Buffer.isBuffer(maxPrint));
     assert.equal(maxPrint.slice(0, 4).toString(), '%PDF');
+    const fullTableMappings = [
+      ...activeTemplate.mappings,
+      {
+        ...activeTemplate.mappings.find((mapping) => mapping.fieldKey === 'item_particulars'),
+        fieldKey: 'hsn',
+        alignment: 'center',
+      },
+      {
+        ...activeTemplate.mappings.find((mapping) => mapping.fieldKey === 'item_particulars'),
+        fieldKey: 'qty_pcs',
+      },
+      {
+        ...activeTemplate.mappings.find((mapping) => mapping.fieldKey === 'item_particulars'),
+        fieldKey: 'weight',
+      },
+    ];
+    const overridePrint = await backend.generateChallanTemplatePdf({
+      challanRow: null,
+      challanDtoOverride: {
+        ...backend.buildTemplateTestChallanDto(8),
+      },
+      templateSnapshot: {
+        ...activeTemplate,
+        mappings: fullTableMappings,
+      },
+      mode: 'digital',
+    });
+    assert.ok(Buffer.isBuffer(overridePrint));
+    assert.equal(overridePrint.slice(0, 4).toString(), '%PDF');
     assert.equal(backend.buildTemplateTestChallanDto(1).items.length, 1);
     assert.equal(backend.buildTemplateTestChallanDto(8).items.length, 8);
   } finally {
