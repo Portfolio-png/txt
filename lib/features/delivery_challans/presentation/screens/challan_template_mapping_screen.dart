@@ -2771,12 +2771,23 @@ class _MappedCanvasElement extends StatelessWidget {
                       ),
               ),
             ),
-            if (selected)
-              ...const [_ResizeHandle.bottomRight].map(
-                (handle) => _ResizeHandleWidget(
-                  handle: handle,
-                  onDrag: (delta) => onResize(handle, delta),
-                  onDragEnd: onResizeEnd,
+            if (selected && tableRails.isNotEmpty)
+              Positioned(
+                left: 0,
+                top: 0,
+                right: 0,
+                height: 32,
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.82),
+                      border: Border(
+                        bottom: BorderSide(
+                          color: SoftErpTheme.border.withValues(alpha: 0.86),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             if (selected && tableRails.isNotEmpty)
@@ -2787,6 +2798,18 @@ class _MappedCanvasElement extends StatelessWidget {
                   boxWidth: boxWidth,
                   boxHeight: boxHeight,
                   onDrag: (deltaMm) => onRailDrag(rail.fieldKey, deltaMm),
+                ),
+              ),
+            if (selected)
+              ...const [
+                _ResizeHandle.centerRight,
+                _ResizeHandle.bottomCenter,
+                _ResizeHandle.bottomRight,
+              ].map(
+                (handle) => _ResizeHandleWidget(
+                  handle: handle,
+                  onDrag: (delta) => onResize(handle, delta),
+                  onDragEnd: onResizeEnd,
                 ),
               ),
           ],
@@ -2816,6 +2839,10 @@ class _TableRailHandle extends StatelessWidget {
     final left = tableWidthMm <= 0
         ? 0.0
         : (rail.xMm / tableWidthMm * boxWidth).clamp(0.0, boxWidth).toDouble();
+    const tagWidth = 72.0;
+    final maxTagLeft = math.max(0.0, boxWidth - tagWidth);
+    final tagLeft = (left - tagWidth / 2).clamp(0.0, maxTagLeft).toDouble();
+    final lineLeft = (left - tagLeft).clamp(0.0, tagWidth).toDouble();
     final label = switch (rail.fieldKey) {
       'item_particulars' => 'Name',
       'hsn' => 'HSN',
@@ -2825,58 +2852,83 @@ class _TableRailHandle extends StatelessWidget {
       _ => rail.fieldKey,
     };
     return Positioned(
-      left: left - 12,
+      left: tagLeft,
       top: 0,
-      width: 24,
+      width: tagWidth,
       height: boxHeight,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onHorizontalDragUpdate: (details) {
-          if (boxWidth <= 0 || tableWidthMm <= 0) {
-            return;
-          }
-          onDrag(details.delta.dx / boxWidth * tableWidthMm);
-        },
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Center(
-              child: Container(
-                width: 2,
-                height: boxHeight,
-                decoration: BoxDecoration(
-                  color: SoftErpTheme.accent.withValues(alpha: 0.78),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-              ),
-            ),
-            Positioned(
-              top: -22,
-              left: -18,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                decoration: BoxDecoration(
-                  color: SoftErpTheme.accent,
-                  borderRadius: BorderRadius.circular(999),
-                  boxShadow: [
-                    BoxShadow(
-                      color: SoftErpTheme.accent.withValues(alpha: 0.18),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.resizeColumn,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onHorizontalDragUpdate: (details) {
+            if (boxWidth <= 0 || tableWidthMm <= 0) {
+              return;
+            }
+            onDrag(details.delta.dx / boxWidth * tableWidthMm);
+          },
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                left: lineLeft - 1,
+                top: 28,
+                bottom: 0,
+                child: Container(
+                  width: 2,
+                  decoration: BoxDecoration(
+                    color: SoftErpTheme.accent.withValues(alpha: 0.78),
+                    borderRadius: BorderRadius.circular(999),
                   ),
                 ),
               ),
-            ),
-          ],
+              Positioned(
+                left: lineLeft - 5,
+                top: 24,
+                child: Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: SoftErpTheme.accent,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: Colors.white, width: 1.2),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 4,
+                left: 0,
+                right: 0,
+                child: Container(
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: SoftErpTheme.accent,
+                    borderRadius: BorderRadius.circular(999),
+                    boxShadow: [
+                      BoxShadow(
+                        color: SoftErpTheme.accent.withValues(alpha: 0.18),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -3009,17 +3061,21 @@ class _ResizeHandleWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final position = switch (handle) {
-      _ResizeHandle.topLeft => const _HandlePosition(left: -12, top: -12),
-      _ResizeHandle.topCenter => const _HandlePosition(top: -12),
-      _ResizeHandle.topRight => const _HandlePosition(right: -12, top: -12),
-      _ResizeHandle.centerLeft => const _HandlePosition(left: -12),
-      _ResizeHandle.centerRight => const _HandlePosition(right: -12),
-      _ResizeHandle.bottomLeft => const _HandlePosition(left: -12, bottom: -12),
-      _ResizeHandle.bottomCenter => const _HandlePosition(bottom: -12),
-      _ResizeHandle.bottomRight => const _HandlePosition(
-        right: -12,
-        bottom: -12,
-      ),
+      _ResizeHandle.topLeft => const _HandlePosition(left: 0, top: 0),
+      _ResizeHandle.topCenter => const _HandlePosition(top: 0),
+      _ResizeHandle.topRight => const _HandlePosition(right: 0, top: 0),
+      _ResizeHandle.centerLeft => const _HandlePosition(left: 0),
+      _ResizeHandle.centerRight => const _HandlePosition(right: 0),
+      _ResizeHandle.bottomLeft => const _HandlePosition(left: 0, bottom: 0),
+      _ResizeHandle.bottomCenter => const _HandlePosition(bottom: 0),
+      _ResizeHandle.bottomRight => const _HandlePosition(right: 0, bottom: 0),
+    };
+    final cursor = switch (handle) {
+      _ResizeHandle.centerLeft ||
+      _ResizeHandle.centerRight => SystemMouseCursors.resizeLeftRight,
+      _ResizeHandle.topCenter ||
+      _ResizeHandle.bottomCenter => SystemMouseCursors.resizeUpDown,
+      _ => SystemMouseCursors.resizeDownRight,
     };
     return Positioned(
       left: position.left,
@@ -3037,23 +3093,23 @@ class _ResizeHandleWidget extends StatelessWidget {
           _ResizeHandle.bottomCenter => Alignment.bottomCenter,
           _ResizeHandle.bottomRight => Alignment.bottomRight,
         },
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onPanUpdate: (details) => onDrag(details.delta),
-          onPanEnd: (_) => onDragEnd(),
-          onPanCancel: onDragEnd,
-          child: SizedBox(
-            width: 24,
-            height: 24,
-            child: Center(
-              child: Container(
-                width: 12,
-                height: 12,
-                decoration: BoxDecoration(
-                  color: SoftErpTheme.accent,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: Colors.white, width: 1.4),
-                ),
+        child: MouseRegion(
+          cursor: cursor,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onPanUpdate: (details) => onDrag(details.delta),
+            onPanEnd: (_) => onDragEnd(),
+            onPanCancel: onDragEnd,
+            child: SizedBox(
+              width: handle == _ResizeHandle.centerRight ? 34 : 44,
+              height: handle == _ResizeHandle.bottomCenter ? 34 : 44,
+              child: Align(
+                alignment: switch (handle) {
+                  _ResizeHandle.centerRight => Alignment.centerRight,
+                  _ResizeHandle.bottomCenter => Alignment.bottomCenter,
+                  _ => Alignment.bottomRight,
+                },
+                child: _ResizeGripVisual(handle: handle),
               ),
             ),
           ),
@@ -3061,6 +3117,114 @@ class _ResizeHandleWidget extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ResizeGripVisual extends StatelessWidget {
+  const _ResizeGripVisual({required this.handle});
+
+  final _ResizeHandle handle;
+
+  @override
+  Widget build(BuildContext context) {
+    if (handle == _ResizeHandle.centerRight) {
+      return Container(
+        width: 12,
+        height: 34,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: const BorderRadius.horizontal(
+            left: Radius.circular(999),
+          ),
+          border: Border.all(color: SoftErpTheme.accent, width: 1.4),
+          boxShadow: [
+            BoxShadow(
+              color: SoftErpTheme.accent.withValues(alpha: 0.18),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Container(
+            width: 3,
+            height: 20,
+            decoration: BoxDecoration(
+              color: SoftErpTheme.accent,
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+        ),
+      );
+    }
+    if (handle == _ResizeHandle.bottomCenter) {
+      return Container(
+        width: 34,
+        height: 12,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(999)),
+          border: Border.all(color: SoftErpTheme.accent, width: 1.4),
+          boxShadow: [
+            BoxShadow(
+              color: SoftErpTheme.accent.withValues(alpha: 0.18),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Container(
+            width: 20,
+            height: 3,
+            decoration: BoxDecoration(
+              color: SoftErpTheme.accent,
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+        ),
+      );
+    }
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(14),
+          bottomRight: Radius.circular(8),
+        ),
+        border: Border.all(color: SoftErpTheme.accent, width: 1.4),
+        boxShadow: [
+          BoxShadow(
+            color: SoftErpTheme.accent.withValues(alpha: 0.18),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: CustomPaint(painter: _ResizeGripPainter()),
+    );
+  }
+}
+
+class _ResizeGripPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = SoftErpTheme.accent
+      ..strokeWidth = 1.3
+      ..strokeCap = StrokeCap.round;
+    for (var offset = 8.0; offset <= 18.0; offset += 5) {
+      canvas.drawLine(
+        Offset(size.width - offset, size.height - 4),
+        Offset(size.width - 4, size.height - offset),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _HandlePosition {
