@@ -530,7 +530,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
           ),
           const SizedBox(height: 14),
           Text(
-            'Test item counts',
+            'Test Print',
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
               fontWeight: FontWeight.w700,
               color: SoftErpTheme.textPrimary,
@@ -547,7 +547,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
           Column(
             children: [
               AppButton(
-                label: '1 Item',
+                label: 'Test Print: 1 Item',
                 variant: AppButtonVariant.secondary,
                 onPressed:
                     _selectedTemplate?.id != null &&
@@ -558,7 +558,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
               ),
               const SizedBox(height: 10),
               AppButton(
-                label: 'Full Table',
+                label: 'Test Print: Full Table',
                 variant: AppButtonVariant.secondary,
                 onPressed:
                     _selectedTemplate?.id != null &&

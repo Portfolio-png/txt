@@ -704,12 +704,24 @@ class ApiChallanRepository implements ChallanRepository {
       mode: mode,
       itemCount: itemCount,
     );
-    final response = await _sendRequest(method: 'GET', uri: uri);
+    var response = await _sendRequest(method: 'GET', uri: uri);
+    if (response.statusCode == 404 || response.statusCode == 405) {
+      response = await _sendRequest(
+        method: 'POST',
+        uri: Uri.parse('$baseUrl/api/challan-templates/test-print'),
+        headers: const {'Content-Type': 'application/json'},
+        body: jsonEncode(<String, dynamic>{
+          'templateId': templateId,
+          'mode': mode,
+          'itemCount': itemCount,
+        }),
+      );
+    }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw DeliveryChallanApiException(
         'Failed to fetch test print PDF (${response.statusCode}).',
         debugMessage:
-            'PDF fetch failed for GET $uri. Status: ${response.statusCode}.',
+            'PDF fetch failed for template $templateId. Final status: ${response.statusCode}. GET uri: $uri',
       );
     }
     return response.bodyBytes;
