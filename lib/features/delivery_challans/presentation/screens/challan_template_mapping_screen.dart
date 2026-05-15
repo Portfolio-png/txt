@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -1747,7 +1748,15 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       final file = File('${tempDir.path}/$fallbackFileName');
       await file.writeAsBytes(bytes, flush: true);
 
-      if (Platform.isWindows || Platform.isMacOS) {
+      if (Platform.isWindows) {
+        await Printing.layoutPdf(
+          name: fallbackFileName,
+          onLayout: (_) async => bytes,
+        );
+        return true;
+      }
+
+      if (Platform.isMacOS) {
         final printed =
             await _nativePrintingChannel.invokeMethod<bool>('printPdfFile', {
               'filePath': file.path,
