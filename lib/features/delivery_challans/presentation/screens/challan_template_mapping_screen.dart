@@ -33,6 +33,7 @@ class TemplateMappingScreen extends StatefulWidget {
 class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
   final TextEditingController _nameController = TextEditingController();
   List<ChallanTemplate> _templates = const <ChallanTemplate>[];
+  List<ChallanTemplateScan> _uploadedScans = const <ChallanTemplateScan>[];
   List<ChallanTemplateMapping> _mappings = <ChallanTemplateMapping>[];
   ChallanTemplate? _selectedTemplate;
   ChallanType _challanType = ChallanType.delivery;
@@ -54,6 +55,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
   double _screenScale = 1;
   bool _showBoundingBoxes = true;
   bool _isLoading = true;
+  bool _isLoadingScans = false;
   bool _isSaving = false;
   String _selectedBlockOwnerFieldKey = _headerOwnerKey;
   String? _selectedMappingFieldKey;
@@ -196,6 +198,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
 
   Future<void> _loadInitial() async {
     await _loadTemplates();
+    await _loadUploadedScans();
   }
 
   Future<void> _loadTemplates() async {
@@ -415,6 +418,8 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
             onPressed: _pickAndUploadBackground,
           ),
           const SizedBox(height: 12),
+          _buildUploadedScansSection(),
+          const SizedBox(height: 12),
           const Text(
             'Print Presets',
             style: TextStyle(
@@ -569,6 +574,100 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildUploadedScansSection() {
+    final visibleScans = _visibleUploadedScans();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Uploaded Scans',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: SoftErpTheme.textPrimary,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Refresh scans',
+              onPressed: _isLoadingScans ? null : _loadUploadedScans,
+              icon: _isLoadingScans
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh_rounded),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (_isLoadingScans && visibleScans.isEmpty)
+          const LinearProgressIndicator(minHeight: 2)
+        else if (visibleScans.isEmpty)
+          Text(
+            'No saved scans yet.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: SoftErpTheme.textSecondary),
+          )
+        else
+          Column(
+            children: [
+              for (final scan in visibleScans) ...[
+                _UploadedScanTile(
+                  scan: scan,
+                  selected: scan.objectKey == _backgroundObjectKey,
+                  onTap: () => _selectUploadedScan(scan),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ],
+          ),
+      ],
+    );
+  }
+
+  List<ChallanTemplateScan> _visibleUploadedScans() {
+    final scans = _uploadedScans.take(6).toList();
+    final selectedScan = _scanForObjectKey(_backgroundObjectKey);
+    if (selectedScan != null &&
+        !scans.any((scan) => scan.objectKey == selectedScan.objectKey)) {
+      scans.add(selectedScan);
+    }
+    return scans;
+  }
+
+  void _selectUploadedScan(ChallanTemplateScan scan) {
+    if (scan.objectKey.isEmpty) {
+      return;
+    }
+    setState(() {
+      _backgroundObjectKey = scan.objectKey;
+      _backgroundImageUrl = scan.imageUrl;
+      _localBackgroundBytes = null;
+      if (scan.canvasWidth > 0) {
+        _canvasWidth = scan.canvasWidth;
+      }
+      if (scan.canvasHeight > 0) {
+        _canvasHeight = scan.canvasHeight;
+      }
+      _error = null;
+    });
+  }
+
+  ChallanTemplateScan? _scanForObjectKey(String objectKey) {
+    for (final scan in _uploadedScans) {
+      if (scan.objectKey == objectKey) {
+        return scan;
+      }
+    }
+    return null;
   }
 
   Widget _buildCanvasPanel() {
@@ -1160,6 +1259,22 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       if (intent == null) {
         throw Exception(provider.errorMessage ?? 'Failed to prepare upload.');
       }
+      if (intent.reused) {
+        final matchingScan = _scanForObjectKey(intent.objectKey);
+        setState(() {
+          _backgroundObjectKey = intent.objectKey;
+          if (intent.canvasWidth > 0) {
+            _canvasWidth = intent.canvasWidth;
+          }
+          if (intent.canvasHeight > 0) {
+            _canvasHeight = intent.canvasHeight;
+          }
+          _localBackgroundBytes = null;
+          _backgroundImageUrl = matchingScan?.imageUrl;
+        });
+        await _loadUploadedScans();
+        return;
+      }
       if (intent.uploadUrl.host != 'mock.local') {
         final response = await http.put(
           intent.uploadUrl,
@@ -1184,6 +1299,7 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
         _localBackgroundBytes = bytes;
         _backgroundImageUrl = null;
       });
+      await _loadUploadedScans();
     } catch (error) {
       setState(() => _error = error.toString());
     } finally {
@@ -1590,6 +1706,27 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     if (!handled && !Platform.isWindows && !Platform.isMacOS) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
+  }
+
+  Future<void> _loadUploadedScans() async {
+    if (!mounted) {
+      return;
+    }
+    setState(() => _isLoadingScans = true);
+    final scans = await context
+        .read<DeliveryChallanProvider>()
+        .loadTemplateScans();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _uploadedScans = scans;
+      if (_localBackgroundBytes == null && _backgroundObjectKey.isNotEmpty) {
+        final matchingScan = _scanForObjectKey(_backgroundObjectKey);
+        _backgroundImageUrl = matchingScan?.imageUrl ?? _backgroundImageUrl;
+      }
+      _isLoadingScans = false;
+    });
   }
 
   Future<bool> _printPdfFromUri(
@@ -2234,6 +2371,95 @@ class _MappedCanvasElement extends StatelessWidget {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _UploadedScanTile extends StatelessWidget {
+  const _UploadedScanTile({
+    required this.scan,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final ChallanTemplateScan scan;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final fileName = scan.fileName.isNotEmpty
+        ? scan.fileName
+        : scan.objectKey.split('/').last;
+    final dimensions = scan.canvasWidth > 0 && scan.canvasHeight > 0
+        ? '${scan.canvasWidth} x ${scan.canvasHeight}'
+        : 'Dimensions pending';
+    return Material(
+      color: selected ? const Color(0xFFEFF6FF) : Colors.white,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: selected ? SoftErpTheme.accent : SoftErpTheme.border,
+            ),
+          ),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  width: 48,
+                  height: 62,
+                  color: const Color(0xFFF4F7FB),
+                  child: scan.imageUrl == null || scan.imageUrl!.isEmpty
+                      ? const Icon(
+                          Icons.description_outlined,
+                          color: SoftErpTheme.textSecondary,
+                        )
+                      : Image.network(scan.imageUrl!, fit: BoxFit.cover),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      fileName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: SoftErpTheme.textPrimary,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      dimensions,
+                      style: const TextStyle(
+                        color: SoftErpTheme.textSecondary,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (selected)
+                const Icon(
+                  Icons.check_circle_rounded,
+                  size: 18,
+                  color: SoftErpTheme.accent,
+                ),
+            ],
+          ),
         ),
       ),
     );

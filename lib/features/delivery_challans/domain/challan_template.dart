@@ -430,12 +430,18 @@ class ChallanTemplateUploadTarget {
     required this.objectKey,
     required this.uploadUrl,
     required this.headers,
+    required this.reused,
+    required this.canvasWidth,
+    required this.canvasHeight,
   });
 
   final String uploadSessionId;
   final String objectKey;
   final Uri uploadUrl;
   final Map<String, String> headers;
+  final bool reused;
+  final int canvasWidth;
+  final int canvasHeight;
 
   factory ChallanTemplateUploadTarget.fromJson(Map<String, dynamic> json) {
     return ChallanTemplateUploadTarget(
@@ -445,6 +451,50 @@ class ChallanTemplateUploadTarget {
       headers: (json['headers'] as Map<String, dynamic>? ?? const {}).map(
         (key, value) => MapEntry(key, '$value'),
       ),
+      reused: json['reused'] as bool? ?? false,
+      canvasWidth: json['canvasWidth'] as int? ?? 0,
+      canvasHeight: json['canvasHeight'] as int? ?? 0,
+    );
+  }
+}
+
+class ChallanTemplateScan {
+  const ChallanTemplateScan({
+    required this.uploadSessionId,
+    required this.objectKey,
+    required this.fileName,
+    required this.contentType,
+    required this.sizeBytes,
+    required this.sha256,
+    required this.canvasWidth,
+    required this.canvasHeight,
+    required this.imageUrl,
+    required this.uploadedAt,
+  });
+
+  final String uploadSessionId;
+  final String objectKey;
+  final String fileName;
+  final String contentType;
+  final int sizeBytes;
+  final String sha256;
+  final int canvasWidth;
+  final int canvasHeight;
+  final String? imageUrl;
+  final String uploadedAt;
+
+  factory ChallanTemplateScan.fromJson(Map<String, dynamic> json) {
+    return ChallanTemplateScan(
+      uploadSessionId: json['uploadSessionId'] as String? ?? '',
+      objectKey: json['objectKey'] as String? ?? '',
+      fileName: json['fileName'] as String? ?? '',
+      contentType: json['contentType'] as String? ?? '',
+      sizeBytes: json['sizeBytes'] as int? ?? 0,
+      sha256: json['sha256'] as String? ?? '',
+      canvasWidth: json['canvasWidth'] as int? ?? 0,
+      canvasHeight: json['canvasHeight'] as int? ?? 0,
+      imageUrl: json['imageUrl'] as String?,
+      uploadedAt: json['uploadedAt'] as String? ?? '',
     );
   }
 }

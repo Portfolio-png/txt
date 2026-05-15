@@ -180,6 +180,17 @@ class ChallanProvider extends ChangeNotifier {
     }
   }
 
+  Future<List<ChallanTemplateScan>> loadTemplateScans({int limit = 24}) async {
+    try {
+      return await _repository.getTemplateScans(limit: limit);
+    } catch (error) {
+      _logError(error);
+      _errorMessage = error.toString();
+      notifyListeners();
+      return const <ChallanTemplateScan>[];
+    }
+  }
+
   Future<ChallanTemplate?> saveTemplate({
     int? id,
     required ChallanTemplateInput input,

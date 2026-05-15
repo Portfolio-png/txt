@@ -50,6 +50,8 @@ abstract class ChallanRepository {
     bool activeOnly = false,
   });
 
+  Future<List<ChallanTemplateScan>> getTemplateScans({int limit = 24});
+
   Future<ChallanTemplate> createTemplate(ChallanTemplateInput input);
 
   Future<ChallanTemplate> updateTemplate(int id, ChallanTemplateInput input);

@@ -32,6 +32,8 @@ class ApiChallanRepository implements ChallanRepository {
   );
   static final List<DeliveryChallan> _mockChallans = <DeliveryChallan>[];
   static final List<ChallanTemplate> _mockTemplates = <ChallanTemplate>[];
+  static final List<ChallanTemplateScan> _mockTemplateScans =
+      <ChallanTemplateScan>[];
   static final Map<String, ChallanTemplateUploadIntentInput>
   _mockTemplateUploads = <String, ChallanTemplateUploadIntentInput>{};
   static int _mockNextId = 1;
@@ -381,6 +383,28 @@ class ApiChallanRepository implements ChallanRepository {
   }
 
   @override
+  Future<List<ChallanTemplateScan>> getTemplateScans({int limit = 24}) async {
+    if (useMockResponses) {
+      return _mockTemplateScans.take(limit).toList(growable: false);
+    }
+    final uri = Uri.parse('$baseUrl/api/challan-templates/scans').replace(
+      queryParameters: <String, String>{'limit': '$limit'},
+    );
+    final response = await _sendRequest(method: 'GET', uri: uri);
+    final payload = _decodeApiResponse(
+      method: 'GET',
+      uri: uri,
+      response: response,
+      fallback: 'Failed to fetch challan template scans.',
+    );
+    return _dataList(payload, 'scans')
+        .map(
+          (item) => ChallanTemplateScan.fromJson(item as Map<String, dynamic>),
+        )
+        .toList(growable: false);
+  }
+
+  @override
   Future<ChallanTemplate> createTemplate(ChallanTemplateInput input) async {
     if (useMockResponses) {
       final template = ChallanTemplate(
@@ -492,6 +516,9 @@ class ApiChallanRepository implements ChallanRepository {
         objectKey: 'mock/challan-templates/$sessionId-${input.fileName}',
         uploadUrl: Uri.parse('https://mock.local/$sessionId'),
         headers: const <String, String>{},
+        reused: false,
+        canvasWidth: 0,
+        canvasHeight: 0,
       );
     }
     final uri = Uri.parse('$baseUrl/api/challan-templates/upload-intent');
@@ -522,6 +549,20 @@ class ApiChallanRepository implements ChallanRepository {
   }) async {
     if (useMockResponses) {
       _mockTemplateUploads.remove(uploadSessionId);
+      final scan = ChallanTemplateScan(
+        uploadSessionId: uploadSessionId,
+        objectKey: objectKey,
+        fileName: objectKey.split('/').last,
+        contentType: 'image/png',
+        sizeBytes: 0,
+        sha256: '',
+        canvasWidth: 1240,
+        canvasHeight: 1754,
+        imageUrl: null,
+        uploadedAt: DateTime.now().toIso8601String(),
+      );
+      _mockTemplateScans.removeWhere((entry) => entry.objectKey == objectKey);
+      _mockTemplateScans.insert(0, scan);
       return ChallanTemplateBackground(
         objectKey: objectKey,
         canvasWidth: 1240,
@@ -562,6 +603,9 @@ class ApiChallanRepository implements ChallanRepository {
         objectKey: 'mock/challan-template-stamps/$sessionId-${input.fileName}',
         uploadUrl: Uri.parse('https://mock.local/$sessionId'),
         headers: const <String, String>{},
+        reused: false,
+        canvasWidth: 0,
+        canvasHeight: 0,
       );
     }
     final uri = Uri.parse('$baseUrl/api/challan-templates/stamp-upload-intent');

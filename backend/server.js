@@ -2436,7 +2436,10 @@ async function initDb() {
       content_type TEXT NOT NULL,
       size_bytes INTEGER NOT NULL DEFAULT 0,
       sha256 TEXT NOT NULL,
+      upload_type TEXT NOT NULL DEFAULT 'CHALLAN_TEMPLATE_BACKGROUND',
       object_key TEXT NOT NULL,
+      canvas_width INTEGER NOT NULL DEFAULT 0,
+      canvas_height INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'pending',
       expires_at TEXT NOT NULL,
       created_at TEXT NOT NULL,
@@ -2740,6 +2743,9 @@ async function initDb() {
   await ensureColumnExists('challan_templates', 'paper_size', "TEXT NOT NULL DEFAULT 'A4'");
   await ensureColumnExists('challan_templates', 'n_up_layout', 'INTEGER NOT NULL DEFAULT 1');
   await ensureColumnExists('challan_templates', 'is_active', 'INTEGER NOT NULL DEFAULT 1');
+  await ensureColumnExists('challan_template_upload_sessions', 'upload_type', "TEXT NOT NULL DEFAULT 'CHALLAN_TEMPLATE_BACKGROUND'");
+  await ensureColumnExists('challan_template_upload_sessions', 'canvas_width', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumnExists('challan_template_upload_sessions', 'canvas_height', 'INTEGER NOT NULL DEFAULT 0');
   await ensureColumnExists('challan_template_mappings', 'field_type', "TEXT NOT NULL DEFAULT 'DYNAMIC'");
   await ensureColumnExists('challan_template_mappings', 'field_value', "TEXT NOT NULL DEFAULT ''");
   await ensureColumnExists('challan_template_mappings', 'asset_object_key', "TEXT NOT NULL DEFAULT ''");
@@ -7365,6 +7371,28 @@ async function completePoUpload({ uploadSessionId, objectKey }) {
 
 async function createChallanTemplateUploadIntent(input) {
   const normalized = assertValidChallanTemplateUploadInput(input || {});
+  if (normalized.uploadType === 'CHALLAN_TEMPLATE_BACKGROUND') {
+    const reusable = await findReusableChallanTemplateUpload(normalized);
+    if (reusable) {
+      const scan = await rowToChallanTemplateScanDto(reusable);
+      if (scan.canvasWidth > 0 && scan.canvasHeight > 0) {
+        return {
+          uploadSessionId: '',
+          objectKey: scan.objectKey,
+          uploadUrl: '',
+          expiresAt: null,
+          headers: {},
+          reused: true,
+          canvasWidth: scan.canvasWidth,
+          canvasHeight: scan.canvasHeight,
+          fileName: scan.fileName,
+          contentType: scan.contentType,
+          sizeBytes: scan.sizeBytes,
+          sha256: scan.sha256,
+        };
+      }
+    }
+  }
   const objectKey = buildS3ObjectKey({
     uploadType: normalized.uploadType,
     fileName: normalized.fileName,
@@ -7378,9 +7406,9 @@ async function createChallanTemplateUploadIntent(input) {
   await run(
     `
     INSERT INTO challan_template_upload_sessions (
-      id, file_name, content_type, size_bytes, sha256, object_key, status, expires_at, created_at
+      id, file_name, content_type, size_bytes, sha256, upload_type, object_key, status, expires_at, created_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
     `,
     [
       uploadSessionId,
@@ -7388,6 +7416,7 @@ async function createChallanTemplateUploadIntent(input) {
       normalized.contentType,
       normalized.sizeBytes,
       normalized.sha256,
+      normalized.uploadType,
       objectKey,
       expiresAt,
       now.toISOString(),
@@ -7407,7 +7436,87 @@ async function createChallanTemplateUploadIntent(input) {
     headers: {
       'Content-Type': normalized.contentType,
     },
+    reused: false,
+    canvasWidth: 0,
+    canvasHeight: 0,
   };
+}
+
+async function findReusableChallanTemplateUpload(normalized) {
+  const prefix = getS3Prefix(normalized.uploadType);
+  return get(
+    `
+    SELECT *
+    FROM challan_template_upload_sessions
+    WHERE status = 'completed'
+      AND sha256 = ?
+      AND object_key LIKE ?
+    ORDER BY datetime(completed_at) DESC, id DESC
+    LIMIT 1
+    `,
+    [normalized.sha256, `${prefix}%`],
+  );
+}
+
+async function ensureChallanTemplateScanDimensions(row) {
+  const canvasWidth = Number(row.canvas_width || 0);
+  const canvasHeight = Number(row.canvas_height || 0);
+  if (canvasWidth > 0 && canvasHeight > 0) {
+    return { canvasWidth, canvasHeight };
+  }
+  try {
+    const buffer = await readS3ObjectBuffer(row.object_key);
+    const dimensions = imageSize(buffer);
+    const width = Number(dimensions.width || 0);
+    const height = Number(dimensions.height || 0);
+    if (width > 0 && height > 0) {
+      await run(
+        'UPDATE challan_template_upload_sessions SET canvas_width = ?, canvas_height = ? WHERE id = ?',
+        [width, height, row.id],
+      );
+      return { canvasWidth: width, canvasHeight: height };
+    }
+  } catch (_) {}
+  return { canvasWidth: 0, canvasHeight: 0 };
+}
+
+async function rowToChallanTemplateScanDto(row) {
+  const dimensions = await ensureChallanTemplateScanDimensions(row);
+  let imageUrl = null;
+  try {
+    imageUrl = (await assetReadUrlPayload(row.object_key)).readUrl;
+  } catch (_) {
+    imageUrl = null;
+  }
+  return {
+    uploadSessionId: row.id || '',
+    objectKey: row.object_key || '',
+    fileName: row.file_name || '',
+    contentType: row.content_type || '',
+    sizeBytes: Number(row.size_bytes || 0),
+    sha256: row.sha256 || '',
+    canvasWidth: dimensions.canvasWidth,
+    canvasHeight: dimensions.canvasHeight,
+    imageUrl,
+    uploadedAt: row.completed_at || row.created_at || null,
+  };
+}
+
+async function listChallanTemplateScans({ limit = 24 } = {}) {
+  const safeLimit = Math.max(1, Math.min(100, Math.round(Number(limit) || 24)));
+  const prefix = S3_UPLOAD_PREFIXES.CHALLAN_TEMPLATE_BACKGROUND;
+  const rows = await all(
+    `
+    SELECT *
+    FROM challan_template_upload_sessions
+    WHERE status = 'completed'
+      AND object_key LIKE ?
+    ORDER BY datetime(completed_at) DESC, id DESC
+    LIMIT ?
+    `,
+    [`${prefix}%`, safeLimit],
+  );
+  return Promise.all(rows.map((row) => rowToChallanTemplateScanDto(row)));
 }
 
 async function completeChallanTemplateUpload({ uploadSessionId, objectKey }) {
@@ -7435,8 +7544,8 @@ async function completeChallanTemplateUpload({ uploadSessionId, objectKey }) {
   }
   const now = new Date().toISOString();
   await run(
-    "UPDATE challan_template_upload_sessions SET status = 'completed', completed_at = ? WHERE id = ?",
-    [now, uploadSessionId],
+    "UPDATE challan_template_upload_sessions SET status = 'completed', completed_at = ?, canvas_width = ?, canvas_height = ? WHERE id = ?",
+    [now, Number(dimensions.width || 0), Number(dimensions.height || 0), uploadSessionId],
   );
   return {
     uploadSessionId,
@@ -13699,6 +13808,23 @@ app.get('/api/challan-templates', requirePermission('config.read'), async (req, 
     res.status(error.statusCode || 500).json({
       success: false,
       templates: [],
+      data: [],
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
+app.get('/api/challan-templates/scans', requirePermission('config.read'), async (req, res) => {
+  try {
+    const scans = await listChallanTemplateScans({
+      limit: req.query.limit,
+    });
+    res.json({ success: true, scans, data: scans, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      scans: [],
       data: [],
       message: error.message,
       error: error.message,
