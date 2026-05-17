@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show File, Platform;
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -2477,6 +2480,7 @@ class _PrintPreviewState extends State<_PrintPreview> {
   late final Future<List<ChallanTemplate>> _templatesFuture;
   ChallanTemplate? _activeTemplateOverride;
   bool _isNudgingTemplate = false;
+  bool _isPrintingTemplate = false;
 
   @override
   void initState() {
@@ -2484,12 +2488,21 @@ class _PrintPreviewState extends State<_PrintPreview> {
     _templatesFuture = _loadMatchingTemplates();
   }
 
-  Future<List<ChallanTemplate>> _loadMatchingTemplates() {
-    return context.read<DeliveryChallanProvider>().loadTemplates(
-      partyType: ChallanTemplatePartyType.generic,
-      challanType: widget.challan.type,
-      activeOnly: true,
-    );
+  Future<List<ChallanTemplate>> _loadMatchingTemplates() async {
+    final templates = await context
+        .read<DeliveryChallanProvider>()
+        .loadTemplates(
+          partyType: ChallanTemplatePartyType.generic,
+          activeOnly: true,
+        );
+    return [
+      ...templates.where(
+        (template) => template.challanType == widget.challan.type,
+      ),
+      ...templates.where(
+        (template) => template.challanType != widget.challan.type,
+      ),
+    ];
   }
 
   @override
@@ -2527,15 +2540,22 @@ class _PrintPreviewState extends State<_PrintPreview> {
                       label: 'Digital Preview',
                       icon: Icons.picture_as_pdf_outlined,
                       variant: AppButtonVariant.secondary,
-                      onPressed: () =>
-                          _openTemplatePdf(context, template, 'digital'),
+                      onPressed: _isPrintingTemplate
+                          ? null
+                          : () =>
+                                _printTemplatePdf(context, template, 'digital'),
                     ),
                     const SizedBox(width: 8),
                     AppButton(
                       label: 'Overprint',
                       icon: Icons.print_outlined,
-                      onPressed: () =>
-                          _openTemplatePdf(context, template, 'overprint'),
+                      onPressed: _isPrintingTemplate
+                          ? null
+                          : () => _printTemplatePdf(
+                              context,
+                              template,
+                              'overprint',
+                            ),
                     ),
                   ] else
                     AppButton(
@@ -2577,19 +2597,39 @@ class _PrintPreviewState extends State<_PrintPreview> {
     );
   }
 
-  Future<void> _openTemplatePdf(
+  Future<void> _printTemplatePdf(
     BuildContext context,
-    ChallanTemplate template,
+    ChallanTemplate? template,
     String mode,
   ) async {
+    if (_isPrintingTemplate) {
+      return;
+    }
     final provider = context.read<DeliveryChallanProvider>();
-    final uri = provider.repository.templatePreviewUri(
-      challanId: widget.challan.id,
-      templateId: template.id,
-      mode: mode,
-    );
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
-    await provider.recordPrint(widget.challan.id);
+    setState(() => _isPrintingTemplate = true);
+    try {
+      final bytes = await provider.repository.fetchTemplatePreviewPdf(
+        challanId: widget.challan.id,
+        templateId: template?.id,
+        mode: mode,
+      );
+      final fileName = _templatePrintFileName(widget.challan, mode);
+      final printed = await _showPdfPrintDialog(bytes, fileName);
+      if (printed) {
+        await provider.recordPrint(widget.challan.id);
+      }
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        this.context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _isPrintingTemplate = false);
+      }
+    }
   }
 
   Future<void> _nudgeTemplate(
@@ -2965,6 +3005,34 @@ Future<void> _launchPrintDialog(
   }
 
   await _launchPrintHtml(challan, profile);
+}
+
+String _templatePrintFileName(DeliveryChallan challan, String mode) {
+  final rawName = challan.challanNo.trim().isEmpty
+      ? 'challan-${challan.id}'
+      : challan.challanNo.trim();
+  final safeName = rawName.replaceAll(RegExp(r'[^a-zA-Z0-9_.-]'), '_');
+  return '$safeName-$mode.pdf';
+}
+
+Future<bool> _showPdfPrintDialog(Uint8List bytes, String fileName) async {
+  if (!kIsWeb && Platform.isMacOS) {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/$fileName');
+      await file.writeAsBytes(bytes, flush: true);
+      return await _nativePrintingChannel.invokeMethod<bool>('printPdfFile', {
+            'filePath': file.path,
+          }) ??
+          false;
+    } on MissingPluginException {
+      // Fall through to the cross-platform print plugin.
+    } on PlatformException {
+      // Fall through to the cross-platform print plugin.
+    }
+  }
+
+  return Printing.layoutPdf(name: fileName, onLayout: (_) async => bytes);
 }
 
 Future<bool?> _showWindowsPrintDialog(

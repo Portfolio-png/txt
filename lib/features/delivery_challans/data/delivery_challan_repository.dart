@@ -84,6 +84,12 @@ abstract class ChallanRepository {
     required String mode,
   });
 
+  Future<Uint8List> fetchTemplatePreviewPdf({
+    required int challanId,
+    int? templateId,
+    required String mode,
+  });
+
   Uri templateTestPrintUri({
     required int templateId,
     required String mode,

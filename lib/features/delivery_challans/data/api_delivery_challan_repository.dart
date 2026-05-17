@@ -679,6 +679,28 @@ class ApiChallanRepository implements ChallanRepository {
   }
 
   @override
+  Future<Uint8List> fetchTemplatePreviewPdf({
+    required int challanId,
+    int? templateId,
+    required String mode,
+  }) async {
+    final uri = templatePreviewUri(
+      challanId: challanId,
+      templateId: templateId,
+      mode: mode,
+    );
+    final response = await _sendRequest(method: 'GET', uri: uri);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw DeliveryChallanApiException(
+        'Failed to fetch challan print PDF (${response.statusCode}).',
+        debugMessage:
+            'PDF fetch failed for challan $challanId. Status: ${response.statusCode}. URI: $uri',
+      );
+    }
+    return response.bodyBytes;
+  }
+
+  @override
   Uri templateTestPrintUri({
     required int templateId,
     required String mode,

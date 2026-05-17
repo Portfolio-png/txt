@@ -2741,6 +2741,13 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
   }) => Uri.parse('https://mock.local/challans/$challanId/$mode');
 
   @override
+  Future<Uint8List> fetchTemplatePreviewPdf({
+    required int challanId,
+    int? templateId,
+    required String mode,
+  }) async => Uint8List.fromList(<int>[37, 80, 68, 70]);
+
+  @override
   Uri templateTestPrintUri({
     required int templateId,
     required String mode,
