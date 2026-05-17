@@ -5482,20 +5482,43 @@ function challanTemplateScalarFields(challanDto) {
     : totalWeight > 0
     ? `${totalWeight} weight`
     : '0';
+  const date = challanDto.date || '';
+  const partyName = isReception
+    ? challanDto.vendor_name || ''
+    : challanDto.customer_name || '';
+  const gstin = isReception
+    ? challanDto.vendor_gstin || ''
+    : challanDto.customer_gstin || '';
   return {
     challan_no: challanDto.challan_no || '',
-    date: challanDto.date || '',
-    party_name: isReception
-      ? challanDto.vendor_name || ''
-      : challanDto.customer_name || '',
-    gstin: isReception
-      ? challanDto.vendor_gstin || ''
-      : challanDto.customer_gstin || '',
+    challanNo: challanDto.challan_no || '',
+    date,
+    challan_date: date,
+    challanDate: date,
+    party_name: partyName,
+    partyName,
+    client_name: partyName,
+    clientName: partyName,
+    customer_name: challanDto.customer_name || partyName,
+    customerName: challanDto.customer_name || partyName,
+    vendor_name: challanDto.vendor_name || partyName,
+    vendorName: challanDto.vendor_name || partyName,
+    gstin,
+    gst_number: gstin,
+    gstNumber: gstin,
+    customer_gstin: challanDto.customer_gstin || gstin,
+    customerGstin: challanDto.customer_gstin || gstin,
+    vendor_gstin: challanDto.vendor_gstin || gstin,
+    vendorGstin: challanDto.vendor_gstin || gstin,
     location: challanDto.location || '',
     source_ref: isReception
       ? challanDto.source_reference || ''
       : (challanDto.order_nos || []).join(', ') || challanDto.order_no || '',
+    sourceRef: isReception
+      ? challanDto.source_reference || ''
+      : (challanDto.order_nos || []).join(', ') || challanDto.order_no || '',
     total_qty: totalQty,
+    totalQty,
     notes: challanDto.notes || '',
   };
 }

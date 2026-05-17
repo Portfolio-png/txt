@@ -2515,11 +2515,12 @@ class _PrintPreviewState extends State<_PrintPreview> {
     return FutureBuilder<List<ChallanTemplate>>(
       future: _templatesFuture,
       builder: (context, snapshot) {
-        final loadedTemplate =
-            (snapshot.data ?? const <ChallanTemplate>[]).isEmpty
-            ? null
-            : (snapshot.data ?? const <ChallanTemplate>[]).first;
+        final templates = snapshot.data ?? const <ChallanTemplate>[];
+        final loadedTemplate = templates.isEmpty ? null : templates.first;
         final template = _activeTemplateOverride ?? loadedTemplate;
+        final missingFields = template == null
+            ? const <String>[]
+            : _missingPrintFields(template);
         return Column(
           children: [
             Padding(
@@ -2574,6 +2575,24 @@ class _PrintPreviewState extends State<_PrintPreview> {
               ),
             ),
             if (template != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
+                child: _SelectedTemplateStrip(
+                  templates: templates,
+                  selectedTemplate: template,
+                  missingFields: missingFields,
+                  onChanged: (templateId) {
+                    final selected = templates
+                        .where((entry) => entry.id == templateId)
+                        .firstOrNull;
+                    if (selected == null) {
+                      return;
+                    }
+                    setState(() => _activeTemplateOverride = selected);
+                  },
+                ),
+              ),
+            if (template != null)
               _TemplateNudgeBar(
                 template: template,
                 isSaving: _isNudgingTemplate,
@@ -2595,6 +2614,42 @@ class _PrintPreviewState extends State<_PrintPreview> {
         );
       },
     );
+  }
+
+  List<String> _missingPrintFields(ChallanTemplate template) {
+    final fieldKeys = template.mappings
+        .map((mapping) => mapping.fieldKey.trim())
+        .where((fieldKey) => fieldKey.isNotEmpty)
+        .toSet();
+    final missing = <String>[];
+    bool hasAny(Set<String> aliases) => aliases.any(fieldKeys.contains);
+    if (!hasAny({'date', 'challan_date', 'challanDate'})) {
+      missing.add('Date');
+    }
+    if (!hasAny({
+      'party_name',
+      'partyName',
+      'client_name',
+      'clientName',
+      'customer_name',
+      'customerName',
+      'vendor_name',
+      'vendorName',
+    })) {
+      missing.add('Party Name');
+    }
+    if (!hasAny({
+      'gstin',
+      'gst_number',
+      'gstNumber',
+      'customer_gstin',
+      'customerGstin',
+      'vendor_gstin',
+      'vendorGstin',
+    })) {
+      missing.add('GSTIN');
+    }
+    return missing;
   }
 
   Future<void> _printTemplatePdf(
@@ -2739,6 +2794,110 @@ class _TemplateNudgeBar extends StatelessWidget {
             isSaving: isSaving,
             onPressed: () => onNudge(template, 0, 0.5),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SelectedTemplateStrip extends StatelessWidget {
+  const _SelectedTemplateStrip({
+    required this.templates,
+    required this.selectedTemplate,
+    required this.missingFields,
+    required this.onChanged,
+  });
+
+  final List<ChallanTemplate> templates;
+  final ChallanTemplate selectedTemplate;
+  final List<String> missingFields;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: SoftErpTheme.cardSurfaceAlt,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.description_outlined,
+                size: 18,
+                color: SoftErpTheme.accent,
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Selected Template',
+                style: TextStyle(
+                  color: SoftErpTheme.textPrimary,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const Spacer(),
+              SoftPill(
+                label:
+                    '${selectedTemplate.stockSize} on ${selectedTemplate.paperSize} • ${selectedTemplate.nUpLayout}-up',
+                background: Colors.white,
+                foreground: SoftErpTheme.textSecondary,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          DropdownButtonFormField<int>(
+            initialValue: selectedTemplate.id,
+            isExpanded: true,
+            decoration: InputDecoration(
+              labelText: 'Template',
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: SoftErpTheme.border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: SoftErpTheme.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: SoftErpTheme.accent),
+              ),
+            ),
+            items: templates
+                .map(
+                  (template) => DropdownMenuItem<int>(
+                    value: template.id,
+                    child: Text(
+                      '${template.name} (${template.challanType.name})',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                )
+                .toList(growable: false),
+            onChanged: (value) {
+              if (value != null) {
+                onChanged(value);
+              }
+            },
+          ),
+          if (missingFields.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Missing mapped fields: ${missingFields.join(', ')}. These will not appear in digital preview or overprint until added to this template.',
+              style: const TextStyle(
+                color: Color(0xFF9A3412),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
         ],
       ),
     );
