@@ -843,10 +843,14 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
   }
 
   Widget _buildRightPanel({bool scrollable = true}) {
-    final selected = _mappingForField(_selectedMappingFieldKey);
     final selectedBlock = _requireBlock(_selectedBlockOwnerFieldKey);
     final selectedBlockPlaced =
         _mappingForField(selectedBlock.ownerFieldKey) != null;
+    final selected =
+        _mappingForField(_selectedMappingFieldKey) ??
+        (selectedBlockPlaced
+            ? _mappingForField(selectedBlock.ownerFieldKey)
+            : null);
     return SoftSurface(
       padding: const EdgeInsets.all(16),
       child: _buildPanelBody(
@@ -884,6 +888,10 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
               }
               setState(() {
                 _selectedBlockOwnerFieldKey = value;
+                if (_mappingForField(value) != null) {
+                  _selectedMappingFieldKey = value;
+                  _selectedMappingFieldKeys = <String>{value};
+                }
               });
             },
           ),
@@ -1169,32 +1177,19 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Column Rails',
+                'Column Controls',
                 style: TextStyle(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 4),
               const Text(
-                'Drag the column labels inside the table block to align printed column starts.',
+                'Use these controls to align printed column starts; the canvas updates instantly.',
                 style: TextStyle(
                   color: SoftErpTheme.textSecondary,
                   fontSize: 12,
                 ),
               ),
               const SizedBox(height: 10),
-              ..._tableRailConfigsForOwner(mapping).map(
-                (rail) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _DecimalInputField(
-                    label: '${_tableRailLabel(rail.fieldKey)} X',
-                    value: rail.xMm,
-                    min: 0,
-                    max: mapping.widthMm,
-                    suffix: 'mm',
-                    onSubmitted: (value) =>
-                        _setTableRailX(mapping, rail.fieldKey, value),
-                  ),
-                ),
-              ),
+              _buildTableColumnControls(mapping),
               const SizedBox(height: 8),
               _DecimalInputField(
                 label: 'Table Height',
@@ -1351,6 +1346,44 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
             });
           },
         ),
+      ],
+    );
+  }
+
+  Widget _buildTableColumnControls(ChallanTemplateMapping mapping) {
+    final rails = _activeAdjustableTableRails(mapping);
+    if (rails.isEmpty) {
+      return const Text(
+        'Enable HSN, Qty, or Weight to adjust their table columns.',
+        style: TextStyle(color: SoftErpTheme.textSecondary, fontSize: 12),
+      );
+    }
+    return Column(
+      children: [
+        for (var index = 0; index < rails.length; index++)
+          Padding(
+            padding: EdgeInsets.only(
+              bottom: index == rails.length - 1 ? 0 : 10,
+            ),
+            child: _TableColumnControlCard(
+              fieldKey: rails[index].fieldKey,
+              label: _tableRailLabel(rails[index].fieldKey),
+              xMm: rails[index].xMm,
+              maxXMm: mapping.widthMm,
+              canMoveLeft: index > 0,
+              canMoveRight: index < rails.length - 1,
+              onNudgeLeft: () =>
+                  _shiftTableRail(mapping, rails[index].fieldKey, -1),
+              onNudgeRight: () =>
+                  _shiftTableRail(mapping, rails[index].fieldKey, 1),
+              onSetX: (value) =>
+                  _setTableRailX(mapping, rails[index].fieldKey, value),
+              onMoveLeft: () =>
+                  _moveTableColumnOrder(mapping, rails[index].fieldKey, -1),
+              onMoveRight: () =>
+                  _moveTableColumnOrder(mapping, rails[index].fieldKey, 1),
+            ),
+          ),
       ],
     );
   }
@@ -2173,12 +2206,9 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
         .where((rail) => rail.fieldKey == _tableOwnerKey)
         .firstOrNull;
     addRail(_tableOwnerKey, itemRail?.xMm ?? 0);
-    for (final fieldKey in _tableColumnKeys) {
-      final rail = rails
-          .where((entry) => entry.fieldKey == fieldKey)
-          .firstOrNull;
-      if (rail != null) {
-        addRail(fieldKey, rail.xMm);
+    for (final rail in rails) {
+      if (_tableColumnKeys.contains(rail.fieldKey)) {
+        addRail(rail.fieldKey, rail.xMm);
       }
     }
     return normalized;
@@ -2194,8 +2224,9 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       return requestedX.clamp(0.0, tableWidthMm).toDouble();
     }
     const minGapMm = 6.0;
-    final activeOrder = _tablePrintableFieldOrder
-        .where((key) => rails.any((rail) => rail.fieldKey == key))
+    final activeOrder = rails
+        .map((rail) => rail.fieldKey)
+        .where((key) => _tablePrintableFieldOrder.contains(key))
         .toList(growable: false);
     final index = activeOrder.indexOf(fieldKey);
     if (index == -1) {
@@ -2309,6 +2340,14 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     );
   }
 
+  void _shiftTableRail(
+    ChallanTemplateMapping owner,
+    String fieldKey,
+    double deltaMm,
+  ) {
+    _moveTableRailByDelta(owner, fieldKey, deltaMm);
+  }
+
   void _setTableRailX(
     ChallanTemplateMapping owner,
     String fieldKey,
@@ -2329,6 +2368,80 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     _updateMapping(
       owner.fieldKey,
       owner.copyWith(fieldValue: _tableFieldValueForRails(rails)),
+    );
+  }
+
+  List<_TableRailConfig> _activeAdjustableTableRails(
+    ChallanTemplateMapping owner,
+  ) {
+    return _tableRailConfigsForOwner(owner)
+        .where(
+          (rail) =>
+              rail.fieldKey == 'hsn' ||
+              rail.fieldKey == 'qty_pcs' ||
+              rail.fieldKey == 'weight',
+        )
+        .toList(growable: false);
+  }
+
+  void _moveTableColumnOrder(
+    ChallanTemplateMapping owner,
+    String fieldKey,
+    int direction,
+  ) {
+    final rails = _tableRailConfigsForOwner(owner);
+    final adjustable = rails
+        .where(
+          (rail) =>
+              rail.fieldKey == 'hsn' ||
+              rail.fieldKey == 'qty_pcs' ||
+              rail.fieldKey == 'weight',
+        )
+        .toList(growable: true);
+    final index = adjustable.indexWhere((rail) => rail.fieldKey == fieldKey);
+    final targetIndex = index + direction;
+    if (index == -1 || targetIndex < 0 || targetIndex >= adjustable.length) {
+      return;
+    }
+
+    final current = adjustable[index];
+    final target = adjustable[targetIndex];
+    adjustable[index] = _TableRailConfig(
+      fieldKey: target.fieldKey,
+      xMm: current.xMm,
+    );
+    adjustable[targetIndex] = _TableRailConfig(
+      fieldKey: current.fieldKey,
+      xMm: target.xMm,
+    );
+
+    final byFieldKey = {for (final rail in adjustable) rail.fieldKey: rail};
+    final nextRails = <_TableRailConfig>[];
+    final itemRail = rails
+        .where((rail) => rail.fieldKey == _tableOwnerKey)
+        .firstOrNull;
+    nextRails.add(
+      itemRail ?? const _TableRailConfig(fieldKey: _tableOwnerKey, xMm: 0),
+    );
+    for (final rail in adjustable) {
+      nextRails.add(rail);
+    }
+    final noteRail = rails.where((rail) => rail.fieldKey == 'note').firstOrNull;
+    if (noteRail != null) {
+      nextRails.add(noteRail);
+    }
+    for (final rail in rails) {
+      if (rail.fieldKey == _tableOwnerKey ||
+          rail.fieldKey == 'note' ||
+          byFieldKey.containsKey(rail.fieldKey)) {
+        continue;
+      }
+      nextRails.add(rail);
+    }
+
+    _updateMapping(
+      owner.fieldKey,
+      owner.copyWith(fieldValue: _tableFieldValueForRails(nextRails)),
     );
   }
 
@@ -2468,7 +2581,9 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       fieldType: block.isTable ? 'TABLE' : 'DYNAMIC',
       fieldKey: block.ownerFieldKey,
       fieldValue: block.isTable
-          ? _tableFieldValueForColumns(enabledCompanionFieldKeys)
+          ? _tableFieldValueForRails(
+              _tableRailConfigsForOwner(owner, source: source),
+            )
           : owner.fieldValue,
       maxWidthMm: block.isTable ? owner.widthMm : owner.widthMm,
       tableHeightMm: block.isTable ? owner.heightMm : owner.tableHeightMm,
@@ -2959,7 +3074,7 @@ class _TableColumnRailOverlay extends StatelessWidget {
           .clamp(0.0, boxWidth)
           .toDouble();
       final railCenter = tableRect.left + startPx;
-      const hitboxWidth = 72.0;
+      const hitboxWidth = 80.0;
       final left = (railCenter - hitboxWidth / 2)
           .clamp(tableRect.left, tableRect.right - hitboxWidth)
           .toDouble();
@@ -2983,65 +3098,251 @@ class _TableColumnRailOverlay extends StatelessWidget {
           height: boxHeight,
           child: MouseRegion(
             cursor: SystemMouseCursors.resizeColumn,
-            child: Listener(
+            child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onPointerDown: (_) => onSelect(rail.fieldKey),
-              onPointerMove: (event) {
-                if (event.buttons == 0) {
-                  return;
-                }
-                if (pixelsPerMm <= 0) {
-                  return;
-                }
-                onDrag(rail.fieldKey, event.delta.dx / pixelsPerMm);
-              },
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned(
-                    left: railLocalX - 1,
-                    top: 28,
-                    bottom: 0,
-                    child: Container(
-                      width: 2,
-                      decoration: BoxDecoration(
-                        color: SoftErpTheme.accent.withValues(alpha: 0.9),
-                        borderRadius: BorderRadius.circular(999),
+              onTap: () => onSelect(rail.fieldKey),
+              onHorizontalDragStart: (_) => onSelect(rail.fieldKey),
+              child: Listener(
+                behavior: HitTestBehavior.opaque,
+                onPointerDown: (_) => onSelect(rail.fieldKey),
+                onPointerMove: (event) {
+                  if (pixelsPerMm <= 0) {
+                    return;
+                  }
+                  onDrag(rail.fieldKey, event.delta.dx / pixelsPerMm);
+                },
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Positioned(
+                      left: railLocalX - 1,
+                      top: 28,
+                      bottom: 0,
+                      child: Container(
+                        width: 2,
+                        decoration: BoxDecoration(
+                          color: SoftErpTheme.accent.withValues(alpha: 0.9),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
                       ),
                     ),
-                  ),
-                  Positioned(
-                    top: 4,
-                    left: 0,
-                    right: 0,
-                    child: _TableRailChip(
-                      label: baseLabel,
-                      widthLabel: widthLabel,
-                      onNudgeLeft: () => onNudge(rail.fieldKey, -1),
-                      onNudgeRight: () => onNudge(rail.fieldKey, 1),
-                    ),
-                  ),
-                  Positioned(
-                    left: (railLocalX - 6).clamp(0.0, hitboxWidth - 12),
-                    top: 23,
-                    child: Container(
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: SoftErpTheme.accent,
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: Colors.white, width: 1.2),
+                    Positioned(
+                      top: 4,
+                      left: 0,
+                      right: 0,
+                      child: _TableRailChip(
+                        label: baseLabel,
+                        widthLabel: widthLabel,
+                        onNudgeLeft: () {
+                          onSelect(rail.fieldKey);
+                          onNudge(rail.fieldKey, -1);
+                        },
+                        onNudgeRight: () {
+                          onSelect(rail.fieldKey);
+                          onNudge(rail.fieldKey, 1);
+                        },
                       ),
                     ),
-                  ),
-                ],
+                    Positioned(
+                      left: (railLocalX - 6).clamp(0.0, hitboxWidth - 12),
+                      top: 23,
+                      child: Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: SoftErpTheme.accent,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: Colors.white, width: 1.2),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
         ),
       );
     }
-    return Stack(clipBehavior: Clip.none, children: children);
+    return Positioned.fill(
+      child: Stack(clipBehavior: Clip.none, children: children),
+    );
+  }
+}
+
+class _TableColumnControlCard extends StatelessWidget {
+  const _TableColumnControlCard({
+    required this.fieldKey,
+    required this.label,
+    required this.xMm,
+    required this.maxXMm,
+    required this.canMoveLeft,
+    required this.canMoveRight,
+    required this.onNudgeLeft,
+    required this.onNudgeRight,
+    required this.onSetX,
+    required this.onMoveLeft,
+    required this.onMoveRight,
+  });
+
+  final String fieldKey;
+  final String label;
+  final double xMm;
+  final double maxXMm;
+  final bool canMoveLeft;
+  final bool canMoveRight;
+  final VoidCallback onNudgeLeft;
+  final VoidCallback onNudgeRight;
+  final ValueChanged<double> onSetX;
+  final VoidCallback onMoveLeft;
+  final VoidCallback onMoveRight;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: SoftErpTheme.cardSurfaceAlt,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              SoftPill(
+                label: label,
+                background: SoftErpTheme.accent.withValues(alpha: 0.12),
+                foreground: SoftErpTheme.accent,
+              ),
+              const Spacer(),
+              _ColumnControlButton(
+                key: ValueKey<String>('table-column-$fieldKey-nudge-left'),
+                icon: Icons.chevron_left_rounded,
+                tooltip: 'Move $label left by 1 mm',
+                onPressed: onNudgeLeft,
+              ),
+              const SizedBox(width: 6),
+              _ColumnControlButton(
+                key: ValueKey<String>('table-column-$fieldKey-nudge-right'),
+                icon: Icons.chevron_right_rounded,
+                tooltip: 'Move $label right by 1 mm',
+                onPressed: onNudgeRight,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _DecimalInputField(
+            key: ValueKey<String>('table-column-$fieldKey-x-input'),
+            label: '$label X',
+            value: xMm,
+            min: 0,
+            max: maxXMm,
+            suffix: 'mm',
+            onSubmitted: onSetX,
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _ColumnOrderButton(
+                  key: ValueKey<String>('table-column-$fieldKey-order-left'),
+                  label: 'Move Left',
+                  icon: Icons.keyboard_arrow_left_rounded,
+                  enabled: canMoveLeft,
+                  onPressed: onMoveLeft,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _ColumnOrderButton(
+                  key: ValueKey<String>('table-column-$fieldKey-order-right'),
+                  label: 'Move Right',
+                  icon: Icons.keyboard_arrow_right_rounded,
+                  enabled: canMoveRight,
+                  onPressed: onMoveRight,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ColumnControlButton extends StatelessWidget {
+  const _ColumnControlButton({
+    super.key,
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: SizedBox(
+        width: 34,
+        height: 34,
+        child: IconButton(
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+          style: IconButton.styleFrom(
+            backgroundColor: Colors.white,
+            foregroundColor: SoftErpTheme.accent,
+            side: const BorderSide(color: SoftErpTheme.border),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          icon: Icon(icon, size: 20),
+          onPressed: onPressed,
+        ),
+      ),
+    );
+  }
+}
+
+class _ColumnOrderButton extends StatelessWidget {
+  const _ColumnOrderButton({
+    super.key,
+    required this.label,
+    required this.icon,
+    required this.enabled,
+    required this.onPressed,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      icon: Icon(icon, size: 16),
+      label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+        foregroundColor: enabled
+            ? SoftErpTheme.textPrimary
+            : SoftErpTheme.textSecondary.withValues(alpha: 0.55),
+        side: BorderSide(
+          color: enabled
+              ? SoftErpTheme.border
+              : SoftErpTheme.border.withValues(alpha: 0.55),
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      onPressed: enabled ? onPressed : null,
+    );
   }
 }
 
@@ -3570,6 +3871,7 @@ InputDecoration _editorInputDecoration({
 
 class _DecimalInputField extends StatefulWidget {
   const _DecimalInputField({
+    super.key,
     required this.label,
     required this.value,
     required this.min,

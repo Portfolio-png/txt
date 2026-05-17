@@ -3463,6 +3463,34 @@ void main() {
       expect(find.text('Placed'), findsOneWidget);
       expect(find.text('Advanced Freedom'), findsOneWidget);
       expect(find.text('Table Block'), findsWidgets);
+
+      await tester.tap(find.text('Field'), warnIfMissed: false);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Table Block').last);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Column Controls'), findsOneWidget);
+      expect(find.text('HSN X'), findsOneWidget);
+      expect(find.text('Qty X'), findsOneWidget);
+      expect(find.text('Weight X'), findsOneWidget);
+
+      final hsnNudgeLeft = find.byKey(
+        const ValueKey<String>('table-column-hsn-nudge-left'),
+      );
+      await tester.ensureVisible(hsnNudgeLeft);
+      await tester.pumpAndSettle();
+      await tester.tap(hsnNudgeLeft);
+      await tester.pumpAndSettle();
+
+      expect(find.text('71'), findsOneWidget);
+      final hsnOrderRight = find.byKey(
+        const ValueKey<String>('table-column-hsn-order-right'),
+      );
+      await tester.ensureVisible(hsnOrderRight);
+      await tester.pumpAndSettle();
+      await tester.tap(hsnOrderRight);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
     },
   );
 
