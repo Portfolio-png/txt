@@ -2518,9 +2518,9 @@ class _PrintPreviewState extends State<_PrintPreview> {
         final templates = snapshot.data ?? const <ChallanTemplate>[];
         final loadedTemplate = templates.isEmpty ? null : templates.first;
         final template = _activeTemplateOverride ?? loadedTemplate;
-        final missingFields = template == null
+        final defaultedPrintPositions = template == null
             ? const <String>[]
-            : _missingPrintFields(template);
+            : _missingTemplatePrintPositions(template);
         return Column(
           children: [
             Padding(
@@ -2580,7 +2580,7 @@ class _PrintPreviewState extends State<_PrintPreview> {
                 child: _SelectedTemplateStrip(
                   templates: templates,
                   selectedTemplate: template,
-                  missingFields: missingFields,
+                  defaultedPrintPositions: defaultedPrintPositions,
                   onChanged: (templateId) {
                     final selected = templates
                         .where((entry) => entry.id == templateId)
@@ -2616,7 +2616,7 @@ class _PrintPreviewState extends State<_PrintPreview> {
     );
   }
 
-  List<String> _missingPrintFields(ChallanTemplate template) {
+  List<String> _missingTemplatePrintPositions(ChallanTemplate template) {
     final fieldKeys = template.mappings
         .map((mapping) => mapping.fieldKey.trim())
         .where((fieldKey) => fieldKey.isNotEmpty)
@@ -2804,13 +2804,13 @@ class _SelectedTemplateStrip extends StatelessWidget {
   const _SelectedTemplateStrip({
     required this.templates,
     required this.selectedTemplate,
-    required this.missingFields,
+    required this.defaultedPrintPositions,
     required this.onChanged,
   });
 
   final List<ChallanTemplate> templates;
   final ChallanTemplate selectedTemplate;
-  final List<String> missingFields;
+  final List<String> defaultedPrintPositions;
   final ValueChanged<int> onChanged;
 
   @override
@@ -2848,6 +2848,11 @@ class _SelectedTemplateStrip extends StatelessWidget {
                 foreground: SoftErpTheme.textSecondary,
               ),
             ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Party, GSTIN, and date values come from the saved challan. The template only controls where those values print on paper.',
+            style: TextStyle(color: SoftErpTheme.textSecondary, fontSize: 12),
           ),
           const SizedBox(height: 10),
           DropdownButtonFormField<int>(
@@ -2887,10 +2892,10 @@ class _SelectedTemplateStrip extends StatelessWidget {
               }
             },
           ),
-          if (missingFields.isNotEmpty) ...[
+          if (defaultedPrintPositions.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
-              'Missing mapped fields: ${missingFields.join(', ')}. These will not appear in digital preview or overprint until added to this template.',
+              'Using default print position for: ${defaultedPrintPositions.join(', ')}. The challan data exists; add/move these blocks in the template editor for exact alignment.',
               style: const TextStyle(
                 color: Color(0xFF9A3412),
                 fontSize: 12,

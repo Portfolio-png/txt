@@ -5826,6 +5826,76 @@ function templateTablePrintNotes(tableFrame) {
   }
 }
 
+function ensureCoreChallanFieldMappings(mappings = []) {
+  const aliasesByCanonicalField = {
+    date: new Set(['date', 'challan_date', 'challanDate']),
+    party_name: new Set([
+      'party_name',
+      'partyName',
+      'client_name',
+      'clientName',
+      'customer_name',
+      'customerName',
+      'vendor_name',
+      'vendorName',
+    ]),
+    gstin: new Set([
+      'gstin',
+      'gst_number',
+      'gstNumber',
+      'customer_gstin',
+      'customerGstin',
+      'vendor_gstin',
+      'vendorGstin',
+    ]),
+  };
+  const existingKeys = new Set(
+    mappings.map((mapping) =>
+      String(templateValue(mapping, 'fieldKey', 'field_key', '') || '').trim(),
+    ),
+  );
+  const hasAny = (aliases) => [...aliases].some((alias) => existingKeys.has(alias));
+  const fallbackMappings = [
+    {
+      fieldType: 'DYNAMIC',
+      fieldKey: 'date',
+      xPercent: 0.62,
+      yPercent: 0.08,
+      widthMm: 46,
+      heightMm: 12,
+      fontSize: 10,
+      fontWeight: 'normal',
+      alignment: 'left',
+      textColor: 'black',
+    },
+    {
+      fieldType: 'DYNAMIC',
+      fieldKey: 'party_name',
+      xPercent: 0.08,
+      yPercent: 0.18,
+      widthMm: 150,
+      heightMm: 14,
+      fontSize: 10,
+      fontWeight: 'normal',
+      alignment: 'left',
+      textColor: 'black',
+    },
+    {
+      fieldType: 'DYNAMIC',
+      fieldKey: 'gstin',
+      xPercent: 0.08,
+      yPercent: 0.25,
+      widthMm: 150,
+      heightMm: 12,
+      fontSize: 10,
+      fontWeight: 'normal',
+      alignment: 'left',
+      textColor: 'black',
+    },
+  ].filter((mapping) => !hasAny(aliasesByCanonicalField[mapping.fieldKey]));
+  return [...mappings, ...fallbackMappings];
+}
+
 function drawTableBlock({
   doc,
   mapping,
@@ -6024,7 +6094,7 @@ async function generateChallanTemplatePdf({
     : 'digital';
   const challanDto = challanDtoOverride || await rowToDeliveryChallanDto(challanRow);
   const templateSource = templateSnapshot || templateRow;
-  const mappings = templateSnapshot
+  const rawMappings = templateSnapshot
     ? (Array.isArray(templateSnapshot.mappings) ? templateSnapshot.mappings : [])
     : await all(
         `
@@ -6035,6 +6105,7 @@ async function generateChallanTemplatePdf({
         `,
         [templateRow.id],
       );
+  const mappings = ensureCoreChallanFieldMappings(rawMappings);
   const paperSize = templateValue(templateSource, 'paperSize', 'paper_size', 'A4');
   const stockSize = templateValue(
     templateSource,
