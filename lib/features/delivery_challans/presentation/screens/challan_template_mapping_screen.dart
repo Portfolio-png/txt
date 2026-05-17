@@ -776,6 +776,41 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
                           );
                         },
                       ),
+                    if (_selectedMappingFieldKeys.contains(_tableOwnerKey))
+                      Builder(
+                        builder: (context) {
+                          final tableMapping = _mappingForField(_tableOwnerKey);
+                          if (tableMapping == null) {
+                            return const SizedBox.shrink();
+                          }
+                          final rect = _mappingRect(
+                            tableMapping,
+                            constraints.maxWidth,
+                            constraints.maxHeight,
+                          );
+                          final rails = _tableRailConfigsForOwner(tableMapping);
+                          return _TableColumnRailOverlay(
+                            tableRect: rect,
+                            tableRails: rails,
+                            tableWidthMm: tableMapping.widthMm,
+                            columnWidthFor: (rail) =>
+                                _tableColumnWidthMm(tableMapping, rail),
+                            onSelect: _selectTableRail,
+                            onNudge: (fieldKey, deltaMm) =>
+                                _moveTableRailByDelta(
+                                  tableMapping,
+                                  fieldKey,
+                                  deltaMm,
+                                ),
+                            onDrag: (fieldKey, deltaMm) =>
+                                _moveTableRailByDelta(
+                                  tableMapping,
+                                  fieldKey,
+                                  deltaMm,
+                                ),
+                          );
+                        },
+                      ),
                   ],
                 ),
               );
@@ -784,6 +819,11 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
         ),
       ),
     );
+  }
+
+  void _selectTableRail(String fieldKey) {
+    _selectMapping(_tableOwnerKey);
+    HapticFeedback.selectionClick();
   }
 
   Widget _buildBackgroundImage() {
@@ -2206,6 +2246,23 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     };
   }
 
+  double _tableColumnWidthMm(
+    ChallanTemplateMapping owner,
+    _TableRailConfig rail,
+  ) {
+    final rails = _tableRailConfigsForOwner(
+      owner,
+    ).where((entry) => entry.fieldKey != 'note').toList(growable: false);
+    final index = rails.indexWhere((entry) => entry.fieldKey == rail.fieldKey);
+    if (index == -1) {
+      return 0;
+    }
+    final nextX = index < rails.length - 1
+        ? rails[index + 1].xMm
+        : owner.widthMm;
+    return math.max(0, nextX - rail.xMm);
+  }
+
   String _tableFieldValueForRails(List<_TableRailConfig> rails) {
     return jsonEncode(<String, dynamic>{
       'columns':
@@ -2745,23 +2802,6 @@ class _MappedCanvasElement extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scale = canvasWidth / 595.28;
-    final printableRails = tableRails
-        .where((rail) => rail.fieldKey != 'note')
-        .toList(growable: false);
-    double columnWidthFor(_TableRailConfig rail) {
-      final activeRails = rail.fieldKey == 'note' ? tableRails : printableRails;
-      final index = activeRails.indexWhere(
-        (entry) => entry.fieldKey == rail.fieldKey,
-      );
-      if (index == -1) {
-        return 0;
-      }
-      final nextX = index < activeRails.length - 1
-          ? activeRails[index + 1].xMm
-          : mapping.widthMm;
-      return math.max(0, nextX - rail.xMm);
-    }
-
     final textColor = switch (mapping.textColor.toLowerCase()) {
       'blue' => const Color(0xFF1D4ED8),
       'red' => const Color(0xFFB91C1C),
@@ -2860,15 +2900,6 @@ class _MappedCanvasElement extends StatelessWidget {
                   ),
                 ),
               ),
-            if (selected && tableRails.isNotEmpty)
-              _TableColumnRailOverlay(
-                tableRails: tableRails,
-                tableWidthMm: mapping.widthMm,
-                boxWidth: boxWidth,
-                boxHeight: boxHeight,
-                columnWidthFor: columnWidthFor,
-                onDrag: onRailDrag,
-              ),
             if (selected)
               ...const [
                 _ResizeHandle.centerRight,
@@ -2890,25 +2921,33 @@ class _MappedCanvasElement extends StatelessWidget {
 
 class _TableColumnRailOverlay extends StatelessWidget {
   const _TableColumnRailOverlay({
+    required this.tableRect,
     required this.tableRails,
     required this.tableWidthMm,
-    required this.boxWidth,
-    required this.boxHeight,
     required this.columnWidthFor,
+    required this.onSelect,
+    required this.onNudge,
     required this.onDrag,
   });
 
+  final Rect tableRect;
   final List<_TableRailConfig> tableRails;
   final double tableWidthMm;
-  final double boxWidth;
-  final double boxHeight;
   final double Function(_TableRailConfig rail) columnWidthFor;
+  final ValueChanged<String> onSelect;
+  final void Function(String fieldKey, double deltaMm) onNudge;
   final void Function(String fieldKey, double deltaMm) onDrag;
 
   @override
   Widget build(BuildContext context) {
+    final boxWidth = tableRect.width;
+    final boxHeight = tableRect.height;
+    final pixelsPerMm = tableWidthMm <= 0 ? 0.0 : boxWidth / tableWidthMm;
     final printableRails = tableRails
-        .where((rail) => rail.fieldKey != 'note')
+        .where(
+          (rail) =>
+              rail.fieldKey != 'note' && rail.fieldKey != 'item_particulars',
+        )
         .toList(growable: false);
     if (printableRails.isEmpty || tableWidthMm <= 0 || boxWidth <= 0) {
       return const SizedBox.shrink();
@@ -2919,14 +2958,12 @@ class _TableColumnRailOverlay extends StatelessWidget {
       final startPx = (rail.xMm / tableWidthMm * boxWidth)
           .clamp(0.0, boxWidth)
           .toDouble();
-      final nextX = index < printableRails.length - 1
-          ? printableRails[index + 1].xMm
-          : tableWidthMm;
-      final endPx = (nextX / tableWidthMm * boxWidth)
-          .clamp(startPx, boxWidth)
+      final railCenter = tableRect.left + startPx;
+      const hitboxWidth = 72.0;
+      final left = (railCenter - hitboxWidth / 2)
+          .clamp(tableRect.left, tableRect.right - hitboxWidth)
           .toDouble();
-      final visualWidth = math.max(34.0, endPx - startPx);
-      final left = math.min(startPx, math.max(0.0, boxWidth - visualWidth));
+      final railLocalX = (railCenter - left).clamp(0.0, hitboxWidth).toDouble();
       final columnWidthMm = columnWidthFor(rail);
       final baseLabel = switch (rail.fieldKey) {
         'item_particulars' => 'Name',
@@ -2941,75 +2978,55 @@ class _TableColumnRailOverlay extends StatelessWidget {
       children.add(
         Positioned(
           left: left,
-          top: 0,
-          width: visualWidth,
+          top: tableRect.top,
+          width: hitboxWidth,
           height: boxHeight,
           child: MouseRegion(
             cursor: SystemMouseCursors.resizeColumn,
-            child: GestureDetector(
+            child: Listener(
               behavior: HitTestBehavior.opaque,
-              onHorizontalDragUpdate: (details) {
-                onDrag(
-                  rail.fieldKey,
-                  details.delta.dx / boxWidth * tableWidthMm,
-                );
+              onPointerDown: (_) => onSelect(rail.fieldKey),
+              onPointerMove: (event) {
+                if (event.buttons == 0) {
+                  return;
+                }
+                if (pixelsPerMm <= 0) {
+                  return;
+                }
+                onDrag(rail.fieldKey, event.delta.dx / pixelsPerMm);
               },
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
                   Positioned(
-                    left: (startPx - left).clamp(0.0, visualWidth).toDouble(),
+                    left: railLocalX - 1,
                     top: 28,
                     bottom: 0,
                     child: Container(
                       width: 2,
                       decoration: BoxDecoration(
-                        color: SoftErpTheme.accent.withValues(alpha: 0.78),
+                        color: SoftErpTheme.accent.withValues(alpha: 0.9),
                         borderRadius: BorderRadius.circular(999),
                       ),
                     ),
                   ),
                   Positioned(
                     top: 4,
-                    left: 2,
-                    right: 2,
-                    child: Container(
-                      alignment: Alignment.center,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: SoftErpTheme.accent,
-                        borderRadius: BorderRadius.circular(999),
-                        boxShadow: [
-                          BoxShadow(
-                            color: SoftErpTheme.accent.withValues(alpha: 0.18),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Text(
-                        '$baseLabel  $widthLabel mm',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
+                    left: 0,
+                    right: 0,
+                    child: _TableRailChip(
+                      label: baseLabel,
+                      widthLabel: widthLabel,
+                      onNudgeLeft: () => onNudge(rail.fieldKey, -1),
+                      onNudgeRight: () => onNudge(rail.fieldKey, 1),
                     ),
                   ),
                   Positioned(
-                    left: (startPx - left - 5)
-                        .clamp(0.0, visualWidth - 10)
-                        .toDouble(),
-                    top: 24,
+                    left: (railLocalX - 6).clamp(0.0, hitboxWidth - 12),
+                    top: 23,
                     child: Container(
-                      width: 10,
-                      height: 10,
+                      width: 12,
+                      height: 12,
                       decoration: BoxDecoration(
                         color: SoftErpTheme.accent,
                         borderRadius: BorderRadius.circular(999),
@@ -3024,8 +3041,86 @@ class _TableColumnRailOverlay extends StatelessWidget {
         ),
       );
     }
-    return Positioned.fill(
-      child: Stack(clipBehavior: Clip.none, children: children),
+    return Stack(clipBehavior: Clip.none, children: children);
+  }
+}
+
+class _TableRailChip extends StatelessWidget {
+  const _TableRailChip({
+    required this.label,
+    required this.widthLabel,
+    required this.onNudgeLeft,
+    required this.onNudgeRight,
+  });
+
+  final String label;
+  final String widthLabel;
+  final VoidCallback onNudgeLeft;
+  final VoidCallback onNudgeRight;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: SoftErpTheme.accent,
+        borderRadius: BorderRadius.circular(999),
+        boxShadow: [
+          BoxShadow(
+            color: SoftErpTheme.accent.withValues(alpha: 0.18),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.max,
+        children: [
+          _TableRailNudgeButton(
+            icon: Icons.chevron_left_rounded,
+            onPressed: onNudgeLeft,
+          ),
+          Expanded(
+            child: Text(
+              '$label $widthLabel mm',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          _TableRailNudgeButton(
+            icon: Icons.chevron_right_rounded,
+            onPressed: onNudgeRight,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TableRailNudgeButton extends StatelessWidget {
+  const _TableRailNudgeButton({required this.icon, required this.onPressed});
+
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 22,
+      height: 24,
+      child: IconButton(
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(width: 22, height: 24),
+        visualDensity: VisualDensity.compact,
+        icon: Icon(icon, size: 16, color: Colors.white),
+        onPressed: onPressed,
+      ),
     );
   }
 }

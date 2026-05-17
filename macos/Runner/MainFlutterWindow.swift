@@ -15,7 +15,7 @@ class MainFlutterWindow: NSWindow {
       binaryMessenger: flutterViewController.engine.binaryMessenger
     )
     nativePrintingChannel.setMethodCallHandler { [weak self] call, result in
-      guard let self else {
+      guard self != nil else {
         result(FlutterError(code: "WINDOW_UNAVAILABLE", message: "Print window is unavailable.", details: nil))
         return
       }
@@ -38,10 +38,7 @@ class MainFlutterWindow: NSWindow {
         return
       }
 
-      let pdfView = PDFView(frame: NSRect(x: 0, y: 0, width: 595, height: 842))
-      pdfView.autoScales = true
-      pdfView.document = document
-      guard let operation = pdfView.printOperation(
+      guard let operation = document.printOperation(
         for: NSPrintInfo.shared,
         scalingMode: .pageScaleToFit,
         autoRotate: true
@@ -53,7 +50,7 @@ class MainFlutterWindow: NSWindow {
       operation.showsPrintPanel = true
       operation.showsProgressPanel = true
       DispatchQueue.main.async {
-        let accepted = operation.runModal(for: self, delegate: nil, didRun: nil, contextInfo: nil)
+        let accepted = operation.run()
         result(accepted)
       }
     }
