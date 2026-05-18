@@ -3291,7 +3291,7 @@ void main() {
       await tester.tap(find.text('Create Delivery').first);
       await tester.pumpAndSettle();
       expect(find.text('Create Delivery Challan'), findsOneWidget);
-      expect(find.text('Find Order...'), findsOneWidget);
+      expect(find.text('fetch order ↗︎'), findsOneWidget);
       expect(find.text('Vendor'), findsNothing);
     },
   );
@@ -3568,15 +3568,12 @@ void main() {
     await tester.tap(find.text('Create Delivery').first);
     await tester.pumpAndSettle();
 
-    await tester.enterText(
-      find.widgetWithText(TextField, 'Find Order...'),
-      'ORD-101',
-    );
-    await tester.pump(const Duration(milliseconds: 350));
+    await tester.tap(find.text('fetch order ↗︎'));
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.text('ORD-101 - Acme Packaging Pvt. Ltd. - 2026-05-12').last,
-    );
+    expect(find.text('Select Order Line'), findsOneWidget);
+    await tester.tap(find.byType(ExpansionTile).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Fetch').first);
     await tester.pumpAndSettle();
 
     await tester.ensureVisible(

@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show File, Platform;
 import 'dart:math' as math;
@@ -92,7 +91,7 @@ Future<void> _showChallanEditor(
 }) {
   return showErpFormDialog<void>(
     context,
-    maxWidth: 980,
+    maxWidth: 1440,
     maxHeight: 760,
     child: _ChallanEditor(
       challan: challan,
@@ -682,8 +681,6 @@ class _ChallanEditor extends StatefulWidget {
 
 class _ChallanEditorState extends State<_ChallanEditor> {
   late final TextEditingController _challanNumberController;
-  late final TextEditingController _orderSearchController;
-  late final FocusNode _orderSearchFocusNode;
   late final TextEditingController _dateController;
   late final TextEditingController _customerController;
   late final TextEditingController _gstinController;
@@ -695,8 +692,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
   late List<OrderEntry> _selectedOrders;
   int? _selectedVendorId;
   String? _validationError;
-  String _debouncedOrderQuery = '';
-  Timer? _orderSearchDebounce;
+  bool _isOrdersPanelOpen = false;
   List<CompletedProductionRun> _completedProductionRuns =
       const <CompletedProductionRun>[];
 
@@ -741,26 +737,6 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     _gstinController.text = _gstinForOrder(order);
   }
 
-  List<OrderEntry> _eligibleOrders() {
-    final clientId = _primarySelectedOrder?.clientId;
-    return context
-        .read<OrdersProvider>()
-        .orders
-        .where((order) {
-          if (order.status == OrderStatus.completed) {
-            return false;
-          }
-          if (_selectedOrders.any((selected) => selected.id == order.id)) {
-            return false;
-          }
-          if (clientId != null && order.clientId != clientId) {
-            return false;
-          }
-          return true;
-        })
-        .toList(growable: false);
-  }
-
   bool _isOrderEligible(OrderEntry order) {
     if (order.status == OrderStatus.completed) {
       return false;
@@ -773,18 +749,6 @@ class _ChallanEditorState extends State<_ChallanEditor> {
       return false;
     }
     return true;
-  }
-
-  void _handleOrderSearchChanged() {
-    _orderSearchDebounce?.cancel();
-    _orderSearchDebounce = Timer(const Duration(milliseconds: 300), () {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _debouncedOrderQuery = _orderSearchController.text.trim().toLowerCase();
-      });
-    });
   }
 
   void _resetDeliveryItemsForSelectedOrders() {
@@ -823,9 +787,6 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     _challanNumberController = TextEditingController(
       text: source?.challanNo ?? '',
     );
-    _orderSearchController = TextEditingController();
-    _orderSearchFocusNode = FocusNode();
-    _orderSearchController.addListener(_handleOrderSearchChanged);
     _dateController = TextEditingController(
       text: _date(source?.date ?? DateTime.now()),
     );
@@ -857,10 +818,6 @@ class _ChallanEditorState extends State<_ChallanEditor> {
   @override
   void dispose() {
     _challanNumberController.dispose();
-    _orderSearchController.removeListener(_handleOrderSearchChanged);
-    _orderSearchController.dispose();
-    _orderSearchDebounce?.cancel();
-    _orderSearchFocusNode.dispose();
     _dateController.dispose();
     _customerController.dispose();
     _gstinController.dispose();
@@ -882,6 +839,47 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     });
   }
 
+  Future<void> _toggleOrdersPanel() async {
+    setState(() {
+      _isOrdersPanelOpen = !_isOrdersPanelOpen;
+      _validationError = null;
+    });
+    if (_isOrdersPanelOpen) {
+      await context.read<OrdersProvider>().refresh();
+    }
+  }
+
+  void _onItemFetched(OrderEntry order, OrderEntry item) {
+    if (order.clientId != item.clientId) {
+      setState(() {
+        _validationError =
+            'The selected order line does not match the parent order client.';
+      });
+      return;
+    }
+    if (!_isOrderEligible(item)) {
+      setState(() {
+        _validationError =
+            'The selected order line is no longer eligible for this challan.';
+      });
+      return;
+    }
+    setState(() {
+      _selectedOrders = [..._selectedOrders, item];
+      final fetchedItem = _ItemDraft.fromOrderOption(
+        _OrderItemOption.fromOrder(item),
+      );
+      _items = [
+        for (final draft in _items)
+          if (!draft.isBlank) draft,
+        fetchedItem,
+      ];
+      _validationError = null;
+      _isOrdersPanelOpen = false;
+      _applySelectedOrderSnapshots();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<DeliveryChallanProvider>();
@@ -894,179 +892,428 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     final errorText = _validationError ?? provider.errorMessage;
     final challanNumberWarningText =
         provider.warningMessage ?? _manualChallanWarningText();
-    return ErpFormScaffold(
-      title: editorTitle,
-      subtitle: _isReception
-          ? 'Record inbound stock against a vendor-backed reception document before it reaches inventory.'
-          : 'Prepare the outbound document linked to an order before dispatch stock leaves the warehouse.',
-      errorBanner: errorText == null
-          ? null
-          : ErpFormMessageBanner(message: errorText, isError: true),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ErpDialogSectionCard(
-            title: 'Document Details',
-            subtitle:
-                'Choose the challan type, source document, date, and warehouse location first.',
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Expanded(child: _challanNumberField()),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _field('Date', _dateController, enabled: _canEdit),
+    final showOrdersPanel = _isOrdersPanelOpen && !_isReception;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.hasBoundedWidth
+            ? constraints.maxWidth
+            : MediaQuery.of(context).size.width - 48;
+        final maxHeight = constraints.hasBoundedHeight
+            ? constraints.maxHeight
+            : MediaQuery.of(context).size.height - 48;
+        final popupHeight = math.min(650.0, maxHeight);
+        final roomForPanel = maxWidth - 560.0 - 20.0;
+        final panelWidth = showOrdersPanel && roomForPanel > 0
+            ? math.min(460.0, roomForPanel)
+            : 0.0;
+        final gutterWidth = panelWidth > 0 ? 20.0 : 0.0;
+        final availableFormWidth = math.max(
+          0.0,
+          maxWidth - panelWidth - gutterWidth,
+        );
+        final formWidth = math.min(800.0, availableFormWidth);
+        final totalWidth = formWidth + gutterWidth + panelWidth;
+
+        return Center(
+          child: Material(
+            color: Colors.transparent,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 350),
+              curve: Curves.easeOutCubic,
+              width: totalWidth,
+              height: popupHeight,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Container(
+                      height: popupHeight,
+                      clipBehavior: Clip.antiAlias,
+                      decoration: _floatingWindowDecoration(context),
+                      child: _buildChallanFormWindow(
+                        context: context,
+                        provider: provider,
+                        title: editorTitle,
+                        subtitle: _isReception
+                            ? 'Record inbound stock against a vendor-backed reception document before it reaches inventory.'
+                            : 'Prepare the outbound document linked to an order before dispatch stock leaves the warehouse.',
+                        errorText: errorText,
+                        challanNumberWarningText: challanNumberWarningText,
+                        issueLabel: issueLabel,
+                      ),
                     ),
-                  ],
-                ),
-                if (challanNumberWarningText != null) ...[
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      challanNumberWarningText,
-                      style: const TextStyle(
-                        color: SoftErpTheme.textSecondary,
-                        fontSize: 12,
+                  ),
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 350),
+                    curve: Curves.easeOutCubic,
+                    width: gutterWidth,
+                  ),
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 350),
+                    curve: Curves.easeOutCubic,
+                    width: panelWidth,
+                    height: popupHeight,
+                    child: ClipRect(
+                      child: SizedBox(
+                        width: 460.0,
+                        child: showOrdersPanel && panelWidth > 0
+                            ? Container(
+                                clipBehavior: Clip.antiAlias,
+                                decoration: _floatingWindowDecoration(
+                                  context,
+                                  shadowOffset: const Offset(4, 8),
+                                ),
+                                child: OrdersFetchPanel(
+                                  selectedOrderIds: _selectedOrders
+                                      .map((order) => order.id)
+                                      .toSet(),
+                                  lockedClientId:
+                                      _primarySelectedOrder?.clientId,
+                                  onClose: () => setState(
+                                    () => _isOrdersPanelOpen = false,
+                                  ),
+                                  onFetch: _onItemFetched,
+                                ),
+                              )
+                            : const SizedBox(),
                       ),
                     ),
                   ),
                 ],
-                const SizedBox(height: 12),
-                _typeSelector(),
-                const SizedBox(height: 12),
-                if (_isReception)
-                  _vendorSelector(context)
-                else
-                  _orderSelector(context),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _field(
-                        _isReception
-                            ? 'Vendor / Source'
-                            : 'Customer name / M/s',
-                        _customerController,
-                        enabled: false,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _field(
-                        _isReception ? 'Vendor GSTIN' : 'Customer GSTIN',
-                        _gstinController,
-                        enabled: false,
-                      ),
-                    ),
-                  ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  BoxDecoration _floatingWindowDecoration(
+    BuildContext context, {
+    Offset shadowOffset = const Offset(0, 8),
+  }) {
+    return BoxDecoration(
+      color: Theme.of(context).cardColor,
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.15),
+          blurRadius: 24,
+          offset: shadowOffset,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildChallanFormWindow({
+    required BuildContext context,
+    required DeliveryChallanProvider provider,
+    required String title,
+    required String subtitle,
+    required String? errorText,
+    required String? challanNumberWarningText,
+    required String issueLabel,
+  }) {
+    return SafeArea(
+      top: false,
+      child: Column(
+        children: [
+          _buildFloatingHeader(context, title: title, subtitle: subtitle),
+          if (errorText != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
+              child: ErpFormMessageBanner(message: errorText, isError: true),
+            ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 18, 24, 22),
+              child: _buildChallanFormBody(challanNumberWarningText),
+            ),
+          ),
+          _buildFloatingFooter(context, provider, issueLabel),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFloatingHeader(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(24, 20, 18, 16),
+      decoration: const BoxDecoration(
+        color: Color(0xFFFBFBFB),
+        border: Border(bottom: BorderSide(color: SoftErpTheme.border)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: SoftErpTheme.textPrimary,
+                  ),
                 ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _field(
-                        'Location',
-                        _locationController,
-                        enabled: _canEdit,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _field(
-                        _isReception
-                            ? 'Supplier Ref / GRN / Invoice'
-                            : 'Dispatch Reference',
-                        _sourceReferenceController,
-                        enabled: _canEdit,
-                      ),
-                    ),
-                  ],
+                const SizedBox(height: 6),
+                Text(
+                  subtitle,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: SoftErpTheme.textSecondary,
+                    height: 1.45,
+                  ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 16),
-          ErpDialogSectionCard(
-            title: _isReception
-                ? 'Reception Line Items'
-                : 'Dispatch Line Items',
-            subtitle: _isReception
-                ? 'Lock each row to an exact item variation and quantity before issuing stock into the warehouse.'
-                : 'Review the selected order-linked dispatch rows and quantities before issuing the challan.',
-            child: _ItemsEditor(
-              isReception: _isReception,
-              enabled: _canEdit,
-              items: _items,
-              orderOptions: _selectedOrderOptions,
-              productionRuns: _completedProductionRuns,
-              onProductionRunPicked: (run) {
-                if (_locationController.text.trim().isEmpty &&
-                    run.location.trim().isNotEmpty) {
-                  _locationController.text = run.location.trim();
-                }
-              },
-              onChanged: () => setState(() {
-                _validationError = null;
-              }),
+          const SizedBox(width: 8),
+          IconButton(
+            tooltip: 'Close',
+            onPressed: () => Navigator.of(context).maybePop(),
+            style: IconButton.styleFrom(
+              backgroundColor: const Color(0xFFF8FAFC),
+              foregroundColor: const Color(0xFF334155),
+              side: const BorderSide(color: Color(0xFFD9E2F2)),
             ),
-          ),
-          const SizedBox(height: 16),
-          ErpDialogSectionCard(
-            title: 'Notes',
-            subtitle:
-                'Add any transport, handoff, or document context that should travel with this challan.',
-            child: _field(
-              'Notes',
-              _notesController,
-              enabled: _canEdit,
-              maxLines: 3,
-            ),
+            icon: const Icon(Icons.close_rounded),
           ),
         ],
       ),
-      footer: Row(
+    );
+  }
+
+  Widget _buildChallanFormBody(String? challanNumberWarningText) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _documentDetailsSection(challanNumberWarningText),
+        const SizedBox(height: 16),
+        ErpDialogSectionCard(
+          title: _isReception ? 'Reception Line Items' : 'Dispatch Line Items',
+          subtitle: _isReception
+              ? 'Lock each row to an exact item variation and quantity before issuing stock into the warehouse.'
+              : 'Review the selected order-linked dispatch rows and quantities before issuing the challan.',
+          child: _ItemsEditor(
+            isReception: _isReception,
+            enabled: _canEdit,
+            items: _items,
+            orderOptions: _selectedOrderOptions,
+            productionRuns: _completedProductionRuns,
+            onProductionRunPicked: (run) {
+              if (_locationController.text.trim().isEmpty &&
+                  run.location.trim().isNotEmpty) {
+                _locationController.text = run.location.trim();
+              }
+            },
+            onChanged: () => setState(() {
+              _validationError = null;
+            }),
+          ),
+        ),
+        const SizedBox(height: 16),
+        ErpDialogSectionCard(
+          title: 'Notes',
+          subtitle:
+              'Add any transport, handoff, or document context that should travel with this challan.',
+          child: _field(
+            'Notes',
+            _notesController,
+            enabled: _canEdit,
+            maxLines: 3,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _documentDetailsSection(String? challanNumberWarningText) {
+    return SoftSurface(
+      radius: SoftErpTheme.radiusLg,
+      color: SoftErpTheme.cardSurface,
+      elevated: true,
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Spacer(),
-          AppButton(
-            label: 'Print',
-            icon: Icons.print_outlined,
-            variant: AppButtonVariant.secondary,
-            onPressed: _source == null ? null : () => widget.onPrint(_source!),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Document Details',
+                      style: TextStyle(
+                        color: SoftErpTheme.textPrimary,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    SizedBox(height: 6),
+                    Text(
+                      'Choose the challan type, source document, date, and warehouse location first.',
+                      style: TextStyle(
+                        color: SoftErpTheme.textSecondary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (!_isReception) ...[
+                const SizedBox(width: 12),
+                _ordersHeaderButton(),
+              ],
+            ],
           ),
-          const SizedBox(width: 10),
-          AppButton(
-            label: 'Cancel',
-            icon: Icons.block_outlined,
-            variant: AppButtonVariant.secondary,
-            onPressed: widget.challan == null || widget.challan!.isCancelled
-                ? null
-                : () async {
-                    final cancelled = await provider.cancelChallan(
-                      widget.challan!.id,
-                    );
-                    if (cancelled != null && context.mounted) {
-                      await context.read<InventoryProvider>().refresh();
-                    }
-                    if (context.mounted) Navigator.of(context).pop();
-                  },
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(child: _challanNumberField()),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _field('Date', _dateController, enabled: _canEdit),
+              ),
+            ],
           ),
-          const SizedBox(width: 10),
-          AppButton(
-            label: 'Save Draft',
-            icon: Icons.save_outlined,
-            isLoading: provider.isSaving,
-            onPressed: _canEdit ? _save : null,
+          if (challanNumberWarningText != null) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                challanNumberWarningText,
+                style: const TextStyle(
+                  color: SoftErpTheme.textSecondary,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          _typeSelector(),
+          if (_isReception) ...[
+            const SizedBox(height: 12),
+            _vendorSelector(context),
+          ] else
+            _selectedOrdersSummary(),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _field(
+                  _isReception ? 'Vendor / Source' : 'Customer name / M/s',
+                  _customerController,
+                  enabled: false,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _field(
+                  _isReception ? 'Vendor GSTIN' : 'Customer GSTIN',
+                  _gstinController,
+                  enabled: false,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 10),
-          AppButton(
-            label: issueLabel,
-            icon: Icons.verified_outlined,
-            isLoading: provider.isSaving,
-            onPressed: _canEdit ? _issue : null,
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _field(
+                  'Location',
+                  _locationController,
+                  enabled: _canEdit,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _field(
+                  _isReception
+                      ? 'Supplier Ref / GRN / Invoice'
+                      : 'Dispatch Reference',
+                  _sourceReferenceController,
+                  enabled: _canEdit,
+                ),
+              ),
+            ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFloatingFooter(
+    BuildContext context,
+    DeliveryChallanProvider provider,
+    String issueLabel,
+  ) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 18),
+      decoration: const BoxDecoration(
+        color: Color(0xFFFBFBFB),
+        border: Border(top: BorderSide(color: SoftErpTheme.border)),
+      ),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppButton(
+                label: 'Print',
+                icon: Icons.print_outlined,
+                variant: AppButtonVariant.secondary,
+                onPressed: _source == null
+                    ? null
+                    : () => widget.onPrint(_source!),
+              ),
+              const SizedBox(width: 10),
+              AppButton(
+                label: 'Cancel',
+                icon: Icons.block_outlined,
+                variant: AppButtonVariant.secondary,
+                onPressed: widget.challan == null || widget.challan!.isCancelled
+                    ? null
+                    : () async {
+                        final cancelled = await provider.cancelChallan(
+                          widget.challan!.id,
+                        );
+                        if (cancelled != null && context.mounted) {
+                          await context.read<InventoryProvider>().refresh();
+                        }
+                        if (context.mounted) Navigator.of(context).pop();
+                      },
+              ),
+              const SizedBox(width: 10),
+              AppButton(
+                label: 'Save Draft',
+                icon: Icons.save_outlined,
+                isLoading: provider.isSaving,
+                onPressed: _canEdit ? _save : null,
+              ),
+              const SizedBox(width: 10),
+              AppButton(
+                label: issueLabel,
+                icon: Icons.verified_outlined,
+                isLoading: provider.isSaving,
+                onPressed: _canEdit ? _issue : null,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1147,7 +1394,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
                   _applySelectedOrderSnapshots();
                 } else {
                   _selectedOrders = <OrderEntry>[];
-                  _orderSearchController.clear();
+                  _isOrdersPanelOpen = false;
                   _customerController.clear();
                   _gstinController.clear();
                 }
@@ -1156,134 +1403,60 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     );
   }
 
-  Widget _orderSelector(BuildContext context) {
-    return SoftSurface(
-      padding: const EdgeInsets.all(12),
-      elevated: false,
+  Widget _ordersHeaderButton() {
+    return OutlinedButton(
+      onPressed: _canEdit ? _toggleOrdersPanel : null,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: SoftErpTheme.accent,
+        side: const BorderSide(color: SoftErpTheme.border),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        visualDensity: VisualDensity.compact,
+      ),
+      child: Text(
+        _isOrdersPanelOpen ? 'close orders ↙︎' : 'fetch order ↗︎',
+        style: const TextStyle(fontWeight: FontWeight.w800),
+      ),
+    );
+  }
+
+  Widget _selectedOrdersSummary() {
+    if (_selectedOrders.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Orders',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-          ),
-          const SizedBox(height: 10),
-          RawAutocomplete<OrderEntry>(
-            textEditingController: _orderSearchController,
-            focusNode: _orderSearchFocusNode,
-            displayStringForOption: _orderOptionLabel,
-            optionsBuilder: (textEditingValue) {
-              final eligible = _eligibleOrders();
-              if (_debouncedOrderQuery.isEmpty) {
-                return eligible.take(12);
-              }
-              return eligible
-                  .where((order) {
-                    return _orderOptionLabel(
-                      order,
-                    ).toLowerCase().contains(_debouncedOrderQuery);
-                  })
-                  .take(12);
-            },
-            onSelected: (order) {
-              if (!_isOrderEligible(order)) {
-                setState(() {
-                  _validationError =
-                      'The selected order is no longer eligible for this challan.';
-                });
-                return;
-              }
-              setState(() {
-                _selectedOrders = [..._selectedOrders, order];
-                _validationError = null;
-                _debouncedOrderQuery = '';
-                _orderSearchController.clear();
-                _resetDeliveryItemsForSelectedOrders();
-                _applySelectedOrderSnapshots();
-              });
-              _orderSearchFocusNode.requestFocus();
-            },
-            fieldViewBuilder:
-                (context, controller, focusNode, onFieldSubmitted) {
-                  return TextField(
-                    controller: controller,
-                    focusNode: focusNode,
-                    enabled: _canEdit,
-                    decoration: InputDecoration(
-                      labelText: 'Find Order...',
-                      prefixIcon: const Icon(Icons.search_rounded),
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    onSubmitted: (_) => onFieldSubmitted(),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _selectedOrders
+                .map((order) {
+                  return InputChip(
+                    label: Text(_orderOptionLabel(order)),
+                    onDeleted: !_canEdit
+                        ? null
+                        : () {
+                            setState(() {
+                              _selectedOrders = _selectedOrders
+                                  .where((selected) => selected.id != order.id)
+                                  .toList(growable: false);
+                              _validationError = null;
+                              _resetDeliveryItemsForSelectedOrders();
+                              _applySelectedOrderSnapshots();
+                            });
+                          },
                   );
-                },
-            optionsViewBuilder: (context, onSelected, options) {
-              return Align(
-                alignment: Alignment.topLeft,
-                child: Material(
-                  elevation: 8,
-                  borderRadius: BorderRadius.circular(12),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(
-                      maxWidth: 720,
-                      maxHeight: 280,
-                    ),
-                    child: ListView(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      shrinkWrap: true,
-                      children: options
-                          .map(
-                            (order) => ListTile(
-                              dense: true,
-                              title: Text(_orderOptionLabel(order)),
-                              subtitle: Text(order.clientName),
-                              onTap: () => onSelected(order),
-                            ),
-                          )
-                          .toList(growable: false),
-                    ),
-                  ),
-                ),
-              );
-            },
+                })
+                .toList(growable: false),
           ),
-          if (_selectedOrders.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _selectedOrders
-                  .map((order) {
-                    return InputChip(
-                      label: Text(_orderOptionLabel(order)),
-                      onDeleted: !_canEdit
-                          ? null
-                          : () {
-                              setState(() {
-                                _selectedOrders = _selectedOrders
-                                    .where(
-                                      (selected) => selected.id != order.id,
-                                    )
-                                    .toList(growable: false);
-                                _validationError = null;
-                                _resetDeliveryItemsForSelectedOrders();
-                                _applySelectedOrderSnapshots();
-                              });
-                            },
-                    );
-                  })
-                  .toList(growable: false),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Client locked to ${_selectedOrders.first.clientName} for this challan.',
-              style: const TextStyle(color: SoftErpTheme.textSecondary),
-            ),
-          ],
+          const SizedBox(height: 8),
+          Text(
+            'Client locked to ${_selectedOrders.first.clientName} for this challan.',
+            style: const TextStyle(color: SoftErpTheme.textSecondary),
+          ),
         ],
       ),
     );
@@ -1462,6 +1635,354 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     if (mounted) {
       Navigator.of(context).pop();
     }
+  }
+}
+
+class OrdersFetchPanel extends StatelessWidget {
+  const OrdersFetchPanel({
+    super.key,
+    required this.selectedOrderIds,
+    required this.lockedClientId,
+    required this.onClose,
+    required this.onFetch,
+  });
+
+  final Set<int> selectedOrderIds;
+  final int? lockedClientId;
+  final VoidCallback onClose;
+  final void Function(OrderEntry order, OrderEntry item) onFetch;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 16, 12, 12),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Select Order Line',
+                  style: TextStyle(
+                    color: SoftErpTheme.textPrimary,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Close orders panel',
+                onPressed: onClose,
+                icon: const Icon(Icons.close_rounded),
+              ),
+            ],
+          ),
+        ),
+        if (lockedClientId != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: SoftErpTheme.accent.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: SoftErpTheme.accent.withValues(alpha: 0.18),
+                ),
+              ),
+              child: const Text(
+                'Client locked by the first selected order.',
+                style: TextStyle(
+                  color: SoftErpTheme.textSecondary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+        Expanded(
+          child: Consumer<OrdersProvider>(
+            builder: (context, provider, _) {
+              if (provider.isLoading) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (provider.errorMessage != null) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      provider.errorMessage!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: SoftErpTheme.dangerText,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                );
+              }
+              final orderLines =
+                  provider.orders
+                      .where((line) {
+                        if (line.status == OrderStatus.completed) {
+                          return false;
+                        }
+                        if (selectedOrderIds.contains(line.id)) {
+                          return false;
+                        }
+                        if (lockedClientId != null &&
+                            line.clientId != lockedClientId) {
+                          return false;
+                        }
+                        return true;
+                      })
+                      .toList(growable: false)
+                    ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+              final groups = _OrderFetchGroup.fromLines(orderLines);
+              if (groups.isEmpty) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'No eligible orders available.',
+                      style: TextStyle(color: SoftErpTheme.textSecondary),
+                    ),
+                  ),
+                );
+              }
+              return ListView.builder(
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 16),
+                itemCount: groups.length,
+                itemBuilder: (context, index) {
+                  final group = groups[index];
+                  return _OrderFetchAccordion(group: group, onFetch: onFetch);
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _OrderFetchGroup {
+  const _OrderFetchGroup({required this.parent, required this.items});
+
+  final OrderEntry parent;
+  final List<OrderEntry> items;
+
+  String get orderCode {
+    final value = parent.orderNo.trim();
+    return value.isEmpty ? 'Order #${parent.id}' : value;
+  }
+
+  String get partyName {
+    final value = parent.clientName.trim();
+    return value.isEmpty ? 'No party name' : value;
+  }
+
+  String get title => '$partyName / $orderCode';
+
+  static List<_OrderFetchGroup> fromLines(List<OrderEntry> lines) {
+    final grouped = <String, List<OrderEntry>>{};
+    for (final line in lines) {
+      final orderCode = line.orderNo.trim();
+      final fallbackOrderKey = orderCode.isEmpty
+          ? 'line-${line.id}'
+          : orderCode;
+      final key = '${line.clientId}|$fallbackOrderKey|${line.poNumber.trim()}';
+      grouped.putIfAbsent(key, () => <OrderEntry>[]).add(line);
+    }
+    return grouped.values
+        .map(
+          (items) => _OrderFetchGroup(
+            parent: items.first,
+            items: List<OrderEntry>.unmodifiable(items),
+          ),
+        )
+        .toList(growable: false);
+  }
+}
+
+class _OrderFetchAccordion extends StatelessWidget {
+  const _OrderFetchAccordion({required this.group, required this.onFetch});
+
+  final _OrderFetchGroup group;
+  final void Function(OrderEntry order, OrderEntry item) onFetch;
+
+  @override
+  Widget build(BuildContext context) {
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: SoftErpTheme.border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          childrenPadding: EdgeInsets.zero,
+          trailing: const Icon(Icons.keyboard_arrow_down_rounded, size: 20),
+          title: Text(
+            group.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: SoftErpTheme.textPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Row(
+              children: [
+                _OrderFetchStatusBadge(status: group.parent.status),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    '${group.items.length} line${group.items.length == 1 ? '' : 's'} available',
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: SoftErpTheme.textSecondary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          children: group.items
+              .map(
+                (item) => _OrderFetchLineRow(
+                  order: group.parent,
+                  item: item,
+                  onFetch: onFetch,
+                ),
+              )
+              .toList(growable: false),
+        ),
+      ),
+    );
+  }
+}
+
+class _OrderFetchLineRow extends StatelessWidget {
+  const _OrderFetchLineRow({
+    required this.order,
+    required this.item,
+    required this.onFetch,
+  });
+
+  final OrderEntry order;
+  final OrderEntry item;
+  final void Function(OrderEntry order, OrderEntry item) onFetch;
+
+  @override
+  Widget build(BuildContext context) {
+    final variation = item.variationPathLabel.trim();
+    final unit = variation.isEmpty ? '' : ' • $variation';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      decoration: const BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: SoftErpTheme.border, width: 0.5),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.itemName.trim().isEmpty
+                      ? 'Unnamed item'
+                      : item.itemName.trim(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: SoftErpTheme.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Qty: ${item.quantity}$unit',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: SoftErpTheme.textSecondary,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          ElevatedButton(
+            onPressed: () => onFetch(order, item),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: SoftErpTheme.accent,
+              foregroundColor: Colors.white,
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: const Text('Fetch', style: TextStyle(fontSize: 12)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OrderFetchStatusBadge extends StatelessWidget {
+  const _OrderFetchStatusBadge({required this.status});
+
+  final OrderStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = switch (status) {
+      OrderStatus.draft => 'Draft',
+      OrderStatus.notStarted => 'Open',
+      OrderStatus.inProgress => 'In Progress',
+      OrderStatus.completed => 'Completed',
+      OrderStatus.delayed => 'Delayed',
+    };
+    final color = switch (status) {
+      OrderStatus.draft => SoftErpTheme.textSecondary,
+      OrderStatus.notStarted => const Color(0xFF2563EB),
+      OrderStatus.inProgress => const Color(0xFF7C3AED),
+      OrderStatus.completed => const Color(0xFF15803D),
+      OrderStatus.delayed => const Color(0xFFB45309),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
   }
 }
 
@@ -2159,6 +2680,18 @@ class _ItemDraft {
   String note;
   String quantityPcs;
   String weight;
+
+  bool get isBlank =>
+      orderItemId == null &&
+      productionRunId == null &&
+      itemId == null &&
+      particulars.trim().isEmpty &&
+      hsnCode.trim().isEmpty &&
+      variationPathLabel.trim().isEmpty &&
+      productionRunLabel.trim().isEmpty &&
+      note.trim().isEmpty &&
+      quantityPcs.trim().isEmpty &&
+      weight.trim().isEmpty;
 
   factory _ItemDraft.blank(int lineNo) => _ItemDraft();
 
