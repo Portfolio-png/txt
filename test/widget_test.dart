@@ -3271,13 +3271,20 @@ void main() {
   });
 
   testWidgets(
-    'challans hub exposes explicit delivery and reception create flows',
+    'challans hub exposes contextual delivery and reception create flows',
     (tester) async {
       await pumpApp(tester, viewSize: const Size(1440, 900));
       await openChallansScreen(tester);
 
-      expect(find.text('Create Reception'), findsWidgets);
+      expect(find.text('Delivery'), findsWidgets);
+      expect(find.text('Reception'), findsWidgets);
       expect(find.text('Create Delivery'), findsWidgets);
+      expect(find.text('Create Reception'), findsNothing);
+
+      await tester.tap(find.text('Reception').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Create Reception'), findsWidgets);
+      expect(find.text('Create Delivery'), findsNothing);
 
       await tester.tap(find.text('Create Reception').first);
       await tester.pumpAndSettle();
@@ -3288,6 +3295,11 @@ void main() {
       await tester.tap(find.byTooltip('Close'));
       await tester.pumpAndSettle();
 
+      await tester.tap(find.text('Delivery').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Create Delivery'), findsWidgets);
+      expect(find.text('Create Reception'), findsNothing);
+
       await tester.tap(find.text('Create Delivery').first);
       await tester.pumpAndSettle();
       expect(find.text('Create Delivery Challan'), findsOneWidget);
@@ -3296,7 +3308,7 @@ void main() {
     },
   );
 
-  testWidgets('challans type filter separates reception and delivery rows', (
+  testWidgets('challans type toggle separates reception and delivery rows', (
     tester,
   ) async {
     final challanRepository = FakeDeliveryChallanRepository(
@@ -3362,7 +3374,7 @@ void main() {
     await openChallansScreen(tester);
 
     expect(find.text('DC-00001'), findsOneWidget);
-    expect(find.text('RC-00001'), findsOneWidget);
+    expect(find.text('RC-00001'), findsNothing);
 
     await tester.tap(find.text('Reception').first);
     await tester.pumpAndSettle();
@@ -3507,6 +3519,8 @@ void main() {
     await pumpApp(tester, viewSize: const Size(1440, 900));
     await openChallansScreen(tester);
 
+    await tester.tap(find.text('Reception').first);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Create Reception').first);
     await tester.pumpAndSettle();
 

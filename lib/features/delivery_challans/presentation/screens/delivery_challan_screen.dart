@@ -23,6 +23,7 @@ import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../orders/domain/order_entry.dart';
 import '../../../orders/presentation/providers/orders_provider.dart';
+import '../../../pm/presentation/screens/pm_screen.dart';
 import '../../../vendors/presentation/providers/vendors_provider.dart';
 import '../../data/delivery_challan_repository.dart';
 import '../../domain/challan_template.dart';
@@ -135,6 +136,20 @@ class _ChallanScreenState extends State<ChallanScreen> {
   bool _showTemplates = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final provider = context.read<DeliveryChallanProvider>();
+      if (provider.typeFilter == null) {
+        provider.setTypeFilter(ChallanType.delivery);
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
@@ -143,14 +158,15 @@ class _ChallanScreenState extends State<ChallanScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<DeliveryChallanProvider>();
+    final activeType = provider.typeFilter ?? ChallanType.delivery;
     return PageContainer(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _Header(
-            onCreateDelivery: () => _openEditor(context),
-            onCreateReception: () =>
-                _openEditor(context, initialType: ChallanType.reception),
+            activeType: activeType,
+            onTypeChanged: provider.setTypeFilter,
+            onCreate: () => _openEditor(context, initialType: activeType),
             onEditProfile: () => _openCompanyProfile(context),
             onOpenTemplates: () => setState(() => _showTemplates = true),
           ),
@@ -164,11 +180,9 @@ class _ChallanScreenState extends State<ChallanScreen> {
           else ...[
             _Filters(
               searchController: _searchController,
-              type: provider.typeFilter,
               status: provider.statusFilter,
               orderFilterId: provider.orderFilterId,
               onSearch: provider.setSearchQuery,
-              onTypeChanged: provider.setTypeFilter,
               onStatusChanged: provider.setStatusFilter,
               onClearOrderFilter: () => provider.setOrderFilter(null),
             ),
@@ -181,11 +195,9 @@ class _ChallanScreenState extends State<ChallanScreen> {
                     ? const Center(child: CircularProgressIndicator())
                     : provider.challans.isEmpty
                     ? _EmptyState(
-                        onCreateDelivery: () => _openEditor(context),
-                        onCreateReception: () => _openEditor(
-                          context,
-                          initialType: ChallanType.reception,
-                        ),
+                        activeType: activeType,
+                        onCreate: () =>
+                            _openEditor(context, initialType: activeType),
                       )
                     : _ChallanTable(
                         challans: provider.challans,
@@ -263,27 +275,70 @@ class _ChallanScreenState extends State<ChallanScreen> {
 }
 
 class _Header extends StatelessWidget {
+  static const List<PMFigmaSegmentOption> _segments = <PMFigmaSegmentOption>[
+    PMFigmaSegmentOption(key: 'delivery', label: 'Delivery'),
+    PMFigmaSegmentOption(key: 'reception', label: 'Reception'),
+  ];
+
   const _Header({
-    required this.onCreateDelivery,
-    required this.onCreateReception,
+    required this.activeType,
+    required this.onTypeChanged,
+    required this.onCreate,
     required this.onEditProfile,
     required this.onOpenTemplates,
   });
 
-  final VoidCallback onCreateDelivery;
-  final VoidCallback onCreateReception;
+  final ChallanType activeType;
+  final ValueChanged<ChallanType> onTypeChanged;
+  final VoidCallback onCreate;
   final VoidCallback onEditProfile;
   final VoidCallback onOpenTemplates;
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      crossAxisAlignment: WrapCrossAlignment.center,
+    final isReception = activeType == ChallanType.reception;
+    final segmented = PMFigmaSegmentedControl(
+      value: isReception ? 'reception' : 'delivery',
+      segments: _segments,
+      segmentWidth: 132,
+      segmentHeight: 48,
+      semanticLabel: 'Challan delivery and reception segmented control',
+      onChanged: (value) => onTypeChanged(
+        value == 'reception' ? ChallanType.reception : ChallanType.delivery,
+      ),
+    );
+    final actions = Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 320, maxWidth: 680),
+        AppButton(
+          label: 'Company Profile',
+          icon: Icons.apartment_outlined,
+          variant: AppButtonVariant.secondary,
+          onPressed: onEditProfile,
+        ),
+        const SizedBox(width: 10),
+        AppButton(
+          label: 'Templates',
+          icon: Icons.dashboard_customize_outlined,
+          variant: AppButtonVariant.secondary,
+          onPressed: onOpenTemplates,
+        ),
+        const SizedBox(width: 14),
+        AppButton(
+          label: isReception ? 'Create Reception' : 'Create Delivery',
+          icon: isReception
+              ? Icons.south_west_rounded
+              : Icons.north_east_rounded,
+          onPressed: onCreate,
+        ),
+      ],
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final title = ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 280, maxWidth: 620),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -301,31 +356,73 @@ class _Header extends StatelessWidget {
               ),
             ],
           ),
-        ),
-        AppButton(
-          label: 'Company Profile',
-          icon: Icons.apartment_outlined,
-          variant: AppButtonVariant.secondary,
-          onPressed: onEditProfile,
-        ),
-        AppButton(
-          label: 'Templates',
-          icon: Icons.dashboard_customize_outlined,
-          variant: AppButtonVariant.secondary,
-          onPressed: onOpenTemplates,
-        ),
-        AppButton(
-          label: 'Create Reception',
-          icon: Icons.south_west_rounded,
-          variant: AppButtonVariant.secondary,
-          onPressed: onCreateReception,
-        ),
-        AppButton(
-          label: 'Create Delivery',
-          icon: Icons.north_east_rounded,
-          onPressed: onCreateDelivery,
-        ),
-      ],
+        );
+
+        if (!constraints.hasBoundedWidth || constraints.maxWidth < 920) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              title,
+              const SizedBox(height: 14),
+              segmented,
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: actions,
+                ),
+              ),
+            ],
+          );
+        }
+
+        if (constraints.maxWidth < 1280) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(child: title),
+                  const SizedBox(width: 14),
+                  segmented,
+                ],
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: actions,
+                ),
+              ),
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            title,
+            const SizedBox(width: 20),
+            segmented,
+            const SizedBox(width: 14),
+            Flexible(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: actions,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -333,21 +430,17 @@ class _Header extends StatelessWidget {
 class _Filters extends StatelessWidget {
   const _Filters({
     required this.searchController,
-    required this.type,
     required this.status,
     required this.orderFilterId,
     required this.onSearch,
-    required this.onTypeChanged,
     required this.onStatusChanged,
     required this.onClearOrderFilter,
   });
 
   final TextEditingController searchController;
-  final ChallanType? type;
   final DeliveryChallanStatus? status;
   final int? orderFilterId;
   final ValueChanged<String> onSearch;
-  final ValueChanged<ChallanType?> onTypeChanged;
   final ValueChanged<DeliveryChallanStatus?> onStatusChanged;
   final VoidCallback onClearOrderFilter;
 
@@ -368,15 +461,6 @@ class _Filters extends StatelessWidget {
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 14),
       ),
-    );
-    final typeFilter = SegmentedButton<ChallanType?>(
-      segments: const [
-        ButtonSegment(value: null, label: Text('All')),
-        ButtonSegment(value: ChallanType.reception, label: Text('Reception')),
-        ButtonSegment(value: ChallanType.delivery, label: Text('Delivery')),
-      ],
-      selected: {type},
-      onSelectionChanged: (value) => onTypeChanged(value.first),
     );
     final statusFilter = SegmentedButton<DeliveryChallanStatus?>(
       segments: const [
@@ -405,7 +489,6 @@ class _Filters extends StatelessWidget {
             runSpacing: 12,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              typeFilter,
               if (orderFilterId != null)
                 InputChip(
                   label: Text('Order #$orderFilterId'),
@@ -612,16 +695,14 @@ class _TypePill extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({
-    required this.onCreateDelivery,
-    required this.onCreateReception,
-  });
+  const _EmptyState({required this.activeType, required this.onCreate});
 
-  final VoidCallback onCreateDelivery;
-  final VoidCallback onCreateReception;
+  final ChallanType activeType;
+  final VoidCallback onCreate;
 
   @override
   Widget build(BuildContext context) {
+    final isReception = activeType == ChallanType.reception;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -634,23 +715,12 @@ class _EmptyState extends StatelessWidget {
           const SizedBox(height: 12),
           const Text('No challans yet'),
           const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            alignment: WrapAlignment.center,
-            children: [
-              AppButton(
-                label: 'Create Reception',
-                icon: Icons.south_west_rounded,
-                variant: AppButtonVariant.secondary,
-                onPressed: onCreateReception,
-              ),
-              AppButton(
-                label: 'Create Delivery',
-                icon: Icons.north_east_rounded,
-                onPressed: onCreateDelivery,
-              ),
-            ],
+          AppButton(
+            label: isReception ? 'Create Reception' : 'Create Delivery',
+            icon: isReception
+                ? Icons.south_west_rounded
+                : Icons.north_east_rounded,
+            onPressed: onCreate,
           ),
         ],
       ),
