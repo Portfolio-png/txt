@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../preferences/preferences_provider.dart';
 import '../../core/theme/soft_erp_theme.dart';
 import '../../features/auth/presentation/providers/auth_provider.dart';
 import '../../features/clients/presentation/providers/clients_provider.dart';
@@ -719,6 +720,36 @@ class _SettingsPreferencesDialogState
                 ),
               ),
               const SizedBox(height: 20),
+              Consumer<PreferencesProvider>(
+                builder: (context, preferences, _) {
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: SoftErpTheme.cardSurfaceAlt,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: SoftErpTheme.border),
+                    ),
+                    child: SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      value: preferences.maintainStocks,
+                      onChanged: preferences.toggleMaintainStocks,
+                      title: const Text(
+                        'Maintain Stocks',
+                        style: TextStyle(
+                          color: SoftErpTheme.textPrimary,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      subtitle: const Text(
+                        'Turn off for typewriter challans that print documents without touching inventory.',
+                        style: TextStyle(color: SoftErpTheme.textSecondary),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),

@@ -2381,6 +2381,7 @@ async function initDb() {
       company_profile_snapshot TEXT,
       template_snapshot_json TEXT,
       notes TEXT DEFAULT '',
+      maintain_stocks INTEGER NOT NULL DEFAULT 1,
       status TEXT NOT NULL DEFAULT 'draft',
       created_by INTEGER REFERENCES users(id),
       updated_by INTEGER REFERENCES users(id),
@@ -2717,6 +2718,7 @@ async function initDb() {
   await ensureColumnExists('delivery_challans', 'vendor_gstin', "TEXT DEFAULT ''");
   await ensureColumnExists('delivery_challans', 'source_reference', "TEXT DEFAULT ''");
   await ensureColumnExists('delivery_challans', 'template_snapshot_json', 'TEXT');
+  await ensureColumnExists('delivery_challans', 'maintain_stocks', 'INTEGER NOT NULL DEFAULT 1');
   await ensureColumnExists('delivery_challan_items', 'order_item_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'production_run_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'item_id', 'INTEGER');
@@ -4801,6 +4803,7 @@ async function rowToDeliveryChallanDto(row, { includeItems = true } = {}) {
     source_reference: row.source_reference || '',
     company_profile_snapshot: parseJsonObject(row.company_profile_snapshot, null),
     notes: row.notes || '',
+    maintain_stocks: Number(row.maintain_stocks ?? 1) !== 0,
     status: row.status || 'draft',
     created_by: row.created_by || null,
     updated_by: row.updated_by || null,
@@ -6753,6 +6756,13 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
     ? normalizeDeliveryChallanOrderIds(input, existing)
     : [];
   const vendorId = Number(input.vendorId ?? input.vendor_id ?? existing?.vendor_id ?? 0);
+  const maintainStocksInput = input.maintainStocks ?? input.maintain_stocks;
+  const maintainStocks = maintainStocksInput === undefined
+    ? Number(existing?.maintain_stocks ?? 1) !== 0
+    : !(
+      maintainStocksInput === false ||
+      Number(maintainStocksInput) === 0
+    );
   const location = String(input.location ?? existing?.location ?? '').trim();
   const sourceReference = String(
     input.sourceReference ?? input.source_reference ?? existing?.source_reference ?? '',
@@ -6762,23 +6772,27 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
   let orderSnapshotsById = new Map();
   let vendor = null;
   if (challanType === 'delivery') {
-    if (orderIds.length == 0) {
+    if (maintainStocks && orderIds.length == 0) {
       const error = new Error('Select at least one order before saving delivery challan.');
       error.statusCode = 400;
       throw error;
     }
-    orders = await getOrdersForDeliveryChallan(orderIds);
-    firstOrder = orders[0] || null;
-    orderSnapshotsById = new Map(
-      orders.map((order) => [Number(order.id), orderItemSnapshotFromOrder(order)]),
-    );
+    if (orderIds.length > 0) {
+      orders = await getOrdersForDeliveryChallan(orderIds);
+      firstOrder = orders[0] || null;
+      orderSnapshotsById = new Map(
+        orders.map((order) => [Number(order.id), orderItemSnapshotFromOrder(order)]),
+      );
+    }
   } else {
-    if (!Number.isInteger(vendorId) || vendorId <= 0) {
+    if (maintainStocks && (!Number.isInteger(vendorId) || vendorId <= 0)) {
       const error = new Error('Select a vendor before saving reception challan.');
       error.statusCode = 400;
       throw error;
     }
-    vendor = await getVendorForChallan(vendorId);
+    if (Number.isInteger(vendorId) && vendorId > 0) {
+      vendor = await getVendorForChallan(vendorId);
+    }
   }
   const requestedChallanNo = String(
     input.challanNo ?? input.challan_no ?? '',
@@ -6796,27 +6810,46 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
 
   const date = normalizeChallanDate(input.date ?? existing?.date);
   const customerName = challanType === 'delivery'
-    ? String(firstOrder?.client_name || '').trim()
+    ? (maintainStocks
+      ? String(firstOrder?.client_name || '').trim()
+      : String(input.customerName ?? input.customer_name ?? existing?.customer_name ?? '').trim())
     : '';
   const customerGstin = challanType === 'delivery'
-    ? String(firstOrder?.client_gstin || '').trim()
+    ? (maintainStocks
+      ? String(firstOrder?.client_gstin || '').trim()
+      : String(input.customerGstin ?? input.customer_gstin ?? existing?.customer_gstin ?? '').trim())
     : '';
   const vendorName = challanType === 'reception'
-    ? String(vendor.name || '').trim()
+    ? (maintainStocks
+      ? String(vendor?.name || '').trim()
+      : String(input.vendorName ?? input.vendor_name ?? input.customerName ?? input.customer_name ?? existing?.vendor_name ?? '').trim())
     : '';
   const vendorGstin = challanType === 'reception'
-    ? String(vendor.gst_number || '').trim()
+    ? (maintainStocks
+      ? String(vendor?.gst_number || '').trim()
+      : String(input.vendorGstin ?? input.vendor_gstin ?? input.customerGstin ?? input.customer_gstin ?? existing?.vendor_gstin ?? '').trim())
     : '';
   const orderNo = challanType === 'delivery'
     ? [...new Set(orders.map((order) => String(order.order_no || '').trim()).filter(Boolean))].join(', ')
     : '';
   const notes = String(input.notes ?? existing?.notes ?? '').trim();
-  const persistedOrderId = challanType === 'delivery' ? (orderIds[0] || null) : null;
-  const persistedVendorId = challanType === 'reception' ? vendor.id : null;
+  const persistedOrderId = challanType === 'delivery' && maintainStocks ? (orderIds[0] || null) : null;
+  const persistedVendorId = challanType === 'reception' && maintainStocks && vendor ? vendor.id : null;
   const normalizedItems = normalizeDeliveryChallanItems(input.items || []);
   const items = [];
   for (const item of normalizedItems) {
-    if (challanType === 'delivery') {
+    if (!maintainStocks) {
+      items.push({
+        ...item,
+        orderItemId: null,
+        productionRunId: null,
+        itemId: null,
+        variationLeafNodeId: 0,
+        particulars: item.particulars,
+        variationPathLabel: item.variationPathLabel,
+        hsnCode: item.hsnCode,
+      });
+    } else if (challanType === 'delivery') {
       if (item.productionRunId) {
         const snapshot = await getItemSelectionSnapshot(item.itemId, item.variationLeafNodeId);
         const run = await validateProductionRunForChallanLine(item.productionRunId, {
@@ -6905,7 +6938,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
         UPDATE delivery_challans
         SET type = ?, order_id = ?, order_no = ?, challan_no = ?, date = ?, location = ?,
             customer_name = ?, customer_gstin = ?, vendor_id = ?, vendor_name = ?, vendor_gstin = ?,
-            source_reference = ?, notes = ?, updated_by = ?, updated_at = ?
+            source_reference = ?, notes = ?, maintain_stocks = ?, updated_by = ?, updated_at = ?
         WHERE id = ?
         `,
         [
@@ -6922,6 +6955,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
           vendorGstin,
           sourceReference,
           notes,
+          maintainStocks ? 1 : 0,
           actor?.id || null,
           now,
           challanId,
@@ -6935,9 +6969,9 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
         INSERT INTO delivery_challans (
           type, order_id, order_no, challan_no, date, location, customer_name, customer_gstin,
           vendor_id, vendor_name, vendor_gstin, source_reference, notes, status,
-          created_by, updated_by, created_at, updated_at
+          maintain_stocks, created_by, updated_by, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?)
         `,
         [
           challanType,
@@ -6953,6 +6987,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
           vendorGstin,
           sourceReference,
           notes,
+          maintainStocks ? 1 : 0,
           actor?.id || null,
           actor?.id || null,
           now,
@@ -6962,7 +6997,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
       challanId = result.lastID;
     }
 
-    if (challanType === 'delivery') {
+    if (challanType === 'delivery' && maintainStocks) {
       for (const orderId of orderIds) {
         await run(
           `
@@ -7031,7 +7066,8 @@ async function issueDeliveryChallan(id, actor = null) {
     error.statusCode = 400;
     throw error;
   }
-  if (normalizeChallanType(existing.type) === 'delivery') {
+  const maintainStocks = Number(existing.maintain_stocks ?? 1) !== 0;
+  if (maintainStocks && normalizeChallanType(existing.type) === 'delivery') {
     const orderIds = await getDeliveryChallanOrderIds(id);
     if (orderIds.length === 0 && !existing.order_id) {
       const error = new Error('Select at least one order before issuing challan.');
@@ -7039,12 +7075,12 @@ async function issueDeliveryChallan(id, actor = null) {
       throw error;
     }
   }
-  if (normalizeChallanType(existing.type) === 'delivery' && !String(existing.customer_name || '').trim()) {
+  if (maintainStocks && normalizeChallanType(existing.type) === 'delivery' && !String(existing.customer_name || '').trim()) {
     const error = new Error('Customer name is required before issuing challan.');
     error.statusCode = 400;
     throw error;
   }
-  if (normalizeChallanType(existing.type) === 'reception' && !existing.vendor_id) {
+  if (maintainStocks && normalizeChallanType(existing.type) === 'reception' && !existing.vendor_id) {
     const error = new Error('Vendor is required before issuing reception challan.');
     error.statusCode = 400;
     throw error;
@@ -7056,8 +7092,13 @@ async function issueDeliveryChallan(id, actor = null) {
     throw error;
   }
   for (const item of items) {
-    if (!item.order_item_id && !item.item_id) {
+    if (maintainStocks && !item.order_item_id && !item.item_id) {
       const error = new Error('Each challan item must reference an order item.');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!maintainStocks && !String(item.particulars || '').trim()) {
+      const error = new Error('Enter item text and Qty / Pcs or Weight for each challan item before issuing.');
       error.statusCode = 400;
       throw error;
     }
@@ -7070,7 +7111,7 @@ async function issueDeliveryChallan(id, actor = null) {
       error.statusCode = 400;
       throw error;
     }
-    if (normalizeChallanType(existing.type) === 'delivery' && item.production_run_id) {
+    if (maintainStocks && normalizeChallanType(existing.type) === 'delivery' && item.production_run_id) {
       await validateProductionRunForChallanLine(item.production_run_id, {
         itemId: item.item_id,
         variationLeafNodeId: item.variation_leaf_node_id,
@@ -7085,7 +7126,7 @@ async function issueDeliveryChallan(id, actor = null) {
   const now = new Date().toISOString();
   await run('BEGIN TRANSACTION');
   try {
-    for (const item of items) {
+    if (maintainStocks) for (const item of items) {
       const quantity = Number(item.quantity_pcs);
       const weight = Number(item.weight);
       const movementQty = Number.isFinite(quantity) && quantity > 0 ? quantity : weight;
@@ -15716,9 +15757,13 @@ app.use((error, req, res, _next) => {
 async function clearAllData() {
   await run('BEGIN TRANSACTION');
   try {
+    await run('DELETE FROM delivery_challan_orders');
     await run('DELETE FROM delivery_challan_activity_log');
     await run('DELETE FROM delivery_challan_items');
     await run('DELETE FROM delivery_challans');
+    await run('DELETE FROM challan_template_mappings');
+    await run('DELETE FROM challan_templates');
+    await run('DELETE FROM challan_template_upload_sessions');
     await run('DELETE FROM order_po_documents');
     await run('DELETE FROM order_material_requirements');
     await run('DELETE FROM order_status_history');
@@ -15730,6 +15775,10 @@ async function clearAllData() {
     await run('DELETE FROM run_barcode_inputs');
     await run('DELETE FROM pipeline_runs');
     await run('DELETE FROM pipeline_templates');
+    await run('DELETE FROM production_runs');
+    await run('DELETE FROM inventory_set_lines');
+    await run('DELETE FROM inventory_sets');
+    await run('DELETE FROM delivery_challan_orders');
     await run('DELETE FROM delivery_challan_activity_log');
     await run('DELETE FROM delivery_challan_items');
     await run('DELETE FROM delivery_challans');
@@ -15742,6 +15791,7 @@ async function clearAllData() {
     await run('DELETE FROM material_group_properties');
     await run('DELETE FROM material_group_units');
     await run('DELETE FROM material_group_preferences');
+    await run('DELETE FROM item_property_schema');
     await run('DELETE FROM inventory_stock_positions');
     await run('DELETE FROM inventory_movements');
     await run('DELETE FROM inventory_reservations');

@@ -3332,6 +3332,7 @@ void main() {
           sourceReference: '',
           companyProfileSnapshot: null,
           notes: '',
+          maintainStocks: true,
           status: DeliveryChallanStatus.draft,
           items: const <DeliveryChallanItem>[],
           itemsCount: 1,
@@ -3357,6 +3358,7 @@ void main() {
           sourceReference: 'GRN-101',
           companyProfileSnapshot: null,
           notes: '',
+          maintainStocks: true,
           status: DeliveryChallanStatus.issued,
           items: const <DeliveryChallanItem>[],
           itemsCount: 1,
@@ -3587,7 +3589,9 @@ void main() {
     expect(find.text('Select Order Line'), findsOneWidget);
     await tester.tap(find.byType(ExpansionTile).first);
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ElevatedButton, 'Fetch').first);
+    await tester.tap(find.byType(Checkbox).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Fetch Selected Items ↗'));
     await tester.pumpAndSettle();
 
     await tester.ensureVisible(
@@ -3604,19 +3608,22 @@ void main() {
     expect(find.text('Close'), findsOneWidget);
   });
 
-  test('navigation provider maps the primary tabs to the requested indices', () {
-    final navigation = NavigationProvider(initialKey: 'configurator_units');
-    addTearDown(navigation.dispose);
+  test(
+    'navigation provider maps the primary tabs to the requested indices',
+    () {
+      final navigation = NavigationProvider(initialKey: 'configurator_units');
+      addTearDown(navigation.dispose);
 
-    expect(navigation.currentTabIndex, 6);
+      expect(navigation.currentTabIndex, 6);
 
-    navigation.select('inventory_scan');
-    expect(navigation.currentTabIndex, 3);
+      navigation.select('inventory_scan');
+      expect(navigation.currentTabIndex, 3);
 
-    navigation.setTab(2);
-    expect(navigation.selectedKey, 'delivery_challans');
-    expect(navigation.currentTabIndex, 2);
-  });
+      navigation.setTab(2);
+      expect(navigation.selectedKey, 'delivery_challans');
+      expect(navigation.currentTabIndex, 2);
+    },
+  );
 
   testWidgets('ctrl digits and home switch the primary shell tabs', (
     tester,
@@ -3676,7 +3683,10 @@ void main() {
     await tester.pumpAndSettle();
 
     final context = tester.element(find.byType(Scaffold).first);
-    context.read<NavigationProvider>().select('inventory', skipTransition: true);
+    context.read<NavigationProvider>().select(
+      'inventory',
+      skipTransition: true,
+    );
     await tester.pumpAndSettle();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
@@ -3756,38 +3766,40 @@ void main() {
     expect(searchField.focusNode?.hasFocus, isTrue);
   });
 
-  testWidgets('home stays within editable text instead of jumping to dashboard', (
-    tester,
-  ) async {
-    await pumpApp(tester, viewSize: const Size(1440, 900));
-    await openOrdersScreen(tester);
+  testWidgets(
+    'home stays within editable text instead of jumping to dashboard',
+    (tester) async {
+      await pumpApp(tester, viewSize: const Size(1440, 900));
+      await openOrdersScreen(tester);
 
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
-    await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
-    await tester.pump();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump();
 
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('shell_top_strip_search_field')),
-      'ord',
-    );
-    await tester.pump();
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('shell_top_strip_search_field')),
+        'ord',
+      );
+      await tester.pump();
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.home);
-    await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.home);
+      await tester.pumpAndSettle();
 
-    final context = tester.element(find.byType(Scaffold).first);
-    final searchField = tester.widget<TextField>(
-      find.byKey(const ValueKey<String>('shell_top_strip_search_field')),
-    );
-    expect(context.read<NavigationProvider>().selectedKey, 'orders');
-    expect(searchField.focusNode?.hasFocus, isTrue);
-  });
+      final context = tester.element(find.byType(Scaffold).first);
+      final searchField = tester.widget<TextField>(
+        find.byKey(const ValueKey<String>('shell_top_strip_search_field')),
+      );
+      expect(context.read<NavigationProvider>().selectedKey, 'orders');
+      expect(searchField.focusNode?.hasFocus, isTrue);
+    },
+  );
 
   testWidgets('tab reaches order dropdowns and dropdown options', (
     tester,
   ) async {
     await pumpApp(tester, viewSize: const Size(1440, 900));
+    await openOrdersScreen(tester);
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.keyN);

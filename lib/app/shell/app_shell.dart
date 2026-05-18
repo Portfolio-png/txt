@@ -10,6 +10,7 @@ import '../../core/widgets/soft_primitives.dart';
 import '../../features/groups/presentation/screens/groups_screen.dart';
 import '../../features/auth/presentation/screens/user_management_screen.dart';
 import '../../features/delivery_challans/domain/delivery_challan.dart';
+import '../../features/delivery_challans/presentation/providers/challan_editor_command_provider.dart';
 import '../../features/delivery_challans/presentation/screens/delivery_challan_screen.dart';
 import '../../features/inventory/presentation/screens/inventory_screen.dart';
 import '../../features/inventory/presentation/screens/material_scan_screen.dart';
@@ -159,49 +160,40 @@ class _PaperShortcutManagerState extends State<PaperShortcutManager> {
 
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
-        const SingleActivator(
-          LogicalKeyboardKey.digit1,
-          control: true,
-        ): () => navProvider.setTab(0),
-        const SingleActivator(
-          LogicalKeyboardKey.digit2,
-          control: true,
-        ): () => navProvider.setTab(1),
-        const SingleActivator(
-          LogicalKeyboardKey.digit3,
-          control: true,
-        ): () => navProvider.setTab(2),
-        const SingleActivator(
-          LogicalKeyboardKey.digit4,
-          control: true,
-        ): () => navProvider.setTab(3),
-        const SingleActivator(
-          LogicalKeyboardKey.digit5,
-          control: true,
-        ): () => navProvider.setTab(4),
-        const SingleActivator(
-          LogicalKeyboardKey.tab,
-          control: true,
-        ): () => navProvider.selectRelativeSidebarItem(),
+        const SingleActivator(LogicalKeyboardKey.digit1, control: true): () =>
+            navProvider.setTab(0),
+        const SingleActivator(LogicalKeyboardKey.digit2, control: true): () =>
+            navProvider.setTab(1),
+        const SingleActivator(LogicalKeyboardKey.digit3, control: true): () =>
+            navProvider.setTab(2),
+        const SingleActivator(LogicalKeyboardKey.digit4, control: true): () =>
+            navProvider.setTab(3),
+        const SingleActivator(LogicalKeyboardKey.digit5, control: true): () =>
+            navProvider.setTab(4),
+        const SingleActivator(LogicalKeyboardKey.tab, control: true): () =>
+            navProvider.selectRelativeSidebarItem(),
         const SingleActivator(
           LogicalKeyboardKey.tab,
           control: true,
           shift: true,
-        ): () => navProvider.selectRelativeSidebarItem(reverse: true),
-        const SingleActivator(
-          LogicalKeyboardKey.keyF,
-          control: true,
-        ): navProvider.focusTopStripSearch,
-        const SingleActivator(
-          LogicalKeyboardKey.keyN,
-          control: true,
-        ): () {
+        ): () =>
+            navProvider.selectRelativeSidebarItem(reverse: true),
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true):
+            navProvider.focusTopStripSearch,
+        const SingleActivator(LogicalKeyboardKey.keyN, control: true): () {
           if (currentTab == 1) {
             _handleCreateOrder(context);
             return;
           }
           if (currentTab == 2) {
             _handleCreateDeliveryChallan(context);
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.keyO, control: true): () {
+          if (currentTab == 2) {
+            context
+                .read<ChallanEditorCommandProvider>()
+                .openOrdersFetchSlidingPanel();
           }
         },
         const SingleActivator(
@@ -325,7 +317,8 @@ class _PaperShortcutManagerState extends State<PaperShortcutManager> {
 
   Future<void> _handleCreateDeliveryChallan(BuildContext context) {
     return _runModalShortcut(
-      () => ChallanScreen.openEditor(context, initialType: ChallanType.delivery),
+      () =>
+          ChallanScreen.openEditor(context, initialType: ChallanType.delivery),
     );
   }
 

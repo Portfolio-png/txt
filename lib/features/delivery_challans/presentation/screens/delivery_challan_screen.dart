@@ -10,6 +10,7 @@ import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../app/preferences/preferences_provider.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
@@ -28,6 +29,7 @@ import '../../../vendors/presentation/providers/vendors_provider.dart';
 import '../../data/delivery_challan_repository.dart';
 import '../../domain/challan_template.dart';
 import '../../domain/delivery_challan.dart';
+import '../providers/challan_editor_command_provider.dart';
 import '../providers/delivery_challan_provider.dart';
 import 'challan_template_mapping_screen.dart';
 
@@ -134,20 +136,7 @@ Future<void> _openPrintPreviewFromContext(
 class _ChallanScreenState extends State<ChallanScreen> {
   final TextEditingController _searchController = TextEditingController();
   bool _showTemplates = false;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        return;
-      }
-      final provider = context.read<DeliveryChallanProvider>();
-      if (provider.typeFilter == null) {
-        provider.setTypeFilter(ChallanType.delivery);
-      }
-    });
-  }
+  ChallanType _activeType = ChallanType.delivery;
 
   @override
   void dispose() {
@@ -158,15 +147,17 @@ class _ChallanScreenState extends State<ChallanScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<DeliveryChallanProvider>();
-    final activeType = provider.typeFilter ?? ChallanType.delivery;
+    final visibleChallans = provider.challans
+        .where((challan) => challan.type == _activeType)
+        .toList(growable: false);
     return PageContainer(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _Header(
-            activeType: activeType,
-            onTypeChanged: provider.setTypeFilter,
-            onCreate: () => _openEditor(context, initialType: activeType),
+            activeType: _activeType,
+            onTypeChanged: (value) => setState(() => _activeType = value),
+            onCreate: () => _openEditor(context, initialType: _activeType),
             onEditProfile: () => _openCompanyProfile(context),
             onOpenTemplates: () => setState(() => _showTemplates = true),
           ),
@@ -193,14 +184,14 @@ class _ChallanScreenState extends State<ChallanScreen> {
                 padding: EdgeInsets.zero,
                 child: provider.isLoading
                     ? const Center(child: CircularProgressIndicator())
-                    : provider.challans.isEmpty
+                    : visibleChallans.isEmpty
                     ? _EmptyState(
-                        activeType: activeType,
+                        activeType: _activeType,
                         onCreate: () =>
-                            _openEditor(context, initialType: activeType),
+                            _openEditor(context, initialType: _activeType),
                       )
                     : _ChallanTable(
-                        challans: provider.challans,
+                        challans: visibleChallans,
                         onOpen: (challan) =>
                             _openEditor(context, challan: challan),
                         onPrint: (challan) =>
@@ -763,13 +754,16 @@ class _ChallanEditorState extends State<_ChallanEditor> {
   int? _selectedVendorId;
   String? _validationError;
   bool _isOrdersPanelOpen = false;
-  List<CompletedProductionRun> _completedProductionRuns =
-      const <CompletedProductionRun>[];
+  bool _ordersCommandRegistered = false;
+  ChallanEditorCommandProvider? _ordersCommandProvider;
 
   DeliveryChallan? get _source => widget.challan ?? widget.sourceForDuplicate;
   bool get _editingExisting => widget.challan != null;
   bool get _canEdit => widget.challan?.isDraft ?? true;
   bool get _isReception => _selectedType == ChallanType.reception;
+  bool get _maintainStocks =>
+      _source?.maintainStocks ??
+      context.read<PreferencesProvider>().maintainStocks;
   OrderEntry? get _primarySelectedOrder =>
       _selectedOrders.isEmpty ? null : _selectedOrders.first;
   List<_OrderItemOption> get _selectedOrderOptions =>
@@ -861,9 +855,15 @@ class _ChallanEditorState extends State<_ChallanEditor> {
       text: _date(source?.date ?? DateTime.now()),
     );
     _customerController = TextEditingController(
-      text: source?.customerName ?? '',
+      text: _selectedType == ChallanType.reception
+          ? source?.vendorName ?? ''
+          : source?.customerName ?? '',
     );
-    _gstinController = TextEditingController(text: source?.customerGstin ?? '');
+    _gstinController = TextEditingController(
+      text: _selectedType == ChallanType.reception
+          ? source?.vendorGstin ?? ''
+          : source?.customerGstin ?? '',
+    );
     _locationController = TextEditingController(
       text: source?.location ?? widget.initialLocation ?? '',
     );
@@ -880,13 +880,24 @@ class _ChallanEditorState extends State<_ChallanEditor> {
               _ItemDraft.blank(1),
           ];
     _applySelectedOrderSnapshots();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadCompletedProductionRuns();
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncOrdersCommand());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _ordersCommandProvider = context.read<ChallanEditorCommandProvider>();
+    _syncOrdersCommand();
   }
 
   @override
   void dispose() {
+    if (_ordersCommandRegistered) {
+      _ordersCommandProvider?.unregisterOrdersPanelOpener(
+        _openOrdersPanelFromShortcut,
+      );
+      _ordersCommandRegistered = false;
+    }
     _challanNumberController.dispose();
     _dateController.dispose();
     _customerController.dispose();
@@ -897,16 +908,27 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     super.dispose();
   }
 
-  Future<void> _loadCompletedProductionRuns() async {
-    final runs = await context
-        .read<DeliveryChallanProvider>()
-        .loadCompletedProductionRuns(limit: 100);
+  void _syncOrdersCommand() {
     if (!mounted) {
       return;
     }
-    setState(() {
-      _completedProductionRuns = runs;
-    });
+    final commands =
+        _ordersCommandProvider ?? context.read<ChallanEditorCommandProvider>();
+    final shouldRegister = _canEdit && !_isReception && _maintainStocks;
+    if (shouldRegister && !_ordersCommandRegistered) {
+      commands.registerOrdersPanelOpener(_openOrdersPanelFromShortcut);
+      _ordersCommandRegistered = true;
+    } else if (!shouldRegister && _ordersCommandRegistered) {
+      commands.unregisterOrdersPanelOpener(_openOrdersPanelFromShortcut);
+      _ordersCommandRegistered = false;
+    }
+  }
+
+  void _openOrdersPanelFromShortcut() {
+    if (!_canEdit || _isReception || !_maintainStocks || _isOrdersPanelOpen) {
+      return;
+    }
+    _toggleOrdersPanel();
   }
 
   Future<void> _toggleOrdersPanel() async {
@@ -919,30 +941,39 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     }
   }
 
-  void _onItemFetched(OrderEntry order, OrderEntry item) {
-    if (order.clientId != item.clientId) {
+  void _onItemsFetched(List<OrderEntry> items) {
+    if (items.isEmpty) {
+      return;
+    }
+    final firstClientId =
+        _primarySelectedOrder?.clientId ?? items.first.clientId;
+    if (items.any((item) => item.clientId != firstClientId)) {
       setState(() {
         _validationError =
-            'The selected order line does not match the parent order client.';
+            'Selected order lines must belong to the same client.';
       });
       return;
     }
-    if (!_isOrderEligible(item)) {
+    final ineligible = items.where((item) => !_isOrderEligible(item)).toList();
+    if (ineligible.isNotEmpty) {
       setState(() {
         _validationError =
-            'The selected order line is no longer eligible for this challan.';
+            'One or more selected order lines are no longer eligible for this challan.';
       });
       return;
     }
     setState(() {
-      _selectedOrders = [..._selectedOrders, item];
-      final fetchedItem = _ItemDraft.fromOrderOption(
-        _OrderItemOption.fromOrder(item),
-      );
+      _selectedOrders = [..._selectedOrders, ...items];
+      final fetchedItems = items
+          .map(
+            (item) =>
+                _ItemDraft.fromOrderOption(_OrderItemOption.fromOrder(item)),
+          )
+          .toList(growable: false);
       _items = [
         for (final draft in _items)
           if (!draft.isBlank) draft,
-        fetchedItem,
+        ...fetchedItems,
       ];
       _validationError = null;
       _isOrdersPanelOpen = false;
@@ -953,6 +984,8 @@ class _ChallanEditorState extends State<_ChallanEditor> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<DeliveryChallanProvider>();
+    context.watch<PreferencesProvider>();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncOrdersCommand());
     final editorTitle = _editingExisting
         ? (_isReception ? 'Edit Reception Challan' : 'Edit Delivery Challan')
         : (_isReception
@@ -1043,7 +1076,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
                                   onClose: () => setState(
                                     () => _isOrdersPanelOpen = false,
                                   ),
-                                  onFetch: _onItemFetched,
+                                  onFetch: _onItemsFetched,
                                 ),
                               )
                             : const SizedBox(),
@@ -1173,16 +1206,10 @@ class _ChallanEditorState extends State<_ChallanEditor> {
               : 'Review the selected order-linked dispatch rows and quantities before issuing the challan.',
           child: _ItemsEditor(
             isReception: _isReception,
+            maintainStocks: _maintainStocks,
             enabled: _canEdit,
             items: _items,
             orderOptions: _selectedOrderOptions,
-            productionRuns: _completedProductionRuns,
-            onProductionRunPicked: (run) {
-              if (_locationController.text.trim().isEmpty &&
-                  run.location.trim().isNotEmpty) {
-                _locationController.text = run.location.trim();
-              }
-            },
             onChanged: () => setState(() {
               _validationError = null;
             }),
@@ -1240,7 +1267,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
                   ],
                 ),
               ),
-              if (!_isReception) ...[
+              if (!_isReception && _maintainStocks) ...[
                 const SizedBox(width: 12),
                 _ordersHeaderButton(),
               ],
@@ -1271,10 +1298,10 @@ class _ChallanEditorState extends State<_ChallanEditor> {
           ],
           const SizedBox(height: 12),
           _typeSelector(),
-          if (_isReception) ...[
+          if (_isReception && _maintainStocks) ...[
             const SizedBox(height: 12),
             _vendorSelector(context),
-          ] else
+          ] else if (_maintainStocks)
             _selectedOrdersSummary(),
           const SizedBox(height: 12),
           Row(
@@ -1283,7 +1310,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
                 child: _field(
                   _isReception ? 'Vendor / Source' : 'Customer name / M/s',
                   _customerController,
-                  enabled: false,
+                  enabled: _canEdit && !_maintainStocks,
                 ),
               ),
               const SizedBox(width: 12),
@@ -1291,7 +1318,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
                 child: _field(
                   _isReception ? 'Vendor GSTIN' : 'Customer GSTIN',
                   _gstinController,
-                  enabled: false,
+                  enabled: _canEdit && !_maintainStocks,
                 ),
               ),
             ],
@@ -1469,6 +1496,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
                   _gstinController.clear();
                 }
               });
+              _syncOrdersCommand();
             },
     );
   }
@@ -1570,23 +1598,37 @@ class _ChallanEditorState extends State<_ChallanEditor> {
   }
 
   DeliveryChallanDraftInput _input() {
-    final orderIds = _selectedType == ChallanType.delivery
+    final maintainStocks = _maintainStocks;
+    final orderIds = _selectedType == ChallanType.delivery && maintainStocks
         ? _selectedOrders.map((order) => order.id).toList(growable: false)
         : const <int>[];
     return DeliveryChallanDraftInput(
       type: _selectedType,
       challanNo: _challanNumberController.text.trim(),
-      orderId: _selectedType == ChallanType.delivery
+      orderId: _selectedType == ChallanType.delivery && maintainStocks
           ? (orderIds.isEmpty ? (_source?.orderId ?? 0) : orderIds.first)
           : 0,
       orderIds: orderIds,
-      vendorId: _selectedType == ChallanType.reception
+      vendorId: _selectedType == ChallanType.reception && maintainStocks
           ? (_selectedVendorId ?? _source?.vendorId ?? 0)
           : 0,
       date: DateTime.tryParse(_dateController.text) ?? DateTime.now(),
       location: _locationController.text,
       sourceReference: _sourceReferenceController.text,
       notes: _notesController.text,
+      maintainStocks: maintainStocks,
+      customerName: _selectedType == ChallanType.delivery
+          ? _customerController.text
+          : '',
+      customerGstin: _selectedType == ChallanType.delivery
+          ? _gstinController.text
+          : '',
+      vendorName: _selectedType == ChallanType.reception
+          ? _customerController.text
+          : '',
+      vendorGstin: _selectedType == ChallanType.reception
+          ? _gstinController.text
+          : '',
       items: _items
           .asMap()
           .entries
@@ -1595,6 +1637,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
             (item) =>
                 item.orderItemId != null ||
                 item.itemId != null ||
+                item.particulars.trim().isNotEmpty ||
                 item.quantityPcs.trim().isNotEmpty ||
                 item.weight.trim().isNotEmpty,
           )
@@ -1607,18 +1650,17 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     setState(() {
       _validationError = null;
     });
-    if (_isReception && (_selectedVendorId ?? _source?.vendorId ?? 0) <= 0) {
+    if (_maintainStocks &&
+        _isReception &&
+        (_selectedVendorId ?? _source?.vendorId ?? 0) <= 0) {
       setState(() {
         _validationError = 'Select a vendor before saving challan.';
       });
       return;
     }
-    if (!_isReception &&
-        _selectedOrders.isEmpty &&
-        !_items.any((item) => item.productionRunId != null)) {
+    if (_maintainStocks && !_isReception && _selectedOrders.isEmpty) {
       setState(() {
-        _validationError =
-            'Select at least one order or pull a completed production run before saving challan.';
+        _validationError = 'Select at least one order before saving challan.';
       });
       return;
     }
@@ -1633,16 +1675,18 @@ class _ChallanEditorState extends State<_ChallanEditor> {
   Future<void> _issue() async {
     final provider = context.read<DeliveryChallanProvider>();
     final input = _input();
-    if (_selectedType == ChallanType.delivery &&
-        input.orderIds.isEmpty &&
-        !input.items.any((item) => item.productionRunId != null)) {
+    final maintainStocks = input.maintainStocks;
+    if (maintainStocks &&
+        _selectedType == ChallanType.delivery &&
+        input.orderIds.isEmpty) {
       setState(() {
-        _validationError =
-            'Select at least one order or pull a completed production run before saving challan.';
+        _validationError = 'Select at least one order before saving challan.';
       });
       return;
     }
-    if (_selectedType == ChallanType.reception && input.vendorId <= 0) {
+    if (maintainStocks &&
+        _selectedType == ChallanType.reception &&
+        input.vendorId <= 0) {
       setState(() {
         _validationError = 'Select a vendor before issuing reception challan.';
       });
@@ -1660,10 +1704,24 @@ class _ChallanEditorState extends State<_ChallanEditor> {
       });
       return;
     }
-    if (_selectedType == ChallanType.delivery) {
+    if (!maintainStocks) {
+      if (input.items.any((item) {
+        final quantity = double.tryParse(item.quantityPcs.trim());
+        final weight = double.tryParse(item.weight.trim());
+        return item.particulars.trim().isEmpty ||
+            !((quantity != null && quantity > 0) ||
+                (weight != null && weight > 0));
+      })) {
+        setState(() {
+          _validationError =
+              'Enter item text and Qty / Pcs or Weight for every row.';
+        });
+        return;
+      }
+    } else if (_selectedType == ChallanType.delivery) {
       if (input.items.any(
         (item) =>
-            (item.orderItemId == null && item.productionRunId == null) ||
+            item.orderItemId == null ||
             (item.quantityPcs.trim().isEmpty && item.weight.trim().isEmpty),
       )) {
         setState(() {
@@ -1708,7 +1766,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
   }
 }
 
-class OrdersFetchPanel extends StatelessWidget {
+class OrdersFetchPanel extends StatefulWidget {
   const OrdersFetchPanel({
     super.key,
     required this.selectedOrderIds,
@@ -1720,7 +1778,72 @@ class OrdersFetchPanel extends StatelessWidget {
   final Set<int> selectedOrderIds;
   final int? lockedClientId;
   final VoidCallback onClose;
-  final void Function(OrderEntry order, OrderEntry item) onFetch;
+  final ValueChanged<List<OrderEntry>> onFetch;
+
+  @override
+  State<OrdersFetchPanel> createState() => _OrdersFetchPanelState();
+}
+
+class _OrdersFetchPanelState extends State<OrdersFetchPanel> {
+  final TextEditingController _searchController = TextEditingController();
+  final Set<int> _selectedLineIds = <int>{};
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<String> get _tokens => _searchController.text
+      .split(',')
+      .map((token) => token.trim().toLowerCase())
+      .where((token) => token.isNotEmpty)
+      .toList(growable: false);
+
+  bool _matchesTokens(_OrderFetchGroup group, List<String> tokens) {
+    if (tokens.isEmpty) {
+      return true;
+    }
+    final groupText = '${group.partyName} ${group.orderCode}'.toLowerCase();
+    return tokens.every((token) {
+      if (groupText.contains(token)) {
+        return true;
+      }
+      return group.items.any((item) {
+        final itemText =
+            '${item.itemName} ${item.clientCode} ${item.variationPathLabel}'
+                .toLowerCase();
+        return itemText.contains(token);
+      });
+    });
+  }
+
+  bool _matchesLine(
+    _OrderFetchGroup group,
+    OrderEntry item,
+    List<String> tokens,
+  ) {
+    if (tokens.isEmpty) {
+      return true;
+    }
+    final groupText = '${group.partyName} ${group.orderCode}'.toLowerCase();
+    final itemText =
+        '${item.itemName} ${item.clientCode} ${item.variationPathLabel}'
+            .toLowerCase();
+    return tokens.every(
+      (token) => groupText.contains(token) || itemText.contains(token),
+    );
+  }
+
+  void _toggleLine(OrderEntry item, bool selected) {
+    setState(() {
+      if (selected) {
+        _selectedLineIds.add(item.id);
+      } else {
+        _selectedLineIds.remove(item.id);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1728,27 +1851,72 @@ class OrdersFetchPanel extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(18, 16, 12, 12),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Expanded(
-                child: Text(
-                  'Select Order Line',
-                  style: TextStyle(
-                    color: SoftErpTheme.textPrimary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Select Order Line',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: SoftErpTheme.textPrimary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                   ),
-                ),
+                  IconButton(
+                    tooltip: 'Close orders panel',
+                    onPressed: widget.onClose,
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
               ),
-              IconButton(
-                tooltip: 'Close orders panel',
-                onPressed: onClose,
-                icon: const Icon(Icons.close_rounded),
+              const SizedBox(height: 10),
+              FilledButton.icon(
+                onPressed: _selectedLineIds.isEmpty
+                    ? null
+                    : () {
+                        final provider = context.read<OrdersProvider>();
+                        final selected = provider.orders
+                            .where(
+                              (order) => _selectedLineIds.contains(order.id),
+                            )
+                            .toList(growable: false);
+                        widget.onFetch(selected);
+                      },
+                icon: const Icon(Icons.north_east_rounded, size: 16),
+                label: const Text(
+                  'Fetch Selected Items ↗',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),
         ),
-        if (lockedClientId != null)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+          child: TextField(
+            controller: _searchController,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              prefixIcon: const Icon(Icons.search_rounded),
+              hintText: 'Search client, order, or items. Use commas for AND.',
+              isDense: true,
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: SoftErpTheme.border),
+              ),
+            ),
+          ),
+        ),
+        if (widget.lockedClientId != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
             child: Container(
@@ -1798,18 +1966,20 @@ class OrdersFetchPanel extends StatelessWidget {
                         if (line.status == OrderStatus.completed) {
                           return false;
                         }
-                        if (selectedOrderIds.contains(line.id)) {
+                        if (widget.selectedOrderIds.contains(line.id)) {
                           return false;
                         }
-                        if (lockedClientId != null &&
-                            line.clientId != lockedClientId) {
+                        if (widget.lockedClientId != null &&
+                            line.clientId != widget.lockedClientId) {
                           return false;
                         }
                         return true;
                       })
                       .toList(growable: false)
                     ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-              final groups = _OrderFetchGroup.fromLines(orderLines);
+              final groups = _OrderFetchGroup.fromLines(orderLines)
+                  .where((group) => _matchesTokens(group, _tokens))
+                  .toList(growable: false);
               if (groups.isEmpty) {
                 return const Center(
                   child: Padding(
@@ -1826,7 +1996,14 @@ class OrdersFetchPanel extends StatelessWidget {
                 itemCount: groups.length,
                 itemBuilder: (context, index) {
                   final group = groups[index];
-                  return _OrderFetchAccordion(group: group, onFetch: onFetch);
+                  return _OrderFetchAccordion(
+                    group: group,
+                    visibleItems: group.items
+                        .where((item) => _matchesLine(group, item, _tokens))
+                        .toList(growable: false),
+                    selectedLineIds: _selectedLineIds,
+                    onToggle: _toggleLine,
+                  );
                 },
               );
             },
@@ -1877,10 +2054,17 @@ class _OrderFetchGroup {
 }
 
 class _OrderFetchAccordion extends StatelessWidget {
-  const _OrderFetchAccordion({required this.group, required this.onFetch});
+  const _OrderFetchAccordion({
+    required this.group,
+    required this.visibleItems,
+    required this.selectedLineIds,
+    required this.onToggle,
+  });
 
   final _OrderFetchGroup group;
-  final void Function(OrderEntry order, OrderEntry item) onFetch;
+  final List<OrderEntry> visibleItems;
+  final Set<int> selectedLineIds;
+  final void Function(OrderEntry item, bool selected) onToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -1916,7 +2100,7 @@ class _OrderFetchAccordion extends StatelessWidget {
                 const SizedBox(width: 8),
                 Flexible(
                   child: Text(
-                    '${group.items.length} line${group.items.length == 1 ? '' : 's'} available',
+                    '${visibleItems.length} line${visibleItems.length == 1 ? '' : 's'} available',
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: SoftErpTheme.textSecondary,
@@ -1928,12 +2112,12 @@ class _OrderFetchAccordion extends StatelessWidget {
               ],
             ),
           ),
-          children: group.items
+          children: visibleItems
               .map(
                 (item) => _OrderFetchLineRow(
-                  order: group.parent,
                   item: item,
-                  onFetch: onFetch,
+                  selected: selectedLineIds.contains(item.id),
+                  onToggle: (selected) => onToggle(item, selected),
                 ),
               )
               .toList(growable: false),
@@ -1945,14 +2129,14 @@ class _OrderFetchAccordion extends StatelessWidget {
 
 class _OrderFetchLineRow extends StatelessWidget {
   const _OrderFetchLineRow({
-    required this.order,
     required this.item,
-    required this.onFetch,
+    required this.selected,
+    required this.onToggle,
   });
 
-  final OrderEntry order;
   final OrderEntry item;
-  final void Function(OrderEntry order, OrderEntry item) onFetch;
+  final bool selected;
+  final ValueChanged<bool> onToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -1967,6 +2151,11 @@ class _OrderFetchLineRow extends StatelessWidget {
       ),
       child: Row(
         children: [
+          Checkbox(
+            value: selected,
+            onChanged: (value) => onToggle(value ?? false),
+          ),
+          const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1995,20 +2184,6 @@ class _OrderFetchLineRow extends StatelessWidget {
                 ),
               ],
             ),
-          ),
-          const SizedBox(width: 12),
-          ElevatedButton(
-            onPressed: () => onFetch(order, item),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: SoftErpTheme.accent,
-              foregroundColor: Colors.white,
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-            child: const Text('Fetch', style: TextStyle(fontSize: 12)),
           ),
         ],
       ),
@@ -2059,20 +2234,18 @@ class _OrderFetchStatusBadge extends StatelessWidget {
 class _ItemsEditor extends StatelessWidget {
   const _ItemsEditor({
     required this.isReception,
+    required this.maintainStocks,
     required this.items,
     required this.enabled,
     required this.orderOptions,
-    required this.productionRuns,
-    required this.onProductionRunPicked,
     required this.onChanged,
   });
 
   final bool isReception;
+  final bool maintainStocks;
   final List<_ItemDraft> items;
   final bool enabled;
   final List<_OrderItemOption> orderOptions;
-  final List<CompletedProductionRun> productionRuns;
-  final ValueChanged<CompletedProductionRun> onProductionRunPicked;
   final VoidCallback onChanged;
 
   @override
@@ -2097,10 +2270,16 @@ class _ItemsEditor extends StatelessWidget {
                 ),
               ),
               TextButton.icon(
-                onPressed: enabled && (isReception || orderOptions.isNotEmpty)
+                onPressed:
+                    enabled &&
+                        (!maintainStocks ||
+                            isReception ||
+                            orderOptions.isNotEmpty)
                     ? () {
                         items.add(
-                          !isReception && orderOptions.isNotEmpty
+                          maintainStocks &&
+                                  !isReception &&
+                                  orderOptions.isNotEmpty
                               ? _ItemDraft.fromOrderOption(orderOptions.first)
                               : _ItemDraft.blank(items.length + 1),
                         );
@@ -2113,7 +2292,7 @@ class _ItemsEditor extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          if (!isReception && orderOptions.isEmpty) ...[
+          if (maintainStocks && !isReception && orderOptions.isEmpty) ...[
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 8),
               child: Text(
@@ -2123,7 +2302,9 @@ class _ItemsEditor extends StatelessWidget {
             ),
           ],
           for (final entry in items.asMap().entries) ...[
-            isReception
+            !maintainStocks
+                ? _buildTypewriterRow(entry.key, entry.value)
+                : isReception
                 ? _buildReceptionRow(
                     context,
                     entry.key,
@@ -2138,77 +2319,85 @@ class _ItemsEditor extends StatelessWidget {
     );
   }
 
+  Widget _buildTypewriterRow(int index, _ItemDraft draft) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              SizedBox(width: 28, child: Text('${index + 1}.')),
+              Expanded(
+                flex: 5,
+                child: _itemField(
+                  draft.particulars,
+                  'Item / Particulars',
+                  enabled,
+                  (value) => draft.particulars = value,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: _itemField(
+                  draft.hsnCode,
+                  'HSN Code',
+                  enabled,
+                  (value) => draft.hsnCode = value,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: _itemField(
+                  draft.quantityPcs,
+                  'Qty / Pcs',
+                  enabled,
+                  (value) => draft.quantityPcs = value,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: _itemField(
+                  draft.weight,
+                  'Weight',
+                  enabled,
+                  (value) => draft.weight = value,
+                ),
+              ),
+              IconButton(
+                tooltip: 'Remove row',
+                onPressed: enabled && items.length > 1
+                    ? () {
+                        items.removeAt(index);
+                        onChanged();
+                      }
+                    : null,
+                icon: const Icon(Icons.remove_circle_outline),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _itemField(
+            draft.note,
+            'Line note',
+            enabled,
+            (value) => draft.note = value,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDeliveryRow(BuildContext context, int index, _ItemDraft draft) {
     return Column(
       children: [
-        Row(
-          children: [
-            const SizedBox(width: 28),
-            Expanded(
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: !enabled
-                          ? null
-                          : () async {
-                              final selected =
-                                  await showSearchableSelectDialog<int>(
-                                    context: context,
-                                    title: 'Pull from Production',
-                                    searchHintText:
-                                        'Search by run, item, or variation',
-                                    options: productionRuns
-                                        .map(
-                                          (run) => SearchableSelectOption<int>(
-                                            value: run.id,
-                                            label: run.displayLabel,
-                                            searchText:
-                                                '${run.runCode} ${run.itemName} ${run.variationPathLabel} ${run.location}',
-                                          ),
-                                        )
-                                        .toList(growable: false),
-                                  );
-                              if (selected == null) {
-                                return;
-                              }
-                              final run = productionRuns
-                                  .where((entry) => entry.id == selected.value)
-                                  .firstOrNull;
-                              if (run == null) {
-                                return;
-                              }
-                              draft.applyProductionRun(run);
-                              onProductionRunPicked(run);
-                              onChanged();
-                            },
-                      icon: const Icon(Icons.factory_outlined, size: 18),
-                      label: const Text('Pull from Production'),
-                    ),
-                    if (draft.productionRunId != null)
-                      InputChip(
-                        label: Text(
-                          draft.productionRunLabel.trim().isEmpty
-                              ? 'Run #${draft.productionRunId}'
-                              : draft.productionRunLabel,
-                        ),
-                        onDeleted: !enabled
-                            ? null
-                            : () {
-                                draft.clearProductionRun();
-                                onChanged();
-                              },
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
         Row(
           children: [
             SizedBox(width: 28, child: Text('${index + 1}.')),

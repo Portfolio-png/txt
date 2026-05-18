@@ -195,14 +195,15 @@ class ApiChallanRepository implements ChallanRepository {
             : input.challanNo.trim(),
         date: input.date,
         location: input.location,
-        customerName: '',
-        customerGstin: '',
+        customerName: input.customerName,
+        customerGstin: input.customerGstin,
         vendorId: input.vendorId > 0 ? input.vendorId : null,
-        vendorName: '',
-        vendorGstin: '',
+        vendorName: input.vendorName,
+        vendorGstin: input.vendorGstin,
         sourceReference: input.sourceReference,
         companyProfileSnapshot: null,
         notes: input.notes,
+        maintainStocks: input.maintainStocks,
         status: DeliveryChallanStatus.draft,
         items: input.items,
         itemsCount: input.items.length,
@@ -240,14 +241,23 @@ class ApiChallanRepository implements ChallanRepository {
         challanNo: current.challanNo,
         date: input.date,
         location: input.location,
-        customerName: current.customerName,
-        customerGstin: current.customerGstin,
+        customerName: input.customerName.isEmpty
+            ? current.customerName
+            : input.customerName,
+        customerGstin: input.customerGstin.isEmpty
+            ? current.customerGstin
+            : input.customerGstin,
         vendorId: input.vendorId > 0 ? input.vendorId : current.vendorId,
-        vendorName: current.vendorName,
-        vendorGstin: current.vendorGstin,
+        vendorName: input.vendorName.isEmpty
+            ? current.vendorName
+            : input.vendorName,
+        vendorGstin: input.vendorGstin.isEmpty
+            ? current.vendorGstin
+            : input.vendorGstin,
         sourceReference: input.sourceReference,
         companyProfileSnapshot: current.companyProfileSnapshot,
         notes: input.notes,
+        maintainStocks: input.maintainStocks,
         status: current.status,
         items: input.items,
         itemsCount: input.items.length,
@@ -802,6 +812,7 @@ class ApiChallanRepository implements ChallanRepository {
             ? _mockProfile
             : current.companyProfileSnapshot,
         notes: current.notes,
+        maintainStocks: current.maintainStocks,
         status: action == 'issue'
             ? DeliveryChallanStatus.issued
             : DeliveryChallanStatus.cancelled,

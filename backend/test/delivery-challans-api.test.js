@@ -359,6 +359,99 @@ test('reception challans issue and cancel with vendor-linked stock provenance', 
   }
 });
 
+test('document-only challans issue without inventory movements', async () => {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-typewriter-challans-'));
+  process.env.DB_PATH = path.join(tempDir, 'paper.db');
+
+  delete require.cache[require.resolve('../server.js')];
+  const backend = require('../server.js');
+  try {
+    await backend.resetAndSeedDemoData();
+    const actor = { id: 1, name: 'Typewriter Tester', role: 'admin' };
+
+    const created = await backend.saveDeliveryChallan(
+      {
+        type: 'delivery',
+        maintain_stocks: false,
+        customer_name: 'Walk-in Customer',
+        customer_gstin: '27TYPE1234F1Z5',
+        date: '2026-05-04',
+        location: 'Front Desk',
+        items: [
+          {
+            particulars: 'Unlisted printed stationery line',
+            hsn_code: '4901',
+            quantity_pcs: '12',
+            weight: '',
+          },
+        ],
+      },
+      actor,
+      { user: actor },
+    );
+
+    assert.equal(Number(created.maintain_stocks), 0);
+    assert.equal(created.customer_name, 'Walk-in Customer');
+    assert.equal(created.order_id, null);
+
+    const savedLine = await backend.get(
+      `
+      SELECT order_item_id, item_id, variation_leaf_node_id, particulars
+      FROM delivery_challan_items
+      WHERE challan_id = ?
+      LIMIT 1
+      `,
+      [created.id],
+    );
+    assert.equal(savedLine.order_item_id, null);
+    assert.equal(savedLine.item_id, null);
+    assert.equal(Number(savedLine.variation_leaf_node_id || 0), 0);
+    assert.equal(savedLine.particulars, 'Unlisted printed stationery line');
+
+    const issued = await backend.issueDeliveryChallan(created.id, actor);
+    assert.equal(issued.status, 'issued');
+
+    const movementCount = await backend.get(
+      'SELECT COUNT(*) AS count FROM inventory_movements WHERE source_challan_id = ?',
+      [created.id],
+    );
+    assert.equal(Number(movementCount.count || 0), 0);
+
+    const cancelled = await backend.cancelDeliveryChallan(created.id, actor);
+    assert.equal(cancelled.status, 'cancelled');
+
+    const movementCountAfterCancel = await backend.get(
+      'SELECT COUNT(*) AS count FROM inventory_movements WHERE source_challan_id = ?',
+      [created.id],
+    );
+    assert.equal(Number(movementCountAfterCancel.count || 0), 0);
+
+    await assert.rejects(
+      () =>
+        backend.saveDeliveryChallan(
+          {
+            type: 'delivery',
+            maintain_stocks: false,
+            date: '2026-05-04',
+            location: 'Front Desk',
+            items: [
+              {
+                particulars: '',
+                quantity_pcs: '0',
+                weight: '',
+              },
+            ],
+          },
+          actor,
+          { user: actor },
+        ).then((draft) => backend.issueDeliveryChallan(draft.id, actor)),
+      /Enter item text and Qty \/ Pcs or Weight/,
+    );
+  } finally {
+    await backend.closeDb();
+  }
+});
+
 test('reception challans reject archived vendors and list filters stay scoped', async () => {
   const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-challan-filters-'));
   process.env.DB_PATH = path.join(tempDir, 'paper.db');

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import 'core/theme/soft_erp_theme.dart';
 import 'core/network/authenticated_http_client.dart';
+import 'app/preferences/preferences_provider.dart';
 import 'app/shell/app_shell.dart';
 import 'app/shell/navigation_provider.dart';
 import 'features/auth/presentation/providers/auth_provider.dart';
@@ -19,6 +20,7 @@ import 'features/clients/data/repositories/client_repository.dart';
 import 'features/clients/presentation/providers/clients_provider.dart';
 import 'features/delivery_challans/data/api_delivery_challan_repository.dart';
 import 'features/delivery_challans/data/delivery_challan_repository.dart';
+import 'features/delivery_challans/presentation/providers/challan_editor_command_provider.dart';
 import 'features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
 import 'features/items/data/repositories/api_item_repository.dart';
 import 'features/items/data/repositories/item_repository.dart';
@@ -159,7 +161,9 @@ class MyApp extends StatelessWidget {
               pipelineRunRepository ??
               _buildPipelineRunRepository(context.read<AuthProvider>()),
         ),
+        ChangeNotifierProvider(create: (_) => PreferencesProvider()),
         ChangeNotifierProvider(create: (_) => NavigationProvider()),
+        ChangeNotifierProvider(create: (_) => ChallanEditorCommandProvider()),
         ChangeNotifierProxyProvider<OrderRepository, OrdersProvider>(
           create: (context) =>
               OrdersProvider(repository: context.read<OrderRepository>())

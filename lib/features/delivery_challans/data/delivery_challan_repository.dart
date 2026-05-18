@@ -117,6 +117,11 @@ class ChallanDraftInput {
     required this.location,
     required this.sourceReference,
     required this.notes,
+    required this.maintainStocks,
+    required this.customerName,
+    required this.customerGstin,
+    required this.vendorName,
+    required this.vendorGstin,
     required this.items,
   });
 
@@ -129,6 +134,11 @@ class ChallanDraftInput {
   final String location;
   final String sourceReference;
   final String notes;
+  final bool maintainStocks;
+  final String customerName;
+  final String customerGstin;
+  final String vendorName;
+  final String vendorGstin;
   final List<DeliveryChallanItem> items;
 
   Map<String, dynamic> toJson() {
@@ -142,6 +152,11 @@ class ChallanDraftInput {
       'location': location.trim(),
       'source_reference': sourceReference.trim(),
       'notes': notes.trim(),
+      'maintain_stocks': maintainStocks,
+      'customer_name': customerName.trim(),
+      'customer_gstin': customerGstin.trim(),
+      'vendor_name': vendorName.trim(),
+      'vendor_gstin': vendorGstin.trim(),
       'items': items
           .map(
             (item) => {

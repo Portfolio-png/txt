@@ -276,6 +276,7 @@ class DeliveryChallan {
     required this.sourceReference,
     required this.companyProfileSnapshot,
     required this.notes,
+    required this.maintainStocks,
     required this.status,
     required this.items,
     required this.itemsCount,
@@ -301,6 +302,7 @@ class DeliveryChallan {
   final String sourceReference;
   final CompanyProfile? companyProfileSnapshot;
   final String notes;
+  final bool maintainStocks;
   final DeliveryChallanStatus status;
   final List<DeliveryChallanItem> items;
   final int itemsCount;
@@ -321,6 +323,8 @@ class DeliveryChallan {
         .toList(growable: false);
     final snapshot =
         json['companyProfileSnapshot'] ?? json['company_profile_snapshot'];
+    final maintainStocksValue =
+        json['maintainStocks'] ?? json['maintain_stocks'];
     return DeliveryChallan(
       id: json['id'] as int? ?? 0,
       type: challanTypeFromName(
@@ -372,6 +376,9 @@ class DeliveryChallan {
           ? CompanyProfile.fromJson(snapshot)
           : null,
       notes: json['notes'] as String? ?? '',
+      maintainStocks: maintainStocksValue is bool
+          ? maintainStocksValue
+          : (maintainStocksValue as int? ?? 1) != 0,
       status: deliveryChallanStatusFromName(json['status'] as String? ?? ''),
       items: items,
       itemsCount:
@@ -403,6 +410,7 @@ class DeliveryChallan {
       sourceReference: sourceReference,
       companyProfileSnapshot: companyProfileSnapshot,
       notes: notes,
+      maintainStocks: maintainStocks,
       status: status,
       items: items ?? this.items,
       itemsCount: items?.length ?? itemsCount,
