@@ -9,6 +9,7 @@ import '../../core/theme/soft_erp_theme.dart';
 import '../../core/widgets/soft_primitives.dart';
 import '../../features/groups/presentation/screens/groups_screen.dart';
 import '../../features/auth/presentation/screens/user_management_screen.dart';
+import '../../features/delivery_challans/domain/delivery_challan.dart';
 import '../../features/delivery_challans/presentation/screens/delivery_challan_screen.dart';
 import '../../features/inventory/presentation/screens/inventory_screen.dart';
 import '../../features/inventory/presentation/screens/material_scan_screen.dart';
@@ -23,55 +24,26 @@ import 'app_sidebar.dart';
 import 'app_topbar.dart';
 import 'navigation_provider.dart';
 
-class AppShell extends StatefulWidget {
+class AppShell extends StatelessWidget {
   const AppShell({super.key});
-
-  @override
-  State<AppShell> createState() => _AppShellState();
-}
-
-class _AppShellState extends State<AppShell> {
-  final FocusNode _shellFocusNode = FocusNode(debugLabel: 'app_shell');
-  bool _isOpeningNewOrder = false;
 
   bool get _isDesktopPlatform =>
       kIsWeb || Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 
   @override
-  void initState() {
-    super.initState();
-    HardwareKeyboard.instance.addHandler(_handleGlobalKeyEvent);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _shellFocusNode.hasFocus) {
-        return;
-      }
-      _shellFocusNode.requestFocus();
-    });
-  }
-
-  @override
-  void dispose() {
-    HardwareKeyboard.instance.removeHandler(_handleGlobalKeyEvent);
-    _shellFocusNode.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return Focus(
-      focusNode: _shellFocusNode,
-      autofocus: true,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final isMobile =
-              constraints.maxWidth < _ShellLayoutMetrics.mobileBreakpoint;
-          final compact =
-              constraints.maxWidth < _ShellLayoutMetrics.compactBreakpoint;
-          final sidebarWidth = compact
-              ? _ShellLayoutMetrics.compactSidebarWidth
-              : _ShellLayoutMetrics.sidebarWidth;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile =
+            constraints.maxWidth < _ShellLayoutMetrics.mobileBreakpoint;
+        final compact =
+            constraints.maxWidth < _ShellLayoutMetrics.compactBreakpoint;
+        final sidebarWidth = compact
+            ? _ShellLayoutMetrics.compactSidebarWidth
+            : _ShellLayoutMetrics.sidebarWidth;
 
-          return Scaffold(
+        return PaperShortcutManager(
+          child: Scaffold(
             backgroundColor: Colors.transparent,
             drawer: isMobile
                 ? Drawer(width: 236, child: _ShellDrawerContent())
@@ -146,59 +118,164 @@ class _AppShellState extends State<AppShell> {
                 ),
               ),
             ),
-          );
+          ),
+        );
+      },
+    );
+  }
+}
+
+class PaperShortcutManager extends StatefulWidget {
+  const PaperShortcutManager({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<PaperShortcutManager> createState() => _PaperShortcutManagerState();
+}
+
+class _PaperShortcutManagerState extends State<PaperShortcutManager> {
+  final FocusNode _focusNode = FocusNode(debugLabel: 'paper_shortcut_manager');
+  bool _isModalShortcutPending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _requestShellFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final navProvider = context.watch<NavigationProvider>();
+    final currentTab = navProvider.currentTabIndex;
+
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(
+          LogicalKeyboardKey.digit1,
+          control: true,
+        ): () => navProvider.setTab(0),
+        const SingleActivator(
+          LogicalKeyboardKey.digit2,
+          control: true,
+        ): () => navProvider.setTab(1),
+        const SingleActivator(
+          LogicalKeyboardKey.digit3,
+          control: true,
+        ): () => navProvider.setTab(2),
+        const SingleActivator(
+          LogicalKeyboardKey.digit4,
+          control: true,
+        ): () => navProvider.setTab(3),
+        const SingleActivator(
+          LogicalKeyboardKey.digit5,
+          control: true,
+        ): () => navProvider.setTab(4),
+        const SingleActivator(
+          LogicalKeyboardKey.tab,
+          control: true,
+        ): () => navProvider.selectRelativeSidebarItem(),
+        const SingleActivator(
+          LogicalKeyboardKey.tab,
+          control: true,
+          shift: true,
+        ): () => navProvider.selectRelativeSidebarItem(reverse: true),
+        const SingleActivator(
+          LogicalKeyboardKey.keyF,
+          control: true,
+        ): navProvider.focusTopStripSearch,
+        const SingleActivator(
+          LogicalKeyboardKey.keyN,
+          control: true,
+        ): () {
+          if (currentTab == 1) {
+            _handleCreateOrder(context);
+            return;
+          }
+          if (currentTab == 2) {
+            _handleCreateDeliveryChallan(context);
+          }
         },
+        const SingleActivator(
+          LogicalKeyboardKey.keyN,
+          control: true,
+          alt: true,
+        ): () {
+          if (currentTab == 2) {
+            _handleCreateReceptionChallan(context);
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.f8): () {
+          if (currentTab == 2) {
+            _handleCreateDeliveryChallan(context);
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.f9): () {
+          if (currentTab == 2) {
+            _handleCreateReceptionChallan(context);
+          }
+        },
+      },
+      child: Focus(
+        focusNode: _focusNode,
+        autofocus: true,
+        includeSemantics: false,
+        onKeyEvent: _handleShellKeyEvent,
+        child: widget.child,
       ),
     );
   }
 
-  bool _handleGlobalKeyEvent(KeyEvent event) {
-    final route = ModalRoute.of(context);
-    if (route != null && !route.isCurrent) {
-      return false;
-    }
-    return _handleShellKeyEvent(event) == KeyEventResult.handled;
-  }
-
-  KeyEventResult _handleShellKeyEvent(KeyEvent event) {
+  KeyEventResult _handleShellKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) {
       return KeyEventResult.ignored;
     }
 
-    final isControlPressed = HardwareKeyboard.instance.isControlPressed;
-    final isMetaPressed = HardwareKeyboard.instance.isMetaPressed;
-    final usesCommandModifier = isControlPressed || isMetaPressed;
-    if (!usesCommandModifier) {
-      final character = event.character;
-      if (_shouldRouteTypingToSearch(event, character)) {
-        context.read<NavigationProvider>().typeIntoTopStripSearch(character!);
-        return KeyEventResult.handled;
-      }
-      return KeyEventResult.ignored;
+    if (_shouldHandleDashboardHome(event)) {
+      context.read<NavigationProvider>().setTab(0);
+      return KeyEventResult.handled;
     }
 
-    switch (event.logicalKey) {
-      case LogicalKeyboardKey.tab:
-        context.read<NavigationProvider>().selectRelativeSidebarItem(
-          reverse: HardwareKeyboard.instance.isShiftPressed,
-        );
-        return KeyEventResult.handled;
-      case LogicalKeyboardKey.keyN:
-        _openNewOrderFromShortcut(context);
-        return KeyEventResult.handled;
-      case LogicalKeyboardKey.keyF:
-        context.read<NavigationProvider>().focusTopStripSearch();
-        return KeyEventResult.handled;
+    final character = event.character;
+    if (_shouldRouteTypingToSearch(event, character)) {
+      context.read<NavigationProvider>().typeIntoTopStripSearch(character!);
+      return KeyEventResult.handled;
     }
 
     return KeyEventResult.ignored;
+  }
+
+  bool _shouldHandleDashboardHome(KeyDownEvent event) {
+    if (event.logicalKey != LogicalKeyboardKey.home) {
+      return false;
+    }
+    if (HardwareKeyboard.instance.isAltPressed ||
+        HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isMetaPressed ||
+        HardwareKeyboard.instance.isShiftPressed) {
+      return false;
+    }
+    if (_isEditableFocusActive()) {
+      return false;
+    }
+    return true;
   }
 
   bool _shouldRouteTypingToSearch(KeyDownEvent event, String? character) {
     if (character == null || character.isEmpty) {
       return false;
     }
-    if (HardwareKeyboard.instance.isAltPressed) {
+    if (HardwareKeyboard.instance.isAltPressed ||
+        HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isMetaPressed) {
       return false;
     }
     if (event.logicalKey == LogicalKeyboardKey.space) {
@@ -231,7 +308,7 @@ class _AppShellState extends State<AppShell> {
     if (focusedContext.widget is EditableText) {
       return true;
     }
-    var editableFound = focusedContext.widget is EditableText;
+    var editableFound = false;
     focusedContext.visitAncestorElements((element) {
       if (element.widget is EditableText) {
         editableFound = true;
@@ -242,15 +319,48 @@ class _AppShellState extends State<AppShell> {
     return editableFound;
   }
 
-  void _openNewOrderFromShortcut(BuildContext context) {
-    if (_isOpeningNewOrder) {
+  Future<void> _handleCreateOrder(BuildContext context) {
+    return _runModalShortcut(() => OrdersScreen.openEditor(context));
+  }
+
+  Future<void> _handleCreateDeliveryChallan(BuildContext context) {
+    return _runModalShortcut(
+      () => ChallanScreen.openEditor(context, initialType: ChallanType.delivery),
+    );
+  }
+
+  Future<void> _handleCreateReceptionChallan(BuildContext context) {
+    return _runModalShortcut(() => ChallanScreen.openReceptionEditor(context));
+  }
+
+  Future<void> _runModalShortcut(Future<void> Function() openModal) async {
+    if (_isModalShortcutPending || _isModalActive(context)) {
       return;
     }
 
-    _isOpeningNewOrder = true;
-    OrdersScreen.openEditor(context).whenComplete(() {
-      _isOpeningNewOrder = false;
-    });
+    _isModalShortcutPending = true;
+    try {
+      await openModal();
+    } finally {
+      _isModalShortcutPending = false;
+      if (mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _requestShellFocus();
+        });
+      }
+    }
+  }
+
+  bool _isModalActive(BuildContext context) {
+    final route = ModalRoute.of(context);
+    return route != null && !route.isCurrent;
+  }
+
+  void _requestShellFocus() {
+    if (!mounted || _isModalActive(context) || _focusNode.hasFocus) {
+      return;
+    }
+    _focusNode.requestFocus();
   }
 }
 

@@ -3604,9 +3604,67 @@ void main() {
     expect(find.text('Close'), findsOneWidget);
   });
 
-  testWidgets('ctrl and command n open the new order editor', (tester) async {
+  test('navigation provider maps the primary tabs to the requested indices', () {
+    final navigation = NavigationProvider(initialKey: 'configurator_units');
+    addTearDown(navigation.dispose);
+
+    expect(navigation.currentTabIndex, 6);
+
+    navigation.select('inventory_scan');
+    expect(navigation.currentTabIndex, 3);
+
+    navigation.setTab(2);
+    expect(navigation.selectedKey, 'delivery_challans');
+    expect(navigation.currentTabIndex, 2);
+  });
+
+  testWidgets('ctrl digits and home switch the primary shell tabs', (
+    tester,
+  ) async {
+    await pumpApp(tester, viewSize: const Size(1440, 900));
+    final context = tester.element(find.byType(Scaffold).first);
+    final navigation = context.read<NavigationProvider>();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(navigation.selectedKey, 'orders');
+    expect(navigation.currentTabIndex, 1);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit3);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(navigation.selectedKey, 'delivery_challans');
+    expect(navigation.currentTabIndex, 2);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit4);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(navigation.selectedKey, 'inventory');
+    expect(navigation.currentTabIndex, 3);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit5);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(navigation.selectedKey, 'production_pipelines');
+    expect(navigation.currentTabIndex, 4);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.home);
+    await tester.pumpAndSettle();
+    expect(navigation.selectedKey, 'dashboard');
+    expect(navigation.currentTabIndex, 0);
+  });
+
+  testWidgets('ctrl n opens the order editor only on the orders tab', (
+    tester,
+  ) async {
     await pumpApp(tester, viewSize: const Size(1440, 900));
 
+    await openOrdersScreen(tester);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
@@ -3617,9 +3675,66 @@ void main() {
     await tester.tap(find.text('Cancel').last);
     await tester.pumpAndSettle();
 
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    final context = tester.element(find.byType(Scaffold).first);
+    context.read<NavigationProvider>().select('inventory', skipTransition: true);
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Create New Order'), findsNothing);
+  });
+
+  testWidgets('challans shortcuts open delivery and reception editors', (
+    tester,
+  ) async {
+    await pumpApp(tester, viewSize: const Size(1440, 900));
+    await openChallansScreen(tester);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(find.text('Create Delivery Challan'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.f8);
+    await tester.pumpAndSettle();
+    expect(find.text('Create Delivery Challan'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(find.text('Create Reception Challan'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.f9);
+    await tester.pumpAndSettle();
+    expect(find.text('Create Reception Challan'), findsOneWidget);
+  });
+
+  testWidgets('held ctrl n does not spawn duplicate order dialogs', (
+    tester,
+  ) async {
+    await pumpApp(tester, viewSize: const Size(1440, 900));
+    await openOrdersScreen(tester);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pumpAndSettle();
 
     expect(find.text('Create New Order'), findsOneWidget);
@@ -3638,6 +3753,34 @@ void main() {
     final searchField = tester.widget<TextField>(
       find.byKey(const ValueKey<String>('shell_top_strip_search_field')),
     );
+    expect(searchField.focusNode?.hasFocus, isTrue);
+  });
+
+  testWidgets('home stays within editable text instead of jumping to dashboard', (
+    tester,
+  ) async {
+    await pumpApp(tester, viewSize: const Size(1440, 900));
+    await openOrdersScreen(tester);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('shell_top_strip_search_field')),
+      'ord',
+    );
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.home);
+    await tester.pumpAndSettle();
+
+    final context = tester.element(find.byType(Scaffold).first);
+    final searchField = tester.widget<TextField>(
+      find.byKey(const ValueKey<String>('shell_top_strip_search_field')),
+    );
+    expect(context.read<NavigationProvider>().selectedKey, 'orders');
     expect(searchField.focusNode?.hasFocus, isTrue);
   });
 

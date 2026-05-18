@@ -25,6 +25,42 @@ const Set<String> kConfiguratorNavigationKeys = <String>{
   'configurator_units',
 };
 
+const List<String> kPrimaryTabNavigationKeys = <String>[
+  'dashboard',
+  'orders',
+  'delivery_challans',
+  'inventory',
+  'production_pipelines',
+  'pm',
+  'configurator',
+];
+
+int primaryTabIndexForKey(String key) {
+  return switch (key) {
+    'dashboard' => 0,
+    'orders' => 1,
+    'delivery_challans' => 2,
+    'inventory' || 'inventory_scan' => 3,
+    'production_pipelines' => 4,
+    'pm' => 5,
+    _ when kConfiguratorNavigationKeys.contains(key) => 6,
+    _ => -1,
+  };
+}
+
+String? primaryTabKeyForIndex(int index) {
+  return switch (index) {
+    0 => 'dashboard',
+    1 => 'orders',
+    2 => 'delivery_challans',
+    3 => 'inventory',
+    4 => 'production_pipelines',
+    5 => 'pm',
+    6 => 'configurator',
+    _ => null,
+  };
+}
+
 class NavigationProvider extends ChangeNotifier {
   NavigationProvider({String initialKey = 'inventory'})
     : _selectedKey = initialKey;
@@ -37,6 +73,7 @@ class NavigationProvider extends ChangeNotifier {
   );
 
   String get selectedKey => _selectedKey;
+  int get currentTabIndex => primaryTabIndexForKey(_selectedKey);
   int get topStripSearchTextRevision => _topStripSearchTextRevision;
   bool _skipNextContentTransition = false;
 
@@ -60,6 +97,14 @@ class NavigationProvider extends ChangeNotifier {
         (safeCurrentIndex + delta + kSidebarNavigationOrder.length) %
         kSidebarNavigationOrder.length;
     select(kSidebarNavigationOrder[nextIndex], skipTransition: true);
+  }
+
+  void setTab(int index, {bool skipTransition = false}) {
+    final key = primaryTabKeyForIndex(index);
+    if (key == null) {
+      return;
+    }
+    select(key, skipTransition: skipTransition);
   }
 
   bool consumeSkipNextContentTransition() {
