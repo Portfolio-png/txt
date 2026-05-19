@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import '../../../app/reports/domain/reconciliation_report.dart';
 import '../domain/delivery_challan.dart';
 import '../domain/challan_template.dart';
 
@@ -39,6 +40,8 @@ abstract class ChallanRepository {
   Future<void> deleteChallan(int id);
 
   Future<void> recordPrint(int id);
+
+  Future<ReconciliationReportSnapshot> getReconciliationReport();
 
   Future<List<CompletedProductionRun>> getCompletedProductionRuns({
     String search = '',

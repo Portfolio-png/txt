@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../../../app/reports/domain/reconciliation_report.dart';
 import '../domain/challan_template.dart';
 import '../domain/delivery_challan.dart';
 import 'delivery_challan_repository.dart';
@@ -313,6 +314,24 @@ class ApiChallanRepository implements ChallanRepository {
       uri: uri,
       response: response,
       fallback: 'Failed to record challan print.',
+    );
+  }
+
+  @override
+  Future<ReconciliationReportSnapshot> getReconciliationReport() async {
+    if (useMockResponses) {
+      return ReconciliationReportSnapshot.empty();
+    }
+    final uri = Uri.parse('$baseUrl/api/reconciliation/report');
+    final response = await _sendRequest(method: 'GET', uri: uri);
+    final payload = _decodeApiResponse(
+      method: 'GET',
+      uri: uri,
+      response: response,
+      fallback: 'Failed to fetch reconciliation report.',
+    );
+    return ReconciliationReportSnapshot.fromJson(
+      _dataObject(payload, 'report'),
     );
   }
 

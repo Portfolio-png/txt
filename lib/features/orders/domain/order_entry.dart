@@ -23,6 +23,8 @@ class OrderEntry {
     required this.quantity,
     required this.status,
     required this.createdAt,
+    this.unitPrice = 0,
+    this.totalInvoicedQty = 0,
     this.startDate,
     this.endDate,
   });
@@ -39,6 +41,8 @@ class OrderEntry {
   final String variationPathLabel;
   final List<int> variationPathNodeIds;
   final int quantity;
+  final double unitPrice;
+  final double totalInvoicedQty;
   final OrderStatus status;
   final DateTime createdAt;
   final DateTime? startDate;

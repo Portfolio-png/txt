@@ -87,6 +87,10 @@ class ApiOrderRepository implements OrderRepository {
           variationPathLabel: input.variationPathLabel.trim(),
           variationPathNodeIds: List<int>.from(input.variationPathNodeIds),
           quantity: existing.quantity + input.quantity,
+          unitPrice: input.unitPrice > 0 ? input.unitPrice : existing.unitPrice,
+          totalInvoicedQty: input.totalInvoicedQty > 0
+              ? input.totalInvoicedQty
+              : existing.totalInvoicedQty,
           status: input.status,
           createdAt: existing.createdAt,
           startDate: input.startDate,
@@ -115,6 +119,8 @@ class ApiOrderRepository implements OrderRepository {
         variationPathLabel: input.variationPathLabel.trim(),
         variationPathNodeIds: List<int>.from(input.variationPathNodeIds),
         quantity: input.quantity,
+        unitPrice: input.unitPrice,
+        totalInvoicedQty: input.totalInvoicedQty,
         status: input.status,
         createdAt: DateTime.now(),
         startDate: input.startDate,

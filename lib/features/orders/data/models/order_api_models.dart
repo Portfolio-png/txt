@@ -23,6 +23,8 @@ class OrderDto {
     required this.quantity,
     required this.status,
     required this.createdAt,
+    required this.unitPrice,
+    required this.totalInvoicedQty,
     required this.startDate,
     required this.endDate,
   });
@@ -39,6 +41,8 @@ class OrderDto {
   final String variationPathLabel;
   final List<int> variationPathNodeIds;
   final int quantity;
+  final double unitPrice;
+  final double totalInvoicedQty;
   final OrderStatus status;
   final DateTime createdAt;
   final DateTime? startDate;
@@ -61,6 +65,13 @@ class OrderDto {
               .map((entry) => entry as int)
               .toList(growable: false),
       quantity: json['quantity'] as int? ?? 0,
+      unitPrice: (json['unitPrice'] as num? ?? json['unit_price'] as num? ?? 0)
+          .toDouble(),
+      totalInvoicedQty:
+          (json['totalInvoicedQty'] as num? ??
+                  json['total_invoiced_qty'] as num? ??
+                  0)
+              .toDouble(),
       status: _statusFromJson(json['status'] as String? ?? ''),
       createdAt:
           DateTime.tryParse(json['createdAt'] as String? ?? '') ??
@@ -84,6 +95,8 @@ class OrderDto {
       variationPathLabel: variationPathLabel,
       variationPathNodeIds: variationPathNodeIds,
       quantity: quantity,
+      unitPrice: unitPrice,
+      totalInvoicedQty: totalInvoicedQty,
       status: status,
       createdAt: createdAt,
       startDate: startDate,
@@ -140,6 +153,8 @@ class CreateOrderRequest {
     required this.variationPathNodeIds,
     required this.quantity,
     required this.status,
+    required this.unitPrice,
+    required this.totalInvoicedQty,
     this.startDate,
     this.endDate,
     this.poDocumentIds = const <int>[],
@@ -156,6 +171,8 @@ class CreateOrderRequest {
   final String variationPathLabel;
   final List<int> variationPathNodeIds;
   final int quantity;
+  final double unitPrice;
+  final double totalInvoicedQty;
   final OrderStatus status;
   final DateTime? startDate;
   final DateTime? endDate;
@@ -175,6 +192,8 @@ class CreateOrderRequest {
       variationPathNodeIds: input.variationPathNodeIds,
       quantity: input.quantity,
       status: input.status,
+      unitPrice: input.unitPrice,
+      totalInvoicedQty: input.totalInvoicedQty,
       startDate: input.startDate,
       endDate: input.endDate,
       poDocumentIds: input.poDocumentIds,
@@ -194,6 +213,8 @@ class CreateOrderRequest {
       'variationPathLabel': variationPathLabel,
       'variationPathNodeIds': variationPathNodeIds,
       'quantity': quantity,
+      'unitPrice': unitPrice,
+      'totalInvoicedQty': totalInvoicedQty,
       'status': status.name,
       'startDate': startDate?.toIso8601String(),
       'endDate': endDate?.toIso8601String(),

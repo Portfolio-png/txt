@@ -1318,3 +1318,121 @@ test('delivery challans reject mixed-client multi-order selections', async () =>
     await backend.closeDb();
   }
 });
+
+test('reconciliation report persists invoice tax, conversion, client material, and waste audit', async () => {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-reconciliation-report-'));
+  process.env.DB_PATH = path.join(tempDir, 'paper.db');
+
+  delete require.cache[require.resolve('../server.js')];
+  const backend = require('../server.js');
+  try {
+    await backend.resetAndSeedDemoData();
+    const actor = { id: 1, name: 'Report Tester', role: 'admin' };
+    const order = (await backend.getOrders())[0];
+    assert.ok(order, 'expected seeded order');
+    const vendor = await backend.saveVendor({
+      name: 'Client Material Gate',
+      gstNumber: '27CLIENTMAT1Z5',
+      phone: '9999999999',
+    });
+
+    await backend.saveConversionOverride({
+      itemId: order.item_id,
+      variationLeafNodeId: order.variation_leaf_node_id || 0,
+      conversionRatio: 2.5,
+      toUnitLabel: 'sheets',
+    });
+    const overrides = await backend.listConversionOverrides();
+    assert.equal(overrides[0].conversionRatio, 2.5);
+
+    const reception = await backend.saveDeliveryChallan(
+      {
+        type: 'reception',
+        vendor_id: vendor.id,
+        date: '2026-05-10',
+        location: 'Report Dock',
+        material_owner_client_id: order.client_id,
+        material_owner_client_name: order.client_name,
+        material_owner_gstin: '27REPORTCLIENT1Z5',
+        items: [
+          {
+            item_id: order.item_id,
+            variation_leaf_node_id: order.variation_leaf_node_id || 0,
+            quantity_pcs: '',
+            weight: '100',
+          },
+        ],
+      },
+      actor,
+      { user: actor },
+    );
+    await backend.issueDeliveryChallan(reception.id, actor);
+
+    const delivery = await backend.saveDeliveryChallan(
+      {
+        type: 'delivery',
+        order_ids: [order.id],
+        date: '2026-05-11',
+        location: 'Report Dock',
+        items: [
+          {
+            order_item_id: order.id,
+            quantity_pcs: '50',
+            weight: '20',
+          },
+        ],
+      },
+      actor,
+      { user: actor },
+    );
+    await backend.issueDeliveryChallan(delivery.id, actor);
+    const deliveryLine = await backend.get(
+      'SELECT * FROM delivery_challan_items WHERE challan_id = ? LIMIT 1',
+      [delivery.id],
+    );
+
+    const invoice = await backend.createInvoice({
+      clientId: order.client_id,
+      clientName: order.client_name,
+      gstin: '27REPORTCLIENT1Z5',
+      lines: [
+        {
+          orderId: order.id,
+          challanId: delivery.id,
+          challanItemId: deliveryLine.id,
+          itemId: order.item_id,
+          variationLeafNodeId: order.variation_leaf_node_id || 0,
+          itemName: order.item_name,
+          hsnCode: '4805',
+          quantity: 45,
+          unitPrice: 10,
+          cgstRate: 9,
+          sgstRate: 9,
+        },
+      ],
+    });
+    assert.equal(invoice.totalQuantity, 45);
+    assert.equal(invoice.cgstAmount, 40.5);
+    assert.equal(invoice.sgstAmount, 40.5);
+
+    const report = await backend.buildReconciliationReport();
+    assert.equal(report.internalAuditor.length, 1);
+    const auditorRow = report.internalAuditor[0];
+    assert.equal(auditorRow.dcNumber, delivery.challan_no);
+    assert.equal(auditorRow.totalDispatchedWeightKg, 20);
+    assert.equal(auditorRow.convertedUnits, 50);
+    assert.equal(auditorRow.invoicedQuantity, 45);
+    assert.equal(auditorRow.status, 'Attention Required');
+    assert.equal(auditorRow.cgst, 40.5);
+    assert.equal(auditorRow.sgst, 40.5);
+    assert.equal(report.clientStatement.length, 1);
+    assert.equal(report.clientStatement[0].materialReceivedInputKg, 100);
+    assert.equal(report.clientStatement[0].totalFinishedUnitsDelivered, 50);
+    assert.equal(report.clientStatement[0].netBalanceMaterialRemainingKg, 80);
+    const wasteRows = await backend.listWasteAuditRows();
+    assert.equal(wasteRows.length, 1);
+    assert.equal(wasteRows[0].wasteWeightKg, 80);
+  } finally {
+    await backend.closeDb();
+  }
+});

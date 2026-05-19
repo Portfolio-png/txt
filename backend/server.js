@@ -1504,6 +1504,8 @@ function rowToOrderDto(row) {
     variationPathLabel: row.variation_path_label || '',
     variationPathNodeIds: parseJson(row.variation_path_node_ids_json, []),
     quantity: Number(row.quantity || 0),
+    unitPrice: Number(row.unit_price || 0),
+    totalInvoicedQty: Number(row.total_invoiced_qty || 0),
     status: row.status || 'notStarted',
     createdAt: row.created_at,
     startDate: row.start_date,
@@ -2377,6 +2379,9 @@ async function initDb() {
       vendor_id INTEGER REFERENCES vendors(id),
       vendor_name TEXT DEFAULT '',
       vendor_gstin TEXT DEFAULT '',
+      material_owner_client_id INTEGER REFERENCES clients(id),
+      material_owner_client_name TEXT DEFAULT '',
+      material_owner_gstin TEXT DEFAULT '',
       source_reference TEXT DEFAULT '',
       company_profile_snapshot TEXT,
       template_snapshot_json TEXT,
@@ -2519,6 +2524,83 @@ async function initDb() {
   await run('CREATE INDEX IF NOT EXISTS idx_challan_template_mappings_template_id ON challan_template_mappings(template_id)');
 
   await run(`
+    CREATE TABLE IF NOT EXISTS invoice_headers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_no TEXT NOT NULL UNIQUE,
+      client_id INTEGER REFERENCES clients(id),
+      client_name TEXT NOT NULL DEFAULT '',
+      gstin TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'draft',
+      invoice_date TEXT NOT NULL,
+      total_quantity REAL NOT NULL DEFAULT 0,
+      taxable_value REAL NOT NULL DEFAULT 0,
+      cgst_amount REAL NOT NULL DEFAULT 0,
+      sgst_amount REAL NOT NULL DEFAULT 0,
+      total_amount REAL NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS invoice_lines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_id INTEGER NOT NULL REFERENCES invoice_headers(id) ON DELETE CASCADE,
+      order_id INTEGER,
+      challan_id INTEGER REFERENCES delivery_challans(id),
+      challan_item_id INTEGER REFERENCES delivery_challan_items(id),
+      item_id INTEGER,
+      variation_leaf_node_id INTEGER NOT NULL DEFAULT 0,
+      item_name TEXT NOT NULL DEFAULT '',
+      hsn_code TEXT DEFAULT '',
+      quantity REAL NOT NULL DEFAULT 0,
+      unit_price REAL NOT NULL DEFAULT 0,
+      taxable_value REAL NOT NULL DEFAULT 0,
+      cgst_rate REAL NOT NULL DEFAULT 0,
+      sgst_rate REAL NOT NULL DEFAULT 0,
+      cgst_amount REAL NOT NULL DEFAULT 0,
+      sgst_amount REAL NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS reconciliation_conversion_overrides (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id INTEGER NOT NULL,
+      variation_leaf_node_id INTEGER NOT NULL DEFAULT 0,
+      conversion_ratio REAL NOT NULL DEFAULT 1,
+      from_unit TEXT NOT NULL DEFAULT 'kg',
+      to_unit_label TEXT NOT NULL DEFAULT 'units',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(item_id, variation_leaf_node_id)
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS reconciliation_waste_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      client_id INTEGER,
+      client_name TEXT NOT NULL DEFAULT '',
+      item_id INTEGER,
+      variation_leaf_node_id INTEGER NOT NULL DEFAULT 0,
+      item_name TEXT NOT NULL DEFAULT '',
+      challan_id INTEGER REFERENCES delivery_challans(id),
+      challan_no TEXT DEFAULT '',
+      input_weight_kg REAL NOT NULL DEFAULT 0,
+      shipped_weight_kg REAL NOT NULL DEFAULT 0,
+      waste_weight_kg REAL NOT NULL DEFAULT 0,
+      waste_percentage REAL NOT NULL DEFAULT 0,
+      source TEXT NOT NULL DEFAULT 'report_snapshot',
+      created_at TEXT NOT NULL
+    )
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_invoice_lines_invoice_id ON invoice_lines(invoice_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_invoice_lines_challan_item ON invoice_lines(challan_item_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_invoice_lines_order_id ON invoice_lines(order_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_reconciliation_conversion_item ON reconciliation_conversion_overrides(item_id, variation_leaf_node_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_reconciliation_waste_client_item ON reconciliation_waste_audit(client_id, item_id, variation_leaf_node_id)');
+
+  await run(`
     CREATE TABLE IF NOT EXISTS production_runs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       run_code TEXT NOT NULL UNIQUE,
@@ -2552,6 +2634,8 @@ async function initDb() {
       variation_path_label TEXT DEFAULT '',
       variation_path_node_ids_json TEXT NOT NULL DEFAULT '[]',
       quantity INTEGER NOT NULL DEFAULT 0,
+      unit_price REAL NOT NULL DEFAULT 0,
+      total_invoiced_qty REAL NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'notStarted',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL DEFAULT '',
@@ -2716,6 +2800,9 @@ async function initDb() {
   await ensureColumnExists('delivery_challans', 'vendor_id', 'INTEGER');
   await ensureColumnExists('delivery_challans', 'vendor_name', "TEXT DEFAULT ''");
   await ensureColumnExists('delivery_challans', 'vendor_gstin', "TEXT DEFAULT ''");
+  await ensureColumnExists('delivery_challans', 'material_owner_client_id', 'INTEGER');
+  await ensureColumnExists('delivery_challans', 'material_owner_client_name', "TEXT DEFAULT ''");
+  await ensureColumnExists('delivery_challans', 'material_owner_gstin', "TEXT DEFAULT ''");
   await ensureColumnExists('delivery_challans', 'source_reference', "TEXT DEFAULT ''");
   await ensureColumnExists('delivery_challans', 'template_snapshot_json', 'TEXT');
   await ensureColumnExists('delivery_challans', 'maintain_stocks', 'INTEGER NOT NULL DEFAULT 1');
@@ -2739,6 +2826,7 @@ async function initDb() {
   await ensureInventorySetLineNullableLeafReference();
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_order_id ON delivery_challans(order_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_vendor_id ON delivery_challans(vendor_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_material_owner ON delivery_challans(material_owner_client_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_type ON delivery_challans(type)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_items_challan_id ON delivery_challan_items(challan_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_challan_id ON delivery_challan_orders(challan_id)');
@@ -2791,6 +2879,12 @@ async function initDb() {
   await run('CREATE INDEX IF NOT EXISTS idx_inventory_set_lines_item_lookup ON inventory_set_lines(item_id, variation_leaf_node_id)');
 
   await ensureColumnExists('orders', 'updated_at', "TEXT NOT NULL DEFAULT ''");
+  await ensureColumnExists('orders', 'unit_price', 'REAL NOT NULL DEFAULT 0');
+  await ensureColumnExists(
+    'orders',
+    'total_invoiced_qty',
+    'REAL NOT NULL DEFAULT 0',
+  );
   await run(`
     UPDATE orders
     SET updated_at = CASE
@@ -4800,6 +4894,9 @@ async function rowToDeliveryChallanDto(row, { includeItems = true } = {}) {
     vendor_id: row.vendor_id || null,
     vendor_name: row.vendor_name || '',
     vendor_gstin: row.vendor_gstin || '',
+    material_owner_client_id: row.material_owner_client_id || null,
+    material_owner_client_name: row.material_owner_client_name || '',
+    material_owner_gstin: row.material_owner_gstin || '',
     source_reference: row.source_reference || '',
     company_profile_snapshot: parseJsonObject(row.company_profile_snapshot, null),
     notes: row.notes || '',
@@ -6819,6 +6916,30 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
       ? String(firstOrder?.client_gstin || '').trim()
       : String(input.customerGstin ?? input.customer_gstin ?? existing?.customer_gstin ?? '').trim())
     : '';
+  const materialOwnerClientId = challanType === 'reception'
+    ? Number(
+      input.materialOwnerClientId ??
+      input.material_owner_client_id ??
+      existing?.material_owner_client_id ??
+      0,
+    )
+    : 0;
+  const materialOwnerClientName = challanType === 'reception'
+    ? String(
+      input.materialOwnerClientName ??
+      input.material_owner_client_name ??
+      existing?.material_owner_client_name ??
+      '',
+    ).trim()
+    : '';
+  const materialOwnerGstin = challanType === 'reception'
+    ? String(
+      input.materialOwnerGstin ??
+      input.material_owner_gstin ??
+      existing?.material_owner_gstin ??
+      '',
+    ).trim()
+    : '';
   const vendorName = challanType === 'reception'
     ? (maintainStocks
       ? String(vendor?.name || '').trim()
@@ -6938,6 +7059,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
         UPDATE delivery_challans
         SET type = ?, order_id = ?, order_no = ?, challan_no = ?, date = ?, location = ?,
             customer_name = ?, customer_gstin = ?, vendor_id = ?, vendor_name = ?, vendor_gstin = ?,
+            material_owner_client_id = ?, material_owner_client_name = ?, material_owner_gstin = ?,
             source_reference = ?, notes = ?, maintain_stocks = ?, updated_by = ?, updated_at = ?
         WHERE id = ?
         `,
@@ -6953,6 +7075,9 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
           persistedVendorId,
           vendorName,
           vendorGstin,
+          materialOwnerClientId > 0 ? materialOwnerClientId : null,
+          materialOwnerClientName,
+          materialOwnerGstin,
           sourceReference,
           notes,
           maintainStocks ? 1 : 0,
@@ -6968,10 +7093,11 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
         `
         INSERT INTO delivery_challans (
           type, order_id, order_no, challan_no, date, location, customer_name, customer_gstin,
-          vendor_id, vendor_name, vendor_gstin, source_reference, notes, status,
+          vendor_id, vendor_name, vendor_gstin, material_owner_client_id, material_owner_client_name,
+          material_owner_gstin, source_reference, notes, status,
           maintain_stocks, created_by, updated_by, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?)
         `,
         [
           challanType,
@@ -6985,6 +7111,9 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
           persistedVendorId,
           vendorName,
           vendorGstin,
+          materialOwnerClientId > 0 ? materialOwnerClientId : null,
+          materialOwnerClientName,
+          materialOwnerGstin,
           sourceReference,
           notes,
           maintainStocks ? 1 : 0,
@@ -7277,6 +7406,559 @@ async function deleteDraftDeliveryChallan(id, actor = null) {
     challanNo: existing.challan_no,
   });
   await run('DELETE FROM delivery_challans WHERE id = ?', [id]);
+}
+
+function rowToInvoiceLineDto(row) {
+  return {
+    id: Number(row.id || 0),
+    invoiceId: Number(row.invoice_id || 0),
+    orderId: row.order_id || null,
+    challanId: row.challan_id || null,
+    challanItemId: row.challan_item_id || null,
+    itemId: row.item_id || null,
+    variationLeafNodeId: Number(row.variation_leaf_node_id || 0),
+    itemName: row.item_name || '',
+    hsnCode: row.hsn_code || '',
+    quantity: Number(row.quantity || 0),
+    unitPrice: Number(row.unit_price || 0),
+    taxableValue: Number(row.taxable_value || 0),
+    cgstRate: Number(row.cgst_rate || 0),
+    sgstRate: Number(row.sgst_rate || 0),
+    cgstAmount: Number(row.cgst_amount || 0),
+    sgstAmount: Number(row.sgst_amount || 0),
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+  };
+}
+
+async function rowToInvoiceHeaderDto(row, { includeLines = true } = {}) {
+  const lines = includeLines
+    ? await all(
+        `
+        SELECT *
+        FROM invoice_lines
+        WHERE invoice_id = ?
+        ORDER BY id ASC
+        `,
+        [row.id],
+      )
+    : [];
+  return {
+    id: Number(row.id || 0),
+    invoiceNo: row.invoice_no || '',
+    clientId: row.client_id || null,
+    clientName: row.client_name || '',
+    gstin: row.gstin || '',
+    status: row.status || 'draft',
+    invoiceDate: row.invoice_date || '',
+    totalQuantity: Number(row.total_quantity || 0),
+    taxableValue: Number(row.taxable_value || 0),
+    cgstAmount: Number(row.cgst_amount || 0),
+    sgstAmount: Number(row.sgst_amount || 0),
+    totalAmount: Number(row.total_amount || 0),
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+    lines: lines.map(rowToInvoiceLineDto),
+  };
+}
+
+function rowToConversionOverrideDto(row) {
+  return {
+    id: Number(row.id || 0),
+    itemId: Number(row.item_id || 0),
+    variationLeafNodeId: Number(row.variation_leaf_node_id || 0),
+    conversionRatio: Number(row.conversion_ratio || 1) || 1,
+    fromUnit: row.from_unit || 'kg',
+    toUnitLabel: row.to_unit_label || 'units',
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+  };
+}
+
+function rowToWasteAuditDto(row) {
+  return {
+    id: Number(row.id || 0),
+    auditTime: row.created_at || null,
+    clientId: row.client_id || null,
+    clientName: row.client_name || '',
+    itemId: row.item_id || null,
+    variationLeafNodeId: Number(row.variation_leaf_node_id || 0),
+    itemName: row.item_name || '',
+    challanId: row.challan_id || null,
+    challanNo: row.challan_no || '',
+    inputWeightKg: Number(row.input_weight_kg || 0),
+    shippedWeightKg: Number(row.shipped_weight_kg || 0),
+    wasteWeightKg: Number(row.waste_weight_kg || 0),
+    wastePercentage: Number(row.waste_percentage || 0),
+    source: row.source || 'report_snapshot',
+  };
+}
+
+async function listInvoices({ includeLines = true } = {}) {
+  const rows = await all(
+    `
+    SELECT *
+    FROM invoice_headers
+    ORDER BY date(invoice_date) DESC, id DESC
+    `,
+  );
+  return Promise.all(rows.map((row) => rowToInvoiceHeaderDto(row, { includeLines })));
+}
+
+async function getInvoiceDtoById(id) {
+  const row = await get('SELECT * FROM invoice_headers WHERE id = ?', [Number(id)]);
+  if (!row) {
+    return null;
+  }
+  return rowToInvoiceHeaderDto(row);
+}
+
+async function generateInvoiceNumber() {
+  const row = await get(
+    `
+    SELECT invoice_no
+    FROM invoice_headers
+    WHERE invoice_no LIKE 'INV-%'
+    ORDER BY id DESC
+    LIMIT 1
+    `,
+  );
+  const match = String(row?.invoice_no || '').match(/(\d+)$/);
+  const next = match ? Number(match[1]) + 1 : 1;
+  return `INV-${String(next).padStart(5, '0')}`;
+}
+
+function normalizePositiveNumber(value, fieldName, { allowZero = false } = {}) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0 || (!allowZero && number === 0)) {
+    const error = new Error(`${fieldName} must be ${allowZero ? 'zero or positive' : 'positive'}.`);
+    error.statusCode = 400;
+    throw error;
+  }
+  return number;
+}
+
+async function createInvoice(input = {}) {
+  const linesInput = Array.isArray(input.lines) ? input.lines : [];
+  if (linesInput.length === 0) {
+    const error = new Error('Add at least one invoice line.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const invoiceNo = String(input.invoiceNo ?? input.invoice_no ?? '').trim() || await generateInvoiceNumber();
+  const duplicate = await get(
+    'SELECT id FROM invoice_headers WHERE LOWER(TRIM(invoice_no)) = LOWER(TRIM(?))',
+    [invoiceNo],
+  );
+  if (duplicate) {
+    const error = new Error(`Invoice number [${invoiceNo}] is already in use.`);
+    error.statusCode = 409;
+    throw error;
+  }
+  const now = new Date().toISOString();
+  const invoiceDate = normalizeChallanDate(input.invoiceDate ?? input.invoice_date ?? now);
+  const normalizedLines = [];
+  for (const rawLine of linesInput) {
+    const quantity = normalizePositiveNumber(rawLine.quantity ?? rawLine.qty, 'Invoice quantity');
+    const unitPrice = normalizePositiveNumber(rawLine.unitPrice ?? rawLine.unit_price ?? 0, 'Unit price', { allowZero: true });
+    const cgstRate = normalizePositiveNumber(rawLine.cgstRate ?? rawLine.cgst_rate ?? 0, 'CGST rate', { allowZero: true });
+    const sgstRate = normalizePositiveNumber(rawLine.sgstRate ?? rawLine.sgst_rate ?? 0, 'SGST rate', { allowZero: true });
+    const taxableValue = quantity * unitPrice;
+    normalizedLines.push({
+      orderId: Number(rawLine.orderId ?? rawLine.order_id ?? 0) || null,
+      challanId: Number(rawLine.challanId ?? rawLine.challan_id ?? 0) || null,
+      challanItemId: Number(rawLine.challanItemId ?? rawLine.challan_item_id ?? 0) || null,
+      itemId: Number(rawLine.itemId ?? rawLine.item_id ?? 0) || null,
+      variationLeafNodeId: Number(rawLine.variationLeafNodeId ?? rawLine.variation_leaf_node_id ?? 0) || 0,
+      itemName: String(rawLine.itemName ?? rawLine.item_name ?? '').trim(),
+      hsnCode: String(rawLine.hsnCode ?? rawLine.hsn_code ?? '').trim(),
+      quantity,
+      unitPrice,
+      taxableValue,
+      cgstRate,
+      sgstRate,
+      cgstAmount: taxableValue * cgstRate / 100,
+      sgstAmount: taxableValue * sgstRate / 100,
+    });
+  }
+  const totalQuantity = normalizedLines.reduce((sum, line) => sum + line.quantity, 0);
+  const taxableValue = normalizedLines.reduce((sum, line) => sum + line.taxableValue, 0);
+  const cgstAmount = normalizedLines.reduce((sum, line) => sum + line.cgstAmount, 0);
+  const sgstAmount = normalizedLines.reduce((sum, line) => sum + line.sgstAmount, 0);
+  await run('BEGIN TRANSACTION');
+  try {
+    const result = await run(
+      `
+      INSERT INTO invoice_headers (
+        invoice_no, client_id, client_name, gstin, status, invoice_date,
+        total_quantity, taxable_value, cgst_amount, sgst_amount, total_amount,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        invoiceNo,
+        Number(input.clientId ?? input.client_id ?? 0) || null,
+        String(input.clientName ?? input.client_name ?? '').trim(),
+        String(input.gstin ?? input.customerGstin ?? input.customer_gstin ?? '').trim(),
+        String(input.status || 'draft').trim() || 'draft',
+        invoiceDate,
+        totalQuantity,
+        taxableValue,
+        cgstAmount,
+        sgstAmount,
+        taxableValue + cgstAmount + sgstAmount,
+        now,
+        now,
+      ],
+    );
+    for (const line of normalizedLines) {
+      await run(
+        `
+        INSERT INTO invoice_lines (
+          invoice_id, order_id, challan_id, challan_item_id, item_id, variation_leaf_node_id,
+          item_name, hsn_code, quantity, unit_price, taxable_value, cgst_rate, sgst_rate,
+          cgst_amount, sgst_amount, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        [
+          result.lastID,
+          line.orderId,
+          line.challanId,
+          line.challanItemId,
+          line.itemId,
+          line.variationLeafNodeId,
+          line.itemName,
+          line.hsnCode,
+          line.quantity,
+          line.unitPrice,
+          line.taxableValue,
+          line.cgstRate,
+          line.sgstRate,
+          line.cgstAmount,
+          line.sgstAmount,
+          now,
+          now,
+        ],
+      );
+    }
+    await run('COMMIT');
+    return getInvoiceDtoById(result.lastID);
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
+}
+
+async function listConversionOverrides() {
+  const rows = await all(
+    `
+    SELECT *
+    FROM reconciliation_conversion_overrides
+    ORDER BY updated_at DESC, id DESC
+    `,
+  );
+  return rows.map(rowToConversionOverrideDto);
+}
+
+async function saveConversionOverride(input = {}) {
+  const itemId = Number(input.itemId ?? input.item_id ?? 0);
+  if (!Number.isInteger(itemId) || itemId <= 0) {
+    const error = new Error('itemId is required for conversion override.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const variationLeafNodeId = Number(input.variationLeafNodeId ?? input.variation_leaf_node_id ?? 0) || 0;
+  const conversionRatio = normalizePositiveNumber(
+    input.conversionRatio ?? input.conversion_ratio ?? 1,
+    'Conversion ratio',
+  );
+  const fromUnit = String(input.fromUnit ?? input.from_unit ?? 'kg').trim() || 'kg';
+  const toUnitLabel = String(input.toUnitLabel ?? input.to_unit_label ?? 'units').trim() || 'units';
+  const now = new Date().toISOString();
+  await run(
+    `
+    INSERT INTO reconciliation_conversion_overrides (
+      item_id, variation_leaf_node_id, conversion_ratio, from_unit, to_unit_label, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(item_id, variation_leaf_node_id)
+    DO UPDATE SET
+      conversion_ratio = excluded.conversion_ratio,
+      from_unit = excluded.from_unit,
+      to_unit_label = excluded.to_unit_label,
+      updated_at = excluded.updated_at
+    `,
+    [itemId, variationLeafNodeId, conversionRatio, fromUnit, toUnitLabel, now, now],
+  );
+  const row = await get(
+    `
+    SELECT *
+    FROM reconciliation_conversion_overrides
+    WHERE item_id = ? AND variation_leaf_node_id = ?
+    `,
+    [itemId, variationLeafNodeId],
+  );
+  return rowToConversionOverrideDto(row);
+}
+
+async function listWasteAuditRows() {
+  const rows = await all(
+    `
+    SELECT *
+    FROM reconciliation_waste_audit
+    ORDER BY datetime(created_at) DESC, id DESC
+    `,
+  );
+  return rows.map(rowToWasteAuditDto);
+}
+
+function conversionKey(itemId, variationLeafNodeId) {
+  return `${Number(itemId || 0)}:${Number(variationLeafNodeId || 0)}`;
+}
+
+function safeRatio(value) {
+  const ratio = Number(value);
+  return Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
+}
+
+function lineMeasureToWeightKg(line, ratio) {
+  const weight = Number(line.weight || 0);
+  if (Number.isFinite(weight) && weight > 0) {
+    return weight;
+  }
+  const qty = Number(line.quantity_pcs || 0);
+  return Number.isFinite(qty) && qty > 0 ? qty / safeRatio(ratio) : 0;
+}
+
+function lineMeasureToUnits(line, ratio) {
+  const qty = Number(line.quantity_pcs || 0);
+  if (Number.isFinite(qty) && qty > 0) {
+    return qty;
+  }
+  const weight = Number(line.weight || 0);
+  return Number.isFinite(weight) && weight > 0 ? weight * safeRatio(ratio) : 0;
+}
+
+function roundMetric(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.round(number * 1000) / 1000 : 0;
+}
+
+async function buildReconciliationReport() {
+  const overrides = await listConversionOverrides();
+  const overrideMap = new Map(
+    overrides.map((override) => [
+      conversionKey(override.itemId, override.variationLeafNodeId),
+      override,
+    ]),
+  );
+  const invoices = await listInvoices();
+  const invoiceLines = invoices.flatMap((invoice) =>
+    invoice.lines.map((line) => ({ ...line, invoice })),
+  );
+  const invoiceLinesByChallanItem = new Map();
+  for (const line of invoiceLines) {
+    if (!line.challanItemId) {
+      continue;
+    }
+    const existing = invoiceLinesByChallanItem.get(line.challanItemId) || [];
+    existing.push(line);
+    invoiceLinesByChallanItem.set(line.challanItemId, existing);
+  }
+
+  const issuedChallans = await all(
+    `
+    SELECT *
+    FROM delivery_challans
+    WHERE status = 'issued'
+    ORDER BY date(date) ASC, id ASC
+    `,
+  );
+  const challanItems = await all(
+    `
+    SELECT dci.*, dc.type, dc.challan_no, dc.customer_name, dc.customer_gstin,
+           dc.material_owner_client_id, dc.material_owner_client_name, dc.material_owner_gstin,
+           dc.maintain_stocks, dc.date, dc.order_id,
+           o.client_id AS delivery_client_id,
+           o.client_name AS delivery_client_name
+    FROM delivery_challan_items dci
+    JOIN delivery_challans dc ON dc.id = dci.challan_id
+    LEFT JOIN orders o ON o.id = dci.order_item_id
+    WHERE dc.status = 'issued'
+    ORDER BY date(dc.date) ASC, dc.id ASC, dci.line_no ASC, dci.id ASC
+    `,
+  );
+
+  const inputByClientItem = new Map();
+  for (const row of challanItems) {
+    if (normalizeChallanType(row.type) !== 'reception') {
+      continue;
+    }
+    const ownerClientId = Number(row.material_owner_client_id || 0);
+    if (!ownerClientId) {
+      continue;
+    }
+    const override = overrideMap.get(conversionKey(row.item_id, row.variation_leaf_node_id));
+    const ratio = safeRatio(override?.conversionRatio);
+    const key = `${ownerClientId}:${conversionKey(row.item_id, row.variation_leaf_node_id)}`;
+    const existing = inputByClientItem.get(key) || {
+      clientId: ownerClientId,
+      clientName: row.material_owner_client_name || '',
+      itemId: row.item_id || null,
+      variationLeafNodeId: Number(row.variation_leaf_node_id || 0),
+      itemName: row.particulars || '',
+      inputWeightKg: 0,
+    };
+    existing.inputWeightKg += lineMeasureToWeightKg(row, ratio);
+    inputByClientItem.set(key, existing);
+  }
+
+  const shippedByClientItem = new Map();
+  const auditorRows = [];
+  for (const row of challanItems) {
+    if (normalizeChallanType(row.type) !== 'delivery') {
+      continue;
+    }
+    const clientId = Number(row.delivery_client_id || 0) || null;
+    const effectiveClientName = String(row.delivery_client_name || row.customer_name || 'Unlinked party').trim() || 'Unlinked party';
+    const override = overrideMap.get(conversionKey(row.item_id, row.variation_leaf_node_id));
+    const ratio = safeRatio(override?.conversionRatio);
+    const dispatchedWeightKg = lineMeasureToWeightKg(row, ratio);
+    const convertedUnits = lineMeasureToUnits(row, ratio);
+    const linkedInvoiceLines = invoiceLinesByChallanItem.get(Number(row.id)) || [];
+    const invoicedQuantity = linkedInvoiceLines.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
+    const cgst = linkedInvoiceLines.reduce((sum, line) => sum + Number(line.cgstAmount || 0), 0);
+    const sgst = linkedInvoiceLines.reduce((sum, line) => sum + Number(line.sgstAmount || 0), 0);
+    const gstin = linkedInvoiceLines.find((line) => String(line.invoice?.gstin || '').trim())?.invoice?.gstin ||
+      row.customer_gstin ||
+      '';
+    const clientItemKey = `${clientId || 0}:${conversionKey(row.item_id, row.variation_leaf_node_id)}`;
+    const shippedExisting = shippedByClientItem.get(clientItemKey) || {
+      clientId,
+      clientName: effectiveClientName,
+      itemId: row.item_id || null,
+      variationLeafNodeId: Number(row.variation_leaf_node_id || 0),
+      itemName: row.particulars || '',
+      shippedWeightKg: 0,
+      deliveredUnits: 0,
+      lastChallanId: row.challan_id,
+      lastChallanNo: row.challan_no || '',
+    };
+    shippedExisting.shippedWeightKg += dispatchedWeightKg;
+    shippedExisting.deliveredUnits += convertedUnits;
+    shippedExisting.lastChallanId = row.challan_id;
+    shippedExisting.lastChallanNo = row.challan_no || '';
+    shippedByClientItem.set(clientItemKey, shippedExisting);
+    const inputKey = `${clientId || 0}:${conversionKey(row.item_id, row.variation_leaf_node_id)}`;
+    const input = inputByClientItem.get(inputKey);
+    const inputWeightKg = input?.inputWeightKg || 0;
+    const wasteWeightKg = Math.max(inputWeightKg - shippedExisting.shippedWeightKg, 0);
+    const wastePercentage = inputWeightKg > 0 ? wasteWeightKg / inputWeightKg * 100 : 0;
+    const denominator = Math.max(Math.abs(convertedUnits), 1);
+    const variance = Math.abs(convertedUnits - invoicedQuantity) / denominator;
+    const isDirectPrint = Number(row.maintain_stocks ?? 1) === 0 || !row.order_item_id;
+    const status = isDirectPrint
+      ? 'Unlinked / Direct Print'
+      : invoicedQuantity <= 0
+        ? 'Unbilled / In Transit'
+        : variance <= 0.02
+          ? 'Auto Reconciled'
+          : 'Attention Required';
+    auditorRows.push({
+      challanId: Number(row.challan_id || 0),
+      challanItemId: Number(row.id || 0),
+      dcNumber: row.challan_no || '',
+      clientId,
+      clientName: effectiveClientName,
+      itemId: row.item_id || null,
+      variationLeafNodeId: Number(row.variation_leaf_node_id || 0),
+      itemName: row.particulars || '',
+      hsnCode: row.hsn_code || '',
+      totalDispatchedWeightKg: roundMetric(dispatchedWeightKg),
+      convertedUnits: roundMetric(convertedUnits),
+      invoicedQuantity: roundMetric(invoicedQuantity),
+      gstin,
+      cgst: roundMetric(cgst),
+      sgst: roundMetric(sgst),
+      wastePercentage: roundMetric(wastePercentage),
+      status,
+      isAttentionRequired: status === 'Attention Required',
+      isDirectPrint,
+      isUnbilled: invoicedQuantity < convertedUnits,
+      invoiceLineIds: linkedInvoiceLines.map((line) => line.id),
+    });
+  }
+
+  const clientRows = [];
+  for (const [key, input] of inputByClientItem.entries()) {
+    const shipped = shippedByClientItem.get(key) || {
+      shippedWeightKg: 0,
+      deliveredUnits: 0,
+    };
+    const balance = input.inputWeightKg - shipped.shippedWeightKg;
+    clientRows.push({
+      clientId: input.clientId || null,
+      clientName: input.clientName || 'Client supplied material',
+      itemId: input.itemId,
+      variationLeafNodeId: input.variationLeafNodeId,
+      itemName: input.itemName,
+      materialReceivedInputKg: roundMetric(input.inputWeightKg),
+      totalFinishedUnitsDelivered: roundMetric(shipped.deliveredUnits || 0),
+      netBalanceMaterialRemainingKg: roundMetric(balance),
+      status: balance < -0.001
+        ? 'Over Dispatched'
+        : balance > 0.001
+          ? 'Material Remaining'
+          : 'Balanced',
+    });
+  }
+
+  const now = new Date().toISOString();
+  await run('BEGIN TRANSACTION');
+  try {
+    await run("DELETE FROM reconciliation_waste_audit WHERE source = 'report_snapshot'");
+    for (const shipped of shippedByClientItem.values()) {
+      const inputKey = `${shipped.clientId || 0}:${conversionKey(shipped.itemId, shipped.variationLeafNodeId)}`;
+      const input = inputByClientItem.get(inputKey);
+      const inputWeightKg = input?.inputWeightKg || 0;
+      const wasteWeightKg = Math.max(inputWeightKg - shipped.shippedWeightKg, 0);
+      const wastePercentage = inputWeightKg > 0 ? wasteWeightKg / inputWeightKg * 100 : 0;
+      await run(
+        `
+        INSERT INTO reconciliation_waste_audit (
+          client_id, client_name, item_id, variation_leaf_node_id, item_name,
+          challan_id, challan_no, input_weight_kg, shipped_weight_kg,
+          waste_weight_kg, waste_percentage, source, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'report_snapshot', ?)
+        `,
+        [
+          shipped.clientId,
+          shipped.clientName,
+          shipped.itemId,
+          shipped.variationLeafNodeId,
+          shipped.itemName,
+          shipped.lastChallanId,
+          shipped.lastChallanNo,
+          inputWeightKg,
+          shipped.shippedWeightKg,
+          wasteWeightKg,
+          wastePercentage,
+          now,
+        ],
+      );
+    }
+    await run('COMMIT');
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
+  const wasteAuditRows = await listWasteAuditRows();
+  return {
+    internalAuditor: auditorRows,
+    clientStatement: clientRows,
+    misc: wasteAuditRows,
+    conversionOverrides: overrides,
+    generatedAt: now,
+  };
 }
 
 async function getOrderRowById(id) {
@@ -8359,6 +9041,8 @@ async function saveOrder({
   variationPathLabel = '',
   variationPathNodeIds = [],
   quantity,
+  unitPrice = 0,
+  totalInvoicedQty,
   status = 'notStarted',
   startDate = null,
   endDate = null,
@@ -8370,6 +9054,10 @@ async function saveOrder({
   const normalizedClientId = Number(clientId);
   const normalizedItemId = Number(itemId);
   const normalizedQuantity = Number(quantity || 0);
+  const normalizedUnitPrice = Number(unitPrice || 0);
+  const hasInvoicedQtyInput =
+    totalInvoicedQty !== undefined && totalInvoicedQty !== null;
+  const normalizedTotalInvoicedQty = Number(totalInvoicedQty || 0);
   const normalizedStartDate = normalizeOptionalDate(startDate, 'start date');
   const normalizedEndDate = normalizeOptionalDate(endDate, 'end date');
   const trimmedPoNumber = String(poNumber || '').trim();
@@ -8408,6 +9096,20 @@ async function saveOrder({
   }
   if (!Number.isInteger(normalizedQuantity)) {
     const error = new Error('Quantity must be a whole number.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!Number.isFinite(normalizedUnitPrice) || normalizedUnitPrice < 0) {
+    const error = new Error('Unit price cannot be negative.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (
+    hasInvoicedQtyInput &&
+    (!Number.isFinite(normalizedTotalInvoicedQty) ||
+      normalizedTotalInvoicedQty < 0)
+  ) {
+    const error = new Error('Total invoiced quantity cannot be negative.');
     error.statusCode = 400;
     throw error;
   }
@@ -8473,6 +9175,8 @@ async function saveOrder({
             item_name = ?,
             variation_path_label = ?,
             variation_path_node_ids_json = ?,
+            unit_price = ?,
+            total_invoiced_qty = ?,
             status = ?,
             start_date = ?,
             end_date = ?,
@@ -8486,6 +9190,10 @@ async function saveOrder({
           trimmedItemName,
           canonicalVariationPathLabel,
           normalizedVariationPathJson,
+          normalizedUnitPrice > 0 ? normalizedUnitPrice : Number(existing.unit_price || 0),
+          hasInvoicedQtyInput
+            ? normalizedTotalInvoicedQty
+            : Number(existing.total_invoiced_qty || 0),
           mergedStatus,
           normalizedStartDate,
           normalizedEndDate,
@@ -8513,9 +9221,9 @@ async function saveOrder({
         INSERT INTO orders (
           order_no, client_id, client_name, po_number, client_code, item_id, item_name,
           variation_leaf_node_id, variation_path_label, variation_path_node_ids_json, quantity,
-          status, created_at, updated_at, start_date, end_date
+          unit_price, total_invoiced_qty, status, created_at, updated_at, start_date, end_date
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           trimmedOrderNo,
@@ -8529,6 +9237,8 @@ async function saveOrder({
           canonicalVariationPathLabel,
           normalizedVariationPathJson,
           normalizedQuantity,
+          normalizedUnitPrice,
+          hasInvoicedQtyInput ? normalizedTotalInvoicedQty : 0,
           normalizedStatus,
           now,
           now,
@@ -9751,6 +10461,8 @@ async function ensureMockOrdersPresent() {
       item: primaryItem,
       leaf: firstLeaf,
       quantity: 1000,
+      unitPrice: 18.5,
+      totalInvoicedQty: 250,
       status: 'notStarted',
     },
     {
@@ -9761,6 +10473,8 @@ async function ensureMockOrdersPresent() {
       item: primaryItem,
       leaf: secondLeaf,
       quantity: 1000,
+      unitPrice: 21.75,
+      totalInvoicedQty: 400,
       status: 'inProgress',
     },
     {
@@ -9771,6 +10485,8 @@ async function ensureMockOrdersPresent() {
       item: secondaryItem,
       leaf: thirdLeaf,
       quantity: 1000,
+      unitPrice: 9.25,
+      totalInvoicedQty: 1000,
       status: 'completed',
     },
     {
@@ -9781,6 +10497,8 @@ async function ensureMockOrdersPresent() {
       item: primaryItem,
       leaf: firstLeaf,
       quantity: 1000,
+      unitPrice: 17.4,
+      totalInvoicedQty: 125,
       status: 'delayed',
     },
   ];
@@ -9801,6 +10519,8 @@ async function ensureMockOrdersPresent() {
       variationPathLabel: order.leaf.displayName,
       variationPathNodeIds: order.leaf.path,
       quantity: order.quantity,
+      unitPrice: order.unitPrice,
+      totalInvoicedQty: order.totalInvoicedQty,
       status: order.status,
       startDate: '2026-04-10T00:00:00.000Z',
       endDate: '2026-05-15T00:00:00.000Z',
@@ -9869,6 +10589,8 @@ async function ensureDemoOrdersPresent() {
       item: bottleItem,
       leaf: findLeafByLabel(bottleLeaves, 'Matte'),
       quantity: 1800,
+      unitPrice: 24.5,
+      totalInvoicedQty: 600,
       status: 'notStarted',
       startDate: '2026-04-12T00:00:00.000Z',
       endDate: '2026-04-21T00:00:00.000Z',
@@ -9880,6 +10602,8 @@ async function ensureDemoOrdersPresent() {
       item: bottleItem,
       leaf: findLeafByLabel(bottleLeaves, 'Offset'),
       quantity: 3200,
+      unitPrice: 27.25,
+      totalInvoicedQty: 1200,
       status: 'inProgress',
       startDate: '2026-04-07T00:00:00.000Z',
       endDate: '2026-04-18T00:00:00.000Z',
@@ -9891,6 +10615,8 @@ async function ensureDemoOrdersPresent() {
       item: capItem,
       leaf: findLeafByLabel(capLeaves, 'White'),
       quantity: 5000,
+      unitPrice: 3.8,
+      totalInvoicedQty: 5000,
       status: 'completed',
       startDate: '2026-03-28T00:00:00.000Z',
       endDate: '2026-04-03T00:00:00.000Z',
@@ -9902,6 +10628,8 @@ async function ensureDemoOrdersPresent() {
       item: glueItem,
       leaf: findLeafByLabel(glueLeaves, 'High'),
       quantity: 750,
+      unitPrice: 112,
+      totalInvoicedQty: 0,
       status: 'delayed',
       startDate: '2026-04-02T00:00:00.000Z',
       endDate: '2026-04-15T00:00:00.000Z',
@@ -9913,6 +10641,8 @@ async function ensureDemoOrdersPresent() {
       item: sleeveItem,
       leaf: findLeafByLabel(sleeveLeaves, 'Export'),
       quantity: 2200,
+      unitPrice: 14.2,
+      totalInvoicedQty: 350,
       status: 'inProgress',
       startDate: '2026-04-08T00:00:00.000Z',
       endDate: '2026-04-23T00:00:00.000Z',
@@ -9924,6 +10654,8 @@ async function ensureDemoOrdersPresent() {
       item: capItem,
       leaf: findLeafByLabel(capLeaves, '32 mm'),
       quantity: 4100,
+      unitPrice: 4.15,
+      totalInvoicedQty: 0,
       status: 'notStarted',
       startDate: '2026-04-16T00:00:00.000Z',
       endDate: '2026-04-28T00:00:00.000Z',
@@ -9943,6 +10675,8 @@ async function ensureDemoOrdersPresent() {
       variationPathLabel: order.leaf.displayName,
       variationPathNodeIds: order.leaf.path,
       quantity: order.quantity,
+      unitPrice: order.unitPrice,
+      totalInvoicedQty: order.totalInvoicedQty,
       status: order.status,
       startDate: order.startDate,
       endDate: order.endDate,
@@ -14117,6 +14851,108 @@ const handleCancelChallan = async (req, res) => {
 app.post('/api/challans/:id/cancel', requirePermission('config.write'), handleCancelChallan);
 app.post('/api/delivery-challans/:id/cancel', requirePermission('config.write'), handleCancelChallan);
 
+app.get('/api/invoices', requirePermission('config.read'), async (req, res) => {
+  try {
+    res.json({ success: true, data: await listInvoices(), error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      data: [],
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
+app.get('/api/invoices/:id', requirePermission('config.read'), async (req, res) => {
+  try {
+    const invoice = await getInvoiceDtoById(Number(req.params.id));
+    if (!invoice) {
+      res.status(404).json({
+        success: false,
+        data: null,
+        message: 'Invoice not found.',
+        error: 'Invoice not found.',
+      });
+      return;
+    }
+    res.json({ success: true, data: invoice, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      data: null,
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/invoices', requirePermission('config.write'), async (req, res) => {
+  try {
+    const invoice = await createInvoice(req.body || {});
+    res.status(201).json({ success: true, data: invoice, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      data: null,
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
+app.get('/api/reconciliation/report', requirePermission('config.read'), async (req, res) => {
+  try {
+    res.json({ success: true, data: await buildReconciliationReport(), error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      data: null,
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
+app.get('/api/reconciliation/conversion-overrides', requirePermission('config.read'), async (req, res) => {
+  try {
+    res.json({ success: true, data: await listConversionOverrides(), error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      data: [],
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
+app.patch('/api/reconciliation/conversion-overrides', requirePermission('config.write'), async (req, res) => {
+  try {
+    res.json({ success: true, data: await saveConversionOverride(req.body || {}), error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      data: null,
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
+app.get('/api/reconciliation/waste-audit', requirePermission('config.read'), async (req, res) => {
+  try {
+    res.json({ success: true, data: await listWasteAuditRows(), error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      data: [],
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
 app.get('/api/production-runs/completed', requirePermission('config.read'), async (req, res) => {
   try {
     const runs = await listCompletedProductionRuns({
@@ -15886,6 +16722,13 @@ module.exports = {
   cancelDeliveryChallan,
   deleteDraftDeliveryChallan,
   listDeliveryChallans,
+  listInvoices,
+  createInvoice,
+  getInvoiceDtoById,
+  listConversionOverrides,
+  saveConversionOverride,
+  buildReconciliationReport,
+  listWasteAuditRows,
   listChallanTemplates,
   listCompletedProductionRuns,
   saveChallanTemplate,

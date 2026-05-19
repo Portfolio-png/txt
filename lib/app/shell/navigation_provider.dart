@@ -39,7 +39,7 @@ int primaryTabIndexForKey(String key) {
   return switch (key) {
     'dashboard' => 0,
     'orders' => 1,
-    'delivery_challans' => 2,
+    'delivery_challans' || 'challan_invoice_report' => 2,
     'inventory' || 'inventory_scan' => 3,
     'production_pipelines' => 4,
     'pm' => 5,

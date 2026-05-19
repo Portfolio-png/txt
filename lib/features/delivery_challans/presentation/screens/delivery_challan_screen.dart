@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../app/preferences/preferences_provider.dart';
+import '../../../../app/shell/navigation_provider.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
@@ -160,6 +161,9 @@ class _ChallanScreenState extends State<ChallanScreen> {
             onCreate: () => _openEditor(context, initialType: _activeType),
             onEditProfile: () => _openCompanyProfile(context),
             onOpenTemplates: () => setState(() => _showTemplates = true),
+            onOpenReport: () => context.read<NavigationProvider>().select(
+              'challan_invoice_report',
+            ),
           ),
           const SizedBox(height: 16),
           if (_showTemplates)
@@ -277,6 +281,7 @@ class _Header extends StatelessWidget {
     required this.onCreate,
     required this.onEditProfile,
     required this.onOpenTemplates,
+    required this.onOpenReport,
   });
 
   final ChallanType activeType;
@@ -284,6 +289,7 @@ class _Header extends StatelessWidget {
   final VoidCallback onCreate;
   final VoidCallback onEditProfile;
   final VoidCallback onOpenTemplates;
+  final VoidCallback onOpenReport;
 
   @override
   Widget build(BuildContext context) {
@@ -314,6 +320,13 @@ class _Header extends StatelessWidget {
           icon: Icons.dashboard_customize_outlined,
           variant: AppButtonVariant.secondary,
           onPressed: onOpenTemplates,
+        ),
+        const SizedBox(width: 10),
+        AppButton(
+          label: 'Report',
+          icon: Icons.analytics_outlined,
+          variant: AppButtonVariant.secondary,
+          onPressed: onOpenReport,
         ),
         const SizedBox(width: 14),
         AppButton(

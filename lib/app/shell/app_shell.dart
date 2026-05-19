@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/theme/soft_erp_theme.dart';
 import '../../core/widgets/soft_primitives.dart';
+import '../reports/views/challan_invoice_reconciliation_screen.dart';
 import '../../features/groups/presentation/screens/groups_screen.dart';
 import '../../features/auth/presentation/screens/user_management_screen.dart';
 import '../../features/delivery_challans/domain/delivery_challan.dart';
@@ -505,6 +506,8 @@ class _ShellContentSwitcher extends StatelessWidget {
               'pm' => const PMScreen(),
               'orders' => const OrdersScreen(),
               'delivery_challans' => const ChallanScreen(),
+              'challan_invoice_report' =>
+                const ChallanInvoiceReconciliationScreen(),
               'configurator' => const _ModulePlaceholder(
                 title: 'Configurator',
                 description:

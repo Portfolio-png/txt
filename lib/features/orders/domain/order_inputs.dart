@@ -14,6 +14,8 @@ class CreateOrderInput {
     required this.variationPathNodeIds,
     required this.quantity,
     this.status = OrderStatus.notStarted,
+    this.unitPrice = 0,
+    this.totalInvoicedQty = 0,
     this.startDate,
     this.endDate,
     this.poDocumentIds = const <int>[],
@@ -31,6 +33,8 @@ class CreateOrderInput {
   final List<int> variationPathNodeIds;
   final int quantity;
   final OrderStatus status;
+  final double unitPrice;
+  final double totalInvoicedQty;
   final DateTime? startDate;
   final DateTime? endDate;
   final List<int> poDocumentIds;

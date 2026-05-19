@@ -603,7 +603,7 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                                           }
                                         });
                                       },
-                                      activeColor: const Color(0xFF6C63FF),
+                                      activeThumbColor: const Color(0xFF6C63FF),
                                     ),
                                     const SizedBox(width: 8),
                                     Expanded(

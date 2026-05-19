@@ -27,6 +27,16 @@ test('orders persistence functions create, list, and update lifecycle', async ()
       true,
       'orders table must expose updated_at',
     );
+    assert.equal(
+      orderColumns.some((column) => column.name === 'unit_price'),
+      true,
+      'orders table must expose unit_price',
+    );
+    assert.equal(
+      orderColumns.some((column) => column.name === 'total_invoiced_qty'),
+      true,
+      'orders table must expose total_invoiced_qty',
+    );
 
     const seededClients = await backend.getClientsWithUsage();
     const seededItems = await backend.getItemsWithUsage();
@@ -243,6 +253,8 @@ test('orders persistence functions create, list, and update lifecycle', async ()
       variationPathLabel: leaf.displayName,
       variationPathNodeIds: leaf.path,
       quantity: 12,
+      unitPrice: 42.5,
+      totalInvoicedQty: 3,
       status: 'inProgress',
       startDate: '2026-04-04T00:00:00.000Z',
       endDate: '2026-04-10T00:00:00.000Z',
@@ -264,6 +276,8 @@ test('orders persistence functions create, list, and update lifecycle', async ()
     assert.equal(createdDto.orderNo, 'ORD-DB-001');
     assert.equal(createdDto.status, 'inProgress');
     assert.equal(createdDto.quantity, 12);
+    assert.equal(createdDto.unitPrice, 42.5);
+    assert.equal(createdDto.totalInvoicedQty, 3);
     const linkedDocuments = await backend.getPoDocumentsForOrder(created.id);
     assert.equal(linkedDocuments.length, 1);
     assert.equal(linkedDocuments[0].id, document.id);
@@ -342,6 +356,7 @@ test('orders persistence functions create, list, and update lifecycle', async ()
         variationPathLabel: 'FORGED LABEL',
         variationPathNodeIds: [...leaf.path].reverse(),
         quantity: 4,
+        unitPrice: 45,
         status: 'completed',
         startDate: '2026-04-05T00:00:00.000Z',
         endDate: '2026-04-12T00:00:00.000Z',
@@ -357,6 +372,8 @@ test('orders persistence functions create, list, and update lifecycle', async ()
     assert.equal(mergedRow.quantity, 16);
     assert.equal(mergedRow.status, 'completed');
     assert.equal(mergedRow.client_code, 'client-facing code');
+    assert.equal(mergedRow.unit_price, 45);
+    assert.equal(mergedRow.total_invoiced_qty, 3);
     assert.equal(mergedRow.variation_path_node_ids_json, JSON.stringify(leaf.path));
     assert.equal(mergedRow.variation_path_label, leaf.displayName);
     assert.ok(mergedRow.updated_at);

@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
 import 'package:paper/app/shell/navigation_provider.dart';
+import 'package:paper/app/reports/domain/reconciliation_report.dart';
 import 'package:paper/features/auth/presentation/providers/auth_provider.dart';
 import 'package:paper/features/delivery_challans/data/delivery_challan_repository.dart';
 import 'package:paper/features/delivery_challans/domain/challan_template.dart';
@@ -2282,6 +2283,10 @@ class FakeOrderRepository extends OrderRepository {
         variationPathLabel: input.variationPathLabel.trim(),
         variationPathNodeIds: List<int>.from(input.variationPathNodeIds),
         quantity: current.quantity + input.quantity,
+        unitPrice: input.unitPrice > 0 ? input.unitPrice : current.unitPrice,
+        totalInvoicedQty: input.totalInvoicedQty > 0
+            ? input.totalInvoicedQty
+            : current.totalInvoicedQty,
         status: input.status,
         createdAt: current.createdAt,
         startDate: input.startDate,
@@ -2306,6 +2311,8 @@ class FakeOrderRepository extends OrderRepository {
       variationPathLabel: input.variationPathLabel.trim(),
       variationPathNodeIds: List<int>.from(input.variationPathNodeIds),
       quantity: input.quantity,
+      unitPrice: input.unitPrice,
+      totalInvoicedQty: input.totalInvoicedQty,
       status: input.status,
       createdAt: DateTime.now(),
       startDate: input.startDate,
@@ -2434,6 +2441,8 @@ class FakeOrderRepository extends OrderRepository {
       variationPathLabel: current.variationPathLabel,
       variationPathNodeIds: current.variationPathNodeIds,
       quantity: current.quantity,
+      unitPrice: current.unitPrice,
+      totalInvoicedQty: current.totalInvoicedQty,
       status: input.status,
       createdAt: current.createdAt,
       startDate: input.startDate,
@@ -2488,8 +2497,11 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
     List<DeliveryChallan>? seedChallans,
     List<ChallanTemplate>? seedTemplates,
     CompanyProfile? companyProfile,
+    ReconciliationReportSnapshot? reconciliationReport,
   }) : _challans = List<DeliveryChallan>.from(seedChallans ?? const []),
-       _templates = List<ChallanTemplate>.from(seedTemplates ?? const []) {
+       _templates = List<ChallanTemplate>.from(seedTemplates ?? const []),
+       _reconciliationReport =
+           reconciliationReport ?? ReconciliationReportSnapshot.empty() {
     if (companyProfile != null) {
       _companyProfile = companyProfile;
     }
@@ -2499,6 +2511,7 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
   int getCompanyProfileCalls = 0;
   final List<DeliveryChallan> _challans;
   final List<ChallanTemplate> _templates;
+  final ReconciliationReportSnapshot _reconciliationReport;
   CompanyProfile _companyProfile = const CompanyProfile(
     id: 1,
     companyName: 'Paper ERP',
@@ -2605,6 +2618,10 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
 
   @override
   Future<void> recordPrint(int id) async {}
+
+  @override
+  Future<ReconciliationReportSnapshot> getReconciliationReport() async =>
+      _reconciliationReport;
 
   @override
   Future<List<CompletedProductionRun>> getCompletedProductionRuns({
@@ -3389,6 +3406,126 @@ void main() {
     expect(find.text('RC-00001'), findsNothing);
   });
 
+  testWidgets('challan report switches between auditor client and misc rows', (
+    tester,
+  ) async {
+    final challanRepository = FakeDeliveryChallanRepository(
+      reconciliationReport: ReconciliationReportSnapshot(
+        generatedAt: DateTime(2026, 5, 12),
+        internalAuditor: const <InternalAuditorRow>[
+          InternalAuditorRow(
+            challanId: 11,
+            challanItemId: 7001,
+            dcNumber: 'DC-101',
+            clientName: 'Alpha Industries',
+            itemName: 'Kraft Sheet',
+            hsnCode: '4805',
+            totalDispatchedWeightKg: 22.8,
+            convertedUnits: 60,
+            invoicedQuantity: 20,
+            gstin: '27AAAAA0000A1Z5',
+            cgst: 90,
+            sgst: 90,
+            wastePercentage: 8,
+            status: 'Attention Required',
+            isAttentionRequired: true,
+            isDirectPrint: false,
+            isUnbilled: true,
+          ),
+          InternalAuditorRow(
+            challanId: 12,
+            challanItemId: 7002,
+            dcNumber: 'DC-TYPE',
+            clientName: 'Walk-in Customer',
+            itemName: 'Typed custom tray',
+            hsnCode: '',
+            totalDispatchedWeightKg: 12,
+            convertedUnits: 12,
+            invoicedQuantity: 0,
+            gstin: '',
+            cgst: 0,
+            sgst: 0,
+            wastePercentage: 0,
+            status: 'Unlinked / Direct Print',
+            isAttentionRequired: false,
+            isDirectPrint: true,
+            isUnbilled: true,
+          ),
+        ],
+        clientStatement: const <ClientStatementRow>[
+          ClientStatementRow(
+            clientName: 'Alpha Industries',
+            itemName: 'Kraft Sheet',
+            materialReceivedInputKg: 100,
+            totalFinishedUnitsDelivered: 60,
+            netBalanceMaterialRemainingKg: 77.2,
+            status: 'Material Remaining',
+          ),
+        ],
+        misc: <WasteAuditRow>[
+          WasteAuditRow(
+            auditTime: DateTime(2026, 5, 12),
+            clientName: 'Alpha Industries',
+            itemName: 'Kraft Sheet',
+            challanNo: 'DC-101',
+            inputWeightKg: 100,
+            shippedWeightKg: 22.8,
+            wasteWeightKg: 77.2,
+            wastePercentage: 77.2,
+            source: 'report_snapshot',
+          ),
+        ],
+      ),
+    );
+
+    await pumpApp(
+      tester,
+      viewSize: const Size(1440, 900),
+      deliveryChallanRepository: challanRepository,
+    );
+    await openChallansScreen(tester);
+
+    await tester.tap(find.text('Report').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Report'), findsWidgets);
+    expect(find.text('Internal Auditor'), findsWidgets);
+    expect(find.text('Dispatched Weight'), findsWidgets);
+    expect(find.text('Attention Required'), findsWidgets);
+    expect(find.text('DC-101'), findsOneWidget);
+    expect(find.text('Alpha Industries'), findsWidgets);
+    expect(find.text('Direct Print / Unlinked'), findsOneWidget);
+    expect(find.text('Generate Invoice'), findsWidgets);
+
+    tester
+        .widget<TextButton>(
+          find.widgetWithText(TextButton, 'Generate Invoice').first,
+        )
+        .onPressed
+        ?.call();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Generate Invoice Payload'), findsOneWidget);
+    expect(find.textContaining('challanItemId'), findsOneWidget);
+    expect(find.textContaining('7001'), findsOneWidget);
+    expect(find.textContaining('quantity'), findsOneWidget);
+    expect(find.textContaining('40.0'), findsOneWidget);
+
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, 'Alpha');
+    await tester.pump();
+    await tester.tap(find.text('Client Statement'));
+    await tester.pumpAndSettle();
+    expect(find.text('Material Received (Input)'), findsOneWidget);
+    expect(find.text('Material Remaining'), findsWidgets);
+
+    await tester.tap(find.text('Misc'));
+    await tester.pumpAndSettle();
+    expect(find.text('Waste Audit Rows'), findsWidgets);
+    expect(find.text('report_snapshot'), findsOneWidget);
+  });
+
   testWidgets(
     'challan templates use fixed layout blocks and a single items area block',
     (tester) async {
@@ -3618,6 +3755,9 @@ void main() {
 
       navigation.select('inventory_scan');
       expect(navigation.currentTabIndex, 3);
+
+      navigation.select('challan_invoice_report');
+      expect(navigation.currentTabIndex, 2);
 
       navigation.setTab(2);
       expect(navigation.selectedKey, 'delivery_challans');
