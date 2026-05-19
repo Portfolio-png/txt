@@ -31,6 +31,9 @@ class ApiChallanRepository implements ChallanRepository {
     signatureLabel: '',
   );
   static final List<DeliveryChallan> _mockChallans = <DeliveryChallan>[];
+  static final List<InvoiceHeader> _mockInvoices = <InvoiceHeader>[];
+  static final List<ConversionOverride> _mockConversionOverrides =
+      <ConversionOverride>[];
   static final List<ChallanTemplate> _mockTemplates = <ChallanTemplate>[];
   static final List<ChallanTemplateScan> _mockTemplateScans =
       <ChallanTemplateScan>[];
@@ -333,6 +336,259 @@ class ApiChallanRepository implements ChallanRepository {
     return ReconciliationReportSnapshot.fromJson(
       _dataObject(payload, 'report'),
     );
+  }
+
+  @override
+  Future<List<InvoiceHeader>> getInvoices() async {
+    if (useMockResponses) {
+      return List<InvoiceHeader>.unmodifiable(_mockInvoices);
+    }
+    final uri = Uri.parse('$baseUrl/api/invoices');
+    final response = await _sendRequest(method: 'GET', uri: uri);
+    final payload = _decodeApiResponse(
+      method: 'GET',
+      uri: uri,
+      response: response,
+      fallback: 'Failed to fetch invoices.',
+    );
+    return _dataList(payload, 'invoices')
+        .whereType<Map<String, dynamic>>()
+        .map(InvoiceHeader.fromJson)
+        .toList(growable: false);
+  }
+
+  @override
+  Future<InvoiceHeader> getInvoice(int id) async {
+    if (useMockResponses) {
+      return _mockInvoices.firstWhere((invoice) => invoice.id == id);
+    }
+    final uri = Uri.parse('$baseUrl/api/invoices/$id');
+    final response = await _sendRequest(method: 'GET', uri: uri);
+    final payload = _decodeApiResponse(
+      method: 'GET',
+      uri: uri,
+      response: response,
+      fallback: 'Failed to fetch invoice.',
+    );
+    return InvoiceHeader.fromJson(_dataObject(payload, 'invoice'));
+  }
+
+  @override
+  Future<InvoiceHeader> createInvoice(InvoiceDraftInput input) async {
+    if (useMockResponses) {
+      final id = _mockInvoices.length + 1;
+      final lines = input.lines
+          .asMap()
+          .entries
+          .map((entry) {
+            final line = entry.value;
+            final taxableValue = line.quantity * line.unitPrice;
+            return InvoiceLine(
+              id: entry.key + 1,
+              invoiceId: id,
+              orderId: line.orderId,
+              challanId: line.challanId,
+              challanItemId: line.challanItemId,
+              itemId: line.itemId,
+              variationLeafNodeId: line.variationLeafNodeId,
+              itemName: line.itemName,
+              hsnCode: line.hsnCode,
+              quantity: line.quantity,
+              unitPrice: line.unitPrice,
+              taxableValue: taxableValue,
+              cgstRate: line.cgstRate,
+              sgstRate: line.sgstRate,
+              cgstAmount: taxableValue * line.cgstRate / 100,
+              sgstAmount: taxableValue * line.sgstRate / 100,
+            );
+          })
+          .toList(growable: false);
+      final taxableValue = lines.fold<double>(
+        0,
+        (sum, line) => sum + line.taxableValue,
+      );
+      final cgstAmount = lines.fold<double>(
+        0,
+        (sum, line) => sum + line.cgstAmount,
+      );
+      final sgstAmount = lines.fold<double>(
+        0,
+        (sum, line) => sum + line.sgstAmount,
+      );
+      final invoice = InvoiceHeader(
+        id: id,
+        invoiceNo: input.invoiceNo.trim().isEmpty
+            ? 'INV-${id.toString().padLeft(5, '0')}'
+            : input.invoiceNo.trim(),
+        clientId: input.clientId,
+        clientName: input.clientName,
+        gstin: input.gstin,
+        status: 'draft',
+        invoiceDate: input.invoiceDate,
+        totalQuantity: lines.fold<double>(
+          0,
+          (sum, line) => sum + line.quantity,
+        ),
+        taxableValue: taxableValue,
+        cgstAmount: cgstAmount,
+        sgstAmount: sgstAmount,
+        totalAmount: taxableValue + cgstAmount + sgstAmount,
+        lines: lines,
+      );
+      _mockInvoices.add(invoice);
+      return invoice;
+    }
+    final uri = Uri.parse('$baseUrl/api/invoices');
+    final response = await _sendRequest(
+      method: 'POST',
+      uri: uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode(input.toJson()),
+    );
+    final payload = _decodeApiResponse(
+      method: 'POST',
+      uri: uri,
+      response: response,
+      fallback: 'Failed to create invoice.',
+    );
+    return InvoiceHeader.fromJson(_dataObject(payload, 'invoice'));
+  }
+
+  @override
+  Future<List<ConversionOverride>> getConversionOverrides() async {
+    if (useMockResponses) {
+      return List<ConversionOverride>.unmodifiable(_mockConversionOverrides);
+    }
+    final uri = Uri.parse('$baseUrl/api/reconciliation/conversion-overrides');
+    final response = await _sendRequest(method: 'GET', uri: uri);
+    final payload = _decodeApiResponse(
+      method: 'GET',
+      uri: uri,
+      response: response,
+      fallback: 'Failed to fetch conversion overrides.',
+    );
+    return _dataList(payload, 'conversionOverrides')
+        .whereType<Map<String, dynamic>>()
+        .map(ConversionOverride.fromJson)
+        .toList(growable: false);
+  }
+
+  @override
+  Future<ConversionOverride> saveConversionOverride(
+    ConversionOverrideInput input,
+  ) async {
+    if (useMockResponses) {
+      final saved = ConversionOverride(
+        id: _mockConversionOverrides.length + 1,
+        itemId: input.itemId,
+        variationLeafNodeId: input.variationLeafNodeId,
+        conversionRatio: input.conversionRatio,
+        fromUnit: 'kg',
+        toUnitLabel: input.toUnitLabel,
+        updatedAt: DateTime.now(),
+      );
+      _mockConversionOverrides.removeWhere(
+        (override) =>
+            override.itemId == input.itemId &&
+            override.variationLeafNodeId == input.variationLeafNodeId,
+      );
+      _mockConversionOverrides.add(saved);
+      return saved;
+    }
+    final uri = Uri.parse('$baseUrl/api/reconciliation/conversion-overrides');
+    final response = await _sendRequest(
+      method: 'PATCH',
+      uri: uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode(input.toJson()),
+    );
+    final payload = _decodeApiResponse(
+      method: 'PATCH',
+      uri: uri,
+      response: response,
+      fallback: 'Failed to save conversion override.',
+    );
+    return ConversionOverride.fromJson(_dataObject(payload, 'conversion'));
+  }
+
+  @override
+  Future<List<WasteAuditRow>> getWasteAuditRows() async {
+    if (useMockResponses) {
+      return const <WasteAuditRow>[];
+    }
+    final uri = Uri.parse('$baseUrl/api/reconciliation/waste-audit');
+    final response = await _sendRequest(method: 'GET', uri: uri);
+    final payload = _decodeApiResponse(
+      method: 'GET',
+      uri: uri,
+      response: response,
+      fallback: 'Failed to fetch waste audit rows.',
+    );
+    return _dataList(payload, 'wasteAudit')
+        .whereType<Map<String, dynamic>>()
+        .map(WasteAuditRow.fromJson)
+        .toList(growable: false);
+  }
+
+  @override
+  Future<ClientStatementReport> generateClientStatementReport(
+    List<String> challanNos,
+  ) async {
+    final normalized = challanNos
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    if (useMockResponses) {
+      final selected = _mockChallans
+          .where(
+            (challan) =>
+                normalized.contains(challan.challanNo) &&
+                challan.type == ChallanType.delivery &&
+                challan.status == DeliveryChallanStatus.issued,
+          )
+          .toList(growable: false);
+      final rows = selected
+          .expand(
+            (challan) => challan.items.map(
+              (item) => ClientStatementReportRow(
+                date: challan.date,
+                challanNo: challan.challanNo,
+                clientName: challan.customerName,
+                orderNo: challan.orderNo,
+                itemName: item.particulars,
+                note: item.note,
+                quantityPcs: double.tryParse(item.quantityPcs) ?? 0,
+                weight: double.tryParse(item.weight) ?? 0,
+              ),
+            ),
+          )
+          .toList(growable: false);
+      return ClientStatementReport(
+        rows: rows,
+        challanCount: selected.length,
+        totalQuantityPcs: rows.fold<double>(
+          0,
+          (sum, row) => sum + row.quantityPcs,
+        ),
+        totalWeight: rows.fold<double>(0, (sum, row) => sum + row.weight),
+        generatedAt: DateTime.now(),
+      );
+    }
+    final uri = Uri.parse('$baseUrl/api/reports/client-statement');
+    final response = await _sendRequest(
+      method: 'POST',
+      uri: uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({'challanIds': normalized}),
+    );
+    final payload = _decodeApiResponse(
+      method: 'POST',
+      uri: uri,
+      response: response,
+      fallback: 'Failed to generate client statement.',
+    );
+    return ClientStatementReport.fromJson(_dataObject(payload, 'report'));
   }
 
   @override

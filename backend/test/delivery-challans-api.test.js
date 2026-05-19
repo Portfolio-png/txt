@@ -142,6 +142,26 @@ test('delivery challans create issue and preserve company profile snapshot', asy
     const snapshot = JSON.parse(issuedRow.company_profile_snapshot);
     assert.equal(snapshot.company_name, 'Shree Ganesh Metal Works');
 
+    const clientStatement = await backend.buildClientStatementReport({
+      challanIds: [issued.challan_no],
+    });
+    assert.equal(clientStatement.summary.challanCount, 1);
+    assert.equal(clientStatement.rows.length, 1);
+    assert.equal(clientStatement.rows[0].challanNo, issued.challan_no);
+    assert.ok(clientStatement.rows[0].itemName.includes(order.item_name));
+    assert.equal(clientStatement.rows[0].note, 'Dispatch after QC clearance');
+    assert.equal(clientStatement.rows[0].quantityPcs, 10);
+    assert.equal(clientStatement.rows[0].weight, 2.5);
+
+    await assert.rejects(
+      () => backend.buildClientStatementReport({ challanIds: [] }),
+      /At least one challan number is required/,
+    );
+    await assert.rejects(
+      () => backend.buildClientStatementReport({ challanIds: ['DC-MISSING'] }),
+      /Unknown challan number/,
+    );
+
     const cancelled = await backend.cancelDeliveryChallan(created.id, actor);
     assert.equal(cancelled.status, 'cancelled');
 

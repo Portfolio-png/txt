@@ -43,6 +43,24 @@ abstract class ChallanRepository {
 
   Future<ReconciliationReportSnapshot> getReconciliationReport();
 
+  Future<List<InvoiceHeader>> getInvoices();
+
+  Future<InvoiceHeader> getInvoice(int id);
+
+  Future<InvoiceHeader> createInvoice(InvoiceDraftInput input);
+
+  Future<List<ConversionOverride>> getConversionOverrides();
+
+  Future<ConversionOverride> saveConversionOverride(
+    ConversionOverrideInput input,
+  );
+
+  Future<List<WasteAuditRow>> getWasteAuditRows();
+
+  Future<ClientStatementReport> generateClientStatementReport(
+    List<String> challanNos,
+  );
+
   Future<List<CompletedProductionRun>> getCompletedProductionRuns({
     String search = '',
     int limit = 25,

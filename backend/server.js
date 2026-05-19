@@ -7779,7 +7779,9 @@ async function buildReconciliationReport() {
            dc.material_owner_client_id, dc.material_owner_client_name, dc.material_owner_gstin,
            dc.maintain_stocks, dc.date, dc.order_id,
            o.client_id AS delivery_client_id,
-           o.client_name AS delivery_client_name
+           o.client_name AS delivery_client_name,
+           o.unit_price AS order_unit_price,
+           o.total_invoiced_qty AS order_total_invoiced_qty
     FROM delivery_challan_items dci
     JOIN delivery_challans dc ON dc.id = dci.challan_id
     LEFT JOIN orders o ON o.id = dci.order_item_id
@@ -7828,6 +7830,8 @@ async function buildReconciliationReport() {
     const invoicedQuantity = linkedInvoiceLines.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
     const cgst = linkedInvoiceLines.reduce((sum, line) => sum + Number(line.cgstAmount || 0), 0);
     const sgst = linkedInvoiceLines.reduce((sum, line) => sum + Number(line.sgstAmount || 0), 0);
+    const cgstRate = linkedInvoiceLines.find((line) => Number(line.cgstRate || 0) > 0)?.cgstRate || 0;
+    const sgstRate = linkedInvoiceLines.find((line) => Number(line.sgstRate || 0) > 0)?.sgstRate || 0;
     const gstin = linkedInvoiceLines.find((line) => String(line.invoice?.gstin || '').trim())?.invoice?.gstin ||
       row.customer_gstin ||
       '';
@@ -7856,6 +7860,8 @@ async function buildReconciliationReport() {
     const denominator = Math.max(Math.abs(convertedUnits), 1);
     const variance = Math.abs(convertedUnits - invoicedQuantity) / denominator;
     const isDirectPrint = Number(row.maintain_stocks ?? 1) === 0 || !row.order_item_id;
+    const invoiceableQuantity = Math.max(convertedUnits - invoicedQuantity, 0);
+    const unitPrice = Number(row.order_unit_price || 0);
     const status = isDirectPrint
       ? 'Unlinked / Direct Print'
       : invoicedQuantity <= 0
@@ -7866,7 +7872,9 @@ async function buildReconciliationReport() {
     auditorRows.push({
       challanId: Number(row.challan_id || 0),
       challanItemId: Number(row.id || 0),
+      orderId: Number(row.order_item_id || 0) || null,
       dcNumber: row.challan_no || '',
+      challanDate: row.date || null,
       clientId,
       clientName: effectiveClientName,
       itemId: row.item_id || null,
@@ -7876,15 +7884,34 @@ async function buildReconciliationReport() {
       totalDispatchedWeightKg: roundMetric(dispatchedWeightKg),
       convertedUnits: roundMetric(convertedUnits),
       invoicedQuantity: roundMetric(invoicedQuantity),
+      invoiceableQuantity: roundMetric(invoiceableQuantity),
+      unitPrice: roundMetric(unitPrice),
+      financialExposure: roundMetric(invoiceableQuantity * unitPrice),
       gstin,
       cgst: roundMetric(cgst),
       sgst: roundMetric(sgst),
+      cgstRate: roundMetric(cgstRate),
+      sgstRate: roundMetric(sgstRate),
       wastePercentage: roundMetric(wastePercentage),
+      conversionRatio: roundMetric(ratio),
+      toUnitLabel: override?.toUnitLabel || 'units',
+      variancePercent: roundMetric(variance * 100),
       status,
+      unlinkedReason: isDirectPrint
+        ? (Number(row.maintain_stocks ?? 1) === 0
+          ? 'Document-only challan line does not carry an inventory/order reference.'
+          : 'Line is not linked to an order item.')
+        : '',
       isAttentionRequired: status === 'Attention Required',
       isDirectPrint,
       isUnbilled: invoicedQuantity < convertedUnits,
       invoiceLineIds: linkedInvoiceLines.map((line) => line.id),
+      linkedInvoices: linkedInvoiceLines.map((line) => ({
+        id: line.invoice?.id || line.invoiceId,
+        invoiceNo: line.invoice?.invoiceNo || '',
+        status: line.invoice?.status || '',
+        invoiceDate: line.invoice?.invoiceDate || null,
+      })),
     });
   }
 
@@ -7958,6 +7985,94 @@ async function buildReconciliationReport() {
     misc: wasteAuditRows,
     conversionOverrides: overrides,
     generatedAt: now,
+  };
+}
+
+async function buildClientStatementReport(input = {}) {
+  const challanIds = Array.isArray(input.challanIds)
+    ? input.challanIds
+    : Array.isArray(input.challan_ids)
+      ? input.challan_ids
+      : [];
+  const requestedChallanNos = [
+    ...new Set(
+      challanIds
+        .map((value) => String(value || '').trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (requestedChallanNos.length === 0) {
+    const error = new Error('At least one challan number is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const placeholders = requestedChallanNos.map(() => '?').join(', ');
+  const challans = await all(
+    `
+    SELECT *
+    FROM delivery_challans
+    WHERE challan_no IN (${placeholders})
+    `,
+    requestedChallanNos,
+  );
+  const foundNos = new Set(challans.map((row) => String(row.challan_no || '').trim()));
+  const missingNos = requestedChallanNos.filter((challanNo) => !foundNos.has(challanNo));
+  if (missingNos.length > 0) {
+    const error = new Error(`Unknown challan number(s): ${missingNos.join(', ')}.`);
+    error.statusCode = 400;
+    throw error;
+  }
+  const invalidNos = challans
+    .filter((row) => normalizeChallanType(row.type) !== 'delivery' || row.status !== 'issued')
+    .map((row) => row.challan_no);
+  if (invalidNos.length > 0) {
+    const error = new Error(`Only issued delivery challans can be exported. Invalid: ${invalidNos.join(', ')}.`);
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const rows = await all(
+    `
+    SELECT dc.date, dc.challan_no, dc.customer_name, dc.order_no,
+           dci.particulars, dci.note, dci.quantity_pcs, dci.weight
+    FROM delivery_challans dc
+    JOIN delivery_challan_items dci ON dci.challan_id = dc.id
+    WHERE dc.challan_no IN (${placeholders})
+      AND dc.type = 'delivery'
+      AND dc.status = 'issued'
+    ORDER BY date(dc.date) ASC, dc.id ASC, dci.line_no ASC, dci.id ASC
+    `,
+    requestedChallanNos,
+  );
+  const reportRows = rows.map((row) => ({
+    date: row.date || null,
+    challanNo: row.challan_no || '',
+    clientName: row.customer_name || '',
+    orderNo: row.order_no || '',
+    itemName: row.particulars || '',
+    note: row.note || '',
+    quantityPcs: roundMetric(Number(row.quantity_pcs || 0)),
+    weight: roundMetric(Number(row.weight || 0)),
+  }));
+  const summary = reportRows.reduce(
+    (acc, row) => {
+      acc.totalQuantityPcs += Number(row.quantityPcs || 0);
+      acc.totalWeight += Number(row.weight || 0);
+      return acc;
+    },
+    {
+      challanCount: requestedChallanNos.length,
+      totalQuantityPcs: 0,
+      totalWeight: 0,
+    },
+  );
+  summary.totalQuantityPcs = roundMetric(summary.totalQuantityPcs);
+  summary.totalWeight = roundMetric(summary.totalWeight);
+  return {
+    rows: reportRows,
+    summary,
+    generatedAt: new Date().toISOString(),
   };
 }
 
@@ -14953,6 +15068,19 @@ app.get('/api/reconciliation/waste-audit', requirePermission('config.read'), asy
   }
 });
 
+app.post('/api/reports/client-statement', requirePermission('config.read'), async (req, res) => {
+  try {
+    res.json({ success: true, data: await buildClientStatementReport(req.body || {}), error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      data: null,
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
 app.get('/api/production-runs/completed', requirePermission('config.read'), async (req, res) => {
   try {
     const runs = await listCompletedProductionRuns({
@@ -16728,6 +16856,7 @@ module.exports = {
   listConversionOverrides,
   saveConversionOverride,
   buildReconciliationReport,
+  buildClientStatementReport,
   listWasteAuditRows,
   listChallanTemplates,
   listCompletedProductionRuns,

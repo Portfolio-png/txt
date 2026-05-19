@@ -11,7 +11,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../app/preferences/preferences_provider.dart';
-import '../../../../app/shell/navigation_provider.dart';
+import '../../../../app/reports/views/challan_invoice_reconciliation_screen.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
@@ -161,9 +161,8 @@ class _ChallanScreenState extends State<ChallanScreen> {
             onCreate: () => _openEditor(context, initialType: _activeType),
             onEditProfile: () => _openCompanyProfile(context),
             onOpenTemplates: () => setState(() => _showTemplates = true),
-            onOpenReport: () => context.read<NavigationProvider>().select(
-              'challan_invoice_report',
-            ),
+            onOpenReport: () =>
+                ChallanInvoiceReconciliationScreen.openDialog(context),
           ),
           const SizedBox(height: 16),
           if (_showTemplates)
