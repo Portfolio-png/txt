@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/delivery_challan_repository.dart';
+import 'package:paper/app/reports/domain/reconciliation_report.dart';
 import '../../domain/challan_template.dart';
 import '../../domain/delivery_challan.dart';
 
@@ -141,6 +142,10 @@ class ChallanProvider extends ChangeNotifier {
   }
 
   Future<void> recordPrint(int id) => _repository.recordPrint(id);
+
+  Future<InvoiceHeader?> updateInvoiceStatus(int id, String status) async {
+    return _save(() => _repository.updateInvoiceStatus(id, status));
+  }
 
   Future<List<CompletedProductionRun>> loadCompletedProductionRuns({
     String search = '',

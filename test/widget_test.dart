@@ -2511,7 +2511,10 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
   int getCompanyProfileCalls = 0;
   int createInvoiceCalls = 0;
   int generateClientStatementReportCalls = 0;
+  int updateChallanCalls = 0;
+  int issueChallanCalls = 0;
   int saveConversionOverrideCalls = 0;
+  DeliveryChallanDraftInput? lastUpdatedChallanInput;
   List<String> lastClientStatementChallanNos = const <String>[];
   final List<DeliveryChallan> _challans;
   final List<ChallanTemplate> _templates;
@@ -2607,12 +2610,85 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
     int id,
     DeliveryChallanDraftInput input,
   ) async {
-    throw UnimplementedError();
+    updateChallanCalls += 1;
+    lastUpdatedChallanInput = input;
+    final index = _challans.indexWhere((challan) => challan.id == id);
+    final current = _challans[index];
+    final updated = DeliveryChallan(
+      id: current.id,
+      type: input.type,
+      orderId: input.orderId > 0 ? input.orderId : current.orderId,
+      orderIds: input.orderIds,
+      clientId: current.clientId,
+      orderNo: current.orderNo,
+      orderNos: current.orderNos,
+      challanNo: input.challanNo.trim().isEmpty
+          ? current.challanNo
+          : input.challanNo.trim(),
+      date: input.date,
+      location: input.location,
+      customerName: input.customerName.isEmpty
+          ? current.customerName
+          : input.customerName,
+      customerGstin: input.customerGstin.isEmpty
+          ? current.customerGstin
+          : input.customerGstin,
+      vendorId: input.vendorId > 0 ? input.vendorId : current.vendorId,
+      vendorName: input.vendorName.isEmpty
+          ? current.vendorName
+          : input.vendorName,
+      vendorGstin: input.vendorGstin.isEmpty
+          ? current.vendorGstin
+          : input.vendorGstin,
+      sourceReference: input.sourceReference,
+      companyProfileSnapshot: current.companyProfileSnapshot,
+      notes: input.notes,
+      maintainStocks: input.maintainStocks,
+      status: current.status,
+      items: input.items,
+      itemsCount: input.items.length,
+      createdAt: current.createdAt,
+      updatedAt: DateTime.now(),
+      usedInReport: current.usedInReport,
+    );
+    _challans[index] = updated;
+    return updated;
   }
 
   @override
   Future<DeliveryChallan> issueChallan(int id) async {
-    throw UnimplementedError();
+    issueChallanCalls += 1;
+    final index = _challans.indexWhere((challan) => challan.id == id);
+    final current = _challans[index];
+    final issued = DeliveryChallan(
+      id: current.id,
+      type: current.type,
+      orderId: current.orderId,
+      orderIds: current.orderIds,
+      clientId: current.clientId,
+      orderNo: current.orderNo,
+      orderNos: current.orderNos,
+      challanNo: current.challanNo,
+      date: current.date,
+      location: current.location,
+      customerName: current.customerName,
+      customerGstin: current.customerGstin,
+      vendorId: current.vendorId,
+      vendorName: current.vendorName,
+      vendorGstin: current.vendorGstin,
+      sourceReference: current.sourceReference,
+      companyProfileSnapshot: current.companyProfileSnapshot,
+      notes: current.notes,
+      maintainStocks: current.maintainStocks,
+      status: DeliveryChallanStatus.issued,
+      items: current.items,
+      itemsCount: current.itemsCount,
+      createdAt: current.createdAt,
+      updatedAt: DateTime.now(),
+      usedInReport: current.usedInReport,
+    );
+    _challans[index] = issued;
+    return issued;
   }
 
   @override
@@ -2702,6 +2778,32 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
   }
 
   @override
+  Future<InvoiceHeader> updateInvoiceStatus(int id, String status) async {
+    final index = createdInvoices.indexWhere((inv) => inv.id == id);
+    if (index != -1) {
+      final current = createdInvoices[index];
+      final updated = InvoiceHeader(
+        id: current.id,
+        invoiceNo: current.invoiceNo,
+        clientId: current.clientId,
+        clientName: current.clientName,
+        gstin: current.gstin,
+        status: status,
+        invoiceDate: current.invoiceDate,
+        totalQuantity: current.totalQuantity,
+        taxableValue: current.taxableValue,
+        cgstAmount: current.cgstAmount,
+        sgstAmount: current.sgstAmount,
+        totalAmount: current.totalAmount,
+        lines: current.lines,
+      );
+      createdInvoices[index] = updated;
+      return updated;
+    }
+    throw UnimplementedError();
+  }
+
+  @override
   Future<List<ConversionOverride>> getConversionOverrides() async =>
       const <ConversionOverride>[];
 
@@ -2757,6 +2859,14 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
           ),
         )
         .toList(growable: false);
+    for (final challan in selected) {
+      final index = _challans.indexWhere(
+        (candidate) => candidate.challanNo == challan.challanNo,
+      );
+      if (index != -1) {
+        _challans[index] = _challans[index].copyWith(usedInReport: true);
+      }
+    }
     return ClientStatementReport(
       rows: rows,
       challanCount: selected.length,
@@ -3297,6 +3407,72 @@ void main() {
     );
   }
 
+  OrderEntry orderForChallanFallback() {
+    return OrderEntry(
+      id: 501,
+      orderNo: 'ORD-FALLBACK',
+      clientId: 41,
+      clientName: 'Fallback Client',
+      poNumber: 'PO-FALLBACK',
+      clientCode: 'FALLBACK',
+      itemId: 91,
+      itemName: 'Fallback Item',
+      variationLeafNodeId: 0,
+      variationPathLabel: 'Base item',
+      variationPathNodeIds: const <int>[],
+      quantity: 20,
+      status: OrderStatus.draft,
+      createdAt: DateTime(2026, 5, 19),
+      startDate: DateTime(2026, 5, 19),
+      endDate: DateTime(2026, 5, 22),
+    );
+  }
+
+  DeliveryChallan draftDeliveryChallanForOrderFallback() {
+    return DeliveryChallan(
+      id: 5010,
+      type: ChallanType.delivery,
+      orderId: 501,
+      orderIds: const <int>[501],
+      clientId: 41,
+      orderNo: 'ORD-FALLBACK',
+      orderNos: const <String>['ORD-FALLBACK'],
+      challanNo: 'DC-DRAFT-ORDER',
+      date: DateTime(2026, 5, 19),
+      location: 'Dispatch Bay',
+      customerName: 'Fallback Client',
+      customerGstin: '27AAAAA0000A1Z5',
+      vendorId: null,
+      vendorName: '',
+      vendorGstin: '',
+      sourceReference: '',
+      companyProfileSnapshot: null,
+      notes: '',
+      maintainStocks: true,
+      status: DeliveryChallanStatus.draft,
+      items: const <DeliveryChallanItem>[
+        DeliveryChallanItem(
+          id: 9001,
+          orderItemId: 501,
+          productionRunId: null,
+          itemId: 91,
+          variationLeafNodeId: 0,
+          lineNo: 1,
+          particulars: 'Fallback Item',
+          hsnCode: '4805',
+          variationPathLabel: 'Base item',
+          note: '',
+          quantityPcs: '5',
+          weight: '',
+        ),
+      ],
+      itemsCount: 1,
+      createdAt: DateTime(2026, 5, 19),
+      updatedAt: DateTime(2026, 5, 19),
+      usedInReport: false,
+    );
+  }
+
   Future<void> changeOpenVariationValue(
     WidgetTester tester, {
     required String itemLabel,
@@ -3501,6 +3677,7 @@ void main() {
           itemsCount: 1,
           createdAt: DateTime(2026, 5, 11),
           updatedAt: DateTime(2026, 5, 11),
+          usedInReport: false,
         ),
         DeliveryChallan(
           id: 2,
@@ -3527,6 +3704,7 @@ void main() {
           itemsCount: 1,
           createdAt: DateTime(2026, 5, 11),
           updatedAt: DateTime(2026, 5, 11),
+          usedInReport: false,
         ),
       ],
     );
@@ -3552,166 +3730,264 @@ void main() {
     expect(find.text('RC-00001'), findsNothing);
   });
 
-  testWidgets('challan report switches between auditor client and misc rows', (
-    tester,
-  ) async {
-    final challanRepository = FakeDeliveryChallanRepository(
-      reconciliationReport: ReconciliationReportSnapshot(
-        generatedAt: DateTime(2026, 5, 12),
-        internalAuditor: <InternalAuditorRow>[
-          InternalAuditorRow(
-            challanId: 11,
-            challanItemId: 7001,
-            orderId: 501,
-            clientId: 41,
-            itemId: 91,
-            variationLeafNodeId: 0,
-            dcNumber: 'DC-101',
-            challanDate: DateTime(2026, 5, 12),
-            clientName: 'Alpha Industries',
-            itemName: 'Kraft Sheet',
-            hsnCode: '4805',
-            totalDispatchedWeightKg: 22.8,
-            convertedUnits: 60,
-            invoicedQuantity: 20,
-            invoiceableQuantity: 40,
-            unitPrice: 18.5,
-            financialExposure: 740,
-            gstin: '27AAAAA0000A1Z5',
-            cgst: 90,
-            sgst: 90,
-            cgstRate: 9,
-            sgstRate: 9,
-            wastePercentage: 8,
-            conversionRatio: 2.63,
-            toUnitLabel: 'sheets',
-            variancePercent: 66.67,
-            status: 'Attention Required',
-            isAttentionRequired: true,
-            isDirectPrint: false,
-            isUnbilled: true,
-          ),
-          InternalAuditorRow(
-            challanId: 12,
-            challanItemId: 7002,
-            dcNumber: 'DC-TYPE',
-            clientName: 'Walk-in Customer',
-            itemName: 'Typed custom tray',
-            hsnCode: '',
-            totalDispatchedWeightKg: 12,
-            convertedUnits: 12,
-            invoicedQuantity: 0,
-            gstin: '',
-            cgst: 0,
-            sgst: 0,
-            wastePercentage: 0,
-            status: 'Unlinked / Direct Print',
-            isAttentionRequired: false,
-            isDirectPrint: true,
-            isUnbilled: true,
-          ),
-        ],
-        clientStatement: const <ClientStatementRow>[
-          ClientStatementRow(
-            clientName: 'Alpha Industries',
-            itemName: 'Kraft Sheet',
-            materialReceivedInputKg: 100,
-            totalFinishedUnitsDelivered: 60,
-            netBalanceMaterialRemainingKg: 77.2,
-            status: 'Material Remaining',
-          ),
-        ],
-        misc: <WasteAuditRow>[
-          WasteAuditRow(
-            auditTime: DateTime(2026, 5, 12),
-            clientName: 'Alpha Industries',
-            itemName: 'Kraft Sheet',
-            challanNo: 'DC-101',
-            inputWeightKg: 100,
-            shippedWeightKg: 22.8,
-            wasteWeightKg: 77.2,
-            wastePercentage: 77.2,
-            source: 'report_snapshot',
-          ),
-        ],
-      ),
-    );
+  testWidgets(
+    'existing delivery draft can issue using saved order ids when orders are not hydrated',
+    (tester) async {
+      final challanRepository = FakeDeliveryChallanRepository(
+        seedChallans: <DeliveryChallan>[draftDeliveryChallanForOrderFallback()],
+      );
 
-    await pumpApp(
-      tester,
-      viewSize: const Size(1440, 900),
-      deliveryChallanRepository: challanRepository,
-    );
-    await openChallansScreen(tester);
+      await pumpApp(
+        tester,
+        viewSize: const Size(1440, 900),
+        deliveryChallanRepository: challanRepository,
+        orderRepository: FakeOrderRepository(),
+      );
+      await openChallansScreen(tester);
 
-    await tester.tap(find.text('Report').first);
-    await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byTooltip('View/Edit').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('View/Edit').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Issue Delivery'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Report'), findsWidgets);
-    expect(find.text('Internal Auditor'), findsWidgets);
-    expect(find.text('Dispatched Weight'), findsWidgets);
-    expect(find.text('Attention Required'), findsWidgets);
-    expect(find.text('DC-101'), findsOneWidget);
-    expect(find.text('Alpha Industries'), findsWidgets);
-    expect(find.text('Direct Print / Unlinked'), findsOneWidget);
-    expect(find.text('Open Draft Invoice'), findsWidgets);
+      expect(challanRepository.updateChallanCalls, 1);
+      expect(challanRepository.issueChallanCalls, 1);
+      expect(challanRepository.lastUpdatedChallanInput?.orderIds, <int>[501]);
+      expect(
+        find.text('Select at least one order before saving challan.'),
+        findsNothing,
+      );
+    },
+  );
 
-    tester
-        .widget<TextButton>(
-          find.widgetWithText(TextButton, 'Open Draft Invoice').first,
-        )
-        .onPressed
-        ?.call();
-    await tester.pumpAndSettle();
+  testWidgets(
+    'existing delivery draft does not fallback to source orders after user removes order selection',
+    (tester) async {
+      final seededOrder = orderForChallanFallback();
+      final challanRepository = FakeDeliveryChallanRepository(
+        seedChallans: <DeliveryChallan>[draftDeliveryChallanForOrderFallback()],
+      );
 
-    expect(find.text('Draft Invoice'), findsOneWidget);
-    expect(find.text('Create Draft Invoice'), findsOneWidget);
-    expect(find.text('DC-101'), findsWidgets);
-    expect(find.text('Kraft Sheet'), findsWidgets);
+      await pumpApp(
+        tester,
+        viewSize: const Size(1440, 900),
+        deliveryChallanRepository: challanRepository,
+        orderRepository: FakeOrderRepository(
+          seedOrders: <OrderEntry>[seededOrder],
+        ),
+      );
+      await openChallansScreen(tester);
 
-    await tester.tap(find.text('Create Draft Invoice'));
-    await tester.pumpAndSettle();
-    expect(challanRepository.createInvoiceCalls, 1);
-    expect(challanRepository.createdInvoices.single.lines.single.quantity, 40);
-    expect(
-      challanRepository.createdInvoices.single.lines.single.unitPrice,
-      18.5,
-    );
-    expect(challanRepository.createdInvoices.single.lines.single.cgstRate, 9);
-    expect(
-      find.textContaining('Draft invoice INV-00001 created.'),
-      findsOneWidget,
-    );
+      await tester.ensureVisible(find.byTooltip('View/Edit').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('View/Edit').first);
+      await tester.pumpAndSettle();
+      final orderChip = tester.widget<InputChip>(
+        find.widgetWithText(
+          InputChip,
+          'ORD-FALLBACK - Fallback Client - 2026-05-19',
+        ),
+      );
+      orderChip.onDeleted?.call();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Issue Delivery'));
+      await tester.pumpAndSettle();
 
-    tester
-        .widget<TextButton>(
-          find.widgetWithText(TextButton, 'Edit Conversion').first,
-        )
-        .onPressed
-        ?.call();
-    await tester.pumpAndSettle();
-    expect(find.text('Edit Conversion'), findsWidgets);
-    await tester.enterText(find.byType(TextField).last, 'sheets');
-    await tester.tap(find.text('Save'));
-    await tester.pumpAndSettle();
-    expect(challanRepository.saveConversionOverrideCalls, 1);
-    expect(
-      challanRepository.savedConversionOverrides.single.conversionRatio,
-      2.63,
-    );
+      expect(challanRepository.updateChallanCalls, 0);
+      expect(challanRepository.issueChallanCalls, 0);
+      expect(
+        find.text('Select at least one order before saving challan.'),
+        findsOneWidget,
+      );
+    },
+  );
 
-    await tester.enterText(find.byType(TextField).first, 'Alpha');
-    await tester.pump();
-    await tester.tap(find.text('Client Statement'));
-    await tester.pumpAndSettle();
-    expect(find.text('Material Received (Input)'), findsOneWidget);
-    expect(find.text('Material Remaining'), findsWidgets);
+  testWidgets(
+    'challan report keeps auditor while dashboard hosts client and misc rows',
+    (tester) async {
+      final challanRepository = FakeDeliveryChallanRepository(
+        reconciliationReport: ReconciliationReportSnapshot(
+          generatedAt: DateTime(2026, 5, 12),
+          internalAuditor: <InternalAuditorRow>[
+            InternalAuditorRow(
+              challanId: 11,
+              challanItemId: 7001,
+              orderId: 501,
+              clientId: 41,
+              itemId: 91,
+              variationLeafNodeId: 0,
+              dcNumber: 'DC-101',
+              challanDate: DateTime(2026, 5, 12),
+              clientName: 'Alpha Industries',
+              itemName: 'Kraft Sheet',
+              hsnCode: '4805',
+              totalDispatchedWeightKg: 22.8,
+              convertedUnits: 60,
+              invoicedQuantity: 20,
+              invoiceableQuantity: 40,
+              unitPrice: 18.5,
+              financialExposure: 740,
+              gstin: '27AAAAA0000A1Z5',
+              cgst: 90,
+              sgst: 90,
+              cgstRate: 9,
+              sgstRate: 9,
+              wastePercentage: 8,
+              conversionRatio: 2.63,
+              toUnitLabel: 'sheets',
+              variancePercent: 66.67,
+              status: 'Attention Required',
+              isAttentionRequired: true,
+              isDirectPrint: false,
+              isUnbilled: true,
+            ),
+            InternalAuditorRow(
+              challanId: 12,
+              challanItemId: 7002,
+              dcNumber: 'DC-TYPE',
+              clientName: 'Walk-in Customer',
+              itemName: 'Typed custom tray',
+              hsnCode: '',
+              totalDispatchedWeightKg: 12,
+              convertedUnits: 12,
+              invoicedQuantity: 0,
+              gstin: '',
+              cgst: 0,
+              sgst: 0,
+              wastePercentage: 0,
+              status: 'Unlinked / Direct Print',
+              isAttentionRequired: false,
+              isDirectPrint: true,
+              isUnbilled: true,
+            ),
+          ],
+          clientStatement: const <ClientStatementRow>[
+            ClientStatementRow(
+              clientName: 'Alpha Industries',
+              itemName: 'Kraft Sheet',
+              materialReceivedInputKg: 100,
+              totalFinishedUnitsDelivered: 60,
+              netBalanceMaterialRemainingKg: 77.2,
+              status: 'Material Remaining',
+            ),
+          ],
+          misc: <WasteAuditRow>[
+            WasteAuditRow(
+              auditTime: DateTime(2026, 5, 12),
+              clientName: 'Alpha Industries',
+              itemName: 'Kraft Sheet',
+              challanNo: 'DC-101',
+              inputWeightKg: 100,
+              shippedWeightKg: 22.8,
+              wasteWeightKg: 77.2,
+              wastePercentage: 77.2,
+              source: 'report_snapshot',
+            ),
+          ],
+        ),
+      );
 
-    await tester.tap(find.text('Misc'));
-    await tester.pumpAndSettle();
-    expect(find.text('Waste Audit Rows'), findsWidgets);
-    expect(find.text('report_snapshot'), findsOneWidget);
-  });
+      await pumpApp(
+        tester,
+        viewSize: const Size(1440, 900),
+        deliveryChallanRepository: challanRepository,
+      );
+      await openChallansScreen(tester);
+
+      await tester.tap(find.text('Report').first);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Report'), findsWidgets);
+      expect(find.text('Internal Auditor'), findsNothing);
+      expect(find.text('Client Statement'), findsNothing);
+      expect(find.text('Misc'), findsNothing);
+      expect(find.text('Dispatched Weight'), findsWidgets);
+      expect(find.text('Attention Required'), findsWidgets);
+      expect(find.text('DC-101'), findsOneWidget);
+      expect(find.text('Alpha Industries'), findsWidgets);
+      expect(find.text('Direct Print / Unlinked'), findsOneWidget);
+      await tester.tap(find.text('Alpha Industries').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Order #501 items'), findsOneWidget);
+      expect(find.text('HSN 4805'), findsWidgets);
+      expect(find.text('Open Draft Invoice'), findsWidgets);
+
+      tester
+          .widget<TextButton>(
+            find.widgetWithText(TextButton, 'Open Draft Invoice').first,
+          )
+          .onPressed
+          ?.call();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Draft Invoice'), findsOneWidget);
+      expect(find.text('Create Draft Invoice'), findsOneWidget);
+      expect(find.text('DC-101'), findsWidgets);
+      expect(find.text('Kraft Sheet'), findsWidgets);
+
+      await tester.tap(find.text('Create Draft Invoice'));
+      await tester.pumpAndSettle();
+      expect(challanRepository.createInvoiceCalls, 1);
+      expect(
+        challanRepository.createdInvoices.single.lines.single.quantity,
+        40,
+      );
+      expect(
+        challanRepository.createdInvoices.single.lines.single.unitPrice,
+        18.5,
+      );
+      expect(challanRepository.createdInvoices.single.lines.single.cgstRate, 9);
+      expect(
+        find.textContaining('Draft invoice INV-00001 created.'),
+        findsOneWidget,
+      );
+
+      tester
+          .widget<TextButton>(
+            find.widgetWithText(TextButton, 'Edit Conversion').first,
+          )
+          .onPressed
+          ?.call();
+      await tester.pumpAndSettle();
+      expect(find.text('Edit Conversion'), findsWidgets);
+      await tester.enterText(find.byType(TextField).first, 'sheets');
+      await tester.enterText(find.byType(TextField).last, '2.63');
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(challanRepository.saveConversionOverrideCalls, 1);
+      expect(
+        challanRepository.savedConversionOverrides.single.conversionRatio,
+        2.63,
+      );
+
+      await tester.tap(find.byTooltip('Back to Challans').first);
+      await tester.pumpAndSettle();
+
+      final context = tester.element(find.byType(Scaffold).first);
+      context.read<NavigationProvider>().select(
+        'dashboard',
+        skipTransition: true,
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Client Statement'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).first, 'Alpha');
+      await tester.pump();
+      expect(find.text('Material Received (Input)'), findsOneWidget);
+      expect(find.text('Material Remaining'), findsWidgets);
+
+      await tester.tap(find.byTooltip('Back to Challans').first);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Misc Audit'));
+      await tester.pumpAndSettle();
+      expect(find.text('Waste Audit Rows'), findsWidgets);
+      expect(find.text('report_snapshot'), findsOneWidget);
+    },
+  );
 
   testWidgets(
     'client report dialog separates selection from preview and exports selected challans',
@@ -3758,6 +4034,7 @@ void main() {
             itemsCount: 1,
             createdAt: DateTime(2026, 5, 18),
             updatedAt: DateTime(2026, 5, 18),
+            usedInReport: false,
           ),
           DeliveryChallan(
             id: 82,
@@ -3784,6 +4061,7 @@ void main() {
             itemsCount: 0,
             createdAt: DateTime(2026, 5, 18),
             updatedAt: DateTime(2026, 5, 18),
+            usedInReport: false,
           ),
         ],
       );
@@ -3793,25 +4071,29 @@ void main() {
         viewSize: const Size(1440, 900),
         deliveryChallanRepository: challanRepository,
       );
-      await openChallansScreen(tester);
 
-      await tester.tap(find.text('Report').first);
+      final context = tester.element(find.byType(Scaffold).first);
+      context.read<NavigationProvider>().select(
+        'dashboard',
+        skipTransition: true,
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.text('Client Report'));
       await tester.pumpAndSettle();
 
       expect(find.text('Client Report'), findsWidgets);
-      expect(find.text('DC-CLIENT-1'), findsWidgets);
+      expect(find.text('DC-CLIENT-1'), findsOneWidget);
+      expect(find.text('Alpha Industries'), findsOneWidget);
       expect(find.text('Client-facing note'), findsNothing);
+
+      await tester.tap(find.text('DC-CLIENT-1'));
+      await tester.pumpAndSettle();
+      expect(find.text('Kraft Sheet'), findsWidgets);
+      expect(find.text('Client-facing note'), findsWidgets);
 
       await tester.tap(find.byType(Checkbox).first);
       await tester.pumpAndSettle();
-      expect(find.text('Client-facing note'), findsNothing);
-
-      await tester.tap(find.text('DC-CLIENT-1').last);
-      await tester.pumpAndSettle();
       expect(find.text('1 Challans Selected'), findsOneWidget);
-      expect(find.text('Client-facing note'), findsOneWidget);
       expect(find.text('Qty 42\nWt 15.5'), findsOneWidget);
 
       final exportButton = tester.widget<ElevatedButton>(

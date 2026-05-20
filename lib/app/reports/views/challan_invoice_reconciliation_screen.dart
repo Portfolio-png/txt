@@ -12,13 +12,17 @@ import '../../../core/theme/soft_erp_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/page_container.dart';
 import '../../../core/widgets/soft_primitives.dart';
+import '../../../features/delivery_challans/domain/challan_template.dart';
+import '../../../features/delivery_challans/domain/delivery_challan.dart';
 import '../../../features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
-import '../../../features/delivery_challans/presentation/screens/delivery_challan_screen.dart';
+import '../../../features/items/domain/item_definition.dart';
+import '../../../features/items/presentation/providers/items_provider.dart';
 import '../../reports/domain/reconciliation_report.dart';
-import '../../reports/widgets/client_report_generator_dialog.dart';
 import '../../shell/navigation_provider.dart';
 
-enum _ReportTab { auditor, clientStatement, misc }
+enum ReconciliationReportSection { auditor, clientStatement, misc }
+
+enum _SidePaneMode { hidden, draftInvoice, challanPreview, invoices }
 
 enum _AuditorSort {
   dcNumber,
@@ -38,12 +42,52 @@ class ChallanInvoiceReconciliationScreen extends StatefulWidget {
     super.key,
     this.embedded = false,
     this.onClose,
+    this.initialSection = ReconciliationReportSection.auditor,
+    this.showSectionToggle = false,
+    this.title = 'Report',
+    this.subtitle =
+        'Reconcile challan dispatch, invoices, material balance, and waste audit.',
   });
 
   final bool embedded;
   final VoidCallback? onClose;
+  final ReconciliationReportSection initialSection;
+  final bool showSectionToggle;
+  final String title;
+  final String subtitle;
 
   static Future<void> openDialog(BuildContext context) {
+    return _openSectionDialog(context);
+  }
+
+  static Future<void> openClientStatementDialog(BuildContext context) {
+    return _openSectionDialog(
+      context,
+      initialSection: ReconciliationReportSection.clientStatement,
+      title: 'Client Statement',
+      subtitle:
+          'Track client-owned material input, finished delivery, and remaining material balance.',
+    );
+  }
+
+  static Future<void> openMiscDialog(BuildContext context) {
+    return _openSectionDialog(
+      context,
+      initialSection: ReconciliationReportSection.misc,
+      title: 'Misc Audit',
+      subtitle:
+          'Review internal waste snapshots and source challan audit references.',
+    );
+  }
+
+  static Future<void> _openSectionDialog(
+    BuildContext context, {
+    ReconciliationReportSection initialSection =
+        ReconciliationReportSection.auditor,
+    String title = 'Report',
+    String subtitle =
+        'Reconcile challan dispatch, invoices, material balance, and waste audit.',
+  }) {
     return showDialog<void>(
       context: context,
       barrierDismissible: true,
@@ -72,6 +116,9 @@ class ChallanInvoiceReconciliationScreen extends StatefulWidget {
               borderRadius: BorderRadius.circular(22),
               child: ChallanInvoiceReconciliationScreen(
                 embedded: true,
+                initialSection: initialSection,
+                title: title,
+                subtitle: subtitle,
                 onClose: () => Navigator.of(context).pop(),
               ),
             ),
@@ -89,7 +136,7 @@ class ChallanInvoiceReconciliationScreen extends StatefulWidget {
 class _ChallanInvoiceReconciliationScreenState
     extends State<ChallanInvoiceReconciliationScreen> {
   final TextEditingController _searchController = TextEditingController();
-  _ReportTab _activeTab = _ReportTab.auditor;
+  late ReconciliationReportSection _activeTab;
   ReconciliationReportSnapshot? _snapshot;
   bool _isLoading = false;
   bool _isExporting = false;
@@ -106,11 +153,17 @@ class _ChallanInvoiceReconciliationScreenState
   bool _sortAscending = true;
   final Set<int> _selectedAuditorRows = <int>{};
 
+  _SidePaneMode _sidePaneMode = _SidePaneMode.hidden;
+  int? _previewChallanId;
+  List<InternalAuditorRow> _draftInvoiceRows = [];
+  InternalAuditorRow? _invoicePreviewRow;
+
   static const String _allFilter = 'All';
 
   @override
   void initState() {
     super.initState();
+    _activeTab = widget.initialSection;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _loadReport();
@@ -140,7 +193,10 @@ class _ChallanInvoiceReconciliationScreenState
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _ReportHeader(
+          title: widget.title,
+          subtitle: widget.subtitle,
           activeTab: _activeTab,
+          showSectionToggle: widget.showSectionToggle,
           generatedAt: _report.generatedAt,
           isLoading: _isLoading,
           isExporting: _isExporting,
@@ -155,10 +211,21 @@ class _ChallanInvoiceReconciliationScreenState
           onTabChanged: (tab) => setState(() => _activeTab = tab),
           onExport: _showExportOptions,
           onPrint: _printCurrentReport,
-          onOpenClientReport: () => ClientReportGeneratorDialog.open(context),
           onBulkInvoice: selectedRows.isEmpty
               ? null
-              : () => _openInvoiceDraft(selectedRows),
+              : () {
+                  final invoiceableRows = selectedRows
+                      .where((row) => row.isUnbilled)
+                      .toList();
+                  if (invoiceableRows.isEmpty) {
+                    _showSnack('Select at least one unbilled row.');
+                    return;
+                  }
+                  setState(() {
+                    _sidePaneMode = _SidePaneMode.draftInvoice;
+                    _draftInvoiceRows = invoiceableRows;
+                  });
+                },
         ),
         const SizedBox(height: 14),
         _ReportToolbar(
@@ -217,9 +284,16 @@ class _ChallanInvoiceReconciliationScreenState
                     onSort: _sortAuditorRows,
                     onToggleRow: _toggleAuditorRow,
                     onToggleAll: _toggleAllVisibleAuditorRows,
-                    onGenerateInvoice: (row) => _openInvoiceDraft([row]),
+                    onGenerateInvoice: (row) {
+                      setState(() {
+                        _sidePaneMode = _SidePaneMode.draftInvoice;
+                        _draftInvoiceRows = [row];
+                      });
+                    },
                     onEditConversion: _openConversionDialog,
-                    onOpenChallan: _openChallan,
+                    onOpenChallan: (id) {
+                      _openChallan(id);
+                    },
                     onViewInvoices: _showLinkedInvoices,
                     onViewWasteAudit: _showWasteAuditDetails,
                   ),
@@ -227,10 +301,64 @@ class _ChallanInvoiceReconciliationScreenState
         ),
       ],
     );
+
+    final body = Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(child: content),
+        if (_sidePaneMode != _SidePaneMode.hidden)
+          SoftSurface(
+            width: _sidePaneWidth,
+            margin: const EdgeInsets.only(left: 16),
+            padding: EdgeInsets.zero,
+            radius: SoftErpTheme.radiusLg,
+            clipContent: true,
+            child: _buildSidePane(),
+          ),
+      ],
+    );
+
     if (widget.embedded) {
-      return Padding(padding: const EdgeInsets.all(24), child: content);
+      return Padding(padding: const EdgeInsets.all(24), child: body);
     }
-    return PageContainer(child: content);
+    return PageContainer(child: body);
+  }
+
+  Widget _buildSidePane() {
+    if (_sidePaneMode == _SidePaneMode.draftInvoice) {
+      return _InvoiceDraftSidebar(
+        rows: _draftInvoiceRows,
+        onClose: () => setState(() => _sidePaneMode = _SidePaneMode.hidden),
+        onInvoiceCreated: () {
+          setState(() => _sidePaneMode = _SidePaneMode.hidden);
+          _loadReport();
+        },
+      );
+    }
+    if (_sidePaneMode == _SidePaneMode.challanPreview &&
+        _previewChallanId != null) {
+      return _ChallanPreviewSidebar(
+        challanId: _previewChallanId!,
+        onClose: () => setState(() => _sidePaneMode = _SidePaneMode.hidden),
+      );
+    }
+    if (_sidePaneMode == _SidePaneMode.invoices && _invoicePreviewRow != null) {
+      return _InvoicesSidebar(
+        row: _invoicePreviewRow!,
+        onClose: () => setState(() => _sidePaneMode = _SidePaneMode.hidden),
+        onInvoiceStatusChanged: _loadReport,
+      );
+    }
+    return const SizedBox();
+  }
+
+  double get _sidePaneWidth {
+    return switch (_sidePaneMode) {
+      _SidePaneMode.challanPreview => 540,
+      _SidePaneMode.invoices => 460,
+      _SidePaneMode.draftInvoice => 420,
+      _SidePaneMode.hidden => 0,
+    };
   }
 
   List<String> get _clientOptions {
@@ -475,52 +603,6 @@ class _ChallanInvoiceReconciliationScreenState
     });
   }
 
-  Future<void> _openInvoiceDraft(List<InternalAuditorRow> rows) async {
-    final invoiceableRows = rows.where((row) => row.isUnbilled).toList();
-    if (invoiceableRows.isEmpty) {
-      _showSnack('Select at least one unbilled row.');
-      return;
-    }
-    final clientKey =
-        invoiceableRows.first.clientId?.toString() ??
-        invoiceableRows.first.clientName.toLowerCase();
-    final mixedClient = invoiceableRows.any((row) {
-      final key = row.clientId?.toString() ?? row.clientName.toLowerCase();
-      return key != clientKey;
-    });
-    if (mixedClient) {
-      _showSnack('Bulk invoice can include one client only.');
-      return;
-    }
-    final input = await showDialog<InvoiceDraftInput>(
-      context: context,
-      builder: (context) => _InvoiceDraftDialog(rows: invoiceableRows),
-    );
-    if (input == null || !mounted) {
-      return;
-    }
-    setState(() => _isLoading = true);
-    try {
-      final invoice = await context
-          .read<DeliveryChallanProvider>()
-          .repository
-          .createInvoice(input);
-      if (!mounted) {
-        return;
-      }
-      _showSnack('Draft invoice ${invoice.invoiceNo} created.');
-      await _loadReport();
-    } catch (error) {
-      if (mounted) {
-        _showSnack(error.toString());
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
-
   Future<void> _openConversionDialog(InternalAuditorRow row) async {
     if (row.itemId == null || row.itemId! <= 0) {
       _showSnack('Conversion can be edited only for linked item rows.');
@@ -550,55 +632,26 @@ class _ChallanInvoiceReconciliationScreenState
     }
   }
 
-  Future<void> _openChallan(int? challanId) async {
+  void _openChallan(int? challanId) {
     if (challanId == null || challanId <= 0) {
       _showSnack('No source challan is linked to this row.');
       return;
     }
-    final provider = context.read<DeliveryChallanProvider>();
-    final challan = await provider.loadChallan(challanId);
-    if (challan == null || !mounted) {
-      _showSnack(provider.errorMessage ?? 'Unable to open challan.');
-      return;
-    }
-    await ChallanScreen.openEditor(context, challan: challan);
+    setState(() {
+      _sidePaneMode = _SidePaneMode.challanPreview;
+      _previewChallanId = challanId;
+    });
   }
 
-  Future<void> _showLinkedInvoices(InternalAuditorRow row) async {
+  void _showLinkedInvoices(InternalAuditorRow row) {
     if (row.linkedInvoices.isEmpty) {
       _showSnack('No linked invoices yet.');
       return;
     }
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Linked invoices for ${row.dcNumber}'),
-        content: SizedBox(
-          width: 460,
-          child: ListView.separated(
-            shrinkWrap: true,
-            itemBuilder: (context, index) {
-              final invoice = row.linkedInvoices[index];
-              return ListTile(
-                title: Text(invoice.invoiceNo),
-                subtitle: Text(
-                  '${invoice.status} • ${_date(invoice.invoiceDate)}',
-                ),
-                trailing: const Icon(Icons.receipt_long_outlined),
-              );
-            },
-            separatorBuilder: (_, _) => const Divider(height: 1),
-            itemCount: row.linkedInvoices.length,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
+    setState(() {
+      _sidePaneMode = _SidePaneMode.invoices;
+      _invoicePreviewRow = row;
+    });
   }
 
   Future<void> _showWasteAuditDetails(WasteAuditRow row) async {
@@ -643,6 +696,10 @@ class _ChallanInvoiceReconciliationScreenState
   }
 
   Future<void> _showExportOptions() async {
+    if (!widget.showSectionToggle) {
+      await _exportXlsx(allTabs: false);
+      return;
+    }
     final allTabs = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -672,13 +729,14 @@ class _ChallanInvoiceReconciliationScreenState
     setState(() => _isExporting = true);
     try {
       final excel = xls.Excel.createExcel();
-      if (allTabs || _activeTab == _ReportTab.auditor) {
+      if (allTabs || _activeTab == ReconciliationReportSection.auditor) {
         _appendAuditorSheet(excel, _filteredAuditorRows());
       }
-      if (allTabs || _activeTab == _ReportTab.clientStatement) {
+      if (allTabs ||
+          _activeTab == ReconciliationReportSection.clientStatement) {
         _appendClientSheet(excel, _filteredClientRows());
       }
-      if (allTabs || _activeTab == _ReportTab.misc) {
+      if (allTabs || _activeTab == ReconciliationReportSection.misc) {
         _appendMiscSheet(excel, _filteredMiscRows());
       }
       if (excel.sheets.containsKey('Sheet1') && excel.sheets.length > 1) {
@@ -730,9 +788,11 @@ class _ChallanInvoiceReconciliationScreenState
     try {
       final pdf = pw.Document();
       final title = switch (_activeTab) {
-        _ReportTab.auditor => 'Internal Auditor Reconciliation',
-        _ReportTab.clientStatement => 'Client Material Statement',
-        _ReportTab.misc => 'Waste Audit',
+        ReconciliationReportSection.auditor =>
+          'Internal Auditor Reconciliation',
+        ReconciliationReportSection.clientStatement =>
+          'Client Material Statement',
+        ReconciliationReportSection.misc => 'Waste Audit',
       };
       pdf.addPage(
         pw.MultiPage(
@@ -767,7 +827,7 @@ class _ChallanInvoiceReconciliationScreenState
   }
 
   pw.Widget _buildPdfTable() {
-    if (_activeTab == _ReportTab.clientStatement) {
+    if (_activeTab == ReconciliationReportSection.clientStatement) {
       return pw.TableHelper.fromTextArray(
         headers: const [
           'Client',
@@ -793,7 +853,7 @@ class _ChallanInvoiceReconciliationScreenState
         cellStyle: const pw.TextStyle(fontSize: 8),
       );
     }
-    if (_activeTab == _ReportTab.misc) {
+    if (_activeTab == ReconciliationReportSection.misc) {
       return pw.TableHelper.fromTextArray(
         headers: const [
           'Audit Time',
@@ -988,7 +1048,10 @@ class _ChallanInvoiceReconciliationScreenState
 
 class _ReportHeader extends StatelessWidget {
   const _ReportHeader({
+    required this.title,
+    required this.subtitle,
     required this.activeTab,
+    required this.showSectionToggle,
     required this.generatedAt,
     required this.isLoading,
     required this.isExporting,
@@ -999,11 +1062,13 @@ class _ReportHeader extends StatelessWidget {
     required this.onTabChanged,
     required this.onExport,
     required this.onPrint,
-    required this.onOpenClientReport,
     required this.onBulkInvoice,
   });
 
-  final _ReportTab activeTab;
+  final String title;
+  final String subtitle;
+  final ReconciliationReportSection activeTab;
+  final bool showSectionToggle;
   final DateTime? generatedAt;
   final bool isLoading;
   final bool isExporting;
@@ -1011,10 +1076,9 @@ class _ReportHeader extends StatelessWidget {
   final int selectedCount;
   final VoidCallback onBack;
   final VoidCallback onRefresh;
-  final ValueChanged<_ReportTab> onTabChanged;
+  final ValueChanged<ReconciliationReportSection> onTabChanged;
   final VoidCallback onExport;
   final VoidCallback onPrint;
-  final VoidCallback onOpenClientReport;
   final VoidCallback? onBulkInvoice;
 
   @override
@@ -1022,10 +1086,10 @@ class _ReportHeader extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        IconButton(
+        SoftIconButton(
           tooltip: 'Back to Challans',
-          onPressed: onBack,
-          icon: const Icon(Icons.arrow_back_rounded),
+          onTap: onBack,
+          icon: Icons.arrow_back_rounded,
         ),
         const SizedBox(width: 8),
         Expanded(
@@ -1037,22 +1101,13 @@ class _ReportHeader extends StatelessWidget {
                 runSpacing: 8,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  Text(
-                    'Report',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
+                  Text(title, style: Theme.of(context).textTheme.headlineSmall),
                   if (selectedCount > 0)
                     AppButton(
                       label: 'Bulk Invoice ($selectedCount)',
                       icon: Icons.receipt_long_outlined,
                       onPressed: onBulkInvoice,
                     ),
-                  AppButton(
-                    label: 'Client Report',
-                    icon: Icons.assignment_outlined,
-                    variant: AppButtonVariant.secondary,
-                    onPressed: onOpenClientReport,
-                  ),
                   AppButton(
                     label: isExporting ? 'Exporting...' : 'Export XLSX',
                     icon: Icons.table_view_outlined,
@@ -1075,7 +1130,7 @@ class _ReportHeader extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                'Reconcile challan dispatch, invoices, material balance, and waste audit.',
+                subtitle,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: SoftErpTheme.textSecondary,
                 ),
@@ -1089,8 +1144,10 @@ class _ReportHeader extends StatelessWidget {
                   color: SoftErpTheme.textSecondary,
                 ),
               ),
-              const SizedBox(height: 14),
-              _TabToggle(activeTab: activeTab, onChanged: onTabChanged),
+              if (showSectionToggle) ...[
+                const SizedBox(height: 14),
+                _TabToggle(activeTab: activeTab, onChanged: onTabChanged),
+              ],
             ],
           ),
         ),
@@ -1102,8 +1159,8 @@ class _ReportHeader extends StatelessWidget {
 class _TabToggle extends StatelessWidget {
   const _TabToggle({required this.activeTab, required this.onChanged});
 
-  final _ReportTab activeTab;
-  final ValueChanged<_ReportTab> onChanged;
+  final ReconciliationReportSection activeTab;
+  final ValueChanged<ReconciliationReportSection> onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -1119,18 +1176,18 @@ class _TabToggle extends StatelessWidget {
         children: [
           _TabPill(
             label: 'Internal Auditor',
-            selected: activeTab == _ReportTab.auditor,
-            onTap: () => onChanged(_ReportTab.auditor),
+            selected: activeTab == ReconciliationReportSection.auditor,
+            onTap: () => onChanged(ReconciliationReportSection.auditor),
           ),
           _TabPill(
             label: 'Client Statement',
-            selected: activeTab == _ReportTab.clientStatement,
-            onTap: () => onChanged(_ReportTab.clientStatement),
+            selected: activeTab == ReconciliationReportSection.clientStatement,
+            onTap: () => onChanged(ReconciliationReportSection.clientStatement),
           ),
           _TabPill(
             label: 'Misc',
-            selected: activeTab == _ReportTab.misc,
-            onTap: () => onChanged(_ReportTab.misc),
+            selected: activeTab == ReconciliationReportSection.misc,
+            onTap: () => onChanged(ReconciliationReportSection.misc),
           ),
         ],
       ),
@@ -1232,7 +1289,7 @@ class _ReportToolbar extends StatelessWidget {
   Widget build(BuildContext context) {
     return SoftSurface(
       padding: const EdgeInsets.all(14),
-      color: Colors.white.withValues(alpha: 0.72),
+      color: SoftErpTheme.cardSurface,
       child: Wrap(
         spacing: 12,
         runSpacing: 10,
@@ -1243,19 +1300,9 @@ class _ReportToolbar extends StatelessWidget {
             child: TextField(
               controller: controller,
               onChanged: onChanged,
-              decoration: InputDecoration(
-                prefixIcon: const Icon(Icons.search_rounded),
+              decoration: _reportInputDecoration(
                 hintText: 'Search client, challan, item, status...',
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(color: SoftErpTheme.border),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(color: SoftErpTheme.border),
-                ),
+                prefixIcon: Icons.search_rounded,
               ),
             ),
           ),
@@ -1286,20 +1333,25 @@ class _ReportToolbar extends StatelessWidget {
             selected: directPrintOnly,
             onSelected: onDirectPrintOnlyChanged,
           ),
-          OutlinedButton.icon(
+          _ReportToolbarButton(
             onPressed: onPickDateFrom,
-            icon: const Icon(Icons.event_outlined),
-            label: Text(dateFrom == null ? 'From' : _date(dateFrom)),
+            icon: Icons.event_outlined,
+            label: dateFrom == null ? 'From' : _date(dateFrom),
           ),
-          OutlinedButton.icon(
+          _ReportToolbarButton(
             onPressed: onPickDateTo,
-            icon: const Icon(Icons.event_available_outlined),
-            label: Text(dateTo == null ? 'To' : _date(dateTo)),
+            icon: Icons.event_available_outlined,
+            label: dateTo == null ? 'To' : _date(dateTo),
           ),
           if (dateFrom != null || dateTo != null)
-            TextButton(
-              onPressed: onClearDates,
-              child: const Text('Clear Dates'),
+            SoftPill(
+              label: 'Clear Dates',
+              leading: const Icon(
+                Icons.close_rounded,
+                size: 16,
+                color: SoftErpTheme.textSecondary,
+              ),
+              onTap: onClearDates,
             ),
         ],
       ),
@@ -1327,12 +1379,7 @@ class _FilterDropdown extends StatelessWidget {
       child: DropdownButtonFormField<String>(
         initialValue: value,
         isExpanded: true,
-        decoration: InputDecoration(
-          labelText: label,
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-        ),
+        decoration: _reportInputDecoration(labelText: label),
         items: values
             .map((item) => DropdownMenuItem(value: item, child: Text(item)))
             .toList(growable: false),
@@ -1359,8 +1406,72 @@ class _FilterChip extends StatelessWidget {
       label: Text(label),
       selected: selected,
       onSelected: onSelected,
+      backgroundColor: SoftErpTheme.cardSurfaceAlt,
       selectedColor: SoftErpTheme.accent.withValues(alpha: 0.14),
       checkmarkColor: SoftErpTheme.accent,
+      side: const BorderSide(color: SoftErpTheme.border),
+      labelStyle: TextStyle(
+        color: selected ? SoftErpTheme.accent : SoftErpTheme.textSecondary,
+        fontWeight: FontWeight.w700,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+    );
+  }
+}
+
+InputDecoration _reportInputDecoration({
+  String? labelText,
+  String? hintText,
+  IconData? prefixIcon,
+  String? helperText,
+  String? prefixText,
+  String? suffixText,
+  bool dense = false,
+}) {
+  return InputDecoration(
+    labelText: labelText,
+    hintText: hintText,
+    helperText: helperText,
+    prefixText: prefixText,
+    suffixText: suffixText,
+    prefixIcon: prefixIcon == null ? null : Icon(prefixIcon, size: 18),
+    isDense: dense,
+    filled: true,
+    fillColor: SoftErpTheme.cardSurface,
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(16),
+      borderSide: const BorderSide(color: SoftErpTheme.border),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(16),
+      borderSide: const BorderSide(color: SoftErpTheme.border),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(16),
+      borderSide: const BorderSide(color: SoftErpTheme.accent, width: 1.4),
+    ),
+  );
+}
+
+class _ReportToolbarButton extends StatelessWidget {
+  const _ReportToolbarButton({
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftPill(
+      label: label,
+      leading: Icon(icon, size: 16, color: SoftErpTheme.textSecondary),
+      background: SoftErpTheme.cardSurface,
+      foreground: SoftErpTheme.textPrimary,
+      onTap: onPressed,
     );
   }
 }
@@ -1373,14 +1484,14 @@ class _SummaryStrip extends StatelessWidget {
     required this.miscRows,
   });
 
-  final _ReportTab activeTab;
+  final ReconciliationReportSection activeTab;
   final List<InternalAuditorRow> auditorRows;
   final List<ClientStatementRow> clientRows;
   final List<WasteAuditRow> miscRows;
 
   @override
   Widget build(BuildContext context) {
-    if (activeTab == _ReportTab.clientStatement) {
+    if (activeTab == ReconciliationReportSection.clientStatement) {
       return Row(
         children: [
           Expanded(
@@ -1416,7 +1527,7 @@ class _SummaryStrip extends StatelessWidget {
         ],
       );
     }
-    if (activeTab == _ReportTab.misc) {
+    if (activeTab == ReconciliationReportSection.misc) {
       final waste = miscRows.fold<double>(
         0,
         (sum, row) => sum + row.wasteWeightKg,
@@ -1570,7 +1681,7 @@ class _ReportBody extends StatelessWidget {
     required this.onViewWasteAudit,
   });
 
-  final _ReportTab activeTab;
+  final ReconciliationReportSection activeTab;
   final List<InternalAuditorRow> auditorRows;
   final List<ClientStatementRow> clientRows;
   final List<WasteAuditRow> miscRows;
@@ -1588,12 +1699,12 @@ class _ReportBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (activeTab == _ReportTab.clientStatement) {
+    if (activeTab == ReconciliationReportSection.clientStatement) {
       return clientRows.isEmpty
           ? const _EmptyReportState(message: 'No client material balances yet.')
           : _ClientStatementTable(rows: clientRows);
     }
-    if (activeTab == _ReportTab.misc) {
+    if (activeTab == ReconciliationReportSection.misc) {
       return miscRows.isEmpty
           ? const _EmptyReportState(message: 'No waste audit snapshots yet.')
           : _MiscTable(
@@ -1653,123 +1764,583 @@ class _AuditorTable extends StatelessWidget {
     final allSelected =
         selectableRows.isNotEmpty &&
         selectableRows.every((row) => selectedRows.contains(row.challanItemId));
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      primary: false,
-      child: SingleChildScrollView(
-        primary: false,
-        child: DataTable(
-          sortAscending: sortAscending,
-          sortColumnIndex: _sortColumnIndex(sort),
-          dataRowMinHeight: 92,
-          dataRowMaxHeight: 132,
-          headingRowColor: WidgetStateProperty.all(SoftErpTheme.cardSurfaceAlt),
-          columns: [
-            DataColumn(
-              label: Checkbox(
-                value: allSelected,
-                onChanged: selectableRows.isEmpty
-                    ? null
-                    : (value) => onToggleAll(rows, value == true),
-              ),
-            ),
-            _sortableColumn('DC Number', _AuditorSort.dcNumber),
-            _sortableColumn('Date', _AuditorSort.date),
-            _sortableColumn('Client / Item', _AuditorSort.client),
-            _sortableColumn('Weight', _AuditorSort.dispatchedWeight),
-            _sortableColumn('Units', _AuditorSort.convertedUnits),
-            _sortableColumn('Invoiced', _AuditorSort.invoicedQuantity),
-            _sortableColumn('Unbilled', _AuditorSort.unbilledQuantity),
-            _sortableColumn('Exposure', _AuditorSort.exposure),
-            const DataColumn(label: Text('Variance')),
-            _sortableColumn('Status', _AuditorSort.status),
-            const DataColumn(label: Text('Actions')),
-          ],
-          rows: rows
-              .map((row) {
-                final selected = selectedRows.contains(row.challanItemId);
-                return DataRow(
-                  selected: selected,
-                  color: WidgetStateProperty.resolveWith((states) {
-                    if (row.isAttentionRequired || row.isDirectPrint) {
-                      return SoftErpTheme.dangerBg.withValues(alpha: 0.55);
-                    }
-                    if (row.isUnbilled) {
-                      return SoftErpTheme.warningBg.withValues(alpha: 0.55);
-                    }
-                    return null;
-                  }),
-                  cells: [
-                    DataCell(
-                      Checkbox(
-                        value: selected,
-                        onChanged: row.isUnbilled
-                            ? (value) => onToggleRow(row, value == true)
-                            : null,
-                      ),
-                    ),
-                    DataCell(_DcCell(row: row)),
-                    DataCell(Text(_date(row.challanDate))),
-                    DataCell(_ClientItemCell(row: row)),
-                    DataCell(Text('${_fmt(row.totalDispatchedWeightKg)} kg')),
-                    DataCell(
-                      Text('${_fmt(row.convertedUnits)} ${row.toUnitLabel}'),
-                    ),
-                    DataCell(Text(_fmt(row.invoicedQuantity))),
-                    DataCell(Text(_fmt(row.unbilledQuantity))),
-                    DataCell(Text(_money(row.financialExposure))),
-                    DataCell(Text('${_fmt(row.variancePercent)}%')),
-                    DataCell(_StatusBadge(row.status)),
-                    DataCell(
-                      _AuditorActions(
-                        row: row,
-                        onGenerateInvoice: onGenerateInvoice,
-                        onEditConversion: onEditConversion,
-                        onOpenChallan: onOpenChallan,
-                        onViewInvoices: onViewInvoices,
-                      ),
-                    ),
-                  ],
-                );
-              })
-              .toList(growable: false),
-        ),
-      ),
-    );
-  }
 
-  DataColumn _sortableColumn(String label, _AuditorSort sortKey) {
-    return DataColumn(label: Text(label), onSort: (_, _) => onSort(sortKey));
+    return Column(
+      children: [
+        _ReportTableHeader(
+          child: Row(
+            children: [
+              SizedBox(
+                width: 40,
+                child: Checkbox(
+                  value: allSelected,
+                  onChanged: selectableRows.isEmpty
+                      ? null
+                      : (value) => onToggleAll(rows, value == true),
+                  activeColor: SoftErpTheme.accent,
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: _SortHeader(
+                  'DC Number',
+                  _AuditorSort.dcNumber,
+                  sort,
+                  sortAscending,
+                  onSort,
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: _SortHeader(
+                  'Date',
+                  _AuditorSort.date,
+                  sort,
+                  sortAscending,
+                  onSort,
+                ),
+              ),
+              Expanded(
+                flex: 3,
+                child: _SortHeader(
+                  'Client / Item',
+                  _AuditorSort.client,
+                  sort,
+                  sortAscending,
+                  onSort,
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: _SortHeader(
+                  'Weight',
+                  _AuditorSort.dispatchedWeight,
+                  sort,
+                  sortAscending,
+                  onSort,
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: _SortHeader(
+                  'Units',
+                  _AuditorSort.convertedUnits,
+                  sort,
+                  sortAscending,
+                  onSort,
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: _SortHeader(
+                  'Invoiced',
+                  _AuditorSort.invoicedQuantity,
+                  sort,
+                  sortAscending,
+                  onSort,
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: _SortHeader(
+                  'Unbilled',
+                  _AuditorSort.unbilledQuantity,
+                  sort,
+                  sortAscending,
+                  onSort,
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: _SortHeader(
+                  'Exposure',
+                  _AuditorSort.exposure,
+                  sort,
+                  sortAscending,
+                  onSort,
+                ),
+              ),
+              const Expanded(flex: 1, child: _ReportHeaderCell('Var')),
+              Expanded(
+                flex: 2,
+                child: _SortHeader(
+                  'Status',
+                  _AuditorSort.status,
+                  sort,
+                  sortAscending,
+                  onSort,
+                ),
+              ),
+              const Expanded(flex: 5, child: _ReportHeaderCell('Actions')),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.all(8),
+            itemCount: rows.length,
+            separatorBuilder: (context, index) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
+              final row = rows[index];
+              final selected = selectedRows.contains(row.challanItemId);
+
+              Color? bgColor;
+              if (row.isAttentionRequired || row.isDirectPrint) {
+                bgColor = SoftErpTheme.dangerBg.withValues(alpha: 0.55);
+              } else if (row.isUnbilled) {
+                bgColor = SoftErpTheme.warningBg.withValues(alpha: 0.55);
+              }
+              if (selected) {
+                bgColor = SoftErpTheme.accent.withValues(alpha: 0.1);
+              }
+
+              return _AuditorReportRow(
+                key: ValueKey<String>('auditor-row-${row.challanItemId}'),
+                row: row,
+                contextRows: rows
+                    .where(
+                      (candidate) => _sameAuditorOrderContext(row, candidate),
+                    )
+                    .toList(growable: false),
+                selected: selected,
+                color: bgColor,
+                onToggleRow: onToggleRow,
+                onGenerateInvoice: onGenerateInvoice,
+                onEditConversion: onEditConversion,
+                onOpenChallan: onOpenChallan,
+                onViewInvoices: onViewInvoices,
+              );
+            },
+          ),
+        ),
+      ],
+    );
   }
 }
 
-class _ClientItemCell extends StatelessWidget {
-  const _ClientItemCell({required this.row});
+class _AuditorReportRow extends StatefulWidget {
+  const _AuditorReportRow({
+    super.key,
+    required this.row,
+    required this.contextRows,
+    required this.selected,
+    required this.color,
+    required this.onToggleRow,
+    required this.onGenerateInvoice,
+    required this.onEditConversion,
+    required this.onOpenChallan,
+    required this.onViewInvoices,
+  });
+
+  final InternalAuditorRow row;
+  final List<InternalAuditorRow> contextRows;
+  final bool selected;
+  final Color? color;
+  final void Function(InternalAuditorRow row, bool selected) onToggleRow;
+  final ValueChanged<InternalAuditorRow> onGenerateInvoice;
+  final ValueChanged<InternalAuditorRow> onEditConversion;
+  final ValueChanged<int?> onOpenChallan;
+  final ValueChanged<InternalAuditorRow> onViewInvoices;
+
+  @override
+  State<_AuditorReportRow> createState() => _AuditorReportRowState();
+}
+
+class _AuditorReportRowState extends State<_AuditorReportRow> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final row = widget.row;
+    return Column(
+      children: [
+        _ReportDataRow(
+          color: widget.color,
+          child: Row(
+            children: [
+              SizedBox(
+                width: 40,
+                child: Checkbox(
+                  value: widget.selected,
+                  onChanged: row.isUnbilled
+                      ? (value) => widget.onToggleRow(row, value == true)
+                      : null,
+                  activeColor: SoftErpTheme.accent,
+                ),
+              ),
+              Expanded(flex: 2, child: _DcCell(row: row)),
+              Expanded(flex: 2, child: Text(_date(row.challanDate))),
+              Expanded(
+                flex: 3,
+                child: _ClientItemCell(
+                  row: row,
+                  expanded: _expanded,
+                  itemCount: widget.contextRows.length,
+                  onToggle: () => setState(() => _expanded = !_expanded),
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Text('${_fmt(row.totalDispatchedWeightKg)} kg'),
+              ),
+              Expanded(
+                flex: 2,
+                child: Text('${_fmt(row.convertedUnits)} ${row.toUnitLabel}'),
+              ),
+              Expanded(flex: 2, child: Text(_fmt(row.invoicedQuantity))),
+              Expanded(flex: 2, child: Text(_fmt(row.unbilledQuantity))),
+              Expanded(flex: 2, child: Text(_money(row.financialExposure))),
+              Expanded(flex: 1, child: Text('${_fmt(row.variancePercent)}%')),
+              Expanded(flex: 2, child: _StatusBadge(row.status)),
+              Expanded(
+                flex: 5,
+                child: _AuditorActions(
+                  row: row,
+                  onGenerateInvoice: widget.onGenerateInvoice,
+                  onEditConversion: widget.onEditConversion,
+                  onOpenChallan: widget.onOpenChallan,
+                  onViewInvoices: widget.onViewInvoices,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (_expanded)
+          _AuditorOrderItemsDropdown(sourceRow: row, rows: widget.contextRows),
+      ],
+    );
+  }
+}
+
+class _AuditorOrderItemsDropdown extends StatelessWidget {
+  const _AuditorOrderItemsDropdown({
+    required this.sourceRow,
+    required this.rows,
+  });
+
+  final InternalAuditorRow sourceRow;
+  final List<InternalAuditorRow> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = sourceRow.orderId != null && sourceRow.orderId! > 0
+        ? 'Order #${sourceRow.orderId} items'
+        : '${sourceRow.dcNumber} items';
+    return Container(
+      margin: const EdgeInsets.fromLTRB(56, 6, 12, 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: SoftErpTheme.cardSurfaceAlt,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.account_tree_outlined,
+                size: 16,
+                color: SoftErpTheme.textSecondary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: SoftErpTheme.textPrimary,
+                  ),
+                ),
+              ),
+              Text(
+                '${rows.length} line${rows.length == 1 ? '' : 's'}',
+                style: const TextStyle(
+                  color: SoftErpTheme.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          for (final itemRow in rows) _AuditorOrderItemLine(row: itemRow),
+        ],
+      ),
+    );
+  }
+}
+
+class _AuditorOrderItemLine extends StatelessWidget {
+  const _AuditorOrderItemLine({required this.row});
 
   final InternalAuditorRow row;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 260,
-      child: Column(
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: SoftErpTheme.cardSurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(
-            row.clientName,
-            style: const TextStyle(fontWeight: FontWeight.w800),
+          Expanded(
+            flex: 4,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  row.itemName,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  'HSN ${row.hsnCode.isEmpty ? '-' : row.hsnCode}',
+                  style: const TextStyle(
+                    color: SoftErpTheme.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 3),
-          Text(row.itemName, overflow: TextOverflow.ellipsis),
-          const SizedBox(height: 2),
-          Text(
-            'HSN ${row.hsnCode.isEmpty ? '-' : row.hsnCode} • 1 kg = ${_fmt(row.conversionRatio)} ${row.toUnitLabel}',
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: SoftErpTheme.textSecondary),
+          Expanded(
+            flex: 2,
+            child: _AuditorLineMetric(
+              label: 'Weight',
+              value: '${_fmt(row.totalDispatchedWeightKg)} kg',
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: _AuditorLineMetric(
+              label: 'Units',
+              value: '${_fmt(row.convertedUnits)} ${row.toUnitLabel}',
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: _AuditorLineMetric(
+              label: 'Unbilled',
+              value: _fmt(row.unbilledQuantity),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: _AuditorLineMetric(
+              label: 'Exposure',
+              value: _money(row.financialExposure),
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _AuditorLineMetric extends StatelessWidget {
+  const _AuditorLineMetric({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: SoftErpTheme.textSecondary,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          textAlign: TextAlign.end,
+          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+        ),
+      ],
+    );
+  }
+}
+
+bool _sameAuditorOrderContext(
+  InternalAuditorRow row,
+  InternalAuditorRow candidate,
+) {
+  if (row.orderId != null && row.orderId! > 0) {
+    return candidate.orderId == row.orderId;
+  }
+  if (row.challanId > 0) {
+    return candidate.challanId == row.challanId;
+  }
+  return candidate.clientName == row.clientName &&
+      candidate.dcNumber == row.dcNumber;
+}
+
+class _SortHeader extends StatelessWidget {
+  const _SortHeader(
+    this.label,
+    this.sortKey,
+    this.currentSort,
+    this.ascending,
+    this.onSort,
+  );
+
+  final String label;
+  final _AuditorSort sortKey;
+  final _AuditorSort currentSort;
+  final bool ascending;
+  final ValueChanged<_AuditorSort> onSort;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => onSort(sortKey),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(child: _ReportHeaderCell(label)),
+            if (currentSort == sortKey) ...[
+              const SizedBox(width: 4),
+              Icon(
+                ascending ? Icons.arrow_upward : Icons.arrow_downward,
+                size: 14,
+                color: SoftErpTheme.accent,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReportTableHeader extends StatelessWidget {
+  const _ReportTableHeader({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: const BoxDecoration(
+        color: SoftErpTheme.cardSurfaceAlt,
+        border: Border(bottom: BorderSide(color: SoftErpTheme.border)),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _ReportHeaderCell extends StatelessWidget {
+  const _ReportHeaderCell(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(
+        color: SoftErpTheme.textSecondary,
+        fontSize: 12,
+        fontWeight: FontWeight.w900,
+        letterSpacing: 0.2,
+      ),
+    );
+  }
+}
+
+class _ReportDataRow extends StatelessWidget {
+  const _ReportDataRow({required this.child, this.color});
+
+  final Widget child;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color ?? SoftErpTheme.cardSurface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _ClientItemCell extends StatelessWidget {
+  const _ClientItemCell({
+    required this.row,
+    required this.expanded,
+    required this.itemCount,
+    required this.onToggle,
+  });
+
+  final InternalAuditorRow row;
+  final bool expanded;
+  final int itemCount;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onToggle,
+      child: SizedBox(
+        width: 260,
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    row.clientName,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(row.itemName, overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 2),
+                  Text(
+                    'HSN ${row.hsnCode.isEmpty ? '-' : row.hsnCode} • $itemCount order item${itemCount == 1 ? '' : 's'}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: SoftErpTheme.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 6),
+            Icon(
+              expanded
+                  ? Icons.keyboard_arrow_up_rounded
+                  : Icons.keyboard_arrow_down_rounded,
+              size: 20,
+              color: SoftErpTheme.accent,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1837,25 +2408,90 @@ class _AuditorActions extends StatelessWidget {
         runSpacing: 4,
         children: [
           if (row.isUnbilled)
-            TextButton(
-              onPressed: () => onGenerateInvoice(row),
-              child: const Text('Open Draft Invoice'),
+            _ReportActionChip(
+              label: 'Open Draft Invoice',
+              icon: Icons.receipt_long_outlined,
+              onTap: () => onGenerateInvoice(row),
             ),
-          TextButton(
-            onPressed: row.itemId == null ? null : () => onEditConversion(row),
-            child: const Text('Edit Conversion'),
+          _ReportActionChip(
+            label: 'Edit Conversion',
+            icon: Icons.tune_rounded,
+            onTap: row.itemId == null ? null : () => onEditConversion(row),
           ),
-          TextButton(
-            onPressed: () => onOpenChallan(row.challanId),
-            child: const Text('Open Challan'),
+          _ReportActionChip(
+            label: 'Open Challan',
+            icon: Icons.open_in_new_rounded,
+            onTap: () => onOpenChallan(row.challanId),
           ),
-          TextButton(
-            onPressed: row.linkedInvoices.isEmpty
+          _ReportActionChip(
+            label: 'View Invoices',
+            icon: Icons.list_alt_rounded,
+            onTap: row.linkedInvoices.isEmpty
                 ? null
                 : () => onViewInvoices(row),
-            child: const Text('View Invoices'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ReportActionChip extends StatelessWidget {
+  const _ReportActionChip({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    final foreground = enabled
+        ? SoftErpTheme.accent
+        : SoftErpTheme.textSecondary;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 152, minHeight: 32),
+      child: TextButton(
+        onPressed: onTap,
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          foregroundColor: foreground,
+          backgroundColor: enabled
+              ? SoftErpTheme.accent.withValues(alpha: 0.08)
+              : SoftErpTheme.cardSurfaceAlt,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(999),
+            side: BorderSide(
+              color: enabled
+                  ? SoftErpTheme.accent.withValues(alpha: 0.22)
+                  : SoftErpTheme.border,
+            ),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: foreground),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1868,45 +2504,64 @@ class _ClientStatementTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      primary: false,
-      child: DataTable(
-        headingRowColor: WidgetStateProperty.all(SoftErpTheme.cardSurfaceAlt),
-        columns: const [
-          DataColumn(label: Text('Client')),
-          DataColumn(label: Text('Item')),
-          DataColumn(label: Text('Material Received (Input)')),
-          DataColumn(label: Text('Finished Units Delivered')),
-          DataColumn(label: Text('Net Balance Material')),
-          DataColumn(label: Text('Status')),
-        ],
-        rows: rows
-            .map((row) {
-              return DataRow(
-                color: WidgetStateProperty.resolveWith((states) {
-                  if (row.status.toLowerCase().contains('over')) {
-                    return SoftErpTheme.dangerBg.withValues(alpha: 0.55);
-                  }
-                  if (row.status.toLowerCase().contains('remaining')) {
-                    return SoftErpTheme.warningBg.withValues(alpha: 0.5);
-                  }
-                  return null;
-                }),
-                cells: [
-                  DataCell(Text(row.clientName)),
-                  DataCell(Text(row.itemName)),
-                  DataCell(Text('${_fmt(row.materialReceivedInputKg)} kg')),
-                  DataCell(Text(_fmt(row.totalFinishedUnitsDelivered))),
-                  DataCell(
-                    Text('${_fmt(row.netBalanceMaterialRemainingKg)} kg'),
-                  ),
-                  DataCell(_StatusBadge(row.status)),
-                ],
+    return Column(
+      children: [
+        _ReportTableHeader(
+          child: const Row(
+            children: [
+              Expanded(flex: 2, child: _ReportHeaderCell('Client')),
+              Expanded(flex: 2, child: _ReportHeaderCell('Item')),
+              Expanded(
+                flex: 2,
+                child: _ReportHeaderCell('Material Received (Input)'),
+              ),
+              Expanded(flex: 2, child: _ReportHeaderCell('Units Delivered')),
+              Expanded(flex: 2, child: _ReportHeaderCell('Balance Material')),
+              Expanded(flex: 1, child: _ReportHeaderCell('Status')),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.all(8),
+            itemCount: rows.length,
+            separatorBuilder: (context, index) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
+              final row = rows[index];
+              Color? bgColor;
+              if (row.status.toLowerCase().contains('over')) {
+                bgColor = SoftErpTheme.dangerBg.withValues(alpha: 0.55);
+              } else if (row.status.toLowerCase().contains('remaining')) {
+                bgColor = SoftErpTheme.warningBg.withValues(alpha: 0.5);
+              }
+              return _ReportDataRow(
+                color: bgColor,
+                child: Row(
+                  children: [
+                    Expanded(flex: 2, child: Text(row.clientName)),
+                    Expanded(flex: 2, child: Text(row.itemName)),
+                    Expanded(
+                      flex: 2,
+                      child: Text('${_fmt(row.materialReceivedInputKg)} kg'),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Text(_fmt(row.totalFinishedUnitsDelivered)),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        '${_fmt(row.netBalanceMaterialRemainingKg)} kg',
+                      ),
+                    ),
+                    Expanded(flex: 1, child: _StatusBadge(row.status)),
+                  ],
+                ),
               );
-            })
-            .toList(growable: false),
-      ),
+            },
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1924,78 +2579,132 @@ class _MiscTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      primary: false,
-      child: DataTable(
-        headingRowColor: WidgetStateProperty.all(SoftErpTheme.cardSurfaceAlt),
-        columns: const [
-          DataColumn(label: Text('Audit ID')),
-          DataColumn(label: Text('Audit Time')),
-          DataColumn(label: Text('Client')),
-          DataColumn(label: Text('Item')),
-          DataColumn(label: Text('DC Number')),
-          DataColumn(label: Text('Input Weight')),
-          DataColumn(label: Text('Shipped Weight')),
-          DataColumn(label: Text('Waste Weight')),
-          DataColumn(label: Text('Waste %')),
-          DataColumn(label: Text('Source')),
-          DataColumn(label: Text('Actions')),
-        ],
-        rows: rows
-            .map((row) {
-              return DataRow(
-                cells: [
-                  DataCell(Text('#${row.id}')),
-                  DataCell(Text(_dateTime(row.auditTime))),
-                  DataCell(Text(row.clientName)),
-                  DataCell(Text(row.itemName)),
-                  DataCell(Text(row.challanNo)),
-                  DataCell(Text('${_fmt(row.inputWeightKg)} kg')),
-                  DataCell(Text('${_fmt(row.shippedWeightKg)} kg')),
-                  DataCell(Text('${_fmt(row.wasteWeightKg)} kg')),
-                  DataCell(Text('${_fmt(row.wastePercentage)}%')),
-                  DataCell(Text(row.source)),
-                  DataCell(
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        TextButton(
-                          onPressed: () => onViewWasteAudit(row),
-                          child: const Text('Details'),
-                        ),
-                        TextButton(
-                          onPressed: row.challanId == null
-                              ? null
-                              : () => onOpenChallan(row.challanId),
-                          child: const Text('Open Challan'),
-                        ),
-                      ],
+    return Column(
+      children: [
+        _ReportTableHeader(
+          child: const Row(
+            children: [
+              Expanded(flex: 1, child: _ReportHeaderCell('ID')),
+              Expanded(flex: 2, child: _ReportHeaderCell('Audit Time')),
+              Expanded(flex: 2, child: _ReportHeaderCell('Client / Item')),
+              Expanded(flex: 2, child: _ReportHeaderCell('DC Number')),
+              Expanded(
+                flex: 3,
+                child: _ReportHeaderCell('Input / Shipped / Waste'),
+              ),
+              Expanded(flex: 2, child: _ReportHeaderCell('Source')),
+              Expanded(flex: 2, child: _ReportHeaderCell('Actions')),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.all(8),
+            itemCount: rows.length,
+            separatorBuilder: (context, index) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
+              final row = rows[index];
+              return _ReportDataRow(
+                child: Row(
+                  children: [
+                    Expanded(flex: 1, child: Text('#${row.id}')),
+                    Expanded(flex: 2, child: Text(_dateTime(row.auditTime))),
+                    Expanded(
+                      flex: 2,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            row.clientName,
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          Text(
+                            row.itemName,
+                            style: const TextStyle(
+                              color: SoftErpTheme.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                    Expanded(flex: 2, child: Text(row.challanNo)),
+                    Expanded(
+                      flex: 3,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Input: ${_fmt(row.inputWeightKg)} kg',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          Text(
+                            'Shipped: ${_fmt(row.shippedWeightKg)} kg',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          Text(
+                            'Waste: ${_fmt(row.wasteWeightKg)} kg (${_fmt(row.wastePercentage)}%)',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: SoftErpTheme.dangerText,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(flex: 2, child: Text(row.source)),
+                    Expanded(
+                      flex: 2,
+                      child: Wrap(
+                        spacing: 4,
+                        children: [
+                          _ReportActionChip(
+                            label: 'Details',
+                            icon: Icons.info_outline_rounded,
+                            onTap: () => onViewWasteAudit(row),
+                          ),
+                          if (row.challanId != null)
+                            _ReportActionChip(
+                              label: 'Challan',
+                              icon: Icons.open_in_new_rounded,
+                              onTap: () => onOpenChallan(row.challanId),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               );
-            })
-            .toList(growable: false),
-      ),
+            },
+          ),
+        ),
+      ],
     );
   }
 }
 
-class _InvoiceDraftDialog extends StatefulWidget {
-  const _InvoiceDraftDialog({required this.rows});
+class _InvoiceDraftSidebar extends StatefulWidget {
+  const _InvoiceDraftSidebar({
+    required this.rows,
+    required this.onClose,
+    required this.onInvoiceCreated,
+  });
 
   final List<InternalAuditorRow> rows;
+  final VoidCallback onClose;
+  final VoidCallback onInvoiceCreated;
 
   @override
-  State<_InvoiceDraftDialog> createState() => _InvoiceDraftDialogState();
+  State<_InvoiceDraftSidebar> createState() => _InvoiceDraftSidebarState();
 }
 
-class _InvoiceDraftDialogState extends State<_InvoiceDraftDialog> {
+class _InvoiceDraftSidebarState extends State<_InvoiceDraftSidebar> {
   final TextEditingController _invoiceNoController = TextEditingController();
   final TextEditingController _dateController = TextEditingController();
   late final List<_InvoiceLineControllers> _lineControllers;
   late DateTime _invoiceDate;
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -2029,139 +2738,195 @@ class _InvoiceDraftDialogState extends State<_InvoiceDraftDialog> {
   Widget build(BuildContext context) {
     final row = widget.rows.first;
     final totals = _totals();
-    return AlertDialog(
-      title: const Text('Draft Invoice'),
-      content: SizedBox(
-        width: 980,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
             children: [
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: [
-                  SizedBox(
-                    width: 220,
-                    child: TextField(
-                      controller: _invoiceNoController,
-                      decoration: const InputDecoration(
-                        labelText: 'Invoice No',
-                        helperText: 'Blank auto-generates',
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 180,
-                    child: TextField(
-                      controller: _dateController,
-                      readOnly: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Invoice Date',
-                      ),
-                      onTap: _pickDate,
-                    ),
-                  ),
-                  SizedBox(
-                    width: 260,
-                    child: _ReadOnlyField(
-                      label: 'Client',
-                      value: row.clientName,
-                    ),
-                  ),
-                  SizedBox(
-                    width: 220,
-                    child: _ReadOnlyField(
-                      label: 'GSTIN',
-                      value: row.gstin.isEmpty ? '-' : row.gstin,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              DataTable(
-                headingRowColor: WidgetStateProperty.all(
-                  SoftErpTheme.cardSurfaceAlt,
-                ),
-                columns: const [
-                  DataColumn(label: Text('Source')),
-                  DataColumn(label: Text('Item')),
-                  DataColumn(label: Text('Qty')),
-                  DataColumn(label: Text('Unit Price')),
-                  DataColumn(label: Text('CGST %')),
-                  DataColumn(label: Text('SGST %')),
-                  DataColumn(label: Text('Total')),
-                ],
-                rows: _lineControllers
-                    .map((controller) {
-                      final lineTotal =
-                          controller.taxableValue +
-                          controller.cgstAmount +
-                          controller.sgstAmount;
-                      return DataRow(
-                        cells: [
-                          DataCell(Text(controller.row.dcNumber)),
-                          DataCell(
-                            SizedBox(
-                              width: 220,
-                              child: Text(
-                                controller.row.itemName,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ),
-                          DataCell(
-                            _NumberCell(
-                              controller.quantityController,
-                              onChanged: _recalc,
-                            ),
-                          ),
-                          DataCell(
-                            _NumberCell(
-                              controller.unitPriceController,
-                              onChanged: _recalc,
-                            ),
-                          ),
-                          DataCell(
-                            _NumberCell(
-                              controller.cgstController,
-                              onChanged: _recalc,
-                            ),
-                          ),
-                          DataCell(
-                            _NumberCell(
-                              controller.sgstController,
-                              onChanged: _recalc,
-                            ),
-                          ),
-                          DataCell(Text(_money(lineTotal))),
-                        ],
-                      );
-                    })
-                    .toList(growable: false),
-              ),
-              const SizedBox(height: 14),
-              Align(
-                alignment: Alignment.centerRight,
+              const Expanded(
                 child: Text(
-                  'Taxable ${_money(totals.taxable)}  •  CGST ${_money(totals.cgst)}  •  SGST ${_money(totals.sgst)}  •  Total ${_money(totals.total)}',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
+                  'Draft Invoice',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                 ),
+              ),
+              SoftIconButton(
+                icon: Icons.close_rounded,
+                tooltip: 'Close',
+                onTap: widget.onClose,
               ),
             ],
           ),
         ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+        const Divider(height: 1),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: _invoiceNoController,
+                  decoration: _reportInputDecoration(
+                    labelText: 'Invoice No',
+                    helperText: 'Blank auto-generates',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _dateController,
+                  readOnly: true,
+                  decoration: _reportInputDecoration(
+                    labelText: 'Invoice Date',
+                    prefixIcon: Icons.event_outlined,
+                  ),
+                  onTap: _pickDate,
+                ),
+                const SizedBox(height: 12),
+                _ReadOnlyField(label: 'Client', value: row.clientName),
+                const SizedBox(height: 12),
+                _ReadOnlyField(
+                  label: 'GSTIN',
+                  value: row.gstin.isEmpty ? '-' : row.gstin,
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'Line Items',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                for (final controller in _lineControllers) ...[
+                  SoftSurface(
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    radius: SoftErpTheme.radiusSm,
+                    elevated: false,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          controller.row.itemName,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          'DC: ${controller.row.dcNumber}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: SoftErpTheme.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _NumberCell(
+                                controller.quantityController,
+                                label: 'Qty',
+                                onChanged: _recalc,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _NumberCell(
+                                controller.unitPriceController,
+                                label: 'Price',
+                                onChanged: _recalc,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _NumberCell(
+                                controller.cgstController,
+                                label: 'CGST%',
+                                onChanged: _recalc,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _NumberCell(
+                                controller.sgstController,
+                                label: 'SGST%',
+                                onChanged: _recalc,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Total: ${_money(controller.taxableValue + controller.cgstAmount + controller.sgstAmount)}',
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                SoftSurface(
+                  padding: const EdgeInsets.all(12),
+                  color: SoftErpTheme.accentSurface,
+                  radius: SoftErpTheme.radiusSm,
+                  elevated: false,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Taxable:'),
+                          Text(_money(totals.taxable)),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('CGST:'),
+                          Text(_money(totals.cgst)),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('SGST:'),
+                          Text(_money(totals.sgst)),
+                        ],
+                      ),
+                      const Divider(),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Grand Total:',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          Text(
+                            _money(totals.total),
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-        FilledButton(
-          onPressed: _submit,
-          child: const Text('Create Draft Invoice'),
+        const Divider(height: 1),
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: AppButton(
+            label: 'Create Draft Invoice',
+            icon: Icons.receipt_long_outlined,
+            isLoading: _isSaving,
+            onPressed: _submit,
+          ),
         ),
       ],
     );
@@ -2185,7 +2950,7 @@ class _InvoiceDraftDialogState extends State<_InvoiceDraftDialog> {
 
   void _recalc() => setState(() {});
 
-  void _submit() {
+  Future<void> _submit() async {
     final lines = <InvoiceDraftLineInput>[];
     for (final controller in _lineControllers) {
       final quantity = controller.quantity;
@@ -2212,16 +2977,39 @@ class _InvoiceDraftDialogState extends State<_InvoiceDraftDialog> {
       );
     }
     final row = widget.rows.first;
-    Navigator.of(context).pop(
-      InvoiceDraftInput(
-        invoiceNo: _invoiceNoController.text,
-        clientId: row.clientId,
-        clientName: row.clientName,
-        gstin: row.gstin,
-        invoiceDate: _invoiceDate,
-        lines: lines,
-      ),
+    final input = InvoiceDraftInput(
+      invoiceNo: _invoiceNoController.text,
+      clientId: row.clientId,
+      clientName: row.clientName,
+      gstin: row.gstin,
+      invoiceDate: _invoiceDate,
+      lines: lines,
     );
+
+    setState(() => _isSaving = true);
+    try {
+      final invoice = await context
+          .read<DeliveryChallanProvider>()
+          .repository
+          .createInvoice(input);
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Draft invoice ${invoice.invoiceNo} created.')),
+      );
+      widget.onInvoiceCreated();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
   }
 
   _InvoiceTotals _totals() {
@@ -2301,6 +3089,7 @@ class _ConversionOverrideDialog extends StatefulWidget {
 class _ConversionOverrideDialogState extends State<_ConversionOverrideDialog> {
   late final TextEditingController _ratioController;
   late final TextEditingController _unitController;
+  List<ItemUnitConversionDefinition> _predefinedConversions = [];
 
   @override
   void initState() {
@@ -2309,6 +3098,22 @@ class _ConversionOverrideDialogState extends State<_ConversionOverrideDialog> {
       text: _fmt(widget.row.conversionRatio),
     );
     _unitController = TextEditingController(text: widget.row.toUnitLabel);
+    _unitController.addListener(() {
+      setState(() {});
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || widget.row.itemId == null) return;
+      final provider = context.read<ItemsProvider>();
+      final item = provider.items
+          .where((i) => i.id == widget.row.itemId)
+          .firstOrNull;
+      if (item != null && item.unitConversions.isNotEmpty) {
+        setState(() {
+          _predefinedConversions = item.unitConversions;
+        });
+      }
+    });
   }
 
   @override
@@ -2320,63 +3125,134 @@ class _ConversionOverrideDialogState extends State<_ConversionOverrideDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Edit Conversion'),
-      content: SizedBox(
-        width: 440,
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      child: SoftSurface(
+        width: 480,
+        padding: const EdgeInsets.all(22),
+        radius: SoftErpTheme.radiusLg,
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _DetailLine('Item', widget.row.itemName),
-            _DetailLine('Variation Leaf', '${widget.row.variationLeafNodeId}'),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Edit Conversion',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                  ),
+                ),
+                SoftIconButton(
+                  icon: Icons.close_rounded,
+                  tooltip: 'Close',
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SoftSurface(
+              padding: const EdgeInsets.all(12),
+              color: SoftErpTheme.cardSurfaceAlt,
+              elevated: false,
+              radius: SoftErpTheme.radiusSm,
+              child: Column(
+                children: [
+                  _DetailLine('Item', widget.row.itemName),
+                  _DetailLine(
+                    'Variation Leaf',
+                    '${widget.row.variationLeafNodeId}',
+                  ),
+                ],
+              ),
+            ),
+            if (_predefinedConversions.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              const Text(
+                'Select from Item Master:',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: SoftErpTheme.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _predefinedConversions.map<Widget>((conv) {
+                  return ActionChip(
+                    label: Text(
+                      '${conv.unitSymbol} (1 kg = ${conv.factorToPrimary})',
+                    ),
+                    onPressed: () {
+                      _unitController.text = conv.unitSymbol;
+                      _ratioController.text = _fmt(conv.factorToPrimary);
+                    },
+                    backgroundColor: SoftErpTheme.accentSoft,
+                    side: BorderSide.none,
+                  );
+                }).toList(),
+              ),
+            ],
             const SizedBox(height: 14),
+            TextField(
+              controller: _unitController,
+              decoration: _reportInputDecoration(
+                labelText: 'Target Unit (e.g. pcs, boxes)',
+              ),
+            ),
+            const SizedBox(height: 12),
             TextField(
               controller: _ratioController,
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
-              decoration: const InputDecoration(
-                labelText: 'Conversion Ratio',
+              decoration: _reportInputDecoration(
+                labelText: 'Conversion Factor',
                 prefixText: '1 kg = ',
+                suffixText:
+                    ' ${_unitController.text.trim().isEmpty ? 'units' : _unitController.text.trim()}',
               ),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _unitController,
-              decoration: const InputDecoration(labelText: 'To Unit Label'),
+            const SizedBox(height: 18),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                AppButton(
+                  label: 'Cancel',
+                  variant: AppButtonVariant.secondary,
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                const SizedBox(width: 10),
+                AppButton(
+                  label: 'Save',
+                  icon: Icons.save_outlined,
+                  onPressed: () {
+                    final ratio = _parseNumber(_ratioController.text);
+                    if (ratio <= 0) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Conversion ratio must be positive.'),
+                        ),
+                      );
+                      return;
+                    }
+                    Navigator.of(context).pop(
+                      ConversionOverrideInput(
+                        itemId: widget.row.itemId!,
+                        variationLeafNodeId: widget.row.variationLeafNodeId,
+                        conversionRatio: ratio,
+                        toUnitLabel: _unitController.text,
+                      ),
+                    );
+                  },
+                ),
+              ],
             ),
           ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () {
-            final ratio = _parseNumber(_ratioController.text);
-            if (ratio <= 0) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Conversion ratio must be positive.'),
-                ),
-              );
-              return;
-            }
-            Navigator.of(context).pop(
-              ConversionOverrideInput(
-                itemId: widget.row.itemId!,
-                variationLeafNodeId: widget.row.variationLeafNodeId,
-                conversionRatio: ratio,
-                toUnitLabel: _unitController.text,
-              ),
-            );
-          },
-          child: const Text('Save'),
-        ),
-      ],
     );
   }
 }
@@ -2390,16 +3266,17 @@ class _ReadOnlyField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InputDecorator(
-      decoration: InputDecoration(labelText: label),
+      decoration: _reportInputDecoration(labelText: label),
       child: Text(value, overflow: TextOverflow.ellipsis),
     );
   }
 }
 
 class _NumberCell extends StatelessWidget {
-  const _NumberCell(this.controller, {required this.onChanged});
+  const _NumberCell(this.controller, {this.label, required this.onChanged});
 
   final TextEditingController controller;
+  final String? label;
   final VoidCallback onChanged;
 
   @override
@@ -2410,7 +3287,7 @@ class _NumberCell extends StatelessWidget {
         controller: controller,
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
         onChanged: (_) => onChanged(),
-        decoration: const InputDecoration(isDense: true),
+        decoration: _reportInputDecoration(labelText: label, dense: true),
       ),
     );
   }
@@ -2454,7 +3331,8 @@ class _StatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final lower = label.toLowerCase();
     final isAttention = lower.contains('attention') || lower.contains('over');
-    final isGood = lower.contains('auto') || lower.contains('balanced');
+    final isGood =
+        lower.contains('auto') || lower.contains('balanced') || lower == 'paid';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
@@ -2509,7 +3387,34 @@ class _ReportLoadingState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(child: CircularProgressIndicator());
+    return Center(
+      child: SoftSurface(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        color: SoftErpTheme.cardSurfaceAlt,
+        elevated: false,
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: SoftErpTheme.accent,
+              ),
+            ),
+            SizedBox(width: 12),
+            Text(
+              'Loading report...',
+              style: TextStyle(
+                color: SoftErpTheme.textSecondary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -2525,7 +3430,11 @@ class _ReportErrorState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.error_outline_rounded, size: 42),
+          const Icon(
+            Icons.error_outline_rounded,
+            size: 42,
+            color: SoftErpTheme.dangerText,
+          ),
           const SizedBox(height: 10),
           Text(message, textAlign: TextAlign.center),
           const SizedBox(height: 14),
@@ -2548,11 +3457,16 @@ class _EmptyReportState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Text(
-        message,
-        style: Theme.of(
-          context,
-        ).textTheme.titleMedium?.copyWith(color: SoftErpTheme.textSecondary),
+      child: SoftSurface(
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
+        color: SoftErpTheme.cardSurfaceAlt,
+        elevated: false,
+        child: Text(
+          message,
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(color: SoftErpTheme.textSecondary),
+        ),
       ),
     );
   }
@@ -2569,21 +3483,6 @@ int _compareDate(DateTime? a, DateTime? b) {
     return 1;
   }
   return a.compareTo(b);
-}
-
-int _sortColumnIndex(_AuditorSort sort) {
-  return switch (sort) {
-    _AuditorSort.dcNumber => 1,
-    _AuditorSort.date => 2,
-    _AuditorSort.client => 3,
-    _AuditorSort.item => 3,
-    _AuditorSort.dispatchedWeight => 4,
-    _AuditorSort.convertedUnits => 5,
-    _AuditorSort.invoicedQuantity => 6,
-    _AuditorSort.unbilledQuantity => 7,
-    _AuditorSort.exposure => 8,
-    _AuditorSort.status => 10,
-  };
 }
 
 double _parseNumber(String value) => double.tryParse(value.trim()) ?? 0;
@@ -2614,4 +3513,885 @@ String _dateTime(DateTime? value) {
   final hour = value.hour.toString().padLeft(2, '0');
   final minute = value.minute.toString().padLeft(2, '0');
   return '${_date(value)} $hour:$minute';
+}
+
+class _ChallanPreviewSidebar extends StatefulWidget {
+  const _ChallanPreviewSidebar({
+    required this.challanId,
+    required this.onClose,
+  });
+
+  final int challanId;
+  final VoidCallback onClose;
+
+  @override
+  State<_ChallanPreviewSidebar> createState() => _ChallanPreviewSidebarState();
+}
+
+class _ChallanPreviewSidebarState extends State<_ChallanPreviewSidebar> {
+  DeliveryChallan? _challan;
+  List<ChallanTemplate> _templates = const <ChallanTemplate>[];
+  ChallanTemplate? _selectedTemplate;
+  Uint8List? _templatePdfBytes;
+  bool _isLoading = true;
+  bool _isPdfLoading = false;
+  String? _errorMessage;
+  String? _templatePdfError;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(_ChallanPreviewSidebar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.challanId != widget.challanId) {
+      _load();
+    }
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+      _templatePdfError = null;
+      _templatePdfBytes = null;
+    });
+    try {
+      final provider = context.read<DeliveryChallanProvider>();
+      final challan = await provider.repository.getChallan(widget.challanId);
+      final templates = await provider.loadTemplates(
+        partyType: ChallanTemplatePartyType.generic,
+        activeOnly: true,
+      );
+      final orderedTemplates = <ChallanTemplate>[
+        ...templates.where((template) => template.challanType == challan.type),
+        ...templates.where((template) => template.challanType != challan.type),
+      ];
+      if (mounted) {
+        setState(() {
+          _challan = challan;
+          _templates = orderedTemplates;
+          _selectedTemplate = orderedTemplates.isEmpty
+              ? null
+              : orderedTemplates.first;
+          _isLoading = false;
+        });
+        await _loadTemplatePdf();
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = error.toString();
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadTemplatePdf() async {
+    final challan = _challan;
+    if (challan == null || !mounted) {
+      return;
+    }
+    setState(() {
+      _isPdfLoading = true;
+      _templatePdfError = null;
+      _templatePdfBytes = null;
+    });
+    try {
+      final bytes = await context
+          .read<DeliveryChallanProvider>()
+          .repository
+          .fetchTemplatePreviewPdf(
+            challanId: challan.id,
+            templateId: _selectedTemplate?.id,
+            mode: 'digital',
+          );
+      if (mounted) {
+        setState(() => _templatePdfBytes = bytes);
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _templatePdfError = error.toString());
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isPdfLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Template Challan',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+              ),
+              SoftIconButton(
+                icon: Icons.close_rounded,
+                tooltip: 'Close',
+                onTap: widget.onClose,
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: _isLoading
+              ? const _ReportLoadingState()
+              : _errorMessage != null
+              ? _ReportErrorState(message: _errorMessage!, onRetry: _load)
+              : _challan == null
+              ? const Center(child: Text('Challan not found.'))
+              : _buildPreview(_challan!),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPreview(DeliveryChallan challan) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SoftSurface(
+            padding: const EdgeInsets.all(14),
+            radius: SoftErpTheme.radiusMd,
+            elevated: false,
+            color: SoftErpTheme.cardSurfaceAlt,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        challan.challanNo,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: SoftErpTheme.textPrimary,
+                        ),
+                      ),
+                    ),
+                    _StatusBadge(challan.status.name.toUpperCase()),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                _DetailLine(
+                  'Party',
+                  challan.isReception
+                      ? challan.vendorName
+                      : challan.customerName,
+                ),
+                _DetailLine(
+                  'GSTIN',
+                  challan.isReception
+                      ? (challan.vendorGstin.isEmpty
+                            ? '-'
+                            : challan.vendorGstin)
+                      : (challan.customerGstin.isEmpty
+                            ? '-'
+                            : challan.customerGstin),
+                ),
+                _DetailLine('Date', _date(challan.date)),
+                if (challan.location.trim().isNotEmpty)
+                  _DetailLine('Location', challan.location),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (_templates.isNotEmpty)
+            DropdownButtonFormField<int>(
+              initialValue: _selectedTemplate?.id,
+              isExpanded: true,
+              decoration: _reportInputDecoration(
+                labelText: 'Template',
+                helperText:
+                    'Digital preview uses this user-defined template layout.',
+              ),
+              items: _templates
+                  .map(
+                    (template) => DropdownMenuItem<int>(
+                      value: template.id,
+                      child: Text(
+                        '${template.name} • ${template.stockSize} on ${template.paperSize}',
+                      ),
+                    ),
+                  )
+                  .toList(growable: false),
+              onChanged: (templateId) {
+                final selected = _templates
+                    .where((template) => template.id == templateId)
+                    .firstOrNull;
+                if (selected == null) {
+                  return;
+                }
+                setState(() => _selectedTemplate = selected);
+                _loadTemplatePdf();
+              },
+            )
+          else
+            SoftSurface(
+              padding: const EdgeInsets.all(12),
+              radius: SoftErpTheme.radiusSm,
+              elevated: false,
+              color: SoftErpTheme.warningBg.withValues(alpha: 0.55),
+              child: const Text(
+                'No active template is listed locally. If this challan was issued with a saved snapshot, the backend preview will still use that frozen template.',
+                style: TextStyle(
+                  color: SoftErpTheme.textPrimary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 520,
+            child: SoftSurface(
+              padding: EdgeInsets.zero,
+              radius: SoftErpTheme.radiusMd,
+              clipContent: true,
+              child: _isPdfLoading
+                  ? const _ReportLoadingState()
+                  : _templatePdfBytes != null
+                  ? PdfPreview(
+                      build: (_) async => _templatePdfBytes!,
+                      allowPrinting: false,
+                      allowSharing: false,
+                      canChangeOrientation: false,
+                      canChangePageFormat: false,
+                      canDebug: false,
+                      useActions: false,
+                      maxPageWidth: 430,
+                    )
+                  : _TemplateFallbackPreview(
+                      challan: challan,
+                      errorMessage: _templatePdfError,
+                    ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _TemplateDataCard(challan: challan),
+        ],
+      ),
+    );
+  }
+}
+
+class _TemplateDataCard extends StatelessWidget {
+  const _TemplateDataCard({required this.challan});
+
+  final DeliveryChallan challan;
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftSurface(
+      padding: const EdgeInsets.all(14),
+      radius: SoftErpTheme.radiusMd,
+      elevated: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Fields sent to template',
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              color: SoftErpTheme.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _DetailLine(
+            'Party Name',
+            challan.isReception ? challan.vendorName : challan.customerName,
+          ),
+          _DetailLine(
+            'GSTIN',
+            challan.isReception
+                ? (challan.vendorGstin.isEmpty ? '-' : challan.vendorGstin)
+                : (challan.customerGstin.isEmpty ? '-' : challan.customerGstin),
+          ),
+          _DetailLine('Date', _date(challan.date)),
+          const Divider(color: SoftErpTheme.border),
+          for (final line in challan.items)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: SoftSurface(
+                padding: const EdgeInsets.all(10),
+                radius: SoftErpTheme.radiusSm,
+                elevated: false,
+                color: SoftErpTheme.cardSurfaceAlt,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      line.particulars,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: SoftErpTheme.textPrimary,
+                      ),
+                    ),
+                    if (line.note.isNotEmpty)
+                      Text(
+                        line.note,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontStyle: FontStyle.italic,
+                          color: SoftErpTheme.textSecondary,
+                        ),
+                      ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        _MiniMetric(
+                          label: 'HSN',
+                          value: line.hsnCode.isEmpty ? '-' : line.hsnCode,
+                        ),
+                        _MiniMetric(
+                          label: 'Qty',
+                          value: _lineValue(line.quantityPcs),
+                        ),
+                        _MiniMetric(
+                          label: 'Weight',
+                          value: '${_lineValue(line.weight)} kg',
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TemplateFallbackPreview extends StatelessWidget {
+  const _TemplateFallbackPreview({
+    required this.challan,
+    required this.errorMessage,
+  });
+
+  final DeliveryChallan challan;
+  final String? errorMessage;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (errorMessage != null) ...[
+            SoftSurface(
+              padding: const EdgeInsets.all(10),
+              radius: SoftErpTheme.radiusSm,
+              elevated: false,
+              color: SoftErpTheme.warningBg.withValues(alpha: 0.6),
+              child: Text(
+                'Template PDF unavailable: $errorMessage',
+                style: const TextStyle(
+                  color: SoftErpTheme.textPrimary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: SoftErpTheme.border),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  challan.isReception
+                      ? 'RECEPTION CHALLAN'
+                      : 'DELIVERY CHALLAN',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _DetailLine('No', challan.challanNo),
+                _DetailLine('Date', _date(challan.date)),
+                _DetailLine(
+                  'Party',
+                  challan.isReception
+                      ? challan.vendorName
+                      : challan.customerName,
+                ),
+                _DetailLine(
+                  'GSTIN',
+                  challan.isReception
+                      ? (challan.vendorGstin.isEmpty
+                            ? '-'
+                            : challan.vendorGstin)
+                      : (challan.customerGstin.isEmpty
+                            ? '-'
+                            : challan.customerGstin),
+                ),
+                const SizedBox(height: 14),
+                const _TemplateTableHeader(),
+                for (final line in challan.items) _TemplateTableRow(line: line),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TemplateTableHeader extends StatelessWidget {
+  const _TemplateTableHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Row(
+      children: [
+        Expanded(flex: 4, child: Text('Item', style: _tableHeaderStyle)),
+        Expanded(flex: 2, child: Text('HSN', style: _tableHeaderStyle)),
+        Expanded(flex: 2, child: Text('Qty', style: _tableHeaderStyle)),
+        Expanded(flex: 2, child: Text('Weight', style: _tableHeaderStyle)),
+      ],
+    );
+  }
+}
+
+class _TemplateTableRow extends StatelessWidget {
+  const _TemplateTableRow({required this.line});
+
+  final DeliveryChallanItem line;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: SoftErpTheme.border)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 4,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(line.particulars),
+                if (line.note.isNotEmpty)
+                  Text(
+                    line.note,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontStyle: FontStyle.italic,
+                      color: SoftErpTheme.textSecondary,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(line.hsnCode.isEmpty ? '-' : line.hsnCode),
+          ),
+          Expanded(flex: 2, child: Text(_lineValue(line.quantityPcs))),
+          Expanded(flex: 2, child: Text('${_lineValue(line.weight)} kg')),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniMetric extends StatelessWidget {
+  const _MiniMetric({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: SoftErpTheme.cardSurface,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Text(
+        '$label: $value',
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: SoftErpTheme.textSecondary,
+        ),
+      ),
+    );
+  }
+}
+
+class _InvoicesSidebar extends StatefulWidget {
+  const _InvoicesSidebar({
+    required this.row,
+    required this.onClose,
+    required this.onInvoiceStatusChanged,
+  });
+
+  final InternalAuditorRow row;
+  final VoidCallback onClose;
+  final VoidCallback onInvoiceStatusChanged;
+
+  @override
+  State<_InvoicesSidebar> createState() => _InvoicesSidebarState();
+}
+
+class _InvoicesSidebarState extends State<_InvoicesSidebar> {
+  int? _selectedInvoiceId;
+  InvoiceHeader? _selectedInvoice;
+  bool _isLoadingInvoice = false;
+  String? _invoiceError;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedInvoiceId = widget.row.linkedInvoices.isEmpty
+        ? null
+        : widget.row.linkedInvoices.first.id;
+    if (_selectedInvoiceId != null) {
+      _loadInvoice(_selectedInvoiceId!);
+    }
+  }
+
+  @override
+  void didUpdateWidget(_InvoicesSidebar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.row.challanItemId != widget.row.challanItemId) {
+      _selectedInvoice = null;
+      _invoiceError = null;
+      _selectedInvoiceId = widget.row.linkedInvoices.isEmpty
+          ? null
+          : widget.row.linkedInvoices.first.id;
+      if (_selectedInvoiceId != null) {
+        _loadInvoice(_selectedInvoiceId!);
+      }
+    }
+  }
+
+  Future<void> _loadInvoice(int invoiceId) async {
+    setState(() {
+      _selectedInvoiceId = invoiceId;
+      _isLoadingInvoice = true;
+      _invoiceError = null;
+    });
+    try {
+      final invoice = await context
+          .read<DeliveryChallanProvider>()
+          .repository
+          .getInvoice(invoiceId);
+      if (mounted) {
+        setState(() => _selectedInvoice = invoice);
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _invoiceError = error.toString());
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingInvoice = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Invoices • ${widget.row.dcNumber}',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              SoftIconButton(
+                icon: Icons.close_rounded,
+                tooltip: 'Close',
+                onTap: widget.onClose,
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Linked invoices',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: SoftErpTheme.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                for (final invoice in widget.row.linkedInvoices)
+                  _InvoiceReferenceTile(
+                    invoice: invoice,
+                    selected: invoice.id == _selectedInvoiceId,
+                    onTap: () => _loadInvoice(invoice.id),
+                  ),
+                const SizedBox(height: 14),
+                if (_isLoadingInvoice)
+                  const SizedBox(height: 220, child: _ReportLoadingState())
+                else if (_invoiceError != null)
+                  _ReportErrorState(
+                    message: _invoiceError!,
+                    onRetry: _selectedInvoiceId == null
+                        ? () {}
+                        : () => _loadInvoice(_selectedInvoiceId!),
+                  )
+                else if (_selectedInvoice != null)
+                  _InvoiceDetailCard(
+                    invoice: _selectedInvoice!,
+                    onToggleStatus: () async {
+                      final newStatus =
+                          _selectedInvoice!.status.toLowerCase() == 'paid'
+                          ? 'issued'
+                          : 'paid';
+                      setState(() {
+                        _isLoadingInvoice = true;
+                      });
+                      final provider = context.read<DeliveryChallanProvider>();
+                      final messenger = ScaffoldMessenger.of(context);
+                      try {
+                        await provider.updateInvoiceStatus(
+                          _selectedInvoice!.id,
+                          newStatus,
+                        );
+                        await _loadInvoice(_selectedInvoice!.id);
+                        widget.onInvoiceStatusChanged();
+                      } catch (e) {
+                        if (mounted) {
+                          messenger.showSnackBar(
+                            SnackBar(
+                              content: Text('Failed to update status: $e'),
+                              backgroundColor: SoftErpTheme.dangerText,
+                            ),
+                          );
+                        }
+                      } finally {
+                        if (mounted) {
+                          setState(() {
+                            _isLoadingInvoice = false;
+                          });
+                        }
+                      }
+                    },
+                  )
+                else
+                  const _EmptyReportState(
+                    message: 'Select an invoice to view details.',
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _InvoiceReferenceTile extends StatelessWidget {
+  const _InvoiceReferenceTile({
+    required this.invoice,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final InvoiceReference invoice;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftSurface(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: EdgeInsets.zero,
+      radius: SoftErpTheme.radiusSm,
+      elevated: false,
+      color: selected
+          ? SoftErpTheme.accent.withValues(alpha: 0.1)
+          : SoftErpTheme.cardSurfaceAlt,
+      child: ListTile(
+        onTap: onTap,
+        selected: selected,
+        dense: true,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(SoftErpTheme.radiusSm),
+        ),
+        title: Text(
+          invoice.invoiceNo,
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+        subtitle: Text('${invoice.status} • ${_date(invoice.invoiceDate)}'),
+        trailing: const Icon(
+          Icons.chevron_right_rounded,
+          color: SoftErpTheme.textSecondary,
+        ),
+      ),
+    );
+  }
+}
+
+class _InvoiceDetailCard extends StatelessWidget {
+  const _InvoiceDetailCard({
+    required this.invoice,
+    required this.onToggleStatus,
+  });
+
+  final InvoiceHeader invoice;
+  final VoidCallback onToggleStatus;
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftSurface(
+      padding: const EdgeInsets.all(14),
+      radius: SoftErpTheme.radiusMd,
+      elevated: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  invoice.invoiceNo,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: SoftErpTheme.textPrimary,
+                  ),
+                ),
+              ),
+              _StatusBadge(invoice.status),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: AppButton(
+                  label: invoice.status.toLowerCase() == 'paid'
+                      ? 'Mark as Unpaid'
+                      : 'Mark as Paid',
+                  icon: invoice.status.toLowerCase() == 'paid'
+                      ? Icons.cancel_outlined
+                      : Icons.check_circle_outline_rounded,
+                  variant: invoice.status.toLowerCase() == 'paid'
+                      ? AppButtonVariant.secondary
+                      : AppButtonVariant.primary,
+                  onPressed: onToggleStatus,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _DetailLine('Date', _date(invoice.invoiceDate)),
+          _DetailLine('Client', invoice.clientName),
+          _DetailLine('GSTIN', invoice.gstin.isEmpty ? '-' : invoice.gstin),
+          const Divider(color: SoftErpTheme.border),
+          for (final line in invoice.lines)
+            SoftSurface(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(10),
+              radius: SoftErpTheme.radiusSm,
+              elevated: false,
+              color: SoftErpTheme.cardSurfaceAlt,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    line.itemName,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      _MiniMetric(
+                        label: 'HSN',
+                        value: line.hsnCode.isEmpty ? '-' : line.hsnCode,
+                      ),
+                      _MiniMetric(label: 'Qty', value: _fmt(line.quantity)),
+                      _MiniMetric(label: 'Rate', value: _money(line.unitPrice)),
+                      _MiniMetric(
+                        label: 'Taxable',
+                        value: _money(line.taxableValue),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          const Divider(color: SoftErpTheme.border),
+          _DetailLine('Total Qty', _fmt(invoice.totalQuantity)),
+          _DetailLine('Taxable', _money(invoice.taxableValue)),
+          _DetailLine('CGST', _money(invoice.cgstAmount)),
+          _DetailLine('SGST', _money(invoice.sgstAmount)),
+          _DetailLine('Grand Total', _money(invoice.totalAmount)),
+        ],
+      ),
+    );
+  }
+}
+
+const TextStyle _tableHeaderStyle = TextStyle(
+  fontSize: 12,
+  fontWeight: FontWeight.w900,
+  color: SoftErpTheme.textSecondary,
+);
+
+String _lineValue(String value) {
+  final parsed = double.tryParse(value.trim());
+  if (parsed == null) {
+    return value.trim().isEmpty ? '-' : value.trim();
+  }
+  return _fmt(parsed);
 }

@@ -213,6 +213,7 @@ class ApiChallanRepository implements ChallanRepository {
         itemsCount: input.items.length,
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
+        usedInReport: false,
       );
       _mockChallans.add(created);
       return created;
@@ -267,6 +268,7 @@ class ApiChallanRepository implements ChallanRepository {
         itemsCount: input.items.length,
         createdAt: current.createdAt,
         updatedAt: DateTime.now(),
+        usedInReport: current.usedInReport,
       );
       _mockChallans[index] = updated;
       return updated;
@@ -369,6 +371,48 @@ class ApiChallanRepository implements ChallanRepository {
       uri: uri,
       response: response,
       fallback: 'Failed to fetch invoice.',
+    );
+    return InvoiceHeader.fromJson(_dataObject(payload, 'invoice'));
+  }
+
+  @override
+  Future<InvoiceHeader> updateInvoiceStatus(int id, String status) async {
+    if (useMockResponses) {
+      final index = _mockInvoices.indexWhere((invoice) => invoice.id == id);
+      if (index == -1) {
+        throw const ChallanApiException('Invoice not found.');
+      }
+      final existing = _mockInvoices[index];
+      final updated = InvoiceHeader(
+        id: existing.id,
+        invoiceNo: existing.invoiceNo,
+        clientId: existing.clientId,
+        clientName: existing.clientName,
+        gstin: existing.gstin,
+        status: status,
+        invoiceDate: existing.invoiceDate,
+        totalQuantity: existing.totalQuantity,
+        taxableValue: existing.taxableValue,
+        cgstAmount: existing.cgstAmount,
+        sgstAmount: existing.sgstAmount,
+        totalAmount: existing.totalAmount,
+        lines: existing.lines,
+      );
+      _mockInvoices[index] = updated;
+      return updated;
+    }
+    final uri = Uri.parse('$baseUrl/api/invoices/$id/status');
+    final response = await _sendRequest(
+      method: 'PATCH',
+      uri: uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({'status': status}),
+    );
+    final payload = _decodeApiResponse(
+      method: 'PATCH',
+      uri: uri,
+      response: response,
+      fallback: 'Failed to update invoice status.',
     );
     return InvoiceHeader.fromJson(_dataObject(payload, 'invoice'));
   }
@@ -564,6 +608,16 @@ class ApiChallanRepository implements ChallanRepository {
             ),
           )
           .toList(growable: false);
+      for (final challan in selected) {
+        final index = _mockChallans.indexWhere(
+          (candidate) => candidate.challanNo == challan.challanNo,
+        );
+        if (index != -1) {
+          _mockChallans[index] = _mockChallans[index].copyWith(
+            usedInReport: true,
+          );
+        }
+      }
       return ClientStatementReport(
         rows: rows,
         challanCount: selected.length,
@@ -1095,6 +1149,7 @@ class ApiChallanRepository implements ChallanRepository {
         itemsCount: current.itemsCount,
         createdAt: current.createdAt,
         updatedAt: DateTime.now(),
+        usedInReport: current.usedInReport,
       );
       _mockChallans[index] = updated;
       return updated;

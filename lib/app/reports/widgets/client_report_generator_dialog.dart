@@ -14,6 +14,7 @@ import '../../../features/delivery_challans/data/delivery_challan_repository.dar
 import '../../../features/delivery_challans/domain/delivery_challan.dart';
 import '../../../features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
 import '../domain/reconciliation_report.dart';
+import 'item_pricing_dialog.dart';
 
 class ClientReportGeneratorDialog extends StatefulWidget {
   const ClientReportGeneratorDialog({super.key});
@@ -62,6 +63,12 @@ class _ClientReportGeneratorDialogState
     final query = _searchController.text.trim().toLowerCase();
     final values = _challansByNo.values.toList(growable: false)
       ..sort((a, b) {
+        final usedCompare = (a.usedInReport ? 1 : 0).compareTo(
+          b.usedInReport ? 1 : 0,
+        );
+        if (usedCompare != 0) {
+          return usedCompare;
+        }
         final dateCompare = b.date.compareTo(a.date);
         return dateCompare == 0 ? b.id.compareTo(a.id) : dateCompare;
       });
@@ -75,6 +82,9 @@ class _ClientReportGeneratorDialogState
             challan.orderNo,
             challan.orderNos.join(' '),
             challan.challanNo,
+            ...challan.items.expand(
+              (item) => <String>[item.particulars, item.hsnCode, item.note],
+            ),
           ].join(' ').toLowerCase();
           return haystack.contains(query);
         })
@@ -131,9 +141,21 @@ class _ClientReportGeneratorDialogState
     }
     setState(() => _isExporting = true);
     try {
-      return await _repository.generateClientStatementReport(
-        _selectedChallanIds.toList(growable: false)..sort(),
+      final selectedNos = _selectedChallanIds.toList(growable: false)..sort();
+      final report = await _repository.generateClientStatementReport(
+        selectedNos,
       );
+      if (mounted) {
+        setState(() {
+          for (final challanNo in selectedNos) {
+            final challan = _challansByNo[challanNo];
+            if (challan != null) {
+              _challansByNo[challanNo] = challan.copyWith(usedInReport: true);
+            }
+          }
+        });
+      }
+      return report;
     } catch (error) {
       if (mounted) {
         _showSnack(error.toString());
@@ -151,6 +173,22 @@ class _ClientReportGeneratorDialogState
     if (report == null || report.rows.isEmpty) {
       return;
     }
+    final uniqueItems =
+        report.rows
+            .map((r) => r.itemName)
+            .where((n) => n.trim().isNotEmpty)
+            .toSet()
+            .toList(growable: false)
+          ..sort();
+
+    if (!mounted) {
+      return;
+    }
+    final pricingRules = await ItemPricingDialog.open(context, uniqueItems);
+    if (pricingRules == null) {
+      return;
+    }
+
     try {
       final excel = xls.Excel.createExcel();
       final sheet = excel['Client Statement'];
@@ -163,8 +201,27 @@ class _ClientReportGeneratorDialogState
         xls.TextCellValue('Note'),
         xls.TextCellValue('Qty'),
         xls.TextCellValue('Weight'),
+        xls.TextCellValue('Unit Price'),
+        xls.TextCellValue('Total Amount'),
       ]);
+
+      double grandTotal = 0;
+
       for (final row in report.rows) {
+        final rule = pricingRules[row.itemName];
+        double total = 0;
+        String priceText = '';
+
+        if (rule != null) {
+          final factor = rule.metric == PricingMetric.pcs
+              ? row.quantityPcs
+              : row.weight;
+          total = factor * rule.price;
+          grandTotal += total;
+          priceText =
+              '₹${_fmtCurrency(rule.price)} (per ${rule.metric == PricingMetric.pcs ? 'Pc' : 'Kg'})';
+        }
+
         sheet.appendRow([
           xls.TextCellValue(_date(row.date)),
           xls.TextCellValue(row.challanNo),
@@ -174,8 +231,25 @@ class _ClientReportGeneratorDialogState
           xls.TextCellValue(row.note),
           xls.DoubleCellValue(row.quantityPcs),
           xls.DoubleCellValue(row.weight),
+          xls.TextCellValue(priceText),
+          xls.DoubleCellValue(total),
         ]);
       }
+
+      // Append summary row
+      sheet.appendRow([
+        xls.TextCellValue(''),
+        xls.TextCellValue(''),
+        xls.TextCellValue(''),
+        xls.TextCellValue(''),
+        xls.TextCellValue(''),
+        xls.TextCellValue('GRAND TOTAL:'),
+        xls.DoubleCellValue(report.totalQuantityPcs),
+        xls.DoubleCellValue(report.totalWeight),
+        xls.TextCellValue(''),
+        xls.DoubleCellValue(grandTotal),
+      ]);
+
       if (excel.sheets.containsKey('Sheet1') && excel.sheets.length > 1) {
         excel.delete('Sheet1');
       }
@@ -220,7 +294,26 @@ class _ClientReportGeneratorDialogState
     if (report == null || report.rows.isEmpty) {
       return;
     }
+
+    final uniqueItems =
+        report.rows
+            .map((r) => r.itemName)
+            .where((n) => n.trim().isNotEmpty)
+            .toSet()
+            .toList(growable: false)
+          ..sort();
+
+    if (!mounted) {
+      return;
+    }
+    final pricingRules = await ItemPricingDialog.open(context, uniqueItems);
+    if (pricingRules == null) {
+      return;
+    }
+
     try {
+      double grandTotal = 0;
+
       final document = pw.Document();
       document.addPage(
         pw.MultiPage(
@@ -242,30 +335,57 @@ class _ClientReportGeneratorDialogState
                 'Challan',
                 'Order',
                 'Item',
-                'Note',
                 'Qty',
                 'Weight',
+                'Unit Price',
+                'Total',
               ],
               data: report.rows
-                  .map(
-                    (row) => [
+                  .map((row) {
+                    final rule = pricingRules[row.itemName];
+                    double total = 0;
+                    String priceText = '';
+                    if (rule != null) {
+                      final factor = rule.metric == PricingMetric.pcs
+                          ? row.quantityPcs
+                          : row.weight;
+                      total = factor * rule.price;
+                      grandTotal += total;
+                      priceText =
+                          'Rs${_fmtCurrency(rule.price)} (/${rule.metric == PricingMetric.pcs ? 'Pc' : 'Kg'})';
+                    }
+                    return [
                       _date(row.date),
                       row.challanNo,
                       row.orderNo,
                       row.itemName,
-                      row.note,
                       _fmt(row.quantityPcs),
                       _fmt(row.weight),
-                    ],
-                  )
+                      priceText,
+                      'Rs${_fmtCurrency(total)}',
+                    ];
+                  })
                   .toList(growable: false),
               headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-              cellStyle: const pw.TextStyle(fontSize: 9),
+              cellStyle: const pw.TextStyle(fontSize: 8),
               cellAlignment: pw.Alignment.centerLeft,
             ),
             pw.SizedBox(height: 12),
-            pw.Text(
-              'Total Qty: ${_fmt(report.totalQuantityPcs)}    Total Weight: ${_fmt(report.totalWeight)}',
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text(
+                  'Total Qty: ${_fmt(report.totalQuantityPcs)}    Total Weight: ${_fmt(report.totalWeight)}',
+                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                ),
+                pw.Text(
+                  'Total Amount Owed: Rs${_fmtCurrency(grandTotal)}',
+                  style: pw.TextStyle(
+                    fontWeight: pw.FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -317,7 +437,7 @@ class _ClientReportGeneratorDialogState
                     width: leftWidth,
                     child: _SelectionPane(
                       controller: _searchController,
-                      groups: _buildGroups(_challans),
+                      challans: _challans,
                       selectedChallanIds: _selectedChallanIds,
                       focusedChallanId: _focusedChallanId,
                       isLoading: _isLoading,
@@ -377,33 +497,6 @@ class _ClientReportGeneratorDialogState
       ),
     );
   }
-
-  List<_ChallanGroup> _buildGroups(List<DeliveryChallan> challans) {
-    final grouped = <String, _ChallanGroup>{};
-    for (final challan in challans) {
-      final label = _groupLabel(challan);
-      final group = grouped.putIfAbsent(label, () => _ChallanGroup(label));
-      group.challans.add(challan);
-    }
-    return grouped.values.toList(growable: false)
-      ..sort((a, b) => a.label.compareTo(b.label));
-  }
-
-  String _groupLabel(DeliveryChallan challan) {
-    final client = challan.customerName.trim().isEmpty
-        ? 'Unlinked Client'
-        : challan.customerName.trim();
-    if (challan.orderNos.length > 1) {
-      return '$client / Multiple Orders: ${challan.orderNos.join(', ')}';
-    }
-    final orderNo = challan.orderNos.isNotEmpty
-        ? challan.orderNos.first
-        : challan.orderNo;
-    if (orderNo.trim().isNotEmpty) {
-      return '$client / $orderNo';
-    }
-    return '$client / Direct Print / Unlinked';
-  }
 }
 
 class _FloatingCard extends StatelessWidget {
@@ -436,7 +529,7 @@ class _FloatingCard extends StatelessWidget {
 class _SelectionPane extends StatelessWidget {
   const _SelectionPane({
     required this.controller,
-    required this.groups,
+    required this.challans,
     required this.selectedChallanIds,
     required this.focusedChallanId,
     required this.isLoading,
@@ -449,7 +542,7 @@ class _SelectionPane extends StatelessWidget {
   });
 
   final TextEditingController controller;
-  final List<_ChallanGroup> groups;
+  final List<DeliveryChallan> challans;
   final Set<String> selectedChallanIds;
   final String? focusedChallanId;
   final bool isLoading;
@@ -480,7 +573,7 @@ class _SelectionPane extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'Select issued delivery challans grouped by order.',
+                      'Select issued delivery challans.',
                       style: TextStyle(color: SoftErpTheme.textSecondary),
                     ),
                   ],
@@ -538,7 +631,7 @@ class _SelectionPane extends StatelessWidget {
         message: error!,
       );
     }
-    if (groups.isEmpty) {
+    if (challans.isEmpty) {
       return const _PaneMessage(
         icon: Icons.inbox_outlined,
         title: 'No issued delivery challans',
@@ -547,45 +640,22 @@ class _SelectionPane extends StatelessWidget {
     }
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-      itemCount: groups.length,
+      itemCount: challans.length,
       itemBuilder: (context, index) {
-        final group = groups[index];
-        return Theme(
-          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-          child: ExpansionTile(
-            initiallyExpanded: index == 0,
-            tilePadding: const EdgeInsets.symmetric(horizontal: 10),
-            childrenPadding: const EdgeInsets.only(bottom: 8),
-            title: Text(
-              group.label,
-              style: const TextStyle(fontWeight: FontWeight.w800),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            subtitle: Text(
-              '${group.challans.length} challan${group.challans.length == 1 ? '' : 's'}',
-              style: const TextStyle(color: SoftErpTheme.textSecondary),
-            ),
-            children: group.challans
-                .map(
-                  (challan) => _ChallanSelectionRow(
-                    challan: challan,
-                    selected: selectedChallanIds.contains(challan.challanNo),
-                    focused: focusedChallanId == challan.challanNo,
-                    onToggle: (selected) =>
-                        onToggle(challan.challanNo, selected),
-                    onFocus: () => onFocus(challan.challanNo),
-                  ),
-                )
-                .toList(growable: false),
-          ),
+        final challan = challans[index];
+        return _ChallanSelectionRow(
+          challan: challan,
+          selected: selectedChallanIds.contains(challan.challanNo),
+          focused: focusedChallanId == challan.challanNo,
+          onToggle: (selected) => onToggle(challan.challanNo, selected),
+          onFocus: () => onFocus(challan.challanNo),
         );
       },
     );
   }
 }
 
-class _ChallanSelectionRow extends StatelessWidget {
+class _ChallanSelectionRow extends StatefulWidget {
   const _ChallanSelectionRow({
     required this.challan,
     required this.selected,
@@ -601,74 +671,301 @@ class _ChallanSelectionRow extends StatelessWidget {
   final VoidCallback onFocus;
 
   @override
+  State<_ChallanSelectionRow> createState() => _ChallanSelectionRowState();
+}
+
+class _ChallanSelectionRowState extends State<_ChallanSelectionRow> {
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
-    final quantity = challan.items.fold<double>(
+    final quantity = widget.challan.items.fold<double>(
       0,
       (sum, item) => sum + (double.tryParse(item.quantityPcs) ?? 0),
     );
-    final weight = challan.items.fold<double>(
+    final weight = widget.challan.items.fold<double>(
       0,
       (sum, item) => sum + (double.tryParse(item.weight) ?? 0),
     );
+
+    Widget cardContent = Column(
+      children: [
+        Row(
+          children: [
+            Checkbox(
+              value: widget.selected,
+              onChanged: (value) => widget.onToggle(value == true),
+            ),
+            Expanded(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () {
+                  widget.onFocus();
+                  setState(() {
+                    _expanded = !_expanded;
+                  });
+                },
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    4,
+                    10,
+                    widget.challan.maintainStocks ? 12 : 24,
+                    10,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.challan.challanNo,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              widget.challan.customerName,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12,
+                                color: SoftErpTheme.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _date(widget.challan.date),
+                              style: const TextStyle(
+                                color: SoftErpTheme.textSecondary,
+                                fontSize: 11,
+                              ),
+                            ),
+                            if (widget.challan.usedInReport)
+                              Container(
+                                margin: const EdgeInsets.only(top: 4),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: SoftErpTheme.border,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  'USED IN REPORT',
+                                  style: TextStyle(
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w800,
+                                    color: SoftErpTheme.textSecondary,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      Padding(
+                        padding: EdgeInsets.only(
+                          top: widget.challan.maintainStocks ? 0 : 12,
+                        ),
+                        child: Text(
+                          'Qty ${_fmt(quantity)}\nWt ${_fmt(weight)}',
+                          textAlign: TextAlign.end,
+                          style: const TextStyle(
+                            color: SoftErpTheme.textSecondary,
+                            fontSize: 12,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (_expanded) ...[
+          if (widget.challan.items.isEmpty)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(50, 0, 14, 12),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'No line items in this challan.',
+                  style: TextStyle(
+                    color: SoftErpTheme.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.fromLTRB(50, 0, 14, 12),
+              child: Column(
+                children: widget.challan.items
+                    .map((item) => _OrderItemPreviewRow(item: item))
+                    .toList(growable: false),
+              ),
+            ),
+        ],
+      ],
+    );
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       decoration: BoxDecoration(
-        color: focused
+        color: widget.focused
             ? SoftErpTheme.accent.withValues(alpha: 0.08)
             : SoftErpTheme.cardSurfaceAlt,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: focused ? SoftErpTheme.accent : SoftErpTheme.border,
+          color: widget.focused ? SoftErpTheme.accent : SoftErpTheme.border,
         ),
       ),
-      child: Row(
-        children: [
-          Checkbox(
-            value: selected,
-            onChanged: (value) => onToggle(value == true),
-          ),
-          Expanded(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: onFocus,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(4, 10, 12, 10),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            challan.challanNo,
-                            style: const TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            _date(challan.date),
-                            style: const TextStyle(
-                              color: SoftErpTheme.textSecondary,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(13),
+        child: Stack(
+          children: [
+            cardContent,
+            if (!widget.challan.maintainStocks)
+              Positioned(
+                top: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: const BoxDecoration(
+                    color: SoftErpTheme.dangerBg,
+                    borderRadius: BorderRadius.only(
+                      bottomLeft: Radius.circular(10),
                     ),
-                    Text(
-                      'Qty ${_fmt(quantity)}\nWt ${_fmt(weight)}',
-                      textAlign: TextAlign.end,
-                      style: const TextStyle(
-                        color: SoftErpTheme.textSecondary,
-                        fontSize: 12,
-                        height: 1.35,
-                      ),
+                  ),
+                  child: const Text(
+                    'STOCK: OFF',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w900,
+                      color: SoftErpTheme.dangerText,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OrderItemPreviewRow extends StatelessWidget {
+  const _OrderItemPreviewRow({required this.item});
+
+  final DeliveryChallanItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: SoftErpTheme.cardSurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.inventory_2_outlined,
+            size: 16,
+            color: SoftErpTheme.textSecondary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.particulars.trim().isEmpty
+                      ? 'Unnamed item'
+                      : item.particulars.trim(),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                  ),
+                ),
+                if (item.note.trim().isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    item.note.trim(),
+                    style: const TextStyle(
+                      color: SoftErpTheme.textSecondary,
+                      fontSize: 11,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    _TinyInfoPill(
+                      label: 'HSN',
+                      value: item.hsnCode.trim().isEmpty
+                          ? '-'
+                          : item.hsnCode.trim(),
+                    ),
+                    _TinyInfoPill(
+                      label: 'Qty',
+                      value: item.quantityPcs.trim().isEmpty
+                          ? '0'
+                          : item.quantityPcs.trim(),
+                    ),
+                    _TinyInfoPill(
+                      label: 'Wt',
+                      value: item.weight.trim().isEmpty
+                          ? '0'
+                          : item.weight.trim(),
                     ),
                   ],
                 ),
-              ),
+              ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _TinyInfoPill extends StatelessWidget {
+  const _TinyInfoPill({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: SoftErpTheme.cardSurfaceAlt,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Text(
+        '$label $value',
+        style: const TextStyle(
+          color: SoftErpTheme.textSecondary,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -842,13 +1139,6 @@ class _PaneMessage extends StatelessWidget {
   }
 }
 
-class _ChallanGroup {
-  _ChallanGroup(this.label);
-
-  final String label;
-  final List<DeliveryChallan> challans = <DeliveryChallan>[];
-}
-
 String _date(DateTime? value) {
   if (value == null) {
     return '-';
@@ -869,5 +1159,9 @@ String _fmt(double value) {
   if (value == value.roundToDouble()) {
     return value.toStringAsFixed(0);
   }
+  return value.toStringAsFixed(2);
+}
+
+String _fmtCurrency(double value) {
   return value.toStringAsFixed(2);
 }

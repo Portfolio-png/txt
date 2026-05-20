@@ -560,7 +560,35 @@ class _ChallanTable extends StatelessWidget {
                 (challan) => DataRow(
                   cells: [
                     DataCell(_TypePill(type: challan.type)),
-                    DataCell(Text(challan.challanNo)),
+                    DataCell(
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(challan.challanNo),
+                          if (!challan.maintainStocks) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: SoftErpTheme.border,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                'Stock: Off',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: SoftErpTheme.textSecondary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
                     DataCell(Text(_date(challan.date))),
                     DataCell(
                       Text(
@@ -766,6 +794,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
   int? _selectedVendorId;
   String? _validationError;
   bool _isOrdersPanelOpen = false;
+  bool _orderSelectionTouched = false;
   bool _ordersCommandRegistered = false;
   ChallanEditorCommandProvider? _ordersCommandProvider;
 
@@ -780,6 +809,16 @@ class _ChallanEditorState extends State<_ChallanEditor> {
       _selectedOrders.isEmpty ? null : _selectedOrders.first;
   List<_OrderItemOption> get _selectedOrderOptions =>
       _selectedOrders.map(_OrderItemOption.fromOrder).toList(growable: false);
+  List<int> get _sourceOrderIds {
+    final source = _source;
+    if (source == null) {
+      return const <int>[];
+    }
+    if (source.orderIds.isNotEmpty) {
+      return source.orderIds;
+    }
+    return [if (source.orderId != null) source.orderId!];
+  }
 
   List<OrderEntry> _findOrders(Iterable<int> orderIds) {
     final ids = orderIds.toSet();
@@ -805,12 +844,34 @@ class _ChallanEditorState extends State<_ChallanEditor> {
   void _applySelectedOrderSnapshots() {
     final order = _primarySelectedOrder;
     if (order == null) {
-      _customerController.clear();
-      _gstinController.clear();
+      if (_selectedType == ChallanType.delivery && !_orderSelectionTouched) {
+        _customerController.text = _source?.customerName ?? '';
+        _gstinController.text = _source?.customerGstin ?? '';
+      } else {
+        _customerController.clear();
+        _gstinController.clear();
+      }
       return;
     }
     _customerController.text = order.clientName;
     _gstinController.text = _gstinForOrder(order);
+  }
+
+  void _hydrateSelectedOrdersFromSourceIfAvailable() {
+    if (!mounted ||
+        _selectedType != ChallanType.delivery ||
+        _orderSelectionTouched ||
+        _selectedOrders.isNotEmpty) {
+      return;
+    }
+    final hydratedOrders = _findOrders(_sourceOrderIds);
+    if (hydratedOrders.isEmpty) {
+      return;
+    }
+    setState(() {
+      _selectedOrders = hydratedOrders;
+      _applySelectedOrderSnapshots();
+    });
   }
 
   bool _isOrderEligible(OrderEntry order) {
@@ -975,6 +1036,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
       return;
     }
     setState(() {
+      _orderSelectionTouched = true;
       _selectedOrders = [..._selectedOrders, ...items];
       final fetchedItems = items
           .map(
@@ -997,7 +1059,11 @@ class _ChallanEditorState extends State<_ChallanEditor> {
   Widget build(BuildContext context) {
     final provider = context.watch<DeliveryChallanProvider>();
     context.watch<PreferencesProvider>();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _syncOrdersCommand());
+    context.watch<OrdersProvider>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncOrdersCommand();
+      _hydrateSelectedOrdersFromSourceIfAvailable();
+    });
     final editorTitle = _editingExisting
         ? (_isReception ? 'Edit Reception Challan' : 'Edit Delivery Challan')
         : (_isReception
@@ -1498,10 +1564,12 @@ class _ChallanEditorState extends State<_ChallanEditor> {
                 _validationError = null;
                 _items = [_ItemDraft.blank(1)];
                 if (next == ChallanType.delivery) {
+                  _orderSelectionTouched = true;
                   _selectedVendorId = null;
                   _sourceReferenceController.text = '';
                   _applySelectedOrderSnapshots();
                 } else {
+                  _orderSelectionTouched = true;
                   _selectedOrders = <OrderEntry>[];
                   _isOrdersPanelOpen = false;
                   _customerController.clear();
@@ -1550,6 +1618,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
                         ? null
                         : () {
                             setState(() {
+                              _orderSelectionTouched = true;
                               _selectedOrders = _selectedOrders
                                   .where((selected) => selected.id != order.id)
                                   .toList(growable: false);
@@ -1611,8 +1680,17 @@ class _ChallanEditorState extends State<_ChallanEditor> {
 
   DeliveryChallanDraftInput _input() {
     final maintainStocks = _maintainStocks;
+    final selectedOrderIds = _selectedOrders
+        .map((order) => order.id)
+        .toList(growable: false);
+    final canFallbackToSourceOrders =
+        _source != null && !_orderSelectionTouched && selectedOrderIds.isEmpty;
     final orderIds = _selectedType == ChallanType.delivery && maintainStocks
-        ? _selectedOrders.map((order) => order.id).toList(growable: false)
+        ? (selectedOrderIds.isNotEmpty
+              ? selectedOrderIds
+              : canFallbackToSourceOrders
+              ? _sourceOrderIds
+              : const <int>[])
         : const <int>[];
     return DeliveryChallanDraftInput(
       type: _selectedType,
@@ -1662,6 +1740,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     setState(() {
       _validationError = null;
     });
+    final input = _input();
     if (_maintainStocks &&
         _isReception &&
         (_selectedVendorId ?? _source?.vendorId ?? 0) <= 0) {
@@ -1670,15 +1749,15 @@ class _ChallanEditorState extends State<_ChallanEditor> {
       });
       return;
     }
-    if (_maintainStocks && !_isReception && _selectedOrders.isEmpty) {
+    if (_maintainStocks && !_isReception && input.orderIds.isEmpty) {
       setState(() {
         _validationError = 'Select at least one order before saving challan.';
       });
       return;
     }
     final saved = _editingExisting
-        ? await provider.updateChallan(widget.challan!.id, _input())
-        : await provider.createChallan(_input());
+        ? await provider.updateChallan(widget.challan!.id, input)
+        : await provider.createChallan(input);
     if (saved != null && mounted) {
       Navigator.of(context).pop();
     }

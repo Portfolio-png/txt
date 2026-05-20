@@ -47,6 +47,8 @@ abstract class ChallanRepository {
 
   Future<InvoiceHeader> getInvoice(int id);
 
+  Future<InvoiceHeader> updateInvoiceStatus(int id, String status);
+
   Future<InvoiceHeader> createInvoice(InvoiceDraftInput input);
 
   Future<List<ConversionOverride>> getConversionOverrides();

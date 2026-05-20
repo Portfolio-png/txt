@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme/soft_erp_theme.dart';
 import '../../core/widgets/soft_primitives.dart';
 import '../reports/views/challan_invoice_reconciliation_screen.dart';
+import '../dashboard/views/dashboard_screen.dart';
 import '../../features/groups/presentation/screens/groups_screen.dart';
 import '../../features/auth/presentation/screens/user_management_screen.dart';
 import '../../features/delivery_challans/domain/delivery_challan.dart';
@@ -520,12 +521,7 @@ class _ShellContentSwitcher extends StatelessWidget {
               'configurator_groups' => const GroupsScreen(),
               'configurator_units' => const UnitsScreen(),
               'user_management' => const UserManagementScreen(),
-              _ => const _ModulePlaceholder(
-                title: 'Dashboard',
-                description:
-                    'The shell is ready. Inventory and Production are live, and dashboard widgets can be added into this slot next.',
-                icon: Icons.dashboard_customize_outlined,
-              ),
+              _ => const DashboardScreen(),
             },
           ),
         );

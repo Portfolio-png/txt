@@ -2387,6 +2387,7 @@ async function initDb() {
       template_snapshot_json TEXT,
       notes TEXT DEFAULT '',
       maintain_stocks INTEGER NOT NULL DEFAULT 1,
+      used_in_report INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'draft',
       created_by INTEGER REFERENCES users(id),
       updated_by INTEGER REFERENCES users(id),
@@ -2806,6 +2807,7 @@ async function initDb() {
   await ensureColumnExists('delivery_challans', 'source_reference', "TEXT DEFAULT ''");
   await ensureColumnExists('delivery_challans', 'template_snapshot_json', 'TEXT');
   await ensureColumnExists('delivery_challans', 'maintain_stocks', 'INTEGER NOT NULL DEFAULT 1');
+  await ensureColumnExists('delivery_challans', 'used_in_report', 'INTEGER NOT NULL DEFAULT 0');
   await ensureColumnExists('delivery_challan_items', 'order_item_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'production_run_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'item_id', 'INTEGER');
@@ -4901,6 +4903,8 @@ async function rowToDeliveryChallanDto(row, { includeItems = true } = {}) {
     company_profile_snapshot: parseJsonObject(row.company_profile_snapshot, null),
     notes: row.notes || '',
     maintain_stocks: Number(row.maintain_stocks ?? 1) !== 0,
+    used_in_report: Number(row.used_in_report ?? 0) !== 0,
+    usedInReport: Number(row.used_in_report ?? 0) !== 0,
     status: row.status || 'draft',
     created_by: row.created_by || null,
     updated_by: row.updated_by || null,
@@ -8069,10 +8073,21 @@ async function buildClientStatementReport(input = {}) {
   );
   summary.totalQuantityPcs = roundMetric(summary.totalQuantityPcs);
   summary.totalWeight = roundMetric(summary.totalWeight);
+  const generatedAt = new Date().toISOString();
+  const updatePlaceholders = requestedChallanNos.map(() => '?').join(', ');
+  await run(
+    `
+    UPDATE delivery_challans
+    SET used_in_report = 1, updated_at = ?
+    WHERE challan_no IN (${updatePlaceholders})
+    `,
+    [generatedAt, ...requestedChallanNos],
+  );
+
   return {
     rows: reportRows,
     summary,
-    generatedAt: new Date().toISOString(),
+    generatedAt,
   };
 }
 
@@ -15002,6 +15017,55 @@ app.get('/api/invoices/:id', requirePermission('config.read'), async (req, res) 
   }
 });
 
+app.patch('/api/invoices/:id/status', requirePermission('config.write'), async (req, res) => {
+  try {
+    const { status } = req.body || {};
+    if (!status) {
+      return res.status(400).json({
+        success: false,
+        message: 'Status is required.',
+        error: 'Status is required.'
+      });
+    }
+    const normalizedStatus = String(status).trim().toLowerCase();
+    if (!['issued', 'paid'].includes(normalizedStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invoice status must be 'issued' or 'paid'.",
+        error: "Invoice status must be 'issued' or 'paid'."
+      });
+    }
+    const invoiceId = Number(req.params.id);
+    if (!Number.isFinite(invoiceId) || invoiceId <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid invoice id is required.',
+        error: 'Valid invoice id is required.'
+      });
+    }
+    await run(
+      'UPDATE invoice_headers SET status = ?, updated_at = ? WHERE id = ?',
+      [normalizedStatus, new Date().toISOString(), invoiceId]
+    );
+    const updatedInvoice = await getInvoiceDtoById(invoiceId);
+    if (!updatedInvoice) {
+      return res.status(404).json({
+        success: false,
+        message: 'Invoice not found.',
+        error: 'Invoice not found.'
+      });
+    }
+    res.json({ success: true, data: updatedInvoice, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      data: null,
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
 app.post('/api/invoices', requirePermission('config.write'), async (req, res) => {
   try {
     const invoice = await createInvoice(req.body || {});
@@ -16721,6 +16785,10 @@ app.use((error, req, res, _next) => {
 async function clearAllData() {
   await run('BEGIN TRANSACTION');
   try {
+    await run('DELETE FROM invoice_lines');
+    await run('DELETE FROM invoice_headers');
+    await run('DELETE FROM reconciliation_waste_audit');
+    await run('DELETE FROM reconciliation_conversion_overrides');
     await run('DELETE FROM delivery_challan_orders');
     await run('DELETE FROM delivery_challan_activity_log');
     await run('DELETE FROM delivery_challan_items');
@@ -16742,10 +16810,6 @@ async function clearAllData() {
     await run('DELETE FROM production_runs');
     await run('DELETE FROM inventory_set_lines');
     await run('DELETE FROM inventory_sets');
-    await run('DELETE FROM delivery_challan_orders');
-    await run('DELETE FROM delivery_challan_activity_log');
-    await run('DELETE FROM delivery_challan_items');
-    await run('DELETE FROM delivery_challans');
     await run('DELETE FROM orders');
     await run('DELETE FROM item_variation_values');
     await run('DELETE FROM item_variations');

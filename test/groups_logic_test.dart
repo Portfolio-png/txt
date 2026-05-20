@@ -13,7 +13,7 @@ void main() {
 
     await repository.init();
     final seeded = await repository.getGroups();
-    expect(seeded.any((group) => group.name == 'Paper'), isTrue);
+    expect(seeded.any((group) => group.name == 'Chemicals'), isTrue);
     expect(seeded.any((group) => group.parentGroupId != null), isTrue);
 
     final created = await repository.createGroup(
@@ -68,8 +68,8 @@ void main() {
       expect(provider.groups.first.isArchived, isFalse);
       expect(provider.groups.last.isArchived, isTrue);
 
-      provider.setSearchQuery('kraft');
-      expect(provider.filteredGroups.map((group) => group.name), ['Kraft']);
+      provider.setSearchQuery('solvents');
+      expect(provider.filteredGroups.map((group) => group.name), ['Solvents']);
 
       provider.setSearchQuery('');
       provider.setStatusFilter(GroupStatusFilter.archived);
@@ -78,10 +78,10 @@ void main() {
       ]);
 
       final duplicate = provider.checkDuplicate(
-        name: 'Kraft',
-        parentGroupId: 1,
+        name: 'Chemicals',
+        parentGroupId: null,
       );
-      final allowed = provider.checkDuplicate(name: 'Kraft', parentGroupId: 3);
+      final allowed = provider.checkDuplicate(name: 'Chemicals', parentGroupId: 3);
       expect(duplicate.blockingDuplicate, isTrue);
       expect(allowed.blockingDuplicate, isFalse);
 

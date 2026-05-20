@@ -277,6 +277,7 @@ class DeliveryChallan {
     required this.companyProfileSnapshot,
     required this.notes,
     required this.maintainStocks,
+    this.usedInReport = false,
     required this.status,
     required this.items,
     required this.itemsCount,
@@ -303,6 +304,7 @@ class DeliveryChallan {
   final CompanyProfile? companyProfileSnapshot;
   final String notes;
   final bool maintainStocks;
+  final bool usedInReport;
   final DeliveryChallanStatus status;
   final List<DeliveryChallanItem> items;
   final int itemsCount;
@@ -325,6 +327,7 @@ class DeliveryChallan {
         json['companyProfileSnapshot'] ?? json['company_profile_snapshot'];
     final maintainStocksValue =
         json['maintainStocks'] ?? json['maintain_stocks'];
+    final usedInReportValue = json['usedInReport'] ?? json['used_in_report'];
     return DeliveryChallan(
       id: json['id'] as int? ?? 0,
       type: challanTypeFromName(
@@ -379,6 +382,14 @@ class DeliveryChallan {
       maintainStocks: maintainStocksValue is bool
           ? maintainStocksValue
           : (maintainStocksValue as int? ?? 1) != 0,
+      usedInReport: usedInReportValue is bool
+          ? usedInReportValue
+          : usedInReportValue is num
+          ? usedInReportValue != 0
+          : usedInReportValue is String
+          ? usedInReportValue == '1' ||
+                usedInReportValue.toLowerCase() == 'true'
+          : false,
       status: deliveryChallanStatusFromName(json['status'] as String? ?? ''),
       items: items,
       itemsCount:
@@ -390,7 +401,10 @@ class DeliveryChallan {
     );
   }
 
-  DeliveryChallan copyWith({List<DeliveryChallanItem>? items}) {
+  DeliveryChallan copyWith({
+    List<DeliveryChallanItem>? items,
+    bool? usedInReport,
+  }) {
     return DeliveryChallan(
       id: id,
       type: type,
@@ -411,6 +425,7 @@ class DeliveryChallan {
       companyProfileSnapshot: companyProfileSnapshot,
       notes: notes,
       maintainStocks: maintainStocks,
+      usedInReport: usedInReport ?? this.usedInReport,
       status: status,
       items: items ?? this.items,
       itemsCount: items?.length ?? itemsCount,

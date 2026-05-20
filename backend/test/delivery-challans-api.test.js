@@ -70,7 +70,7 @@ test('delivery challans create issue and preserve company profile snapshot', asy
     assert.equal(Number(aggregated.total_qty || 0), 10);
     assert.equal(Number(aggregated.total_weight || 0), 2.5);
     const savedLine = await backend.get(
-      'SELECT note FROM delivery_challan_items WHERE challan_id = ? LIMIT 1',
+      'SELECT id, note FROM delivery_challan_items WHERE challan_id = ? LIMIT 1',
       [created.id],
     );
     assert.equal(savedLine.note, 'Dispatch after QC clearance');
@@ -236,6 +236,38 @@ test('delivery challans create issue and preserve company profile snapshot', asy
         ),
       /Invalid challan quantity/,
     );
+
+    await backend.createInvoice({
+      clientId: order.client_id,
+      clientName: order.client_name,
+      gstin: '',
+      invoiceDate: '2026-05-05',
+      lines: [
+        {
+          orderId: order.id,
+          challanId: created.id,
+          challanItemId: savedLine.id,
+          itemId: order.item_id,
+          variationLeafNodeId: order.variation_leaf_node_id || 0,
+          itemName: order.item_name,
+          hsnCode: '',
+          quantity: 10,
+          unitPrice: 12,
+          cgstRate: 9,
+          sgstRate: 9,
+        },
+      ],
+    });
+    await backend.buildReconciliationReport();
+    await backend.resetAndSeedDemoData();
+    const invoiceRowsAfterReset = await backend.get(
+      'SELECT COUNT(*) AS count FROM invoice_lines',
+    );
+    const wasteRowsAfterReset = await backend.get(
+      'SELECT COUNT(*) AS count FROM reconciliation_waste_audit',
+    );
+    assert.equal(Number(invoiceRowsAfterReset.count || 0), 0);
+    assert.equal(Number(wasteRowsAfterReset.count || 0), 0);
   } finally {
     await backend.closeDb();
   }
