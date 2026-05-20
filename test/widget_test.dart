@@ -3752,9 +3752,8 @@ void main() {
       await tester.tap(find.text('Issue Delivery'));
       await tester.pumpAndSettle();
 
-      expect(challanRepository.updateChallanCalls, 1);
+      expect(challanRepository.updateChallanCalls, 0);
       expect(challanRepository.issueChallanCalls, 1);
-      expect(challanRepository.lastUpdatedChallanInput?.orderIds, <int>[501]);
       expect(
         find.text('Select at least one order before saving challan.'),
         findsNothing,

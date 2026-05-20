@@ -1735,6 +1735,73 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     );
   }
 
+  bool _sameOrderIds(List<int> left, List<int> right) {
+    final leftSorted = left.toList(growable: false)..sort();
+    final rightSorted = right.toList(growable: false)..sort();
+    if (leftSorted.length != rightSorted.length) {
+      return false;
+    }
+    for (var index = 0; index < leftSorted.length; index += 1) {
+      if (leftSorted[index] != rightSorted[index]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool _sameNullableInt(int? left, int? right) => (left ?? 0) == (right ?? 0);
+
+  bool _sameText(String left, String right) => left.trim() == right.trim();
+
+  bool _sameItem(DeliveryChallanItem left, DeliveryChallanItem right) {
+    return _sameNullableInt(left.orderItemId, right.orderItemId) &&
+        _sameNullableInt(left.productionRunId, right.productionRunId) &&
+        _sameNullableInt(left.itemId, right.itemId) &&
+        left.variationLeafNodeId == right.variationLeafNodeId &&
+        _sameText(left.particulars, right.particulars) &&
+        _sameText(left.hsnCode, right.hsnCode) &&
+        _sameText(left.variationPathLabel, right.variationPathLabel) &&
+        _sameText(left.note, right.note) &&
+        _sameText(left.quantityPcs, right.quantityPcs) &&
+        _sameText(left.weight, right.weight);
+  }
+
+  bool _sameItems(
+    List<DeliveryChallanItem> left,
+    List<DeliveryChallanItem> right,
+  ) {
+    if (left.length != right.length) {
+      return false;
+    }
+    for (var index = 0; index < left.length; index += 1) {
+      if (!_sameItem(left[index], right[index])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool _matchesSourceDraft(DeliveryChallanDraftInput input) {
+    final source = widget.challan;
+    if (source == null) {
+      return false;
+    }
+    return input.type == source.type &&
+        _sameText(input.challanNo, source.challanNo) &&
+        _date(input.date) == _date(source.date) &&
+        _sameText(input.location, source.location) &&
+        _sameText(input.sourceReference, source.sourceReference) &&
+        _sameText(input.notes, source.notes) &&
+        input.maintainStocks == source.maintainStocks &&
+        _sameText(input.customerName, source.customerName) &&
+        _sameText(input.customerGstin, source.customerGstin) &&
+        _sameText(input.vendorName, source.vendorName) &&
+        _sameText(input.vendorGstin, source.vendorGstin) &&
+        _sameNullableInt(input.vendorId, source.vendorId) &&
+        _sameOrderIds(input.orderIds, _sourceOrderIds) &&
+        _sameItems(input.items, source.items);
+  }
+
   Future<void> _save() async {
     final provider = context.read<DeliveryChallanProvider>();
     setState(() {
@@ -1755,7 +1822,9 @@ class _ChallanEditorState extends State<_ChallanEditor> {
       });
       return;
     }
-    final saved = _editingExisting
+    final saved = _editingExisting && _matchesSourceDraft(input)
+        ? widget.challan
+        : _editingExisting
         ? await provider.updateChallan(widget.challan!.id, input)
         : await provider.createChallan(input);
     if (saved != null && mounted) {
@@ -1838,7 +1907,9 @@ class _ChallanEditorState extends State<_ChallanEditor> {
       _validationError = null;
     });
     final inventoryProvider = context.read<InventoryProvider>();
-    final saved = _editingExisting
+    final saved = _editingExisting && _matchesSourceDraft(input)
+        ? widget.challan
+        : _editingExisting
         ? await provider.updateChallan(widget.challan!.id, input)
         : await provider.createChallan(input);
     if (saved == null) {
