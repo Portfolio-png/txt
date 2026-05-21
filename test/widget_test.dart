@@ -49,6 +49,7 @@ import 'package:paper/features/vendors/domain/vendor_definition.dart';
 import 'package:paper/features/vendors/domain/vendor_inputs.dart';
 import 'package:paper/features/vendors/presentation/providers/vendors_provider.dart';
 import 'package:paper/features/vendors/presentation/screens/vendors_screen.dart';
+import 'package:paper/app/preferences/preferences_provider.dart';
 import 'package:paper/main.dart';
 
 void _noop() {}
@@ -2804,6 +2805,11 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
   }
 
   @override
+  Future<Uint8List> fetchInvoicePdf(int invoiceId) async {
+    return Uint8List(0);
+  }
+
+  @override
   Future<List<ConversionOverride>> getConversionOverrides() async =>
       const <ConversionOverride>[];
 
@@ -2830,9 +2836,10 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
       const <WasteAuditRow>[];
 
   @override
-  Future<ClientStatementReport> generateClientStatementReport(
-    List<String> challanNos,
-  ) async {
+  Future<ClientStatementReport> generateClientStatementReport({
+    required List<String> challanNos,
+    required List<String> receptionChallanNos,
+  }) async {
     generateClientStatementReportCalls += 1;
     lastClientStatementChallanNos = List<String>.from(challanNos);
     final selected = _challans
@@ -2869,6 +2876,7 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
     }
     return ClientStatementReport(
       rows: rows,
+      receptionGroups: const <ClientStatementGroup>[],
       challanCount: selected.length,
       totalQuantityPcs: rows.fold<double>(
         0,
@@ -3470,6 +3478,50 @@ void main() {
       createdAt: DateTime(2026, 5, 19),
       updatedAt: DateTime(2026, 5, 19),
       usedInReport: false,
+    );
+  }
+
+  DeliveryChallan issuedDeliveryChallanForOrderTimeline() {
+    return DeliveryChallan(
+      id: 5011,
+      type: ChallanType.delivery,
+      orderId: 501,
+      orderIds: const <int>[501],
+      clientId: 41,
+      orderNo: 'ORD-FALLBACK',
+      orderNos: const <String>['ORD-FALLBACK'],
+      challanNo: 'DC-ORDER-TL',
+      date: DateTime(2026, 5, 20),
+      location: 'Dispatch Bay',
+      customerName: 'Fallback Client',
+      customerGstin: '27AAAAA0000A1Z5',
+      vendorId: null,
+      vendorName: '',
+      vendorGstin: '',
+      sourceReference: '',
+      companyProfileSnapshot: null,
+      notes: '',
+      maintainStocks: true,
+      status: DeliveryChallanStatus.issued,
+      items: const <DeliveryChallanItem>[
+        DeliveryChallanItem(
+          id: 9101,
+          orderItemId: 501,
+          productionRunId: null,
+          itemId: 91,
+          variationLeafNodeId: 0,
+          lineNo: 1,
+          particulars: 'Fallback Item',
+          hsnCode: '4805',
+          variationPathLabel: 'Base item',
+          note: '',
+          quantityPcs: '12',
+          weight: '3.5',
+        ),
+      ],
+      itemsCount: 1,
+      createdAt: DateTime(2026, 5, 20, 9, 30),
+      updatedAt: DateTime(2026, 5, 20, 10, 15),
     );
   }
 
@@ -4320,6 +4372,43 @@ void main() {
     expect(find.text('Apply Path'), findsNothing);
     expect(find.text('Close'), findsOneWidget);
   });
+
+  testWidgets(
+    'simplified delivery challan creation layout based on maintainStocks',
+    (tester) async {
+      await pumpApp(tester, viewSize: const Size(1440, 900));
+      await openChallansScreen(tester);
+
+      // 1. When maintainStocks is true (default)
+      await tester.tap(find.text('Create Delivery').first);
+      await tester.pumpAndSettle();
+
+      // The 'Location' field should be present, and 'Customer name / M/s' field should NOT be present
+      expect(find.text('Location'), findsOneWidget);
+      expect(find.text('Customer name / M/s'), findsNothing);
+
+      // Close the editor
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      // 2. Set maintainStocks to false
+      final context = tester.element(find.byType(Scaffold).first);
+      context.read<PreferencesProvider>().toggleMaintainStocks(false);
+      await tester.pumpAndSettle();
+
+      // Open delivery editor again
+      await tester.tap(find.text('Create Delivery').first, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      // The 'Location' field should NOT be present, and 'Customer name / M/s' field should be present
+      expect(find.text('Location'), findsNothing);
+      expect(find.text('Customer name / M/s'), findsOneWidget);
+
+      // Close the editor
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+    },
+  );
 
   test(
     'navigation provider maps the primary tabs to the requested indices',
@@ -5290,6 +5379,40 @@ void main() {
 
     expect(find.text('Completed'), findsWidgets);
   });
+
+  testWidgets(
+    'order details timeline shows issued delivery challan quantities',
+    (tester) async {
+      final seededOrder = orderForChallanFallback();
+      await pumpApp(
+        tester,
+        viewSize: const Size(1440, 900),
+        orderRepository: FakeOrderRepository(
+          seedOrders: <OrderEntry>[seededOrder],
+        ),
+        deliveryChallanRepository: FakeDeliveryChallanRepository(
+          seedChallans: <DeliveryChallan>[
+            issuedDeliveryChallanForOrderTimeline(),
+          ],
+        ),
+      );
+      await openOrdersScreen(tester);
+
+      await tester.tap(find.text('ORD-FALLBACK').last, warnIfMissed: false);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Timeline').last);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Delivery challan issued · DC-ORDER-TL'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Delivered / issued: 12 pcs · 3.5 weight · 1 line'),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('orders can be saved as draft from create dialog', (
     tester,

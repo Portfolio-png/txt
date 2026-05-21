@@ -499,6 +499,23 @@ class ApiChallanRepository implements ChallanRepository {
   }
 
   @override
+  Future<Uint8List> fetchInvoicePdf(int invoiceId) async {
+    if (useMockResponses) {
+      return Uint8List(0);
+    }
+    final uri = Uri.parse('$baseUrl/api/invoices/$invoiceId/pdf');
+    final response = await _sendRequest(method: 'GET', uri: uri);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw DeliveryChallanApiException(
+        'Failed to fetch invoice PDF (${response.statusCode}).',
+        debugMessage:
+            'PDF fetch failed for invoice $invoiceId. Status: ${response.statusCode}. URI: $uri',
+      );
+    }
+    return response.bodyBytes;
+  }
+
+  @override
   Future<List<ConversionOverride>> getConversionOverrides() async {
     if (useMockResponses) {
       return List<ConversionOverride>.unmodifiable(_mockConversionOverrides);
@@ -575,10 +592,16 @@ class ApiChallanRepository implements ChallanRepository {
   }
 
   @override
-  Future<ClientStatementReport> generateClientStatementReport(
-    List<String> challanNos,
-  ) async {
+  Future<ClientStatementReport> generateClientStatementReport({
+    required List<String> challanNos,
+    required List<String> receptionChallanNos,
+  }) async {
     final normalized = challanNos
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    final normalizedReception = receptionChallanNos
         .map((value) => value.trim())
         .where((value) => value.isNotEmpty)
         .toSet()
@@ -589,6 +612,14 @@ class ApiChallanRepository implements ChallanRepository {
             (challan) =>
                 normalized.contains(challan.challanNo) &&
                 challan.type == ChallanType.delivery &&
+                challan.status == DeliveryChallanStatus.issued,
+          )
+          .toList(growable: false);
+      final selectedReceptions = _mockChallans
+          .where(
+            (challan) =>
+                normalizedReception.contains(challan.challanNo) &&
+                challan.type == ChallanType.reception &&
                 challan.status == DeliveryChallanStatus.issued,
           )
           .toList(growable: false);
@@ -608,7 +639,7 @@ class ApiChallanRepository implements ChallanRepository {
             ),
           )
           .toList(growable: false);
-      for (final challan in selected) {
+      for (final challan in [...selected, ...selectedReceptions]) {
         final index = _mockChallans.indexWhere(
           (candidate) => candidate.challanNo == challan.challanNo,
         );
@@ -618,8 +649,29 @@ class ApiChallanRepository implements ChallanRepository {
           );
         }
       }
+      final groups = selectedReceptions.map((rc) {
+        final rcWeight = rc.items.fold<double>(0.0, (sum, i) => sum + (double.tryParse(i.weight) ?? 0.0));
+        final deliveries = selected.expand((dc) => dc.items.map((i) => ClientStatementGroupDeliveryItem(
+          date: dc.date,
+          challanNo: dc.challanNo,
+          particulars: i.particulars,
+          note: i.note,
+          weight: double.tryParse(i.weight) ?? 0.0,
+          quantityPcs: double.tryParse(i.quantityPcs) ?? 0.0,
+        ))).toList(growable: false);
+        return ClientStatementGroup(
+          receptionChallanNo: rc.challanNo,
+          receptionDate: rc.date,
+          receptionSize: rc.items.isNotEmpty ? rc.items.first.particulars : '',
+          receptionWeight: rcWeight,
+          lessWeight: rcWeight * 0.05,
+          totalWeight: rcWeight,
+          deliveries: deliveries,
+        );
+      }).toList(growable: false);
       return ClientStatementReport(
         rows: rows,
+        receptionGroups: groups,
         challanCount: selected.length,
         totalQuantityPcs: rows.fold<double>(
           0,
@@ -634,7 +686,10 @@ class ApiChallanRepository implements ChallanRepository {
       method: 'POST',
       uri: uri,
       headers: const {'Content-Type': 'application/json'},
-      body: jsonEncode({'challanIds': normalized}),
+      body: jsonEncode({
+        'challanIds': normalized,
+        'receptionChallanIds': normalizedReception,
+      }),
     );
     final payload = _decodeApiResponse(
       method: 'POST',

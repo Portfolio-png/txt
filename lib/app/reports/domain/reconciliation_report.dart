@@ -54,6 +54,7 @@ class ReconciliationReportSnapshot {
 class ClientStatementReport {
   const ClientStatementReport({
     required this.rows,
+    required this.receptionGroups,
     required this.challanCount,
     required this.totalQuantityPcs,
     required this.totalWeight,
@@ -61,6 +62,7 @@ class ClientStatementReport {
   });
 
   final List<ClientStatementReportRow> rows;
+  final List<ClientStatementGroup> receptionGroups;
   final int challanCount;
   final double totalQuantityPcs;
   final double totalWeight;
@@ -69,6 +71,7 @@ class ClientStatementReport {
   factory ClientStatementReport.empty() {
     return const ClientStatementReport(
       rows: <ClientStatementReportRow>[],
+      receptionGroups: <ClientStatementGroup>[],
       challanCount: 0,
       totalQuantityPcs: 0,
       totalWeight: 0,
@@ -84,12 +87,78 @@ class ClientStatementReport {
       rows: _asMapList(
         json['rows'],
       ).map(ClientStatementReportRow.fromJson).toList(growable: false),
+      receptionGroups: _asMapList(
+        json['receptionGroups'] ?? json['reception_groups'],
+      ).map(ClientStatementGroup.fromJson).toList(growable: false),
       challanCount: _asInt(summary['challanCount'] ?? summary['challan_count']),
       totalQuantityPcs: _asDouble(
         summary['totalQuantityPcs'] ?? summary['total_quantity_pcs'],
       ),
       totalWeight: _asDouble(summary['totalWeight'] ?? summary['total_weight']),
       generatedAt: _asDate(json['generatedAt'] ?? json['generated_at']),
+    );
+  }
+}
+
+class ClientStatementGroup {
+  const ClientStatementGroup({
+    required this.receptionChallanNo,
+    required this.receptionDate,
+    required this.receptionSize,
+    required this.receptionWeight,
+    required this.lessWeight,
+    required this.totalWeight,
+    required this.deliveries,
+  });
+
+  final String receptionChallanNo;
+  final DateTime? receptionDate;
+  final String receptionSize;
+  final double receptionWeight;
+  final double lessWeight;
+  final double totalWeight;
+  final List<ClientStatementGroupDeliveryItem> deliveries;
+
+  factory ClientStatementGroup.fromJson(Map<String, dynamic> json) {
+    return ClientStatementGroup(
+      receptionChallanNo: _asString(json['receptionChallanNo'] ?? json['reception_challan_no']),
+      receptionDate: _asDate(json['receptionDate'] ?? json['reception_date']),
+      receptionSize: _asString(json['receptionSize'] ?? json['reception_size']),
+      receptionWeight: _asDouble(json['receptionWeight'] ?? json['reception_weight']),
+      lessWeight: _asDouble(json['lessWeight'] ?? json['less_weight']),
+      totalWeight: _asDouble(json['totalWeight'] ?? json['total_weight']),
+      deliveries: _asMapList(json['deliveries'])
+          .map(ClientStatementGroupDeliveryItem.fromJson)
+          .toList(growable: false),
+    );
+  }
+}
+
+class ClientStatementGroupDeliveryItem {
+  const ClientStatementGroupDeliveryItem({
+    required this.date,
+    required this.challanNo,
+    required this.particulars,
+    required this.note,
+    required this.weight,
+    required this.quantityPcs,
+  });
+
+  final DateTime? date;
+  final String challanNo;
+  final String particulars;
+  final String note;
+  final double weight;
+  final double quantityPcs;
+
+  factory ClientStatementGroupDeliveryItem.fromJson(Map<String, dynamic> json) {
+    return ClientStatementGroupDeliveryItem(
+      date: _asDate(json['date']),
+      challanNo: _asString(json['challanNo'] ?? json['challan_no']),
+      particulars: _asString(json['particulars']),
+      note: _asString(json['note']),
+      weight: _asDouble(json['weight']),
+      quantityPcs: _asDouble(json['quantityPcs'] ?? json['quantity_pcs']),
     );
   }
 }

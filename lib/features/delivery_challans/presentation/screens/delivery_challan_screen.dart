@@ -1374,55 +1374,64 @@ class _ChallanEditorState extends State<_ChallanEditor> {
               ),
             ),
           ],
-          const SizedBox(height: 12),
-          _typeSelector(),
-          if (_isReception && _maintainStocks) ...[
+          if (_maintainStocks) ...[
+            if (_isReception) ...[
+              const SizedBox(height: 12),
+              _vendorSelector(context),
+            ] else
+              _selectedOrdersSummary(),
             const SizedBox(height: 12),
-            _vendorSelector(context),
-          ] else if (_maintainStocks)
-            _selectedOrdersSummary(),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _field(
-                  _isReception ? 'Vendor / Source' : 'Customer name / M/s',
-                  _customerController,
-                  enabled: _canEdit && !_maintainStocks,
+            Row(
+              children: [
+                Expanded(
+                  child: _field(
+                    'Location',
+                    _locationController,
+                    enabled: _canEdit,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _field(
-                  _isReception ? 'Vendor GSTIN' : 'Customer GSTIN',
-                  _gstinController,
-                  enabled: _canEdit && !_maintainStocks,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _field(
+                    _isReception
+                        ? 'Supplier Ref / GRN / Invoice'
+                        : 'Dispatch Reference',
+                    _sourceReferenceController,
+                    enabled: _canEdit,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _field(
-                  'Location',
-                  _locationController,
-                  enabled: _canEdit,
+              ],
+            ),
+          ] else ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _field(
+                    _isReception ? 'Vendor / Source' : 'Customer name / M/s',
+                    _customerController,
+                    enabled: _canEdit,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _field(
-                  _isReception
-                      ? 'Supplier Ref / GRN / Invoice'
-                      : 'Dispatch Reference',
-                  _sourceReferenceController,
-                  enabled: _canEdit,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _field(
+                    _isReception ? 'Vendor GSTIN' : 'Customer GSTIN',
+                    _gstinController,
+                    enabled: _canEdit,
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _field(
+              _isReception
+                  ? 'Supplier Ref / GRN / Invoice'
+                  : 'Dispatch Reference',
+              _sourceReferenceController,
+              enabled: _canEdit,
+            ),
+          ],
         ],
       ),
     );
@@ -1632,9 +1641,33 @@ class _ChallanEditorState extends State<_ChallanEditor> {
                 .toList(growable: false),
           ),
           const SizedBox(height: 8),
-          Text(
-            'Client locked to ${_selectedOrders.first.clientName} for this challan.',
-            style: const TextStyle(color: SoftErpTheme.textSecondary),
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              Text(
+                'Client locked to ${_selectedOrders.first.clientName} for this challan.',
+                style: const TextStyle(color: SoftErpTheme.textSecondary),
+              ),
+              if (_gstinForOrder(_selectedOrders.first).isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: SoftErpTheme.cardSurfaceAlt,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: SoftErpTheme.border),
+                  ),
+                  child: Text(
+                    'GSTIN: ${_gstinForOrder(_selectedOrders.first)}',
+                    style: const TextStyle(
+                      color: SoftErpTheme.textSecondary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+            ],
           ),
         ],
       ),
@@ -1703,7 +1736,9 @@ class _ChallanEditorState extends State<_ChallanEditor> {
           ? (_selectedVendorId ?? _source?.vendorId ?? 0)
           : 0,
       date: DateTime.tryParse(_dateController.text) ?? DateTime.now(),
-      location: _locationController.text,
+      location: (!maintainStocks && _locationController.text.trim().isEmpty)
+          ? 'Main Store'
+          : _locationController.text.trim(),
       sourceReference: _sourceReferenceController.text,
       notes: _notesController.text,
       maintainStocks: maintainStocks,
@@ -1852,7 +1887,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
       });
       return;
     }
-    if (input.location.trim().isEmpty) {
+    if (maintainStocks && input.location.trim().isEmpty) {
       setState(() {
         _validationError = 'Enter a location before issuing challan.';
       });

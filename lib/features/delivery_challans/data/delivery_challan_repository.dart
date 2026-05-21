@@ -51,6 +51,8 @@ abstract class ChallanRepository {
 
   Future<InvoiceHeader> createInvoice(InvoiceDraftInput input);
 
+  Future<Uint8List> fetchInvoicePdf(int invoiceId);
+
   Future<List<ConversionOverride>> getConversionOverrides();
 
   Future<ConversionOverride> saveConversionOverride(
@@ -59,9 +61,10 @@ abstract class ChallanRepository {
 
   Future<List<WasteAuditRow>> getWasteAuditRows();
 
-  Future<ClientStatementReport> generateClientStatementReport(
-    List<String> challanNos,
-  );
+  Future<ClientStatementReport> generateClientStatementReport({
+    required List<String> challanNos,
+    required List<String> receptionChallanNos,
+  });
 
   Future<List<CompletedProductionRun>> getCompletedProductionRuns({
     String search = '',

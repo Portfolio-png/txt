@@ -1104,7 +1104,7 @@ class _ReportHeader extends StatelessWidget {
                   Text(title, style: Theme.of(context).textTheme.headlineSmall),
                   if (selectedCount > 0)
                     AppButton(
-                      label: 'Bulk Invoice ($selectedCount)',
+                      label: '+ Invoice ($selectedCount)',
                       icon: Icons.receipt_long_outlined,
                       onPressed: onBulkInvoice,
                     ),
@@ -4130,6 +4130,25 @@ class _InvoicesSidebarState extends State<_InvoicesSidebar> {
     }
   }
 
+  Future<void> _printInvoice(int invoiceId, String invoiceNo) async {
+    final provider = context.read<DeliveryChallanProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final bytes = await provider.repository.fetchInvoicePdf(invoiceId);
+      await Printing.layoutPdf(
+        name: 'Invoice-$invoiceNo.pdf',
+        onLayout: (_) async => bytes,
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Failed to print invoice: $e'),
+          backgroundColor: SoftErpTheme.dangerText,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -4189,6 +4208,10 @@ class _InvoicesSidebarState extends State<_InvoicesSidebar> {
                 else if (_selectedInvoice != null)
                   _InvoiceDetailCard(
                     invoice: _selectedInvoice!,
+                    onPrint: () => _printInvoice(
+                      _selectedInvoice!.id,
+                      _selectedInvoice!.invoiceNo,
+                    ),
                     onToggleStatus: () async {
                       final newStatus =
                           _selectedInvoice!.status.toLowerCase() == 'paid'
@@ -4283,10 +4306,12 @@ class _InvoiceDetailCard extends StatelessWidget {
   const _InvoiceDetailCard({
     required this.invoice,
     required this.onToggleStatus,
+    required this.onPrint,
   });
 
   final InvoiceHeader invoice;
   final VoidCallback onToggleStatus;
+  final VoidCallback onPrint;
 
   @override
   Widget build(BuildContext context) {
@@ -4327,6 +4352,15 @@ class _InvoiceDetailCard extends StatelessWidget {
                       ? AppButtonVariant.secondary
                       : AppButtonVariant.primary,
                   onPressed: onToggleStatus,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: AppButton(
+                  label: 'Print Invoice',
+                  icon: Icons.print_outlined,
+                  variant: AppButtonVariant.secondary,
+                  onPressed: onPrint,
                 ),
               ),
             ],

@@ -15,6 +15,7 @@ import '../../../../core/widgets/soft_primitives.dart';
 import '../../../../app/shell/navigation_provider.dart';
 import '../../../clients/domain/client_definition.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
+import '../../../delivery_challans/domain/delivery_challan.dart';
 import '../../../delivery_challans/presentation/providers/delivery_challan_provider.dart';
 import '../../../delivery_challans/presentation/screens/delivery_challan_screen.dart';
 import 'package:paper/widgets/variation_path_selector_dialog.dart';
@@ -4656,30 +4657,89 @@ class _OrderActivityTimeline extends StatelessWidget {
 
   final int orderId;
 
+  Future<_OrderTimelineData> _loadTimeline(BuildContext context) async {
+    final ordersProvider = context.read<OrdersProvider>();
+    final challanProvider = context.read<DeliveryChallanProvider>();
+    final results = await Future.wait<Object>([
+      ordersProvider.getOrderActivity(orderId),
+      _loadIssuedDeliveryChallans(challanProvider),
+    ]);
+    return _OrderTimelineData(
+      activities: results[0] as List<OrderActivityEntry>,
+      challans: results[1] as List<DeliveryChallan>,
+    );
+  }
+
+  Future<List<DeliveryChallan>> _loadIssuedDeliveryChallans(
+    DeliveryChallanProvider provider,
+  ) async {
+    final summaries = await provider.getOrderChallans(orderId);
+    final fullChallans = await Future.wait(
+      summaries.map((challan) => provider.loadChallan(challan.id)),
+    );
+    return fullChallans
+        .whereType<DeliveryChallan>()
+        .where(
+          (challan) =>
+              challan.type == ChallanType.delivery &&
+              challan.status == DeliveryChallanStatus.issued,
+        )
+        .toList(growable: false);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<OrderActivityEntry>>(
-      future: context.read<OrdersProvider>().getOrderActivity(orderId),
+    return FutureBuilder<_OrderTimelineData>(
+      future: _loadTimeline(context),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-        final activities = snapshot.data ?? const <OrderActivityEntry>[];
-        if (activities.isEmpty) {
+        final data = snapshot.data ?? _OrderTimelineData.empty();
+        final entries = <({DateTime timestamp, Widget child})>[
+          for (final challan in data.challans)
+            (
+              timestamp: challan.updatedAt ?? challan.createdAt ?? challan.date,
+              child: _OrderChallanTimelineTile(
+                orderId: orderId,
+                challan: challan,
+              ),
+            ),
+          for (final activity in data.activities)
+            (
+              timestamp: activity.createdAt,
+              child: _OrderActivityTile(activity: activity),
+            ),
+        ]..sort((left, right) => right.timestamp.compareTo(left.timestamp));
+        if (entries.isEmpty) {
           return const _OrderDetailEmptyState(
             message: 'No timeline events yet',
           );
         }
         return _OrderDetailPanelCard(
           child: ListView.separated(
-            itemCount: activities.length,
+            itemCount: entries.length,
             separatorBuilder: (context, index) => const SizedBox(height: 10),
             itemBuilder: (context, index) {
-              return _OrderActivityTile(activity: activities[index]);
+              return entries[index].child;
             },
           ),
         );
       },
+    );
+  }
+}
+
+class _OrderTimelineData {
+  const _OrderTimelineData({required this.activities, required this.challans});
+
+  final List<OrderActivityEntry> activities;
+  final List<DeliveryChallan> challans;
+
+  factory _OrderTimelineData.empty() {
+    return const _OrderTimelineData(
+      activities: <OrderActivityEntry>[],
+      challans: <DeliveryChallan>[],
     );
   }
 }
@@ -4747,6 +4807,59 @@ class _OrderActivityTile extends StatelessWidget {
       if (status != null) 'Status: $status',
     ];
     return parts.isEmpty ? 'Recorded by system' : parts.join(' · ');
+  }
+}
+
+class _OrderChallanTimelineTile extends StatelessWidget {
+  const _OrderChallanTimelineTile({
+    required this.orderId,
+    required this.challan,
+  });
+
+  final int orderId;
+  final DeliveryChallan challan;
+
+  @override
+  Widget build(BuildContext context) {
+    final orderItems = _itemsForOrder(challan, orderId);
+    final totalPcs = orderItems.fold<double>(
+      0,
+      (sum, item) => sum + (double.tryParse(item.quantityPcs.trim()) ?? 0),
+    );
+    final totalWeight = orderItems.fold<double>(
+      0,
+      (sum, item) => sum + (double.tryParse(item.weight.trim()) ?? 0),
+    );
+    final itemCount = orderItems.length;
+    final itemLabel = itemCount == 1 ? '1 line' : '$itemCount lines';
+    return _OrderHistoryTile(
+      title: 'Delivery challan issued · ${challan.challanNo}',
+      subtitle:
+          'Delivered / issued: ${_formatCompactNumber(totalPcs)} pcs · ${_formatCompactNumber(totalWeight)} weight · $itemLabel',
+      timestamp: _formatTimestamp(
+        challan.updatedAt ?? challan.createdAt ?? challan.date,
+      ),
+      icon: Icons.local_shipping_outlined,
+    );
+  }
+
+  static List<DeliveryChallanItem> _itemsForOrder(
+    DeliveryChallan challan,
+    int orderId,
+  ) {
+    final directMatches = challan.items
+        .where((item) => item.orderItemId == orderId)
+        .toList(growable: false);
+    if (directMatches.isNotEmpty) {
+      return directMatches;
+    }
+    final singleOrderLinked =
+        challan.orderId == orderId ||
+        (challan.orderIds.length == 1 && challan.orderIds.first == orderId);
+    if (singleOrderLinked) {
+      return challan.items;
+    }
+    return const <DeliveryChallanItem>[];
   }
 }
 
@@ -4897,6 +5010,19 @@ String _formatTimestamp(DateTime value) {
   final hour = value.hour.toString().padLeft(2, '0');
   final minute = value.minute.toString().padLeft(2, '0');
   return '$day-$month-${value.year} $hour:$minute';
+}
+
+String _formatCompactNumber(double value) {
+  if (!value.isFinite) {
+    return '0';
+  }
+  if (value == value.truncateToDouble()) {
+    return value.toStringAsFixed(0);
+  }
+  return value
+      .toStringAsFixed(2)
+      .replaceFirst(RegExp(r'0+$'), '')
+      .replaceFirst(RegExp(r'\.$'), '');
 }
 
 class _OrderPoDocumentsSection extends StatelessWidget {
