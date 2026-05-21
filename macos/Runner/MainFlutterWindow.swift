@@ -10,6 +10,32 @@ class MainFlutterWindow: NSWindow {
     self.setFrame(windowFrame, display: true)
 
     RegisterGeneratedPlugins(registry: flutterViewController)
+
+    let windowControlChannel = FlutterMethodChannel(
+      name: "paper/window_control",
+      binaryMessenger: flutterViewController.engine.binaryMessenger
+    )
+    windowControlChannel.setMethodCallHandler { [weak self] call, result in
+      guard let self = self else {
+        result(FlutterError(code: "WINDOW_UNAVAILABLE", message: "Window is unavailable.", details: nil))
+        return
+      }
+      if call.method == "setFullscreen" {
+        guard let args = call.arguments as? [String: Any],
+              let enabled = args["enabled"] as? Bool else {
+          result(FlutterError(code: "INVALID_ARGUMENTS", message: "enabled is required.", details: nil))
+          return
+        }
+        let isFullscreen = self.styleMask.contains(.fullScreen)
+        if enabled != isFullscreen {
+          self.toggleFullScreen(nil)
+        }
+        result(true)
+      } else {
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
     let nativePrintingChannel = FlutterMethodChannel(
       name: "paper/native_printing",
       binaryMessenger: flutterViewController.engine.binaryMessenger

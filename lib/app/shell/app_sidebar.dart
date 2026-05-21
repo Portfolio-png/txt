@@ -16,10 +16,16 @@ import '../../features/vendors/presentation/providers/vendors_provider.dart';
 import 'navigation_provider.dart';
 
 class AppSidebar extends StatefulWidget {
-  const AppSidebar({super.key, this.compact = false, this.onItemSelected});
+  const AppSidebar({
+    super.key,
+    this.compact = false,
+    this.onItemSelected,
+    this.transparentBackground = false,
+  });
 
   final bool compact;
   final ValueChanged<String>? onItemSelected;
+  final bool transparentBackground;
 
   @override
   State<AppSidebar> createState() => _AppSidebarState();
@@ -197,11 +203,15 @@ class _AppSidebarState extends State<AppSidebar> {
           duration: const Duration(milliseconds: 200),
           width: double.infinity,
           decoration: BoxDecoration(
-            color: _isHovered
-                ? Colors.white
-                : Colors.white.withValues(alpha: 0.8),
+            color: widget.transparentBackground
+                ? Colors.transparent
+                : (_isHovered
+                    ? Colors.white
+                    : Colors.white.withValues(alpha: 0.8)),
             borderRadius: BorderRadius.circular(widget.compact ? 18 : 34),
-            boxShadow: SoftErpTheme.subtleShadow,
+            boxShadow: widget.transparentBackground
+                ? const <BoxShadow>[]
+                : SoftErpTheme.subtleShadow,
           ),
           child: Padding(
             padding: EdgeInsets.fromLTRB(

@@ -243,8 +243,7 @@ void DrawChallanDocument(HDC hdc, const ChallanPrintData& data) {
 
   const std::wstring party_text =
       JoinLine(data.party_label, data.party_name) + L"\n" +
-      JoinLine(L"GSTIN", data.party_gstin) + L"\n" +
-      JoinLine(L"Location", data.location);
+      JoinLine(L"GSTIN", data.party_gstin);
   DrawCellText(hdc, regular_font, party_text, left_info,
                DT_LEFT | DT_TOP | DT_WORDBREAK);
 
@@ -580,6 +579,59 @@ bool FlutterWindow::OnCreate() {
         result->NotImplemented();
       });
 
+  window_control_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(), "paper/window_control",
+          &flutter::StandardMethodCodec::GetInstance());
+  window_control_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        if (call.method_name() == "setFullscreen") {
+          const auto* arguments = call.arguments();
+          const auto* map = std::get_if<flutter::EncodableMap>(arguments);
+          bool enabled = false;
+          if (map != nullptr) {
+            const auto it = map->find(flutter::EncodableValue("enabled"));
+            if (it != map->end()) {
+              const auto* val = std::get_if<bool>(&it->second);
+              if (val != nullptr) {
+                enabled = *val;
+              }
+            }
+          }
+
+          HWND hwnd = GetHandle();
+          if (enabled != is_fullscreen_) {
+            if (enabled) {
+              saved_window_style_ = GetWindowLong(hwnd, GWL_STYLE);
+              if (GetWindowPlacement(hwnd, &saved_window_placement_)) {
+                MONITORINFO mi = { sizeof(mi) };
+                if (GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &mi)) {
+                  SetWindowLong(hwnd, GWL_STYLE, saved_window_style_ & ~WS_OVERLAPPEDWINDOW);
+                  SetWindowPos(hwnd, HWND_TOP,
+                               mi.rcMonitor.left, mi.rcMonitor.top,
+                               mi.rcMonitor.right - mi.rcMonitor.left,
+                               mi.rcMonitor.bottom - mi.rcMonitor.top,
+                               SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+                  is_fullscreen_ = true;
+                }
+              }
+            } else {
+              SetWindowLong(hwnd, GWL_STYLE, saved_window_style_);
+              SetWindowPlacement(hwnd, &saved_window_placement_);
+              SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
+                           SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+                           SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+              is_fullscreen_ = false;
+            }
+          }
+          result->Success(flutter::EncodableValue(true));
+          return;
+        }
+        result->NotImplemented();
+      });
+
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -596,6 +648,7 @@ bool FlutterWindow::OnCreate() {
 
 void FlutterWindow::OnDestroy() {
   native_printing_channel_.reset();
+  window_control_channel_.reset();
 
   if (flutter_controller_) {
     flutter_controller_ = nullptr;

@@ -33,6 +33,12 @@ class FlutterWindow : public Win32Window {
 
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       native_printing_channel_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      window_control_channel_;
+
+  bool is_fullscreen_ = false;
+  WINDOWPLACEMENT saved_window_placement_ = { sizeof(WINDOWPLACEMENT) };
+  DWORD saved_window_style_ = 0;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

@@ -5614,7 +5614,7 @@ function challanTemplateScalarFields(challanDto) {
     customerGstin: challanDto.customer_gstin || gstin,
     vendor_gstin: challanDto.vendor_gstin || gstin,
     vendorGstin: challanDto.vendor_gstin || gstin,
-    location: challanDto.location || '',
+    location: '',
     source_ref: isReception
       ? challanDto.source_reference || ''
       : (challanDto.order_nos || []).join(', ') || challanDto.order_no || '',
@@ -6168,7 +6168,7 @@ function buildTemplateTestChallanDto(itemCount = 3) {
     challan_no: 'DC-TEST-0001',
     display_id: 'REF: 00000',
     date: 'DD/MM/YYYY',
-    location: 'Sample Warehouse',
+    location: '',
     customer_name: 'John Doe',
     customer_gstin: '27ABCDE1234F1Z5',
     vendor_id: null,
@@ -7194,11 +7194,7 @@ async function issueDeliveryChallan(id, actor = null) {
     error.statusCode = 400;
     throw error;
   }
-  if (!String(existing.location || '').trim()) {
-    const error = new Error('Select a location before issuing challan.');
-    error.statusCode = 400;
-    throw error;
-  }
+
   const maintainStocks = Number(existing.maintain_stocks ?? 1) !== 0;
   if (maintainStocks && normalizeChallanType(existing.type) === 'delivery') {
     const orderIds = await getDeliveryChallanOrderIds(id);
@@ -7286,7 +7282,7 @@ async function issueDeliveryChallan(id, actor = null) {
           qty: movementQty,
           primaryQty: movementQty,
           uom: movementUom,
-          toLocationId: String(existing.location || '').trim(),
+          toLocationId: String(existing.location || '').trim() || 'MAIN',
           reasonCode: normalizeChallanType(existing.type) === 'reception'
             ? 'reception_challan_issue'
             : 'delivery_challan_issue',
@@ -8044,7 +8040,7 @@ async function generateInvoicePdf(invoiceId) {
     doc.font('Helvetica-Bold').fontSize(10).fillColor('#334155')
        .text(challanDto.customer_name, 35, 148, { width: 250 });
     doc.font('Helvetica').fontSize(8)
-       .text(challanDto.location || clientAddress, 35, 160, { width: 250 });
+       .text(clientAddress || '', 35, 160, { width: 250 });
     doc.font('Helvetica-Bold')
        .text(`GSTIN: `, 35, 195, { width: 50, align: 'left' })
        .font('Helvetica').text(challanDto.customer_gstin || 'N/A', 85, 195, { width: 200 });
@@ -8053,8 +8049,7 @@ async function generateInvoicePdf(invoiceId) {
     doc.font('Helvetica-Bold').fontSize(9).fillColor('#0F172A')
        .text('DISPATCH DETAILS:', 320, 135, { width: 240 });
     doc.font('Helvetica').fontSize(8).fillColor('#334155')
-       .text(`Location: ${challanDto.location || 'N/A'}`, 320, 148, { width: 240 })
-       .text(`Notes: ${challanDto.notes || 'N/A'}`, 320, 160, { width: 240, height: 40 });
+       .text(`Notes: ${challanDto.notes || 'N/A'}`, 320, 148, { width: 240, height: 40 });
 
     doc.moveTo(30, 210).lineTo(565.28, 210).stroke('#CCCCCC');
 

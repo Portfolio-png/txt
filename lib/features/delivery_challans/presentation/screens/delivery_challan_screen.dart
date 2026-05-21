@@ -1549,47 +1549,6 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     return 'Manual challan numbers usually start with $expectedPrefix. This is a warning only; unique values are still allowed.';
   }
 
-  Widget _typeSelector() {
-    return SegmentedButton<ChallanType>(
-      segments: const [
-        ButtonSegment(
-          value: ChallanType.delivery,
-          label: Text('Delivery'),
-          icon: Icon(Icons.arrow_upward_rounded),
-        ),
-        ButtonSegment(
-          value: ChallanType.reception,
-          label: Text('Reception'),
-          icon: Icon(Icons.arrow_downward_rounded),
-        ),
-      ],
-      selected: {_selectedType},
-      onSelectionChanged: !_canEdit
-          ? null
-          : (selection) {
-              final next = selection.first;
-              setState(() {
-                _selectedType = next;
-                _validationError = null;
-                _items = [_ItemDraft.blank(1)];
-                if (next == ChallanType.delivery) {
-                  _orderSelectionTouched = true;
-                  _selectedVendorId = null;
-                  _sourceReferenceController.text = '';
-                  _applySelectedOrderSnapshots();
-                } else {
-                  _orderSelectionTouched = true;
-                  _selectedOrders = <OrderEntry>[];
-                  _isOrdersPanelOpen = false;
-                  _customerController.clear();
-                  _gstinController.clear();
-                }
-              });
-              _syncOrdersCommand();
-            },
-    );
-  }
-
   Widget _ordersHeaderButton() {
     return OutlinedButton(
       onPressed: _canEdit ? _toggleOrdersPanel : null,
@@ -4022,8 +3981,6 @@ class _ChallanDocument extends StatelessWidget {
                           Text('$partyLabel: $partyName'),
                           const SizedBox(height: 8),
                           Text('GSTIN: $partyGstin'),
-                          const SizedBox(height: 8),
-                          Text('Location: ${challan.location}'),
                         ],
                       ),
                     ),
@@ -4291,7 +4248,7 @@ body{font-family:Arial,sans-serif;margin:24px;color:#000}.doc{max-width:820px;ma
 </head><body><div class="actions"><button onclick="window.print()">Print</button></div><div class="doc">
 <div class="pad"><div class="top"><div></div><div class="title">$docTitle</div><div class="mobile">${profile.mobile.isEmpty ? '' : 'Mobile: ${e(profile.mobile)}'}</div></div>
 <div class="company">${e(profile.companyName)}</div><div class="center">${e(profile.businessDescription)}</div><div class="center">${e(profile.address)}</div></div>
-<div class="grid"><div><p>$partyLabel: ${e(partyName)}</p><p>GSTIN: ${e(partyGstin)}</p><p>Location: ${e(challan.location)}</p></div><div><p>$referenceLabel: ${e(referenceValue)}</p><p>Challan No.: ${e(challan.challanNo)}</p><p>Date: ${_date(challan.date)}</p></div></div>
+<div class="grid"><div><p>$partyLabel: ${e(partyName)}</p><p>GSTIN: ${e(partyGstin)}</p></div><div><p>$referenceLabel: ${e(referenceValue)}</p><p>Challan No.: ${e(challan.challanNo)}</p><p>Date: ${_date(challan.date)}</p></div></div>
 <table><thead><tr><th>Particulars</th><th>HSN Code</th><th>QTY. Pcs.</th><th>Weight</th></tr></thead><tbody>$rows</tbody></table>
 <div class="bottom"><div><p>State Code: ${e(profile.stateCode)}</p><p>GSTIN: ${e(profile.gstin)}</p><p class="sign">Receiver's Signature</p></div><div><p>For ${e(profile.companyName)}</p><p class="sign">${e(profile.signatureLabel.isEmpty ? 'Checked by / Authorized Signatory' : profile.signatureLabel)}</p></div></div>
 </div><script>setTimeout(()=>window.print(),300)</script></body></html>

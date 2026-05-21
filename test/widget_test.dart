@@ -4144,7 +4144,7 @@ void main() {
 
       await tester.tap(find.byType(Checkbox).first);
       await tester.pumpAndSettle();
-      expect(find.text('1 Challans Selected'), findsOneWidget);
+      expect(find.text('1 Del. / 0 Rec. Selected'), findsOneWidget);
       expect(find.text('Qty 42\nWt 15.5'), findsOneWidget);
 
       final exportButton = tester.widget<ElevatedButton>(

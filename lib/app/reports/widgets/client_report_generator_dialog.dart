@@ -193,7 +193,7 @@ class _ClientReportGeneratorDialogState
   }
 
   Future<ClientStatementReport?> _generateReport() async {
-    if (_selectedChallanIds.isEmpty || _selectedReceptionChallanIds.isEmpty) {
+    if (_selectedChallanIds.isEmpty && _selectedReceptionChallanIds.isEmpty) {
       return null;
     }
     setState(() => _isExporting = true);
@@ -984,11 +984,11 @@ class _ClientReportGeneratorDialogState
                                   selectedReceptionCount:
                                       _selectedReceptionChallanIds.length,
                                   isExporting: _isExporting,
-                                  onExport: (_selectedChallanIds.isEmpty ||
+                                  onExport: (_selectedChallanIds.isEmpty &&
                                           _selectedReceptionChallanIds.isEmpty)
                                       ? null
                                       : _exportXlsx,
-                                  onPrint: (_selectedChallanIds.isEmpty ||
+                                  onPrint: (_selectedChallanIds.isEmpty &&
                                           _selectedReceptionChallanIds.isEmpty)
                                       ? null
                                       : _printPdf,
@@ -1561,7 +1561,7 @@ class _PreviewPane extends StatelessWidget {
                 ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800, fontSize: 16),
               ),
               const SizedBox(height: 10),
-              if (selectedCount == 0 || selectedReceptionCount == 0)
+              if (selectedCount == 0 && selectedReceptionCount == 0)
                 Container(
                   margin: const EdgeInsets.only(bottom: 10),
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1576,9 +1576,7 @@ class _PreviewPane extends StatelessWidget {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          selectedCount == 0
-                              ? 'Select at least one delivery challan.'
-                              : 'Select at least one reception challan.',
+                          'Select at least one delivery or reception challan.',
                           style: const TextStyle(color: SoftErpTheme.dangerText, fontSize: 12, fontWeight: FontWeight.w600),
                         ),
                       ),

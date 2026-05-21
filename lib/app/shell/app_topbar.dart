@@ -205,7 +205,7 @@ class AppTopBar extends StatelessWidget {
                 child: Center(
                   child: ConstrainedBox(
                     constraints: BoxConstraints(maxWidth: searchMaxWidth),
-                    child: _ShellTopStripSearchField(search: searchConfig),
+                    child: ShellTopStripSearchField(search: searchConfig),
                   ),
                 ),
               ),
@@ -220,7 +220,7 @@ class AppTopBar extends StatelessWidget {
               const SizedBox(width: 14),
               SizedBox(
                 width: profileWidth,
-                child: _TopStripProfileCard(user: currentUser),
+                child: TopStripProfileCard(user: currentUser),
               ),
             ],
           );
@@ -232,17 +232,17 @@ class AppTopBar extends StatelessWidget {
 
 void _noopSearch(String _) {}
 
-class _ShellTopStripSearchField extends StatefulWidget {
-  const _ShellTopStripSearchField({required this.search});
+class ShellTopStripSearchField extends StatefulWidget {
+  const ShellTopStripSearchField({super.key, required this.search});
 
   final ShellTopStripSearchConfig search;
 
   @override
-  State<_ShellTopStripSearchField> createState() =>
+  State<ShellTopStripSearchField> createState() =>
       _ShellTopStripSearchFieldState();
 }
 
-class _ShellTopStripSearchFieldState extends State<_ShellTopStripSearchField> {
+class _ShellTopStripSearchFieldState extends State<ShellTopStripSearchField> {
   late final TextEditingController _controller;
   FocusNode? _focusNode;
   int _lastConsumedSearchTextRevision = 0;
@@ -268,7 +268,7 @@ class _ShellTopStripSearchFieldState extends State<_ShellTopStripSearchField> {
   }
 
   @override
-  void didUpdateWidget(covariant _ShellTopStripSearchField oldWidget) {
+  void didUpdateWidget(covariant ShellTopStripSearchField oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (_controller.text != widget.search.initialValue) {
       _controller.value = TextEditingValue(
@@ -428,8 +428,8 @@ class _TopStripChipAction extends StatelessWidget {
   }
 }
 
-class _TopStripProfileCard extends StatelessWidget {
-  const _TopStripProfileCard({required this.user});
+class TopStripProfileCard extends StatelessWidget {
+  const TopStripProfileCard({super.key, required this.user});
 
   final AuthUser? user;
 

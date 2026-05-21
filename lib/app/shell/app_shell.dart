@@ -1,10 +1,13 @@
 import 'dart:io' show Platform;
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../features/auth/domain/auth_user.dart';
+import '../../features/auth/presentation/providers/auth_provider.dart';
 import '../../core/theme/soft_erp_theme.dart';
 import '../../core/widgets/soft_primitives.dart';
 import '../reports/views/challan_invoice_reconciliation_screen.dart';
@@ -35,6 +38,11 @@ class AppShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final selectedKey = context.select<NavigationProvider, String>(
+      (navigation) => navigation.selectedKey,
+    );
+    final isProduction = selectedKey == 'production_pipelines';
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final isMobile =
@@ -68,55 +76,104 @@ class AppShell extends StatelessWidget {
                     colors: [Color(0xFFE8E8F0), Color(0xFFA7B9F9)],
                   ),
                 ),
-                child: Column(
+                child: Stack(
                   children: [
-                    if (!isMobile)
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SizedBox(
-                            width:
-                                sidebarWidth +
-                                _ShellLayoutMetrics.sidebarLeftInset +
-                                _ShellLayoutMetrics.sidebarRightGap,
-                            child: const Padding(
-                              padding: EdgeInsets.fromLTRB(
-                                _ShellLayoutMetrics.brandLeftInset,
-                                _ShellLayoutMetrics.brandTopInset,
-                                0,
-                                0,
+                    Column(
+                      children: [
+                        if (!isMobile)
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 250),
+                            curve: Curves.easeOutCubic,
+                            height: isProduction ? 0 : 78,
+                            child: ClipRect(
+                              child: OverflowBox(
+                                minHeight: 0,
+                                maxHeight: 78,
+                                alignment: Alignment.topCenter,
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    SizedBox(
+                                      width:
+                                          sidebarWidth +
+                                          _ShellLayoutMetrics.sidebarLeftInset +
+                                          _ShellLayoutMetrics.sidebarRightGap,
+                                      child: const Padding(
+                                        padding: EdgeInsets.fromLTRB(
+                                          _ShellLayoutMetrics.brandLeftInset,
+                                          _ShellLayoutMetrics.brandTopInset,
+                                          0,
+                                          0,
+                                        ),
+                                        child: _ShellCompanyBrand(),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: isProduction
+                                          ? const SizedBox.shrink()
+                                          : const AppTopBar(),
+                                    ),
+                                  ],
+                                ),
                               ),
-                              child: _ShellCompanyBrand(),
                             ),
                           ),
-                          const Expanded(child: AppTopBar()),
-                        ],
-                      ),
-                    Expanded(
-                      child: Row(
-                        children: [
-                          if (!isMobile)
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                _ShellLayoutMetrics.sidebarLeftInset,
-                                _ShellLayoutMetrics.sidebarTopGap,
-                                _ShellLayoutMetrics.sidebarRightGap,
-                                _ShellLayoutMetrics.sidebarBottomInset,
+                        Expanded(
+                          child: Row(
+                            children: [
+                              if (!isMobile)
+                                AnimatedContainer(
+                                  duration: const Duration(milliseconds: 250),
+                                  curve: Curves.easeOutCubic,
+                                  width: isProduction
+                                      ? 0
+                                      : sidebarWidth +
+                                            _ShellLayoutMetrics
+                                                .sidebarLeftInset +
+                                            _ShellLayoutMetrics.sidebarRightGap,
+                                  child: ClipRect(
+                                    child: OverflowBox(
+                                      minWidth: 0,
+                                      maxWidth:
+                                          sidebarWidth +
+                                          _ShellLayoutMetrics.sidebarLeftInset +
+                                          _ShellLayoutMetrics.sidebarRightGap,
+                                      alignment: Alignment.topLeft,
+                                      child: Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          _ShellLayoutMetrics.sidebarLeftInset,
+                                          _ShellLayoutMetrics.sidebarTopGap,
+                                          _ShellLayoutMetrics.sidebarRightGap,
+                                          _ShellLayoutMetrics
+                                              .sidebarBottomInset,
+                                        ),
+                                        child: SizedBox(
+                                          width: sidebarWidth,
+                                          child: const AppSidebar(
+                                            compact: false,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              Expanded(
+                                child: _DesktopContentFrame(
+                                  enabled: _isDesktopPlatform,
+                                  child: const _ShellContentSwitcher(),
+                                ),
                               ),
-                              child: SizedBox(
-                                width: sidebarWidth,
-                                child: const AppSidebar(compact: false),
-                              ),
-                            ),
-                          Expanded(
-                            child: _DesktopContentFrame(
-                              enabled: _isDesktopPlatform,
-                              child: const _ShellContentSwitcher(),
-                            ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
+                    if (!isMobile && isProduction)
+                      const Positioned(
+                        left: 16,
+                        top: 16,
+                        child: _ProductionOverlayControl(),
+                      ),
                   ],
                 ),
               ),
@@ -503,7 +560,9 @@ class _ShellContentSwitcher extends StatelessWidget {
             child: switch (key) {
               'inventory' => const InventoryScreen(),
               'inventory_scan' => const MaterialScanScreen(),
-              'production_pipelines' => const ProductionPipelinesScreen(),
+              'production_pipelines' => const ProductionPipelinesScreen(
+                embeddedInShell: true,
+              ),
               'pm' => const PMScreen(),
               'orders' => const OrdersScreen(),
               'delivery_challans' => const ChallanScreen(),
@@ -570,6 +629,163 @@ class _ModulePlaceholder extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+void _noopSearch(String _) {}
+
+class _ProductionOverlayControl extends StatefulWidget {
+  const _ProductionOverlayControl();
+
+  @override
+  State<_ProductionOverlayControl> createState() =>
+      _ProductionOverlayControlState();
+}
+
+class _ProductionOverlayControlState extends State<_ProductionOverlayControl> {
+  bool _isHovered = false;
+  bool _isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final currentUser = context.select<AuthProvider, AuthUser?>(
+      (auth) => auth.user,
+    );
+    final selectedKey = context.select<NavigationProvider, String>(
+      (navigation) => navigation.selectedKey,
+    );
+    final config = resolveTopStrip(selectedKey, context);
+    final searchConfig =
+        config.search ??
+        const ShellTopStripSearchConfig(
+          placeholder: 'Search',
+          initialValue: '',
+          onChanged: _noopSearch,
+        );
+
+    final mediaHeight = MediaQuery.sizeOf(context).height;
+    final panelHeight = (mediaHeight - 32).clamp(56.0, double.infinity);
+    final isOpen = _isHovered || _isExpanded;
+
+    return TapRegion(
+      onTapOutside: (event) {
+        setState(() {
+          _isExpanded = false;
+        });
+      },
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOutCubic,
+          width: isOpen ? 340 : 56,
+          height: isOpen ? panelHeight : 56,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(isOpen ? 24 : 28),
+            boxShadow: isOpen
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 24,
+                      spreadRadius: 4,
+                      offset: const Offset(0, 8),
+                    ),
+                  ]
+                : SoftErpTheme.subtleShadow,
+            border: Border.all(
+              color: Colors.white.withValues(alpha: isOpen ? 0.35 : 0.2),
+              width: 1.5,
+            ),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(isOpen ? 24 : 28),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(
+                sigmaX: isOpen ? 16 : 8,
+                sigmaY: isOpen ? 16 : 8,
+              ),
+              child: Container(
+                color: Colors.white.withValues(alpha: isOpen ? 0.35 : 0.15),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  child: isOpen
+                      ? _buildFullPanel(context, currentUser, searchConfig)
+                      : _buildCollapsedButton(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCollapsedButton() {
+    return InkWell(
+      key: const ValueKey('collapsed'),
+      onTap: () {
+        setState(() {
+          _isExpanded = !_isExpanded;
+        });
+      },
+      borderRadius: BorderRadius.circular(28),
+      child: const Center(
+        child: Icon(
+          Icons.menu_open_rounded,
+          color: SoftErpTheme.textPrimary,
+          size: 24,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFullPanel(
+    BuildContext context,
+    AuthUser? currentUser,
+    ShellTopStripSearchConfig searchConfig,
+  ) {
+    return Padding(
+      key: const ValueKey('expanded'),
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: const Icon(
+                  Icons.menu_open_rounded,
+                  color: SoftErpTheme.textPrimary,
+                  size: 24,
+                ),
+                onPressed: () {
+                  setState(() {
+                    _isExpanded = false;
+                    _isHovered = false;
+                  });
+                },
+              ),
+              const SizedBox(width: 8),
+              Expanded(child: ShellTopStripSearchField(search: searchConfig)),
+              const SizedBox(width: 10),
+              SizedBox(
+                width: 66,
+                child: TopStripProfileCard(user: currentUser),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(height: 1, color: Colors.white.withValues(alpha: 0.15)),
+          const SizedBox(height: 16),
+          const Expanded(
+            child: AppSidebar(compact: false, transparentBackground: true),
+          ),
+        ],
       ),
     );
   }
