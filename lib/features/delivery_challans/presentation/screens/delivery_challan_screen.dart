@@ -329,7 +329,11 @@ class _ChallanScreenState extends State<ChallanScreen> {
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: const Text('Deleted draft challan.')),
+        SnackBar(
+          content: Text(
+            challan.isReception ? 'Deleted reception challan.' : 'Deleted draft challan.',
+          ),
+        ),
       );
     }
   }
@@ -1143,10 +1147,12 @@ class _ChallanCard extends StatelessWidget {
                   ),
                   if (!challan.isCancelled)
                     const PopupMenuItem(value: 'cancel', child: Text('Cancel')),
-                  if (challan.isDraft)
-                    const PopupMenuItem(
+                  if (challan.isDraft || challan.isReception)
+                    PopupMenuItem(
                       value: 'delete',
-                      child: Text('Delete draft'),
+                      child: Text(
+                        challan.isReception ? 'Delete challan' : 'Delete draft',
+                      ),
                     ),
                 ],
               ),

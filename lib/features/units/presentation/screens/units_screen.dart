@@ -271,7 +271,7 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
   late final TextEditingController _baseUnitNameController;
   late final TextEditingController _baseUnitSymbolController;
 
-  bool get _isDetailsLocked => widget.unit?.isUsed ?? false;
+  bool get _isDetailsLocked => false;
   @override
   void initState() {
     super.initState();

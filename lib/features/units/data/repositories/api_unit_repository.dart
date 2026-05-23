@@ -108,9 +108,9 @@ class ApiUnitRepository implements UnitRepository {
         throw UnitApiException('Unit not found.');
       }
       final current = _mockUnits[index];
-      if (current.isUsed) {
-        throw UnitApiException('Used units cannot be edited.');
-      }
+      // if (current.isUsed) {
+      //   throw UnitApiException('Used units cannot be edited.');
+      // }
       final updated = UnitDefinition(
         id: current.id,
         name: input.name.trim(),

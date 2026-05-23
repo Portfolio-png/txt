@@ -28,7 +28,7 @@ import '../../../delivery_challans/presentation/screens/delivery_challan_screen.
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../items/presentation/screens/items_screen.dart';
-import '../../../items/presentation/widgets/item_detail_panel.dart';
+
 import 'package:paper/widgets/variation_path_selector_dialog.dart';
 import '../../../pm/presentation/barcode/material_barcode_toolkit.dart';
 import '../../../pm/presentation/screens/pm_screen.dart';
@@ -1003,6 +1003,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
             final linkedGroupName = linkedItem == null
                 ? null
                 : groupNameById[linkedItem.groupId];
+            String? resolvedVariationPathLabel = setLine?.variationPathLabel;
+            if ((resolvedVariationPathLabel == null || resolvedVariationPathLabel.isEmpty) && record.name.contains(' - ')) {
+              resolvedVariationPathLabel = record.name.substring(record.name.lastIndexOf(' - ') + 3);
+            }
             return _InventoryRowEntry(
               record: record,
               displayName: linkedItem == null
@@ -1014,7 +1018,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
               displayMetadata: _itemMetadataText(
                 record,
                 linkedGroupName,
-                variationPathLabel: setLine?.variationPathLabel,
+                variationPathLabel: resolvedVariationPathLabel,
               ),
               itemGroupId: linkedItem?.groupId,
               setQuantity: setLine?.quantity,
@@ -1580,23 +1584,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   Future<void> _openDetails(MaterialRecord record) async {
     _dismissInventoryActionOverlays();
-    final linkedItemId = record.linkedItemId;
-    if (linkedItemId != null) {
-      final linkedItem = context
-          .read<ItemsProvider>()
-          .items
-          .where((item) => item.id == linkedItemId)
-          .firstOrNull;
-      if (linkedItem != null) {
-        await showItemDetailPanel(
-          context,
-          item: linkedItem,
-          barcode: record.barcode,
-          onEdit: () => ItemsScreen.openEditor(context, item: linkedItem),
-        );
-        return;
-      }
-    }
     final provider = context.read<InventoryProvider>();
     await provider.selectMaterial(record.barcode);
     if (!mounted) {

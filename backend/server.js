@@ -7601,11 +7601,13 @@ async function deleteDraftDeliveryChallan(id, actor = null) {
     error.statusCode = 404;
     throw error;
   }
-  if (existing.status !== 'draft') {
+  if (existing.status !== 'draft' && existing.type !== 'reception') {
     const error = new Error('Only draft challans can be deleted.');
     error.statusCode = 400;
     throw error;
   }
+  await run('UPDATE invoice_lines SET challan_id = NULL, challan_item_id = NULL WHERE challan_id = ?', [id]);
+  await run('UPDATE reconciliation_waste_audit SET challan_id = NULL WHERE challan_id = ?', [id]);
   await logDeliveryChallanActivity(id, 'challan_deleted', actor, {
     challanNo: existing.challan_no,
   });
@@ -10907,6 +10909,7 @@ async function saveItem({
         error.statusCode = 404;
         throw error;
       }
+      /*
       if ((existing.usage_count || 0) > 0) {
         const existingTree = await getItemVariationTree(id);
         const structuralChangeDetected =
@@ -10922,6 +10925,7 @@ async function saveItem({
           throw error;
         }
       }
+      */
       await run(
         `
         UPDATE items
@@ -17061,6 +17065,7 @@ app.patch('/api/items/:id/archive', requirePermission('config.write'), async (re
       res.status(404).json({ success: false, item: null, error: 'Item not found.' });
       return;
     }
+    /*
     if ((existing.usage_count || 0) > 0) {
       res.status(409).json({
         success: false,
@@ -17069,6 +17074,7 @@ app.patch('/api/items/:id/archive', requirePermission('config.write'), async (re
       });
       return;
     }
+    */
     const now = new Date().toISOString();
     await run('UPDATE items SET is_archived = 1, updated_at = ? WHERE id = ?', [now, id]);
     await run('UPDATE item_variation_nodes SET is_archived = 1, updated_at = ? WHERE item_id = ?', [now, id]);

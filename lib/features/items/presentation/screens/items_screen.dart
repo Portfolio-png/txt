@@ -502,10 +502,9 @@ class _ItemRow extends StatelessWidget {
                 label: 'Edit',
                 onTap: () => ItemsScreen.openEditor(context, item: item),
               ),
-              if (!item.isUsed)
-                SoftActionLink(
-                  label: item.isArchived ? 'Restore' : 'Archive',
-                  onTap: itemsProvider.isSaving
+              SoftActionLink(
+                label: item.isArchived ? 'Restore' : 'Archive',
+                onTap: itemsProvider.isSaving
                       ? null
                       : () {
                           if (item.isArchived) {
@@ -628,7 +627,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   final Set<String> _promotedPropertyKeys = <String>{};
   bool _isLoadingGroupSchema = false;
 
-  bool get _isReadOnly => widget.item?.isUsed ?? false;
+  bool get _isReadOnly => false;
 
   @override
   void initState() {
