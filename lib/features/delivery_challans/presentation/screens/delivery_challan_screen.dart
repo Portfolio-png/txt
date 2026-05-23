@@ -24,6 +24,7 @@ import '../../../../widgets/variation_path_selector_dialog.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
 import '../../../inventory/presentation/providers/inventory_provider.dart';
 import '../../../items/domain/item_definition.dart';
+import '../../../units/presentation/providers/units_provider.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../orders/domain/order_entry.dart';
 import '../../../orders/presentation/providers/orders_provider.dart';
@@ -1833,6 +1834,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
   @override
   void initState() {
     super.initState();
+    context.read<UnitsProvider>().initialize();
     final source = _source;
     _selectedType = widget.initialType ?? source?.type ?? ChallanType.delivery;
     final initialOrderIds = source?.orderIds.isNotEmpty == true
@@ -3626,9 +3628,13 @@ class _ItemsEditor extends StatelessWidget {
     _ItemDraft draft,
     List<ItemDefinition> availableItems,
   ) {
+    final unitsProvider = context.watch<UnitsProvider>();
     final selectedItem = availableItems
         .where((item) => item.id == draft.itemId)
         .firstOrNull;
+    if (selectedItem != null) {
+      draft.initializeConversionFields(selectedItem, unitsProvider);
+    }
     final itemOptions = availableItems
         .map(
           (item) => SearchableSelectOption<int>(
@@ -3671,35 +3677,74 @@ class _ItemsEditor extends StatelessWidget {
                   dialogTitle: 'Select Item',
                   searchHintText: 'Search item',
                   options: itemOptions,
-                  onChanged: (itemId) {
+                  onChanged: (itemId) async {
                     final item = availableItems
                         .where((candidate) => candidate.id == itemId)
                         .firstOrNull;
                     draft.applyReceptionItem(item);
                     onChanged();
+                    
+                    if (item != null && item.topLevelProperties.isNotEmpty) {
+                      final result = await _openVariationSelector(
+                        context,
+                        item: item,
+                        draft: draft,
+                        readOnly: false,
+                      );
+                      if (result != null) {
+                        draft.applyReceptionVariationSelection(
+                          result.item,
+                          result.valueNodeIds,
+                          result.leaf,
+                          _variationSelectionLabel(result.item, result.valueNodeIds),
+                        );
+                        onChanged();
+                      }
+                    }
                   },
                 ),
               ),
               const SizedBox(width: 8),
-              Expanded(
-                flex: 2,
-                child: _itemField(
-                  draft.quantityPcs,
-                  'Qty',
-                  enabled,
-                  (value) => draft.quantityPcs = value,
+              if (selectedItem == null) ...[
+                Expanded(
+                  flex: 2,
+                  child: _itemField(
+                    draft.quantityPcs,
+                    'Qty',
+                    enabled,
+                    (value) => draft.quantityPcs = value,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                flex: 2,
-                child: _itemField(
-                  draft.weight,
-                  'Weight (Kg)',
-                  enabled,
-                  (value) => draft.weight = value,
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: _itemField(
+                    draft.weight,
+                    'Weight (Kg)',
+                    enabled,
+                    (value) => draft.weight = value,
+                  ),
                 ),
-              ),
+              ] else ...[
+                Expanded(
+                  flex: 2,
+                  child: _buildUnitDropdown(context, draft, selectedItem, unitsProvider),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: _itemField(
+                    draft.enteredValue,
+                    'Value',
+                    enabled,
+                    (value) {
+                      draft.enteredValue = value;
+                      draft.updateConversions(selectedItem, unitsProvider);
+                      onChanged();
+                    },
+                  ),
+                ),
+              ],
               IconButton(
                 tooltip: 'Remove row',
                 onPressed: enabled && items.length > 1
@@ -3713,6 +3758,8 @@ class _ItemsEditor extends StatelessWidget {
             ],
           ),
           if (selectedItem != null) ...[
+            const SizedBox(height: 10),
+            _buildConversionSummary(context, draft, selectedItem, unitsProvider),
             const SizedBox(height: 10),
             _buildReceptionVariationPathField(
               context,
@@ -3729,6 +3776,102 @@ class _ItemsEditor extends StatelessWidget {
             (value) => draft.note = value,
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildUnitDropdown(
+    BuildContext context,
+    _ItemDraft draft,
+    ItemDefinition item,
+    UnitsProvider unitsProvider,
+  ) {
+    final units = draft.getAvailableUnits(item, unitsProvider);
+    if (units.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return DropdownButtonFormField<int>(
+      value: draft.selectedUnitId,
+      decoration: InputDecoration(
+        labelText: 'Unit',
+        isDense: true,
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+      items: units.map((u) {
+        return DropdownMenuItem<int>(
+          value: u.id,
+          child: Text(u.symbol, overflow: TextOverflow.ellipsis),
+        );
+      }).toList(),
+      onChanged: enabled
+          ? (unitId) {
+              draft.selectedUnitId = unitId;
+              draft.updateConversions(item, unitsProvider);
+              onChanged();
+            }
+          : null,
+    );
+  }
+
+  Widget _buildConversionSummary(
+    BuildContext context,
+    _ItemDraft draft,
+    ItemDefinition item,
+    UnitsProvider unitsProvider,
+  ) {
+    final units = draft.getAvailableUnits(item, unitsProvider);
+    if (units.isEmpty) return const SizedBox.shrink();
+
+    // Trigger update conversions if empty to make sure values are in sync
+    if (draft.quantityPcs.isEmpty && draft.weight.isEmpty && draft.enteredValue.isNotEmpty) {
+      draft.updateConversions(item, unitsProvider);
+    }
+
+    final parts = <String>[];
+    final val = double.tryParse(draft.enteredValue.trim());
+    if (val != null && val > 0) {
+      final selectedUnit = units.firstWhere((u) => u.id == draft.selectedUnitId, orElse: () => units.first);
+      final primaryVal = val * selectedUnit.factorToPrimary;
+      
+      for (final u in units) {
+        final converted = primaryVal / u.factorToPrimary;
+        parts.add('${draft.formatDouble(converted)} ${u.symbol}');
+      }
+    }
+
+    if (parts.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Padding(
+        padding: const EdgeInsets.only(left: 4, bottom: 4),
+        child: Wrap(
+          spacing: 6,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            const Icon(
+              Icons.swap_horiz,
+              size: 14,
+              color: Color(0xFF64748B),
+            ),
+            Text(
+              'Converted: ${parts.join("  •  ")}',
+              style: const TextStyle(
+                fontSize: 12,
+                color: Color(0xFF64748B),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -4048,6 +4191,22 @@ class _ErrorBanner extends StatelessWidget {
   }
 }
 
+class ItemUnitOption {
+  final int id;
+  final String name;
+  final String symbol;
+  final double factorToPrimary;
+  final bool isPrimary;
+
+  ItemUnitOption({
+    required this.id,
+    required this.name,
+    required this.symbol,
+    required this.factorToPrimary,
+    required this.isPrimary,
+  });
+}
+
 class _ItemDraft {
   _ItemDraft({
     this.orderItemId,
@@ -4076,6 +4235,8 @@ class _ItemDraft {
   String note;
   String quantityPcs;
   String weight;
+  int? selectedUnitId;
+  String enteredValue = '';
 
   bool get isBlank =>
       orderItemId == null &&
@@ -4087,7 +4248,8 @@ class _ItemDraft {
       productionRunLabel.trim().isEmpty &&
       note.trim().isEmpty &&
       quantityPcs.trim().isEmpty &&
-      weight.trim().isEmpty;
+      weight.trim().isEmpty &&
+      enteredValue.trim().isEmpty;
 
   factory _ItemDraft.blank(int lineNo) => _ItemDraft();
 
@@ -4122,6 +4284,155 @@ class _ItemDraft {
     );
   }
 
+  List<ItemUnitOption> getAvailableUnits(ItemDefinition item, UnitsProvider unitsProvider) {
+    final list = <ItemUnitOption>[];
+    final primary = unitsProvider.findById(item.unitId);
+    if (primary != null) {
+      list.add(ItemUnitOption(
+        id: primary.id,
+        name: primary.name,
+        symbol: primary.symbol,
+        factorToPrimary: 1.0,
+        isPrimary: true,
+      ));
+    }
+    for (final conv in item.unitConversions) {
+      if (conv.unitId == item.unitId) continue;
+      list.add(ItemUnitOption(
+        id: conv.unitId,
+        name: conv.unitName,
+        symbol: conv.unitSymbol,
+        factorToPrimary: conv.factorToPrimary,
+        isPrimary: false,
+      ));
+    }
+    return list;
+  }
+
+  bool isWeightUnit(ItemUnitOption option) {
+    final s = option.symbol.toLowerCase();
+    final n = option.name.toLowerCase();
+    return s == 'kg' || s == 'kgs' || s == 'g' || s == 'gms' || s == 'gram' || s == 'grams' || s == 'kilogram' || s == 'kilograms' || n.contains('weight');
+  }
+
+  bool isQtyUnit(ItemUnitOption option) {
+    final s = option.symbol.toLowerCase();
+    final n = option.name.toLowerCase();
+    return s == 'pcs' || s == 'pc' || s == 'piece' || s == 'pieces' || s == 'unit' || s == 'units' || n.contains('quantity') || n.contains('count');
+  }
+
+  void initializeConversionFields(ItemDefinition? item, UnitsProvider unitsProvider) {
+    if (item == null) return;
+    final units = getAvailableUnits(item, unitsProvider);
+    if (units.isEmpty) return;
+
+    if (selectedUnitId != null) return;
+
+    if (weight.isNotEmpty && double.tryParse(weight) != null) {
+      ItemUnitOption? wtOpt;
+      for (final u in units) {
+        if (isWeightUnit(u)) {
+          wtOpt = u;
+          break;
+        }
+      }
+      final targetUnit = wtOpt ?? units.first;
+      selectedUnitId = targetUnit.id;
+      enteredValue = weight;
+    } else if (quantityPcs.isNotEmpty && double.tryParse(quantityPcs) != null) {
+      ItemUnitOption? qtyOpt;
+      for (final u in units) {
+        if (isQtyUnit(u)) {
+          qtyOpt = u;
+          break;
+        }
+      }
+      final targetUnit = qtyOpt ?? units.first;
+      selectedUnitId = targetUnit.id;
+      enteredValue = quantityPcs;
+    } else {
+      selectedUnitId = units.first.id;
+      enteredValue = '';
+    }
+  }
+
+  void updateConversions(ItemDefinition? item, UnitsProvider unitsProvider) {
+    if (item == null) return;
+    final units = getAvailableUnits(item, unitsProvider);
+    if (units.isEmpty) return;
+
+    if (selectedUnitId == null) {
+      selectedUnitId = units.first.id;
+    }
+
+    final val = double.tryParse(enteredValue.trim());
+    if (val == null || val <= 0) {
+      quantityPcs = '';
+      weight = '';
+      return;
+    }
+
+    final selectedUnit = units.firstWhere((u) => u.id == selectedUnitId, orElse: () => units.first);
+    final primaryVal = val * selectedUnit.factorToPrimary;
+
+    ItemUnitOption? wtOpt;
+    for (final u in units) {
+      if (isWeightUnit(u)) {
+        wtOpt = u;
+        break;
+      }
+    }
+    ItemUnitOption? qtyOpt;
+    for (final u in units) {
+      if (isQtyUnit(u)) {
+        qtyOpt = u;
+        break;
+      }
+    }
+
+    if (wtOpt != null) {
+      final wtVal = primaryVal / wtOpt.factorToPrimary;
+      weight = formatDouble(wtVal);
+    } else {
+      final primaryUnit = unitsProvider.findById(item.unitId);
+      if (primaryUnit != null && isWeightUnit(ItemUnitOption(id: primaryUnit.id, name: primaryUnit.name, symbol: primaryUnit.symbol, factorToPrimary: 1.0, isPrimary: true))) {
+        weight = formatDouble(primaryVal);
+      } else {
+        weight = '';
+      }
+    }
+
+    if (qtyOpt != null) {
+      final qtyVal = primaryVal / qtyOpt.factorToPrimary;
+      quantityPcs = formatDouble(qtyVal);
+    } else {
+      final primaryUnit = unitsProvider.findById(item.unitId);
+      if (primaryUnit != null && isQtyUnit(ItemUnitOption(id: primaryUnit.id, name: primaryUnit.name, symbol: primaryUnit.symbol, factorToPrimary: 1.0, isPrimary: true))) {
+        quantityPcs = formatDouble(primaryVal);
+      } else {
+        quantityPcs = '';
+      }
+    }
+  }
+
+  String formatDouble(double val) {
+    if (val == val.toInt()) {
+      return val.toInt().toString();
+    }
+    final str = val.toStringAsFixed(4);
+    if (str.contains('.')) {
+      var end = str.length - 1;
+      while (end > 0 && str[end] == '0') {
+        end--;
+      }
+      if (str[end] == '.') {
+        end--;
+      }
+      return str.substring(0, end + 1);
+    }
+    return str;
+  }
+
   void applyOrderOption(_OrderItemOption? option) {
     orderItemId = option?.orderItemId;
     if (productionRunId == null) {
@@ -4143,6 +4454,8 @@ class _ItemDraft {
     variationPathLabel = '';
     productionRunLabel = '';
     particulars = item?.displayName ?? '';
+    selectedUnitId = null;
+    enteredValue = '';
   }
 
   void applyReceptionVariationSelection(
@@ -4161,6 +4474,8 @@ class _ItemDraft {
         ? item.displayName
         : '${item.displayName} - $label';
     hsnCode = '';
+    selectedUnitId = null;
+    enteredValue = '';
   }
 
   void applyProductionRun(CompletedProductionRun run) {

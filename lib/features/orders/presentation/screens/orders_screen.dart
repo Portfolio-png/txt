@@ -2584,13 +2584,23 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       onCreateOption: (query) =>
           _quickCreateItemForLine(context, lineIndex: index, name: query),
       createOptionLabelBuilder: (query) => 'Create item "$query"',
-      onChanged: (value) {
+      onChanged: (value) async {
         setState(() {
           line.selectedItemId = value;
           final latestItems = context.read<ItemsProvider>().items;
           final item = _selectedItemForLine(latestItems, value);
           _syncVariationSelectionForLine(line, item);
         });
+        
+        final latestItems = context.read<ItemsProvider>().items;
+        final item = _selectedItemForLine(latestItems, value);
+        if (item != null && item.topLevelProperties.isNotEmpty && mounted) {
+          await _openVariationPathSelectorForLine(
+            context,
+            items: latestItems,
+            lineIndex: index,
+          );
+        }
       },
       validator: (value) {
         if (value == null) {
