@@ -262,6 +262,7 @@ class DeliveryChallan {
     required this.type,
     required this.orderId,
     required this.orderIds,
+    this.reportGroupCodes = const <String>[],
     required this.clientId,
     required this.orderNo,
     required this.orderNos,
@@ -289,6 +290,7 @@ class DeliveryChallan {
   final ChallanType type;
   final int? orderId;
   final List<int> orderIds;
+  final List<String> reportGroupCodes;
   final int? clientId;
   final String orderNo;
   final List<String> orderNos;
@@ -342,6 +344,13 @@ class DeliveryChallan {
                   const <dynamic>[])
               .map((value) => value as int? ?? 0)
               .where((value) => value > 0)
+              .toList(growable: false),
+      reportGroupCodes:
+          (json['reportGroupCodes'] as List<dynamic>? ??
+                  json['report_group_codes'] as List<dynamic>? ??
+                  const <dynamic>[])
+              .map((value) => value.toString().trim())
+              .where((value) => value.isNotEmpty)
               .toList(growable: false),
       clientId: json['clientId'] as int? ?? json['client_id'] as int?,
       orderNo: json['orderNo'] as String? ?? json['order_no'] as String? ?? '',
@@ -404,12 +413,14 @@ class DeliveryChallan {
   DeliveryChallan copyWith({
     List<DeliveryChallanItem>? items,
     bool? usedInReport,
+    List<String>? reportGroupCodes,
   }) {
     return DeliveryChallan(
       id: id,
       type: type,
       orderId: orderId,
       orderIds: orderIds,
+      reportGroupCodes: reportGroupCodes ?? this.reportGroupCodes,
       clientId: clientId,
       orderNo: orderNo,
       orderNos: orderNos,

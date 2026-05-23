@@ -365,7 +365,9 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
                   final result = widget.client!.isArchived
                       ? await provider.restoreClient(widget.client!.id)
                       : await provider.archiveClient(widget.client!.id);
-                  if (context.mounted && result != null) {
+                  if (context.mounted &&
+                      result != null &&
+                      provider.errorMessage == null) {
                     Navigator.of(context).pop(result);
                   }
                 },
@@ -433,7 +435,7 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
             ),
           );
 
-    if (context.mounted && result != null) {
+    if (context.mounted && result != null && provider.errorMessage == null) {
       Navigator.of(context).pop(result);
     }
   }

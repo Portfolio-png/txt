@@ -1504,8 +1504,12 @@ function rowToOrderDto(row) {
     variationPathLabel: row.variation_path_label || '',
     variationPathNodeIds: parseJson(row.variation_path_node_ids_json, []),
     quantity: Number(row.quantity || 0),
+    unitId: row.unit_id || null,
+    unitName: row.unit_name || '',
+    unitSymbol: row.unit_symbol || '',
     unitPrice: Number(row.unit_price || 0),
     totalInvoicedQty: Number(row.total_invoiced_qty || 0),
+    totalDeliveredQty: Number(row.total_delivered_qty || 0),
     status: row.status || 'notStarted',
     createdAt: row.created_at,
     startDate: row.start_date,
@@ -2373,7 +2377,7 @@ async function initDb() {
       order_no TEXT DEFAULT '',
       challan_no TEXT NOT NULL UNIQUE,
       date TEXT NOT NULL,
-      location TEXT DEFAULT '',
+      location TEXT DEFAULT 'MAIN',
       customer_name TEXT NOT NULL DEFAULT '',
       customer_gstin TEXT DEFAULT '',
       vendor_id INTEGER REFERENCES vendors(id),
@@ -2421,6 +2425,24 @@ async function initDb() {
       order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
       created_at TEXT NOT NULL,
       PRIMARY KEY (challan_id, order_id)
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS report_groups (
+      code TEXT PRIMARY KEY,
+      label TEXT DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS delivery_challan_report_groups (
+      challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
+      report_group_code TEXT NOT NULL REFERENCES report_groups(code) ON DELETE CASCADE,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (challan_id, report_group_code)
     )
   `);
 
@@ -2519,6 +2541,8 @@ async function initDb() {
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_items_challan_id ON delivery_challan_items(challan_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_challan_id ON delivery_challan_orders(challan_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_order_id ON delivery_challan_orders(order_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_report_groups_challan_id ON delivery_challan_report_groups(challan_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_report_groups_code ON delivery_challan_report_groups(report_group_code)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_activity_challan_id_created_at ON delivery_challan_activity_log(challan_id, created_at)');
   await run('CREATE INDEX IF NOT EXISTS idx_challan_template_upload_sessions_sha256 ON challan_template_upload_sessions(sha256)');
   await run('CREATE INDEX IF NOT EXISTS idx_challan_templates_party ON challan_templates(party_type, party_id, challan_type, is_active)');
@@ -2635,6 +2659,9 @@ async function initDb() {
       variation_path_label TEXT DEFAULT '',
       variation_path_node_ids_json TEXT NOT NULL DEFAULT '[]',
       quantity INTEGER NOT NULL DEFAULT 0,
+      unit_id INTEGER REFERENCES units(id),
+      unit_name TEXT NOT NULL DEFAULT 'Pieces',
+      unit_symbol TEXT NOT NULL DEFAULT 'Pieces',
       unit_price REAL NOT NULL DEFAULT 0,
       total_invoiced_qty REAL NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'notStarted',
@@ -2797,7 +2824,7 @@ async function initDb() {
   await ensureColumnExists('delivery_challans', 'order_id', 'INTEGER');
   await ensureColumnExists('delivery_challans', 'order_no', "TEXT DEFAULT ''");
   await ensureColumnExists('delivery_challans', 'type', "TEXT NOT NULL DEFAULT 'delivery'");
-  await ensureColumnExists('delivery_challans', 'location', "TEXT DEFAULT ''");
+  await ensureColumnExists('delivery_challans', 'location', "TEXT DEFAULT 'MAIN'");
   await ensureColumnExists('delivery_challans', 'vendor_id', 'INTEGER');
   await ensureColumnExists('delivery_challans', 'vendor_name', "TEXT DEFAULT ''");
   await ensureColumnExists('delivery_challans', 'vendor_gstin', "TEXT DEFAULT ''");
@@ -2825,6 +2852,22 @@ async function initDb() {
       PRIMARY KEY (challan_id, order_id)
     )
   `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS report_groups (
+      code TEXT PRIMARY KEY,
+      label TEXT DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS delivery_challan_report_groups (
+      challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
+      report_group_code TEXT NOT NULL REFERENCES report_groups(code) ON DELETE CASCADE,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (challan_id, report_group_code)
+    )
+  `);
   await ensureInventorySetLineNullableLeafReference();
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_order_id ON delivery_challans(order_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_vendor_id ON delivery_challans(vendor_id)');
@@ -2833,6 +2876,8 @@ async function initDb() {
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_items_challan_id ON delivery_challan_items(challan_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_challan_id ON delivery_challan_orders(challan_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_order_id ON delivery_challan_orders(order_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_report_groups_challan_id ON delivery_challan_report_groups(challan_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_report_groups_code ON delivery_challan_report_groups(report_group_code)');
   await ensureColumnExists('challan_templates', 'rotation_degrees', 'REAL NOT NULL DEFAULT 0');
   await ensureColumnExists('challan_templates', 'global_offset_x_mm', 'REAL NOT NULL DEFAULT 0');
   await ensureColumnExists('challan_templates', 'global_offset_y_mm', 'REAL NOT NULL DEFAULT 0');
@@ -2881,6 +2926,9 @@ async function initDb() {
   await run('CREATE INDEX IF NOT EXISTS idx_inventory_set_lines_item_lookup ON inventory_set_lines(item_id, variation_leaf_node_id)');
 
   await ensureColumnExists('orders', 'updated_at', "TEXT NOT NULL DEFAULT ''");
+  await ensureColumnExists('orders', 'unit_id', 'INTEGER');
+  await ensureColumnExists('orders', 'unit_name', "TEXT NOT NULL DEFAULT 'Pieces'");
+  await ensureColumnExists('orders', 'unit_symbol', "TEXT NOT NULL DEFAULT 'Pieces'");
   await ensureColumnExists('orders', 'unit_price', 'REAL NOT NULL DEFAULT 0');
   await ensureColumnExists(
     'orders',
@@ -2893,6 +2941,23 @@ async function initDb() {
       WHEN TRIM(COALESCE(updated_at, '')) = '' THEN created_at
       ELSE updated_at
     END
+  `);
+  await run(`
+    UPDATE orders
+    SET unit_id = (SELECT items.unit_id FROM items WHERE items.id = orders.item_id)
+    WHERE unit_id IS NULL
+  `);
+  await run(`
+    UPDATE orders
+    SET unit_name = COALESCE((SELECT units.name FROM units WHERE units.id = orders.unit_id), unit_name, 'Pieces')
+    WHERE unit_id IS NOT NULL
+      AND (TRIM(COALESCE(unit_name, '')) = '' OR TRIM(unit_name) = 'Pieces')
+  `);
+  await run(`
+    UPDATE orders
+    SET unit_symbol = COALESCE((SELECT units.symbol FROM units WHERE units.id = orders.unit_id), unit_symbol, unit_name, 'Pieces')
+    WHERE unit_id IS NOT NULL
+      AND (TRIM(COALESCE(unit_symbol, '')) = '' OR TRIM(unit_symbol) = 'Pieces')
   `);
 
   await run(`
@@ -3794,6 +3859,7 @@ async function getUnitRowById(id) {
         (SELECT COUNT(*) FROM groups WHERE groups.unit_id = units.id) +
         (SELECT COUNT(*) FROM items WHERE items.unit_id = units.id) +
         (SELECT COUNT(*) FROM item_unit_conversions WHERE item_unit_conversions.unit_id = units.id) +
+        (SELECT COUNT(*) FROM orders WHERE orders.unit_id = units.id) +
         (SELECT COUNT(*) FROM units AS dependent_units WHERE dependent_units.conversion_base_unit_id = units.id) +
         (SELECT COUNT(*) FROM order_material_requirements WHERE order_material_requirements.unit_id = units.id)
       ) AS usage_count
@@ -3997,6 +4063,7 @@ async function resolveOrderVariationSelection({
   itemId,
   variationLeafNodeId = 0,
   variationPathNodeIds = [],
+  variationPathLabel = '',
   status = 'notStarted',
 }) {
   const item = await getItemRowById(itemId);
@@ -4059,9 +4126,58 @@ async function resolveOrderVariationSelection({
   return {
     item,
     variationLeafNodeId: normalizedLeafId,
-    variationPathNodeIds: leafSelection.nodeIds,
-    variationPathNodeIdsJson: JSON.stringify(leafSelection.nodeIds),
-    variationPathLabel: buildVariationPathLabel(leafSelection.segments),
+    variationPathNodeIds: normalizedPathNodeIds.length > 0 ? normalizedPathNodeIds : leafSelection.nodeIds,
+    variationPathNodeIdsJson: JSON.stringify(normalizedPathNodeIds.length > 0 ? normalizedPathNodeIds : leafSelection.nodeIds),
+    variationPathLabel: variationPathLabel ? String(variationPathLabel).trim() : buildVariationPathLabel(leafSelection.segments),
+  };
+}
+
+async function resolveOrderUnitSelection({ item, unitId = null }) {
+  const itemUnitId = Number(item?.unit_id || 0);
+  const requestedUnitId = Number(unitId || 0);
+  const normalizedUnitId = requestedUnitId > 0 ? requestedUnitId : itemUnitId;
+  if (!normalizedUnitId) {
+    return {
+      unitId: null,
+      unitName: 'Pieces',
+      unitSymbol: 'Pieces',
+    };
+  }
+
+  const unit = await get('SELECT * FROM units WHERE id = ?', [
+    normalizedUnitId,
+  ]);
+  if (!unit || unit.is_archived) {
+    const error = new Error(
+      'That unit is no longer active. Pick another unit or restore it in Masters → Units.',
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (requestedUnitId > 0 && requestedUnitId !== itemUnitId) {
+    const conversion = await get(
+      `
+      SELECT 1 AS ok
+      FROM item_unit_conversions
+      WHERE item_id = ? AND unit_id = ?
+      LIMIT 1
+      `,
+      [item.id, requestedUnitId],
+    );
+    if (!conversion) {
+      const error = new Error(
+        'This item does not use that unit yet. Add the conversion in the order line, then save again.',
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
+  return {
+    unitId: unit.id,
+    unitName: unit.name || '',
+    unitSymbol: unit.symbol || unit.name || '',
   };
 }
 
@@ -4137,38 +4253,12 @@ async function getItemsWithUsage() {
 async function findItemDuplicate({ name, groupId, excludeId = null, variationTree = [] }) {
   const rows = await all('SELECT id, name, group_id FROM items');
   const normalizedName = normalizeUnitValue(name);
-  const newProperties = new Set(
-    (variationTree || []).filter(n => String(n.kind) === 'property').map(n => normalizeUnitValue(n.name))
-  );
 
   for (const row of rows) {
     if (excludeId != null && row.id === excludeId) {
       continue;
     }
-    const isBasicMatch = (
-      row.group_id === groupId &&
-      normalizeUnitValue(row.name) === normalizedName
-    );
-    if (!isBasicMatch) {
-      continue;
-    }
-
-    const existingNodes = await all('SELECT name FROM item_variation_nodes WHERE item_id = ? AND parent_node_id IS NULL', [row.id]);
-    const existingProperties = new Set(existingNodes.map(n => normalizeUnitValue(n.name)));
-    
-    let propertiesMatch = true;
-    if (existingProperties.size !== newProperties.size) {
-      propertiesMatch = false;
-    } else {
-      for (const prop of newProperties) {
-        if (!existingProperties.has(prop)) {
-          propertiesMatch = false;
-          break;
-        }
-      }
-    }
-
-    if (propertiesMatch) {
+    if (normalizeUnitValue(row.name) === normalizedName) {
       return row;
     }
   }
@@ -4698,6 +4788,99 @@ async function getDeliveryChallanOrderIds(challanId) {
     .filter((value) => Number.isInteger(value) && value > 0);
 }
 
+function normalizeReportGroupCode(value) {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^A-Z0-9_-]/g, '');
+}
+
+function normalizeReportGroupCodes(values = []) {
+  const candidates = Array.isArray(values) ? values : [];
+  return [
+    ...new Set(
+      candidates
+        .map(normalizeReportGroupCode)
+        .filter(Boolean),
+    ),
+  ].sort();
+}
+
+function deriveReportGroupCodesFromOrderIds(orderIds = []) {
+  const normalizedOrderIds = [
+    ...new Set(
+      orderIds
+        .map((value) => Number(value || 0))
+        .filter((value) => Number.isInteger(value) && value > 0),
+    ),
+  ].sort((a, b) => a - b);
+  if (normalizedOrderIds.length === 0) {
+    return [];
+  }
+  if (normalizedOrderIds.length === 1) {
+    return [`ORD-${normalizedOrderIds[0]}`];
+  }
+  return [`ORDSET-${normalizedOrderIds.join('-')}`];
+}
+
+async function getDeliveryChallanReportGroupCodes(challanId) {
+  const rows = await all(
+    `
+    SELECT report_group_code
+    FROM delivery_challan_report_groups
+    WHERE challan_id = ?
+    ORDER BY report_group_code ASC
+    `,
+    [challanId],
+  );
+  return rows
+    .map((row) => normalizeReportGroupCode(row.report_group_code))
+    .filter(Boolean);
+}
+
+async function effectiveReportGroupCodesForChallan(row, orderIds = null) {
+  const explicitCodes = await getDeliveryChallanReportGroupCodes(row.id);
+  if (normalizeChallanType(row.type) !== 'delivery') {
+    return explicitCodes;
+  }
+  const linkedOrderIds = orderIds || await getDeliveryChallanOrderIds(row.id);
+  const fallbackOrderIds = linkedOrderIds.length > 0
+    ? linkedOrderIds
+    : [Number(row.order_id || 0)].filter((value) => value > 0);
+  return [
+    ...new Set([
+      ...explicitCodes,
+      ...deriveReportGroupCodesFromOrderIds(fallbackOrderIds),
+    ]),
+  ].sort();
+}
+
+async function replaceChallanReportGroups(challanId, codes = []) {
+  const now = new Date().toISOString();
+  const normalizedCodes = normalizeReportGroupCodes(codes);
+  await run('DELETE FROM delivery_challan_report_groups WHERE challan_id = ?', [challanId]);
+  for (const code of normalizedCodes) {
+    await run(
+      `
+      INSERT INTO report_groups (code, label, created_at, updated_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(code) DO UPDATE SET updated_at = excluded.updated_at
+      `,
+      [code, code, now, now],
+    );
+    await run(
+      `
+      INSERT OR IGNORE INTO delivery_challan_report_groups (
+        challan_id, report_group_code, created_at
+      ) VALUES (?, ?, ?)
+      `,
+      [challanId, code, now],
+    );
+  }
+  return normalizedCodes;
+}
+
 async function getOrderRowsByIds(orderIds = []) {
   const normalizedOrderIds = [
     ...new Set(
@@ -4880,11 +5063,17 @@ async function rowToDeliveryChallanDto(row, { includeItems = true } = {}) {
     ),
   ];
   const clientId = Number(orderRows[0]?.client_id || 0) || null;
+  const reportGroupCodes = await effectiveReportGroupCodesForChallan(
+    row,
+    orderIds,
+  );
   return {
     id: row.id,
     type: normalizeChallanType(row.type),
     order_id: row.order_id || null,
     order_ids: orderIds,
+    report_group_codes: reportGroupCodes,
+    reportGroupCodes: reportGroupCodes,
     order_no: row.order_no || '',
     order_nos: orderNos,
     client_id: clientId,
@@ -6485,7 +6674,7 @@ async function listDeliveryChallans({
     `,
     params,
   );
-  return Promise.all(rows.map((row) => rowToDeliveryChallanDto(row, { includeItems: false })));
+  return Promise.all(rows.map((row) => rowToDeliveryChallanDto(row)));
 }
 
 async function getOrderForDeliveryChallan(orderId) {
@@ -6864,7 +7053,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
       maintainStocksInput === false ||
       Number(maintainStocksInput) === 0
     );
-  const location = String(input.location ?? existing?.location ?? '').trim();
+  const location = String(input.location ?? existing?.location ?? '').trim() || 'MAIN';
   const sourceReference = String(
     input.sourceReference ?? input.source_reference ?? existing?.source_reference ?? '',
   ).trim();
@@ -7141,6 +7330,21 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
         );
       }
     }
+
+    const reportGroupInputProvided =
+      Object.prototype.hasOwnProperty.call(input, 'reportGroupCodes') ||
+      Object.prototype.hasOwnProperty.call(input, 'report_group_codes');
+    let reportGroupCodes = [];
+    if (challanType === 'delivery') {
+      reportGroupCodes = deriveReportGroupCodesFromOrderIds(orderIds);
+    } else if (reportGroupInputProvided) {
+      reportGroupCodes = normalizeReportGroupCodes(
+        input.reportGroupCodes ?? input.report_group_codes ?? [],
+      );
+    } else if (existing) {
+      reportGroupCodes = await getDeliveryChallanReportGroupCodes(challanId);
+    }
+    await replaceChallanReportGroups(challanId, reportGroupCodes);
 
     for (const item of items) {
       await run(
@@ -8466,6 +8670,9 @@ async function buildReconciliationReport() {
 }
 
 async function buildClientStatementReport(input = {}) {
+  const requestedReportGroupCode = normalizeReportGroupCode(
+    input.reportGroupCode ?? input.report_group_code ?? '',
+  );
   const challanIds = Array.isArray(input.challanIds)
     ? input.challanIds
     : Array.isArray(input.challan_ids)
@@ -8528,6 +8735,23 @@ async function buildClientStatementReport(input = {}) {
     throw error;
   }
 
+  if (requestedReportGroupCode) {
+    const mismatched = [];
+    for (const row of challans) {
+      const codes = await effectiveReportGroupCodesForChallan(row);
+      if (!codes.includes(requestedReportGroupCode)) {
+        mismatched.push(row.challan_no);
+      }
+    }
+    if (mismatched.length > 0) {
+      const error = new Error(
+        `Delivery challans outside report group ${requestedReportGroupCode}: ${mismatched.join(', ')}.`,
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
   const receptionPlaceholders = requestedReceptionNos.map(() => '?').join(', ');
   const receptionChallans = await all(
     `
@@ -8551,6 +8775,23 @@ async function buildClientStatementReport(input = {}) {
     const error = new Error(`Only issued reception challans can be used. Invalid: ${invalidReceptionNos.join(', ')}.`);
     error.statusCode = 400;
     throw error;
+  }
+
+  if (requestedReportGroupCode) {
+    const mismatched = [];
+    for (const row of receptionChallans) {
+      const codes = await effectiveReportGroupCodesForChallan(row);
+      if (!codes.includes(requestedReportGroupCode)) {
+        mismatched.push(row.challan_no);
+      }
+    }
+    if (mismatched.length > 0) {
+      const error = new Error(
+        `Reception challans outside report group ${requestedReportGroupCode}: ${mismatched.join(', ')}.`,
+      );
+      error.statusCode = 400;
+      throw error;
+    }
   }
 
   const rows = await all(
@@ -8630,9 +8871,15 @@ async function buildClientStatementReport(input = {}) {
       }
     }
     if (!allocated) {
-      const error = new Error(`Selected reception challans do not have enough capacity to cover delivery challan ${dc.challanNo} (Total Weight: ${dc.totalWeight.toFixed(3)} Kg).`);
-      error.statusCode = 400;
-      throw error;
+      if (bins.length > 0) {
+        // Fallback: over-allocate to the first available reception challan
+        bins[0].deliveries.push(...dc.items);
+        bins[0].allocatedWeight += dc.totalWeight;
+      } else {
+        const error = new Error(`No reception challans available to cover delivery challan ${dc.challanNo}.`);
+        error.statusCode = 400;
+        throw error;
+      }
     }
   }
 
@@ -8696,7 +8943,15 @@ async function getOrderRowById(id) {
 }
 
 async function getOrders() {
-  return all('SELECT * FROM orders ORDER BY datetime(created_at) DESC, id DESC');
+  return all(`
+    SELECT o.*,
+      (SELECT SUM(dci.quantity_pcs) 
+       FROM delivery_challan_items dci 
+       JOIN delivery_challans dc ON dci.challan_id = dc.id 
+       WHERE dci.order_item_id = o.id AND dc.status != 'cancelled') as total_delivered_qty
+    FROM orders o 
+    ORDER BY datetime(o.created_at) DESC, o.id DESC
+  `);
 }
 
 const ALLOWED_PO_CONTENT_TYPES = new Set([
@@ -9771,6 +10026,9 @@ async function saveOrder({
   variationPathLabel = '',
   variationPathNodeIds = [],
   quantity,
+  unitId = null,
+  unitName = '',
+  unitSymbol = '',
   unitPrice = 0,
   totalInvoicedQty,
   status = 'notStarted',
@@ -9847,7 +10105,12 @@ async function saveOrder({
     itemId: normalizedItemId,
     variationLeafNodeId,
     variationPathNodeIds,
+    variationPathLabel,
     status: normalizedStatus,
+  });
+  const unitSelection = await resolveOrderUnitSelection({
+    item: variationSelection.item,
+    unitId,
   });
 
   if (!trimmedClientName && client) {
@@ -9859,6 +10122,10 @@ async function saveOrder({
   if (!trimmedItemName && variationSelection && variationSelection.item) {
     trimmedItemName = String(variationSelection.item.name || '').trim();
   }
+  const normalizedUnitName =
+    unitSelection.unitName || String(unitName || '').trim() || 'Pieces';
+  const normalizedUnitSymbol =
+    unitSelection.unitSymbol || String(unitSymbol || '').trim() || normalizedUnitName;
   const normalizedLeafId = variationSelection.variationLeafNodeId;
   const normalizedVariationPathJson = variationSelection.variationPathNodeIdsJson;
   const canonicalVariationPathLabel = variationSelection.variationPathLabel;
@@ -9875,6 +10142,7 @@ async function saveOrder({
         AND item_id = ?
         AND variation_leaf_node_id = ?
         AND variation_path_node_ids_json = ?
+        AND unit_id IS ?
         AND LOWER(TRIM(po_number)) = LOWER(TRIM(?))
         AND start_date IS ?
         AND end_date IS ?
@@ -9885,6 +10153,7 @@ async function saveOrder({
         normalizedItemId,
         normalizedLeafId,
         normalizedVariationPathJson,
+        unitSelection.unitId,
         trimmedPoNumber,
         normalizedStartDate,
         normalizedEndDate,
@@ -9915,6 +10184,9 @@ async function saveOrder({
             item_name = ?,
             variation_path_label = ?,
             variation_path_node_ids_json = ?,
+            unit_id = ?,
+            unit_name = ?,
+            unit_symbol = ?,
             unit_price = ?,
             total_invoiced_qty = ?,
             status = ?,
@@ -9930,6 +10202,9 @@ async function saveOrder({
           trimmedItemName,
           canonicalVariationPathLabel,
           normalizedVariationPathJson,
+          unitSelection.unitId,
+          normalizedUnitName,
+          normalizedUnitSymbol,
           normalizedUnitPrice > 0 ? normalizedUnitPrice : Number(existing.unit_price || 0),
           hasInvoicedQtyInput
             ? normalizedTotalInvoicedQty
@@ -9961,9 +10236,10 @@ async function saveOrder({
         INSERT INTO orders (
           order_no, client_id, client_name, po_number, client_code, item_id, item_name,
           variation_leaf_node_id, variation_path_label, variation_path_node_ids_json, quantity,
-          unit_price, total_invoiced_qty, status, created_at, updated_at, start_date, end_date
+          unit_id, unit_name, unit_symbol, unit_price, total_invoiced_qty, status,
+          created_at, updated_at, start_date, end_date
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           trimmedOrderNo,
@@ -9977,6 +10253,9 @@ async function saveOrder({
           canonicalVariationPathLabel,
           normalizedVariationPathJson,
           normalizedQuantity,
+          unitSelection.unitId,
+          normalizedUnitName,
+          normalizedUnitSymbol,
           normalizedUnitPrice,
           hasInvoicedQtyInput ? normalizedTotalInvoicedQty : 0,
           normalizedStatus,
@@ -10522,7 +10801,7 @@ async function saveItem({
     variationTree: variationTree,
   });
   if (duplicate) {
-    const error = new Error('An item with the same name and variation properties already exists in this group.');
+    const error = new Error('An item with the same name already exists.');
     error.statusCode = 409;
     throw error;
   }
@@ -11435,6 +11714,7 @@ async function getUnitsWithUsage() {
         (SELECT COUNT(*) FROM groups WHERE groups.unit_id = units.id) +
         (SELECT COUNT(*) FROM items WHERE items.unit_id = units.id) +
         (SELECT COUNT(*) FROM item_unit_conversions WHERE item_unit_conversions.unit_id = units.id) +
+        (SELECT COUNT(*) FROM orders WHERE orders.unit_id = units.id) +
         (SELECT COUNT(*) FROM units AS dependent_units WHERE dependent_units.conversion_base_unit_id = units.id) +
         (SELECT COUNT(*) FROM order_material_requirements WHERE order_material_requirements.unit_id = units.id)
       ) AS usage_count
@@ -15590,6 +15870,57 @@ const handleCancelChallan = async (req, res) => {
 
 app.post('/api/challans/:id/cancel', requirePermission('config.write'), handleCancelChallan);
 app.post('/api/delivery-challans/:id/cancel', requirePermission('config.write'), handleCancelChallan);
+
+const handleUpdateChallanReportGroups = async (req, res) => {
+  try {
+    const challanId = Number(req.params.id);
+    const existing = await getDeliveryChallanRowById(challanId);
+    if (!existing) {
+      res.status(404).json({
+        success: false,
+        data: null,
+        message: 'Challan not found.',
+        error: 'Challan not found.',
+      });
+      return;
+    }
+    const requestedCodes = normalizeChallanType(existing.type) === 'delivery'
+      ? await effectiveReportGroupCodesForChallan(existing)
+      : normalizeReportGroupCodes(
+          req.body?.reportGroupCodes ?? req.body?.report_group_codes ?? [],
+        );
+    await run('BEGIN TRANSACTION');
+    try {
+      await replaceChallanReportGroups(challanId, requestedCodes);
+      await logDeliveryChallanActivity(
+        challanId,
+        'report_groups_updated',
+        actorFromRequest(req),
+        { reportGroupCodes: requestedCodes },
+      );
+      await run('COMMIT');
+    } catch (error) {
+      await run('ROLLBACK');
+      throw error;
+    }
+    const refreshed = await getDeliveryChallanRowById(challanId);
+    res.json({
+      success: true,
+      data: await rowToDeliveryChallanDto(refreshed),
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      data: null,
+      message: error.message,
+      error: error.message,
+    });
+  }
+};
+
+app.patch('/api/challans/:id/report-groups', requirePermission('config.write'), handleUpdateChallanReportGroups);
+app.patch('/api/delivery-challans/:id/report-groups', requirePermission('config.write'), handleUpdateChallanReportGroups);
 
 app.get('/api/invoices', requirePermission('config.read'), async (req, res) => {
   try {

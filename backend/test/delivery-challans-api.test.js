@@ -142,8 +142,35 @@ test('delivery challans create issue and preserve company profile snapshot', asy
     const snapshot = JSON.parse(issuedRow.company_profile_snapshot);
     assert.equal(snapshot.company_name, 'Shree Ganesh Metal Works');
 
+    const vendor = await backend.saveVendor({
+      name: 'Supplier A',
+      gstNumber: '27ABCDE1234F1Z5',
+      phone: '9999999999',
+    });
+    const reception = await backend.saveDeliveryChallan(
+      {
+        type: 'reception',
+        date: '2026-05-04',
+        location: 'Dispatch Bay',
+        vendor_id: vendor.id,
+        source_reference: 'GRN-101',
+        items: [
+          {
+            item_id: order.item_id,
+            variation_leaf_node_id: order.variation_leaf_node_id || 0,
+            quantity_pcs: '25',
+            weight: '25',
+          },
+        ],
+      },
+      actor,
+      { user: actor },
+    );
+    const issuedReception = await backend.issueDeliveryChallan(reception.id, actor);
+
     const clientStatement = await backend.buildClientStatementReport({
       challanIds: [issued.challan_no],
+      receptionChallanIds: [issuedReception.challan_no],
     });
     assert.equal(clientStatement.summary.challanCount, 1);
     assert.equal(clientStatement.rows.length, 1);
@@ -158,9 +185,20 @@ test('delivery challans create issue and preserve company profile snapshot', asy
       /At least one challan number is required/,
     );
     await assert.rejects(
-      () => backend.buildClientStatementReport({ challanIds: ['DC-MISSING'] }),
+      () => backend.buildClientStatementReport({ challanIds: [issued.challan_no], receptionChallanIds: [] }),
+      /At least one reception challan is required/,
+    );
+    await assert.rejects(
+      () => backend.buildClientStatementReport({ challanIds: ['DC-MISSING'], receptionChallanIds: [issuedReception.challan_no] }),
       /Unknown challan number/,
     );
+    await assert.rejects(
+      () => backend.buildClientStatementReport({ challanIds: [issued.challan_no], receptionChallanIds: ['RC-MISSING'] }),
+      /Unknown reception challan number/,
+    );
+
+    const cancelledReception = await backend.cancelDeliveryChallan(reception.id, actor);
+    assert.equal(cancelledReception.status, 'cancelled');
 
     const cancelled = await backend.cancelDeliveryChallan(created.id, actor);
     assert.equal(cancelled.status, 'cancelled');

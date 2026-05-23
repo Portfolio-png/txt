@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/production_provider.dart';
@@ -6,8 +8,104 @@ import '../providers/production_run_provider.dart';
 import '../widgets/lock_key_setup_modal.dart';
 import '../widgets/material_ledger_closure_dialog.dart';
 
-class ShopFloorKioskScreen extends StatelessWidget {
+class ShopFloorKioskScreen extends StatefulWidget {
   const ShopFloorKioskScreen({super.key});
+
+  @override
+  State<ShopFloorKioskScreen> createState() => _ShopFloorKioskScreenState();
+}
+
+class _ShopFloorKioskScreenState extends State<ShopFloorKioskScreen> {
+  late final FocusNode _globalFocusNode;
+  final StringBuffer _barcodeBuffer = StringBuffer();
+  Timer? _debounceTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _globalFocusNode = FocusNode();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final productionProvider = Provider.of<ProductionProvider>(context);
+    final stage = productionProvider.selectedStage;
+    final runProvider = Provider.of<ProductionRunProvider>(context, listen: false);
+    if (stage != null && runProvider.stageId != stage.id) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          context.read<ProductionRunProvider>().updateExpectedAssets(
+            stageId: stage.id,
+            machineId: stage.machineId,
+            dieId: stage.dieId,
+          );
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _globalFocusNode.dispose();
+    _debounceTimer?.cancel();
+    super.dispose();
+  }
+
+  void _dispatchBarcode(String barcode) {
+    final run = context.read<ProductionRunProvider>();
+    final production = context.read<ProductionProvider>();
+    run.verifyScannedAsset(
+      barcode,
+      onVerifiedAll: () {
+        final machineId = run.scannedMachineId;
+        final dieId = run.scannedDieId;
+        if (machineId != null && dieId != null) {
+          production.verifyAssetSetup(machineId, dieId);
+          production.startRun();
+          final runId =
+              production.activeRun?.id ??
+              'run-${DateTime.now().microsecondsSinceEpoch}';
+          run.startRun(runId: runId);
+        }
+      },
+    );
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (FocusManager.instance.primaryFocus != _globalFocusNode) {
+      return KeyEventResult.ignored;
+    }
+
+    if (event is! KeyDownEvent) {
+      return KeyEventResult.ignored;
+    }
+
+    final logicalKey = event.logicalKey;
+
+    if (logicalKey == LogicalKeyboardKey.enter ||
+        logicalKey == LogicalKeyboardKey.numpadEnter) {
+      _debounceTimer?.cancel();
+      final barcode = _barcodeBuffer.toString().trim();
+      _barcodeBuffer.clear();
+      if (barcode.isNotEmpty) {
+        _dispatchBarcode(barcode);
+      }
+      return KeyEventResult.handled;
+    }
+
+    final char = event.character;
+    if (char != null && char.isNotEmpty) {
+      _debounceTimer?.cancel();
+      _barcodeBuffer.write(char);
+      _debounceTimer = Timer(const Duration(milliseconds: 50), () {
+        _barcodeBuffer.clear();
+      });
+      return KeyEventResult.handled;
+    }
+
+    return KeyEventResult.ignored;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -23,30 +121,35 @@ class ShopFloorKioskScreen extends StatelessWidget {
       (provider) => provider.state,
     );
 
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        children: [
-          _StatusHero(provider: provider),
-          const SizedBox(height: 12),
-          _KioskPipelineVisualizer(provider: provider),
-          const SizedBox(height: 12),
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: _RunTelemetry(stage: stage, provider: provider),
-                ),
-                const SizedBox(width: 18),
-                Expanded(flex: 2, child: _LiveCounters(provider: provider)),
-              ],
+    return Focus(
+      focusNode: _globalFocusNode,
+      autofocus: true,
+      onKeyEvent: _handleKeyEvent,
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          children: [
+            _StatusHero(provider: provider),
+            const SizedBox(height: 12),
+            _KioskPipelineVisualizer(provider: provider),
+            const SizedBox(height: 12),
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: _RunTelemetry(stage: stage, provider: provider),
+                  ),
+                  const SizedBox(width: 18),
+                  Expanded(flex: 2, child: _LiveCounters(provider: provider)),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 18),
-          _KioskControls(provider: provider),
-        ],
+            const SizedBox(height: 18),
+            _KioskControls(provider: provider),
+          ],
+        ),
       ),
     );
   }
@@ -66,47 +169,36 @@ class _KioskPipelineVisualizer extends StatelessWidget {
       (provider) => provider.state,
     );
 
-    return Container(
+    return SizedBox(
       width: double.infinity,
-      height: 125,
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: stages.length,
-        separatorBuilder: (context, index) {
-          final isCompleted = index < selectedIndex;
-          final color = isCompleted
-              ? const Color(0xFF10B981)
-              : const Color(0xFFCBD5E1);
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(width: 24, height: 2, color: color),
-                  Icon(Icons.chevron_right, color: color, size: 18),
-                ],
-              ),
+      height: 150,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final nodeWidth = constraints.maxWidth < 540
+              ? constraints.maxWidth
+              : 250.0;
+          return SingleChildScrollView(
+            primary: false,
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                for (var index = 0; index < stages.length; index++)
+                  _KioskPipelineNode(
+                    width: nodeWidth,
+                    stage: stages[index],
+                    index: index,
+                    isSelected: stages[index].id == selectedId,
+                    isCompleted: index < selectedIndex,
+                    isActive:
+                        stages[index].id == selectedId &&
+                        (runState == ProductionState.running ||
+                            runState == ProductionState.paused),
+                    provider: provider,
+                  ),
+              ],
             ),
-          );
-        },
-        itemBuilder: (context, index) {
-          final stage = stages[index];
-          final isSelected = stage.id == selectedId;
-          final isCompleted = index < selectedIndex;
-          final isActive =
-              isSelected &&
-              (runState == ProductionState.running ||
-                  runState == ProductionState.paused);
-
-          return _KioskPipelineNode(
-            stage: stage,
-            index: index,
-            isSelected: isSelected,
-            isCompleted: isCompleted,
-            isActive: isActive,
-            provider: provider,
           );
         },
       ),
@@ -116,6 +208,7 @@ class _KioskPipelineVisualizer extends StatelessWidget {
 
 class _KioskPipelineNode extends StatefulWidget {
   const _KioskPipelineNode({
+    required this.width,
     required this.stage,
     required this.index,
     required this.isSelected,
@@ -124,6 +217,7 @@ class _KioskPipelineNode extends StatefulWidget {
     required this.provider,
   });
 
+  final double width;
   final PipelineStage stage;
   final int index;
   final bool isSelected;
@@ -192,7 +286,8 @@ class _KioskPipelineNodeState extends State<_KioskPipelineNode>
     }
 
     Widget content = Container(
-      width: 250,
+      width: widget.width,
+      height: 117,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
         color: cardBg,
@@ -464,12 +559,11 @@ class _StatusHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final running = context.select<ProductionRunProvider, bool>(
-      (provider) => provider.isRunning,
+    final runState = context.select<ProductionRunProvider, ProductionState>(
+      (provider) => provider.state,
     );
-    final paused = context.select<ProductionRunProvider, bool>(
-      (provider) => provider.isPaused,
-    );
+    final running = runState == ProductionState.running;
+    final paused = runState == ProductionState.paused;
     final text = running
         ? 'RUNNING'
         : paused
@@ -482,9 +576,16 @@ class _StatusHero extends StatelessWidget {
       (provider) => provider.activeOperator,
     );
 
-    final backgroundColor = running
-        ? const Color(0xFF22C55E)
-        : const Color(0xFFF59E0B);
+    final Color backgroundColor;
+    switch (runState) {
+      case ProductionState.running:
+        backgroundColor = const Color(0xFF22C55E);
+      case ProductionState.paused:
+      case ProductionState.idle:
+      case ProductionState.setup:
+      case ProductionState.completed:
+        backgroundColor = const Color(0xFFF59E0B);
+    }
     const textColor = Color(0xFF09090B);
 
     return Container(
@@ -576,24 +677,20 @@ class _ElapsedClock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final elapsed = context.select<ProductionProvider, String>(
-      (provider) => provider.formattedElapsed,
-    );
-    final runElapsed = context.select<ProductionRunProvider, String>(
-      (provider) => provider.elapsedDisplay,
-    );
-    final runActive = context.select<ProductionRunProvider, bool>(
-      (provider) => provider.isRunning || provider.isPaused,
-    );
-    return Text(
-      runActive ? runElapsed : elapsed,
-      style: const TextStyle(
-        color: Color(0xFF09090B),
-        fontFamily: 'monospace',
-        fontSize: 22,
-        fontWeight: FontWeight.w900,
-        letterSpacing: 0,
-      ),
+    return Selector<ProductionRunProvider, String>(
+      selector: (context, provider) => provider.elapsedDisplay,
+      builder: (context, elapsedDisplay, child) {
+        return Text(
+          elapsedDisplay,
+          style: const TextStyle(
+            color: Color(0xFF09090B),
+            fontFamily: 'monospace',
+            fontSize: 22,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0,
+          ),
+        );
+      },
     );
   }
 }
@@ -931,6 +1028,11 @@ class _RunTelemetry extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final barcodeError = context.select<ProductionRunProvider, String?>(
+      (p) => p.barcodeErrorMessage,
+    );
+    final errorMessage = provider.validationErrorMessage ?? barcodeError;
+
     return _KioskPanel(
       child: SingleChildScrollView(
         child: Column(
@@ -961,7 +1063,7 @@ class _RunTelemetry extends StatelessWidget {
               value: stage?.outputMaterial ?? '--',
             ),
             _TelemetryLine(label: 'Scrap', value: stage?.scrapPolicy ?? '--'),
-            if (provider.validationErrorMessage != null) ...[
+            if (errorMessage != null) ...[
               const SizedBox(height: 18),
               Container(
                 width: double.infinity,
@@ -973,7 +1075,7 @@ class _RunTelemetry extends StatelessWidget {
                   ),
                 ),
                 child: Text(
-                  provider.validationErrorMessage!,
+                  errorMessage,
                   style: const TextStyle(
                     color: Color(0xFF7F1D1D),
                     fontWeight: FontWeight.w800,

@@ -211,9 +211,15 @@ class _StructuredGroupEditorDialogState
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<InventoryProvider>();
-    final groups = context.watch<GroupsProvider>().activeGroups;
+    final groupsProvider = context.watch<GroupsProvider>();
+    final itemsProvider = context.watch<ItemsProvider>();
+    final groups = groupsProvider.activeGroups;
     final units = context.watch<UnitsProvider>().activeUnits;
     final items = _activeItems();
+    final saveError =
+        groupsProvider.errorMessage ??
+        itemsProvider.errorMessage ??
+        provider.errorMessage;
     final selectedUnit = units
         .where((unit) => unit.id == _selectedUnitId)
         .firstOrNull;
@@ -285,6 +291,25 @@ class _StructuredGroupEditorDialogState
                   ],
                 ),
               ),
+              if (saveError != null)
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.fromLTRB(24, 14, 24, 0),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF2F2),
+                    border: Border.all(color: const Color(0xFFFECACA)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    saveError,
+                    style: _inventorySegoeStyle(
+                      color: const Color(0xFF991B1B),
+                      size: 13,
+                      weight: FontWeight.w600,
+                    ),
+                  ),
+                ),
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
@@ -933,11 +958,17 @@ class _StructuredGroupEditorDialogState
             unitId: _selectedUnitId!,
           ),
         );
-        if (savedGroup == null) {
+        if (savedGroup == null || groupsProvider.errorMessage != null) {
           return;
         }
         await groupsProvider.refresh();
+        if (groupsProvider.errorMessage != null) {
+          return;
+        }
         await itemsProvider.refresh();
+        if (itemsProvider.errorMessage != null) {
+          return;
+        }
         savedGroup = groupsProvider.findById(savedGroup.id) ?? savedGroup;
         if (!context.mounted) {
           return;
@@ -976,7 +1007,13 @@ class _StructuredGroupEditorDialogState
         return;
       }
       await groupsProvider.refresh();
+      if (groupsProvider.errorMessage != null) {
+        return;
+      }
       await itemsProvider.refresh();
+      if (itemsProvider.errorMessage != null) {
+        return;
+      }
       final matchingGroups = groupsProvider.activeGroups
           .where(
             (group) =>
@@ -997,7 +1034,7 @@ class _StructuredGroupEditorDialogState
           unitId: _selectedUnitId!,
         ),
       );
-      if (savedGroup == null) {
+      if (savedGroup == null || groupsProvider.errorMessage != null) {
         return;
       }
 
@@ -1041,11 +1078,21 @@ class _StructuredGroupEditorDialogState
       }
 
       await groupsProvider.refresh();
+      if (groupsProvider.errorMessage != null) {
+        return;
+      }
       await itemsProvider.refresh();
+      if (itemsProvider.errorMessage != null) {
+        return;
+      }
       savedGroup = groupsProvider.findById(group.id) ?? savedGroup;
     }
 
-    if (!context.mounted) {
+    if (!context.mounted ||
+        savedGroup == null ||
+        groupsProvider.errorMessage != null ||
+        itemsProvider.errorMessage != null ||
+        inventoryProvider.errorMessage != null) {
       return;
     }
     Navigator.of(context).pop(savedGroup);

@@ -33,6 +33,16 @@ test('orders persistence functions create, list, and update lifecycle', async ()
       'orders table must expose unit_price',
     );
     assert.equal(
+      orderColumns.some((column) => column.name === 'unit_id'),
+      true,
+      'orders table must expose unit_id',
+    );
+    assert.equal(
+      orderColumns.some((column) => column.name === 'unit_symbol'),
+      true,
+      'orders table must expose unit_symbol',
+    );
+    assert.equal(
       orderColumns.some((column) => column.name === 'total_invoiced_qty'),
       true,
       'orders table must expose total_invoiced_qty',
@@ -276,6 +286,8 @@ test('orders persistence functions create, list, and update lifecycle', async ()
     assert.equal(createdDto.orderNo, 'ORD-DB-001');
     assert.equal(createdDto.status, 'inProgress');
     assert.equal(createdDto.quantity, 12);
+    assert.equal(createdDto.unitId, item.unitId);
+    assert.ok(createdDto.unitSymbol.length > 0);
     assert.equal(createdDto.unitPrice, 42.5);
     assert.equal(createdDto.totalInvoicedQty, 3);
     const linkedDocuments = await backend.getPoDocumentsForOrder(created.id);

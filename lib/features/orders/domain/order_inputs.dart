@@ -13,6 +13,9 @@ class CreateOrderInput {
     required this.variationPathLabel,
     required this.variationPathNodeIds,
     required this.quantity,
+    this.unitId,
+    this.unitName = 'Pieces',
+    this.unitSymbol = 'Pieces',
     this.status = OrderStatus.notStarted,
     this.unitPrice = 0,
     this.totalInvoicedQty = 0,
@@ -32,6 +35,9 @@ class CreateOrderInput {
   final String variationPathLabel;
   final List<int> variationPathNodeIds;
   final int quantity;
+  final int? unitId;
+  final String unitName;
+  final String unitSymbol;
   final OrderStatus status;
   final double unitPrice;
   final double totalInvoicedQty;

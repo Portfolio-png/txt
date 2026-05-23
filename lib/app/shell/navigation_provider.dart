@@ -92,8 +92,8 @@ class NavigationProvider extends ChangeNotifier {
     _selectedKey = key;
     notifyListeners();
 
-    if (wasProduction != isProduction) {
-      _toggleFullscreen(isProduction);
+    if (!wasProduction && isProduction) {
+      _toggleFullscreen(true);
     }
   }
 

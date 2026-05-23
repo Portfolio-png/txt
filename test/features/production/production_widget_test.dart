@@ -66,6 +66,28 @@ void main() {
     expect(provider.blueprint.stages.length, initialCount + 1);
   });
 
+  testWidgets('builder renders stages on a zoomable canvas', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    final provider = ProductionProvider.seeded();
+    addTearDown(provider.dispose);
+
+    await tester.pumpWidget(
+      _ProductionHarness(
+        provider: provider,
+        child: const PipelineBuilderScreen(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(InteractiveViewer), findsOneWidget);
+    expect(find.text('CANVAS'), findsOneWidget);
+    expect(find.byIcon(Icons.center_focus_strong), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.add_rounded));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('kiosk macro buttons keep 64dp minimum target height', (
     tester,
   ) async {
@@ -303,6 +325,131 @@ void main() {
     expect(find.text('OPERATOR SWITCHER'), findsNothing);
     expect(provider.activeOperator, 'OPERATOR-A');
   });
+
+  testWidgets('wedge keyboard buffering, verification, and start flow', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    final provider = ProductionProvider.seeded();
+
+    await tester.pumpWidget(
+      _ProductionHarness(
+        provider: provider,
+        child: const ShopFloorKioskScreen(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Helper to send characters simulating a rapid keyboard wedge scan
+    Future<void> sendWedgeBarcode(String barcode) async {
+      for (var i = 0; i < barcode.length; i++) {
+        final char = barcode[i];
+        final key = _getLogicalKeyFromChar(char);
+        await tester.sendKeyDownEvent(key, character: char);
+        await tester.sendKeyUpEvent(key);
+        await tester.pump(const Duration(milliseconds: 2));
+      }
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+    }
+
+    // 1. Initially, we are in setup phase
+    expect(provider.phase, ProductionRunPhase.idle);
+
+    // 2. Scan machine
+    await sendWedgeBarcode('MC-SLIT-01');
+    
+    final runProvider = Provider.of<ProductionRunProvider>(
+      tester.element(find.byType(ShopFloorKioskScreen)),
+      listen: false,
+    );
+    expect(runProvider.scannedMachineId, 'MC-SLIT-01');
+    expect(runProvider.barcodeErrorMessage, isNull);
+
+    // 3. Scan die
+    await sendWedgeBarcode('DIE-1450-A');
+    
+    // Scanned die should be updated, and the run should auto-start
+    expect(runProvider.scannedDieId, 'DIE-1450-A');
+    expect(runProvider.barcodeErrorMessage, isNull);
+    expect(provider.phase, ProductionRunPhase.running);
+
+    provider.dispose();
+  });
+
+  testWidgets('wedge barcode mismatch shows error message', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    final provider = ProductionProvider.seeded();
+    addTearDown(provider.dispose);
+
+    await tester.pumpWidget(
+      _ProductionHarness(
+        provider: provider,
+        child: const ShopFloorKioskScreen(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    Future<void> sendWedgeBarcode(String barcode) async {
+      for (var i = 0; i < barcode.length; i++) {
+        final char = barcode[i];
+        final key = _getLogicalKeyFromChar(char);
+        await tester.sendKeyDownEvent(key, character: char);
+        await tester.sendKeyUpEvent(key);
+        await tester.pump(const Duration(milliseconds: 2));
+      }
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+    }
+
+    // Scan wrong machine barcode
+    await sendWedgeBarcode('MC-WRONG');
+    
+    // Screen should render the barcode error message
+    expect(find.textContaining('does not match expected assets'), findsOneWidget);
+  });
+
+  testWidgets('debounce timer clears wedge buffer on slow inputs', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    final provider = ProductionProvider.seeded();
+    addTearDown(provider.dispose);
+
+    await tester.pumpWidget(
+      _ProductionHarness(
+        provider: provider,
+        child: const ShopFloorKioskScreen(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Type "MC-"
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.keyM, character: 'M');
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.keyM);
+    await tester.pump(const Duration(milliseconds: 2));
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.keyC, character: 'C');
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.keyC);
+    await tester.pump(const Duration(milliseconds: 2));
+
+    // Wait more than 50ms (debounce timeout)
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // Type the rest "SLIT-01"
+    for (final char in ['-', 'S', 'L', 'I', 'T', '-', '0', '1']) {
+      final key = _getLogicalKeyFromChar(char);
+      await tester.sendKeyDownEvent(key, character: char);
+      await tester.sendKeyUpEvent(key);
+      await tester.pump(const Duration(milliseconds: 2));
+    }
+    
+    // Press enter
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    // Since "MC-" was cleared from the buffer after 50ms, only "-SLIT-01" was sent, which is invalid
+    expect(find.textContaining('does not match expected assets'), findsOneWidget);
+  });
 }
 
 class _ProductionHarness extends StatelessWidget {
@@ -322,5 +469,24 @@ class _ProductionHarness extends StatelessWidget {
       ],
       child: MaterialApp(home: Scaffold(body: child)),
     );
+  }
+}
+
+LogicalKeyboardKey _getLogicalKeyFromChar(String char) {
+  switch (char.toUpperCase()) {
+    case 'M': return LogicalKeyboardKey.keyM;
+    case 'C': return LogicalKeyboardKey.keyC;
+    case 'S': return LogicalKeyboardKey.keyS;
+    case 'L': return LogicalKeyboardKey.keyL;
+    case 'I': return LogicalKeyboardKey.keyI;
+    case 'T': return LogicalKeyboardKey.keyT;
+    case 'D': return LogicalKeyboardKey.keyD;
+    case 'A': return LogicalKeyboardKey.keyA;
+    case '-': return LogicalKeyboardKey.minus;
+    case '0': return LogicalKeyboardKey.digit0;
+    case '1': return LogicalKeyboardKey.digit1;
+    case '4': return LogicalKeyboardKey.digit4;
+    case '5': return LogicalKeyboardKey.digit5;
+    default: return LogicalKeyboardKey.space;
   }
 }

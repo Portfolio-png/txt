@@ -143,6 +143,19 @@ class ChallanProvider extends ChangeNotifier {
 
   Future<void> recordPrint(int id) => _repository.recordPrint(id);
 
+  Future<DeliveryChallan?> updateChallanReportGroups(
+    int id,
+    List<String> reportGroupCodes,
+  ) async {
+    final saved = await _save(
+      () => _repository.updateChallanReportGroups(id, reportGroupCodes),
+    );
+    if (saved != null) {
+      await refresh();
+    }
+    return saved;
+  }
+
   Future<InvoiceHeader?> updateInvoiceStatus(int id, String status) async {
     return _save(() => _repository.updateInvoiceStatus(id, status));
   }
@@ -255,7 +268,9 @@ class ChallanProvider extends ChangeNotifier {
     Future<DeliveryChallan> Function() action,
   ) async {
     final saved = await _save(action);
-    await refresh();
+    if (saved != null) {
+      await refresh();
+    }
     return saved;
   }
 
@@ -271,6 +286,13 @@ class ChallanProvider extends ChangeNotifier {
       return null;
     } finally {
       _isSaving = false;
+      notifyListeners();
+    }
+  }
+
+  void clearError() {
+    if (_errorMessage != null) {
+      _errorMessage = null;
       notifyListeners();
     }
   }

@@ -68,6 +68,7 @@ class ApiOrderRepository implements OrderRepository {
             order.clientId == input.clientId &&
             order.itemId == input.itemId &&
             order.variationLeafNodeId == input.variationLeafNodeId &&
+            (order.unitId ?? 0) == (input.unitId ?? 0) &&
             _normalize(order.poNumber) == normalizedPoNumber &&
             _sameMoment(order.startDate, input.startDate) &&
             _sameMoment(order.endDate, input.endDate),
@@ -87,6 +88,13 @@ class ApiOrderRepository implements OrderRepository {
           variationPathLabel: input.variationPathLabel.trim(),
           variationPathNodeIds: List<int>.from(input.variationPathNodeIds),
           quantity: existing.quantity + input.quantity,
+          unitId: input.unitId ?? existing.unitId,
+          unitName: input.unitName.trim().isNotEmpty
+              ? input.unitName.trim()
+              : existing.unitName,
+          unitSymbol: input.unitSymbol.trim().isNotEmpty
+              ? input.unitSymbol.trim()
+              : existing.unitSymbol,
           unitPrice: input.unitPrice > 0 ? input.unitPrice : existing.unitPrice,
           totalInvoicedQty: input.totalInvoicedQty > 0
               ? input.totalInvoicedQty
@@ -119,6 +127,9 @@ class ApiOrderRepository implements OrderRepository {
         variationPathLabel: input.variationPathLabel.trim(),
         variationPathNodeIds: List<int>.from(input.variationPathNodeIds),
         quantity: input.quantity,
+        unitId: input.unitId,
+        unitName: input.unitName.trim(),
+        unitSymbol: input.unitSymbol.trim(),
         unitPrice: input.unitPrice,
         totalInvoicedQty: input.totalInvoicedQty,
         status: input.status,
@@ -413,6 +424,9 @@ class ApiOrderRepository implements OrderRepository {
         variationPathLabel: current.variationPathLabel,
         variationPathNodeIds: List<int>.from(current.variationPathNodeIds),
         quantity: current.quantity,
+        unitId: current.unitId,
+        unitName: current.unitName,
+        unitSymbol: current.unitSymbol,
         status: input.status,
         createdAt: current.createdAt,
         startDate: input.startDate,

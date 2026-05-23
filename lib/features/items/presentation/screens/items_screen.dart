@@ -1784,7 +1784,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                 : await itemsProvider.archiveItem(
                                     widget.item!.id,
                                   );
-                            if (context.mounted && result != null) {
+                            if (context.mounted &&
+                                result != null &&
+                                itemsProvider.errorMessage == null) {
                               Navigator.of(context).pop(result);
                             }
                           },
@@ -2121,7 +2123,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
             ),
           );
 
-    if (context.mounted && result != null) {
+    if (context.mounted &&
+        result != null &&
+        itemsProvider.errorMessage == null) {
       Navigator.of(context).pop(result);
     }
   }

@@ -167,7 +167,9 @@ class _ClientReportGeneratorDialogState
         _receptionChallansByNo
           ..clear()
           ..addEntries(
-            fullReceptions.map((challan) => MapEntry(challan.challanNo, challan)),
+            fullReceptions.map(
+              (challan) => MapEntry(challan.challanNo, challan),
+            ),
           );
         _selectedChallanIds.removeWhere(
           (challanNo) => !_challansByNo.containsKey(challanNo),
@@ -199,8 +201,11 @@ class _ClientReportGeneratorDialogState
     setState(() => _isExporting = true);
     try {
       final selectedNos = _selectedChallanIds.toList(growable: false)..sort();
-      final selectedReceptionNos = _selectedReceptionChallanIds.toList(growable: false)..sort();
+      final selectedReceptionNos = _selectedReceptionChallanIds.toList(
+        growable: false,
+      )..sort();
       final report = await _repository.generateClientStatementReport(
+        reportGroupCode: _selectedReportGroupCode(),
         challanNos: selectedNos,
         receptionChallanNos: selectedReceptionNos,
       );
@@ -215,7 +220,9 @@ class _ClientReportGeneratorDialogState
           for (final challanNo in selectedReceptionNos) {
             final challan = _receptionChallansByNo[challanNo];
             if (challan != null) {
-              _receptionChallansByNo[challanNo] = challan.copyWith(usedInReport: true);
+              _receptionChallansByNo[challanNo] = challan.copyWith(
+                usedInReport: true,
+              );
             }
           }
         });
@@ -372,12 +379,17 @@ class _ClientReportGeneratorDialogState
 
     // 2. Filter unique items for pricing dialog (exclude scrap)
     final scrapKeyword = options.scrapItemKeyword.toLowerCase();
-    final uniqueItems = report.rows
-        .map((r) => r.itemName)
-        .where((n) => n.trim().isNotEmpty && !n.toLowerCase().contains(scrapKeyword))
-        .toSet()
-        .toList(growable: false)
-      ..sort();
+    final uniqueItems =
+        report.rows
+            .map((r) => r.itemName)
+            .where(
+              (n) =>
+                  n.trim().isNotEmpty &&
+                  !n.toLowerCase().contains(scrapKeyword),
+            )
+            .toSet()
+            .toList(growable: false)
+          ..sort();
 
     if (!mounted) {
       return;
@@ -411,7 +423,10 @@ class _ClientReportGeneratorDialogState
       }) {
         return pw.Container(
           alignment: alignment,
-          padding: pw.EdgeInsets.symmetric(horizontal: paddingHorizontal, vertical: paddingVertical),
+          padding: pw.EdgeInsets.symmetric(
+            horizontal: paddingHorizontal,
+            vertical: paddingVertical,
+          ),
           decoration: pw.BoxDecoration(
             color: bgColor,
             border: pw.Border(
@@ -453,20 +468,64 @@ class _ClientReportGeneratorDialogState
         );
       }
 
-      final headerStyle = pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8);
+      final headerStyle = pw.TextStyle(
+        fontWeight: pw.FontWeight.bold,
+        fontSize: 8,
+      );
       final headerRow = pw.TableRow(
         children: [
           buildTextCell("", alignment: pw.Alignment.center, style: headerStyle),
-          buildTextCell("Date", alignment: pw.Alignment.center, style: headerStyle),
-          buildTextCell("Size", alignment: pw.Alignment.center, style: headerStyle),
-          buildTextCell("Weight", alignment: pw.Alignment.center, style: headerStyle, showRightDivider: true),
-          buildTextCell("Date", alignment: pw.Alignment.center, style: headerStyle),
-          buildTextCell("CHLL.No.", alignment: pw.Alignment.center, style: headerStyle),
-          buildTextCell("Particulars", alignment: pw.Alignment.center, style: headerStyle),
-          buildTextCell("Weight", alignment: pw.Alignment.center, style: headerStyle),
-          buildTextCell("Pcs", alignment: pw.Alignment.center, style: headerStyle),
-          buildTextCell("Rate", alignment: pw.Alignment.center, style: headerStyle),
-          buildTextCell("Amount", alignment: pw.Alignment.center, style: headerStyle),
+          buildTextCell(
+            "Date",
+            alignment: pw.Alignment.center,
+            style: headerStyle,
+          ),
+          buildTextCell(
+            "Size",
+            alignment: pw.Alignment.center,
+            style: headerStyle,
+          ),
+          buildTextCell(
+            "Weight",
+            alignment: pw.Alignment.center,
+            style: headerStyle,
+            showRightDivider: true,
+          ),
+          buildTextCell(
+            "Date",
+            alignment: pw.Alignment.center,
+            style: headerStyle,
+          ),
+          buildTextCell(
+            "CHLL.No.",
+            alignment: pw.Alignment.center,
+            style: headerStyle,
+          ),
+          buildTextCell(
+            "Particulars",
+            alignment: pw.Alignment.center,
+            style: headerStyle,
+          ),
+          buildTextCell(
+            "Weight",
+            alignment: pw.Alignment.center,
+            style: headerStyle,
+          ),
+          buildTextCell(
+            "Pcs",
+            alignment: pw.Alignment.center,
+            style: headerStyle,
+          ),
+          buildTextCell(
+            "Rate",
+            alignment: pw.Alignment.center,
+            style: headerStyle,
+          ),
+          buildTextCell(
+            "Amount",
+            alignment: pw.Alignment.center,
+            style: headerStyle,
+          ),
         ],
         decoration: const pw.BoxDecoration(color: PdfColors.grey200),
       );
@@ -485,7 +544,9 @@ class _ClientReportGeneratorDialogState
 
         for (int i = 0; i < n; i++) {
           final item = deliveries.isNotEmpty ? deliveries[i] : null;
-          final isScrap = item != null && item.particulars.toLowerCase().contains(scrapKeyword);
+          final isScrap =
+              item != null &&
+              item.particulars.toLowerCase().contains(scrapKeyword);
 
           double itemAmount = 0;
           double itemPcs = 0;
@@ -499,7 +560,9 @@ class _ClientReportGeneratorDialogState
             } else {
               final rule = pricingRules?[item.particulars];
               if (rule != null) {
-                final factor = rule.metric == PricingMetric.pcs ? item.quantityPcs : item.weight;
+                final factor = rule.metric == PricingMetric.pcs
+                    ? item.quantityPcs
+                    : item.weight;
                 itemAmount = factor * rule.price;
                 subtotal += itemAmount;
                 groupTotalAmount += itemAmount;
@@ -521,10 +584,19 @@ class _ClientReportGeneratorDialogState
                             width: 7,
                             height: 7,
                             decoration: pw.BoxDecoration(
-                              border: pw.Border.all(color: PdfColors.black, width: 0.8),
+                              border: pw.Border.all(
+                                color: PdfColors.black,
+                                width: 0.8,
+                              ),
                             ),
                             alignment: pw.Alignment.center,
-                            child: pw.Text('x', style: pw.TextStyle(fontSize: 5, fontWeight: pw.FontWeight.bold)),
+                            child: pw.Text(
+                              'x',
+                              style: pw.TextStyle(
+                                fontSize: 5,
+                                fontWeight: pw.FontWeight.bold,
+                              ),
+                            ),
                           ),
                         )
                       : pw.SizedBox.shrink(),
@@ -536,9 +608,7 @@ class _ClientReportGeneratorDialogState
                   alignment: pw.Alignment.center,
                 ),
                 // Reception Size
-                buildTextCell(
-                  i == 0 ? group.receptionSize : "",
-                ),
+                buildTextCell(i == 0 ? group.receptionSize : ""),
                 // Reception Weight
                 buildTextCell(
                   i == 0 ? _fmt(group.receptionWeight) : "",
@@ -561,9 +631,19 @@ class _ClientReportGeneratorDialogState
                       ? pw.Column(
                           crossAxisAlignment: pw.CrossAxisAlignment.start,
                           children: [
-                            pw.Text(item.particulars, style: const pw.TextStyle(fontSize: 8)),
+                            pw.Text(
+                              item.particulars,
+                              style: const pw.TextStyle(fontSize: 8),
+                            ),
                             if (item.note.trim().isNotEmpty)
-                              pw.Text(item.note.trim(), style: pw.TextStyle(fontSize: 6, fontStyle: pw.FontStyle.italic, color: PdfColors.grey700)),
+                              pw.Text(
+                                item.note.trim(),
+                                style: pw.TextStyle(
+                                  fontSize: 6,
+                                  fontStyle: pw.FontStyle.italic,
+                                  color: PdfColors.grey700,
+                                ),
+                              ),
                           ],
                         )
                       : pw.SizedBox.shrink(),
@@ -579,15 +659,9 @@ class _ClientReportGeneratorDialogState
                   alignment: pw.Alignment.centerRight,
                 ),
                 // Delivery Rate
-                buildTextCell(
-                  rateText,
-                  alignment: pw.Alignment.centerRight,
-                ),
+                buildTextCell(rateText, alignment: pw.Alignment.centerRight),
                 // Delivery Amount
-                buildTextCell(
-                  amountText,
-                  alignment: pw.Alignment.centerRight,
-                ),
+                buildTextCell(amountText, alignment: pw.Alignment.centerRight),
               ],
             ),
           );
@@ -603,8 +677,21 @@ class _ClientReportGeneratorDialogState
                 buildTextCell("", showRightDivider: true),
                 buildTextCell(""),
                 buildTextCell(""),
-                buildTextCell("LESS", style: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
-                buildTextCell(_fmt(group.lessWeight), alignment: pw.Alignment.centerRight, style: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
+                buildTextCell(
+                  "LESS",
+                  style: pw.TextStyle(
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.grey700,
+                  ),
+                ),
+                buildTextCell(
+                  _fmt(group.lessWeight),
+                  alignment: pw.Alignment.centerRight,
+                  style: pw.TextStyle(
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.grey700,
+                  ),
+                ),
                 buildTextCell(""),
                 buildTextCell(""),
                 buildTextCell(""),
@@ -613,21 +700,41 @@ class _ClientReportGeneratorDialogState
           );
         }
 
-        final totalStyle = pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8);
+        final totalStyle = pw.TextStyle(
+          fontWeight: pw.FontWeight.bold,
+          fontSize: 8,
+        );
         tableRows.add(
           pw.TableRow(
             children: [
               buildTextCell(""),
               buildTextCell(""),
               buildTextCell("TOTAL", style: totalStyle),
-              buildTextCell(_fmt(group.receptionWeight), alignment: pw.Alignment.centerRight, style: totalStyle, showRightDivider: true),
+              buildTextCell(
+                _fmt(group.receptionWeight),
+                alignment: pw.Alignment.centerRight,
+                style: totalStyle,
+                showRightDivider: true,
+              ),
               buildTextCell(""),
               buildTextCell(""),
               buildTextCell("TOTAL", style: totalStyle),
-              buildTextCell(_fmt(group.totalWeight), alignment: pw.Alignment.centerRight, style: totalStyle),
-              buildTextCell(_fmt(groupTotalPcs), alignment: pw.Alignment.centerRight, style: totalStyle),
+              buildTextCell(
+                _fmt(group.totalWeight),
+                alignment: pw.Alignment.centerRight,
+                style: totalStyle,
+              ),
+              buildTextCell(
+                _fmt(groupTotalPcs),
+                alignment: pw.Alignment.centerRight,
+                style: totalStyle,
+              ),
               buildTextCell(""),
-              buildTextCell(_fmtCurrency(groupTotalAmount), alignment: pw.Alignment.centerRight, style: totalStyle),
+              buildTextCell(
+                _fmtCurrency(groupTotalAmount),
+                alignment: pw.Alignment.centerRight,
+                style: totalStyle,
+              ),
             ],
             decoration: const pw.BoxDecoration(color: PdfColors.grey100),
           ),
@@ -650,7 +757,10 @@ class _ClientReportGeneratorDialogState
               padding: const pw.EdgeInsets.symmetric(vertical: 4),
               child: pw.Text(
                 'RECEPTION (INPUT)',
-                style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8),
+                style: pw.TextStyle(
+                  fontWeight: pw.FontWeight.bold,
+                  fontSize: 8,
+                ),
               ),
             ),
             pw.Container(
@@ -667,7 +777,10 @@ class _ClientReportGeneratorDialogState
               padding: const pw.EdgeInsets.symmetric(vertical: 4),
               child: pw.Text(
                 'DELIVERY (OUTPUT)',
-                style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8),
+                style: pw.TextStyle(
+                  fontWeight: pw.FontWeight.bold,
+                  fontSize: 8,
+                ),
               ),
             ),
           ],
@@ -691,7 +804,10 @@ class _ClientReportGeneratorDialogState
             bottom: pw.BorderSide(color: PdfColors.black, width: 1),
             left: pw.BorderSide(color: PdfColors.black, width: 1),
             right: pw.BorderSide(color: PdfColors.black, width: 1),
-            horizontalInside: pw.BorderSide(color: PdfColors.grey300, width: 0.5),
+            horizontalInside: pw.BorderSide(
+              color: PdfColors.grey300,
+              width: 0.5,
+            ),
           ),
           children: tableRows,
         );
@@ -700,11 +816,7 @@ class _ClientReportGeneratorDialogState
           pw.Inseparable(
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                superHeader,
-                table,
-                pw.SizedBox(height: 12),
-              ],
+              children: [superHeader, table, pw.SizedBox(height: 12)],
             ),
           ),
         );
@@ -726,7 +838,10 @@ class _ClientReportGeneratorDialogState
                   pw.Center(
                     child: pw.Text(
                       profile.companyName.toUpperCase(),
-                      style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14),
+                      style: pw.TextStyle(
+                        fontWeight: pw.FontWeight.bold,
+                        fontSize: 14,
+                      ),
                     ),
                   ),
                   pw.SizedBox(height: 2),
@@ -752,7 +867,10 @@ class _ClientReportGeneratorDialogState
                     children: [
                       pw.Text(
                         'Client: ${report.rows.firstOrNull?.clientName ?? ""}',
-                        style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+                        style: pw.TextStyle(
+                          fontWeight: pw.FontWeight.bold,
+                          fontSize: 10,
+                        ),
                       ),
                       pw.Text(
                         'Date: ${_date(report.generatedAt ?? DateTime.now())}    Page: ${context.pageNumber}',
@@ -764,7 +882,11 @@ class _ClientReportGeneratorDialogState
                   pw.Center(
                     child: pw.Text(
                       'STATEMENT',
-                      style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12, letterSpacing: 2),
+                      style: pw.TextStyle(
+                        fontWeight: pw.FontWeight.bold,
+                        fontSize: 12,
+                        letterSpacing: 2,
+                      ),
                     ),
                   ),
                   pw.SizedBox(height: 10),
@@ -778,7 +900,10 @@ class _ClientReportGeneratorDialogState
                     children: [
                       pw.Text(
                         'Client Statement: ${report.rows.firstOrNull?.clientName ?? ""}',
-                        style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9),
+                        style: pw.TextStyle(
+                          fontWeight: pw.FontWeight.bold,
+                          fontSize: 9,
+                        ),
                       ),
                       pw.Text(
                         'Page ${context.pageNumber}',
@@ -801,11 +926,17 @@ class _ClientReportGeneratorDialogState
               children: [
                 pw.Text(
                   '${options.scrapLabel} (${_fmt(totalWastageWeight)} Kg @ Rs ${_fmt(options.scrapRate)}/Kg):',
-                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9),
+                  style: pw.TextStyle(
+                    fontWeight: pw.FontWeight.bold,
+                    fontSize: 9,
+                  ),
                 ),
                 pw.Text(
                   '(-) Rs ${_fmtCurrency(wastageCredit)}',
-                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9),
+                  style: pw.TextStyle(
+                    fontWeight: pw.FontWeight.bold,
+                    fontSize: 9,
+                  ),
                 ),
               ],
             ),
@@ -820,58 +951,111 @@ class _ClientReportGeneratorDialogState
                   children: [
                     pw.Row(
                       children: [
-                        pw.Text('Subtotal:  ', style: const pw.TextStyle(fontSize: 9)),
+                        pw.Text(
+                          'Subtotal:  ',
+                          style: const pw.TextStyle(fontSize: 9),
+                        ),
                         pw.SizedBox(
                           width: 80,
-                          child: pw.Text('Rs ${_fmtCurrency(subtotal)}', textAlign: pw.TextAlign.right, style: const pw.TextStyle(fontSize: 9)),
+                          child: pw.Text(
+                            'Rs ${_fmtCurrency(subtotal)}',
+                            textAlign: pw.TextAlign.right,
+                            style: const pw.TextStyle(fontSize: 9),
+                          ),
                         ),
                       ],
                     ),
                     pw.SizedBox(height: 4),
                     pw.Row(
                       children: [
-                        pw.Text('Wastage Credit:  ', style: const pw.TextStyle(fontSize: 9)),
+                        pw.Text(
+                          'Wastage Credit:  ',
+                          style: const pw.TextStyle(fontSize: 9),
+                        ),
                         pw.SizedBox(
                           width: 80,
-                          child: pw.Text('Rs ${_fmtCurrency(wastageCredit)}', textAlign: pw.TextAlign.right, style: const pw.TextStyle(fontSize: 9)),
+                          child: pw.Text(
+                            'Rs ${_fmtCurrency(wastageCredit)}',
+                            textAlign: pw.TextAlign.right,
+                            style: const pw.TextStyle(fontSize: 9),
+                          ),
                         ),
                       ],
                     ),
                     pw.SizedBox(height: 4),
                     pw.Row(
                       children: [
-                        pw.Text('Total:  ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9)),
+                        pw.Text(
+                          'Total:  ',
+                          style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold,
+                            fontSize: 9,
+                          ),
+                        ),
                         pw.SizedBox(
                           width: 80,
-                          child: pw.Text('Rs ${_fmtCurrency(netTotal)}', textAlign: pw.TextAlign.right, style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9)),
+                          child: pw.Text(
+                            'Rs ${_fmtCurrency(netTotal)}',
+                            textAlign: pw.TextAlign.right,
+                            style: pw.TextStyle(
+                              fontWeight: pw.FontWeight.bold,
+                              fontSize: 9,
+                            ),
+                          ),
                         ),
                       ],
                     ),
                     pw.SizedBox(height: 4),
                     pw.Row(
                       children: [
-                        pw.Text('RD OFF:  ', style: const pw.TextStyle(fontSize: 9)),
+                        pw.Text(
+                          'RD OFF:  ',
+                          style: const pw.TextStyle(fontSize: 9),
+                        ),
                         pw.SizedBox(
                           width: 80,
-                          child: pw.Text('${rdOff >= 0 ? "+" : ""}${_fmtCurrency(rdOff)}', textAlign: pw.TextAlign.right, style: const pw.TextStyle(fontSize: 9)),
+                          child: pw.Text(
+                            '${rdOff >= 0 ? "+" : ""}${_fmtCurrency(rdOff)}',
+                            textAlign: pw.TextAlign.right,
+                            style: const pw.TextStyle(fontSize: 9),
+                          ),
                         ),
                       ],
                     ),
                     pw.SizedBox(height: 6),
                     pw.Container(
-                      padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                      padding: const pw.EdgeInsets.symmetric(
+                        vertical: 4,
+                        horizontal: 8,
+                      ),
                       decoration: const pw.BoxDecoration(
                         border: pw.Border(
                           top: pw.BorderSide(color: PdfColors.black, width: 1),
-                          bottom: pw.BorderSide(color: PdfColors.black, width: 1),
+                          bottom: pw.BorderSide(
+                            color: PdfColors.black,
+                            width: 1,
+                          ),
                         ),
                       ),
                       child: pw.Row(
                         children: [
-                          pw.Text('Grand Total:  ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
+                          pw.Text(
+                            'Grand Total:  ',
+                            style: pw.TextStyle(
+                              fontWeight: pw.FontWeight.bold,
+                              fontSize: 11,
+                            ),
+                          ),
                           pw.SizedBox(
                             width: 80,
-                            child: pw.Text('Rs $grandTotal', textAlign: pw.TextAlign.right, style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
+                            child: pw.Text(
+                              'Rs $grandTotal',
+                              textAlign: pw.TextAlign.right,
+                              style: pw.TextStyle(
+                                fontWeight: pw.FontWeight.bold,
+                                fontSize: 11,
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -900,6 +1084,19 @@ class _ClientReportGeneratorDialogState
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  String _selectedReportGroupCode() {
+    final codes = <String>{};
+    for (final challanNo in _selectedChallanIds) {
+      codes.addAll(_challansByNo[challanNo]?.reportGroupCodes ?? const []);
+    }
+    for (final challanNo in _selectedReceptionChallanIds) {
+      codes.addAll(
+        _receptionChallansByNo[challanNo]?.reportGroupCodes ?? const [],
+      );
+    }
+    return codes.length == 1 ? codes.single : '';
   }
 
   @override
@@ -984,11 +1181,13 @@ class _ClientReportGeneratorDialogState
                                   selectedReceptionCount:
                                       _selectedReceptionChallanIds.length,
                                   isExporting: _isExporting,
-                                  onExport: (_selectedChallanIds.isEmpty &&
+                                  onExport:
+                                      (_selectedChallanIds.isEmpty &&
                                           _selectedReceptionChallanIds.isEmpty)
                                       ? null
                                       : _exportXlsx,
-                                  onPrint: (_selectedChallanIds.isEmpty &&
+                                  onPrint:
+                                      (_selectedChallanIds.isEmpty &&
                                           _selectedReceptionChallanIds.isEmpty)
                                       ? null
                                       : _printPdf,
@@ -1556,28 +1755,42 @@ class _PreviewPane extends StatelessWidget {
             children: [
               Text(
                 '$selectedCount Del. / $selectedReceptionCount Rec. Selected',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800, fontSize: 16),
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                ),
               ),
               const SizedBox(height: 10),
               if (selectedCount == 0 && selectedReceptionCount == 0)
                 Container(
                   margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: SoftErpTheme.dangerBg.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: SoftErpTheme.dangerText.withValues(alpha: 0.3)),
+                    border: Border.all(
+                      color: SoftErpTheme.dangerText.withValues(alpha: 0.3),
+                    ),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.warning_amber_rounded, color: SoftErpTheme.dangerText, size: 20),
+                      const Icon(
+                        Icons.warning_amber_rounded,
+                        color: SoftErpTheme.dangerText,
+                        size: 20,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           'Select at least one delivery or reception challan.',
-                          style: const TextStyle(color: SoftErpTheme.dangerText, fontSize: 12, fontWeight: FontWeight.w600),
+                          style: const TextStyle(
+                            color: SoftErpTheme.dangerText,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ],
@@ -1726,7 +1939,6 @@ String _date(DateTime? value) {
   return '${value.day.toString().padLeft(2, '0')}-${value.month.toString().padLeft(2, '0')}-${value.year}';
 }
 
-
 String _timestamp() {
   final now = DateTime.now();
   return '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}-${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}';
@@ -1779,7 +1991,9 @@ class _ReportOptionsDialogState extends State<_ReportOptionsDialog> {
   void initState() {
     super.initState();
     _scrapRateController = TextEditingController(text: '170.00');
-    _scrapLabelController = TextEditingController(text: 'ALUMINIUM WASTAGE LESS');
+    _scrapLabelController = TextEditingController(
+      text: 'ALUMINIUM WASTAGE LESS',
+    );
     _scrapItemKeywordController = TextEditingController(text: 'wastage');
   }
 
@@ -1795,11 +2009,13 @@ class _ReportOptionsDialogState extends State<_ReportOptionsDialog> {
     final rate = double.tryParse(_scrapRateController.text.trim()) ?? 170.0;
     final label = _scrapLabelController.text.trim();
     final keyword = _scrapItemKeywordController.text.trim();
-    Navigator.of(context).pop(_ReportOptions(
-      scrapRate: rate,
-      scrapLabel: label.isEmpty ? 'ALUMINIUM WASTAGE LESS' : label,
-      scrapItemKeyword: keyword.isEmpty ? 'wastage' : keyword,
-    ));
+    Navigator.of(context).pop(
+      _ReportOptions(
+        scrapRate: rate,
+        scrapLabel: label.isEmpty ? 'ALUMINIUM WASTAGE LESS' : label,
+        scrapItemKeyword: keyword.isEmpty ? 'wastage' : keyword,
+      ),
+    );
   }
 
   @override
@@ -1841,7 +2057,10 @@ class _ReportOptionsDialogState extends State<_ReportOptionsDialog> {
                   children: [
                     const Text(
                       'Scrap Rate (₹/Kg)',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     TextField(
@@ -1881,7 +2100,10 @@ class _ReportOptionsDialogState extends State<_ReportOptionsDialog> {
                     const SizedBox(height: 16),
                     const Text(
                       'Scrap Label',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     TextField(
@@ -1912,7 +2134,10 @@ class _ReportOptionsDialogState extends State<_ReportOptionsDialog> {
                     const SizedBox(height: 16),
                     const Text(
                       'Scrap Item Name Keyword',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     TextField(
@@ -1955,10 +2180,7 @@ class _ReportOptionsDialogState extends State<_ReportOptionsDialog> {
                       onPressed: () => Navigator.of(context).pop(),
                     ),
                     const SizedBox(width: 12),
-                    AppButton(
-                      label: 'Continue',
-                      onPressed: _submit,
-                    ),
+                    AppButton(label: 'Continue', onPressed: _submit),
                   ],
                 ),
               ),
@@ -1969,4 +2191,3 @@ class _ReportOptionsDialogState extends State<_ReportOptionsDialog> {
     );
   }
 }
-

@@ -23,8 +23,12 @@ class OrderEntry {
     required this.quantity,
     required this.status,
     required this.createdAt,
+    this.unitId,
+    this.unitName = 'Pieces',
+    this.unitSymbol = 'Pieces',
     this.unitPrice = 0,
     this.totalInvoicedQty = 0,
+    this.totalDeliveredQty = 0,
     this.startDate,
     this.endDate,
   });
@@ -41,12 +45,25 @@ class OrderEntry {
   final String variationPathLabel;
   final List<int> variationPathNodeIds;
   final int quantity;
+  final int? unitId;
+  final String unitName;
+  final String unitSymbol;
   final double unitPrice;
   final double totalInvoicedQty;
+  final double totalDeliveredQty;
   final OrderStatus status;
   final DateTime createdAt;
   final DateTime? startDate;
   final DateTime? endDate;
+
+  String get unitDisplayLabel {
+    final symbol = unitSymbol.trim();
+    if (symbol.isNotEmpty) {
+      return symbol;
+    }
+    final name = unitName.trim();
+    return name.isNotEmpty ? name : 'Pieces';
+  }
 }
 
 extension<T> on Iterable<T> {

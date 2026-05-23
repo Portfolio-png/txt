@@ -3707,8 +3707,6 @@ class _ChallanPreviewSidebarState extends State<_ChallanPreviewSidebar> {
                             : challan.customerGstin),
                 ),
                 _DetailLine('Date', _date(challan.date)),
-                if (challan.location.trim().isNotEmpty)
-                  _DetailLine('Location', challan.location),
               ],
             ),
           ),

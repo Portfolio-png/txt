@@ -21,10 +21,14 @@ class OrderDto {
     required this.variationPathLabel,
     required this.variationPathNodeIds,
     required this.quantity,
+    required this.unitId,
+    required this.unitName,
+    required this.unitSymbol,
     required this.status,
     required this.createdAt,
     required this.unitPrice,
     required this.totalInvoicedQty,
+    required this.totalDeliveredQty,
     required this.startDate,
     required this.endDate,
   });
@@ -41,8 +45,12 @@ class OrderDto {
   final String variationPathLabel;
   final List<int> variationPathNodeIds;
   final int quantity;
+  final int? unitId;
+  final String unitName;
+  final String unitSymbol;
   final double unitPrice;
   final double totalInvoicedQty;
+  final double totalDeliveredQty;
   final OrderStatus status;
   final DateTime createdAt;
   final DateTime? startDate;
@@ -65,11 +73,21 @@ class OrderDto {
               .map((entry) => entry as int)
               .toList(growable: false),
       quantity: json['quantity'] as int? ?? 0,
+      unitId: (json['unitId'] as num? ?? json['unit_id'] as num?)?.toInt(),
+      unitName:
+          json['unitName'] as String? ?? json['unit_name'] as String? ?? '',
+      unitSymbol:
+          json['unitSymbol'] as String? ?? json['unit_symbol'] as String? ?? '',
       unitPrice: (json['unitPrice'] as num? ?? json['unit_price'] as num? ?? 0)
           .toDouble(),
       totalInvoicedQty:
           (json['totalInvoicedQty'] as num? ??
                   json['total_invoiced_qty'] as num? ??
+                  0)
+              .toDouble(),
+      totalDeliveredQty:
+          (json['totalDeliveredQty'] as num? ??
+                  json['total_delivered_qty'] as num? ??
                   0)
               .toDouble(),
       status: _statusFromJson(json['status'] as String? ?? ''),
@@ -95,8 +113,12 @@ class OrderDto {
       variationPathLabel: variationPathLabel,
       variationPathNodeIds: variationPathNodeIds,
       quantity: quantity,
+      unitId: unitId,
+      unitName: unitName,
+      unitSymbol: unitSymbol,
       unitPrice: unitPrice,
       totalInvoicedQty: totalInvoicedQty,
+      totalDeliveredQty: totalDeliveredQty,
       status: status,
       createdAt: createdAt,
       startDate: startDate,
@@ -152,6 +174,9 @@ class CreateOrderRequest {
     required this.variationPathLabel,
     required this.variationPathNodeIds,
     required this.quantity,
+    required this.unitId,
+    required this.unitName,
+    required this.unitSymbol,
     required this.status,
     required this.unitPrice,
     required this.totalInvoicedQty,
@@ -171,6 +196,9 @@ class CreateOrderRequest {
   final String variationPathLabel;
   final List<int> variationPathNodeIds;
   final int quantity;
+  final int? unitId;
+  final String unitName;
+  final String unitSymbol;
   final double unitPrice;
   final double totalInvoicedQty;
   final OrderStatus status;
@@ -191,6 +219,9 @@ class CreateOrderRequest {
       variationPathLabel: input.variationPathLabel,
       variationPathNodeIds: input.variationPathNodeIds,
       quantity: input.quantity,
+      unitId: input.unitId,
+      unitName: input.unitName,
+      unitSymbol: input.unitSymbol,
       status: input.status,
       unitPrice: input.unitPrice,
       totalInvoicedQty: input.totalInvoicedQty,
@@ -213,6 +244,9 @@ class CreateOrderRequest {
       'variationPathLabel': variationPathLabel,
       'variationPathNodeIds': variationPathNodeIds,
       'quantity': quantity,
+      'unitId': unitId,
+      'unitName': unitName,
+      'unitSymbol': unitSymbol,
       'unitPrice': unitPrice,
       'totalInvoicedQty': totalInvoicedQty,
       'status': status.name,

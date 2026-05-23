@@ -752,7 +752,9 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                                     : await provider.archiveUnit(
                                         widget.unit!.id,
                                       );
-                                if (context.mounted && result != null) {
+                                if (context.mounted &&
+                                    result != null &&
+                                    provider.errorMessage == null) {
                                   Navigator.of(context).pop(result);
                                 }
                               },
@@ -854,7 +856,7 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
           conversionFactor: 1,
         ),
       );
-      if (baseResult == null) return;
+      if (baseResult == null || provider.errorMessage != null) return;
     }
 
     final result = widget.unit == null
@@ -881,7 +883,7 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
             ),
           );
 
-    if (context.mounted && result != null) {
+    if (context.mounted && result != null && provider.errorMessage == null) {
       Navigator.of(context).pop(result);
     }
   }

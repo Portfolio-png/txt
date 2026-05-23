@@ -43,6 +43,36 @@ class ApiChallanRepository implements ChallanRepository {
   static int _mockNextTemplateId = 1;
   String? _lastWarningMessage;
 
+  static List<String> _deriveReportGroupCodesFromOrderIds(
+    Iterable<int> orderIds,
+  ) {
+    final ids = orderIds.where((id) => id > 0).toSet().toList(growable: false)
+      ..sort();
+    if (ids.isEmpty) {
+      return const <String>[];
+    }
+    if (ids.length == 1) {
+      return <String>['ORD-${ids.first}'];
+    }
+    return <String>['ORDSET-${ids.join('-')}'];
+  }
+
+  static List<String> _reportGroupCodesForInput(
+    DeliveryChallanDraftInput input,
+  ) {
+    if (input.type == ChallanType.delivery) {
+      return _deriveReportGroupCodesFromOrderIds(
+        input.orderIds.isEmpty ? <int>[input.orderId] : input.orderIds,
+      );
+    }
+    return input.reportGroupCodes
+        .map((code) => code.trim().toUpperCase())
+        .where((code) => code.isNotEmpty)
+        .toSet()
+        .toList(growable: false)
+      ..sort();
+  }
+
   @override
   String? get lastWarningMessage => _lastWarningMessage;
 
@@ -187,6 +217,7 @@ class ApiChallanRepository implements ChallanRepository {
         type: input.type,
         orderId: input.orderId,
         orderIds: input.orderIds,
+        reportGroupCodes: _reportGroupCodesForInput(input),
         clientId: null,
         orderNo: input.orderIds.isEmpty
             ? 'Order ${input.orderId}'
@@ -240,6 +271,9 @@ class ApiChallanRepository implements ChallanRepository {
         type: input.type,
         orderId: input.orderId,
         orderIds: input.orderIds,
+        reportGroupCodes: _reportGroupCodesForInput(input).isEmpty
+            ? current.reportGroupCodes
+            : _reportGroupCodesForInput(input),
         clientId: current.clientId,
         orderNo: current.orderNo,
         orderNos: current.orderNos,
@@ -320,6 +354,41 @@ class ApiChallanRepository implements ChallanRepository {
       response: response,
       fallback: 'Failed to record challan print.',
     );
+  }
+
+  @override
+  Future<DeliveryChallan> updateChallanReportGroups(
+    int id,
+    List<String> reportGroupCodes,
+  ) async {
+    final normalized =
+        reportGroupCodes
+            .map((code) => code.trim().toUpperCase())
+            .where((code) => code.isNotEmpty)
+            .toSet()
+            .toList(growable: false)
+          ..sort();
+    if (useMockResponses) {
+      final index = _mockChallans.indexWhere((challan) => challan.id == id);
+      final current = _mockChallans[index];
+      final updated = current.copyWith(reportGroupCodes: normalized);
+      _mockChallans[index] = updated;
+      return updated;
+    }
+    final uri = Uri.parse('$baseUrl/api/challans/$id/report-groups');
+    final response = await _sendRequest(
+      method: 'PATCH',
+      uri: uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({'reportGroupCodes': normalized}),
+    );
+    final payload = _decodeApiResponse(
+      method: 'PATCH',
+      uri: uri,
+      response: response,
+      fallback: 'Failed to update challan report groups.',
+    );
+    return DeliveryChallan.fromJson(_dataObject(payload, 'challan'));
   }
 
   @override
@@ -593,9 +662,11 @@ class ApiChallanRepository implements ChallanRepository {
 
   @override
   Future<ClientStatementReport> generateClientStatementReport({
+    required String reportGroupCode,
     required List<String> challanNos,
     required List<String> receptionChallanNos,
   }) async {
+    final normalizedReportGroupCode = reportGroupCode.trim().toUpperCase();
     final normalized = challanNos
         .map((value) => value.trim())
         .where((value) => value.isNotEmpty)
@@ -612,7 +683,11 @@ class ApiChallanRepository implements ChallanRepository {
             (challan) =>
                 normalized.contains(challan.challanNo) &&
                 challan.type == ChallanType.delivery &&
-                challan.status == DeliveryChallanStatus.issued,
+                challan.status == DeliveryChallanStatus.issued &&
+                (normalizedReportGroupCode.isEmpty ||
+                    challan.reportGroupCodes.contains(
+                      normalizedReportGroupCode,
+                    )),
           )
           .toList(growable: false);
       final selectedReceptions = _mockChallans
@@ -620,9 +695,20 @@ class ApiChallanRepository implements ChallanRepository {
             (challan) =>
                 normalizedReception.contains(challan.challanNo) &&
                 challan.type == ChallanType.reception &&
-                challan.status == DeliveryChallanStatus.issued,
+                challan.status == DeliveryChallanStatus.issued &&
+                (normalizedReportGroupCode.isEmpty ||
+                    challan.reportGroupCodes.contains(
+                      normalizedReportGroupCode,
+                    )),
           )
           .toList(growable: false);
+      if (normalizedReportGroupCode.isNotEmpty &&
+          (selected.length != normalized.length ||
+              selectedReceptions.length != normalizedReception.length)) {
+        throw DeliveryChallanApiException(
+          'Selected challans must belong to report group $normalizedReportGroupCode.',
+        );
+      }
       final rows = selected
           .expand(
             (challan) => challan.items.map(
@@ -649,26 +735,39 @@ class ApiChallanRepository implements ChallanRepository {
           );
         }
       }
-      final groups = selectedReceptions.map((rc) {
-        final rcWeight = rc.items.fold<double>(0.0, (sum, i) => sum + (double.tryParse(i.weight) ?? 0.0));
-        final deliveries = selected.expand((dc) => dc.items.map((i) => ClientStatementGroupDeliveryItem(
-          date: dc.date,
-          challanNo: dc.challanNo,
-          particulars: i.particulars,
-          note: i.note,
-          weight: double.tryParse(i.weight) ?? 0.0,
-          quantityPcs: double.tryParse(i.quantityPcs) ?? 0.0,
-        ))).toList(growable: false);
-        return ClientStatementGroup(
-          receptionChallanNo: rc.challanNo,
-          receptionDate: rc.date,
-          receptionSize: rc.items.isNotEmpty ? rc.items.first.particulars : '',
-          receptionWeight: rcWeight,
-          lessWeight: rcWeight * 0.05,
-          totalWeight: rcWeight,
-          deliveries: deliveries,
-        );
-      }).toList(growable: false);
+      final groups = selectedReceptions
+          .map((rc) {
+            final rcWeight = rc.items.fold<double>(
+              0.0,
+              (sum, i) => sum + (double.tryParse(i.weight) ?? 0.0),
+            );
+            final deliveries = selected
+                .expand(
+                  (dc) => dc.items.map(
+                    (i) => ClientStatementGroupDeliveryItem(
+                      date: dc.date,
+                      challanNo: dc.challanNo,
+                      particulars: i.particulars,
+                      note: i.note,
+                      weight: double.tryParse(i.weight) ?? 0.0,
+                      quantityPcs: double.tryParse(i.quantityPcs) ?? 0.0,
+                    ),
+                  ),
+                )
+                .toList(growable: false);
+            return ClientStatementGroup(
+              receptionChallanNo: rc.challanNo,
+              receptionDate: rc.date,
+              receptionSize: rc.items.isNotEmpty
+                  ? rc.items.first.particulars
+                  : '',
+              receptionWeight: rcWeight,
+              lessWeight: rcWeight * 0.05,
+              totalWeight: rcWeight,
+              deliveries: deliveries,
+            );
+          })
+          .toList(growable: false);
       return ClientStatementReport(
         rows: rows,
         receptionGroups: groups,
@@ -687,6 +786,7 @@ class ApiChallanRepository implements ChallanRepository {
       uri: uri,
       headers: const {'Content-Type': 'application/json'},
       body: jsonEncode({
+        'reportGroupCode': normalizedReportGroupCode,
         'challanIds': normalized,
         'receptionChallanIds': normalizedReception,
       }),
@@ -1180,6 +1280,7 @@ class ApiChallanRepository implements ChallanRepository {
         type: current.type,
         orderId: current.orderId,
         orderIds: current.orderIds,
+        reportGroupCodes: current.reportGroupCodes,
         clientId: current.clientId,
         orderNo: current.orderNo,
         orderNos: current.orderNos,

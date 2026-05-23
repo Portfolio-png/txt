@@ -423,7 +423,9 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
                   final saved = widget.vendor!.isArchived
                       ? await provider.restoreVendor(widget.vendor!.id)
                       : await provider.archiveVendor(widget.vendor!.id);
-                  if (!context.mounted || saved == null) {
+                  if (!context.mounted ||
+                      saved == null ||
+                      provider.errorMessage != null) {
                     return;
                   }
                   Navigator.of(context).pop(saved);
@@ -516,7 +518,7 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
               email: _emailController.text,
             ),
           );
-    if (saved != null && mounted) {
+    if (saved != null && mounted && provider.errorMessage == null) {
       Navigator.of(context).pop(saved);
     }
   }

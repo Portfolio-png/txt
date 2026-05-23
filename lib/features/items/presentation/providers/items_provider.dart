@@ -228,6 +228,59 @@ class ItemsProvider extends ChangeNotifier {
     return _save(() => _repository.updateItem(input));
   }
 
+  Future<ItemDefinition?> addUnitConversion({
+    required int itemId,
+    required int unitId,
+    required double unitsPerPrimary,
+  }) async {
+    final current = _items.where((item) => item.id == itemId).firstOrNull;
+    if (current == null) {
+      _errorMessage = 'Item not found. Please select the item again.';
+      notifyListeners();
+      return null;
+    }
+    if (unitId == current.unitId ||
+        current.unitConversions.any(
+          (conversion) => conversion.unitId == unitId,
+        )) {
+      _errorMessage = 'This unit is already available for this item.';
+      notifyListeners();
+      return null;
+    }
+    if (unitsPerPrimary <= 0) {
+      _errorMessage = 'Enter a conversion value greater than zero.';
+      notifyListeners();
+      return null;
+    }
+
+    return updateItem(
+      UpdateItemInput(
+        id: current.id,
+        name: current.name,
+        alias: current.alias,
+        displayName: current.displayName,
+        groupId: current.groupId,
+        unitId: current.unitId,
+        unitConversions: <ItemUnitConversionInput>[
+          ...current.unitConversions.map(
+            (conversion) => ItemUnitConversionInput(
+              unitId: conversion.unitId,
+              factorToPrimary: conversion.factorToPrimary,
+            ),
+          ),
+          ItemUnitConversionInput(
+            unitId: unitId,
+            factorToPrimary: 1 / unitsPerPrimary,
+          ),
+        ],
+        namingFormat: current.namingFormat,
+        variationTree: current.variationTree
+            .map(_toInput)
+            .toList(growable: false),
+      ),
+    );
+  }
+
   Future<QuickCreateVariationValueResult?> appendVariationValue({
     required int itemId,
     required int propertyNodeId,
@@ -535,6 +588,7 @@ class ItemsProvider extends ChangeNotifier {
       parentNodeId: node.parentNodeId,
       kind: node.kind,
       name: node.name,
+      code: node.code,
       displayName: node.displayName,
       children: node.children.map(_toInput).toList(growable: false),
     );

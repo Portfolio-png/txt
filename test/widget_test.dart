@@ -1299,6 +1299,14 @@ class FakeItemRepository extends ItemRepository {
               quantity: 1,
               groupId: 2,
               unitId: 2,
+              unitConversions: const [
+                ItemUnitConversionDefinition(
+                  unitId: 1,
+                  unitName: 'Kilogram',
+                  unitSymbol: 'Kg',
+                  factorToPrimary: 1,
+                ),
+              ],
               isArchived: false,
               usageCount: 2,
               createdAt: DateTime(2024),
@@ -2028,6 +2036,16 @@ class FakeItemRepository extends ItemRepository {
       quantity: 0,
       groupId: input.groupId,
       unitId: input.unitId,
+      unitConversions: input.unitConversions
+          .map(
+            (conversion) => ItemUnitConversionDefinition(
+              unitId: conversion.unitId,
+              unitName: '',
+              unitSymbol: '',
+              factorToPrimary: conversion.factorToPrimary,
+            ),
+          )
+          .toList(growable: false),
       isArchived: false,
       usageCount: 0,
       createdAt: DateTime.now(),
@@ -2051,6 +2069,16 @@ class FakeItemRepository extends ItemRepository {
       quantity: 0,
       groupId: input.groupId,
       unitId: input.unitId,
+      unitConversions: input.unitConversions
+          .map(
+            (conversion) => ItemUnitConversionDefinition(
+              unitId: conversion.unitId,
+              unitName: '',
+              unitSymbol: '',
+              factorToPrimary: conversion.factorToPrimary,
+            ),
+          )
+          .toList(growable: false),
       isArchived: current.isArchived,
       usageCount: current.usageCount,
       createdAt: current.createdAt,
@@ -2073,6 +2101,7 @@ class FakeItemRepository extends ItemRepository {
       quantity: current.quantity,
       groupId: current.groupId,
       unitId: current.unitId,
+      unitConversions: current.unitConversions,
       isArchived: true,
       usageCount: current.usageCount,
       createdAt: current.createdAt,
@@ -2095,6 +2124,7 @@ class FakeItemRepository extends ItemRepository {
       quantity: current.quantity,
       groupId: current.groupId,
       unitId: current.unitId,
+      unitConversions: current.unitConversions,
       isArchived: false,
       usageCount: current.usageCount,
       createdAt: current.createdAt,
@@ -2265,6 +2295,7 @@ class FakeOrderRepository extends OrderRepository {
           order.clientId == input.clientId &&
           order.itemId == input.itemId &&
           order.variationLeafNodeId == input.variationLeafNodeId &&
+          (order.unitId ?? 0) == (input.unitId ?? 0) &&
           order.poNumber.trim().toLowerCase() == normalizedPoNo &&
           _sameMoment(order.startDate, input.startDate) &&
           _sameMoment(order.endDate, input.endDate),
@@ -2284,6 +2315,13 @@ class FakeOrderRepository extends OrderRepository {
         variationPathLabel: input.variationPathLabel.trim(),
         variationPathNodeIds: List<int>.from(input.variationPathNodeIds),
         quantity: current.quantity + input.quantity,
+        unitId: input.unitId ?? current.unitId,
+        unitName: input.unitName.trim().isNotEmpty
+            ? input.unitName.trim()
+            : current.unitName,
+        unitSymbol: input.unitSymbol.trim().isNotEmpty
+            ? input.unitSymbol.trim()
+            : current.unitSymbol,
         unitPrice: input.unitPrice > 0 ? input.unitPrice : current.unitPrice,
         totalInvoicedQty: input.totalInvoicedQty > 0
             ? input.totalInvoicedQty
@@ -2312,6 +2350,9 @@ class FakeOrderRepository extends OrderRepository {
       variationPathLabel: input.variationPathLabel.trim(),
       variationPathNodeIds: List<int>.from(input.variationPathNodeIds),
       quantity: input.quantity,
+      unitId: input.unitId,
+      unitName: input.unitName.trim(),
+      unitSymbol: input.unitSymbol.trim(),
       unitPrice: input.unitPrice,
       totalInvoicedQty: input.totalInvoicedQty,
       status: input.status,
@@ -2442,6 +2483,9 @@ class FakeOrderRepository extends OrderRepository {
       variationPathLabel: current.variationPathLabel,
       variationPathNodeIds: current.variationPathNodeIds,
       quantity: current.quantity,
+      unitId: current.unitId,
+      unitName: current.unitName,
+      unitSymbol: current.unitSymbol,
       unitPrice: current.unitPrice,
       totalInvoicedQty: current.totalInvoicedQty,
       status: input.status,
@@ -2517,6 +2561,8 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
   int saveConversionOverrideCalls = 0;
   DeliveryChallanDraftInput? lastUpdatedChallanInput;
   List<String> lastClientStatementChallanNos = const <String>[];
+  List<String> lastClientStatementReceptionChallanNos = const <String>[];
+  String lastClientStatementReportGroupCode = '';
   final List<DeliveryChallan> _challans;
   final List<ChallanTemplate> _templates;
   final List<InvoiceHeader> createdInvoices = <InvoiceHeader>[];
@@ -2620,6 +2666,9 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
       type: input.type,
       orderId: input.orderId > 0 ? input.orderId : current.orderId,
       orderIds: input.orderIds,
+      reportGroupCodes: input.reportGroupCodes.isEmpty
+          ? current.reportGroupCodes
+          : input.reportGroupCodes,
       clientId: current.clientId,
       orderNo: current.orderNo,
       orderNos: current.orderNos,
@@ -2666,6 +2715,7 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
       type: current.type,
       orderId: current.orderId,
       orderIds: current.orderIds,
+      reportGroupCodes: current.reportGroupCodes,
       clientId: current.clientId,
       orderNo: current.orderNo,
       orderNos: current.orderNos,
@@ -2702,6 +2752,26 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
 
   @override
   Future<void> recordPrint(int id) async {}
+
+  @override
+  Future<DeliveryChallan> updateChallanReportGroups(
+    int id,
+    List<String> reportGroupCodes,
+  ) async {
+    final index = _challans.indexWhere((challan) => challan.id == id);
+    final current = _challans[index];
+    final updated = current.copyWith(
+      reportGroupCodes:
+          reportGroupCodes
+              .map((code) => code.trim().toUpperCase())
+              .where((code) => code.isNotEmpty)
+              .toSet()
+              .toList(growable: false)
+            ..sort(),
+    );
+    _challans[index] = updated;
+    return updated;
+  }
 
   @override
   Future<ReconciliationReportSnapshot> getReconciliationReport() async =>
@@ -2837,11 +2907,16 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
 
   @override
   Future<ClientStatementReport> generateClientStatementReport({
+    required String reportGroupCode,
     required List<String> challanNos,
     required List<String> receptionChallanNos,
   }) async {
     generateClientStatementReportCalls += 1;
+    lastClientStatementReportGroupCode = reportGroupCode;
     lastClientStatementChallanNos = List<String>.from(challanNos);
+    lastClientStatementReceptionChallanNos = List<String>.from(
+      receptionChallanNos,
+    );
     final selected = _challans
         .where(
           (challan) =>
@@ -2866,7 +2941,18 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
           ),
         )
         .toList(growable: false);
-    for (final challan in selected) {
+    final selectedReceptions = _challans
+        .where(
+          (challan) =>
+              receptionChallanNos.contains(challan.challanNo) &&
+              challan.type == ChallanType.reception &&
+              challan.status == DeliveryChallanStatus.issued,
+        )
+        .toList(growable: false);
+    for (final challan in <DeliveryChallan>[
+      ...selected,
+      ...selectedReceptions,
+    ]) {
       final index = _challans.indexWhere(
         (candidate) => candidate.challanNo == challan.challanNo,
       );
@@ -3049,6 +3135,22 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
   Future<CompanyProfile> updateCompanyProfile(CompanyProfile profile) async {
     _companyProfile = profile;
     return profile;
+  }
+}
+
+class FailureDeliveryChallanRepository extends FakeDeliveryChallanRepository {
+  FailureDeliveryChallanRepository({
+    super.seedChallans,
+    super.seedTemplates,
+    super.companyProfile,
+    super.reconciliationReport,
+  });
+
+  @override
+  Future<DeliveryChallan> issueChallan(int id) async {
+    throw const ChallanApiException(
+      'Failed to issue challan: Item not in stock',
+    );
   }
 }
 
@@ -3670,12 +3772,7 @@ void main() {
       expect(find.text('Delivery'), findsWidgets);
       expect(find.text('Reception'), findsWidgets);
       expect(find.text('Create Delivery'), findsWidgets);
-      expect(find.text('Create Reception'), findsNothing);
-
-      await tester.tap(find.text('Reception').first);
-      await tester.pumpAndSettle();
       expect(find.text('Create Reception'), findsWidgets);
-      expect(find.text('Create Delivery'), findsNothing);
 
       await tester.tap(find.text('Create Reception').first);
       await tester.pumpAndSettle();
@@ -3686,10 +3783,7 @@ void main() {
       await tester.tap(find.byTooltip('Close'));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Delivery').first);
-      await tester.pumpAndSettle();
       expect(find.text('Create Delivery'), findsWidgets);
-      expect(find.text('Create Reception'), findsNothing);
 
       await tester.tap(find.text('Create Delivery').first);
       await tester.pumpAndSettle();
@@ -3699,7 +3793,7 @@ void main() {
     },
   );
 
-  testWidgets('challans type toggle separates reception and delivery rows', (
+  testWidgets('challans workspace shows reception and delivery columns', (
     tester,
   ) async {
     final challanRepository = FakeDeliveryChallanRepository(
@@ -3736,6 +3830,7 @@ void main() {
           type: ChallanType.reception,
           orderId: null,
           orderIds: const <int>[],
+          reportGroupCodes: const <String>['ORD-10'],
           clientId: null,
           orderNo: '',
           orderNos: const <String>[],
@@ -3768,19 +3863,270 @@ void main() {
     );
     await openChallansScreen(tester);
 
+    expect(find.text('Report group'), findsOneWidget);
+    expect(find.text('Reception'), findsWidgets);
+    expect(find.text('Delivery'), findsWidgets);
     expect(find.text('DC-00001'), findsOneWidget);
-    expect(find.text('RC-00001'), findsNothing);
-
-    await tester.tap(find.text('Reception').first);
-    await tester.pumpAndSettle();
     expect(find.text('RC-00001'), findsOneWidget);
-    expect(find.text('DC-00001'), findsNothing);
-
-    await tester.tap(find.text('Delivery').first);
-    await tester.pumpAndSettle();
-    expect(find.text('DC-00001'), findsOneWidget);
-    expect(find.text('RC-00001'), findsNothing);
+    expect(find.text('Acme Packaging'), findsOneWidget);
+    expect(find.text('Supplier A'), findsOneWidget);
+    expect(find.byTooltip('Challan actions'), findsWidgets);
   });
+
+  testWidgets(
+    'challans workspace filters by group, opens detail pane, and generates client statement report directly',
+    (tester) async {
+      final challanRepository = FakeDeliveryChallanRepository(
+        seedChallans: <DeliveryChallan>[
+          DeliveryChallan(
+            id: 1,
+            type: ChallanType.delivery,
+            orderId: 10,
+            orderIds: const <int>[10],
+            clientId: 1,
+            orderNo: 'ORD-10',
+            orderNos: const <String>['ORD-10'],
+            challanNo: 'DC-00001',
+            date: DateTime(2026, 5, 11),
+            location: 'Dispatch Bay',
+            customerName: 'Acme Packaging',
+            customerGstin: '27AAAAA0000A1Z5',
+            vendorId: null,
+            vendorName: '',
+            vendorGstin: '',
+            sourceReference: '',
+            companyProfileSnapshot: null,
+            notes: '',
+            maintainStocks: true,
+            status: DeliveryChallanStatus.issued,
+            items: const <DeliveryChallanItem>[
+              DeliveryChallanItem(
+                id: 9001,
+                orderItemId: 10,
+                productionRunId: null,
+                itemId: 1,
+                variationLeafNodeId: 0,
+                lineNo: 1,
+                particulars: 'Box A',
+                hsnCode: '4805',
+                variationPathLabel: '',
+                note: '',
+                quantityPcs: '10',
+                weight: '5.5',
+              ),
+            ],
+            itemsCount: 1,
+            createdAt: DateTime(2026, 5, 11),
+            updatedAt: DateTime(2026, 5, 11),
+            usedInReport: false,
+          ),
+          DeliveryChallan(
+            id: 2,
+            type: ChallanType.reception,
+            orderId: null,
+            orderIds: const <int>[],
+            reportGroupCodes: const <String>['ORD-10'],
+            clientId: null,
+            orderNo: '',
+            orderNos: const <String>[],
+            challanNo: 'RC-00001',
+            date: DateTime(2026, 5, 11),
+            location: 'Inbound Dock',
+            customerName: '',
+            customerGstin: '',
+            vendorId: 3,
+            vendorName: 'Supplier A',
+            vendorGstin: '27ABCDE1234F1Z5',
+            sourceReference: 'GRN-101',
+            companyProfileSnapshot: null,
+            notes: '',
+            maintainStocks: true,
+            status: DeliveryChallanStatus.issued,
+            items: const <DeliveryChallanItem>[
+              DeliveryChallanItem(
+                id: 9002,
+                orderItemId: null,
+                productionRunId: null,
+                itemId: 2,
+                variationLeafNodeId: 0,
+                lineNo: 1,
+                particulars: 'Paper Roll',
+                hsnCode: '4805',
+                variationPathLabel: '',
+                note: '',
+                quantityPcs: '20',
+                weight: '15.5',
+              ),
+            ],
+            itemsCount: 1,
+            createdAt: DateTime(2026, 5, 11),
+            updatedAt: DateTime(2026, 5, 11),
+            usedInReport: false,
+          ),
+          DeliveryChallan(
+            id: 3,
+            type: ChallanType.delivery,
+            orderId: 20,
+            orderIds: const <int>[20],
+            clientId: 1,
+            orderNo: 'ORD-20',
+            orderNos: const <String>['ORD-20'],
+            challanNo: 'DC-00002',
+            date: DateTime(2026, 5, 12),
+            location: 'Dispatch Bay',
+            customerName: 'Beta Packing',
+            customerGstin: '27AAAAA0000A1Z5',
+            vendorId: null,
+            vendorName: '',
+            vendorGstin: '',
+            sourceReference: '',
+            companyProfileSnapshot: null,
+            notes: '',
+            maintainStocks: true,
+            status: DeliveryChallanStatus.issued,
+            items: const <DeliveryChallanItem>[],
+            itemsCount: 0,
+            createdAt: DateTime(2026, 5, 12),
+            updatedAt: DateTime(2026, 5, 12),
+            usedInReport: false,
+          ),
+          DeliveryChallan(
+            id: 4,
+            type: ChallanType.reception,
+            orderId: null,
+            orderIds: const <int>[],
+            reportGroupCodes: const <String>['ORD-20'],
+            clientId: null,
+            orderNo: '',
+            orderNos: const <String>[],
+            challanNo: 'RC-00002',
+            date: DateTime(2026, 5, 12),
+            location: 'Inbound Dock',
+            customerName: '',
+            customerGstin: '',
+            vendorId: 3,
+            vendorName: 'Supplier B',
+            vendorGstin: '27ABCDE1234F1Z5',
+            sourceReference: 'GRN-102',
+            companyProfileSnapshot: null,
+            notes: '',
+            maintainStocks: true,
+            status: DeliveryChallanStatus.issued,
+            items: const <DeliveryChallanItem>[],
+            itemsCount: 0,
+            createdAt: DateTime(2026, 5, 12),
+            updatedAt: DateTime(2026, 5, 12),
+            usedInReport: false,
+          ),
+        ],
+        seedTemplates: <ChallanTemplate>[
+          ChallanTemplate(
+            id: 1,
+            name: 'Default Template',
+            partyType: ChallanTemplatePartyType.generic,
+            partyId: 0,
+            challanType: ChallanType.delivery,
+            backgroundObjectKey: 'templates/default.png',
+            backgroundImageUrl: '',
+            canvasWidth: 1240,
+            canvasHeight: 1754,
+            rotationDegrees: 0,
+            globalOffsetXmm: 0,
+            globalOffsetYmm: 0,
+            stockSize: 'A4',
+            paperSize: 'A4',
+            nUpLayout: 1,
+            isActive: true,
+            mappings: const <ChallanTemplateMapping>[],
+          ),
+        ],
+      );
+
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('net.nfet.printing'),
+        (MethodCall methodCall) async {
+          return true;
+        },
+      );
+
+      await pumpApp(
+        tester,
+        viewSize: const Size(1440, 900),
+        deliveryChallanRepository: challanRepository,
+      );
+      await openChallansScreen(tester);
+
+      expect(find.text('DC-00001'), findsOneWidget);
+      expect(find.text('RC-00001'), findsOneWidget);
+      expect(find.text('DC-00002'), findsNothing);
+      expect(find.text('RC-00002'), findsNothing);
+
+      final groupDropdown = find.byType(DropdownButtonFormField<String>).first;
+      await tester.tap(groupDropdown);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('ORD-20').last);
+      await tester.pumpAndSettle();
+
+      expect(find.text('DC-00001'), findsNothing);
+      expect(find.text('RC-00001'), findsNothing);
+      expect(find.text('DC-00002'), findsOneWidget);
+      expect(find.text('RC-00002'), findsOneWidget);
+
+      await tester.tap(groupDropdown);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('ORD-10').last);
+      await tester.pumpAndSettle();
+
+      expect(find.text('DC-00001'), findsOneWidget);
+      expect(find.text('RC-00001'), findsOneWidget);
+
+      await tester.tap(find.text('RC-00001'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Template Preview'), findsOneWidget);
+      expect(find.text('View/Edit'), findsWidgets);
+      expect(find.text('Print'), findsWidgets);
+      expect(find.text('Unlink Group'), findsOneWidget);
+
+      await tester.tap(find.text('Unlink Group'));
+      await tester.pumpAndSettle();
+      expect(find.text('Link Group'), findsOneWidget);
+
+      await tester.tap(find.text('Link Group'));
+      await tester.pumpAndSettle();
+      expect(find.text('Unlink Group'), findsOneWidget);
+
+      await tester.tap(find.byType(Checkbox).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(Checkbox).last);
+      await tester.pumpAndSettle();
+
+      final reportButton = find.widgetWithText(ElevatedButton, 'Report');
+      await tester.ensureVisible(reportButton);
+      await tester.tap(reportButton);
+      await tester.pumpAndSettle();
+
+      expect(challanRepository.generateClientStatementReportCalls, 1);
+      expect(challanRepository.lastClientStatementReportGroupCode, 'ORD-10');
+      expect(
+        challanRepository.lastClientStatementChallanNos,
+        contains('DC-00001'),
+      );
+      expect(
+        challanRepository.lastClientStatementReceptionChallanNos,
+        contains('RC-00001'),
+      );
+
+      expect(find.text('Client Statement Preview'), findsOneWidget);
+      final closeButton = find.descendant(
+        of: find.byType(Dialog),
+        matching: find.byIcon(Icons.close_rounded),
+      );
+      await tester.tap(closeButton);
+      await tester.pumpAndSettle();
+      expect(find.text('Client Statement Preview'), findsNothing);
+    },
+  );
 
   testWidgets(
     'existing delivery draft can issue using saved order ids when orders are not hydrated',
@@ -3797,9 +4143,11 @@ void main() {
       );
       await openChallansScreen(tester);
 
-      await tester.ensureVisible(find.byTooltip('View/Edit').first);
+      await tester.ensureVisible(find.text('DC-DRAFT-ORDER').first);
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('View/Edit').first);
+      await tester.tap(find.byTooltip('Challan actions').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('View/Edit').last);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Issue Delivery'));
       await tester.pumpAndSettle();
@@ -3809,6 +4157,39 @@ void main() {
       expect(
         find.text('Select at least one order before saving challan.'),
         findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'failed issue request displays error in the banner and keeps editor open',
+    (tester) async {
+      final challanRepository = FailureDeliveryChallanRepository(
+        seedChallans: <DeliveryChallan>[draftDeliveryChallanForOrderFallback()],
+      );
+
+      await pumpApp(
+        tester,
+        viewSize: const Size(1440, 900),
+        deliveryChallanRepository: challanRepository,
+        orderRepository: FakeOrderRepository(),
+      );
+      await openChallansScreen(tester);
+
+      await tester.ensureVisible(find.text('DC-DRAFT-ORDER').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Challan actions').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('View/Edit').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Issue Delivery'));
+      await tester.pumpAndSettle();
+
+      // The editor dialog must stay open, and the error must be visible
+      expect(find.text('Edit Delivery Challan'), findsOneWidget);
+      expect(
+        find.text('Failed to issue challan: Item not in stock'),
+        findsOneWidget,
       );
     },
   );
@@ -3831,9 +4212,11 @@ void main() {
       );
       await openChallansScreen(tester);
 
-      await tester.ensureVisible(find.byTooltip('View/Edit').first);
+      await tester.ensureVisible(find.text('DC-DRAFT-ORDER').first);
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('View/Edit').first);
+      await tester.tap(find.byTooltip('Challan actions').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('View/Edit').last);
       await tester.pumpAndSettle();
       final orderChip = tester.widget<InputChip>(
         find.widgetWithText(
@@ -3947,7 +4330,11 @@ void main() {
       );
       await openChallansScreen(tester);
 
-      await tester.tap(find.text('Report').first);
+      final reportContext = tester.element(find.byType(Scaffold).first);
+      reportContext.read<NavigationProvider>().select(
+        'challan_invoice_report',
+        skipTransition: true,
+      );
       await tester.pumpAndSettle();
 
       expect(find.text('Report'), findsWidgets);
@@ -4383,8 +4770,8 @@ void main() {
       await tester.tap(find.text('Create Delivery').first);
       await tester.pumpAndSettle();
 
-      // The 'Location' field should be present, and 'Customer name / M/s' field should NOT be present
-      expect(find.text('Location'), findsOneWidget);
+      // Location is stored internally for stock movements but not shown to users.
+      expect(find.text('Location'), findsNothing);
       expect(find.text('Customer name / M/s'), findsNothing);
 
       // Close the editor
@@ -4400,7 +4787,7 @@ void main() {
       await tester.tap(find.text('Create Delivery').first, warnIfMissed: false);
       await tester.pumpAndSettle();
 
-      // The 'Location' field should NOT be present, and 'Customer name / M/s' field should be present
+      // The hidden location stays hidden, and manual customer entry appears.
       expect(find.text('Location'), findsNothing);
       expect(find.text('Customer name / M/s'), findsOneWidget);
 
@@ -4804,7 +5191,7 @@ void main() {
     expect(find.text('Acme Packaging Pvt. Ltd.'), findsOneWidget);
     expect(find.text('PO-42'), findsOneWidget);
     expect(find.textContaining('Without Plating'), findsOneWidget);
-    expect(find.text('1 Pieces'), findsOneWidget);
+    expect(find.text('1 Sheet'), findsOneWidget);
   });
 
   testWidgets('orders keep selected variation path visible after add more', (
@@ -4828,6 +5215,127 @@ void main() {
     );
     expect(find.textContaining('Without Plating'), findsWidgets);
     expect(find.textContaining('Action Dolly Plating:'), findsNothing);
+  });
+
+  testWidgets('order creation allows changing the order line unit', (
+    tester,
+  ) async {
+    await pumpApp(tester, viewSize: const Size(1440, 900));
+
+    await openOrdersScreen(tester);
+    await tester.tap(find.byKey(const Key('orders-new-order-button')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('orders-editor-order-no-field')),
+      'ORD-UNIT',
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-client-field')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Acme Packaging Pvt. Ltd. / Acme').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('orders-editor-po-number-field')),
+      'PO-UNIT',
+    );
+
+    await selectPrimaryVariationPath(tester);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-unit-field')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Kilogram (Kg)').last);
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey<String>('orders-editor-create-order')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-create-order')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('ORD-UNIT'), findsOneWidget);
+    expect(find.text('1 Kg'), findsOneWidget);
+  });
+
+  testWidgets('order creation can add an item unit conversion on the spot', (
+    tester,
+  ) async {
+    final baseItem = ItemDefinition(
+      id: 77,
+      name: 'Plain Bottle',
+      alias: 'Bottle',
+      displayName: 'Plain Bottle',
+      quantity: 0,
+      groupId: 2,
+      unitId: 2,
+      isArchived: false,
+      usageCount: 0,
+      createdAt: DateTime(2024),
+      updatedAt: DateTime(2024),
+      variationTree: const <ItemVariationNodeDefinition>[],
+    );
+    await pumpApp(
+      tester,
+      viewSize: const Size(1440, 900),
+      itemRepository: FakeItemRepository(seedItems: <ItemDefinition>[baseItem]),
+    );
+
+    await openOrdersScreen(tester);
+    await tester.tap(find.byKey(const Key('orders-new-order-button')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('orders-editor-order-no-field')),
+      'ORD-CONVERT',
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-client-field')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Acme Packaging Pvt. Ltd. / Acme').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-item-field')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Plain Bottle').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-add-unit-conversion')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Add unit conversion'), findsOneWidget);
+    expect(
+      find.text('1 Sheet (Sheet) equals how many Kilogram (Kg)?'),
+      findsOneWidget,
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('orders-unit-conversion-factor-field')),
+      '0.25',
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-unit-conversion-save')),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey<String>('orders-editor-create-order')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('orders-editor-create-order')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('ORD-CONVERT'), findsOneWidget);
+    expect(find.text('1 Kg'), findsOneWidget);
   });
 
   testWidgets('orders hide variation path until a variant item is selected', (
@@ -5314,7 +5822,7 @@ void main() {
     await addOrder();
 
     expect(find.text('ORD-002'), findsOneWidget);
-    expect(find.text('2 Pieces'), findsOneWidget);
+    expect(find.text('2 Sheet'), findsOneWidget);
   });
 
   testWidgets('orders lifecycle can be updated from table row', (tester) async {

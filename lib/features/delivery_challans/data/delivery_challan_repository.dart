@@ -41,6 +41,11 @@ abstract class ChallanRepository {
 
   Future<void> recordPrint(int id);
 
+  Future<DeliveryChallan> updateChallanReportGroups(
+    int id,
+    List<String> reportGroupCodes,
+  );
+
   Future<ReconciliationReportSnapshot> getReconciliationReport();
 
   Future<List<InvoiceHeader>> getInvoices();
@@ -62,6 +67,7 @@ abstract class ChallanRepository {
   Future<List<WasteAuditRow>> getWasteAuditRows();
 
   Future<ClientStatementReport> generateClientStatementReport({
+    required String reportGroupCode,
     required List<String> challanNos,
     required List<String> receptionChallanNos,
   });
@@ -138,6 +144,7 @@ class ChallanDraftInput {
     required this.challanNo,
     required this.orderId,
     required this.orderIds,
+    this.reportGroupCodes = const <String>[],
     required this.vendorId,
     required this.date,
     required this.location,
@@ -155,6 +162,7 @@ class ChallanDraftInput {
   final String challanNo;
   final int orderId;
   final List<int> orderIds;
+  final List<String> reportGroupCodes;
   final int vendorId;
   final DateTime date;
   final String location;
@@ -173,6 +181,11 @@ class ChallanDraftInput {
       'challan_no': challanNo.trim(),
       if (orderId > 0) 'order_id': orderId,
       if (orderIds.isNotEmpty) 'order_ids': orderIds,
+      if (reportGroupCodes.isNotEmpty)
+        'report_group_codes': reportGroupCodes
+            .map((code) => code.trim())
+            .where((code) => code.isNotEmpty)
+            .toList(growable: false),
       if (vendorId > 0) 'vendor_id': vendorId,
       'date': date.toIso8601String().substring(0, 10),
       'location': location.trim(),

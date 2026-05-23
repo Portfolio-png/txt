@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import '../data/datasources/offline_database_helper.dart';
 
 enum ProductionState { idle, setup, running, paused, completed }
 
@@ -31,17 +33,22 @@ class ProductionRunProvider extends ChangeNotifier {
     ProductionNow? now,
     Duration tickInterval = const Duration(seconds: 1),
     Duration syncInterval = const Duration(seconds: 5),
+    Duration offlinePollInterval = const Duration(seconds: 30),
   }) : _statusFetcher = statusFetcher,
        _bufferCommitter = bufferCommitter,
        _now = now ?? DateTime.now,
        _tickInterval = tickInterval,
-       _syncInterval = syncInterval;
+       _syncInterval = syncInterval,
+       _offlinePollInterval = offlinePollInterval {
+    _startOfflineSyncTimer();
+  }
 
   final ProductionStatusFetcher? _statusFetcher;
   final ProductionBufferCommitter? _bufferCommitter;
   final ProductionNow _now;
   final Duration _tickInterval;
   final Duration _syncInterval;
+  final Duration _offlinePollInterval;
 
   ProductionState _state = ProductionState.idle;
   String? _runId;
@@ -53,6 +60,14 @@ class ProductionRunProvider extends ChangeNotifier {
   bool _isCommitting = false;
   Timer? _ticker;
   Timer? _serverSync;
+
+  String? _stageId;
+  String? _expectedMachineId;
+  String? _expectedDieId;
+  String? _scannedMachineId;
+  String? _scannedDieId;
+  String? _barcodeErrorMessage;
+  Timer? _offlineSyncTimer;
 
   ProductionState get state => _state;
   String? get runId => _runId;
@@ -66,6 +81,13 @@ class ProductionRunProvider extends ChangeNotifier {
   bool get isRunning => _state == ProductionState.running;
   bool get isPaused => _state == ProductionState.paused;
   bool get isCompleted => _state == ProductionState.completed;
+
+  String? get stageId => _stageId;
+  String? get expectedMachineId => _expectedMachineId;
+  String? get expectedDieId => _expectedDieId;
+  String? get scannedMachineId => _scannedMachineId;
+  String? get scannedDieId => _scannedDieId;
+  String? get barcodeErrorMessage => _barcodeErrorMessage;
 
   Duration get elapsed {
     final startedAt = _stageStartedAt;
@@ -130,7 +152,7 @@ class ProductionRunProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> completeRun() async {
+  Future<void> completeStage() async {
     if (_state == ProductionState.completed) {
       return;
     }
@@ -140,7 +162,48 @@ class ProductionRunProvider extends ChangeNotifier {
     _ticker?.cancel();
     _serverSync?.cancel();
     notifyListeners();
-    await _commitBuffers();
+
+    final committer = _bufferCommitter;
+    final runId = _runId;
+    final stageId = _stageId;
+    if (committer == null || runId == null) {
+      return;
+    }
+    _isCommitting = true;
+    notifyListeners();
+    try {
+      await committer(
+        ProductionRunCommit(
+          runId: runId,
+          goodYield: _currentYield,
+          setupScrap: _currentScrap,
+          state: _state,
+        ),
+      );
+    } on Exception catch (e) {
+      if (e is SocketException || e is TimeoutException) {
+        final log = OfflineStageLog(
+          runId: runId,
+          stageId: stageId ?? '',
+          payload: {
+            'goodYield': _currentYield,
+            'setupScrap': _currentScrap,
+          },
+          createdAt: _now(),
+          syncStatus: 'pending',
+        );
+        await OfflineSyncDbHelper.instance.insertLog(log);
+      } else {
+        rethrow;
+      }
+    } finally {
+      _isCommitting = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> completeRun() async {
+    await completeStage();
   }
 
   void incrementYield([int amount = 1]) {
@@ -286,10 +349,97 @@ class ProductionRunProvider extends ChangeNotifier {
         '${seconds.toString().padLeft(2, '0')}';
   }
 
+  void updateExpectedAssets({
+    required String stageId,
+    required String machineId,
+    required String dieId,
+  }) {
+    _stageId = stageId;
+    _expectedMachineId = machineId;
+    _expectedDieId = dieId;
+    _scannedMachineId = null;
+    _scannedDieId = null;
+    _barcodeErrorMessage = null;
+    notifyListeners();
+  }
+
+  void verifyScannedAsset(String barcode, {VoidCallback? onVerifiedAll}) {
+    final normalized = _normalizeAssetCode(barcode);
+    final normExpectedMachine = _normalizeAssetCode(_expectedMachineId ?? '');
+    final normExpectedDie = _normalizeAssetCode(_expectedDieId ?? '');
+
+    bool matched = false;
+    if (normalized == normExpectedMachine) {
+      _scannedMachineId = _expectedMachineId;
+      _barcodeErrorMessage = null;
+      matched = true;
+    } else if (normalized == normExpectedDie) {
+      _scannedDieId = _expectedDieId;
+      _barcodeErrorMessage = null;
+      matched = true;
+    }
+
+    if (!matched) {
+      _barcodeErrorMessage =
+          'Invalid scan: "$barcode" does not match expected assets.';
+    }
+
+    notifyListeners();
+
+    if (_scannedMachineId != null && _scannedDieId != null) {
+      onVerifiedAll?.call();
+    }
+  }
+
+  String _normalizeAssetCode(String value) {
+    final upper = value.trim().toUpperCase();
+    if (upper.contains(':')) {
+      return upper.split(':').last.trim();
+    }
+    if (upper.contains('|')) {
+      return upper.split('|').last.trim();
+    }
+    return upper;
+  }
+
+  void _startOfflineSyncTimer() {
+    _offlineSyncTimer?.cancel();
+    _offlineSyncTimer = Timer.periodic(_offlinePollInterval, (_) => _pollOfflineLogs());
+  }
+
+  Future<void> _pollOfflineLogs() async {
+    final committer = _bufferCommitter;
+    if (committer == null) {
+      return;
+    }
+    try {
+      final logs = await OfflineSyncDbHelper.instance.getPendingLogs();
+      for (final log in logs) {
+        try {
+          final commit = ProductionRunCommit(
+            runId: log.runId,
+            goodYield: log.payload['goodYield'] as int? ?? 0,
+            setupScrap: log.payload['setupScrap'] as int? ?? 0,
+            state: ProductionState.completed,
+          );
+          await committer(commit);
+          await OfflineSyncDbHelper.instance.deleteLog(log.id!);
+        } on Exception catch (e) {
+          if (e is SocketException || e is TimeoutException) {
+            await OfflineSyncDbHelper.instance.updateLogStatus(log.id!, 'failed');
+          }
+        }
+      }
+    } catch (_) {
+      // Ignore DB or background errors
+    }
+  }
+
   @override
   void dispose() {
     _ticker?.cancel();
     _serverSync?.cancel();
+    _offlineSyncTimer?.cancel();
     super.dispose();
   }
 }

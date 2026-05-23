@@ -971,6 +971,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 ): line,
             };
       final coveredSetLineKeys = <String>{};
+      final coveredItemIds = <int>{};
       final rows = scopedRecords
           .where((record) => record.linkedItemId != null)
           .map((record) {
@@ -993,8 +994,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
             if (activeSet != null && setLine == null) {
               return null;
             }
-            if (setLineKey != null && setLine != null) {
+            if (setLineKey != null) {
               coveredSetLineKeys.add(setLineKey);
+              if (linkedItem != null) {
+                coveredItemIds.add(linkedItem.id);
+              }
             }
             final linkedGroupName = linkedItem == null
                 ? null
@@ -1053,6 +1057,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
             variationLeafNodeId: line.variationLeafNodeId,
           );
           if (activeSet != null && coveredSetLineKeys.contains(lineKey)) {
+            continue;
+          }
+          if (activeSet == null && coveredItemIds.contains(item.id)) {
             continue;
           }
           final itemLabel = item.displayName.trim().isEmpty

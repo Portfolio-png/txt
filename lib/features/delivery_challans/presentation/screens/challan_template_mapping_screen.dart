@@ -119,16 +119,6 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
       defaultHeightMm: 12,
     ),
     _TemplateBlockSpec(
-      ownerFieldKey: 'location',
-      label: 'Location',
-      description: 'Warehouse or delivery location.',
-      companionFieldKeys: <String>[],
-      defaultXPercent: 0.08,
-      defaultYPercent: 0.31,
-      defaultWidthMm: 150,
-      defaultHeightMm: 12,
-    ),
-    _TemplateBlockSpec(
       ownerFieldKey: 'source_ref',
       label: 'Source Ref',
       description: 'PO, order, or source reference.',
@@ -176,7 +166,6 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
     _TemplateField('date', 'Date'),
     _TemplateField('party_name', 'Party Name'),
     _TemplateField('gstin', 'GSTIN'),
-    _TemplateField('location', 'Location'),
     _TemplateField('source_ref', 'Source Ref'),
     _TemplateField('total_qty', 'Total Qty'),
     _TemplateField('notes', 'Notes'),
@@ -1684,8 +1673,6 @@ class _TemplateMappingScreenState extends State<TemplateMappingScreen> {
         return 'Sarvadnya Udyog Private Limited';
       case 'gstin':
         return '27ABCDE1234F1Z5';
-      case 'location':
-        return 'Main Warehouse';
       case 'source_ref':
         return 'PO-1042';
       case 'total_qty':

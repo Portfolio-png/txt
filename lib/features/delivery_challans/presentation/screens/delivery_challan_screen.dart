@@ -6,12 +6,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../app/preferences/preferences_provider.dart';
-import '../../../../app/reports/views/challan_invoice_reconciliation_screen.dart';
+import '../../../../app/reports/domain/reconciliation_report.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
@@ -25,7 +27,6 @@ import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../orders/domain/order_entry.dart';
 import '../../../orders/presentation/providers/orders_provider.dart';
-import '../../../pm/presentation/screens/pm_screen.dart';
 import '../../../vendors/presentation/providers/vendors_provider.dart';
 import '../../data/delivery_challan_repository.dart';
 import '../../domain/challan_template.dart';
@@ -37,6 +38,7 @@ import 'challan_template_mapping_screen.dart';
 const MethodChannel _nativePrintingChannel = MethodChannel(
   'paper/native_printing',
 );
+const String _defaultChallanStorageLocation = 'MAIN';
 
 class ChallanScreen extends StatefulWidget {
   const ChallanScreen({super.key});
@@ -93,6 +95,7 @@ Future<void> _showChallanEditor(
   ChallanType? initialType,
   String? initialLocation,
 }) {
+  context.read<DeliveryChallanProvider>().clearError();
   return showErpFormDialog<void>(
     context,
     maxWidth: 1440,
@@ -137,7 +140,11 @@ Future<void> _openPrintPreviewFromContext(
 class _ChallanScreenState extends State<ChallanScreen> {
   final TextEditingController _searchController = TextEditingController();
   bool _showTemplates = false;
-  ChallanType _activeType = ChallanType.delivery;
+  String? _activeReportGroupCode;
+  int? _focusedChallanId;
+  final Set<String> _selectedDeliveryChallanNos = <String>{};
+  final Set<String> _selectedReceptionChallanNos = <String>{};
+  bool _isGeneratingReport = false;
 
   @override
   void dispose() {
@@ -148,21 +155,50 @@ class _ChallanScreenState extends State<ChallanScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<DeliveryChallanProvider>();
-    final visibleChallans = provider.challans
-        .where((challan) => challan.type == _activeType)
+    final reportGroups = _availableReportGroupCodes(provider.challans);
+    final activeReportGroupCode =
+        (_activeReportGroupCode != null &&
+            reportGroups.contains(_activeReportGroupCode))
+        ? _activeReportGroupCode
+        : (reportGroups.isEmpty ? null : reportGroups.first);
+    final deliveryChallans = provider.challans
+        .where(
+          (challan) =>
+              challan.isDelivery &&
+              _challanBelongsToReportGroup(challan, activeReportGroupCode),
+        )
         .toList(growable: false);
+    final receptionChallans = provider.challans
+        .where(
+          (challan) =>
+              challan.isReception &&
+              _receptionVisibleForReportGroup(challan, activeReportGroupCode),
+        )
+        .toList(growable: false);
+    final focusedChallan = _focusedChallanId == null
+        ? null
+        : provider.challans
+              .where((challan) => challan.id == _focusedChallanId)
+              .firstOrNull;
     return PageContainer(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _Header(
-            activeType: _activeType,
-            onTypeChanged: (value) => setState(() => _activeType = value),
-            onCreate: () => _openEditor(context, initialType: _activeType),
+            isGeneratingReport: _isGeneratingReport,
+            canGenerateReport:
+                activeReportGroupCode != null &&
+                _selectedDeliveryChallanNos.isNotEmpty &&
+                _selectedReceptionChallanNos.isNotEmpty,
+            onCreateDelivery: () =>
+                _openEditor(context, initialType: ChallanType.delivery),
+            onCreateReception: () =>
+                _openEditor(context, initialType: ChallanType.reception),
             onEditProfile: () => _openCompanyProfile(context),
             onOpenTemplates: () => setState(() => _showTemplates = true),
-            onOpenReport: () =>
-                ChallanInvoiceReconciliationScreen.openDialog(context),
+            onGenerateReport: activeReportGroupCode == null
+                ? null
+                : () => _generateReport(context, activeReportGroupCode),
           ),
           const SizedBox(height: 16),
           if (_showTemplates)
@@ -176,38 +212,50 @@ class _ChallanScreenState extends State<ChallanScreen> {
               searchController: _searchController,
               status: provider.statusFilter,
               orderFilterId: provider.orderFilterId,
+              reportGroups: reportGroups,
+              selectedReportGroupCode: activeReportGroupCode,
+              selectedDeliveryCount: _selectedDeliveryChallanNos.length,
+              selectedReceptionCount: _selectedReceptionChallanNos.length,
               onSearch: provider.setSearchQuery,
               onStatusChanged: provider.setStatusFilter,
+              onReportGroupChanged: _setActiveReportGroup,
               onClearOrderFilter: () => provider.setOrderFilter(null),
             ),
             const SizedBox(height: 14),
             Expanded(
-              child: SoftSurface(
-                clipContent: true,
-                padding: EdgeInsets.zero,
-                child: provider.isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : visibleChallans.isEmpty
-                    ? _EmptyState(
-                        activeType: _activeType,
-                        onCreate: () =>
-                            _openEditor(context, initialType: _activeType),
-                      )
-                    : _ChallanTable(
-                        challans: visibleChallans,
-                        onOpen: (challan) =>
-                            _openEditor(context, challan: challan),
-                        onPrint: (challan) =>
-                            _openPrintPreview(context, challan),
-                        onDuplicate: (challan) => _openEditor(
-                          context,
-                          challan: challan,
-                          duplicate: true,
-                        ),
-                        onCancel: (challan) => _cancel(context, challan),
-                        onDelete: (challan) => _delete(context, challan),
+              child: provider.isLoading
+                  ? const SoftSurface(
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  : _ChallanWorkspace(
+                      activeReportGroupCode: activeReportGroupCode,
+                      deliveryChallans: deliveryChallans,
+                      receptionChallans: receptionChallans,
+                      selectedDeliveryChallanNos: _selectedDeliveryChallanNos,
+                      selectedReceptionChallanNos: _selectedReceptionChallanNos,
+                      focusedChallan: focusedChallan,
+                      onFocus: (challan) =>
+                          setState(() => _focusedChallanId = challan?.id),
+                      onToggleDelivery: _toggleDeliverySelection,
+                      onToggleReception: _toggleReceptionSelection,
+                      onOpen: (challan) =>
+                          _openEditor(context, challan: challan),
+                      onPrint: (challan) => _openPrintPreview(context, challan),
+                      onDuplicate: (challan) => _openEditor(
+                        context,
+                        challan: challan,
+                        duplicate: true,
                       ),
-              ),
+                      onCancel: (challan) => _cancel(context, challan),
+                      onDelete: (challan) => _delete(context, challan),
+                      onToggleReportGroup: activeReportGroupCode == null
+                          ? null
+                          : (challan) => _toggleReceptionReportGroup(
+                              context,
+                              challan,
+                              activeReportGroupCode,
+                            ),
+                    ),
             ),
           ],
         ],
@@ -258,51 +306,212 @@ class _ChallanScreenState extends State<ChallanScreen> {
   Future<void> _cancel(BuildContext context, DeliveryChallan challan) async {
     final provider = context.read<DeliveryChallanProvider>();
     final cancelled = await provider.cancelChallan(challan.id);
-    if (cancelled != null && context.mounted) {
+    if (!context.mounted) return;
+    if (cancelled != null) {
       await context.read<InventoryProvider>().refresh();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Cancelled challan ${challan.challanNo}.')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(provider.errorMessage ?? 'Could not cancel challan.')),
+      );
     }
   }
 
   Future<void> _delete(BuildContext context, DeliveryChallan challan) async {
-    await context.read<DeliveryChallanProvider>().deleteChallan(challan.id);
+    final provider = context.read<DeliveryChallanProvider>();
+    await provider.deleteChallan(challan.id);
+    if (!context.mounted) return;
+    if (provider.errorMessage != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(provider.errorMessage!)),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: const Text('Deleted draft challan.')),
+      );
+    }
+  }
+
+  void _setActiveReportGroup(String? code) {
+    setState(() {
+      _activeReportGroupCode = code;
+      _focusedChallanId = null;
+      _selectedDeliveryChallanNos.clear();
+      _selectedReceptionChallanNos.clear();
+    });
+  }
+
+  void _toggleDeliverySelection(DeliveryChallan challan, bool selected) {
+    setState(() {
+      if (selected) {
+        _selectedDeliveryChallanNos.add(challan.challanNo);
+      } else {
+        _selectedDeliveryChallanNos.remove(challan.challanNo);
+      }
+    });
+  }
+
+  void _toggleReceptionSelection(DeliveryChallan challan, bool selected) {
+    setState(() {
+      if (selected) {
+        _selectedReceptionChallanNos.add(challan.challanNo);
+      } else {
+        _selectedReceptionChallanNos.remove(challan.challanNo);
+      }
+    });
+  }
+
+  Future<void> _toggleReceptionReportGroup(
+    BuildContext context,
+    DeliveryChallan challan,
+    String reportGroupCode,
+  ) async {
+    final codes = _effectiveReportGroupCodes(challan).toSet();
+    if (codes.contains(reportGroupCode)) {
+      codes.remove(reportGroupCode);
+      _selectedReceptionChallanNos.remove(challan.challanNo);
+    } else {
+      codes.add(reportGroupCode);
+    }
+    final provider = context.read<DeliveryChallanProvider>();
+    final updated = await provider.updateChallanReportGroups(
+      challan.id,
+      codes.toList(growable: false),
+    );
+    if (!context.mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          updated == null
+              ? (provider.errorMessage ?? 'Could not update report group links.')
+              : 'Updated report links for ${challan.challanNo}.',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _generateReport(
+    BuildContext context,
+    String reportGroupCode,
+  ) async {
+    if (_selectedDeliveryChallanNos.isEmpty ||
+        _selectedReceptionChallanNos.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Select at least one delivery and one linked reception challan.',
+          ),
+        ),
+      );
+      return;
+    }
+    setState(() => _isGeneratingReport = true);
+    try {
+      final report = await context
+          .read<DeliveryChallanProvider>()
+          .repository
+          .generateClientStatementReport(
+            reportGroupCode: reportGroupCode,
+            challanNos: _selectedDeliveryChallanNos.toList(growable: false)
+              ..sort(),
+            receptionChallanNos: _selectedReceptionChallanNos.toList(
+              growable: false,
+            )..sort(),
+          );
+      final bytes = await _buildClientStatementPdf(report, reportGroupCode);
+      showDialog<void>(
+        context: context,
+        builder: (dialogContext) => Dialog(
+          insetPadding: const EdgeInsets.all(20),
+          child: SizedBox(
+            width: 860,
+            height: math.min(MediaQuery.of(context).size.height - 40, 820),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 14, 10, 10),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Client Statement Preview',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: PdfPreview(
+                    build: (_) async => bytes,
+                    allowPrinting: true,
+                    allowSharing: true,
+                    canChangeOrientation: false,
+                    canChangePageFormat: false,
+                    canDebug: false,
+                    pdfFileName: 'client-statement-$reportGroupCode.pdf',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      if (!context.mounted) {
+        return;
+      }
+      await context.read<DeliveryChallanProvider>().refresh();
+      setState(() {
+        _selectedDeliveryChallanNos.clear();
+        _selectedReceptionChallanNos.clear();
+      });
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isGeneratingReport = false);
+      }
+    }
   }
 }
 
 class _Header extends StatelessWidget {
-  static const List<PMFigmaSegmentOption> _segments = <PMFigmaSegmentOption>[
-    PMFigmaSegmentOption(key: 'delivery', label: 'Delivery'),
-    PMFigmaSegmentOption(key: 'reception', label: 'Reception'),
-  ];
-
   const _Header({
-    required this.activeType,
-    required this.onTypeChanged,
-    required this.onCreate,
+    required this.isGeneratingReport,
+    required this.canGenerateReport,
+    required this.onCreateDelivery,
+    required this.onCreateReception,
     required this.onEditProfile,
     required this.onOpenTemplates,
-    required this.onOpenReport,
+    required this.onGenerateReport,
   });
 
-  final ChallanType activeType;
-  final ValueChanged<ChallanType> onTypeChanged;
-  final VoidCallback onCreate;
+  final bool isGeneratingReport;
+  final bool canGenerateReport;
+  final VoidCallback onCreateDelivery;
+  final VoidCallback onCreateReception;
   final VoidCallback onEditProfile;
   final VoidCallback onOpenTemplates;
-  final VoidCallback onOpenReport;
+  final VoidCallback? onGenerateReport;
 
   @override
   Widget build(BuildContext context) {
-    final isReception = activeType == ChallanType.reception;
-    final segmented = PMFigmaSegmentedControl(
-      value: isReception ? 'reception' : 'delivery',
-      segments: _segments,
-      segmentWidth: 132,
-      segmentHeight: 48,
-      semanticLabel: 'Challan delivery and reception segmented control',
-      onChanged: (value) => onTypeChanged(
-        value == 'reception' ? ChallanType.reception : ChallanType.delivery,
-      ),
-    );
     final actions = Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -324,16 +533,21 @@ class _Header extends StatelessWidget {
         AppButton(
           label: 'Report',
           icon: Icons.analytics_outlined,
-          variant: AppButtonVariant.secondary,
-          onPressed: onOpenReport,
+          isLoading: isGeneratingReport,
+          onPressed: canGenerateReport ? onGenerateReport : null,
         ),
         const SizedBox(width: 14),
         AppButton(
-          label: isReception ? 'Create Reception' : 'Create Delivery',
-          icon: isReception
-              ? Icons.south_west_rounded
-              : Icons.north_east_rounded,
-          onPressed: onCreate,
+          label: 'Create Reception',
+          icon: Icons.south_west_rounded,
+          variant: AppButtonVariant.secondary,
+          onPressed: onCreateReception,
+        ),
+        const SizedBox(width: 10),
+        AppButton(
+          label: 'Create Delivery',
+          icon: Icons.north_east_rounded,
+          onPressed: onCreateDelivery,
         ),
       ],
     );
@@ -354,7 +568,7 @@ class _Header extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               const Text(
-                'Manage outbound delivery and inbound reception documents from one hub.',
+                'Select a report group, verify receptions, then generate the client statement directly.',
                 style: TextStyle(color: SoftErpTheme.textSecondary),
               ),
             ],
@@ -366,8 +580,6 @@ class _Header extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               title,
-              const SizedBox(height: 14),
-              segmented,
               const SizedBox(height: 12),
               Align(
                 alignment: Alignment.centerRight,
@@ -387,11 +599,7 @@ class _Header extends StatelessWidget {
             children: [
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(child: title),
-                  const SizedBox(width: 14),
-                  segmented,
-                ],
+                children: [Expanded(child: title)],
               ),
               const SizedBox(height: 12),
               Align(
@@ -410,8 +618,6 @@ class _Header extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             title,
-            const SizedBox(width: 20),
-            segmented,
             const SizedBox(width: 14),
             Flexible(
               child: Align(
@@ -435,16 +641,26 @@ class _Filters extends StatelessWidget {
     required this.searchController,
     required this.status,
     required this.orderFilterId,
+    required this.reportGroups,
+    required this.selectedReportGroupCode,
+    required this.selectedDeliveryCount,
+    required this.selectedReceptionCount,
     required this.onSearch,
     required this.onStatusChanged,
+    required this.onReportGroupChanged,
     required this.onClearOrderFilter,
   });
 
   final TextEditingController searchController;
   final DeliveryChallanStatus? status;
   final int? orderFilterId;
+  final List<String> reportGroups;
+  final String? selectedReportGroupCode;
+  final int selectedDeliveryCount;
+  final int selectedReceptionCount;
   final ValueChanged<String> onSearch;
   final ValueChanged<DeliveryChallanStatus?> onStatusChanged;
+  final ValueChanged<String?> onReportGroupChanged;
   final VoidCallback onClearOrderFilter;
 
   @override
@@ -481,6 +697,42 @@ class _Filters extends StatelessWidget {
       selected: {status},
       onSelectionChanged: (value) => onStatusChanged(value.first),
     );
+    final groupSelector = SizedBox(
+      width: 260,
+      child: DropdownButtonFormField<String>(
+        initialValue: selectedReportGroupCode,
+        isExpanded: true,
+        decoration: InputDecoration(
+          labelText: 'Report group',
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: SoftErpTheme.border),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: SoftErpTheme.border),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+        ),
+        items: reportGroups
+            .map(
+              (code) => DropdownMenuItem<String>(
+                value: code,
+                child: Text(code, overflow: TextOverflow.ellipsis),
+              ),
+            )
+            .toList(growable: false),
+        onChanged: reportGroups.isEmpty ? null : onReportGroupChanged,
+      ),
+    );
+    final selectionPill = SoftPill(
+      label: '$selectedReceptionCount Rec / $selectedDeliveryCount Del',
+      background: SoftErpTheme.accent.withValues(alpha: 0.08),
+      foreground: SoftErpTheme.textPrimary,
+      borderColor: SoftErpTheme.accent.withValues(alpha: 0.2),
+    );
 
     return SoftSurface(
       padding: const EdgeInsets.all(12),
@@ -497,7 +749,9 @@ class _Filters extends StatelessWidget {
                   label: Text('Order #$orderFilterId'),
                   onDeleted: onClearOrderFilter,
                 ),
+              groupSelector,
               statusFilter,
+              selectionPill,
             ],
           );
           if (compact) {
@@ -520,9 +774,125 @@ class _Filters extends StatelessWidget {
   }
 }
 
-class _ChallanTable extends StatelessWidget {
-  const _ChallanTable({
+class _ChallanWorkspace extends StatelessWidget {
+  const _ChallanWorkspace({
+    required this.activeReportGroupCode,
+    required this.deliveryChallans,
+    required this.receptionChallans,
+    required this.selectedDeliveryChallanNos,
+    required this.selectedReceptionChallanNos,
+    required this.focusedChallan,
+    required this.onFocus,
+    required this.onToggleDelivery,
+    required this.onToggleReception,
+    required this.onOpen,
+    required this.onPrint,
+    required this.onDuplicate,
+    required this.onCancel,
+    required this.onDelete,
+    required this.onToggleReportGroup,
+  });
+
+  final String? activeReportGroupCode;
+  final List<DeliveryChallan> deliveryChallans;
+  final List<DeliveryChallan> receptionChallans;
+  final Set<String> selectedDeliveryChallanNos;
+  final Set<String> selectedReceptionChallanNos;
+  final DeliveryChallan? focusedChallan;
+  final void Function(DeliveryChallan?) onFocus;
+  final void Function(DeliveryChallan challan, bool selected) onToggleDelivery;
+  final void Function(DeliveryChallan challan, bool selected) onToggleReception;
+  final ValueChanged<DeliveryChallan> onOpen;
+  final ValueChanged<DeliveryChallan> onPrint;
+  final ValueChanged<DeliveryChallan> onDuplicate;
+  final ValueChanged<DeliveryChallan> onCancel;
+  final ValueChanged<DeliveryChallan> onDelete;
+  final ValueChanged<DeliveryChallan>? onToggleReportGroup;
+
+  @override
+  Widget build(BuildContext context) {
+    final sideOpen = focusedChallan != null;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: SoftSurface(
+            clipContent: true,
+            padding: EdgeInsets.zero,
+            child: Row(
+              children: [
+                Expanded(
+                  child: _ChallanColumn(
+                    title: 'Reception',
+                    subtitle: 'Material received and linked manually',
+                    challans: receptionChallans,
+                    activeReportGroupCode: activeReportGroupCode,
+                    selectedChallanNos: selectedReceptionChallanNos,
+                    focusedChallanId: focusedChallan?.id,
+                    onFocus: onFocus,
+                    onToggle: onToggleReception,
+                    onOpen: onOpen,
+                    onPrint: onPrint,
+                    onDuplicate: onDuplicate,
+                    onCancel: onCancel,
+                    onDelete: onDelete,
+                  ),
+                ),
+                const VerticalDivider(width: 1, color: SoftErpTheme.border),
+                Expanded(
+                  child: _ChallanColumn(
+                    title: 'Delivery',
+                    subtitle: 'Output challans in this report group',
+                    challans: deliveryChallans,
+                    activeReportGroupCode: activeReportGroupCode,
+                    selectedChallanNos: selectedDeliveryChallanNos,
+                    focusedChallanId: focusedChallan?.id,
+                    onFocus: onFocus,
+                    onToggle: onToggleDelivery,
+                    onOpen: onOpen,
+                    onPrint: onPrint,
+                    onDuplicate: onDuplicate,
+                    onCancel: onCancel,
+                    onDelete: onDelete,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          width: sideOpen ? 460 : 0,
+          margin: EdgeInsets.only(left: sideOpen ? 14 : 0),
+          child: ClipRect(
+            child: sideOpen
+                ? _ChallanDetailPane(
+                    challan: focusedChallan!,
+                    activeReportGroupCode: activeReportGroupCode,
+                    onOpen: onOpen,
+                    onPrint: onPrint,
+                    onToggleReportGroup: onToggleReportGroup,
+                    onClose: () => onFocus(null),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ChallanColumn extends StatelessWidget {
+  const _ChallanColumn({
+    required this.title,
+    required this.subtitle,
     required this.challans,
+    required this.activeReportGroupCode,
+    required this.selectedChallanNos,
+    required this.focusedChallanId,
+    required this.onFocus,
+    required this.onToggle,
     required this.onOpen,
     required this.onPrint,
     required this.onDuplicate,
@@ -530,7 +900,14 @@ class _ChallanTable extends StatelessWidget {
     required this.onDelete,
   });
 
+  final String title;
+  final String subtitle;
   final List<DeliveryChallan> challans;
+  final String? activeReportGroupCode;
+  final Set<String> selectedChallanNos;
+  final int? focusedChallanId;
+  final ValueChanged<DeliveryChallan> onFocus;
+  final void Function(DeliveryChallan challan, bool selected) onToggle;
   final ValueChanged<DeliveryChallan> onOpen;
   final ValueChanged<DeliveryChallan> onPrint;
   final ValueChanged<DeliveryChallan> onDuplicate;
@@ -539,124 +916,699 @@ class _ChallanTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 1120),
-        child: DataTable(
-          headingRowColor: WidgetStateProperty.all(const Color(0xFFF7F8FC)),
-          columns: const [
-            DataColumn(label: Text('Type')),
-            DataColumn(label: Text('Challan No.')),
-            DataColumn(label: Text('Date')),
-            DataColumn(label: Text('Source')),
-            DataColumn(label: Text('Party')),
-            DataColumn(label: Text('Items')),
-            DataColumn(label: Text('Status')),
-            DataColumn(label: Text('Actions')),
-          ],
-          rows: challans
-              .map(
-                (challan) => DataRow(
-                  cells: [
-                    DataCell(_TypePill(type: challan.type)),
-                    DataCell(
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(challan.challanNo),
-                          if (!challan.maintainStocks) ...[
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: SoftErpTheme.border,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: const Text(
-                                'Stock: Off',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                  color: SoftErpTheme.textSecondary,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
-                    DataCell(Text(_date(challan.date))),
-                    DataCell(
-                      Text(
-                        challan.isDelivery
-                            ? (challan.orderNo.isEmpty ? '-' : challan.orderNo)
-                            : (challan.sourceReference.isEmpty
-                                  ? '-'
-                                  : challan.sourceReference),
-                      ),
-                    ),
-                    DataCell(
-                      Text(
-                        challan.isDelivery
-                            ? (challan.customerName.isEmpty
-                                  ? '-'
-                                  : challan.customerName)
-                            : (challan.vendorName.isEmpty
-                                  ? '-'
-                                  : challan.vendorName),
-                      ),
-                    ),
-                    DataCell(Text('${challan.itemsCount}')),
-                    DataCell(_StatusPill(status: challan.status)),
-                    DataCell(
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SoftIconButton(
-                            icon: Icons.edit_outlined,
-                            tooltip: 'View/Edit',
-                            onTap: () => onOpen(challan),
-                          ),
-                          const SizedBox(width: 6),
-                          SoftIconButton(
-                            icon: Icons.print_outlined,
-                            tooltip: 'Print',
-                            onTap: () => onPrint(challan),
-                          ),
-                          const SizedBox(width: 6),
-                          SoftIconButton(
-                            icon: Icons.copy_outlined,
-                            tooltip: 'Duplicate',
-                            onTap: () => onDuplicate(challan),
-                          ),
-                          const SizedBox(width: 6),
-                          SoftIconButton(
-                            icon: Icons.block_outlined,
-                            tooltip: 'Cancel',
-                            onTap: challan.isCancelled
-                                ? null
-                                : () => onCancel(challan),
-                          ),
-                          const SizedBox(width: 6),
-                          SoftIconButton(
-                            icon: Icons.delete_outline,
-                            tooltip: 'Delete draft',
-                            onTap: challan.isDraft
-                                ? () => onDelete(challan)
-                                : null,
-                          ),
-                        ],
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: SoftErpTheme.textSecondary,
+                        fontSize: 12,
                       ),
                     ),
                   ],
                 ),
-              )
-              .toList(growable: false),
+              ),
+              SoftPill(
+                label: '${challans.length}',
+                background: SoftErpTheme.cardSurfaceAlt,
+                foreground: SoftErpTheme.textPrimary,
+              ),
+            ],
+          ),
         ),
+        const Divider(height: 1, color: SoftErpTheme.border),
+        Expanded(
+          child: challans.isEmpty
+              ? _ColumnEmptyState(title: title)
+              : ListView.separated(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: challans.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
+                  itemBuilder: (context, index) {
+                    final challan = challans[index];
+                    return _ChallanCard(
+                      key: ValueKey<String>('challan-card-${challan.id}'),
+                      challan: challan,
+                      focused: focusedChallanId == challan.id,
+                      selected: selectedChallanNos.contains(challan.challanNo),
+                      activeReportGroupCode: activeReportGroupCode,
+                      onFocus: () => onFocus(challan),
+                      onToggle: (selected) => onToggle(challan, selected),
+                      onOpen: () => onOpen(challan),
+                      onPrint: () => onPrint(challan),
+                      onDuplicate: () => onDuplicate(challan),
+                      onCancel: () => onCancel(challan),
+                      onDelete: () => onDelete(challan),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ChallanCard extends StatelessWidget {
+  const _ChallanCard({
+    super.key,
+    required this.challan,
+    required this.focused,
+    required this.selected,
+    required this.activeReportGroupCode,
+    required this.onFocus,
+    required this.onToggle,
+    required this.onOpen,
+    required this.onPrint,
+    required this.onDuplicate,
+    required this.onCancel,
+    required this.onDelete,
+  });
+
+  final DeliveryChallan challan;
+  final bool focused;
+  final bool selected;
+  final String? activeReportGroupCode;
+  final VoidCallback onFocus;
+  final ValueChanged<bool> onToggle;
+  final VoidCallback onOpen;
+  final VoidCallback onPrint;
+  final VoidCallback onDuplicate;
+  final VoidCallback onCancel;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final linkedToGroup = _challanBelongsToReportGroup(
+      challan,
+      activeReportGroupCode,
+    );
+    final canSelect = challan.isIssued && linkedToGroup;
+    final codes = _effectiveReportGroupCodes(challan);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onFocus,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          padding: const EdgeInsets.fromLTRB(10, 10, 8, 10),
+          decoration: BoxDecoration(
+            color: focused
+                ? SoftErpTheme.accent.withValues(alpha: 0.08)
+                : Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: focused ? SoftErpTheme.accent : SoftErpTheme.border,
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Checkbox(
+                value: selected,
+                onChanged: canSelect
+                    ? (value) => onToggle(value == true)
+                    : null,
+                activeColor: SoftErpTheme.accent,
+              ),
+              const SizedBox(width: 2),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            _partyName(challan),
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: SoftErpTheme.textPrimary,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        _StatusPill(status: challan.status),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      _itemSummary(challan),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: SoftErpTheme.textSecondary,
+                        fontSize: 12,
+                        height: 1.3,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        _CompactPill(
+                          label: challan.challanNo,
+                          background: SoftErpTheme.cardSurfaceAlt,
+                          foreground: SoftErpTheme.textPrimary,
+                        ),
+                        _CompactPill(
+                          label: _qtyLabel(challan),
+                          background: SoftErpTheme.cardSurfaceAlt,
+                          foreground: SoftErpTheme.textSecondary,
+                        ),
+                        _CompactPill(
+                          label: codes.isEmpty ? 'UNLINKED' : codes.join(', '),
+                          background: linkedToGroup
+                              ? SoftErpTheme.accent.withValues(alpha: 0.08)
+                              : SoftErpTheme.warningBg.withValues(alpha: 0.7),
+                          foreground: SoftErpTheme.textPrimary,
+                        ),
+                        if (challan.usedInReport)
+                          const _CompactPill(
+                            label: 'USED',
+                            background: Color(0xFFF2F3F7),
+                            foreground: SoftErpTheme.textSecondary,
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuButton<String>(
+                tooltip: 'Challan actions',
+                icon: const Icon(Icons.more_vert_rounded),
+                onSelected: (value) {
+                  switch (value) {
+                    case 'open':
+                      onOpen();
+                      break;
+                    case 'print':
+                      onPrint();
+                      break;
+                    case 'duplicate':
+                      onDuplicate();
+                      break;
+                    case 'cancel':
+                      onCancel();
+                      break;
+                    case 'delete':
+                      onDelete();
+                      break;
+                  }
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(value: 'open', child: Text('View/Edit')),
+                  const PopupMenuItem(value: 'print', child: Text('Print')),
+                  const PopupMenuItem(
+                    value: 'duplicate',
+                    child: Text('Duplicate'),
+                  ),
+                  if (!challan.isCancelled)
+                    const PopupMenuItem(value: 'cancel', child: Text('Cancel')),
+                  if (challan.isDraft)
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: Text('Delete draft'),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CompactPill extends StatelessWidget {
+  const _CompactPill({
+    required this.label,
+    required this.background,
+    required this.foreground,
+  });
+
+  final String label;
+  final Color background;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 170),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: SoftErpTheme.border),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: foreground,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChallanDetailPane extends StatelessWidget {
+  const _ChallanDetailPane({
+    required this.challan,
+    required this.activeReportGroupCode,
+    required this.onOpen,
+    required this.onPrint,
+    required this.onToggleReportGroup,
+    required this.onClose,
+  });
+
+  final DeliveryChallan challan;
+  final String? activeReportGroupCode;
+  final ValueChanged<DeliveryChallan> onOpen;
+  final ValueChanged<DeliveryChallan> onPrint;
+  final ValueChanged<DeliveryChallan>? onToggleReportGroup;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final linked = _challanBelongsToReportGroup(challan, activeReportGroupCode);
+    return SoftSurface(
+      clipContent: true,
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        challan.challanNo,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    _TypePill(type: challan.type),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded),
+                      tooltip: 'Close pane',
+                      onPressed: onClose,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                _DetailLineCompact('Party', _partyName(challan)),
+                _DetailLineCompact('Date', _date(challan.date)),
+                _DetailLineCompact(
+                  challan.isDelivery ? 'Order' : 'Source',
+                  challan.isDelivery
+                      ? (challan.orderNo.isEmpty ? '-' : challan.orderNo)
+                      : (challan.sourceReference.isEmpty
+                            ? '-'
+                            : challan.sourceReference),
+                ),
+                _DetailLineCompact(
+                  'Report Group',
+                  _effectiveReportGroupCodes(challan).isEmpty
+                      ? 'Unlinked'
+                      : _effectiveReportGroupCodes(challan).join(', '),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    AppButton(
+                      label: 'View/Edit',
+                      icon: Icons.edit_outlined,
+                      variant: AppButtonVariant.secondary,
+                      onPressed: () => onOpen(challan),
+                    ),
+                    AppButton(
+                      label: 'Print',
+                      icon: Icons.print_outlined,
+                      variant: AppButtonVariant.secondary,
+                      onPressed: () => onPrint(challan),
+                    ),
+                    if (challan.isReception && activeReportGroupCode != null)
+                      AppButton(
+                        label: linked ? 'Unlink Group' : 'Link Group',
+                        icon: linked
+                            ? Icons.link_off_rounded
+                            : Icons.add_link_rounded,
+                        variant: AppButtonVariant.secondary,
+                        onPressed: onToggleReportGroup == null
+                            ? null
+                            : () => onToggleReportGroup!(challan),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: SoftErpTheme.border),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _LineItemsPanel(challan: challan),
+                const SizedBox(height: 14),
+                _ChallanTemplatePreviewPane(challan: challan),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DetailLineCompact extends StatelessWidget {
+  const _DetailLineCompact(this.label, this.value);
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 96,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: SoftErpTheme.textSecondary,
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                color: SoftErpTheme.textPrimary,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LineItemsPanel extends StatelessWidget {
+  const _LineItemsPanel({required this.challan});
+
+  final DeliveryChallan challan;
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftSurface(
+      padding: const EdgeInsets.all(12),
+      elevated: false,
+      color: SoftErpTheme.cardSurfaceAlt,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('Items', style: TextStyle(fontWeight: FontWeight.w900)),
+          const SizedBox(height: 8),
+          if (challan.items.isEmpty)
+            const Text(
+              'No line item details loaded.',
+              style: TextStyle(color: SoftErpTheme.textSecondary),
+            )
+          else
+            ...challan.items.map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        item.particulars.trim().isEmpty
+                            ? 'Unnamed item'
+                            : item.particulars.trim(),
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Qty ${item.quantityPcs.isEmpty ? '0' : item.quantityPcs}\nWt ${item.weight.isEmpty ? '0' : item.weight}',
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        color: SoftErpTheme.textSecondary,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ColumnEmptyState extends StatelessWidget {
+  const _ColumnEmptyState({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(
+          'No $title challans for this report group.',
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: SoftErpTheme.textSecondary),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChallanTemplatePreviewPane extends StatefulWidget {
+  const _ChallanTemplatePreviewPane({required this.challan});
+
+  final DeliveryChallan challan;
+
+  @override
+  State<_ChallanTemplatePreviewPane> createState() =>
+      _ChallanTemplatePreviewPaneState();
+}
+
+class _ChallanTemplatePreviewPaneState
+    extends State<_ChallanTemplatePreviewPane> {
+  List<ChallanTemplate> _templates = const <ChallanTemplate>[];
+  ChallanTemplate? _selectedTemplate;
+  Uint8List? _pdfBytes;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(_ChallanTemplatePreviewPane oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.challan.id != widget.challan.id) {
+      _load();
+    }
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+      _pdfBytes = null;
+    });
+    try {
+      final provider = context.read<DeliveryChallanProvider>();
+      final templates = await provider.loadTemplates(
+        partyType: ChallanTemplatePartyType.generic,
+        activeOnly: true,
+      );
+      final ordered = <ChallanTemplate>[
+        ...templates.where(
+          (template) => template.challanType == widget.challan.type,
+        ),
+        ...templates.where(
+          (template) => template.challanType != widget.challan.type,
+        ),
+      ];
+      final selected = ordered.isEmpty ? null : ordered.first;
+      Uint8List? bytes;
+      if (widget.challan.id > 0) {
+        bytes = await provider.repository.fetchTemplatePreviewPdf(
+          challanId: widget.challan.id,
+          templateId: selected?.id,
+          mode: 'digital',
+        );
+      }
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _templates = ordered;
+        _selectedTemplate = selected;
+        _pdfBytes = bytes;
+        _loading = false;
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _error = error.toString();
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _selectTemplate(int? id) async {
+    final selected = _templates
+        .where((template) => template.id == id)
+        .firstOrNull;
+    if (selected == null) {
+      return;
+    }
+    setState(() {
+      _selectedTemplate = selected;
+      _loading = true;
+      _pdfBytes = null;
+      _error = null;
+    });
+    try {
+      final bytes = await context
+          .read<DeliveryChallanProvider>()
+          .repository
+          .fetchTemplatePreviewPdf(
+            challanId: widget.challan.id,
+            templateId: selected.id,
+            mode: 'digital',
+          );
+      if (mounted) {
+        setState(() {
+          _pdfBytes = bytes;
+          _loading = false;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _error = error.toString();
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftSurface(
+      padding: const EdgeInsets.all(12),
+      elevated: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Template Preview',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+          if (_templates.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            DropdownButtonFormField<int>(
+              initialValue: _selectedTemplate?.id,
+              isExpanded: true,
+              decoration: InputDecoration(
+                labelText: 'Template',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: SoftErpTheme.border),
+                ),
+              ),
+              items: _templates
+                  .map(
+                    (template) => DropdownMenuItem<int>(
+                      value: template.id,
+                      child: Text(
+                        template.name,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(growable: false),
+              onChanged: _selectTemplate,
+            ),
+          ],
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 360,
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _pdfBytes != null
+                ? PdfPreview(
+                    build: (_) async => _pdfBytes!,
+                    allowPrinting: false,
+                    allowSharing: false,
+                    canChangeOrientation: false,
+                    canChangePageFormat: false,
+                    canDebug: false,
+                    useActions: false,
+                    maxPageWidth: 360,
+                  )
+                : Center(
+                    child: Text(
+                      _error ?? 'No template preview available.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: SoftErpTheme.textSecondary),
+                    ),
+                  ),
+          ),
+        ],
       ),
     );
   }
@@ -718,40 +1670,6 @@ class _TypePill extends StatelessWidget {
               fontWeight: FontWeight.w700,
               fontSize: 12,
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.activeType, required this.onCreate});
-
-  final ChallanType activeType;
-  final VoidCallback onCreate;
-
-  @override
-  Widget build(BuildContext context) {
-    final isReception = activeType == ChallanType.reception;
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(
-            Icons.description_outlined,
-            size: 48,
-            color: SoftErpTheme.textSecondary,
-          ),
-          const SizedBox(height: 12),
-          const Text('No challans yet'),
-          const SizedBox(height: 14),
-          AppButton(
-            label: isReception ? 'Create Reception' : 'Create Delivery',
-            icon: isReception
-                ? Icons.south_west_rounded
-                : Icons.north_east_rounded,
-            onPressed: onCreate,
           ),
         ],
       ),
@@ -938,7 +1856,10 @@ class _ChallanEditorState extends State<_ChallanEditor> {
           : source?.customerGstin ?? '',
     );
     _locationController = TextEditingController(
-      text: source?.location ?? widget.initialLocation ?? '',
+      text:
+          source?.location ??
+          widget.initialLocation ??
+          _defaultChallanStorageLocation,
     );
     _sourceReferenceController = TextEditingController(
       text: source?.sourceReference ?? '',
@@ -1335,7 +2256,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
                     ),
                     SizedBox(height: 6),
                     Text(
-                      'Choose the challan type, source document, date, and warehouse location first.',
+                      'Choose the challan type, source document, and date first.',
                       style: TextStyle(
                         color: SoftErpTheme.textSecondary,
                         fontSize: 13,
@@ -1381,26 +2302,12 @@ class _ChallanEditorState extends State<_ChallanEditor> {
             ] else
               _selectedOrdersSummary(),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _field(
-                    'Location',
-                    _locationController,
-                    enabled: _canEdit,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _field(
-                    _isReception
-                        ? 'Supplier Ref / GRN / Invoice'
-                        : 'Dispatch Reference',
-                    _sourceReferenceController,
-                    enabled: _canEdit,
-                  ),
-                ),
-              ],
+            _field(
+              _isReception
+                  ? 'Supplier Ref / GRN / Invoice'
+                  : 'Dispatch Reference',
+              _sourceReferenceController,
+              enabled: _canEdit,
             ),
           ] else ...[
             const SizedBox(height: 12),
@@ -1475,10 +2382,12 @@ class _ChallanEditorState extends State<_ChallanEditor> {
                         final cancelled = await provider.cancelChallan(
                           widget.challan!.id,
                         );
-                        if (cancelled != null && context.mounted) {
-                          await context.read<InventoryProvider>().refresh();
+                        if (cancelled != null) {
+                          if (context.mounted) {
+                            await context.read<InventoryProvider>().refresh();
+                            Navigator.of(context).pop();
+                          }
                         }
-                        if (context.mounted) Navigator.of(context).pop();
                       },
               ),
               const SizedBox(width: 10),
@@ -1611,7 +2520,10 @@ class _ChallanEditorState extends State<_ChallanEditor> {
               ),
               if (_gstinForOrder(_selectedOrders.first).isNotEmpty)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: SoftErpTheme.cardSurfaceAlt,
                     borderRadius: BorderRadius.circular(6),
@@ -1670,6 +2582,11 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     );
   }
 
+  String get _storageLocation {
+    final entered = _locationController.text.trim();
+    return entered.isEmpty ? _defaultChallanStorageLocation : entered;
+  }
+
   DeliveryChallanDraftInput _input() {
     final maintainStocks = _maintainStocks;
     final selectedOrderIds = _selectedOrders
@@ -1695,9 +2612,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
           ? (_selectedVendorId ?? _source?.vendorId ?? 0)
           : 0,
       date: DateTime.tryParse(_dateController.text) ?? DateTime.now(),
-      location: (!maintainStocks && _locationController.text.trim().isEmpty)
-          ? 'Main Store'
-          : _locationController.text.trim(),
+      location: _storageLocation,
       sourceReference: _sourceReferenceController.text,
       notes: _notesController.text,
       maintainStocks: maintainStocks,
@@ -1846,12 +2761,6 @@ class _ChallanEditorState extends State<_ChallanEditor> {
       });
       return;
     }
-    if (maintainStocks && input.location.trim().isEmpty) {
-      setState(() {
-        _validationError = 'Enter a location before issuing challan.';
-      });
-      return;
-    }
     if (input.items.isEmpty) {
       setState(() {
         _validationError = 'Add at least one line item before issuing challan.';
@@ -1884,22 +2793,74 @@ class _ChallanEditorState extends State<_ChallanEditor> {
         });
         return;
       }
-    } else if (input.items.any(
-      (item) =>
-          item.itemId == null ||
-          item.quantityPcs.trim().isEmpty ||
-          double.tryParse(item.quantityPcs.trim()) == null ||
-          double.parse(item.quantityPcs.trim()) <= 0,
-    )) {
+    } else if (input.items.any((item) {
+      if (item.itemId == null) return true;
+      final q = double.tryParse(item.quantityPcs.trim()) ?? 0;
+      final w = double.tryParse(item.weight.trim()) ?? 0;
+      return q <= 0 && w <= 0;
+    })) {
       setState(() {
         _validationError =
-            'Select an exact item variation and enter quantity for every reception row.';
+            'Select an exact item variation and enter quantity or weight for every reception row.';
       });
       return;
     }
     setState(() {
       _validationError = null;
     });
+
+    if (maintainStocks && _selectedType == ChallanType.delivery) {
+      final overDeliveries = <String>[];
+      for (final item in input.items) {
+        if (item.orderItemId != null && item.orderItemId! > 0) {
+          OrderEntry? order;
+          for (final o in _selectedOrders) {
+            if (o.id == item.orderItemId) {
+              order = o;
+              break;
+            }
+          }
+          if (order != null) {
+            final qty = double.tryParse(item.quantityPcs.trim()) ?? 0;
+            if (order.totalDeliveredQty + qty > order.quantity) {
+              final orderLabel = order.orderNo.trim().isNotEmpty ? order.orderNo : '#${order.id}';
+              overDeliveries.add(orderLabel);
+            }
+          }
+        }
+      }
+      
+      if (overDeliveries.isNotEmpty) {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) {
+            return AlertDialog(
+              title: const Text('Over-Delivery Warning'),
+              content: Text(
+                'The quantity you are about to issue for order(s) ${overDeliveries.toSet().join(', ')} '
+                'exceeds the remaining ordered quantity.\n\n'
+                'Are you sure you want to proceed with this over-delivery?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Proceed'),
+                ),
+              ],
+            );
+          },
+        );
+        
+        if (confirmed != true) {
+          return;
+        }
+      }
+    }
+
     final inventoryProvider = context.read<InventoryProvider>();
     final saved = _editingExisting && _matchesSourceDraft(input)
         ? widget.challan
@@ -2723,6 +3684,16 @@ class _ItemsEditor extends StatelessWidget {
                   (value) => draft.quantityPcs = value,
                 ),
               ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: _itemField(
+                  draft.weight,
+                  'Weight (Kg)',
+                  enabled,
+                  (value) => draft.weight = value,
+                ),
+              ),
               IconButton(
                 tooltip: 'Remove row',
                 onPressed: enabled && items.length > 1
@@ -2786,7 +3757,7 @@ class _ItemsEditor extends StatelessWidget {
               final result = await _openVariationSelector(
                 context,
                 item: item,
-                initialLeafId: draft.variationLeafNodeId,
+                draft: draft,
                 readOnly: false,
               );
               if (result == null) {
@@ -2864,7 +3835,7 @@ class _ItemsEditor extends StatelessWidget {
         _openVariationSelector(
           context,
           item: item,
-          initialLeafId: draft.variationLeafNodeId,
+          draft: draft,
           readOnly: true,
         );
       },
@@ -2905,7 +3876,7 @@ class _ItemsEditor extends StatelessWidget {
   Future<VariationPathSelectionResult?> _openVariationSelector(
     BuildContext context, {
     required ItemDefinition item,
-    required int initialLeafId,
+    required _ItemDraft draft,
     required bool readOnly,
   }) {
     return showDialog<VariationPathSelectionResult>(
@@ -2917,9 +3888,11 @@ class _ItemsEditor extends StatelessWidget {
           child: VariationPathSelectorDialog(
             item: item,
             initialRootPropertyId: null,
-            initialValueNodeIds: initialLeafId <= 0
-                ? const <int>[]
-                : _valueNodeIdsForLeaf(item, initialLeafId),
+            initialValueNodeIds: draft.variationPathNodeIds.isNotEmpty
+                ? draft.variationPathNodeIds
+                : draft.variationLeafNodeId <= 0
+                    ? const <int>[]
+                    : _valueNodeIdsForLeaf(item, draft.variationLeafNodeId),
             onCreateValue: null,
             readOnly: readOnly,
           ),
@@ -3075,6 +4048,7 @@ class _ItemDraft {
     this.productionRunId,
     this.itemId,
     this.variationLeafNodeId = 0,
+    this.variationPathNodeIds = const <int>[],
     this.particulars = '',
     this.hsnCode = '',
     this.variationPathLabel = '',
@@ -3088,6 +4062,7 @@ class _ItemDraft {
   int? productionRunId;
   int? itemId;
   int variationLeafNodeId;
+  List<int> variationPathNodeIds;
   String particulars;
   String hsnCode;
   String variationPathLabel;
@@ -3116,6 +4091,7 @@ class _ItemDraft {
       productionRunId: null,
       itemId: option?.itemId,
       variationLeafNodeId: option?.variationLeafNodeId ?? 0,
+      variationPathNodeIds: option?.variationPathNodeIds ?? const <int>[],
       particulars: option?.particulars ?? '',
       hsnCode: option?.hsnCode ?? '',
       variationPathLabel: option?.variationPathLabel ?? '',
@@ -3145,6 +4121,7 @@ class _ItemDraft {
     if (productionRunId == null) {
       itemId = option?.itemId;
       variationLeafNodeId = option?.variationLeafNodeId ?? 0;
+      variationPathNodeIds = option?.variationPathNodeIds ?? const <int>[];
       particulars = option?.particulars ?? '';
       hsnCode = option?.hsnCode ?? '';
       variationPathLabel = option?.variationPathLabel ?? '';
@@ -3227,6 +4204,7 @@ class _OrderItemOption {
     required this.orderNo,
     required this.itemId,
     required this.variationLeafNodeId,
+    required this.variationPathNodeIds,
     required this.particulars,
     required this.hsnCode,
     required this.variationPathLabel,
@@ -3237,6 +4215,7 @@ class _OrderItemOption {
   final String orderNo;
   final int itemId;
   final int variationLeafNodeId;
+  final List<int> variationPathNodeIds;
   final String particulars;
   final String hsnCode;
   final String variationPathLabel;
@@ -3252,6 +4231,7 @@ class _OrderItemOption {
       orderNo: order.orderNo,
       itemId: order.itemId,
       variationLeafNodeId: order.variationLeafNodeId,
+      variationPathNodeIds: order.variationPathNodeIds,
       particulars: particulars,
       hsnCode: '',
       variationPathLabel: variation,
@@ -4183,7 +5163,7 @@ Map<String, Object> _nativePrintPayload(
     'partyLabel': isReception ? 'Vendor' : 'M/s',
     'partyName': isReception ? challan.vendorName : challan.customerName,
     'partyGstin': isReception ? challan.vendorGstin : challan.customerGstin,
-    'location': challan.location,
+    'location': '',
     'referenceLabel': isReception ? 'Source Ref.' : 'Challan No.',
     'referenceValue': isReception
         ? (challan.sourceReference.trim().isEmpty
@@ -4253,6 +5233,158 @@ body{font-family:Arial,sans-serif;margin:24px;color:#000}.doc{max-width:820px;ma
 <div class="bottom"><div><p>State Code: ${e(profile.stateCode)}</p><p>GSTIN: ${e(profile.gstin)}</p><p class="sign">Receiver's Signature</p></div><div><p>For ${e(profile.companyName)}</p><p class="sign">${e(profile.signatureLabel.isEmpty ? 'Checked by / Authorized Signatory' : profile.signatureLabel)}</p></div></div>
 </div><script>setTimeout(()=>window.print(),300)</script></body></html>
 ''';
+}
+
+List<String> _availableReportGroupCodes(List<DeliveryChallan> challans) {
+  final codes = <String>{};
+  for (final challan in challans) {
+    codes.addAll(_effectiveReportGroupCodes(challan));
+  }
+  return codes.toList(growable: false)..sort();
+}
+
+List<String> _effectiveReportGroupCodes(DeliveryChallan challan) {
+  final explicitCodes =
+      challan.reportGroupCodes
+          .map((code) => code.trim().toUpperCase())
+          .where((code) => code.isNotEmpty)
+          .toSet()
+          .toList(growable: false)
+        ..sort();
+  if (explicitCodes.isNotEmpty || !challan.isDelivery) {
+    return explicitCodes;
+  }
+  final orderIds = challan.orderIds.isNotEmpty
+      ? challan.orderIds
+      : [if (challan.orderId != null) challan.orderId!];
+  final normalized = orderIds.where((id) => id > 0).toSet().toList()..sort();
+  if (normalized.isEmpty) {
+    return const <String>[];
+  }
+  if (normalized.length == 1) {
+    return <String>['ORD-${normalized.first}'];
+  }
+  return <String>['ORDSET-${normalized.join('-')}'];
+}
+
+bool _challanBelongsToReportGroup(DeliveryChallan challan, String? code) {
+  if (code == null || code.isEmpty) {
+    return true;
+  }
+  return _effectiveReportGroupCodes(challan).contains(code);
+}
+
+bool _receptionVisibleForReportGroup(DeliveryChallan challan, String? code) {
+  if (code == null || code.isEmpty) {
+    return true;
+  }
+  final codes = _effectiveReportGroupCodes(challan);
+  return codes.isEmpty || codes.contains(code);
+}
+
+String _partyName(DeliveryChallan challan) {
+  final value = challan.isReception ? challan.vendorName : challan.customerName;
+  return value.trim().isEmpty ? 'Unassigned party' : value.trim();
+}
+
+String _itemSummary(DeliveryChallan challan) {
+  if (challan.items.isEmpty) {
+    return '${challan.itemsCount} item${challan.itemsCount == 1 ? '' : 's'}';
+  }
+  return challan.items
+      .take(2)
+      .map((item) => item.particulars.trim())
+      .where((value) => value.isNotEmpty)
+      .join(' / ');
+}
+
+String _qtyLabel(DeliveryChallan challan) {
+  final quantity = challan.items.fold<double>(
+    0,
+    (sum, item) => sum + (double.tryParse(item.quantityPcs) ?? 0),
+  );
+  final weight = challan.items.fold<double>(
+    0,
+    (sum, item) => sum + (double.tryParse(item.weight) ?? 0),
+  );
+  final qtyPrefix = challan.isReception ? 'Received' : 'Delivered';
+  if (quantity == 0 && weight == 0) {
+    return '$qtyPrefix ${challan.itemsCount} item${challan.itemsCount == 1 ? '' : 's'}';
+  }
+  final parts = <String>[];
+  if (quantity > 0) {
+    parts.add('${_formatMetric(quantity)} Pcs');
+  }
+  if (weight > 0) {
+    parts.add('${_formatMetric(weight)} Kg');
+  }
+  return '$qtyPrefix ${parts.join(' / ')}';
+}
+
+String _formatMetric(double value) {
+  if (value == value.roundToDouble()) {
+    return value.toStringAsFixed(0);
+  }
+  return value.toStringAsFixed(2);
+}
+
+Future<Uint8List> _buildClientStatementPdf(
+  ClientStatementReport report,
+  String reportGroupCode,
+) async {
+  final document = pw.Document();
+  final rows = report.rows;
+  document.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.all(24),
+      build: (context) => [
+        pw.Text(
+          'CLIENT STATEMENT',
+          style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16),
+        ),
+        pw.SizedBox(height: 4),
+        pw.Text('Report Group: $reportGroupCode'),
+        pw.SizedBox(height: 12),
+        pw.TableHelper.fromTextArray(
+          headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+          headerDecoration: const pw.BoxDecoration(color: PdfColors.grey200),
+          cellStyle: const pw.TextStyle(fontSize: 8),
+          headers: const <String>[
+            'Date',
+            'Challan',
+            'Client',
+            'Order',
+            'Item',
+            'Qty',
+            'Weight',
+          ],
+          data: rows
+              .map(
+                (row) => <String>[
+                  row.date == null ? '-' : _date(row.date!),
+                  row.challanNo,
+                  row.clientName,
+                  row.orderNo,
+                  row.itemName,
+                  _formatMetric(row.quantityPcs),
+                  _formatMetric(row.weight),
+                ],
+              )
+              .toList(growable: false),
+        ),
+        pw.SizedBox(height: 12),
+        pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            'Total: ${_formatMetric(report.totalQuantityPcs)} Pcs / ${_formatMetric(report.totalWeight)} Kg',
+            style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+          ),
+        ),
+      ],
+    ),
+  );
+  return document.save();
 }
 
 String _date(DateTime value) {
