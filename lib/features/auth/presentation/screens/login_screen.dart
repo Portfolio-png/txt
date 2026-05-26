@@ -11,8 +11,8 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  static const _quickLoginEmail = 'super@paper.local';
   static const _quickLoginPassword = 'Paper@12345';
+
 
   final _emailController = TextEditingController(text: 'super@paper.local');
   final _passwordController = TextEditingController();
@@ -36,8 +36,8 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Future<void> _quickLogin() async {
-    _emailController.text = _quickLoginEmail;
+  Future<void> _quickLoginWith(String email) async {
+    _emailController.text = email;
     _passwordController.text = _quickLoginPassword;
     await _submit();
   }
@@ -63,7 +63,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Form(
                   key: _formKey,
                   child: Column(
-                    mainAxisSize: MainAxisSize.min,
+                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
@@ -154,40 +154,112 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 6),
                     const Text(
-                      'Temporary dev shortcut for the bootstrap super admin account.',
+                      'Select a credentials shortcut to log in immediately.',
                       style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
                     ),
                     const SizedBox(height: 14),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        border: Border.all(color: const Color(0xFFE5E7EB)),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Super Admin',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF111827),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            onTap: auth.isLoading ? null : () => _quickLoginWith('super@paper.local'),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                border: Border.all(color: const Color(0xFFE5E7EB)),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.computer_rounded, size: 14, color: Colors.blue),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Local Dev',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 12,
+                                          color: Colors.blue.shade800,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  const Text(
+                                    'super@paper.local',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF111827),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  const Text(
+                                    'Local Sandbox',
+                                    style: TextStyle(fontSize: 10, color: Color(0xFF6B7280)),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                          SizedBox(height: 4),
-                          Text(
-                            'super@paper.local',
-                            style: TextStyle(color: Color(0xFF4B5563)),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: InkWell(
+                            onTap: auth.isLoading ? null : () => _quickLoginWith('tangriine@gmail.com'),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                border: Border.all(color: const Color(0xFFE5E7EB)),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.cloud_queue_rounded, size: 14, color: Colors.teal),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Online Env',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 12,
+                                          color: Colors.teal.shade800,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  const Text(
+                                    'tangriine@gmail.com',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF111827),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  const Text(
+                                    'Staging/Cloud',
+                                    style: TextStyle(fontSize: 10, color: Color(0xFF6B7280)),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: auth.isLoading ? null : _quickLogin,
-                      icon: const Icon(Icons.flash_on_rounded, size: 18),
-                      label: const Text('Login as Super Admin'),
+                        ),
+                      ],
                     ),
                   ],
                 ),
