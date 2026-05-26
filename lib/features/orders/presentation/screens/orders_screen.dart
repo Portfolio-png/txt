@@ -2289,16 +2289,10 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
               key: const ValueKey<String>('orders-editor-order-no-field'),
               controller: _orderNoController,
               decoration: _inputDecoration(
-                hintText: '123456',
+                hintText: 'Leave empty to auto-generate',
                 suffixIcon: Icons.edit_outlined,
               ),
               textInputAction: TextInputAction.next,
-              validator: (value) {
-                if ((value ?? '').trim().isEmpty) {
-                  return 'Enter an order number.';
-                }
-                return null;
-              },
             ),
           ),
           const SizedBox(height: 28),
@@ -5751,28 +5745,18 @@ class _OrderUnitConversionDialogState
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    TextButton(
+                    AppButton(
+                      label: 'Cancel',
+                      variant: AppButtonVariant.secondary,
                       onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Cancel'),
                     ),
                     const SizedBox(width: 10),
-                    ElevatedButton(
+                    AppButton(
                       key: const ValueKey<String>(
                         'orders-unit-conversion-save',
                       ),
+                      label: 'Add Conversion',
                       onPressed: _save,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: SoftErpTheme.accent,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 13,
-                        ),
-                      ),
-                      child: const Text('Add Conversion'),
                     ),
                   ],
                 ),

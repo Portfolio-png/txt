@@ -14,6 +14,8 @@ const List<String> kSidebarNavigationOrder = <String>[
   'configurator_items',
   'configurator_groups',
   'configurator_units',
+  'configurator_machines',
+  'configurator_dies',
   'user_management',
 ];
 
@@ -24,6 +26,8 @@ const Set<String> kConfiguratorNavigationKeys = <String>{
   'configurator_items',
   'configurator_groups',
   'configurator_units',
+  'configurator_machines',
+  'configurator_dies',
 };
 
 const List<String> kPrimaryTabNavigationKeys = <String>[

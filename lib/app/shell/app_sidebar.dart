@@ -66,6 +66,8 @@ class _AppSidebarState extends State<AppSidebar> {
     _SidebarItemData('configurator_items', 'Items', Icons.inventory_outlined),
     _SidebarItemData('configurator_groups', 'Groups', Icons.grid_view_outlined),
     _SidebarItemData('configurator_units', 'Units', Icons.straighten_outlined),
+    _SidebarItemData('configurator_machines', 'Machines', Icons.precision_manufacturing_outlined),
+    _SidebarItemData('configurator_dies', 'Dies', Icons.build_circle_outlined),
   ];
 
   static const List<_SidebarItemData> _adminItems = <_SidebarItemData>[

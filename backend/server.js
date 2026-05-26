@@ -42,6 +42,8 @@ const S3_UPLOAD_PREFIXES = Object.freeze({
   DELIVERY_CHALLAN: 'logistics/challans/',
   CHALLAN_TEMPLATE_BACKGROUND: 'logistics/challan-templates/',
   CHALLAN_TEMPLATE_STAMP: 'logistics/challan-template-stamps/',
+  MACHINE_IMAGE: 'masters/machines/',
+  DIE_IMAGE: 'masters/dies/',
 });
 const COMMON_WEAK_PASSWORDS = new Set([
   'password',
@@ -3179,6 +3181,48 @@ async function initDb() {
     await seedTemplatesIfEmpty();
     await ensureDemoDataset();
   }
+  await run(`
+    CREATE TABLE IF NOT EXISTS machines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      asset_id TEXT NOT NULL UNIQUE,
+      primary_photo_url TEXT,
+      group_id INTEGER REFERENCES groups(id),
+      make_model TEXT,
+      serial_number TEXT,
+      location TEXT,
+      installation_date TEXT,
+      status TEXT NOT NULL,
+      custom_properties TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS dies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tool_code TEXT NOT NULL UNIQUE,
+      produced_part_numbers TEXT NOT NULL DEFAULT '[]',
+      photo_urls TEXT NOT NULL DEFAULT '[]',
+      operational_notes TEXT,
+      compatible_machine_group_ids TEXT NOT NULL DEFAULT '[]',
+      storage_location TEXT,
+      number_of_cavities INTEGER,
+      stroke_count INTEGER NOT NULL DEFAULT 0,
+      max_strokes INTEGER NOT NULL DEFAULT 0,
+      physical_specs TEXT NOT NULL DEFAULT '{}',
+      status TEXT NOT NULL,
+      ownership TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  if (SEED_DEMO_DATA_ON_BOOT) {
+    await seedMachinesAndDiesIfEmpty();
+  }
+
   await bootstrapSuperAdminIfNeeded();
   dbReady = true;
 }
@@ -3663,6 +3707,88 @@ async function backfillMaterialUnitIds() {
     if (matches.length === 1) {
       await run('UPDATE materials SET unit_id = ? WHERE id = ?', [matches[0], row.id]);
     }
+  }
+}
+
+async function seedMachinesAndDiesIfEmpty() {
+  const machineCount = await get('SELECT COUNT(*) as count FROM machines');
+  if (machineCount.count === 0) {
+    await run(`
+      INSERT INTO machines (name, asset_id, primary_photo_url, group_id, make_model, serial_number, location, installation_date, status, custom_properties, created_at, updated_at)
+      VALUES (
+        'Amada CNC Press Brake',
+        'MAC-1001',
+        'https://images.unsplash.com/photo-1565439390237-db561c2ba24e?auto=format&fit=crop&q=80',
+        NULL,
+        'Amada HDS-8025NT',
+        'AMD-909283',
+        'Press Shop A',
+        '2022-05-10',
+        'active',
+        '[{"key": "Tonnage", "value": "80T"}, {"key": "Bed Length", "value": "2500mm"}]',
+        datetime('now'),
+        datetime('now')
+      )
+    `);
+    await run(`
+      INSERT INTO machines (name, asset_id, primary_photo_url, group_id, make_model, serial_number, location, installation_date, status, custom_properties, created_at, updated_at)
+      VALUES (
+        'Haas VF-2SS CNC Mill',
+        'MAC-1002',
+        'https://images.unsplash.com/photo-1610484557978-56961cf3d623?auto=format&fit=crop&q=80',
+        NULL,
+        'Haas VF-2SS',
+        'HSS-10020',
+        'CNC Line 2',
+        '2023-01-15',
+        'maintenance',
+        '[{"key": "Spindle Speed", "value": "12000 RPM"}, {"key": "Axis", "value": "3-Axis"}]',
+        datetime('now'),
+        datetime('now')
+      )
+    `);
+  }
+
+  const dieCount = await get('SELECT COUNT(*) as count FROM dies');
+  if (dieCount.count === 0) {
+    await run(`
+      INSERT INTO dies (tool_code, produced_part_numbers, photo_urls, operational_notes, compatible_machine_group_ids, storage_location, number_of_cavities, stroke_count, max_strokes, physical_specs, status, ownership, created_at, updated_at)
+      VALUES (
+        'TL-890-A',
+        '["PART-4432", "PART-4433"]',
+        '["https://images.unsplash.com/photo-1590494165264-1ebe3602eb80?auto=format&fit=crop&q=80", "https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&q=80"]',
+        'Requires heavy lubrication on the guide pins. Watch out for scrap buildup on the left exit chute.',
+        '[]',
+        'Rack B, Shelf 3',
+        2,
+        45000,
+        100000,
+        '{"Weight": "1250 kg", "Shut Height": "350 mm", "Dimensions": "800 x 600 x 400 mm"}',
+        'ready',
+        'inHouse',
+        datetime('now'),
+        datetime('now')
+      )
+    `);
+    await run(`
+      INSERT INTO dies (tool_code, produced_part_numbers, photo_urls, operational_notes, compatible_machine_group_ids, storage_location, number_of_cavities, stroke_count, max_strokes, physical_specs, status, ownership, created_at, updated_at)
+      VALUES (
+        'TL-102-B',
+        '["PART-9901"]',
+        '["https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=80"]',
+        'Customer owned. Handle with care. Clean thoroughly before returning to storage.',
+        '[]',
+        'Rack A, Shelf 1',
+        1,
+        98000,
+        100000,
+        '{"Weight": "2100 kg"}',
+        'needsRepair',
+        'customerOwned',
+        datetime('now'),
+        datetime('now')
+      )
+    `);
   }
 }
 
@@ -9088,18 +9214,21 @@ function assertValidAssetUploadInput({
   const normalizedSha = String(sha256 || '').toLowerCase().trim();
   const normalizedName = normalizeAssetFileName(fileName);
 
-  if (normalizedUploadType !== 'ITEM_IMAGE') {
-    const error = new Error('Item image uploads must declare uploadType = ITEM_IMAGE.');
+  const validUploadTypes = new Set(['ITEM_IMAGE', 'MACHINE_IMAGE', 'DIE_IMAGE']);
+  const validEntityTypes = new Set(['item', 'machine', 'die']);
+
+  if (!validUploadTypes.has(normalizedUploadType)) {
+    const error = new Error('Invalid uploadType.');
     error.statusCode = 400;
     throw error;
   }
-  if (normalizedEntityType !== 'item') {
-    const error = new Error('Only item image uploads are supported.');
+  if (!validEntityTypes.has(normalizedEntityType)) {
+    const error = new Error('Entity type not supported.');
     error.statusCode = 400;
     throw error;
   }
   if (!Number.isInteger(normalizedEntityId) || normalizedEntityId <= 0) {
-    const error = new Error('A valid item id is required.');
+    const error = new Error('A valid entity id is required.');
     error.statusCode = 400;
     throw error;
   }
@@ -9703,6 +9832,18 @@ async function assertAssetEntityExists(entityType, entityId) {
   if (entityType === 'item') {
     const item = await getItemRowById(entityId);
     if (item) {
+      return;
+    }
+  }
+  if (entityType === 'machine') {
+    const machine = await get('SELECT id FROM machines WHERE id = ?', [entityId]);
+    if (machine) {
+      return;
+    }
+  }
+  if (entityType === 'die') {
+    const die = await get('SELECT id FROM dies WHERE id = ?', [entityId]);
+    if (die) {
       return;
     }
   }
@@ -15456,6 +15597,282 @@ app.get('/api/delete-requests/export', requirePermission('audit.read'), async (_
     res.status(200).send(csv);
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Machines CRUD Endpoints
+app.get('/api/machines', requirePermission('config.read'), async (req, res) => {
+  try {
+    const rows = await all('SELECT * FROM machines ORDER BY created_at DESC');
+    const machines = rows.map((r) => ({
+      id: String(r.id),
+      name: r.name,
+      assetId: r.asset_id,
+      primaryPhotoUrl: r.primary_photo_url,
+      groupId: r.group_id,
+      makeModel: r.make_model,
+      serialNumber: r.serial_number,
+      location: r.location,
+      installationDate: r.installation_date ? new Date(r.installation_date).toISOString() : null,
+      status: r.status,
+      customProperties: JSON.parse(r.custom_properties || '[]'),
+      createdAt: new Date(r.created_at).toISOString(),
+      updatedAt: new Date(r.updated_at).toISOString(),
+    }));
+    res.json({ success: true, machines, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, machines: [], error: error.message });
+  }
+});
+
+app.get('/api/machines/:id', requirePermission('config.read'), async (req, res) => {
+  try {
+    const r = await get('SELECT * FROM machines WHERE id = ?', [req.params.id]);
+    if (!r) {
+      return res.status(404).json({ success: false, machine: null, error: 'Machine not found' });
+    }
+    const machine = {
+      id: String(r.id),
+      name: r.name,
+      assetId: r.asset_id,
+      primaryPhotoUrl: r.primary_photo_url,
+      groupId: r.group_id,
+      makeModel: r.make_model,
+      serialNumber: r.serial_number,
+      location: r.location,
+      installationDate: r.installation_date ? new Date(r.installation_date).toISOString() : null,
+      status: r.status,
+      customProperties: JSON.parse(r.custom_properties || '[]'),
+      createdAt: new Date(r.created_at).toISOString(),
+      updatedAt: new Date(r.updated_at).toISOString(),
+    };
+    res.json({ success: true, machine, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, machine: null, error: error.message });
+  }
+});
+
+app.post('/api/machines', requirePermission('config.write'), async (req, res) => {
+  try {
+    const { id, name, assetId, primaryPhotoUrl, groupId, makeModel, serialNumber, location, installationDate, status, customProperties } = req.body || {};
+    const now = new Date().toISOString();
+    let resultId = id;
+    if (id && id.trim() !== '' && !id.startsWith('temp_') && isNaN(Number(id)) === false) {
+      // Update
+      await run(
+        `UPDATE machines SET name = ?, asset_id = ?, primary_photo_url = ?, group_id = ?, make_model = ?, serial_number = ?, location = ?, installation_date = ?, status = ?, custom_properties = ?, updated_at = ? WHERE id = ?`,
+        [name, assetId, primaryPhotoUrl, groupId, makeModel, serialNumber, location, installationDate, status, JSON.stringify(customProperties || []), now, Number(id)]
+      );
+    } else {
+      // Create
+      const info = await run(
+        `INSERT INTO machines (name, asset_id, primary_photo_url, group_id, make_model, serial_number, location, installation_date, status, custom_properties, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [name, assetId, primaryPhotoUrl, groupId, makeModel, serialNumber, location, installationDate, status, JSON.stringify(customProperties || []), now, now]
+      );
+      resultId = String(info.lastID);
+    }
+    const r = await get('SELECT * FROM machines WHERE id = ?', [resultId]);
+    const machine = {
+      id: String(r.id),
+      name: r.name,
+      assetId: r.asset_id,
+      primaryPhotoUrl: r.primary_photo_url,
+      groupId: r.group_id,
+      makeModel: r.make_model,
+      serialNumber: r.serial_number,
+      location: r.location,
+      installationDate: r.installation_date ? new Date(r.installation_date).toISOString() : null,
+      status: r.status,
+      customProperties: JSON.parse(r.custom_properties || '[]'),
+      createdAt: new Date(r.created_at).toISOString(),
+      updatedAt: new Date(r.updated_at).toISOString(),
+    };
+    res.json({ success: true, machine, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, machine: null, error: error.message });
+  }
+});
+
+app.delete('/api/machines/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    await run('DELETE FROM machines WHERE id = ?', [req.params.id]);
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Machines Assets
+app.get('/api/machines/:id/assets', requirePermission('config.read'), async (req, res) => {
+  try {
+    const assets = await listAssetsForEntity('machine', Number(req.params.id));
+    res.json({ success: true, assets, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, assets: [], error: error.message });
+  }
+});
+
+app.post('/api/machines/:id/assets/upload-intent', requirePermission('config.write'), async (req, res) => {
+  try {
+    const entityId = Number(req.params.id);
+    const intent = await createAssetUploadIntent({
+      ...(req.body || {}),
+      entityType: 'machine',
+      entityId,
+    });
+    res.status(intent.alreadyUploaded ? 200 : 201).json({ success: true, intent, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, intent: null, error: error.message });
+  }
+});
+
+app.post('/api/machines/:id/assets/upload-complete', requirePermission('config.write'), async (req, res) => {
+  try {
+    const asset = await completeAssetUpload(req.body || {});
+    res.json({ success: true, asset, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, asset: null, error: error.message });
+  }
+});
+
+// Dies CRUD Endpoints
+app.get('/api/dies', requirePermission('config.read'), async (req, res) => {
+  try {
+    const rows = await all('SELECT * FROM dies ORDER BY created_at DESC');
+    const dies = rows.map((r) => ({
+      id: String(r.id),
+      toolCode: r.tool_code,
+      producedPartNumbers: JSON.parse(r.produced_part_numbers || '[]'),
+      photoUrls: JSON.parse(r.photo_urls || '[]'),
+      operationalNotes: r.operational_notes,
+      compatibleMachineGroupIds: JSON.parse(r.compatible_machine_group_ids || '[]'),
+      storageLocation: r.storage_location,
+      numberOfCavities: r.number_of_cavities,
+      strokeCount: r.stroke_count,
+      maxStrokes: r.max_strokes,
+      physicalSpecs: JSON.parse(r.physical_specs || '{}'),
+      status: r.status,
+      ownership: r.ownership,
+      createdAt: new Date(r.created_at).toISOString(),
+      updatedAt: new Date(r.updated_at).toISOString(),
+    }));
+    res.json({ success: true, dies, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, dies: [], error: error.message });
+  }
+});
+
+app.get('/api/dies/:id', requirePermission('config.read'), async (req, res) => {
+  try {
+    const r = await get('SELECT * FROM dies WHERE id = ?', [req.params.id]);
+    if (!r) {
+      return res.status(404).json({ success: false, die: null, error: 'Die not found' });
+    }
+    const die = {
+      id: String(r.id),
+      toolCode: r.tool_code,
+      producedPartNumbers: JSON.parse(r.produced_part_numbers || '[]'),
+      photoUrls: JSON.parse(r.photo_urls || '[]'),
+      operationalNotes: r.operational_notes,
+      compatibleMachineGroupIds: JSON.parse(r.compatible_machine_group_ids || '[]'),
+      storageLocation: r.storage_location,
+      numberOfCavities: r.number_of_cavities,
+      strokeCount: r.stroke_count,
+      maxStrokes: r.max_strokes,
+      physicalSpecs: JSON.parse(r.physical_specs || '{}'),
+      status: r.status,
+      ownership: r.ownership,
+      createdAt: new Date(r.created_at).toISOString(),
+      updatedAt: new Date(r.updated_at).toISOString(),
+    };
+    res.json({ success: true, die, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, die: null, error: error.message });
+  }
+});
+
+app.post('/api/dies', requirePermission('config.write'), async (req, res) => {
+  try {
+    const { id, toolCode, producedPartNumbers, photoUrls, operationalNotes, compatibleMachineGroupIds, storageLocation, numberOfCavities, strokeCount, maxStrokes, physicalSpecs, status, ownership } = req.body || {};
+    const now = new Date().toISOString();
+    let resultId = id;
+    if (id && id.trim() !== '' && !id.startsWith('temp_') && isNaN(Number(id)) === false) {
+      // Update
+      await run(
+        `UPDATE dies SET tool_code = ?, produced_part_numbers = ?, photo_urls = ?, operational_notes = ?, compatible_machine_group_ids = ?, storage_location = ?, number_of_cavities = ?, stroke_count = ?, max_strokes = ?, physical_specs = ?, status = ?, ownership = ?, updated_at = ? WHERE id = ?`,
+        [toolCode, JSON.stringify(producedPartNumbers || []), JSON.stringify(photoUrls || []), operationalNotes, JSON.stringify(compatibleMachineGroupIds || []), storageLocation, numberOfCavities, strokeCount || 0, maxStrokes || 0, JSON.stringify(physicalSpecs || {}), status, ownership, now, Number(id)]
+      );
+    } else {
+      // Create
+      const info = await run(
+        `INSERT INTO dies (tool_code, produced_part_numbers, photo_urls, operational_notes, compatible_machine_group_ids, storage_location, number_of_cavities, stroke_count, max_strokes, physical_specs, status, ownership, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [toolCode, JSON.stringify(producedPartNumbers || []), JSON.stringify(photoUrls || []), operationalNotes, JSON.stringify(compatibleMachineGroupIds || []), storageLocation, numberOfCavities, strokeCount || 0, maxStrokes || 0, JSON.stringify(physicalSpecs || {}), status, ownership, now, now]
+      );
+      resultId = String(info.lastID);
+    }
+    const r = await get('SELECT * FROM dies WHERE id = ?', [resultId]);
+    const die = {
+      id: String(r.id),
+      toolCode: r.tool_code,
+      producedPartNumbers: JSON.parse(r.produced_part_numbers || '[]'),
+      photoUrls: JSON.parse(r.photo_urls || '[]'),
+      operationalNotes: r.operational_notes,
+      compatibleMachineGroupIds: JSON.parse(r.compatible_machine_group_ids || '[]'),
+      storageLocation: r.storage_location,
+      numberOfCavities: r.number_of_cavities,
+      strokeCount: r.stroke_count,
+      maxStrokes: r.max_strokes,
+      physicalSpecs: JSON.parse(r.physical_specs || '{}'),
+      status: r.status,
+      ownership: r.ownership,
+      createdAt: new Date(r.created_at).toISOString(),
+      updatedAt: new Date(r.updated_at).toISOString(),
+    };
+    res.json({ success: true, die, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, die: null, error: error.message });
+  }
+});
+
+app.delete('/api/dies/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    await run('DELETE FROM dies WHERE id = ?', [req.params.id]);
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Dies Assets
+app.get('/api/dies/:id/assets', requirePermission('config.read'), async (req, res) => {
+  try {
+    const assets = await listAssetsForEntity('die', Number(req.params.id));
+    res.json({ success: true, assets, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, assets: [], error: error.message });
+  }
+});
+
+app.post('/api/dies/:id/assets/upload-intent', requirePermission('config.write'), async (req, res) => {
+  try {
+    const entityId = Number(req.params.id);
+    const intent = await createAssetUploadIntent({
+      ...(req.body || {}),
+      entityType: 'die',
+      entityId,
+    });
+    res.status(intent.alreadyUploaded ? 200 : 201).json({ success: true, intent, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, intent: null, error: error.message });
+  }
+});
+
+app.post('/api/dies/:id/assets/upload-complete', requirePermission('config.write'), async (req, res) => {
+  try {
+    const asset = await completeAssetUpload(req.body || {});
+    res.json({ success: true, asset, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, asset: null, error: error.message });
   }
 });
 

@@ -318,11 +318,19 @@ class _AndroidScannerLayout extends StatelessWidget {
           ),
         ),
         if (isLoading)
-          const Positioned(
+          Positioned(
             top: 16,
             right: 16,
-            child: Card(
-              child: Padding(
+            child: Material(
+              color: Colors.white,
+              elevation: 1,
+              shadowColor: const Color(0x146A74B8),
+              borderRadius: BorderRadius.circular(12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: const BorderSide(color: Color(0xFFE6E8F4)),
+              ),
+              child: const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -333,7 +341,14 @@ class _AndroidScannerLayout extends StatelessWidget {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
                     SizedBox(width: 10),
-                    Text('Looking up barcode...'),
+                    Text(
+                      'Looking up barcode...',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF303646),
+                      ),
+                    ),
                   ],
                 ),
               ),

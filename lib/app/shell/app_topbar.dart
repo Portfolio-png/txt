@@ -14,6 +14,8 @@ import '../../features/inventory/presentation/providers/inventory_provider.dart'
 import '../../features/items/presentation/providers/items_provider.dart';
 import '../../features/orders/presentation/providers/orders_provider.dart';
 import '../../features/units/presentation/providers/units_provider.dart';
+import '../../features/machines/presentation/providers/machine_provider.dart';
+import '../../features/dies/presentation/providers/die_provider.dart';
 import 'navigation_provider.dart';
 
 enum ShellTopStripSearchLayoutMode { centered, leading, expanded }
@@ -113,6 +115,24 @@ ShellTopStripConfig resolveTopStrip(String selectedKey, BuildContext context) {
           placeholder: 'Search units or symbols',
           initialValue: provider.searchQuery,
           onChanged: provider.setSearchQuery,
+        ),
+      );
+    case 'configurator_machines':
+      final machinesProvider = context.watch<MachinesProvider>();
+      return ShellTopStripConfig(
+        search: ShellTopStripSearchConfig(
+          placeholder: 'Search machines by name, model, asset ID or group',
+          initialValue: machinesProvider.searchQuery,
+          onChanged: machinesProvider.setSearchQuery,
+        ),
+      );
+    case 'configurator_dies':
+      final diesProvider = context.watch<DiesProvider>();
+      return ShellTopStripConfig(
+        search: ShellTopStripSearchConfig(
+          placeholder: 'Search dies by tool code or produced parts',
+          initialValue: diesProvider.searchQuery,
+          onChanged: diesProvider.setSearchQuery,
         ),
       );
     case 'inventory':

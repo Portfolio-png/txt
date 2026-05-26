@@ -36,6 +36,13 @@ import 'features/units/presentation/providers/units_provider.dart';
 import 'features/vendors/data/repositories/api_vendor_repository.dart';
 import 'features/vendors/data/repositories/vendor_repository.dart';
 import 'features/vendors/presentation/providers/vendors_provider.dart';
+import 'features/machines/data/machine_repository.dart';
+import 'features/machines/data/api_machine_repository.dart';
+import 'features/machines/presentation/providers/machine_provider.dart';
+import 'features/dies/data/die_repository.dart';
+import 'features/dies/data/api_die_repository.dart';
+import 'features/dies/presentation/providers/die_provider.dart';
+
 
 const _isDemoMode = bool.fromEnvironment(
   'PAPER_DEMO_MODE',
@@ -74,6 +81,8 @@ class MyApp extends StatelessWidget {
     this.itemRepository,
     this.orderRepository,
     this.pipelineRunRepository,
+    this.machineRepository,
+    this.dieRepository,
     this.demoModeOverride,
   });
 
@@ -87,7 +96,10 @@ class MyApp extends StatelessWidget {
   final ItemRepository? itemRepository;
   final OrderRepository? orderRepository;
   final PipelineRunRepository? pipelineRunRepository;
+  final MachineRepository? machineRepository;
+  final DieRepository? dieRepository;
   final bool? demoModeOverride;
+
 
   bool get _effectiveDemoMode => demoModeOverride ?? _isDemoMode;
 
@@ -103,6 +115,94 @@ class MyApp extends StatelessWidget {
         bodyLarge: TextStyle(fontSize: 16),
         bodyMedium: TextStyle(fontSize: 14),
         bodySmall: TextStyle(fontSize: 12),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: const Color(0xFFF8F7FC),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: SoftErpTheme.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: SoftErpTheme.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: SoftErpTheme.accent, width: 1.5),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: SoftErpTheme.dangerBg),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: SoftErpTheme.dangerText, width: 1.5),
+        ),
+        labelStyle: const TextStyle(
+          color: SoftErpTheme.textSecondary,
+          fontWeight: FontWeight.w500,
+          fontSize: 14,
+        ),
+        hintStyle: const TextStyle(
+          color: SoftErpTheme.textSecondary,
+          fontSize: 14,
+        ),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: const BorderSide(color: SoftErpTheme.border),
+        ),
+        titleTextStyle: const TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.w800,
+          color: SoftErpTheme.textPrimary,
+          fontFamily: 'Segoe UI',
+        ),
+        contentTextStyle: const TextStyle(
+          fontSize: 14,
+          color: SoftErpTheme.textSecondary,
+          fontFamily: 'Segoe UI',
+        ),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          elevation: 1,
+          shadowColor: const Color(0x146A74B8),
+          backgroundColor: SoftErpTheme.accent,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: const BorderSide(color: SoftErpTheme.accentDark),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+          textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, fontFamily: 'Segoe UI'),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: SoftErpTheme.accent,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, fontFamily: 'Segoe UI'),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: SoftErpTheme.textPrimary,
+          side: const BorderSide(color: SoftErpTheme.border),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+          textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, fontFamily: 'Segoe UI'),
+        ),
       ),
     );
 
@@ -160,6 +260,16 @@ class MyApp extends StatelessWidget {
           create: (context) =>
               pipelineRunRepository ??
               _buildPipelineRunRepository(context.read<AuthProvider>()),
+        ),
+        Provider<MachineRepository>(
+          create: (context) =>
+              machineRepository ??
+              _buildMachineRepository(context.read<AuthProvider>()),
+        ),
+        Provider<DieRepository>(
+          create: (context) =>
+              dieRepository ??
+              _buildDieRepository(context.read<AuthProvider>()),
         ),
         ChangeNotifierProvider(create: (_) => PreferencesProvider()),
         ChangeNotifierProvider(create: (_) => NavigationProvider()),
@@ -226,6 +336,22 @@ class MyApp extends StatelessWidget {
                 ..initialize(),
           update: (context, repository, previous) =>
               previous ?? ChallanProvider(repository: repository)
+                ..initialize(),
+        ),
+        ChangeNotifierProxyProvider<MachineRepository, MachinesProvider>(
+          create: (context) =>
+              MachinesProvider(repository: context.read<MachineRepository>())
+                ..initialize(),
+          update: (context, repository, previous) =>
+              previous ?? MachinesProvider(repository: repository)
+                ..initialize(),
+        ),
+        ChangeNotifierProxyProvider<DieRepository, DiesProvider>(
+          create: (context) =>
+              DiesProvider(repository: context.read<DieRepository>())
+                ..initialize(),
+          update: (context, repository, previous) =>
+              previous ?? DiesProvider(repository: repository)
                 ..initialize(),
         ),
       ],
@@ -325,6 +451,22 @@ class MyApp extends StatelessWidget {
       client: _authClient(auth),
     );
   }
+
+  MachineRepository _buildMachineRepository(AuthProvider auth) {
+    return ApiMachineRepository(
+      client: _authClient(auth),
+      baseUrl: _apiBaseUrl,
+      useMockResponses: _effectiveDemoMode,
+    );
+  }
+
+  DieRepository _buildDieRepository(AuthProvider auth) {
+    return ApiDieRepository(
+      client: _authClient(auth),
+      baseUrl: _apiBaseUrl,
+      useMockResponses: _effectiveDemoMode,
+    );
+  }
 }
 
 class _AuthGate extends StatefulWidget {
@@ -355,6 +497,8 @@ class _AuthGateState extends State<_AuthGate> {
         context.read<VendorsProvider>().refresh(),
         context.read<ItemsProvider>().refresh(),
         context.read<DeliveryChallanProvider>().refresh(),
+        context.read<MachinesProvider>().refresh(),
+        context.read<DiesProvider>().refresh(),
       ]);
     });
   }

@@ -2775,6 +2775,22 @@ class _ChallanEditorState extends State<_ChallanEditor> {
       });
       return;
     }
+    if (input.items.any((item) {
+      final pcsStr = item.quantityPcs.trim();
+      if (pcsStr.isNotEmpty) {
+        final pcsDouble = double.tryParse(pcsStr);
+        if (pcsDouble != null && pcsDouble != pcsDouble.toInt()) {
+          return true;
+        }
+      }
+      return false;
+    })) {
+      setState(() {
+        _validationError = 'Qty / Pcs must be a whole number. Use Weight for decimals.';
+      });
+      return;
+    }
+
     if (!maintainStocks) {
       if (input.items.any((item) {
         final quantity = double.tryParse(item.quantityPcs.trim());
@@ -2829,7 +2845,9 @@ class _ChallanEditorState extends State<_ChallanEditor> {
             }
           }
           if (order != null) {
-            final qty = double.tryParse(item.quantityPcs.trim()) ?? 0;
+            final qtyPcs = double.tryParse(item.quantityPcs.trim());
+            final weight = double.tryParse(item.weight.trim());
+            final qty = (qtyPcs != null && qtyPcs > 0) ? qtyPcs : (weight ?? 0);
             if (order.totalDeliveredQty + qty > order.quantity) {
               final orderLabel = order.orderNo.trim().isNotEmpty ? order.orderNo : '#${order.id}';
               overDeliveries.add(orderLabel);
@@ -3436,7 +3454,7 @@ class _ItemsEditor extends StatelessWidget {
                     entry.value,
                     availableItems,
                   )
-                : _buildDeliveryRow(context, entry.key, entry.value),
+                : _buildDeliveryRow(context, entry.key, entry.value, availableItems),
             const SizedBox(height: 8),
           ],
         ],
@@ -3520,7 +3538,20 @@ class _ItemsEditor extends StatelessWidget {
     );
   }
 
-  Widget _buildDeliveryRow(BuildContext context, int index, _ItemDraft draft) {
+  Widget _buildDeliveryRow(
+    BuildContext context, 
+    int index, 
+    _ItemDraft draft,
+    List<ItemDefinition> availableItems,
+  ) {
+    final unitsProvider = context.watch<UnitsProvider>();
+    final selectedItem = availableItems
+        .where((item) => item.id == draft.itemId)
+        .firstOrNull;
+    if (selectedItem != null) {
+      draft.initializeConversionFields(selectedItem, unitsProvider);
+    }
+    
     return Column(
       children: [
         Row(
@@ -3574,26 +3605,6 @@ class _ItemsEditor extends StatelessWidget {
               flex: 2,
               child: _readonlyItemField(draft.hsnCode, 'HSN Code'),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              flex: 2,
-              child: _itemField(
-                draft.quantityPcs,
-                'Qty / Pcs',
-                enabled && orderOptions.isNotEmpty,
-                (value) => draft.quantityPcs = value,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              flex: 2,
-              child: _itemField(
-                draft.weight,
-                'Weight',
-                enabled && orderOptions.isNotEmpty,
-                (value) => draft.weight = value,
-              ),
-            ),
             IconButton(
               tooltip: 'Remove row',
               onPressed: enabled && items.length > 1
@@ -3606,6 +3617,82 @@ class _ItemsEditor extends StatelessWidget {
             ),
           ],
         ),
+        if (selectedItem != null) ...[
+          const SizedBox(height: 10),
+          _buildConversionSummary(context, draft, selectedItem, unitsProvider),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              const SizedBox(width: 28),
+              Expanded(
+                flex: 3,
+                child: _buildUnitDropdown(context, draft, selectedItem, unitsProvider),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: _itemField(
+                  draft.enteredValue,
+                  'Value',
+                  enabled && orderOptions.isNotEmpty,
+                  (value) {
+                    draft.enteredValue = value;
+                    draft.updateConversions(selectedItem, unitsProvider);
+                    onChanged();
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: _itemField(
+                  draft.quantityPcs,
+                  'Qty / Pcs',
+                  enabled && orderOptions.isNotEmpty,
+                  (value) => draft.quantityPcs = value,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: _itemField(
+                  draft.weight,
+                  'Weight',
+                  enabled && orderOptions.isNotEmpty,
+                  (value) => draft.weight = value,
+                ),
+              ),
+              const SizedBox(width: 48),
+            ],
+          ),
+        ] else ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              const SizedBox(width: 28),
+              Expanded(
+                flex: 2,
+                child: _itemField(
+                  draft.quantityPcs,
+                  'Qty / Pcs',
+                  enabled && orderOptions.isNotEmpty,
+                  (value) => draft.quantityPcs = value,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: _itemField(
+                  draft.weight,
+                  'Weight',
+                  enabled && orderOptions.isNotEmpty,
+                  (value) => draft.weight = value,
+                ),
+              ),
+              const SizedBox(width: 48),
+            ],
+          ),
+        ],
         if (draft.itemId != null &&
             draft.variationPathLabel.trim().isNotEmpty) ...[
           const SizedBox(height: 10),
@@ -4221,6 +4308,8 @@ class _ItemDraft {
     this.note = '',
     this.quantityPcs = '',
     this.weight = '',
+    this.selectedUnitId,
+    this.enteredValue = '',
   });
 
   int? orderItemId;
@@ -4256,13 +4345,13 @@ class _ItemDraft {
   factory _ItemDraft.fromOrderOption(_OrderItemOption? option) {
     return _ItemDraft(
       orderItemId: option?.orderItemId,
-      productionRunId: null,
       itemId: option?.itemId,
       variationLeafNodeId: option?.variationLeafNodeId ?? 0,
-      variationPathNodeIds: option?.variationPathNodeIds ?? const <int>[],
       particulars: option?.particulars ?? '',
       hsnCode: option?.hsnCode ?? '',
       variationPathLabel: option?.variationPathLabel ?? '',
+      selectedUnitId: option?.unitId,
+      enteredValue: (option != null && option.quantity > 0) ? option.quantity.toString() : '',
     );
   }
 
@@ -4442,6 +4531,9 @@ class _ItemDraft {
       particulars = option?.particulars ?? '';
       hsnCode = option?.hsnCode ?? '';
       variationPathLabel = option?.variationPathLabel ?? '';
+      if (option != null && option.quantity > 0) {
+        quantityPcs = option.quantity.toString();
+      }
     }
   }
 
@@ -4530,6 +4622,7 @@ class _OrderItemOption {
     required this.hsnCode,
     required this.variationPathLabel,
     required this.quantity,
+    this.unitId,
   });
 
   final int orderItemId;
@@ -4541,6 +4634,7 @@ class _OrderItemOption {
   final String hsnCode;
   final String variationPathLabel;
   final int quantity;
+  final int? unitId;
 
   factory _OrderItemOption.fromOrder(OrderEntry order) {
     final variation = order.variationPathLabel.trim();
@@ -4557,6 +4651,7 @@ class _OrderItemOption {
       hsnCode: '',
       variationPathLabel: variation,
       quantity: order.quantity,
+      unitId: order.unitId,
     );
   }
 

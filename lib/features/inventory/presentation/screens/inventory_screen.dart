@@ -11771,14 +11771,15 @@ class _QuickCreateUnitSheetState extends State<_QuickCreateUnitSheet> {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                TextButton(
+                AppButton(
+                  label: 'Cancel',
+                  variant: AppButtonVariant.secondary,
                   onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cancel'),
                 ),
-                const SizedBox(width: 8),
-                ElevatedButton(
+                const SizedBox(width: 10),
+                AppButton(
+                  label: 'Create Unit',
                   onPressed: () => _submit(context),
-                  child: const Text('Create Unit'),
                 ),
               ],
             ),

@@ -28,6 +28,10 @@ void main() {
       find.widgetWithText(TextField, 'Reel Slitting'),
       'Edited Slitting',
     );
+    await tester.tap(find.textContaining('FLR-01'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('PIPE-A'));
+    await tester.pumpAndSettle();
     await tester.tap(find.textContaining('Die Punching'));
     await tester.pumpAndSettle();
     await tester.tap(find.textContaining('Reel Slitting').first);
@@ -86,6 +90,38 @@ void main() {
     await tester.tap(find.byIcon(Icons.add_rounded));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('builder drills from factory floors to machine telemetry', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    final provider = ProductionProvider.seeded();
+    addTearDown(provider.dispose);
+
+    await tester.pumpWidget(
+      _ProductionHarness(
+        provider: provider,
+        child: const PipelineBuilderScreen(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('FLR-01'), findsOneWidget);
+    expect(find.textContaining('Factory View'), findsOneWidget);
+
+    await tester.tap(find.textContaining('FLR-01'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('SPD: 420u/m'), findsOneWidget);
+    expect(find.textContaining('PIPE-A'), findsOneWidget);
+
+    await tester.tap(find.textContaining('PIPE-A'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('ACT_DIE'), findsWidgets);
+    expect(find.textContaining('MTL_IN'), findsWidgets);
+    expect(find.textContaining('STRK_CNT'), findsWidgets);
   });
 
   testWidgets('kiosk macro buttons keep 64dp minimum target height', (
@@ -326,7 +362,9 @@ void main() {
     expect(provider.activeOperator, 'OPERATOR-A');
   });
 
-  testWidgets('wedge keyboard buffering, verification, and start flow', (tester) async {
+  testWidgets('wedge keyboard buffering, verification, and start flow', (
+    tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     final provider = ProductionProvider.seeded();
 
@@ -357,7 +395,7 @@ void main() {
 
     // 2. Scan machine
     await sendWedgeBarcode('MC-SLIT-01');
-    
+
     final runProvider = Provider.of<ProductionRunProvider>(
       tester.element(find.byType(ShopFloorKioskScreen)),
       listen: false,
@@ -367,7 +405,7 @@ void main() {
 
     // 3. Scan die
     await sendWedgeBarcode('DIE-1450-A');
-    
+
     // Scanned die should be updated, and the run should auto-start
     expect(runProvider.scannedDieId, 'DIE-1450-A');
     expect(runProvider.barcodeErrorMessage, isNull);
@@ -404,12 +442,17 @@ void main() {
 
     // Scan wrong machine barcode
     await sendWedgeBarcode('MC-WRONG');
-    
+
     // Screen should render the barcode error message
-    expect(find.textContaining('does not match expected assets'), findsOneWidget);
+    expect(
+      find.textContaining('does not match expected assets'),
+      findsOneWidget,
+    );
   });
 
-  testWidgets('debounce timer clears wedge buffer on slow inputs', (tester) async {
+  testWidgets('debounce timer clears wedge buffer on slow inputs', (
+    tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     final provider = ProductionProvider.seeded();
     addTearDown(provider.dispose);
@@ -441,14 +484,17 @@ void main() {
       await tester.sendKeyUpEvent(key);
       await tester.pump(const Duration(milliseconds: 2));
     }
-    
+
     // Press enter
     await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
 
     // Since "MC-" was cleared from the buffer after 50ms, only "-SLIT-01" was sent, which is invalid
-    expect(find.textContaining('does not match expected assets'), findsOneWidget);
+    expect(
+      find.textContaining('does not match expected assets'),
+      findsOneWidget,
+    );
   });
 }
 
@@ -474,19 +520,33 @@ class _ProductionHarness extends StatelessWidget {
 
 LogicalKeyboardKey _getLogicalKeyFromChar(String char) {
   switch (char.toUpperCase()) {
-    case 'M': return LogicalKeyboardKey.keyM;
-    case 'C': return LogicalKeyboardKey.keyC;
-    case 'S': return LogicalKeyboardKey.keyS;
-    case 'L': return LogicalKeyboardKey.keyL;
-    case 'I': return LogicalKeyboardKey.keyI;
-    case 'T': return LogicalKeyboardKey.keyT;
-    case 'D': return LogicalKeyboardKey.keyD;
-    case 'A': return LogicalKeyboardKey.keyA;
-    case '-': return LogicalKeyboardKey.minus;
-    case '0': return LogicalKeyboardKey.digit0;
-    case '1': return LogicalKeyboardKey.digit1;
-    case '4': return LogicalKeyboardKey.digit4;
-    case '5': return LogicalKeyboardKey.digit5;
-    default: return LogicalKeyboardKey.space;
+    case 'M':
+      return LogicalKeyboardKey.keyM;
+    case 'C':
+      return LogicalKeyboardKey.keyC;
+    case 'S':
+      return LogicalKeyboardKey.keyS;
+    case 'L':
+      return LogicalKeyboardKey.keyL;
+    case 'I':
+      return LogicalKeyboardKey.keyI;
+    case 'T':
+      return LogicalKeyboardKey.keyT;
+    case 'D':
+      return LogicalKeyboardKey.keyD;
+    case 'A':
+      return LogicalKeyboardKey.keyA;
+    case '-':
+      return LogicalKeyboardKey.minus;
+    case '0':
+      return LogicalKeyboardKey.digit0;
+    case '1':
+      return LogicalKeyboardKey.digit1;
+    case '4':
+      return LogicalKeyboardKey.digit4;
+    case '5':
+      return LogicalKeyboardKey.digit5;
+    default:
+      return LogicalKeyboardKey.space;
   }
 }

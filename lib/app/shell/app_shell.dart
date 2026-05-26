@@ -23,9 +23,11 @@ import '../../features/items/presentation/screens/items_screen.dart';
 import '../../features/clients/presentation/screens/clients_screen.dart';
 import '../../features/orders/presentation/screens/orders_screen.dart';
 import '../../features/pm/presentation/screens/pm_screen.dart';
-import '../../features/production_pipelines/presentation/screens/production_pipelines_screen.dart';
 import '../../features/units/presentation/screens/units_screen.dart';
 import '../../features/vendors/presentation/screens/vendors_screen.dart';
+import '../../features/machines/presentation/screens/machine_list_screen.dart';
+import '../../features/dies/presentation/screens/die_list_screen.dart';
+import '../../features/production_pipelines/presentation/screens/production_pipelines_screen.dart';
 import 'app_sidebar.dart';
 import 'app_topbar.dart';
 import 'navigation_provider.dart';
@@ -579,6 +581,8 @@ class _ShellContentSwitcher extends StatelessWidget {
               'configurator_items' => const ItemsScreen(),
               'configurator_groups' => const GroupsScreen(),
               'configurator_units' => const UnitsScreen(),
+              'configurator_machines' => const MachinesScreen(),
+              'configurator_dies' => const DiesScreen(),
               'user_management' => const UserManagementScreen(),
               _ => const DashboardScreen(),
             },
