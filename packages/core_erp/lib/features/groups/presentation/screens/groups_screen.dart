@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/navigation/app_navigation.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_empty_state.dart';
@@ -13,7 +14,9 @@ import '../providers/groups_provider.dart';
 import '../widgets/structured_group_editor_dialog.dart';
 
 class GroupsScreen extends StatelessWidget {
-  const GroupsScreen({super.key});
+  const GroupsScreen({super.key, this.mode = 'items'});
+
+  final String mode;
 
   @override
   Widget build(BuildContext context) {
@@ -25,16 +28,17 @@ class GroupsScreen extends StatelessWidget {
         }
 
         return SoftMasterDataPage(
-          title: 'Groups',
-          subtitle:
-              'Create hierarchical groups and map each one to a reusable unit from Configurator Units.',
+          title: mode == 'machines' ? 'Machine Groups' : 'Groups',
+          subtitle: mode == 'machines'
+              ? 'Create hierarchical groups for machine classification.'
+              : 'Create hierarchical groups and map each one to a reusable unit from Configurator Units.',
           action: AppButton(
             label: 'Add Group',
             icon: Icons.add,
             isLoading: groups.isSaving,
             onPressed: () => openEditor(context),
           ),
-          toolbar: const _GroupsToolbar(),
+          toolbar: _GroupsToolbar(mode: mode),
           messages: [
             if (groups.errorMessage != null)
               _GroupsMessageBanner(
@@ -70,14 +74,65 @@ class GroupsScreen extends StatelessWidget {
 }
 
 class _GroupsToolbar extends StatelessWidget {
-  const _GroupsToolbar();
+  const _GroupsToolbar({required this.mode});
+
+  final String mode;
 
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<GroupsProvider>();
     final isDesktop = MediaQuery.of(context).size.width >= 900;
+
+    final tabSegment = SoftSegmentedFilter<String>(
+      selected: 'groups',
+      onChanged: (value) {
+        if (mode == 'items') {
+          if (value == 'items') {
+            try {
+              context.read<AppNavigation>().select('configurator_items');
+            } catch (_) {}
+          }
+        } else if (mode == 'machines') {
+          if (value == 'machines') {
+            try {
+              context.read<AppNavigation>().select('configurator_machines');
+            } catch (_) {}
+          }
+        }
+      },
+      options: mode == 'items'
+          ? const [
+              SoftSegmentOption<String>(
+                value: 'items',
+                label: 'Items Catalog',
+              ),
+              SoftSegmentOption<String>(
+                value: 'groups',
+                label: 'Item Groups',
+              ),
+            ]
+          : const [
+              SoftSegmentOption<String>(
+                value: 'machines',
+                label: 'Machines Catalog',
+              ),
+              SoftSegmentOption<String>(
+                value: 'groups',
+                label: 'Machine Groups',
+              ),
+            ],
+    );
+
     return SoftMasterToolbar(
       children: [
+        tabSegment,
+        if (isDesktop)
+          Container(
+            width: 1,
+            height: 28,
+            color: SoftErpTheme.border,
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+          ),
         if (!isDesktop)
           SoftMasterSearchField(
             width: 300,

@@ -27,10 +27,14 @@ class MachinesProvider extends ChangeNotifier {
     if (query.isEmpty) return _machines;
     return _machines.where((m) {
       final groupName = m.groupId != null ? (groupNames[m.groupId!] ?? '') : '';
+      final matchesCustom = m.customProperties.any(
+        (p) => p.key.toLowerCase().contains(query) || p.value.toLowerCase().contains(query),
+      );
       return m.name.toLowerCase().contains(query) ||
              m.assetId.toLowerCase().contains(query) ||
              m.makeModel.toLowerCase().contains(query) ||
-             groupName.toLowerCase().contains(query);
+             groupName.toLowerCase().contains(query) ||
+             matchesCustom;
     }).toList();
   }
 
@@ -38,9 +42,13 @@ class MachinesProvider extends ChangeNotifier {
     final query = _searchQuery.trim().toLowerCase();
     if (query.isEmpty) return _machines;
     return _machines.where((m) {
+      final matchesCustom = m.customProperties.any(
+        (p) => p.key.toLowerCase().contains(query) || p.value.toLowerCase().contains(query),
+      );
       return m.name.toLowerCase().contains(query) ||
              m.assetId.toLowerCase().contains(query) ||
-             m.makeModel.toLowerCase().contains(query);
+             m.makeModel.toLowerCase().contains(query) ||
+             matchesCustom;
     }).toList();
   }
 

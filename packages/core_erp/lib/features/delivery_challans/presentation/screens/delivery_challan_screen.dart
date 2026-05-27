@@ -705,8 +705,17 @@ class _Filters extends StatelessWidget {
     final groupSelector = SizedBox(
       width: 260,
       child: DropdownButtonFormField<String>(
-        initialValue: selectedReportGroupCode,
+        value: selectedReportGroupCode,
         isExpanded: true,
+        icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
+        dropdownColor: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        menuMaxHeight: 300,
+        style: const TextStyle(
+          fontSize: 14,
+          color: SoftErpTheme.textPrimary,
+          fontFamily: 'Segoe UI',
+        ),
         decoration: InputDecoration(
           labelText: 'Report group',
           filled: true,
@@ -719,7 +728,11 @@ class _Filters extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
             borderSide: const BorderSide(color: SoftErpTheme.border),
           ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: SoftErpTheme.accent, width: 1.5),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         ),
         items: reportGroups
             .map(
@@ -1568,14 +1581,34 @@ class _ChallanTemplatePreviewPaneState
           if (_templates.isNotEmpty) ...[
             const SizedBox(height: 10),
             DropdownButtonFormField<int>(
-              initialValue: _selectedTemplate?.id,
+              value: _selectedTemplate?.id,
               isExpanded: true,
+              icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
+              dropdownColor: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              menuMaxHeight: 300,
+              style: const TextStyle(
+                fontSize: 14,
+                color: SoftErpTheme.textPrimary,
+                fontFamily: 'Segoe UI',
+              ),
               decoration: InputDecoration(
                 labelText: 'Template',
+                filled: true,
+                fillColor: Colors.white,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: const BorderSide(color: SoftErpTheme.border),
                 ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: SoftErpTheme.border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: SoftErpTheme.accent, width: 1.5),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               ),
               items: _templates
                   .map(
@@ -1715,8 +1748,10 @@ class _ChallanEditorState extends State<_ChallanEditor> {
   late final TextEditingController _notesController;
   late List<_ItemDraft> _items;
   late ChallanType _selectedType;
+  late ChallanPurpose _selectedPurpose;
   late List<OrderEntry> _selectedOrders;
   int? _selectedVendorId;
+  int? _selectedClientId;
   String? _validationError;
   bool _isOrdersPanelOpen = false;
   bool _orderSelectionTouched = false;
@@ -1835,8 +1870,10 @@ class _ChallanEditorState extends State<_ChallanEditor> {
   void initState() {
     super.initState();
     context.read<UnitsProvider>().initialize();
+    context.read<ClientsProvider>().initialize();
     final source = _source;
     _selectedType = widget.initialType ?? source?.type ?? ChallanType.delivery;
+    _selectedPurpose = source?.purpose ?? ChallanPurpose.trading;
     final initialOrderIds = source?.orderIds.isNotEmpty == true
         ? source!.orderIds
         : [
@@ -1847,6 +1884,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
           ];
     _selectedOrders = _findOrders(initialOrderIds);
     _selectedVendorId = source?.vendorId;
+    _selectedClientId = source?.clientId;
     _challanNumberController = TextEditingController(
       text: source?.challanNo ?? '',
     );
@@ -2214,6 +2252,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
           child: _ItemsEditor(
             isReception: _isReception,
             maintainStocks: _maintainStocks,
+            purpose: _selectedPurpose,
             enabled: _canEdit,
             items: _items,
             orderOptions: _selectedOrderOptions,
@@ -2239,6 +2278,13 @@ class _ChallanEditorState extends State<_ChallanEditor> {
   }
 
   Widget _documentDetailsSection(String? challanNumberWarningText) {
+    final preferences = context.watch<PreferencesProvider>();
+    final activePurposes = <ChallanPurpose>[
+      if (preferences.enableTrading) ChallanPurpose.trading,
+      if (preferences.enableManufacturing) ChallanPurpose.manufacturing,
+      if (preferences.enableServiceMode) ChallanPurpose.jobWork,
+    ];
+
     return SoftSurface(
       radius: SoftErpTheme.radiusLg,
       color: SoftErpTheme.cardSurface,
@@ -2274,7 +2320,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
                   ],
                 ),
               ),
-              if (!_isReception && _maintainStocks) ...[
+              if (!_isReception && _maintainStocks && _selectedPurpose != ChallanPurpose.jobWork) ...[
                 const SizedBox(width: 12),
                 _ordersHeaderButton(),
               ],
@@ -2290,6 +2336,10 @@ class _ChallanEditorState extends State<_ChallanEditor> {
               ),
             ],
           ),
+          if (activePurposes.length > 1) ...[
+            const SizedBox(height: 12),
+            _purposeSelector(activePurposes),
+          ],
           if (challanNumberWarningText != null) ...[
             const SizedBox(height: 8),
             Align(
@@ -2306,9 +2356,17 @@ class _ChallanEditorState extends State<_ChallanEditor> {
           if (_maintainStocks) ...[
             if (_isReception) ...[
               const SizedBox(height: 12),
-              _vendorSelector(context),
-            ] else
-              _selectedOrdersSummary(),
+              if (_selectedPurpose == ChallanPurpose.jobWork)
+                _clientSelector(context)
+              else
+                _vendorSelector(context),
+            ] else ...[
+              if (_selectedPurpose == ChallanPurpose.jobWork) ...[
+                const SizedBox(height: 12),
+                _clientSelector(context),
+              ] else
+                _selectedOrdersSummary(),
+            ],
             const SizedBox(height: 12),
             _field(
               _isReception
@@ -2560,13 +2618,34 @@ class _ChallanEditorState extends State<_ChallanEditor> {
         .where((vendor) => !vendor.isArchived)
         .toList(growable: false);
     return DropdownButtonFormField<int>(
-      initialValue: _selectedVendorId,
+      value: _selectedVendorId,
       isExpanded: true,
+      icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
+      dropdownColor: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      menuMaxHeight: 300,
+      style: const TextStyle(
+        fontSize: 14,
+        color: SoftErpTheme.textPrimary,
+        fontFamily: 'Segoe UI',
+      ),
       decoration: InputDecoration(
         labelText: 'Vendor',
         filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+        fillColor: _canEdit ? Colors.white : const Color(0xFFF7F8FC),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: SoftErpTheme.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: SoftErpTheme.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: SoftErpTheme.accent, width: 1.5),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       ),
       items: vendors
           .map(
@@ -2587,6 +2666,130 @@ class _ChallanEditorState extends State<_ChallanEditor> {
                 _validationError = null;
               });
             },
+    );
+  }
+
+  Widget _clientSelector(BuildContext context) {
+    final clients = context
+        .watch<ClientsProvider>()
+        .clients
+        .where((client) => !client.isArchived)
+        .toList(growable: false);
+    return DropdownButtonFormField<int>(
+      value: _selectedClientId,
+      isExpanded: true,
+      icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
+      dropdownColor: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      menuMaxHeight: 300,
+      style: const TextStyle(
+        fontSize: 14,
+        color: SoftErpTheme.textPrimary,
+        fontFamily: 'Segoe UI',
+      ),
+      decoration: InputDecoration(
+        labelText: 'Customer / Material Owner',
+        filled: true,
+        fillColor: _canEdit ? Colors.white : const Color(0xFFF7F8FC),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: SoftErpTheme.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: SoftErpTheme.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: SoftErpTheme.accent, width: 1.5),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      ),
+      items: clients
+          .map(
+            (client) => DropdownMenuItem<int>(
+              value: client.id,
+              child: Text(client.displayLabel, overflow: TextOverflow.ellipsis),
+            ),
+          )
+          .toList(growable: false),
+      onChanged: !_canEdit
+          ? null
+          : (value) {
+              final client = context.read<ClientsProvider>().clients.firstWhere(
+                    (c) => c.id == value,
+                  );
+              setState(() {
+                _selectedClientId = value;
+                _customerController.text = client.name;
+                _gstinController.text = client.gstNumber;
+                _validationError = null;
+              });
+            },
+    );
+  }
+
+  Widget _purposeSelector(List<ChallanPurpose> activePurposes) {
+    return DropdownButtonFormField<ChallanPurpose>(
+      value: _selectedPurpose,
+      isExpanded: true,
+      icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
+      dropdownColor: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      menuMaxHeight: 300,
+      style: const TextStyle(
+        fontSize: 14,
+        color: SoftErpTheme.textPrimary,
+        fontFamily: 'Segoe UI',
+      ),
+      decoration: InputDecoration(
+        labelText: 'Purpose / Workflow',
+        filled: true,
+        fillColor: _canEdit ? Colors.white : const Color(0xFFF7F8FC),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: SoftErpTheme.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: SoftErpTheme.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: SoftErpTheme.accent, width: 1.5),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      ),
+      items: activePurposes
+          .map(
+            (purpose) => DropdownMenuItem<ChallanPurpose>(
+              value: purpose,
+              child: Text(
+                purpose == ChallanPurpose.trading
+                    ? 'Trading (Own Stock)'
+                    : purpose == ChallanPurpose.manufacturing
+                        ? 'Manufacturing (Own Stock)'
+                        : 'Job Work (Customer Owned Stock)',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          )
+          .toList(growable: false),
+      onChanged: !_canEdit
+          ? null
+          : (value) {
+        if (value != null) {
+          setState(() {
+            _selectedPurpose = value;
+            _validationError = null;
+            _selectedVendorId = null;
+            _selectedClientId = null;
+            _selectedOrders = [];
+            _customerController.clear();
+            _gstinController.clear();
+          });
+        }
+      },
     );
   }
 
@@ -2611,14 +2814,18 @@ class _ChallanEditorState extends State<_ChallanEditor> {
         : const <int>[];
     return DeliveryChallanDraftInput(
       type: _selectedType,
+      purpose: _selectedPurpose,
       challanNo: _challanNumberController.text.trim(),
       orderId: _selectedType == ChallanType.delivery && maintainStocks
           ? (orderIds.isEmpty ? (_source?.orderId ?? 0) : orderIds.first)
           : 0,
       orderIds: orderIds,
-      vendorId: _selectedType == ChallanType.reception && maintainStocks
+      vendorId: _selectedType == ChallanType.reception && maintainStocks && _selectedPurpose != ChallanPurpose.jobWork
           ? (_selectedVendorId ?? _source?.vendorId ?? 0)
           : 0,
+      materialOwnerClientId: _selectedPurpose == ChallanPurpose.jobWork
+          ? (_selectedClientId ?? _source?.clientId)
+          : null,
       date: DateTime.tryParse(_dateController.text) ?? DateTime.now(),
       location: _storageLocation,
       sourceReference: _sourceReferenceController.text,
@@ -2704,6 +2911,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
       return false;
     }
     return input.type == source.type &&
+        input.purpose == source.purpose &&
         _sameText(input.challanNo, source.challanNo) &&
         _date(input.date) == _date(source.date) &&
         _sameText(input.location, source.location) &&
@@ -2715,6 +2923,8 @@ class _ChallanEditorState extends State<_ChallanEditor> {
         _sameText(input.vendorName, source.vendorName) &&
         _sameText(input.vendorGstin, source.vendorGstin) &&
         _sameNullableInt(input.vendorId, source.vendorId) &&
+        (source.purpose != ChallanPurpose.jobWork ||
+            _sameNullableInt(input.materialOwnerClientId, source.clientId)) &&
         _sameOrderIds(input.orderIds, _sourceOrderIds) &&
         _sameItems(input.items, source.items);
   }
@@ -2727,15 +2937,31 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     final input = _input();
     if (_maintainStocks &&
         _isReception &&
+        _selectedPurpose != ChallanPurpose.jobWork &&
         (_selectedVendorId ?? _source?.vendorId ?? 0) <= 0) {
       setState(() {
         _validationError = 'Select a vendor before saving challan.';
       });
       return;
     }
-    if (_maintainStocks && !_isReception && input.orderIds.isEmpty) {
+    if (_maintainStocks &&
+        _isReception &&
+        _selectedPurpose == ChallanPurpose.jobWork &&
+        (_selectedClientId ?? _source?.clientId ?? 0) <= 0) {
+      setState(() {
+        _validationError = 'Select a customer before saving job work inward challan.';
+      });
+      return;
+    }
+    if (_maintainStocks && !_isReception && _selectedPurpose != ChallanPurpose.jobWork && input.orderIds.isEmpty) {
       setState(() {
         _validationError = 'Select at least one order before saving challan.';
+      });
+      return;
+    }
+    if (_maintainStocks && !_isReception && _selectedPurpose == ChallanPurpose.jobWork && (_selectedClientId ?? _source?.clientId ?? 0) <= 0) {
+      setState(() {
+        _validationError = 'Select a customer before saving job work return challan.';
       });
       return;
     }
@@ -2755,6 +2981,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     final maintainStocks = input.maintainStocks;
     if (maintainStocks &&
         _selectedType == ChallanType.delivery &&
+        _selectedPurpose != ChallanPurpose.jobWork &&
         input.orderIds.isEmpty) {
       setState(() {
         _validationError = 'Select at least one order before saving challan.';
@@ -2762,10 +2989,29 @@ class _ChallanEditorState extends State<_ChallanEditor> {
       return;
     }
     if (maintainStocks &&
+        _selectedType == ChallanType.delivery &&
+        _selectedPurpose == ChallanPurpose.jobWork &&
+        (_selectedClientId ?? _source?.clientId ?? 0) <= 0) {
+      setState(() {
+        _validationError = 'Select a customer before issuing job work return challan.';
+      });
+      return;
+    }
+    if (maintainStocks &&
         _selectedType == ChallanType.reception &&
+        _selectedPurpose != ChallanPurpose.jobWork &&
         input.vendorId <= 0) {
       setState(() {
         _validationError = 'Select a vendor before issuing reception challan.';
+      });
+      return;
+    }
+    if (maintainStocks &&
+        _selectedType == ChallanType.reception &&
+        _selectedPurpose == ChallanPurpose.jobWork &&
+        (_selectedClientId ?? _source?.clientId ?? 0) <= 0) {
+      setState(() {
+        _validationError = 'Select a customer before issuing job work inward challan.';
       });
       return;
     }
@@ -2806,16 +3052,30 @@ class _ChallanEditorState extends State<_ChallanEditor> {
         return;
       }
     } else if (_selectedType == ChallanType.delivery) {
-      if (input.items.any(
-        (item) =>
-            item.orderItemId == null ||
-            (item.quantityPcs.trim().isEmpty && item.weight.trim().isEmpty),
-      )) {
-        setState(() {
-          _validationError =
-              'Select an order item and enter Qty / Pcs or Weight for every row.';
-        });
-        return;
+      if (_selectedPurpose == ChallanPurpose.jobWork) {
+        if (input.items.any(
+          (item) =>
+              item.itemId == null ||
+              (item.quantityPcs.trim().isEmpty && item.weight.trim().isEmpty),
+        )) {
+          setState(() {
+            _validationError =
+                'Select an item and enter Qty / Pcs or Weight for every row.';
+          });
+          return;
+        }
+      } else {
+        if (input.items.any(
+          (item) =>
+              item.orderItemId == null ||
+              (item.quantityPcs.trim().isEmpty && item.weight.trim().isEmpty),
+        )) {
+          setState(() {
+            _validationError =
+                'Select an order item and enter Qty / Pcs or Weight for every row.';
+          });
+          return;
+        }
       }
     } else if (input.items.any((item) {
       if (item.itemId == null) return true;
@@ -3378,6 +3638,7 @@ class _ItemsEditor extends StatelessWidget {
   const _ItemsEditor({
     required this.isReception,
     required this.maintainStocks,
+    this.purpose = ChallanPurpose.trading,
     required this.items,
     required this.enabled,
     required this.orderOptions,
@@ -3386,6 +3647,7 @@ class _ItemsEditor extends StatelessWidget {
 
   final bool isReception;
   final bool maintainStocks;
+  final ChallanPurpose purpose;
   final List<_ItemDraft> items;
   final bool enabled;
   final List<_OrderItemOption> orderOptions;
@@ -3417,11 +3679,13 @@ class _ItemsEditor extends StatelessWidget {
                     enabled &&
                         (!maintainStocks ||
                             isReception ||
+                            purpose == ChallanPurpose.jobWork ||
                             orderOptions.isNotEmpty)
                     ? () {
                         items.add(
                           maintainStocks &&
                                   !isReception &&
+                                  purpose != ChallanPurpose.jobWork &&
                                   orderOptions.isNotEmpty
                               ? _ItemDraft.fromOrderOption(orderOptions.first)
                               : _ItemDraft.blank(items.length + 1),
@@ -3435,7 +3699,7 @@ class _ItemsEditor extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          if (maintainStocks && !isReception && orderOptions.isEmpty) ...[
+          if (maintainStocks && !isReception && purpose != ChallanPurpose.jobWork && orderOptions.isEmpty) ...[
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 8),
               child: Text(
@@ -3447,7 +3711,7 @@ class _ItemsEditor extends StatelessWidget {
           for (final entry in items.asMap().entries) ...[
             !maintainStocks
                 ? _buildTypewriterRow(entry.key, entry.value)
-                : isReception
+                : (isReception || purpose == ChallanPurpose.jobWork)
                 ? _buildReceptionRow(
                     context,
                     entry.key,
@@ -3563,15 +3827,34 @@ class _ItemsEditor extends StatelessWidget {
                 key: ValueKey<String>(
                   '$index-${draft.orderItemId}-${orderOptions.length}',
                 ),
-                initialValue: draft.orderItemId,
+                value: draft.orderItemId,
                 isExpanded: true,
+                icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
+                dropdownColor: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                menuMaxHeight: 300,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: SoftErpTheme.textPrimary,
+                  fontFamily: 'Segoe UI',
+                ),
                 decoration: InputDecoration(
                   labelText: 'Particulars',
                   isDense: true,
                   filled: true,
                   fillColor: Colors.white,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: SoftErpTheme.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: SoftErpTheme.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: SoftErpTheme.accent, width: 1.5),
                   ),
                 ),
                 items: orderOptions
@@ -3879,6 +4162,16 @@ class _ItemsEditor extends StatelessWidget {
     }
     return DropdownButtonFormField<int>(
       value: draft.selectedUnitId,
+      isExpanded: true,
+      icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
+      dropdownColor: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      menuMaxHeight: 300,
+      style: const TextStyle(
+        fontSize: 13,
+        color: SoftErpTheme.textPrimary,
+        fontFamily: 'Segoe UI',
+      ),
       decoration: InputDecoration(
         labelText: 'Unit',
         isDense: true,
@@ -3887,6 +4180,15 @@ class _ItemsEditor extends StatelessWidget {
         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: SoftErpTheme.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: SoftErpTheme.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: SoftErpTheme.accent, width: 1.5),
         ),
       ),
       items: units.map((u) {
@@ -5200,8 +5502,17 @@ class _SelectedTemplateStrip extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           DropdownButtonFormField<int>(
-            initialValue: selectedTemplate.id,
+            value: selectedTemplate.id,
             isExpanded: true,
+            icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
+            dropdownColor: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            menuMaxHeight: 300,
+            style: const TextStyle(
+              fontSize: 14,
+              color: SoftErpTheme.textPrimary,
+              fontFamily: 'Segoe UI',
+            ),
             decoration: InputDecoration(
               labelText: 'Template',
               filled: true,
@@ -5216,8 +5527,9 @@ class _SelectedTemplateStrip extends StatelessWidget {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: SoftErpTheme.accent),
+                borderSide: const BorderSide(color: SoftErpTheme.accent, width: 1.5),
               ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             ),
             items: templates
                 .map(

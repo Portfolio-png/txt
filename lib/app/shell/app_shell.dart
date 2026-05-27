@@ -6,25 +6,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../../features/auth/domain/auth_user.dart';
-import '../../features/auth/presentation/providers/auth_provider.dart';
-import '../../core/theme/soft_erp_theme.dart';
-import '../../core/widgets/soft_primitives.dart';
-import '../reports/views/challan_invoice_reconciliation_screen.dart';
-import '../dashboard/views/dashboard_screen.dart';
-import '../../features/groups/presentation/screens/groups_screen.dart';
-import '../../features/auth/presentation/screens/user_management_screen.dart';
-import '../../features/delivery_challans/domain/delivery_challan.dart';
-import '../../features/delivery_challans/presentation/providers/challan_editor_command_provider.dart';
-import '../../features/delivery_challans/presentation/screens/delivery_challan_screen.dart';
-import '../../features/inventory/presentation/screens/inventory_screen.dart';
-import '../../features/inventory/presentation/screens/material_scan_screen.dart';
-import '../../features/items/presentation/screens/items_screen.dart';
-import '../../features/clients/presentation/screens/clients_screen.dart';
-import '../../features/orders/presentation/screens/orders_screen.dart';
+import 'package:core_erp/features/auth/domain/auth_user.dart';
+import 'package:core_erp/features/auth/presentation/providers/auth_provider.dart';
+import 'package:core_erp/core/theme/soft_erp_theme.dart';
+import 'package:core_erp/core/widgets/soft_primitives.dart';
+import 'package:core_erp/app/reports/views/challan_invoice_reconciliation_screen.dart';
+import 'package:core_erp/app/dashboard/views/dashboard_screen.dart';
+import 'package:core_erp/features/auth/presentation/screens/user_management_screen.dart';
+import 'package:core_erp/features/delivery_challans/domain/delivery_challan.dart';
+import 'package:core_erp/features/delivery_challans/presentation/providers/challan_editor_command_provider.dart';
+import 'package:core_erp/features/delivery_challans/presentation/screens/delivery_challan_screen.dart';
+import 'package:core_erp/features/inventory/presentation/screens/inventory_screen.dart';
+import 'package:core_erp/features/inventory/presentation/screens/material_scan_screen.dart';
+import 'package:core_erp/features/items/presentation/screens/items_screen.dart';
+import 'package:core_erp/features/clients/presentation/screens/clients_screen.dart';
+import 'package:core_erp/features/orders/presentation/screens/orders_screen.dart';
 import '../../features/pm/presentation/screens/pm_screen.dart';
-import '../../features/units/presentation/screens/units_screen.dart';
-import '../../features/vendors/presentation/screens/vendors_screen.dart';
+import 'package:core_erp/features/units/presentation/screens/units_screen.dart';
+import 'package:core_erp/features/vendors/presentation/screens/vendors_screen.dart';
 import '../../features/machines/presentation/screens/machine_list_screen.dart';
 import '../../features/dies/presentation/screens/die_list_screen.dart';
 import '../../features/production_pipelines/presentation/screens/production_pipelines_screen.dart';
@@ -578,10 +577,11 @@ class _ShellContentSwitcher extends StatelessWidget {
               ),
               'configurator_clients' => const ClientsScreen(),
               'configurator_vendors' => const VendorsScreen(),
-              'configurator_items' => const ItemsScreen(),
-              'configurator_groups' => const GroupsScreen(),
+              'configurator_items' => const ItemsScreen(initialTab: 0),
+              'configurator_groups' => const ItemsScreen(initialTab: 1),
               'configurator_units' => const UnitsScreen(),
-              'configurator_machines' => const MachinesScreen(),
+              'configurator_machines' => const MachinesScreen(initialTab: 0),
+              'configurator_machine_groups' => const MachinesScreen(initialTab: 1),
               'configurator_dies' => const DiesScreen(),
               'user_management' => const UserManagementScreen(),
               _ => const DashboardScreen(),

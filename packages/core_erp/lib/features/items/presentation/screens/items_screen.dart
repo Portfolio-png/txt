@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
+import '../../../../core/navigation/app_navigation.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
@@ -23,7 +23,9 @@ import '../widgets/item_card.dart';
 import '../widgets/item_detail_panel.dart';
 
 class ItemsScreen extends StatefulWidget {
-  const ItemsScreen({super.key});
+  const ItemsScreen({super.key, this.initialTab = 0});
+
+  final int initialTab;
 
   static Future<ItemDefinition?> openEditor(
     BuildContext context, {
@@ -74,6 +76,10 @@ class _ItemsScreenState extends State<ItemsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.initialTab == 1) {
+      return const GroupsScreen();
+    }
+
     return Consumer3<ItemsProvider, GroupsProvider, UnitsProvider>(
       builder: (context, items, groups, units, _) {
         if ((items.isLoading && items.items.isEmpty) ||
@@ -157,8 +163,38 @@ class _ItemsToolbar extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = context.watch<ItemsProvider>();
     final isDesktop = MediaQuery.of(context).size.width >= 900;
+
+    final tabSegment = SoftSegmentedFilter<String>(
+      selected: 'items',
+      onChanged: (value) {
+        if (value == 'groups') {
+          try {
+            context.read<AppNavigation>().select('configurator_groups');
+          } catch (_) {}
+        }
+      },
+      options: const [
+        SoftSegmentOption<String>(
+          value: 'items',
+          label: 'Items Catalog',
+        ),
+        SoftSegmentOption<String>(
+          value: 'groups',
+          label: 'Item Groups',
+        ),
+      ],
+    );
+
     return SoftMasterToolbar(
       children: [
+        tabSegment,
+        if (isDesktop)
+          Container(
+            width: 1,
+            height: 28,
+            color: SoftErpTheme.border,
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+          ),
         if (!isDesktop)
           SoftMasterSearchField(
             hintText: 'Search items, properties, values, or leaf nodes',

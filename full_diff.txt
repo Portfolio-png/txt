@@ -1,0 +1,1275 @@
+diff --git a/backend/paper.db-wal b/backend/paper.db-wal
+index 14f6396..96f78f7 100644
+Binary files a/backend/paper.db-wal and b/backend/paper.db-wal differ
+diff --git a/lib/app/preferences/preferences_provider.dart b/lib/app/preferences/preferences_provider.dart
+index 9cadf07..49e8c3b 100644
+--- a/lib/app/preferences/preferences_provider.dart
++++ b/lib/app/preferences/preferences_provider.dart
+@@ -2,8 +2,14 @@ import 'package:flutter/foundation.dart';
+ 
+ class PreferencesProvider extends ChangeNotifier {
+   bool _maintainStocks = true;
++  bool _enableTrading = true;
++  bool _enableManufacturing = true;
++  bool _enableServiceMode = true;
+ 
+   bool get maintainStocks => _maintainStocks;
++  bool get enableTrading => _enableTrading;
++  bool get enableManufacturing => _enableManufacturing;
++  bool get enableServiceMode => _enableServiceMode;
+ 
+   void toggleMaintainStocks(bool value) {
+     if (_maintainStocks == value) {
+@@ -12,4 +18,28 @@ class PreferencesProvider extends ChangeNotifier {
+     _maintainStocks = value;
+     notifyListeners();
+   }
++
++  void toggleTrading(bool value) {
++    if (_enableTrading == value) {
++      return;
++    }
++    _enableTrading = value;
++    notifyListeners();
++  }
++
++  void toggleManufacturing(bool value) {
++    if (_enableManufacturing == value) {
++      return;
++    }
++    _enableManufacturing = value;
++    notifyListeners();
++  }
++
++  void toggleServiceMode(bool value) {
++    if (_enableServiceMode == value) {
++      return;
++    }
++    _enableServiceMode = value;
++    notifyListeners();
++  }
+ }
+diff --git a/lib/app/shell/app_sidebar.dart b/lib/app/shell/app_sidebar.dart
+index 0bd1f6c..648f1bc 100644
+--- a/lib/app/shell/app_sidebar.dart
++++ b/lib/app/shell/app_sidebar.dart
+@@ -710,9 +710,10 @@ class _SettingsPreferencesDialogState
+       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+       child: ConstrainedBox(
+         constraints: const BoxConstraints(maxWidth: 460),
+-        child: Padding(
+-          padding: const EdgeInsets.fromLTRB(24, 22, 24, 20),
+-          child: Column(
++        child: SingleChildScrollView(
++          child: Padding(
++            padding: const EdgeInsets.fromLTRB(24, 22, 24, 20),
++            child: Column(
+             mainAxisSize: MainAxisSize.min,
+             crossAxisAlignment: CrossAxisAlignment.start,
+             children: [
+@@ -742,21 +743,77 @@ class _SettingsPreferencesDialogState
+                       borderRadius: BorderRadius.circular(18),
+                       border: Border.all(color: SoftErpTheme.border),
+                     ),
+-                    child: SwitchListTile.adaptive(
+-                      contentPadding: EdgeInsets.zero,
+-                      value: preferences.maintainStocks,
+-                      onChanged: preferences.toggleMaintainStocks,
+-                      title: const Text(
+-                        'Maintain Stocks',
+-                        style: TextStyle(
+-                          color: SoftErpTheme.textPrimary,
+-                          fontWeight: FontWeight.w800,
++                    child: Column(
++                      mainAxisSize: MainAxisSize.min,
++                      children: [
++                        SwitchListTile.adaptive(
++                          contentPadding: EdgeInsets.zero,
++                          value: preferences.maintainStocks,
++                          onChanged: preferences.toggleMaintainStocks,
++                          title: const Text(
++                            'Maintain Stocks',
++                            style: TextStyle(
++                              color: SoftErpTheme.textPrimary,
++                              fontWeight: FontWeight.w800,
++                            ),
++                          ),
++                          subtitle: const Text(
++                            'Turn off for typewriter challans that print documents without touching inventory.',
++                            style: TextStyle(color: SoftErpTheme.textSecondary),
++                          ),
+                         ),
+-                      ),
+-                      subtitle: const Text(
+-                        'Turn off for typewriter challans that print documents without touching inventory.',
+-                        style: TextStyle(color: SoftErpTheme.textSecondary),
+-                      ),
++                        const Divider(height: 24),
++                        SwitchListTile.adaptive(
++                          contentPadding: EdgeInsets.zero,
++                          value: preferences.enableTrading,
++                          onChanged: preferences.toggleTrading,
++                          title: const Text(
++                            'Trading Mode',
++                            style: TextStyle(
++                              color: SoftErpTheme.textPrimary,
++                              fontWeight: FontWeight.w800,
++                            ),
++                          ),
++                          subtitle: const Text(
++                            'Enable direct buy/sell flow and standard retail/wholesale inventory stock.',
++                            style: TextStyle(color: SoftErpTheme.textSecondary),
++                          ),
++                        ),
++                        const Divider(height: 24),
++                        SwitchListTile.adaptive(
++                          contentPadding: EdgeInsets.zero,
++                          value: preferences.enableManufacturing,
++                          onChanged: preferences.toggleManufacturing,
++                          title: const Text(
++                            'Manufacturing Mode',
++                            style: TextStyle(
++                              color: SoftErpTheme.textPrimary,
++                              fontWeight: FontWeight.w800,
++                            ),
++                          ),
++                          subtitle: const Text(
++                            'Enable linkage to production runs, tracking raw material vs. finished goods.',
++                            style: TextStyle(color: SoftErpTheme.textSecondary),
++                          ),
++                        ),
++                        const Divider(height: 24),
++                        SwitchListTile.adaptive(
++                          contentPadding: EdgeInsets.zero,
++                          value: preferences.enableServiceMode,
++                          onChanged: preferences.toggleServiceMode,
++                          title: const Text(
++                            'Service (Job Work) Mode',
++                            style: TextStyle(
++                              color: SoftErpTheme.textPrimary,
++                              fontWeight: FontWeight.w800,
++                            ),
++                          ),
++                          subtitle: const Text(
++                            'Enable customer-owned stock receipt (Inward), printing/processing, and return.',
++                            style: TextStyle(color: SoftErpTheme.textSecondary),
++                          ),
++                        ),
++                      ],
+                     ),
+                   );
+                 },
+@@ -843,8 +900,9 @@ class _SettingsPreferencesDialogState
+           ),
+         ),
+       ),
+-    );
+-  }
++    ),
++  );
++}
+ }
+ 
+ class _SidebarTile extends StatelessWidget {
+diff --git a/lib/features/delivery_challans/data/api_delivery_challan_repository.dart b/lib/features/delivery_challans/data/api_delivery_challan_repository.dart
+index 0c58b2c..30d3a74 100644
+--- a/lib/features/delivery_challans/data/api_delivery_challan_repository.dart
++++ b/lib/features/delivery_challans/data/api_delivery_challan_repository.dart
+@@ -215,10 +215,11 @@ class ApiChallanRepository implements ChallanRepository {
+       final created = DeliveryChallan(
+         id: _mockNextId++,
+         type: input.type,
++        purpose: input.purpose,
+         orderId: input.orderId,
+         orderIds: input.orderIds,
+         reportGroupCodes: _reportGroupCodesForInput(input),
+-        clientId: null,
++        clientId: input.materialOwnerClientId,
+         orderNo: input.orderIds.isEmpty
+             ? 'Order ${input.orderId}'
+             : 'Order ${input.orderIds.first}',
+@@ -269,12 +270,13 @@ class ApiChallanRepository implements ChallanRepository {
+       final updated = DeliveryChallan(
+         id: current.id,
+         type: input.type,
++        purpose: input.purpose,
+         orderId: input.orderId,
+         orderIds: input.orderIds,
+         reportGroupCodes: _reportGroupCodesForInput(input).isEmpty
+             ? current.reportGroupCodes
+             : _reportGroupCodesForInput(input),
+-        clientId: current.clientId,
++        clientId: input.materialOwnerClientId ?? current.clientId,
+         orderNo: current.orderNo,
+         orderNos: current.orderNos,
+         challanNo: current.challanNo,
+@@ -1278,6 +1280,7 @@ class ApiChallanRepository implements ChallanRepository {
+       final updated = DeliveryChallan(
+         id: current.id,
+         type: current.type,
++        purpose: current.purpose,
+         orderId: current.orderId,
+         orderIds: current.orderIds,
+         reportGroupCodes: current.reportGroupCodes,
+diff --git a/lib/features/delivery_challans/data/delivery_challan_repository.dart b/lib/features/delivery_challans/data/delivery_challan_repository.dart
+index 6c41fc8..a813d06 100644
+--- a/lib/features/delivery_challans/data/delivery_challan_repository.dart
++++ b/lib/features/delivery_challans/data/delivery_challan_repository.dart
+@@ -141,11 +141,13 @@ typedef DeliveryChallanRepository = ChallanRepository;
+ class ChallanDraftInput {
+   const ChallanDraftInput({
+     required this.type,
++    this.purpose = ChallanPurpose.trading,
+     required this.challanNo,
+     required this.orderId,
+     required this.orderIds,
+     this.reportGroupCodes = const <String>[],
+     required this.vendorId,
++    this.materialOwnerClientId,
+     required this.date,
+     required this.location,
+     required this.sourceReference,
+@@ -159,11 +161,13 @@ class ChallanDraftInput {
+   });
+ 
+   final ChallanType type;
++  final ChallanPurpose purpose;
+   final String challanNo;
+   final int orderId;
+   final List<int> orderIds;
+   final List<String> reportGroupCodes;
+   final int vendorId;
++  final int? materialOwnerClientId;
+   final DateTime date;
+   final String location;
+   final String sourceReference;
+@@ -178,6 +182,7 @@ class ChallanDraftInput {
+   Map<String, dynamic> toJson() {
+     return {
+       'type': type.name,
++      'purpose': purpose.name,
+       'challan_no': challanNo.trim(),
+       if (orderId > 0) 'order_id': orderId,
+       if (orderIds.isNotEmpty) 'order_ids': orderIds,
+@@ -187,6 +192,8 @@ class ChallanDraftInput {
+             .where((code) => code.isNotEmpty)
+             .toList(growable: false),
+       if (vendorId > 0) 'vendor_id': vendorId,
++      if (materialOwnerClientId != null && materialOwnerClientId! > 0)
++        'material_owner_client_id': materialOwnerClientId,
+       'date': date.toIso8601String().substring(0, 10),
+       'location': location.trim(),
+       'source_reference': sourceReference.trim(),
+diff --git a/lib/features/delivery_challans/domain/delivery_challan.dart b/lib/features/delivery_challans/domain/delivery_challan.dart
+index af1d105..5e6f25b 100644
+--- a/lib/features/delivery_challans/domain/delivery_challan.dart
++++ b/lib/features/delivery_challans/domain/delivery_challan.dart
+@@ -2,6 +2,8 @@ enum DeliveryChallanStatus { draft, issued, cancelled }
+ 
+ enum ChallanType { delivery, reception }
+ 
++enum ChallanPurpose { trading, manufacturing, jobWork }
++
+ ChallanType challanTypeFromName(String value) {
+   return ChallanType.values.firstWhere(
+     (type) => type.name == value.toLowerCase(),
+@@ -9,6 +11,13 @@ ChallanType challanTypeFromName(String value) {
+   );
+ }
+ 
++ChallanPurpose challanPurposeFromName(String value) {
++  return ChallanPurpose.values.firstWhere(
++    (purpose) => purpose.name == value.toLowerCase(),
++    orElse: () => ChallanPurpose.trading,
++  );
++}
++
+ DeliveryChallanStatus deliveryChallanStatusFromName(String value) {
+   return DeliveryChallanStatus.values.firstWhere(
+     (status) => status.name == value,
+@@ -260,6 +269,7 @@ class DeliveryChallan {
+   const DeliveryChallan({
+     required this.id,
+     required this.type,
++    this.purpose = ChallanPurpose.trading,
+     required this.orderId,
+     required this.orderIds,
+     this.reportGroupCodes = const <String>[],
+@@ -288,6 +298,7 @@ class DeliveryChallan {
+ 
+   final int id;
+   final ChallanType type;
++  final ChallanPurpose purpose;
+   final int? orderId;
+   final List<int> orderIds;
+   final List<String> reportGroupCodes;
+@@ -318,6 +329,7 @@ class DeliveryChallan {
+   bool get isCancelled => status == DeliveryChallanStatus.cancelled;
+   bool get isReception => type == ChallanType.reception;
+   bool get isDelivery => type == ChallanType.delivery;
++  bool get isJobWork => purpose == ChallanPurpose.jobWork;
+ 
+   factory DeliveryChallan.fromJson(Map<String, dynamic> json) {
+     final items = (json['items'] as List<dynamic>? ?? const [])
+@@ -337,6 +349,11 @@ class DeliveryChallan {
+             json['challan_type'] as String? ??
+             'delivery',
+       ),
++      purpose: challanPurposeFromName(
++        json['purpose'] as String? ??
++            json['challan_purpose'] as String? ??
++            'trading',
++      ),
+       orderId: json['orderId'] as int? ?? json['order_id'] as int?,
+       orderIds:
+           (json['orderIds'] as List<dynamic>? ??
+@@ -414,10 +431,12 @@ class DeliveryChallan {
+     List<DeliveryChallanItem>? items,
+     bool? usedInReport,
+     List<String>? reportGroupCodes,
++    ChallanPurpose? purpose,
+   }) {
+     return DeliveryChallan(
+       id: id,
+       type: type,
++      purpose: purpose ?? this.purpose,
+       orderId: orderId,
+       orderIds: orderIds,
+       reportGroupCodes: reportGroupCodes ?? this.reportGroupCodes,
+diff --git a/lib/features/delivery_challans/presentation/screens/delivery_challan_screen.dart b/lib/features/delivery_challans/presentation/screens/delivery_challan_screen.dart
+index 397f475..cf57a79 100644
+--- a/lib/features/delivery_challans/presentation/screens/delivery_challan_screen.dart
++++ b/lib/features/delivery_challans/presentation/screens/delivery_challan_screen.dart
+@@ -1715,8 +1715,10 @@ class _ChallanEditorState extends State<_ChallanEditor> {
+   late final TextEditingController _notesController;
+   late List<_ItemDraft> _items;
+   late ChallanType _selectedType;
++  late ChallanPurpose _selectedPurpose;
+   late List<OrderEntry> _selectedOrders;
+   int? _selectedVendorId;
++  int? _selectedClientId;
+   String? _validationError;
+   bool _isOrdersPanelOpen = false;
+   bool _orderSelectionTouched = false;
+@@ -1835,8 +1837,10 @@ class _ChallanEditorState extends State<_ChallanEditor> {
+   void initState() {
+     super.initState();
+     context.read<UnitsProvider>().initialize();
++    context.read<ClientsProvider>().initialize();
+     final source = _source;
+     _selectedType = widget.initialType ?? source?.type ?? ChallanType.delivery;
++    _selectedPurpose = source?.purpose ?? ChallanPurpose.trading;
+     final initialOrderIds = source?.orderIds.isNotEmpty == true
+         ? source!.orderIds
+         : [
+@@ -1847,6 +1851,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
+           ];
+     _selectedOrders = _findOrders(initialOrderIds);
+     _selectedVendorId = source?.vendorId;
++    _selectedClientId = source?.clientId;
+     _challanNumberController = TextEditingController(
+       text: source?.challanNo ?? '',
+     );
+@@ -2214,6 +2219,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
+           child: _ItemsEditor(
+             isReception: _isReception,
+             maintainStocks: _maintainStocks,
++            purpose: _selectedPurpose,
+             enabled: _canEdit,
+             items: _items,
+             orderOptions: _selectedOrderOptions,
+@@ -2239,6 +2245,13 @@ class _ChallanEditorState extends State<_ChallanEditor> {
+   }
+ 
+   Widget _documentDetailsSection(String? challanNumberWarningText) {
++    final preferences = context.watch<PreferencesProvider>();
++    final activePurposes = <ChallanPurpose>[
++      if (preferences.enableTrading) ChallanPurpose.trading,
++      if (preferences.enableManufacturing) ChallanPurpose.manufacturing,
++      if (preferences.enableServiceMode) ChallanPurpose.jobWork,
++    ];
++
+     return SoftSurface(
+       radius: SoftErpTheme.radiusLg,
+       color: SoftErpTheme.cardSurface,
+@@ -2274,7 +2287,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
+                   ],
+                 ),
+               ),
+-              if (!_isReception && _maintainStocks) ...[
++              if (!_isReception && _maintainStocks && _selectedPurpose != ChallanPurpose.jobWork) ...[
+                 const SizedBox(width: 12),
+                 _ordersHeaderButton(),
+               ],
+@@ -2290,6 +2303,10 @@ class _ChallanEditorState extends State<_ChallanEditor> {
+               ),
+             ],
+           ),
++          if (activePurposes.length > 1) ...[
++            const SizedBox(height: 12),
++            _purposeSelector(activePurposes),
++          ],
+           if (challanNumberWarningText != null) ...[
+             const SizedBox(height: 8),
+             Align(
+@@ -2306,9 +2323,17 @@ class _ChallanEditorState extends State<_ChallanEditor> {
+           if (_maintainStocks) ...[
+             if (_isReception) ...[
+               const SizedBox(height: 12),
+-              _vendorSelector(context),
+-            ] else
+-              _selectedOrdersSummary(),
++              if (_selectedPurpose == ChallanPurpose.jobWork)
++                _clientSelector(context)
++              else
++                _vendorSelector(context),
++            ] else ...[
++              if (_selectedPurpose == ChallanPurpose.jobWork) ...[
++                const SizedBox(height: 12),
++                _clientSelector(context),
++              ] else
++                _selectedOrdersSummary(),
++            ],
+             const SizedBox(height: 12),
+             _field(
+               _isReception
+@@ -2590,6 +2615,88 @@ class _ChallanEditorState extends State<_ChallanEditor> {
+     );
+   }
+ 
++  Widget _clientSelector(BuildContext context) {
++    final clients = context
++        .watch<ClientsProvider>()
++        .clients
++        .where((client) => !client.isArchived)
++        .toList(growable: false);
++    return DropdownButtonFormField<int>(
++      initialValue: _selectedClientId,
++      isExpanded: true,
++      decoration: InputDecoration(
++        labelText: 'Customer / Material Owner',
++        filled: true,
++        fillColor: _canEdit ? Colors.white : const Color(0xFFF7F8FC),
++        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
++      ),
++      items: clients
++          .map(
++            (client) => DropdownMenuItem<int>(
++              value: client.id,
++              child: Text(client.displayLabel, overflow: TextOverflow.ellipsis),
++            ),
++          )
++          .toList(growable: false),
++      onChanged: !_canEdit
++          ? null
++          : (value) {
++              final client = context.read<ClientsProvider>().clients.firstWhere(
++                    (c) => c.id == value,
++                  );
++              setState(() {
++                _selectedClientId = value;
++                _customerController.text = client.name;
++                _gstinController.text = client.gstNumber;
++                _validationError = null;
++              });
++            },
++    );
++  }
++
++  Widget _purposeSelector(List<ChallanPurpose> activePurposes) {
++    return DropdownButtonFormField<ChallanPurpose>(
++      value: _selectedPurpose,
++      isExpanded: true,
++      decoration: InputDecoration(
++        labelText: 'Purpose / Workflow',
++        filled: true,
++        fillColor: _canEdit ? Colors.white : const Color(0xFFF7F8FC),
++        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
++      ),
++      items: activePurposes
++          .map(
++            (purpose) => DropdownMenuItem<ChallanPurpose>(
++              value: purpose,
++              child: Text(
++                purpose == ChallanPurpose.trading
++                    ? 'Trading (Own Stock)'
++                    : purpose == ChallanPurpose.manufacturing
++                        ? 'Manufacturing (Own Stock)'
++                        : 'Job Work (Customer Owned Stock)',
++                overflow: TextOverflow.ellipsis,
++              ),
++            ),
++          )
++          .toList(growable: false),
++      onChanged: !_canEdit
++          ? null
++          : (value) {
++        if (value != null) {
++          setState(() {
++            _selectedPurpose = value;
++            _validationError = null;
++            _selectedVendorId = null;
++            _selectedClientId = null;
++            _selectedOrders = [];
++            _customerController.clear();
++            _gstinController.clear();
++          });
++        }
++      },
++    );
++  }
++
+   String get _storageLocation {
+     final entered = _locationController.text.trim();
+     return entered.isEmpty ? _defaultChallanStorageLocation : entered;
+@@ -2611,14 +2718,18 @@ class _ChallanEditorState extends State<_ChallanEditor> {
+         : const <int>[];
+     return DeliveryChallanDraftInput(
+       type: _selectedType,
++      purpose: _selectedPurpose,
+       challanNo: _challanNumberController.text.trim(),
+       orderId: _selectedType == ChallanType.delivery && maintainStocks
+           ? (orderIds.isEmpty ? (_source?.orderId ?? 0) : orderIds.first)
+           : 0,
+       orderIds: orderIds,
+-      vendorId: _selectedType == ChallanType.reception && maintainStocks
++      vendorId: _selectedType == ChallanType.reception && maintainStocks && _selectedPurpose != ChallanPurpose.jobWork
+           ? (_selectedVendorId ?? _source?.vendorId ?? 0)
+           : 0,
++      materialOwnerClientId: _selectedPurpose == ChallanPurpose.jobWork
++          ? (_selectedClientId ?? _source?.clientId)
++          : null,
+       date: DateTime.tryParse(_dateController.text) ?? DateTime.now(),
+       location: _storageLocation,
+       sourceReference: _sourceReferenceController.text,
+@@ -2704,6 +2815,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
+       return false;
+     }
+     return input.type == source.type &&
++        input.purpose == source.purpose &&
+         _sameText(input.challanNo, source.challanNo) &&
+         _date(input.date) == _date(source.date) &&
+         _sameText(input.location, source.location) &&
+@@ -2715,6 +2827,8 @@ class _ChallanEditorState extends State<_ChallanEditor> {
+         _sameText(input.vendorName, source.vendorName) &&
+         _sameText(input.vendorGstin, source.vendorGstin) &&
+         _sameNullableInt(input.vendorId, source.vendorId) &&
++        (source.purpose != ChallanPurpose.jobWork ||
++            _sameNullableInt(input.materialOwnerClientId, source.clientId)) &&
+         _sameOrderIds(input.orderIds, _sourceOrderIds) &&
+         _sameItems(input.items, source.items);
+   }
+@@ -2727,18 +2841,34 @@ class _ChallanEditorState extends State<_ChallanEditor> {
+     final input = _input();
+     if (_maintainStocks &&
+         _isReception &&
++        _selectedPurpose != ChallanPurpose.jobWork &&
+         (_selectedVendorId ?? _source?.vendorId ?? 0) <= 0) {
+       setState(() {
+         _validationError = 'Select a vendor before saving challan.';
+       });
+       return;
+     }
+-    if (_maintainStocks && !_isReception && input.orderIds.isEmpty) {
++    if (_maintainStocks &&
++        _isReception &&
++        _selectedPurpose == ChallanPurpose.jobWork &&
++        (_selectedClientId ?? _source?.clientId ?? 0) <= 0) {
++      setState(() {
++        _validationError = 'Select a customer before saving job work inward challan.';
++      });
++      return;
++    }
++    if (_maintainStocks && !_isReception && _selectedPurpose != ChallanPurpose.jobWork && input.orderIds.isEmpty) {
+       setState(() {
+         _validationError = 'Select at least one order before saving challan.';
+       });
+       return;
+     }
++    if (_maintainStocks && !_isReception && _selectedPurpose == ChallanPurpose.jobWork && (_selectedClientId ?? _source?.clientId ?? 0) <= 0) {
++      setState(() {
++        _validationError = 'Select a customer before saving job work return challan.';
++      });
++      return;
++    }
+     final saved = _editingExisting && _matchesSourceDraft(input)
+         ? widget.challan
+         : _editingExisting
+@@ -2755,20 +2885,40 @@ class _ChallanEditorState extends State<_ChallanEditor> {
+     final maintainStocks = input.maintainStocks;
+     if (maintainStocks &&
+         _selectedType == ChallanType.delivery &&
++        _selectedPurpose != ChallanPurpose.jobWork &&
+         input.orderIds.isEmpty) {
+       setState(() {
+         _validationError = 'Select at least one order before saving challan.';
+       });
+       return;
+     }
++    if (maintainStocks &&
++        _selectedType == ChallanType.delivery &&
++        _selectedPurpose == ChallanPurpose.jobWork &&
++        (_selectedClientId ?? _source?.clientId ?? 0) <= 0) {
++      setState(() {
++        _validationError = 'Select a customer before issuing job work return challan.';
++      });
++      return;
++    }
+     if (maintainStocks &&
+         _selectedType == ChallanType.reception &&
++        _selectedPurpose != ChallanPurpose.jobWork &&
+         input.vendorId <= 0) {
+       setState(() {
+         _validationError = 'Select a vendor before issuing reception challan.';
+       });
+       return;
+     }
++    if (maintainStocks &&
++        _selectedType == ChallanType.reception &&
++        _selectedPurpose == ChallanPurpose.jobWork &&
++        (_selectedClientId ?? _source?.clientId ?? 0) <= 0) {
++      setState(() {
++        _validationError = 'Select a customer before issuing job work inward challan.';
++      });
++      return;
++    }
+     if (input.items.isEmpty) {
+       setState(() {
+         _validationError = 'Add at least one line item before issuing challan.';
+@@ -2806,16 +2956,30 @@ class _ChallanEditorState extends State<_ChallanEditor> {
+         return;
+       }
+     } else if (_selectedType == ChallanType.delivery) {
+-      if (input.items.any(
+-        (item) =>
+-            item.orderItemId == null ||
+-            (item.quantityPcs.trim().isEmpty && item.weight.trim().isEmpty),
+-      )) {
+-        setState(() {
+-          _validationError =
+-              'Select an order item and enter Qty / Pcs or Weight for every row.';
+-        });
+-        return;
++      if (_selectedPurpose == ChallanPurpose.jobWork) {
++        if (input.items.any(
++          (item) =>
++              item.itemId == null ||
++              (item.quantityPcs.trim().isEmpty && item.weight.trim().isEmpty),
++        )) {
++          setState(() {
++            _validationError =
++                'Select an item and enter Qty / Pcs or Weight for every row.';
++          });
++          return;
++        }
++      } else {
++        if (input.items.any(
++          (item) =>
++              item.orderItemId == null ||
++              (item.quantityPcs.trim().isEmpty && item.weight.trim().isEmpty),
++        )) {
++          setState(() {
++            _validationError =
++                'Select an order item and enter Qty / Pcs or Weight for every row.';
++          });
++          return;
++        }
+       }
+     } else if (input.items.any((item) {
+       if (item.itemId == null) return true;
+@@ -3378,6 +3542,7 @@ class _ItemsEditor extends StatelessWidget {
+   const _ItemsEditor({
+     required this.isReception,
+     required this.maintainStocks,
++    this.purpose = ChallanPurpose.trading,
+     required this.items,
+     required this.enabled,
+     required this.orderOptions,
+@@ -3386,6 +3551,7 @@ class _ItemsEditor extends StatelessWidget {
+ 
+   final bool isReception;
+   final bool maintainStocks;
++  final ChallanPurpose purpose;
+   final List<_ItemDraft> items;
+   final bool enabled;
+   final List<_OrderItemOption> orderOptions;
+@@ -3417,11 +3583,13 @@ class _ItemsEditor extends StatelessWidget {
+                     enabled &&
+                         (!maintainStocks ||
+                             isReception ||
++                            purpose == ChallanPurpose.jobWork ||
+                             orderOptions.isNotEmpty)
+                     ? () {
+                         items.add(
+                           maintainStocks &&
+                                   !isReception &&
++                                  purpose != ChallanPurpose.jobWork &&
+                                   orderOptions.isNotEmpty
+                               ? _ItemDraft.fromOrderOption(orderOptions.first)
+                               : _ItemDraft.blank(items.length + 1),
+@@ -3435,7 +3603,7 @@ class _ItemsEditor extends StatelessWidget {
+             ],
+           ),
+           const SizedBox(height: 8),
+-          if (maintainStocks && !isReception && orderOptions.isEmpty) ...[
++          if (maintainStocks && !isReception && purpose != ChallanPurpose.jobWork && orderOptions.isEmpty) ...[
+             const Padding(
+               padding: EdgeInsets.symmetric(vertical: 8),
+               child: Text(
+@@ -3447,7 +3615,7 @@ class _ItemsEditor extends StatelessWidget {
+           for (final entry in items.asMap().entries) ...[
+             !maintainStocks
+                 ? _buildTypewriterRow(entry.key, entry.value)
+-                : isReception
++                : (isReception || purpose == ChallanPurpose.jobWork)
+                 ? _buildReceptionRow(
+                     context,
+                     entry.key,
+@@ -3879,6 +4047,7 @@ class _ItemsEditor extends StatelessWidget {
+     }
+     return DropdownButtonFormField<int>(
+       value: draft.selectedUnitId,
++      isExpanded: true,
+       decoration: InputDecoration(
+         labelText: 'Unit',
+         isDense: true,
+diff --git a/lib/features/inventory/presentation/screens/inventory_screen.dart b/lib/features/inventory/presentation/screens/inventory_screen.dart
+index be79b10..fa476ad 100644
+--- a/lib/features/inventory/presentation/screens/inventory_screen.dart
++++ b/lib/features/inventory/presentation/screens/inventory_screen.dart
+@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
+ import 'package:path_provider/path_provider.dart';
+ import 'package:provider/provider.dart';
+ 
++import '../../../../app/preferences/preferences_provider.dart';
+ import '../../../../core/theme/soft_erp_theme.dart';
+ import '../../../../core/widgets/app_button.dart';
+ import '../../../../core/widgets/app_empty_state.dart';
+@@ -23,6 +24,8 @@ import '../../../groups/presentation/providers/groups_provider.dart';
+ import '../../../groups/presentation/screens/groups_screen.dart';
+ import '../../../groups/presentation/widgets/structured_group_editor_dialog.dart';
+ import '../../../auth/presentation/providers/auth_provider.dart';
++import '../../../clients/presentation/providers/clients_provider.dart';
++import '../../../delivery_challans/domain/delivery_challan.dart';
+ import '../../../delivery_challans/presentation/providers/delivery_challan_provider.dart';
+ import '../../../delivery_challans/presentation/screens/delivery_challan_screen.dart';
+ import '../../../items/domain/item_definition.dart';
+@@ -48,7 +51,7 @@ import '../../domain/material_record.dart';
+ import '../providers/inventory_provider.dart';
+ import '../widgets/inventory_set_editor_dialog.dart';
+ 
+-enum _InventoryViewMode { groups, items, sets }
++enum _InventoryViewMode { groups, items, sets, jobWork }
+ 
+ enum _InventoryListingMode { all, recentFirst }
+ 
+@@ -434,73 +437,75 @@ class _InventoryScreenState extends State<InventoryScreen> {
+                       const Divider(height: 1, color: SoftErpTheme.border),
+                       const SizedBox(height: 14),
+                       Expanded(
+-                        child: _InventoryTable(
+-                          rows: rows,
+-                          viewMode: _viewMode,
+-                          sortColumn: _sortColumn,
+-                          sortAscending: _sortAscending,
+-                          groupsProvider: groups,
+-                          itemsProvider: items,
+-                          selectedBarcodes: _selectedBarcodes,
+-                          pinnedBarcodes: _pinnedBarcodes,
+-                          expandedParents: _expandedParents,
+-                          isRequestDelete: isRequestDelete,
+-                          onToggleSelection: (barcode) {
+-                            setState(() {
+-                              if (_selectedBarcodes.contains(barcode)) {
+-                                _selectedBarcodes.remove(barcode);
+-                              } else {
+-                                _selectedBarcodes.add(barcode);
+-                              }
+-                            });
+-                          },
+-                          onToggleExpanded: (barcode) {
+-                            setState(() {
+-                              if (_expandedParents.contains(barcode)) {
+-                                _expandedParents.remove(barcode);
+-                              } else {
+-                                _expandedParents.add(barcode);
+-                              }
+-                            });
+-                          },
+-                          onTogglePinned: (barcode) {
+-                            setState(() {
+-                              if (_pinnedBarcodes.contains(barcode)) {
+-                                _pinnedBarcodes.remove(barcode);
+-                              } else {
+-                                _pinnedBarcodes.add(barcode);
+-                              }
+-                            });
+-                            _persistPinnedState();
+-                          },
+-                          onHeaderSortRequested: (column, ascending) {
+-                            setState(() {
+-                              if (column == null) {
+-                                _sortColumn = null;
+-                                _sortAscending = true;
+-                              } else {
+-                                _sortColumn = column;
+-                                _sortAscending = ascending;
+-                              }
+-                            });
+-                          },
+-                          onOpenDetails: (record) => _openDetails(record),
+-                          onOpenGroupItems: (record) =>
+-                              _openGroupItemsFromInventoryRecord(record),
+-                          onOpenSetItems: _openSetItems,
+-                          onReceive: (record) => _openMovementComposer(
+-                            movementType: InventoryMovementType.receive,
+-                            initialBarcode: record.barcode,
+-                          ),
+-                          onAddSubGroup: (record) => _openAddSubGroup(record),
+-                          onEdit: (record) => _openEditMaterial(record),
+-                          onEditSet: _openSetEditor,
+-                          onDelete: (record) => _confirmDelete(record),
+-                          onDeleteSet: _deleteSet,
+-                          onLinkGroup: (record) => _openGroupLinker(record),
+-                          onLinkItem: (record) => _openItemLinker(record),
+-                          onUnlink: (record) => _unlinkInheritance(record),
+-                        ),
++                        child: _viewMode == _InventoryViewMode.jobWork
++                            ? const _JobWorkStockTable()
++                            : _InventoryTable(
++                                rows: rows,
++                                viewMode: _viewMode,
++                                sortColumn: _sortColumn,
++                                sortAscending: _sortAscending,
++                                groupsProvider: groups,
++                                itemsProvider: items,
++                                selectedBarcodes: _selectedBarcodes,
++                                pinnedBarcodes: _pinnedBarcodes,
++                                expandedParents: _expandedParents,
++                                isRequestDelete: isRequestDelete,
++                                onToggleSelection: (barcode) {
++                                  setState(() {
++                                    if (_selectedBarcodes.contains(barcode)) {
++                                      _selectedBarcodes.remove(barcode);
++                                    } else {
++                                      _selectedBarcodes.add(barcode);
++                                    }
++                                  });
++                                },
++                                onToggleExpanded: (barcode) {
++                                  setState(() {
++                                    if (_expandedParents.contains(barcode)) {
++                                      _expandedParents.remove(barcode);
++                                    } else {
++                                      _expandedParents.add(barcode);
++                                    }
++                                  });
++                                },
++                                onTogglePinned: (barcode) {
++                                  setState(() {
++                                    if (_pinnedBarcodes.contains(barcode)) {
++                                      _pinnedBarcodes.remove(barcode);
++                                    } else {
++                                      _pinnedBarcodes.add(barcode);
++                                    }
++                                  });
++                                  _persistPinnedState();
++                                },
++                                onHeaderSortRequested: (column, ascending) {
++                                  setState(() {
++                                    if (column == null) {
++                                      _sortColumn = null;
++                                      _sortAscending = true;
++                                    } else {
++                                      _sortColumn = column;
++                                      _sortAscending = ascending;
++                                    }
++                                  });
++                                },
++                                onOpenDetails: (record) => _openDetails(record),
++                                onOpenGroupItems: (record) =>
++                                    _openGroupItemsFromInventoryRecord(record),
++                                onOpenSetItems: _openSetItems,
++                                onReceive: (record) => _openMovementComposer(
++                                  movementType: InventoryMovementType.receive,
++                                  initialBarcode: record.barcode,
++                                ),
++                                onAddSubGroup: (record) => _openAddSubGroup(record),
++                                onEdit: (record) => _openEditMaterial(record),
++                                onEditSet: _openSetEditor,
++                                onDelete: (record) => _confirmDelete(record),
++                                onDeleteSet: _deleteSet,
++                                onLinkGroup: (record) => _openGroupLinker(record),
++                                onLinkItem: (record) => _openItemLinker(record),
++                                onUnlink: (record) => _unlinkInheritance(record),
++                              ),
+                       ),
+                     ],
+                   ),
+@@ -723,6 +728,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
+         );
+       case _InventoryViewMode.sets:
+         await _openSetEditor();
++      case _InventoryViewMode.jobWork:
++        ChallanScreen.openReceptionEditor(context);
+     }
+   }
+ 
+@@ -2616,12 +2623,6 @@ class _InventoryMovementComposerDialogState
+ }
+ 
+ class _InventoryWorkspaceHeader extends StatelessWidget {
+-  static const List<PMFigmaSegmentOption> _segments = <PMFigmaSegmentOption>[
+-    PMFigmaSegmentOption(key: 'group', label: 'Groups'),
+-    PMFigmaSegmentOption(key: 'item', label: 'Items'),
+-    PMFigmaSegmentOption(key: 'set', label: 'Sets'),
+-  ];
+-
+   const _InventoryWorkspaceHeader({
+     required this.viewMode,
+     required this.onViewModeChanged,
+@@ -2644,18 +2645,29 @@ class _InventoryWorkspaceHeader extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
++    final preferences = context.watch<PreferencesProvider>();
++    final segments = <PMFigmaSegmentOption>[
++      const PMFigmaSegmentOption(key: 'group', label: 'Groups'),
++      const PMFigmaSegmentOption(key: 'item', label: 'Items'),
++      const PMFigmaSegmentOption(key: 'set', label: 'Sets'),
++      if (preferences.enableServiceMode)
++        const PMFigmaSegmentOption(key: 'jobWork', label: 'Job Work Stock'),
++    ];
++
+     final segmented = PMFigmaSegmentedControl(
+       value: switch (viewMode) {
+         _InventoryViewMode.groups => 'group',
+         _InventoryViewMode.items => 'item',
+         _InventoryViewMode.sets => 'set',
++        _InventoryViewMode.jobWork => 'jobWork',
+       },
+-      segments: _segments,
+-      semanticLabel: 'Inventory groups, items, and sets segmented control',
++      segments: segments,
++      semanticLabel: 'Inventory segments control',
+       onChanged: (value) {
+         onViewModeChanged(switch (value) {
+           'group' => _InventoryViewMode.groups,
+           'set' => _InventoryViewMode.sets,
++          'jobWork' => _InventoryViewMode.jobWork,
+           _ => _InventoryViewMode.items,
+         });
+       },
+@@ -11991,3 +12003,312 @@ extension _NullableStringX on String? {
+ extension _FirstOrNullX<T> on Iterable<T> {
+   T? get firstOrNull => isEmpty ? null : first;
+ }
++
++class _JobWorkBalance {
++  _JobWorkBalance({
++    required this.clientId,
++    required this.clientLabel,
++    required this.itemName,
++    required this.variationPath,
++    required this.inwardQty,
++    required this.returnedQty,
++  });
++
++  final int clientId;
++  final String clientLabel;
++  final String itemName;
++  final String variationPath;
++  final double inwardQty;
++  final double returnedQty;
++
++  double get balance => inwardQty - returnedQty;
++}
++
++class _JobWorkStockTable extends StatelessWidget {
++  const _JobWorkStockTable();
++
++  @override
++  Widget build(BuildContext context) {
++    final challanProvider = context.watch<DeliveryChallanProvider>();
++    final clientsProvider = context.watch<ClientsProvider>();
++    final inventoryProvider = context.watch<InventoryProvider>();
++
++    final challans = challanProvider.challans;
++    final clients = clientsProvider.clients;
++    final searchQuery = inventoryProvider.searchQuery;
++
++    // Filter challans: must be issued, and purpose must be jobWork
++    final jobWorkChallans = challans.where((c) =>
++        c.isIssued && c.purpose == ChallanPurpose.jobWork).toList();
++
++    // Map clients by ID for quick lookup
++    final clientMap = {for (final c in clients) c.id: c};
++
++    // We want to group by (clientId, itemId, particulars, variationPathLabel)
++    final Map<String, _JobWorkBalance> balances = {};
++
++    for (final challan in jobWorkChallans) {
++      final clientId = challan.clientId ?? 0;
++      if (clientId == 0) continue;
++
++      // Resolve client label
++      final client = clientMap[clientId];
++      final clientLabel = client?.displayLabel ?? (challan.isReception ? challan.vendorName : challan.customerName);
++
++      for (final item in challan.items) {
++        final itemId = item.itemId ?? 0;
++        final particulars = item.particulars.trim();
++        final variationPath = item.variationPathLabel.trim();
++
++        // Build a unique key
++        final key = '${clientId}_${itemId}_${particulars}_$variationPath';
++
++        final qty = double.tryParse(item.quantityPcs) ?? 0.0;
++        final isReception = challan.isReception;
++
++        final inwardQty = isReception ? qty : 0.0;
++        final returnedQty = !isReception ? qty : 0.0;
++
++        if (balances.containsKey(key)) {
++          final existing = balances[key]!;
++          balances[key] = _JobWorkBalance(
++            clientId: clientId,
++            clientLabel: clientLabel,
++            itemName: particulars,
++            variationPath: variationPath,
++            inwardQty: existing.inwardQty + inwardQty,
++            returnedQty: existing.returnedQty + returnedQty,
++          );
++        } else {
++          balances[key] = _JobWorkBalance(
++            clientId: clientId,
++            clientLabel: clientLabel,
++            itemName: particulars,
++            variationPath: variationPath,
++            inwardQty: inwardQty,
++            returnedQty: returnedQty,
++          );
++        }
++      }
++    }
++
++    // Convert to list and filter by search query
++    var list = balances.values.toList();
++
++    if (searchQuery.trim().isNotEmpty) {
++      final query = searchQuery.trim().toLowerCase();
++      list = list.where((b) {
++        return b.clientLabel.toLowerCase().contains(query) ||
++            b.itemName.toLowerCase().contains(query) ||
++            b.variationPath.toLowerCase().contains(query);
++      }).toList();
++    }
++
++    // Sort: group by Client Name, then Item Name
++    list.sort((a, b) {
++      final clientCompare = a.clientLabel.compareTo(b.clientLabel);
++      if (clientCompare != 0) return clientCompare;
++      return a.itemName.compareTo(b.itemName);
++    });
++
++    if (list.isEmpty) {
++      return const AppEmptyState(
++        title: 'No Job Work Stock found',
++        message: 'Try a different search query or record a new Job Work Reception Challan.',
++        icon: Icons.assignment_turned_in_outlined,
++      );
++    }
++
++    return LayoutBuilder(
++      builder: (context, constraints) {
++        return Column(
++          crossAxisAlignment: CrossAxisAlignment.stretch,
++          children: [
++            // Table Header
++            Container(
++              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
++              decoration: const BoxDecoration(
++                color: SoftErpTheme.cardSurfaceAlt,
++                border: Border(
++                  bottom: BorderSide(color: SoftErpTheme.border, width: 1),
++                ),
++              ),
++              child: Row(
++                children: const [
++                  Expanded(
++                    flex: 3,
++                    child: Text(
++                      'Customer / Owner',
++                      style: TextStyle(
++                        fontWeight: FontWeight.w600,
++                        fontSize: 13,
++                        color: SoftErpTheme.textSecondary,
++                      ),
++                    ),
++                  ),
++                  Expanded(
++                    flex: 3,
++                    child: Text(
++                      'Item / Particulars',
++                      style: TextStyle(
++                        fontWeight: FontWeight.w600,
++                        fontSize: 13,
++                        color: SoftErpTheme.textSecondary,
++                      ),
++                    ),
++                  ),
++                  Expanded(
++                    flex: 2,
++                    child: Text(
++                      'Variation',
++                      style: TextStyle(
++                        fontWeight: FontWeight.w600,
++                        fontSize: 13,
++                        color: SoftErpTheme.textSecondary,
++                      ),
++                    ),
++                  ),
++                  Expanded(
++                    flex: 2,
++                    child: Text(
++                      'Inward Qty (Pcs)',
++                      textAlign: TextAlign.right,
++                      style: TextStyle(
++                        fontWeight: FontWeight.w600,
++                        fontSize: 13,
++                        color: SoftErpTheme.textSecondary,
++                      ),
++                    ),
++                  ),
++                  Expanded(
++                    flex: 2,
++                    child: Text(
++                      'Returned Qty (Pcs)',
++                      textAlign: TextAlign.right,
++                      style: TextStyle(
++                        fontWeight: FontWeight.w600,
++                        fontSize: 13,
++                        color: SoftErpTheme.textSecondary,
++                      ),
++                    ),
++                  ),
++                  Expanded(
++                    flex: 2,
++                    child: Text(
++                      'Balance on Hand',
++                      textAlign: TextAlign.right,
++                      style: TextStyle(
++                        fontWeight: FontWeight.w600,
++                        fontSize: 13,
++                        color: SoftErpTheme.textSecondary,
++                      ),
++                    ),
++                  ),
++                ],
++              ),
++            ),
++            // Table Body
++            Expanded(
++              child: ListView.separated(
++                itemCount: list.length,
++                separatorBuilder: (context, index) => const Divider(height: 1, color: SoftErpTheme.border),
++                itemBuilder: (context, index) {
++                  final item = list[index];
++                  final isEven = index % 2 == 0;
++                  final balanceStyle = item.balance <= 0
++                      ? const TextStyle(
++                          color: SoftErpTheme.textPrimary,
++                          fontWeight: FontWeight.w500,
++                        )
++                      : const TextStyle(
++                          color: Color(0xFF2E7D32), // Green
++                          fontWeight: FontWeight.w600,
++                        );
++
++                  return Container(
++                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
++                    color: isEven ? SoftErpTheme.cardSurface : const Color(0xFFFBFBFE),
++                    child: Row(
++                      children: [
++                        Expanded(
++                          flex: 3,
++                          child: Text(
++                            item.clientLabel,
++                            style: const TextStyle(
++                              fontSize: 14,
++                              color: SoftErpTheme.textPrimary,
++                              fontWeight: FontWeight.w500,
++                            ),
++                          ),
++                        ),
++                        Expanded(
++                          flex: 3,
++                          child: Text(
++                            item.itemName,
++                            style: const TextStyle(
++                              fontSize: 14,
++                              color: SoftErpTheme.textPrimary,
++                            ),
++                          ),
++                        ),
++                        Expanded(
++                          flex: 2,
++                          child: Text(
++                            item.variationPath.isNotEmpty ? item.variationPath : '—',
++                            style: TextStyle(
++                              fontSize: 13,
++                              color: item.variationPath.isNotEmpty
++                                  ? SoftErpTheme.textSecondary
++                                  : SoftErpTheme.textSecondary.withValues(alpha: 0.5),
++                            ),
++                          ),
++                        ),
++                        Expanded(
++                          flex: 2,
++                          child: Text(
++                            _formatQty(item.inwardQty),
++                            textAlign: TextAlign.right,
++                            style: const TextStyle(
++                              fontSize: 14,
++                              color: SoftErpTheme.textPrimary,
++                            ),
++                          ),
++                        ),
++                        Expanded(
++                          flex: 2,
++                          child: Text(
++                            _formatQty(item.returnedQty),
++                            textAlign: TextAlign.right,
++                            style: const TextStyle(
++                              fontSize: 14,
++                              color: SoftErpTheme.textPrimary,
++                            ),
++                          ),
++                        ),
++                        Expanded(
++                          flex: 2,
++                          child: Text(
++                            _formatQty(item.balance),
++                            textAlign: TextAlign.right,
++                            style: balanceStyle,
++                          ),
++                        ),
++                      ],
++                    ),
++                  );
++                },
++              ),
++            ),
++          ],
++        );
++      },
++    );
++  }
++
++  String _formatQty(double qty) {
++    if (qty == qty.toInt()) {
++      return qty.toInt().toString();
++    }
++    return qty.toStringAsFixed(2);
++  }
++}

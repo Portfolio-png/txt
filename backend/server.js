@@ -2394,6 +2394,7 @@ async function initDb() {
       notes TEXT DEFAULT '',
       maintain_stocks INTEGER NOT NULL DEFAULT 1,
       used_in_report INTEGER NOT NULL DEFAULT 0,
+      purpose TEXT NOT NULL DEFAULT 'trading',
       status TEXT NOT NULL DEFAULT 'draft',
       created_by INTEGER REFERENCES users(id),
       updated_by INTEGER REFERENCES users(id),
@@ -2837,6 +2838,7 @@ async function initDb() {
   await ensureColumnExists('delivery_challans', 'template_snapshot_json', 'TEXT');
   await ensureColumnExists('delivery_challans', 'maintain_stocks', 'INTEGER NOT NULL DEFAULT 1');
   await ensureColumnExists('delivery_challans', 'used_in_report', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumnExists('delivery_challans', 'purpose', "TEXT NOT NULL DEFAULT 'trading'");
   await ensureColumnExists('delivery_challan_items', 'order_item_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'production_run_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'item_id', 'INTEGER');
@@ -5196,6 +5198,9 @@ async function rowToDeliveryChallanDto(row, { includeItems = true } = {}) {
   return {
     id: row.id,
     type: normalizeChallanType(row.type),
+    purpose: row.purpose || 'trading',
+    challanPurpose: row.purpose || 'trading',
+    challan_purpose: row.purpose || 'trading',
     order_id: row.order_id || null,
     order_ids: orderIds,
     report_group_codes: reportGroupCodes,
@@ -7225,6 +7230,12 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
   }
 
   const date = normalizeChallanDate(input.date ?? existing?.date);
+  const inputPurpose = String(
+    input.purpose ?? input.challanPurpose ?? input.challan_purpose ?? existing?.purpose ?? 'trading',
+  ).trim();
+  const purpose = ['trading', 'manufacturing', 'jobWork'].includes(inputPurpose)
+    ? inputPurpose
+    : (inputPurpose === 'job_work' ? 'jobWork' : 'trading');
   const customerName = challanType === 'delivery'
     ? (maintainStocks
       ? String(firstOrder?.client_name || '').trim()
@@ -7379,7 +7390,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
         SET type = ?, order_id = ?, order_no = ?, challan_no = ?, date = ?, location = ?,
             customer_name = ?, customer_gstin = ?, vendor_id = ?, vendor_name = ?, vendor_gstin = ?,
             material_owner_client_id = ?, material_owner_client_name = ?, material_owner_gstin = ?,
-            source_reference = ?, notes = ?, maintain_stocks = ?, updated_by = ?, updated_at = ?
+            source_reference = ?, notes = ?, maintain_stocks = ?, purpose = ?, updated_by = ?, updated_at = ?
         WHERE id = ?
         `,
         [
@@ -7400,6 +7411,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
           sourceReference,
           notes,
           maintainStocks ? 1 : 0,
+          purpose,
           actor?.id || null,
           now,
           challanId,
@@ -7414,9 +7426,9 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
           type, order_id, order_no, challan_no, date, location, customer_name, customer_gstin,
           vendor_id, vendor_name, vendor_gstin, material_owner_client_id, material_owner_client_name,
           material_owner_gstin, source_reference, notes, status,
-          maintain_stocks, created_by, updated_by, created_at, updated_at
+          maintain_stocks, purpose, created_by, updated_by, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?)
         `,
         [
           challanType,
@@ -7436,6 +7448,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
           sourceReference,
           notes,
           maintainStocks ? 1 : 0,
+          purpose,
           actor?.id || null,
           actor?.id || null,
           now,

@@ -12,13 +12,13 @@ import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/widgets/page_container.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../../core/widgets/soft_primitives.dart';
-import '../../../../app/shell/navigation_provider.dart';
+import 'package:core_erp/core/navigation/app_navigation.dart';
 import '../../../clients/domain/client_definition.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
 import '../../../delivery_challans/domain/delivery_challan.dart';
 import '../../../delivery_challans/presentation/providers/delivery_challan_provider.dart';
 import '../../../delivery_challans/presentation/screens/delivery_challan_screen.dart';
-import 'package:paper/widgets/variation_path_selector_dialog.dart';
+import 'package:core_erp/widgets/variation_path_selector_dialog.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/screens/items_screen.dart';
@@ -4495,7 +4495,7 @@ class _OrderDetailsModalState extends State<_OrderDetailsModal> {
       return;
     }
     Navigator.of(context).pop();
-    context.read<NavigationProvider>().select('delivery_challans');
+    context.read<AppNavigation>().select('delivery_challans');
   }
 }
 

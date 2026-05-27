@@ -1,6 +1,6 @@
 enum MachineStatus { active, maintenance, decommissioned }
 
-enum CustomPropertyType { text, numeric }
+enum CustomPropertyType { text, numeric, dropdown }
 
 class CustomProperty {
   const CustomProperty({
@@ -8,24 +8,28 @@ class CustomProperty {
     required this.value,
     this.type = CustomPropertyType.text,
     this.unitId,
+    this.options = const [],
   });
 
   final String key;
   final String value;
   final CustomPropertyType type;
   final int? unitId;
+  final List<String> options;
   
   CustomProperty copyWith({
     String? key,
     String? value,
     CustomPropertyType? type,
     int? unitId,
+    List<String>? options,
   }) {
     return CustomProperty(
       key: key ?? this.key,
       value: value ?? this.value,
       type: type ?? this.type,
       unitId: unitId ?? this.unitId,
+      options: options ?? this.options,
     );
   }
 }

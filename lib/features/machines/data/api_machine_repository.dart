@@ -172,12 +172,18 @@ class ApiMachineRepository implements MachineRepository {
     if (typeStr == 'numeric') {
       return CustomPropertyType.numeric;
     }
+    if (typeStr == 'dropdown') {
+      return CustomPropertyType.dropdown;
+    }
     return CustomPropertyType.text;
   }
 
   String _propertyTypeToString(CustomPropertyType type) {
     if (type == CustomPropertyType.numeric) {
       return 'numeric';
+    }
+    if (type == CustomPropertyType.dropdown) {
+      return 'dropdown';
     }
     return 'text';
   }
@@ -188,6 +194,7 @@ class ApiMachineRepository implements MachineRepository {
       value: json['value'] as String? ?? '',
       type: _parsePropertyType(json['type'] as String? ?? 'text'),
       unitId: json['unitId'] as int?,
+      options: (json['options'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
     );
   }
 
@@ -197,6 +204,7 @@ class ApiMachineRepository implements MachineRepository {
       'value': prop.value,
       'type': _propertyTypeToString(prop.type),
       'unitId': prop.unitId,
+      'options': prop.options,
     };
   }
 

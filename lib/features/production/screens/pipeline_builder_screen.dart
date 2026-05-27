@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../../../core/theme/soft_erp_theme.dart';
+import 'package:core_erp/core/theme/soft_erp_theme.dart';
 import '../providers/production_provider.dart';
 
 class PipelineBuilderScreen extends StatefulWidget {

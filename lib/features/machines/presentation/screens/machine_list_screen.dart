@@ -3,18 +3,22 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../../../core/theme/soft_erp_theme.dart';
-import '../../../../core/widgets/app_button.dart';
-import '../../../../core/widgets/app_empty_state.dart';
-import '../../../../core/widgets/soft_master_data.dart';
-import '../../../../core/widgets/soft_primitives.dart';
+import 'package:core_erp/core/theme/soft_erp_theme.dart';
+import 'package:core_erp/core/widgets/app_button.dart';
+import 'package:core_erp/core/widgets/app_empty_state.dart';
+import 'package:core_erp/core/widgets/soft_master_data.dart';
+import 'package:core_erp/core/widgets/soft_primitives.dart';
+import 'package:core_erp/core/navigation/app_navigation.dart';
+import 'package:core_erp/features/groups/presentation/screens/groups_screen.dart';
 import '../../domain/machine.dart';
 import '../providers/machine_provider.dart';
 import 'machine_form_screen.dart';
-import '../../../../features/groups/presentation/providers/groups_provider.dart';
+import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
 
 class MachinesScreen extends StatefulWidget {
-  const MachinesScreen({super.key});
+  const MachinesScreen({super.key, this.initialTab = 0});
+
+  final int initialTab;
 
   static void openMachineEditor(BuildContext context, {Machine? machine}) {
     showMachineFormDialog(context, machine: machine);
@@ -58,6 +62,10 @@ class _MachinesScreenState extends State<MachinesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.initialTab == 1) {
+      return const GroupsScreen(mode: 'machines');
+    }
+
     return Consumer2<MachinesProvider, GroupsProvider>(
       builder: (context, provider, groupsProvider, _) {
         if (provider.isLoading && provider.machines.isEmpty) {
@@ -114,8 +122,39 @@ class _MachinesToolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDesktop = MediaQuery.of(context).size.width >= 900;
+
+    final tabSegment = SoftSegmentedFilter<String>(
+      selected: 'machines',
+      onChanged: (value) {
+        if (value == 'groups') {
+          try {
+            context.read<AppNavigation>().select('configurator_machine_groups');
+          } catch (_) {}
+        }
+      },
+      options: const [
+        SoftSegmentOption<String>(
+          value: 'machines',
+          label: 'Machines Catalog',
+        ),
+        SoftSegmentOption<String>(
+          value: 'groups',
+          label: 'Machine Groups',
+        ),
+      ],
+    );
+
     return SoftMasterToolbar(
       children: [
+        tabSegment,
+        if (isDesktop)
+          Container(
+            width: 1,
+            height: 28,
+            color: SoftErpTheme.border,
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+          ),
         _ViewToggleButton(isGridView: isGridView, onTap: onToggleView),
         if (isGridView)
           _CardScaleControl(scale: cardScale, onChanged: onCardScaleChanged),

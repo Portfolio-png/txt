@@ -36,6 +36,9 @@ Future<T?> showErpFormDialog<T>(
         insetPadding: desktopInsetPadding,
         backgroundColor: Colors.transparent,
         elevation: 0,
+        shadowColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        shape: const RoundedRectangleBorder(side: BorderSide.none),
         child: SizedBox(
           width: math.min(
             maxWidth,

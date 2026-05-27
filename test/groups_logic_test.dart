@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:paper/features/groups/data/repositories/api_group_repository.dart';
-import 'package:paper/features/groups/domain/group_inputs.dart';
-import 'package:paper/features/groups/presentation/providers/groups_provider.dart';
+import 'package:core_erp/features/groups/data/repositories/api_group_repository.dart';
+import 'package:core_erp/features/groups/domain/group_inputs.dart';
+import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
 
 void main() {
   setUp(() {

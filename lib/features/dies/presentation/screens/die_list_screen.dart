@@ -3,15 +3,15 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../../../core/theme/soft_erp_theme.dart';
-import '../../../../core/widgets/app_button.dart';
-import '../../../../core/widgets/app_empty_state.dart';
-import '../../../../core/widgets/soft_master_data.dart';
-import '../../../../core/widgets/soft_primitives.dart';
+import 'package:core_erp/core/theme/soft_erp_theme.dart';
+import 'package:core_erp/core/widgets/app_button.dart';
+import 'package:core_erp/core/widgets/app_empty_state.dart';
+import 'package:core_erp/core/widgets/soft_master_data.dart';
+import 'package:core_erp/core/widgets/soft_primitives.dart';
 import '../../domain/die.dart';
 import '../providers/die_provider.dart';
 import 'die_form_screen.dart';
-import '../../../../features/groups/presentation/providers/groups_provider.dart';
+import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
 
 class DiesScreen extends StatefulWidget {
   const DiesScreen({super.key});
@@ -262,8 +262,8 @@ class _DieCardState extends State<_DieCard> {
   void _duplicate(BuildContext context) {
     final cloned = Die(
       id: '',
+      name: '${die.name} (Copy)',
       toolCode: '${die.toolCode} (Copy)',
-      producedPartNumbers: List.from(die.producedPartNumbers),
       photoUrls: List.from(die.photoUrls),
       operationalNotes: die.operationalNotes,
       compatibleMachineGroupIds: List.from(die.compatibleMachineGroupIds),
@@ -271,7 +271,7 @@ class _DieCardState extends State<_DieCard> {
       numberOfCavities: die.numberOfCavities,
       strokeCount: 0,
       maxStrokes: die.maxStrokes,
-      physicalSpecs: Map.from(die.physicalSpecs),
+      physicalSpecs: List.from(die.physicalSpecs),
       status: die.status,
       ownership: die.ownership,
       createdAt: DateTime.now(),
@@ -353,7 +353,7 @@ class _DieCardState extends State<_DieCard> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                die.toolCode,
+                                die.name,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w700,
                                   fontSize: 13.5,
@@ -364,9 +364,7 @@ class _DieCardState extends State<_DieCard> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                die.producedPartNumbers.isNotEmpty
-                                    ? die.producedPartNumbers.join(', ')
-                                    : 'No parts',
+                                die.toolCode,
                                 style: const TextStyle(
                                   color: SoftErpTheme.textSecondary,
                                   fontSize: 11.5,
@@ -566,8 +564,8 @@ class _DiesTable extends StatelessWidget {
       minWidth: 1080,
       columns: const [
         SoftTableColumn('Photo', flex: 1),
+        SoftTableColumn('Die Name', flex: 2),
         SoftTableColumn('Tool Code', flex: 2),
-        SoftTableColumn('Parts', flex: 2),
         SoftTableColumn('Lifecycle', flex: 2),
         SoftTableColumn('Status', flex: 1),
         SoftTableColumn('Actions', flex: 2),
@@ -616,7 +614,7 @@ class _DieRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              SoftInlineText(die.toolCode, weight: FontWeight.w700),
+              SoftInlineText(die.name, weight: FontWeight.w700),
               if (die.ownership == DieOwnership.customerOwned) ...[
                 const SizedBox(height: 4),
                 const SoftInlineText('Customer Owned',
@@ -627,7 +625,7 @@ class _DieRow extends StatelessWidget {
         ),
         Expanded(
           flex: 2,
-          child: SoftInlineText(die.producedPartNumbers.join(', ')),
+          child: SoftInlineText(die.toolCode),
         ),
         // Lifecycle / stroke progress bar
         Expanded(
@@ -657,8 +655,8 @@ class _DieRow extends StatelessWidget {
                 onTap: () {
                   final cloned = Die(
                     id: '',
+                    name: '${die.name} (Copy)',
                     toolCode: '${die.toolCode} (Copy)',
-                    producedPartNumbers: List.from(die.producedPartNumbers),
                     photoUrls: List.from(die.photoUrls),
                     operationalNotes: die.operationalNotes,
                     compatibleMachineGroupIds:
@@ -667,7 +665,7 @@ class _DieRow extends StatelessWidget {
                     numberOfCavities: die.numberOfCavities,
                     strokeCount: 0,
                     maxStrokes: die.maxStrokes,
-                    physicalSpecs: Map.from(die.physicalSpecs),
+                    physicalSpecs: List.from(die.physicalSpecs),
                     status: die.status,
                     ownership: die.ownership,
                     createdAt: DateTime.now(),

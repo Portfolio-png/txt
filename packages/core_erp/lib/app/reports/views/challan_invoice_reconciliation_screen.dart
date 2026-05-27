@@ -17,8 +17,8 @@ import '../../../features/delivery_challans/domain/delivery_challan.dart';
 import '../../../features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
 import '../../../features/items/domain/item_definition.dart';
 import '../../../features/items/presentation/providers/items_provider.dart';
+import '../../../core/navigation/app_navigation.dart';
 import '../../reports/domain/reconciliation_report.dart';
-import '../../shell/navigation_provider.dart';
 
 enum ReconciliationReportSection { auditor, clientStatement, misc }
 
@@ -204,7 +204,7 @@ class _ChallanInvoiceReconciliationScreenState
           selectedCount: selectedRows.length,
           onBack:
               widget.onClose ??
-              () => context.read<NavigationProvider>().select(
+              () => context.read<AppNavigation>().select(
                 'delivery_challans',
               ),
           onRefresh: _loadReport,

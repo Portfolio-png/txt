@@ -30,7 +30,7 @@ class DiesProvider extends ChangeNotifier {
           .map((id) => groupNames[id] ?? '')
           .join(' ');
       return d.toolCode.toLowerCase().contains(query) ||
-             d.producedPartNumbers.any((p) => p.toLowerCase().contains(query)) ||
+             d.name.toLowerCase().contains(query) ||
              compatibleNames.toLowerCase().contains(query);
     }).toList();
   }
@@ -40,7 +40,7 @@ class DiesProvider extends ChangeNotifier {
     if (query.isEmpty) return _dies;
     return _dies.where((d) {
       return d.toolCode.toLowerCase().contains(query) ||
-             d.producedPartNumbers.any((p) => p.toLowerCase().contains(query));
+             d.name.toLowerCase().contains(query);
     }).toList();
   }
 

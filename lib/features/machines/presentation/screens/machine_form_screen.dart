@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../../../core/widgets/app_button.dart';
-import '../../../../core/widgets/erp_form_dialog.dart';
-import '../../../../core/widgets/searchable_select.dart';
+import 'package:core_erp/core/widgets/app_button.dart';
+import 'package:core_erp/core/widgets/erp_form_dialog.dart';
+import 'package:core_erp/core/widgets/searchable_select.dart';
+import 'package:core_erp/core/navigation/app_navigation.dart';
+import 'package:core_erp/features/groups/presentation/screens/groups_screen.dart';
 import '../../domain/machine.dart';
 import '../providers/machine_provider.dart';
-import '../../../../features/units/presentation/providers/units_provider.dart';
-import '../../../../features/groups/presentation/providers/groups_provider.dart';
+import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
+import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
 
 class _MutableProperty {
   _MutableProperty({
@@ -15,11 +17,13 @@ class _MutableProperty {
     this.value = '',
     this.type = CustomPropertyType.text,
     this.unitId,
-  });
+    List<String>? options,
+  }) : options = options ?? [];
   String key;
   String value;
   CustomPropertyType type;
   int? unitId;
+  List<String> options;
 }
 
 Future<Machine?> showMachineFormDialog(BuildContext context, {Machine? machine}) {
@@ -45,13 +49,9 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
   
   late final TextEditingController _nameController;
   late final TextEditingController _assetIdController;
-  late final TextEditingController _makeModelController;
-  late final TextEditingController _serialNumberController;
-  late final TextEditingController _locationController;
   late final TextEditingController _photoUrlController;
   
   int? _groupId;
-  DateTime? _installationDate;
   MachineStatus _status = MachineStatus.active;
   
   // Custom properties as a list of mutable objects for editing
@@ -62,22 +62,48 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
     super.initState();
     _nameController = TextEditingController(text: widget.machine?.name ?? '');
     _assetIdController = TextEditingController(text: widget.machine?.assetId ?? '');
-    _makeModelController = TextEditingController(text: widget.machine?.makeModel ?? '');
-    _serialNumberController = TextEditingController(text: widget.machine?.serialNumber ?? '');
-    _locationController = TextEditingController(text: widget.machine?.location ?? '');
     _photoUrlController = TextEditingController(text: widget.machine?.primaryPhotoUrl ?? '');
     
     _groupId = widget.machine?.groupId;
-    _installationDate = widget.machine?.installationDate;
     
     if (widget.machine != null) {
       _status = widget.machine!.status;
+      
+      // Convert legacy fields to custom fields dynamically to preserve data
+      if (widget.machine!.makeModel.trim().isNotEmpty) {
+        _customProperties.add(_MutableProperty(
+          key: 'Make/Model',
+          value: widget.machine!.makeModel.trim(),
+        ));
+      }
+      if (widget.machine!.serialNumber.trim().isNotEmpty) {
+        _customProperties.add(_MutableProperty(
+          key: 'Serial Number',
+          value: widget.machine!.serialNumber.trim(),
+        ));
+      }
+      if (widget.machine!.location != null && widget.machine!.location!.trim().isNotEmpty) {
+        _customProperties.add(_MutableProperty(
+          key: 'Location',
+          value: widget.machine!.location!.trim(),
+        ));
+      }
+      if (widget.machine!.installationDate != null) {
+        final d = widget.machine!.installationDate!;
+        final dateStr = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+        _customProperties.add(_MutableProperty(
+          key: 'Installation Date',
+          value: dateStr,
+        ));
+      }
+
       for (var prop in widget.machine!.customProperties) {
         _customProperties.add(_MutableProperty(
           key: prop.key,
           value: prop.value,
           type: prop.type,
           unitId: prop.unitId,
+          options: List.from(prop.options),
         ));
       }
     }
@@ -91,9 +117,6 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
   void dispose() {
     _nameController.dispose();
     _assetIdController.dispose();
-    _makeModelController.dispose();
-    _serialNumberController.dispose();
-    _locationController.dispose();
     _photoUrlController.dispose();
     super.dispose();
   }
@@ -115,14 +138,19 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
   }
 
   void _updateCustomPropertyValue(int index, String value) {
-    _customProperties[index].value = value;
+    setState(() {
+      _customProperties[index].value = value;
+    });
   }
 
   void _updateCustomPropertyType(int index, CustomPropertyType type) {
     setState(() {
       _customProperties[index].type = type;
-      if (type == CustomPropertyType.text) {
+      if (type != CustomPropertyType.numeric) {
         _customProperties[index].unitId = null;
+      }
+      if (type != CustomPropertyType.dropdown) {
+        _customProperties[index].options = [];
       }
     });
   }
@@ -133,18 +161,18 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
     });
   }
 
-  Future<void> _pickInstallationDate() async {
-    final date = await showDatePicker(
-      context: context,
-      initialDate: _installationDate ?? DateTime.now(),
-      firstDate: DateTime(1980),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-    );
-    if (date != null) {
-      setState(() {
-        _installationDate = date;
-      });
-    }
+  void _updateCustomPropertyOptions(int index, String optionsStr) {
+    setState(() {
+      _customProperties[index].options = optionsStr
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      if (_customProperties[index].value.isNotEmpty &&
+          !_customProperties[index].options.contains(_customProperties[index].value)) {
+        _customProperties[index].value = '';
+      }
+    });
   }
 
   @override
@@ -192,36 +220,24 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                         ),
                         const SizedBox(height: 12),
                         Row(
-                          children: [
-                            Expanded(
-                              child: _MachineTextField(
-                                controller: _makeModelController,
-                                label: 'Make/Model',
-                                helper: 'Manufacturer and model',
-                                required: false,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _MachineTextField(
-                                controller: _serialNumberController,
-                                label: 'Serial Number',
-                                helper: 'Hardware serial number',
-                                required: false,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
                               child: SearchableSelectField<int>(
                                 tapTargetKey: const ValueKey<String>('machine-group-field'),
                                 value: _groupId,
-                                decoration: const InputDecoration(
+                                decoration: InputDecoration(
                                   labelText: 'Machine Group',
                                   helperText: 'Categorization from Group Master',
+                                  suffixIcon: TextButton(
+                                    onPressed: () {
+                                      Navigator.of(context).pop();
+                                      try {
+                                        context.read<AppNavigation>().select('configurator_machine_groups');
+                                      } catch (_) {}
+                                    },
+                                    child: const Text('Manage'),
+                                  ),
                                 ),
                                 dialogTitle: 'Machine Group',
                                 searchHintText: 'Search machine groups',
@@ -231,15 +247,42 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                                 )).toList(),
                                 onChanged: (val) => setState(() => _groupId = val),
                                 validator: (val) => val == null ? 'Required' : null,
+                                onCreateOption: (query) async {
+                                  final created = await GroupsScreen.openEditor(
+                                    context,
+                                    initialName: query,
+                                  );
+                                  if (!context.mounted || created == null) {
+                                    return null;
+                                  }
+                                  await context.read<GroupsProvider>().refresh();
+                                  return SearchableSelectOption<int>(
+                                    value: created.id,
+                                    label: created.name,
+                                  );
+                                },
+                                createOptionLabelBuilder: (query) => 'Create group "$query"',
                               ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
-                              child: _MachineTextField(
-                                controller: _locationController,
-                                label: 'Location / Zone',
-                                helper: 'E.g. Press Shop A',
-                                required: false,
+                              child: SearchableSelectField<MachineStatus>(
+                                tapTargetKey: const ValueKey<String>('machine-status-field'),
+                                value: _status,
+                                decoration: const InputDecoration(
+                                  labelText: 'Status',
+                                  helperText: 'Current operational state',
+                                ),
+                                dialogTitle: 'Status',
+                                options: MachineStatus.values.map((s) {
+                                  return SearchableSelectOption(
+                                    value: s,
+                                    label: s.name.toUpperCase(),
+                                  );
+                                }).toList(),
+                                onChanged: (val) {
+                                  if (val != null) setState(() => _status = val);
+                                },
                               ),
                             ),
                           ],
@@ -249,53 +292,67 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                   ),
                   const SizedBox(height: 16),
                   ErpDialogSectionCard(
-                    title: 'Custom Properties',
-                    subtitle: 'Define flexible properties like Tonnage, Power, Coolant Type.',
+                    title: 'Custom Fields',
+                    subtitle: 'Define any text field name and its corresponding value.',
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        ..._customProperties.asMap().entries.map((entry) {
-                          final index = entry.key;
-                          final prop = entry.value;
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 16.0),
-                            child: Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF8FAFC),
-                                border: Border.all(color: const Color(0xFFE2E8F0)),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
+                        if (_customProperties.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                            child: Text(
+                              'No custom fields added yet.',
+                              style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                            ),
+                          )
+                        else
+                          ..._customProperties.asMap().entries.map((entry) {
+                            final index = entry.key;
+                            final prop = entry.value;
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 12.0),
                               child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
                                     children: [
                                       Expanded(
-                                        flex: 2,
+                                        flex: 4,
                                         child: TextFormField(
                                           initialValue: prop.key,
-                                          decoration: const InputDecoration(
-                                            labelText: 'Property Name',
-                                            hintText: 'e.g. Tonnage',
-                                            isDense: true,
+                                          decoration: InputDecoration(
+                                            labelText: 'Field Name',
+                                            hintText: 'e.g. Tonnage, Location, etc.',
+                                            filled: true,
+                                            fillColor: const Color(0xFFF9FAFB),
+                                            border: OutlineInputBorder(
+                                              borderRadius: BorderRadius.circular(8),
+                                              borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                            ),
+                                            enabledBorder: OutlineInputBorder(
+                                              borderRadius: BorderRadius.circular(8),
+                                              borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                            ),
                                           ),
                                           onChanged: (val) => _updateCustomPropertyKey(index, val),
                                         ),
                                       ),
-                                      const SizedBox(width: 8),
+                                      const SizedBox(width: 12),
                                       Expanded(
-                                        flex: 1,
+                                        flex: 3,
                                         child: SearchableSelectField<CustomPropertyType>(
                                           tapTargetKey: ValueKey<String>('machine-custom-property-type-$index'),
                                           value: prop.type,
                                           decoration: const InputDecoration(
-                                            labelText: 'Type',
-                                            isDense: true,
+                                            labelText: 'Field Type',
+                                            filled: true,
+                                            fillColor: Color(0xFFF9FAFB),
                                           ),
-                                          dialogTitle: 'Property Type',
+                                          dialogTitle: 'Field Type',
                                           options: const [
                                             SearchableSelectOption(value: CustomPropertyType.text, label: 'Text'),
                                             SearchableSelectOption(value: CustomPropertyType.numeric, label: 'Numeric'),
+                                            SearchableSelectOption(value: CustomPropertyType.dropdown, label: 'Dropdown'),
                                           ],
                                           onChanged: (val) {
                                             if (val != null) _updateCustomPropertyType(index, val);
@@ -303,23 +360,50 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                                         ),
                                       ),
                                       IconButton(
-                                        icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
+                                        icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
                                         onPressed: () => _removeCustomProperty(index),
-                                      )
+                                      ),
                                     ],
                                   ),
-                                  const SizedBox(height: 12),
-                                  Row(
-                                    children: [
-                                      if (prop.type == CustomPropertyType.numeric) ...[
+                                  const SizedBox(height: 8),
+                                  if (prop.type == CustomPropertyType.text)
+                                    Row(
+                                      children: [
                                         Expanded(
-                                          flex: 1,
+                                          child: TextFormField(
+                                            initialValue: prop.value,
+                                            decoration: InputDecoration(
+                                              labelText: 'Value',
+                                              hintText: 'Enter text value...',
+                                              filled: true,
+                                              fillColor: const Color(0xFFF9FAFB),
+                                              border: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(8),
+                                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                              ),
+                                              enabledBorder: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(8),
+                                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                              ),
+                                            ),
+                                            onChanged: (val) => _updateCustomPropertyValue(index, val),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 48),
+                                      ],
+                                    )
+                                  else if (prop.type == CustomPropertyType.numeric)
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          flex: 2,
                                           child: SearchableSelectField<int?>(
                                             tapTargetKey: ValueKey<String>('machine-custom-property-unit-$index'),
                                             value: prop.unitId,
                                             decoration: const InputDecoration(
                                               labelText: 'Unit (Optional)',
-                                              isDense: true,
+                                              filled: true,
+                                              fillColor: Color(0xFFF9FAFB),
                                             ),
                                             dialogTitle: 'Select Unit',
                                             options: [
@@ -334,33 +418,93 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                                             onChanged: (val) => _updateCustomPropertyUnit(index, val),
                                           ),
                                         ),
-                                        const SizedBox(width: 8),
-                                      ],
-                                      Expanded(
-                                        flex: 2,
-                                        child: TextFormField(
-                                          initialValue: prop.value,
-                                          keyboardType: prop.type == CustomPropertyType.numeric ? TextInputType.number : TextInputType.text,
-                                          decoration: InputDecoration(
-                                            labelText: 'Value',
-                                            hintText: prop.type == CustomPropertyType.numeric ? 'e.g. 100' : 'e.g. Red',
-                                            isDense: true,
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          flex: 3,
+                                          child: TextFormField(
+                                            initialValue: prop.value,
+                                            keyboardType: TextInputType.number,
+                                            decoration: InputDecoration(
+                                              labelText: 'Value',
+                                              hintText: 'Enter numeric value...',
+                                              filled: true,
+                                              fillColor: const Color(0xFFF9FAFB),
+                                              border: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(8),
+                                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                              ),
+                                              enabledBorder: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(8),
+                                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                              ),
+                                            ),
+                                            onChanged: (val) => _updateCustomPropertyValue(index, val),
                                           ),
-                                          onChanged: (val) => _updateCustomPropertyValue(index, val),
                                         ),
-                                      ),
-                                    ],
-                                  ),
+                                        const SizedBox(width: 48),
+                                      ],
+                                    )
+                                  else if (prop.type == CustomPropertyType.dropdown)
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          flex: 2,
+                                          child: TextFormField(
+                                            initialValue: prop.options.join(', '),
+                                            decoration: InputDecoration(
+                                              labelText: 'Dropdown Options',
+                                              hintText: 'A, B, C (comma separated)',
+                                              filled: true,
+                                              fillColor: const Color(0xFFF9FAFB),
+                                              border: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(8),
+                                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                              ),
+                                              enabledBorder: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(8),
+                                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                              ),
+                                            ),
+                                            onChanged: (val) => _updateCustomPropertyOptions(index, val),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          flex: 3,
+                                          child: SearchableSelectField<String>(
+                                            tapTargetKey: ValueKey<String>('machine-custom-property-value-$index'),
+                                            value: prop.options.contains(prop.value) ? prop.value : null,
+                                            decoration: const InputDecoration(
+                                              labelText: 'Select Value',
+                                              filled: true,
+                                              fillColor: Color(0xFFF9FAFB),
+                                            ),
+                                            dialogTitle: 'Select Value',
+                                            options: prop.options.map((opt) {
+                                              return SearchableSelectOption<String>(
+                                                value: opt,
+                                                label: opt,
+                                              );
+                                            }).toList(),
+                                            onChanged: (val) {
+                                              if (val != null) _updateCustomPropertyValue(index, val);
+                                            },
+                                          ),
+                                        ),
+                                        const SizedBox(width: 48),
+                                      ],
+                                    ),
+                                  const Divider(height: 24),
                                 ],
                               ),
-                            ),
-                          );
-                        }),
-                        const SizedBox(height: 8),
-                        TextButton.icon(
+                            );
+                          }),
+                        const SizedBox(height: 12),
+                        AppButton(
+                          label: 'Add Field',
+                          icon: Icons.add,
+                          variant: AppButtonVariant.secondary,
                           onPressed: _addCustomProperty,
-                          icon: const Icon(Icons.add),
-                          label: const Text('Add Property'),
                         ),
                       ],
                     ),
@@ -374,52 +518,6 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ErpDialogSectionCard(
-                    title: 'Status & Lifecycle',
-                    subtitle: 'Current operational state.',
-                    child: Column(
-                      children: [
-                        SearchableSelectField<MachineStatus>(
-                          tapTargetKey: const ValueKey<String>('machine-status-field'),
-                          value: _status,
-                          decoration: const InputDecoration(
-                            labelText: 'Status',
-                          ),
-                          dialogTitle: 'Status',
-                          options: MachineStatus.values.map((s) {
-                            return SearchableSelectOption(
-                              value: s,
-                              label: s.name.toUpperCase(),
-                            );
-                          }).toList(),
-                          onChanged: (val) {
-                            if (val != null) setState(() => _status = val);
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                        InkWell(
-                          onTap: _pickInstallationDate,
-                          child: InputDecorator(
-                            decoration: InputDecoration(
-                              labelText: 'Installation Date',
-                              filled: true,
-                              fillColor: const Color(0xFFF9FAFB),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
-                              ),
-                            ),
-                            child: Text(
-                              _installationDate == null 
-                                ? 'Not specified' 
-                                : '${_installationDate!.year}-${_installationDate!.month.toString().padLeft(2, '0')}-${_installationDate!.day.toString().padLeft(2, '0')}',
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
                   ErpDialogSectionCard(
                     title: 'Primary Photo',
                     subtitle: 'A visual identifier for the machine.',
@@ -475,6 +573,7 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
           value: prop.value.trim(),
           type: prop.type,
           unitId: prop.unitId,
+          options: prop.options,
         ));
       }
     }
@@ -485,10 +584,10 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
       assetId: _assetIdController.text.trim(),
       primaryPhotoUrl: _photoUrlController.text.trim(),
       groupId: _groupId,
-      makeModel: _makeModelController.text.trim(),
-      serialNumber: _serialNumberController.text.trim(),
-      location: _locationController.text.trim(),
-      installationDate: _installationDate,
+      makeModel: '',
+      serialNumber: '',
+      location: null,
+      installationDate: null,
       status: _status,
       customProperties: customPropsList,
       createdAt: widget.machine?.createdAt ?? DateTime.now(),

@@ -2,10 +2,19 @@ enum DeliveryChallanStatus { draft, issued, cancelled }
 
 enum ChallanType { delivery, reception }
 
+enum ChallanPurpose { trading, manufacturing, jobWork }
+
 ChallanType challanTypeFromName(String value) {
   return ChallanType.values.firstWhere(
     (type) => type.name == value.toLowerCase(),
     orElse: () => ChallanType.delivery,
+  );
+}
+
+ChallanPurpose challanPurposeFromName(String value) {
+  return ChallanPurpose.values.firstWhere(
+    (purpose) => purpose.name == value.toLowerCase(),
+    orElse: () => ChallanPurpose.trading,
   );
 }
 
@@ -260,6 +269,7 @@ class DeliveryChallan {
   const DeliveryChallan({
     required this.id,
     required this.type,
+    this.purpose = ChallanPurpose.trading,
     required this.orderId,
     required this.orderIds,
     this.reportGroupCodes = const <String>[],
@@ -288,6 +298,7 @@ class DeliveryChallan {
 
   final int id;
   final ChallanType type;
+  final ChallanPurpose purpose;
   final int? orderId;
   final List<int> orderIds;
   final List<String> reportGroupCodes;
@@ -318,6 +329,7 @@ class DeliveryChallan {
   bool get isCancelled => status == DeliveryChallanStatus.cancelled;
   bool get isReception => type == ChallanType.reception;
   bool get isDelivery => type == ChallanType.delivery;
+  bool get isJobWork => purpose == ChallanPurpose.jobWork;
 
   factory DeliveryChallan.fromJson(Map<String, dynamic> json) {
     final items = (json['items'] as List<dynamic>? ?? const [])
@@ -336,6 +348,11 @@ class DeliveryChallan {
         json['type'] as String? ??
             json['challan_type'] as String? ??
             'delivery',
+      ),
+      purpose: challanPurposeFromName(
+        json['purpose'] as String? ??
+            json['challan_purpose'] as String? ??
+            'trading',
       ),
       orderId: json['orderId'] as int? ?? json['order_id'] as int?,
       orderIds:
@@ -414,10 +431,12 @@ class DeliveryChallan {
     List<DeliveryChallanItem>? items,
     bool? usedInReport,
     List<String>? reportGroupCodes,
+    ChallanPurpose? purpose,
   }) {
     return DeliveryChallan(
       id: id,
       type: type,
+      purpose: purpose ?? this.purpose,
       orderId: orderId,
       orderIds: orderIds,
       reportGroupCodes: reportGroupCodes ?? this.reportGroupCodes,

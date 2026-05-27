@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../inventory/data/repositories/inventory_repository.dart';
+import 'package:core_erp/features/inventory/data/repositories/inventory_repository.dart';
 import '../data/repositories/pipeline_run_repository.dart';
 import '../domain/barcode_input.dart';
 import '../domain/material_flow.dart';

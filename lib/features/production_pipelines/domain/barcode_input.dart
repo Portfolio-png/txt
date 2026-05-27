@@ -1,4 +1,4 @@
-import '../../inventory/domain/material_record.dart';
+import 'package:core_erp/features/inventory/domain/material_record.dart';
 
 class BarcodeInput {
   const BarcodeInput({

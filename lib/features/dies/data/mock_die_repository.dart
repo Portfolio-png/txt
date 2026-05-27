@@ -1,3 +1,4 @@
+import 'package:paper/features/machines/domain/machine.dart';
 import '../domain/die.dart';
 import 'die_repository.dart';
 
@@ -8,8 +9,8 @@ class MockDieRepository implements DieRepository {
   final List<Die> _dies = [
     Die(
       id: 'd1',
+      name: 'Amada Press Die Set A',
       toolCode: 'TL-890-A',
-      producedPartNumbers: const ['PART-4432', 'PART-4433'],
       photoUrls: const [
         'https://images.unsplash.com/photo-1590494165264-1ebe3602eb80?auto=format&fit=crop&q=80',
         'https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&q=80'
@@ -20,11 +21,11 @@ class MockDieRepository implements DieRepository {
       numberOfCavities: 2,
       strokeCount: 45000,
       maxStrokes: 100000,
-      physicalSpecs: const {
-        'Weight': '1250 kg',
-        'Shut Height': '350 mm',
-        'Dimensions': '800 x 600 x 400 mm'
-      },
+      physicalSpecs: const [
+        CustomProperty(key: 'Weight', value: '1250 kg'),
+        CustomProperty(key: 'Shut Height', value: '350 mm'),
+        CustomProperty(key: 'Dimensions', value: '800 x 600 x 400 mm'),
+      ],
       status: DieStatus.ready,
       ownership: DieOwnership.inHouse,
       createdAt: DateTime.now().subtract(const Duration(days: 400)),
@@ -32,8 +33,8 @@ class MockDieRepository implements DieRepository {
     ),
     Die(
       id: 'd2',
+      name: 'Haas CNC Cutter Head',
       toolCode: 'TL-102-B',
-      producedPartNumbers: const ['PART-9901'],
       photoUrls: const [
         'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=80'
       ],
@@ -43,9 +44,9 @@ class MockDieRepository implements DieRepository {
       numberOfCavities: 1,
       strokeCount: 98000,
       maxStrokes: 100000,
-      physicalSpecs: const {
-        'Weight': '2100 kg',
-      },
+      physicalSpecs: const [
+        CustomProperty(key: 'Weight', value: '2100 kg'),
+      ],
       status: DieStatus.needsRepair,
       ownership: DieOwnership.customerOwned,
       createdAt: DateTime.now().subtract(const Duration(days: 800)),

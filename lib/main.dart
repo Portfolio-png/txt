@@ -1,41 +1,42 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
+import 'package:core_erp/core/navigation/app_navigation.dart';
 
-import 'core/theme/soft_erp_theme.dart';
-import 'core/network/authenticated_http_client.dart';
-import 'app/preferences/preferences_provider.dart';
+import 'package:core_erp/core/theme/soft_erp_theme.dart';
+import 'package:core_erp/core/network/authenticated_http_client.dart';
+import 'package:core_erp/app/preferences/preferences_provider.dart';
 import 'app/shell/app_shell.dart';
 import 'app/shell/navigation_provider.dart';
-import 'features/auth/presentation/providers/auth_provider.dart';
-import 'features/auth/presentation/screens/login_screen.dart';
-import 'features/groups/data/repositories/api_group_repository.dart';
-import 'features/groups/data/repositories/group_repository.dart';
-import 'features/groups/presentation/providers/groups_provider.dart';
-import 'features/inventory/data/repositories/api_inventory_repository.dart';
-import 'features/inventory/data/repositories/inventory_repository.dart';
-import 'features/inventory/presentation/providers/inventory_provider.dart';
-import 'features/clients/data/repositories/api_client_repository.dart';
-import 'features/clients/data/repositories/client_repository.dart';
-import 'features/clients/presentation/providers/clients_provider.dart';
-import 'features/delivery_challans/data/api_delivery_challan_repository.dart';
-import 'features/delivery_challans/data/delivery_challan_repository.dart';
-import 'features/delivery_challans/presentation/providers/challan_editor_command_provider.dart';
-import 'features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
-import 'features/items/data/repositories/api_item_repository.dart';
-import 'features/items/data/repositories/item_repository.dart';
-import 'features/items/presentation/providers/items_provider.dart';
-import 'features/orders/data/repositories/api_order_repository.dart';
-import 'features/orders/data/repositories/order_repository.dart';
-import 'features/orders/presentation/providers/orders_provider.dart';
+import 'package:core_erp/features/auth/presentation/providers/auth_provider.dart';
+import 'package:core_erp/features/auth/presentation/screens/login_screen.dart';
+import 'package:core_erp/features/groups/data/repositories/api_group_repository.dart';
+import 'package:core_erp/features/groups/data/repositories/group_repository.dart';
+import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
+import 'package:core_erp/features/inventory/data/repositories/api_inventory_repository.dart';
+import 'package:core_erp/features/inventory/data/repositories/inventory_repository.dart';
+import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
+import 'package:core_erp/features/clients/data/repositories/api_client_repository.dart';
+import 'package:core_erp/features/clients/data/repositories/client_repository.dart';
+import 'package:core_erp/features/clients/presentation/providers/clients_provider.dart';
+import 'package:core_erp/features/delivery_challans/data/api_delivery_challan_repository.dart';
+import 'package:core_erp/features/delivery_challans/data/delivery_challan_repository.dart';
+import 'package:core_erp/features/delivery_challans/presentation/providers/challan_editor_command_provider.dart';
+import 'package:core_erp/features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
+import 'package:core_erp/features/items/data/repositories/api_item_repository.dart';
+import 'package:core_erp/features/items/data/repositories/item_repository.dart';
+import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
+import 'package:core_erp/features/orders/data/repositories/api_order_repository.dart';
+import 'package:core_erp/features/orders/data/repositories/order_repository.dart';
+import 'package:core_erp/features/orders/presentation/providers/orders_provider.dart';
 import 'features/production_pipelines/data/repositories/mock_pipeline_run_repository.dart';
 import 'features/production_pipelines/data/repositories/pipeline_run_repository.dart';
-import 'features/units/data/repositories/api_unit_repository.dart';
-import 'features/units/data/repositories/unit_repository.dart';
-import 'features/units/presentation/providers/units_provider.dart';
-import 'features/vendors/data/repositories/api_vendor_repository.dart';
-import 'features/vendors/data/repositories/vendor_repository.dart';
-import 'features/vendors/presentation/providers/vendors_provider.dart';
+import 'package:core_erp/features/units/data/repositories/api_unit_repository.dart';
+import 'package:core_erp/features/units/data/repositories/unit_repository.dart';
+import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
+import 'package:core_erp/features/vendors/data/repositories/api_vendor_repository.dart';
+import 'package:core_erp/features/vendors/data/repositories/vendor_repository.dart';
+import 'package:core_erp/features/vendors/presentation/providers/vendors_provider.dart';
 import 'features/machines/data/machine_repository.dart';
 import 'features/machines/data/api_machine_repository.dart';
 import 'features/machines/presentation/providers/machine_provider.dart';
@@ -273,6 +274,7 @@ class MyApp extends StatelessWidget {
         ),
         ChangeNotifierProvider(create: (_) => PreferencesProvider()),
         ChangeNotifierProvider(create: (_) => NavigationProvider()),
+        Provider<AppNavigation>(create: (context) => AppNavigationWrapper(context.read<NavigationProvider>())),
         ChangeNotifierProvider(create: (_) => ChallanEditorCommandProvider()),
         ChangeNotifierProxyProvider<OrderRepository, OrdersProvider>(
           create: (context) =>

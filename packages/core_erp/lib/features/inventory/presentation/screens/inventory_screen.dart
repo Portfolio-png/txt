@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../app/preferences/preferences_provider.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_empty_state.dart';
@@ -23,15 +24,17 @@ import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../groups/presentation/screens/groups_screen.dart';
 import '../../../groups/presentation/widgets/structured_group_editor_dialog.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../clients/presentation/providers/clients_provider.dart';
+import '../../../delivery_challans/domain/delivery_challan.dart';
 import '../../../delivery_challans/presentation/providers/delivery_challan_provider.dart';
 import '../../../delivery_challans/presentation/screens/delivery_challan_screen.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../items/presentation/screens/items_screen.dart';
 
-import 'package:paper/widgets/variation_path_selector_dialog.dart';
-import '../../../pm/presentation/barcode/material_barcode_toolkit.dart';
-import '../../../pm/presentation/screens/pm_screen.dart';
+import 'package:core_erp/widgets/variation_path_selector_dialog.dart';
+import 'package:core_erp/core/widgets/material_barcode_toolkit.dart';
+import 'package:core_erp/core/widgets/pm_segmented_control.dart';
 import '../../../units/domain/unit_definition.dart';
 import '../../../units/domain/unit_inputs.dart';
 import '../../../units/presentation/providers/units_provider.dart';
@@ -48,7 +51,7 @@ import '../../domain/material_record.dart';
 import '../providers/inventory_provider.dart';
 import '../widgets/inventory_set_editor_dialog.dart';
 
-enum _InventoryViewMode { groups, items, sets }
+enum _InventoryViewMode { groups, items, sets, jobWork }
 
 enum _InventoryListingMode { all, recentFirst }
 
@@ -434,73 +437,75 @@ class _InventoryScreenState extends State<InventoryScreen> {
                       const Divider(height: 1, color: SoftErpTheme.border),
                       const SizedBox(height: 14),
                       Expanded(
-                        child: _InventoryTable(
-                          rows: rows,
-                          viewMode: _viewMode,
-                          sortColumn: _sortColumn,
-                          sortAscending: _sortAscending,
-                          groupsProvider: groups,
-                          itemsProvider: items,
-                          selectedBarcodes: _selectedBarcodes,
-                          pinnedBarcodes: _pinnedBarcodes,
-                          expandedParents: _expandedParents,
-                          isRequestDelete: isRequestDelete,
-                          onToggleSelection: (barcode) {
-                            setState(() {
-                              if (_selectedBarcodes.contains(barcode)) {
-                                _selectedBarcodes.remove(barcode);
-                              } else {
-                                _selectedBarcodes.add(barcode);
-                              }
-                            });
-                          },
-                          onToggleExpanded: (barcode) {
-                            setState(() {
-                              if (_expandedParents.contains(barcode)) {
-                                _expandedParents.remove(barcode);
-                              } else {
-                                _expandedParents.add(barcode);
-                              }
-                            });
-                          },
-                          onTogglePinned: (barcode) {
-                            setState(() {
-                              if (_pinnedBarcodes.contains(barcode)) {
-                                _pinnedBarcodes.remove(barcode);
-                              } else {
-                                _pinnedBarcodes.add(barcode);
-                              }
-                            });
-                            _persistPinnedState();
-                          },
-                          onHeaderSortRequested: (column, ascending) {
-                            setState(() {
-                              if (column == null) {
-                                _sortColumn = null;
-                                _sortAscending = true;
-                              } else {
-                                _sortColumn = column;
-                                _sortAscending = ascending;
-                              }
-                            });
-                          },
-                          onOpenDetails: (record) => _openDetails(record),
-                          onOpenGroupItems: (record) =>
-                              _openGroupItemsFromInventoryRecord(record),
-                          onOpenSetItems: _openSetItems,
-                          onReceive: (record) => _openMovementComposer(
-                            movementType: InventoryMovementType.receive,
-                            initialBarcode: record.barcode,
-                          ),
-                          onAddSubGroup: (record) => _openAddSubGroup(record),
-                          onEdit: (record) => _openEditMaterial(record),
-                          onEditSet: _openSetEditor,
-                          onDelete: (record) => _confirmDelete(record),
-                          onDeleteSet: _deleteSet,
-                          onLinkGroup: (record) => _openGroupLinker(record),
-                          onLinkItem: (record) => _openItemLinker(record),
-                          onUnlink: (record) => _unlinkInheritance(record),
-                        ),
+                        child: _viewMode == _InventoryViewMode.jobWork
+                            ? const _JobWorkStockTable()
+                            : _InventoryTable(
+                                rows: rows,
+                                viewMode: _viewMode,
+                                sortColumn: _sortColumn,
+                                sortAscending: _sortAscending,
+                                groupsProvider: groups,
+                                itemsProvider: items,
+                                selectedBarcodes: _selectedBarcodes,
+                                pinnedBarcodes: _pinnedBarcodes,
+                                expandedParents: _expandedParents,
+                                isRequestDelete: isRequestDelete,
+                                onToggleSelection: (barcode) {
+                                  setState(() {
+                                    if (_selectedBarcodes.contains(barcode)) {
+                                      _selectedBarcodes.remove(barcode);
+                                    } else {
+                                      _selectedBarcodes.add(barcode);
+                                    }
+                                  });
+                                },
+                                onToggleExpanded: (barcode) {
+                                  setState(() {
+                                    if (_expandedParents.contains(barcode)) {
+                                      _expandedParents.remove(barcode);
+                                    } else {
+                                      _expandedParents.add(barcode);
+                                    }
+                                  });
+                                },
+                                onTogglePinned: (barcode) {
+                                  setState(() {
+                                    if (_pinnedBarcodes.contains(barcode)) {
+                                      _pinnedBarcodes.remove(barcode);
+                                    } else {
+                                      _pinnedBarcodes.add(barcode);
+                                    }
+                                  });
+                                  _persistPinnedState();
+                                },
+                                onHeaderSortRequested: (column, ascending) {
+                                  setState(() {
+                                    if (column == null) {
+                                      _sortColumn = null;
+                                      _sortAscending = true;
+                                    } else {
+                                      _sortColumn = column;
+                                      _sortAscending = ascending;
+                                    }
+                                  });
+                                },
+                                onOpenDetails: (record) => _openDetails(record),
+                                onOpenGroupItems: (record) =>
+                                    _openGroupItemsFromInventoryRecord(record),
+                                onOpenSetItems: _openSetItems,
+                                onReceive: (record) => _openMovementComposer(
+                                  movementType: InventoryMovementType.receive,
+                                  initialBarcode: record.barcode,
+                                ),
+                                onAddSubGroup: (record) => _openAddSubGroup(record),
+                                onEdit: (record) => _openEditMaterial(record),
+                                onEditSet: _openSetEditor,
+                                onDelete: (record) => _confirmDelete(record),
+                                onDeleteSet: _deleteSet,
+                                onLinkGroup: (record) => _openGroupLinker(record),
+                                onLinkItem: (record) => _openItemLinker(record),
+                                onUnlink: (record) => _unlinkInheritance(record),
+                              ),
                       ),
                     ],
                   ),
@@ -723,6 +728,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
         );
       case _InventoryViewMode.sets:
         await _openSetEditor();
+      case _InventoryViewMode.jobWork:
+        ChallanScreen.openReceptionEditor(context);
     }
   }
 
@@ -2616,12 +2623,6 @@ class _InventoryMovementComposerDialogState
 }
 
 class _InventoryWorkspaceHeader extends StatelessWidget {
-  static const List<PMFigmaSegmentOption> _segments = <PMFigmaSegmentOption>[
-    PMFigmaSegmentOption(key: 'group', label: 'Groups'),
-    PMFigmaSegmentOption(key: 'item', label: 'Items'),
-    PMFigmaSegmentOption(key: 'set', label: 'Sets'),
-  ];
-
   const _InventoryWorkspaceHeader({
     required this.viewMode,
     required this.onViewModeChanged,
@@ -2644,18 +2645,29 @@ class _InventoryWorkspaceHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final preferences = context.watch<PreferencesProvider>();
+    final segments = <PMFigmaSegmentOption>[
+      const PMFigmaSegmentOption(key: 'group', label: 'Groups'),
+      const PMFigmaSegmentOption(key: 'item', label: 'Items'),
+      const PMFigmaSegmentOption(key: 'set', label: 'Sets'),
+      if (preferences.enableServiceMode)
+        const PMFigmaSegmentOption(key: 'jobWork', label: 'Job Work Stock'),
+    ];
+
     final segmented = PMFigmaSegmentedControl(
       value: switch (viewMode) {
         _InventoryViewMode.groups => 'group',
         _InventoryViewMode.items => 'item',
         _InventoryViewMode.sets => 'set',
+        _InventoryViewMode.jobWork => 'jobWork',
       },
-      segments: _segments,
-      semanticLabel: 'Inventory groups, items, and sets segmented control',
+      segments: segments,
+      semanticLabel: 'Inventory segments control',
       onChanged: (value) {
         onViewModeChanged(switch (value) {
           'group' => _InventoryViewMode.groups,
           'set' => _InventoryViewMode.sets,
+          'jobWork' => _InventoryViewMode.jobWork,
           _ => _InventoryViewMode.items,
         });
       },
@@ -11990,4 +12002,313 @@ extension _NullableStringX on String? {
 
 extension _FirstOrNullX<T> on Iterable<T> {
   T? get firstOrNull => isEmpty ? null : first;
+}
+
+class _JobWorkBalance {
+  _JobWorkBalance({
+    required this.clientId,
+    required this.clientLabel,
+    required this.itemName,
+    required this.variationPath,
+    required this.inwardQty,
+    required this.returnedQty,
+  });
+
+  final int clientId;
+  final String clientLabel;
+  final String itemName;
+  final String variationPath;
+  final double inwardQty;
+  final double returnedQty;
+
+  double get balance => inwardQty - returnedQty;
+}
+
+class _JobWorkStockTable extends StatelessWidget {
+  const _JobWorkStockTable();
+
+  @override
+  Widget build(BuildContext context) {
+    final challanProvider = context.watch<DeliveryChallanProvider>();
+    final clientsProvider = context.watch<ClientsProvider>();
+    final inventoryProvider = context.watch<InventoryProvider>();
+
+    final challans = challanProvider.challans;
+    final clients = clientsProvider.clients;
+    final searchQuery = inventoryProvider.searchQuery;
+
+    // Filter challans: must be issued, and purpose must be jobWork
+    final jobWorkChallans = challans.where((c) =>
+        c.isIssued && c.purpose == ChallanPurpose.jobWork).toList();
+
+    // Map clients by ID for quick lookup
+    final clientMap = {for (final c in clients) c.id: c};
+
+    // We want to group by (clientId, itemId, particulars, variationPathLabel)
+    final Map<String, _JobWorkBalance> balances = {};
+
+    for (final challan in jobWorkChallans) {
+      final clientId = challan.clientId ?? 0;
+      if (clientId == 0) continue;
+
+      // Resolve client label
+      final client = clientMap[clientId];
+      final clientLabel = client?.displayLabel ?? (challan.isReception ? challan.vendorName : challan.customerName);
+
+      for (final item in challan.items) {
+        final itemId = item.itemId ?? 0;
+        final particulars = item.particulars.trim();
+        final variationPath = item.variationPathLabel.trim();
+
+        // Build a unique key
+        final key = '${clientId}_${itemId}_${particulars}_$variationPath';
+
+        final qty = double.tryParse(item.quantityPcs) ?? 0.0;
+        final isReception = challan.isReception;
+
+        final inwardQty = isReception ? qty : 0.0;
+        final returnedQty = !isReception ? qty : 0.0;
+
+        if (balances.containsKey(key)) {
+          final existing = balances[key]!;
+          balances[key] = _JobWorkBalance(
+            clientId: clientId,
+            clientLabel: clientLabel,
+            itemName: particulars,
+            variationPath: variationPath,
+            inwardQty: existing.inwardQty + inwardQty,
+            returnedQty: existing.returnedQty + returnedQty,
+          );
+        } else {
+          balances[key] = _JobWorkBalance(
+            clientId: clientId,
+            clientLabel: clientLabel,
+            itemName: particulars,
+            variationPath: variationPath,
+            inwardQty: inwardQty,
+            returnedQty: returnedQty,
+          );
+        }
+      }
+    }
+
+    // Convert to list and filter by search query
+    var list = balances.values.toList();
+
+    if (searchQuery.trim().isNotEmpty) {
+      final query = searchQuery.trim().toLowerCase();
+      list = list.where((b) {
+        return b.clientLabel.toLowerCase().contains(query) ||
+            b.itemName.toLowerCase().contains(query) ||
+            b.variationPath.toLowerCase().contains(query);
+      }).toList();
+    }
+
+    // Sort: group by Client Name, then Item Name
+    list.sort((a, b) {
+      final clientCompare = a.clientLabel.compareTo(b.clientLabel);
+      if (clientCompare != 0) return clientCompare;
+      return a.itemName.compareTo(b.itemName);
+    });
+
+    if (list.isEmpty) {
+      return const AppEmptyState(
+        title: 'No Job Work Stock found',
+        message: 'Try a different search query or record a new Job Work Reception Challan.',
+        icon: Icons.assignment_turned_in_outlined,
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Table Header
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+              decoration: const BoxDecoration(
+                color: SoftErpTheme.cardSurfaceAlt,
+                border: Border(
+                  bottom: BorderSide(color: SoftErpTheme.border, width: 1),
+                ),
+              ),
+              child: Row(
+                children: const [
+                  Expanded(
+                    flex: 3,
+                    child: Text(
+                      'Customer / Owner',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        color: SoftErpTheme.textSecondary,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 3,
+                    child: Text(
+                      'Item / Particulars',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        color: SoftErpTheme.textSecondary,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      'Variation',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        color: SoftErpTheme.textSecondary,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      'Inward Qty (Pcs)',
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        color: SoftErpTheme.textSecondary,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      'Returned Qty (Pcs)',
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        color: SoftErpTheme.textSecondary,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      'Balance on Hand',
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        color: SoftErpTheme.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Table Body
+            Expanded(
+              child: ListView.separated(
+                itemCount: list.length,
+                separatorBuilder: (context, index) => const Divider(height: 1, color: SoftErpTheme.border),
+                itemBuilder: (context, index) {
+                  final item = list[index];
+                  final isEven = index % 2 == 0;
+                  final balanceStyle = item.balance <= 0
+                      ? const TextStyle(
+                          color: SoftErpTheme.textPrimary,
+                          fontWeight: FontWeight.w500,
+                        )
+                      : const TextStyle(
+                          color: Color(0xFF2E7D32), // Green
+                          fontWeight: FontWeight.w600,
+                        );
+
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    color: isEven ? SoftErpTheme.cardSurface : const Color(0xFFFBFBFE),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: Text(
+                            item.clientLabel,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: SoftErpTheme.textPrimary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          flex: 3,
+                          child: Text(
+                            item.itemName,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: SoftErpTheme.textPrimary,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          flex: 2,
+                          child: Text(
+                            item.variationPath.isNotEmpty ? item.variationPath : '—',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: item.variationPath.isNotEmpty
+                                  ? SoftErpTheme.textSecondary
+                                  : SoftErpTheme.textSecondary.withValues(alpha: 0.5),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          flex: 2,
+                          child: Text(
+                            _formatQty(item.inwardQty),
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: SoftErpTheme.textPrimary,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          flex: 2,
+                          child: Text(
+                            _formatQty(item.returnedQty),
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: SoftErpTheme.textPrimary,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          flex: 2,
+                          child: Text(
+                            _formatQty(item.balance),
+                            textAlign: TextAlign.right,
+                            style: balanceStyle,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  String _formatQty(double qty) {
+    if (qty == qty.toInt()) {
+      return qty.toInt().toString();
+    }
+    return qty.toStringAsFixed(2);
+  }
 }

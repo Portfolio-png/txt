@@ -1,3 +1,5 @@
+import 'package:paper/features/machines/domain/machine.dart';
+
 enum DieStatus { ready, inProduction, needsRepair, obsolete }
 enum DieOwnership { inHouse, customerOwned }
 
@@ -6,8 +8,8 @@ const Object _dieAbsent = Object();
 class Die {
   const Die({
     required this.id,
+    required this.name,
     required this.toolCode,
-    required this.producedPartNumbers,
     required this.photoUrls,
     required this.operationalNotes,
     required this.compatibleMachineGroupIds,
@@ -15,7 +17,7 @@ class Die {
     this.numberOfCavities,
     this.strokeCount,
     this.maxStrokes,
-    this.physicalSpecs = const {},
+    this.physicalSpecs = const [],
     required this.status,
     required this.ownership,
     required this.createdAt,
@@ -23,8 +25,8 @@ class Die {
   });
 
   final String id;
+  final String name;
   final String toolCode;
-  final List<String> producedPartNumbers;
   final List<String> photoUrls;
   final String operationalNotes;
   final List<int> compatibleMachineGroupIds;
@@ -32,7 +34,7 @@ class Die {
   final int? numberOfCavities;
   final int? strokeCount;
   final int? maxStrokes;
-  final Map<String, String> physicalSpecs;
+  final List<CustomProperty> physicalSpecs;
   final DieStatus status;
   final DieOwnership ownership;
   final DateTime createdAt;
@@ -40,8 +42,8 @@ class Die {
 
   Die copyWith({
     String? id,
+    String? name,
     String? toolCode,
-    List<String>? producedPartNumbers,
     List<String>? photoUrls,
     String? operationalNotes,
     List<int>? compatibleMachineGroupIds,
@@ -49,7 +51,7 @@ class Die {
     int? numberOfCavities,
     int? strokeCount,
     int? maxStrokes,
-    Map<String, String>? physicalSpecs,
+    List<CustomProperty>? physicalSpecs,
     DieStatus? status,
     DieOwnership? ownership,
     DateTime? createdAt,
@@ -57,8 +59,8 @@ class Die {
   }) {
     return Die(
       id: id ?? this.id,
+      name: name ?? this.name,
       toolCode: toolCode ?? this.toolCode,
-      producedPartNumbers: producedPartNumbers ?? this.producedPartNumbers,
       photoUrls: photoUrls ?? this.photoUrls,
       operationalNotes: operationalNotes ?? this.operationalNotes,
       compatibleMachineGroupIds: compatibleMachineGroupIds ?? this.compatibleMachineGroupIds,

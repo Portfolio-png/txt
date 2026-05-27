@@ -10,7 +10,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_info_panel.dart';
 import '../../../../core/widgets/app_section_title.dart';
-import '../../../pm/presentation/barcode/material_barcode_toolkit.dart';
+import 'package:core_erp/core/widgets/material_barcode_toolkit.dart';
 import '../../domain/material_record.dart';
 import '../providers/inventory_provider.dart';
 

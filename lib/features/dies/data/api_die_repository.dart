@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:paper/features/machines/domain/machine.dart';
 import '../domain/die.dart';
 import 'die_repository.dart';
 
@@ -17,8 +18,8 @@ class ApiDieRepository implements DieRepository {
   static final List<Die> _mockDies = [
     Die(
       id: 'd1',
+      name: 'Amada Press Die Set A',
       toolCode: 'TL-890-A',
-      producedPartNumbers: const ['PART-4432', 'PART-4433'],
       photoUrls: const [
         'https://images.unsplash.com/photo-1590494165264-1ebe3602eb80?auto=format&fit=crop&q=80',
         'https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&q=80'
@@ -29,11 +30,11 @@ class ApiDieRepository implements DieRepository {
       numberOfCavities: 2,
       strokeCount: 45000,
       maxStrokes: 100000,
-      physicalSpecs: const {
-        'Weight': '1250 kg',
-        'Shut Height': '350 mm',
-        'Dimensions': '800 x 600 x 400 mm'
-      },
+      physicalSpecs: const [
+        CustomProperty(key: 'Weight', value: '1250 kg'),
+        CustomProperty(key: 'Shut Height', value: '350 mm'),
+        CustomProperty(key: 'Dimensions', value: '800 x 600 x 400 mm'),
+      ],
       status: DieStatus.ready,
       ownership: DieOwnership.inHouse,
       createdAt: DateTime.now().subtract(const Duration(days: 400)),
@@ -41,8 +42,8 @@ class ApiDieRepository implements DieRepository {
     ),
     Die(
       id: 'd2',
+      name: 'Haas CNC Cutter Head',
       toolCode: 'TL-102-B',
-      producedPartNumbers: const ['PART-9901'],
       photoUrls: const [
         'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=80'
       ],
@@ -52,9 +53,9 @@ class ApiDieRepository implements DieRepository {
       numberOfCavities: 1,
       strokeCount: 98000,
       maxStrokes: 100000,
-      physicalSpecs: const {
-        'Weight': '2100 kg',
-      },
+      physicalSpecs: const [
+        CustomProperty(key: 'Weight', value: '2100 kg'),
+      ],
       status: DieStatus.needsRepair,
       ownership: DieOwnership.customerOwned,
       createdAt: DateTime.now().subtract(const Duration(days: 800)),
@@ -195,13 +196,51 @@ class ApiDieRepository implements DieRepository {
     return 'inHouse';
   }
 
+  CustomPropertyType _parsePropertyType(String typeStr) {
+    if (typeStr == 'numeric') {
+      return CustomPropertyType.numeric;
+    }
+    if (typeStr == 'dropdown') {
+      return CustomPropertyType.dropdown;
+    }
+    return CustomPropertyType.text;
+  }
+
+  String _propertyTypeToString(CustomPropertyType type) {
+    if (type == CustomPropertyType.numeric) {
+      return 'numeric';
+    }
+    if (type == CustomPropertyType.dropdown) {
+      return 'dropdown';
+    }
+    return 'text';
+  }
+
+  CustomProperty _propertyFromJson(Map<String, dynamic> json) {
+    return CustomProperty(
+      key: json['key'] as String? ?? '',
+      value: json['value'] as String? ?? '',
+      type: _parsePropertyType(json['type'] as String? ?? 'text'),
+      unitId: json['unitId'] as int?,
+      options: (json['options'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
+    );
+  }
+
+  Map<String, dynamic> _propertyToJson(CustomProperty prop) {
+    return {
+      'key': prop.key,
+      'value': prop.value,
+      'type': _propertyTypeToString(prop.type),
+      'unitId': prop.unitId,
+      'options': prop.options,
+    };
+  }
+
   Die _dieFromJson(Map<String, dynamic> json) {
     return Die(
       id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? (json['producedPartNumbers'] as List<dynamic>?)?.join(', ') ?? '',
       toolCode: json['toolCode'] as String? ?? '',
-      producedPartNumbers: (json['producedPartNumbers'] as List<dynamic>? ?? [])
-          .map((e) => e as String)
-          .toList(),
       photoUrls: (json['photoUrls'] as List<dynamic>? ?? [])
           .map((e) => e as String)
           .toList(),
@@ -213,7 +252,18 @@ class ApiDieRepository implements DieRepository {
       numberOfCavities: json['numberOfCavities'] as int?,
       strokeCount: json['strokeCount'] as int?,
       maxStrokes: json['maxStrokes'] as int?,
-      physicalSpecs: Map<String, String>.from(json['physicalSpecs'] as Map? ?? {}),
+      physicalSpecs: () {
+        final raw = json['physicalSpecs'];
+        if (raw is List) {
+          return raw.map((p) => _propertyFromJson(p as Map<String, dynamic>)).toList();
+        } else if (raw is Map) {
+          return raw.entries.map((e) => CustomProperty(
+            key: e.key.toString(),
+            value: e.value.toString(),
+          )).toList();
+        }
+        return const <CustomProperty>[];
+      }(),
       status: _parseStatus(json['status'] as String? ?? ''),
       ownership: _parseOwnership(json['ownership'] as String? ?? ''),
       createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt'] as String) ?? DateTime.now() : DateTime.now(),
@@ -224,8 +274,8 @@ class ApiDieRepository implements DieRepository {
   Map<String, dynamic> _dieToJson(Die d) {
     return {
       'id': d.id,
+      'name': d.name,
       'toolCode': d.toolCode,
-      'producedPartNumbers': d.producedPartNumbers,
       'photoUrls': d.photoUrls,
       'operationalNotes': d.operationalNotes,
       'compatibleMachineGroupIds': d.compatibleMachineGroupIds,
@@ -233,7 +283,7 @@ class ApiDieRepository implements DieRepository {
       'numberOfCavities': d.numberOfCavities,
       'strokeCount': d.strokeCount,
       'maxStrokes': d.maxStrokes,
-      'physicalSpecs': d.physicalSpecs,
+      'physicalSpecs': d.physicalSpecs.map(_propertyToJson).toList(),
       'status': _statusToString(d.status),
       'ownership': _ownershipToString(d.ownership),
       'createdAt': d.createdAt.toIso8601String(),

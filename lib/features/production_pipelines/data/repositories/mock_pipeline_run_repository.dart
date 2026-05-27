@@ -1,5 +1,5 @@
-import '../../../inventory/data/repositories/inventory_repository.dart';
-import '../../../inventory/domain/material_record.dart';
+import 'package:core_erp/features/inventory/data/repositories/inventory_repository.dart';
+import 'package:core_erp/features/inventory/domain/material_record.dart';
 import '../../domain/barcode_input.dart';
 import '../../domain/node_run_status.dart';
 import '../../domain/pipeline_run.dart';

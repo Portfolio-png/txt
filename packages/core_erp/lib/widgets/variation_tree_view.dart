@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:paper/features/items/domain/item_definition.dart';
+import 'package:core_erp/features/items/domain/item_definition.dart';
 
 typedef VariationNode = ItemVariationNodeDefinition;
 

@@ -215,10 +215,11 @@ class ApiChallanRepository implements ChallanRepository {
       final created = DeliveryChallan(
         id: _mockNextId++,
         type: input.type,
+        purpose: input.purpose,
         orderId: input.orderId,
         orderIds: input.orderIds,
         reportGroupCodes: _reportGroupCodesForInput(input),
-        clientId: null,
+        clientId: input.materialOwnerClientId,
         orderNo: input.orderIds.isEmpty
             ? 'Order ${input.orderId}'
             : 'Order ${input.orderIds.first}',
@@ -269,12 +270,13 @@ class ApiChallanRepository implements ChallanRepository {
       final updated = DeliveryChallan(
         id: current.id,
         type: input.type,
+        purpose: input.purpose,
         orderId: input.orderId,
         orderIds: input.orderIds,
         reportGroupCodes: _reportGroupCodesForInput(input).isEmpty
             ? current.reportGroupCodes
             : _reportGroupCodesForInput(input),
-        clientId: current.clientId,
+        clientId: input.materialOwnerClientId ?? current.clientId,
         orderNo: current.orderNo,
         orderNos: current.orderNos,
         challanNo: current.challanNo,
@@ -1278,6 +1280,7 @@ class ApiChallanRepository implements ChallanRepository {
       final updated = DeliveryChallan(
         id: current.id,
         type: current.type,
+        purpose: current.purpose,
         orderId: current.orderId,
         orderIds: current.orderIds,
         reportGroupCodes: current.reportGroupCodes,

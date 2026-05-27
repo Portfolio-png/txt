@@ -141,11 +141,13 @@ typedef DeliveryChallanRepository = ChallanRepository;
 class ChallanDraftInput {
   const ChallanDraftInput({
     required this.type,
+    this.purpose = ChallanPurpose.trading,
     required this.challanNo,
     required this.orderId,
     required this.orderIds,
     this.reportGroupCodes = const <String>[],
     required this.vendorId,
+    this.materialOwnerClientId,
     required this.date,
     required this.location,
     required this.sourceReference,
@@ -159,11 +161,13 @@ class ChallanDraftInput {
   });
 
   final ChallanType type;
+  final ChallanPurpose purpose;
   final String challanNo;
   final int orderId;
   final List<int> orderIds;
   final List<String> reportGroupCodes;
   final int vendorId;
+  final int? materialOwnerClientId;
   final DateTime date;
   final String location;
   final String sourceReference;
@@ -178,6 +182,7 @@ class ChallanDraftInput {
   Map<String, dynamic> toJson() {
     return {
       'type': type.name,
+      'purpose': purpose.name,
       'challan_no': challanNo.trim(),
       if (orderId > 0) 'order_id': orderId,
       if (orderIds.isNotEmpty) 'order_ids': orderIds,
@@ -187,6 +192,8 @@ class ChallanDraftInput {
             .where((code) => code.isNotEmpty)
             .toList(growable: false),
       if (vendorId > 0) 'vendor_id': vendorId,
+      if (materialOwnerClientId != null && materialOwnerClientId! > 0)
+        'material_owner_client_id': materialOwnerClientId,
       'date': date.toIso8601String().substring(0, 10),
       'location': location.trim(),
       'source_reference': sourceReference.trim(),

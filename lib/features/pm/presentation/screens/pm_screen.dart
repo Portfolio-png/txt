@@ -2,10 +2,10 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../../../../core/widgets/app_button.dart';
-import '../../../../core/widgets/app_card.dart';
-import '../../../../core/widgets/app_info_panel.dart';
-import '../../../../core/widgets/app_section_title.dart';
+import 'package:core_erp/core/widgets/app_button.dart';
+import 'package:core_erp/core/widgets/app_card.dart';
+import 'package:core_erp/core/widgets/app_info_panel.dart';
+import 'package:core_erp/core/widgets/app_section_title.dart';
 import '../barcode/material_barcode_toolkit.dart';
 
 class PMScreen extends StatefulWidget {

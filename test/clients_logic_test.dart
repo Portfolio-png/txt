@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:paper/features/clients/data/repositories/api_client_repository.dart';
-import 'package:paper/features/clients/domain/client_inputs.dart';
-import 'package:paper/features/clients/presentation/providers/clients_provider.dart';
+import 'package:core_erp/features/clients/data/repositories/api_client_repository.dart';
+import 'package:core_erp/features/clients/domain/client_inputs.dart';
+import 'package:core_erp/features/clients/presentation/providers/clients_provider.dart';
 
 void main() {
   setUp(() {

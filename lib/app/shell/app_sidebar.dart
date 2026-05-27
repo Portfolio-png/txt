@@ -2,17 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../preferences/preferences_provider.dart';
-import '../../core/theme/soft_erp_theme.dart';
-import '../../features/auth/presentation/providers/auth_provider.dart';
-import '../../features/clients/presentation/providers/clients_provider.dart';
-import '../../features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
-import '../../features/groups/presentation/providers/groups_provider.dart';
-import '../../features/inventory/presentation/providers/inventory_provider.dart';
-import '../../features/items/presentation/providers/items_provider.dart';
-import '../../features/orders/presentation/providers/orders_provider.dart';
-import '../../features/units/presentation/providers/units_provider.dart';
-import '../../features/vendors/presentation/providers/vendors_provider.dart';
+import 'package:core_erp/app/preferences/preferences_provider.dart';
+import 'package:core_erp/core/theme/soft_erp_theme.dart';
+import 'package:core_erp/features/auth/presentation/providers/auth_provider.dart';
+import 'package:core_erp/features/clients/presentation/providers/clients_provider.dart';
+import 'package:core_erp/features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
+import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
+import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
+import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
+import 'package:core_erp/features/orders/presentation/providers/orders_provider.dart';
+import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
+import 'package:core_erp/features/vendors/presentation/providers/vendors_provider.dart';
 import 'navigation_provider.dart';
 
 class AppSidebar extends StatefulWidget {
@@ -64,7 +64,6 @@ class _AppSidebarState extends State<AppSidebar> {
       Icons.storefront_outlined,
     ),
     _SidebarItemData('configurator_items', 'Items', Icons.inventory_outlined),
-    _SidebarItemData('configurator_groups', 'Groups', Icons.grid_view_outlined),
     _SidebarItemData('configurator_units', 'Units', Icons.straighten_outlined),
     _SidebarItemData('configurator_machines', 'Machines', Icons.precision_manufacturing_outlined),
     _SidebarItemData('configurator_dies', 'Dies', Icons.build_circle_outlined),
@@ -710,9 +709,10 @@ class _SettingsPreferencesDialogState
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 460),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 22, 24, 20),
-          child: Column(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 22, 24, 20),
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -742,21 +742,77 @@ class _SettingsPreferencesDialogState
                       borderRadius: BorderRadius.circular(18),
                       border: Border.all(color: SoftErpTheme.border),
                     ),
-                    child: SwitchListTile.adaptive(
-                      contentPadding: EdgeInsets.zero,
-                      value: preferences.maintainStocks,
-                      onChanged: preferences.toggleMaintainStocks,
-                      title: const Text(
-                        'Maintain Stocks',
-                        style: TextStyle(
-                          color: SoftErpTheme.textPrimary,
-                          fontWeight: FontWeight.w800,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          value: preferences.maintainStocks,
+                          onChanged: preferences.toggleMaintainStocks,
+                          title: const Text(
+                            'Maintain Stocks',
+                            style: TextStyle(
+                              color: SoftErpTheme.textPrimary,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          subtitle: const Text(
+                            'Turn off for typewriter challans that print documents without touching inventory.',
+                            style: TextStyle(color: SoftErpTheme.textSecondary),
+                          ),
                         ),
-                      ),
-                      subtitle: const Text(
-                        'Turn off for typewriter challans that print documents without touching inventory.',
-                        style: TextStyle(color: SoftErpTheme.textSecondary),
-                      ),
+                        const Divider(height: 24),
+                        SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          value: preferences.enableTrading,
+                          onChanged: preferences.toggleTrading,
+                          title: const Text(
+                            'Trading Mode',
+                            style: TextStyle(
+                              color: SoftErpTheme.textPrimary,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          subtitle: const Text(
+                            'Enable direct buy/sell flow and standard retail/wholesale inventory stock.',
+                            style: TextStyle(color: SoftErpTheme.textSecondary),
+                          ),
+                        ),
+                        const Divider(height: 24),
+                        SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          value: preferences.enableManufacturing,
+                          onChanged: preferences.toggleManufacturing,
+                          title: const Text(
+                            'Manufacturing Mode',
+                            style: TextStyle(
+                              color: SoftErpTheme.textPrimary,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          subtitle: const Text(
+                            'Enable linkage to production runs, tracking raw material vs. finished goods.',
+                            style: TextStyle(color: SoftErpTheme.textSecondary),
+                          ),
+                        ),
+                        const Divider(height: 24),
+                        SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          value: preferences.enableServiceMode,
+                          onChanged: preferences.toggleServiceMode,
+                          title: const Text(
+                            'Service (Job Work) Mode',
+                            style: TextStyle(
+                              color: SoftErpTheme.textPrimary,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          subtitle: const Text(
+                            'Enable customer-owned stock receipt (Inward), printing/processing, and return.',
+                            style: TextStyle(color: SoftErpTheme.textSecondary),
+                          ),
+                        ),
+                      ],
                     ),
                   );
                 },
@@ -843,8 +899,9 @@ class _SettingsPreferencesDialogState
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 class _SidebarTile extends StatelessWidget {

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/widgets/searchable_select.dart';
+import 'package:core_erp/core/widgets/searchable_select.dart';
 
 class PPFilterToolbar extends StatelessWidget {
   const PPFilterToolbar({

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:core_erp/core/navigation/app_navigation.dart';
 
 const List<String> kSidebarNavigationOrder = <String>[
   'dashboard',
@@ -15,6 +16,7 @@ const List<String> kSidebarNavigationOrder = <String>[
   'configurator_groups',
   'configurator_units',
   'configurator_machines',
+  'configurator_machine_groups',
   'configurator_dies',
   'user_management',
 ];
@@ -27,6 +29,7 @@ const Set<String> kConfiguratorNavigationKeys = <String>{
   'configurator_groups',
   'configurator_units',
   'configurator_machines',
+  'configurator_machine_groups',
   'configurator_dies',
 };
 
@@ -66,7 +69,7 @@ String? primaryTabKeyForIndex(int index) {
   };
 }
 
-class NavigationProvider extends ChangeNotifier {
+class NavigationProvider extends ChangeNotifier implements AppNavigation {
   NavigationProvider({String initialKey = 'inventory'})
     : _selectedKey = initialKey;
 
@@ -82,6 +85,7 @@ class NavigationProvider extends ChangeNotifier {
   int get topStripSearchTextRevision => _topStripSearchTextRevision;
   bool _skipNextContentTransition = false;
 
+  @override
   void select(String key, {bool skipTransition = false}) {
     if (_selectedKey == key) {
       return;

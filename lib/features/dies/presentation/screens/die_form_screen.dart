@@ -1,12 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../../../core/widgets/app_button.dart';
-import '../../../../core/widgets/erp_form_dialog.dart';
-import '../../../../core/widgets/searchable_select.dart';
+import 'package:core_erp/core/widgets/app_button.dart';
+import 'package:core_erp/core/widgets/erp_form_dialog.dart';
+import 'package:core_erp/core/widgets/searchable_select.dart';
 import '../../domain/die.dart';
 import '../providers/die_provider.dart';
-import '../../../../features/groups/presentation/providers/groups_provider.dart';
+import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
+import 'package:paper/features/machines/domain/machine.dart';
+import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
+import 'package:core_erp/core/navigation/app_navigation.dart';
+
+class _MutableProperty {
+  _MutableProperty({
+    this.key = '',
+    this.value = '',
+    this.type = CustomPropertyType.text,
+    this.unitId,
+    List<String>? options,
+  }) : options = options ?? [];
+  String key;
+  String value;
+  CustomPropertyType type;
+  int? unitId;
+  List<String> options;
+}
 
 Future<Die?> showDieFormDialog(BuildContext context, {Die? die}) {
   return showErpFormDialog<Die?>(
@@ -30,19 +48,15 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
   final _formKey = GlobalKey<FormState>();
   
   late final TextEditingController _toolCodeController;
-  late final TextEditingController _partsController;
+  late final TextEditingController _nameController;
   late final TextEditingController _operationalNotesController;
-  late final TextEditingController _strokeCountController;
   late final TextEditingController _storageLocationController;
-  late final TextEditingController _numberOfCavitiesController;
   
   DieStatus _status = DieStatus.ready;
   DieOwnership _ownership = DieOwnership.inHouse;
   
-  // Physical specs
-  late final TextEditingController _bedSizeController;
-  late final TextEditingController _tonnageController;
-  late final TextEditingController _shutHeightController;
+  // Custom properties as a list of mutable objects for editing
+  final List<_MutableProperty> _customProperties = [];
 
   // Compatible groups
   final List<int> _compatibleMachineGroupIds = [];
@@ -54,36 +68,94 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
   void initState() {
     super.initState();
     _toolCodeController = TextEditingController(text: widget.die?.toolCode ?? '');
-    _partsController = TextEditingController(text: widget.die?.producedPartNumbers.join(', ') ?? '');
+    _nameController = TextEditingController(text: widget.die?.name ?? '');
     _operationalNotesController = TextEditingController(text: widget.die?.operationalNotes ?? '');
-    _strokeCountController = TextEditingController(text: widget.die?.strokeCount?.toString() ?? '');
     _storageLocationController = TextEditingController(text: widget.die?.storageLocation ?? '');
-    _numberOfCavitiesController = TextEditingController(text: widget.die?.numberOfCavities?.toString() ?? '');
-    
-    _bedSizeController = TextEditingController(text: widget.die?.physicalSpecs['bedSize']?.toString() ?? '');
-    _tonnageController = TextEditingController(text: widget.die?.physicalSpecs['tonnage']?.toString() ?? '');
-    _shutHeightController = TextEditingController(text: widget.die?.physicalSpecs['shutHeight']?.toString() ?? '');
     
     if (widget.die != null) {
       _status = widget.die!.status;
       _ownership = widget.die!.ownership;
       _photoUrls.addAll(widget.die!.photoUrls);
       _compatibleMachineGroupIds.addAll(widget.die!.compatibleMachineGroupIds);
+      
+      for (var prop in widget.die!.physicalSpecs) {
+        String key = prop.key;
+        if (key == 'bedSize') key = 'Bed Size';
+        if (key == 'tonnage') key = 'Tonnage Req.';
+        if (key == 'shutHeight') key = 'Shut Height';
+
+        _customProperties.add(_MutableProperty(
+          key: key,
+          value: prop.value,
+          type: prop.type,
+          unitId: prop.unitId,
+          options: List.from(prop.options),
+        ));
+      }
     }
   }
 
   @override
   void dispose() {
     _toolCodeController.dispose();
-    _partsController.dispose();
+    _nameController.dispose();
     _operationalNotesController.dispose();
-    _strokeCountController.dispose();
     _storageLocationController.dispose();
-    _numberOfCavitiesController.dispose();
-    _bedSizeController.dispose();
-    _tonnageController.dispose();
-    _shutHeightController.dispose();
     super.dispose();
+  }
+
+  void _addCustomProperty() {
+    setState(() {
+      _customProperties.add(_MutableProperty());
+    });
+  }
+
+  void _removeCustomProperty(int index) {
+    setState(() {
+      _customProperties.removeAt(index);
+    });
+  }
+
+  void _updateCustomPropertyKey(int index, String key) {
+    _customProperties[index].key = key;
+  }
+
+  void _updateCustomPropertyValue(int index, String value) {
+    setState(() {
+      _customProperties[index].value = value;
+    });
+  }
+
+  void _updateCustomPropertyType(int index, CustomPropertyType type) {
+    setState(() {
+      _customProperties[index].type = type;
+      if (type != CustomPropertyType.numeric) {
+        _customProperties[index].unitId = null;
+      }
+      if (type != CustomPropertyType.dropdown) {
+        _customProperties[index].options = [];
+      }
+    });
+  }
+
+  void _updateCustomPropertyUnit(int index, int? unitId) {
+    setState(() {
+      _customProperties[index].unitId = unitId;
+    });
+  }
+
+  void _updateCustomPropertyOptions(int index, String optionsStr) {
+    setState(() {
+      _customProperties[index].options = optionsStr
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      if (_customProperties[index].value.isNotEmpty &&
+          !_customProperties[index].options.contains(_customProperties[index].value)) {
+        _customProperties[index].value = '';
+      }
+    });
   }
 
   void _addPhotoPlaceholder() {
@@ -97,16 +169,7 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
       _photoUrls.removeAt(index);
     });
   }
-  
-  void _toggleGroup(int groupId) {
-    setState(() {
-      if (_compatibleMachineGroupIds.contains(groupId)) {
-        _compatibleMachineGroupIds.remove(groupId);
-      } else {
-        _compatibleMachineGroupIds.add(groupId);
-      }
-    });
-  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -144,141 +207,308 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                             const SizedBox(width: 12),
                             Expanded(
                               child: _DieTextField(
-                                controller: _partsController,
-                                label: 'Produced Part Numbers',
-                                helper: 'Comma-separated list',
+                                controller: _nameController,
+                                label: 'Die Name',
+                                helper: 'Name of the tool/die',
                               ),
                             ),
                           ],
                         ),
                         const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _DieTextField(
-                                controller: _numberOfCavitiesController,
-                                label: 'Number of Cavities',
-                                helper: 'E.g. 1, 2, 4',
-                                required: false,
-                                isNumber: true,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _DieTextField(
-                                controller: _storageLocationController,
-                                label: 'Storage Rack / Location',
-                                helper: 'E.g. Rack A, Shelf 1',
-                                required: false,
-                              ),
-                            ),
-                          ],
+                        _DieTextField(
+                          controller: _storageLocationController,
+                          label: 'Storage Rack / Location',
+                          helper: 'E.g. Rack A, Shelf 1',
+                          required: false,
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 16),
                   ErpDialogSectionCard(
-                    title: 'Compatibility & Lifecycle',
-                    subtitle: 'Determine where the die can run and its current wear.',
+                    title: 'Machine Compatibility',
+                    subtitle: 'Determine where the die can run.',
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Compatible Machine Groups', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF64748B))),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: groups.map((g) {
-                            final isSelected = _compatibleMachineGroupIds.contains(g.id);
-                            return FilterChip(
-                              label: Text(g.name),
-                              selected: isSelected,
-                              onSelected: (_) => _toggleGroup(g.id),
-                              selectedColor: const Color(0xFFEFF6FF),
-                              checkmarkColor: const Color(0xFF2563EB),
-                              labelStyle: TextStyle(
-                                color: isSelected ? const Color(0xFF1E3A8A) : const Color(0xFF475569),
-                                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                side: BorderSide(
-                                  color: isSelected ? const Color(0xFFBFDBFE) : const Color(0xFFE2E8F0),
-                                ),
-                              ),
-                              backgroundColor: const Color(0xFFF8FAFC),
-                            );
-                          }).toList(),
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _DieTextField(
-                                controller: _strokeCountController,
-                                label: 'Stroke Count',
-                                helper: 'Current number of strokes',
-                                required: false,
-                                isNumber: true,
-                              ),
+                        SearchableSelectField<int>(
+                          tapTargetKey: const ValueKey<String>('die-add-machine-group-field'),
+                          decoration: InputDecoration(
+                            labelText: 'Add Compatible Machine Group',
+                            helperText: 'Select group to add compatible machine groups',
+                            suffixIcon: TextButton(
+                              onPressed: () {
+                                Navigator.of(context).pop();
+                                try {
+                                  context.read<AppNavigation>().select('configurator_machine_groups');
+                                } catch (_) {}
+                              },
+                              child: const Text('Manage'),
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: SearchableSelectField<DieOwnership>(
-                                tapTargetKey: const ValueKey<String>('die-ownership-field'),
-                                value: _ownership,
-                                decoration: const InputDecoration(
-                                  labelText: 'Ownership',
-                                ),
-                                dialogTitle: 'Ownership',
-                                options: DieOwnership.values.map((o) {
-                                  return SearchableSelectOption(
-                                    value: o,
-                                    label: o == DieOwnership.inHouse ? 'In-House' : 'Customer Owned',
-                                  );
-                                }).toList(),
-                                onChanged: (val) {
-                                  if (val != null) setState(() => _ownership = val);
+                          ),
+                          dialogTitle: 'Select Machine Group',
+                          options: groups
+                              .where((g) => !_compatibleMachineGroupIds.contains(g.id))
+                              .map((g) => SearchableSelectOption<int>(
+                                    value: g.id,
+                                    label: g.name,
+                                  ))
+                              .toList(),
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() {
+                                _compatibleMachineGroupIds.add(val);
+                              });
+                            }
+                          },
+                        ),
+                        if (_compatibleMachineGroupIds.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: _compatibleMachineGroupIds.map((id) {
+                              String getGroupName(int id) {
+                                for (final g in groups) {
+                                  if (g.id == id) return g.name;
+                                }
+                                return 'Group $id';
+                              }
+                              return InputChip(
+                                label: Text(getGroupName(id)),
+                                onDeleted: () {
+                                  setState(() {
+                                    _compatibleMachineGroupIds.remove(id);
+                                  });
                                 },
-                              ),
-                            ),
-                          ],
-                        ),
+                                deleteIconColor: Colors.redAccent,
+                                backgroundColor: const Color(0xFFEFF6FF),
+                                labelStyle: const TextStyle(
+                                  color: Color(0xFF1E3A8A),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ],
                       ],
                     ),
                   ),
                   const SizedBox(height: 16),
                   ErpDialogSectionCard(
-                    title: 'Physical Specs',
-                    subtitle: 'Dimensions and limits for matching with machines.',
-                    child: Row(
+                    title: 'Properties',
+                    subtitle: 'Define custom properties and their values.',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: _DieTextField(
-                            controller: _bedSizeController,
-                            label: 'Bed Size',
-                            helper: 'E.g. 1000x800mm',
-                            required: false,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _DieTextField(
-                            controller: _tonnageController,
-                            label: 'Tonnage Req.',
-                            helper: 'E.g. 100T',
-                            required: false,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _DieTextField(
-                            controller: _shutHeightController,
-                            label: 'Shut Height',
-                            helper: 'E.g. 350mm',
-                            required: false,
-                          ),
+                        if (_customProperties.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                            child: Text(
+                              'No custom fields added yet.',
+                              style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                            ),
+                          )
+                        else
+                          ..._customProperties.asMap().entries.map((entry) {
+                            final index = entry.key;
+                            final prop = entry.value;
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 12.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        flex: 4,
+                                        child: TextFormField(
+                                          initialValue: prop.key,
+                                          decoration: InputDecoration(
+                                            labelText: 'Field Name',
+                                            hintText: 'e.g. Tonnage, Location, etc.',
+                                            filled: true,
+                                            fillColor: const Color(0xFFF9FAFB),
+                                            border: OutlineInputBorder(
+                                              borderRadius: BorderRadius.circular(8),
+                                              borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                            ),
+                                            enabledBorder: OutlineInputBorder(
+                                              borderRadius: BorderRadius.circular(8),
+                                              borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                            ),
+                                          ),
+                                          onChanged: (val) => _updateCustomPropertyKey(index, val),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        flex: 3,
+                                        child: SearchableSelectField<CustomPropertyType>(
+                                          tapTargetKey: ValueKey<String>('die-custom-property-type-$index'),
+                                          value: prop.type,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Field Type',
+                                            filled: true,
+                                            fillColor: Color(0xFFF9FAFB),
+                                          ),
+                                          dialogTitle: 'Field Type',
+                                          options: const [
+                                            SearchableSelectOption(value: CustomPropertyType.text, label: 'Text'),
+                                            SearchableSelectOption(value: CustomPropertyType.numeric, label: 'Numeric'),
+                                            SearchableSelectOption(value: CustomPropertyType.dropdown, label: 'Dropdown'),
+                                          ],
+                                          onChanged: (val) {
+                                            if (val != null) _updateCustomPropertyType(index, val);
+                                          },
+                                        ),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                                        onPressed: () => _removeCustomProperty(index),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  if (prop.type == CustomPropertyType.text)
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: TextFormField(
+                                            initialValue: prop.value,
+                                            decoration: InputDecoration(
+                                              labelText: 'Value',
+                                              hintText: 'Enter text value...',
+                                              filled: true,
+                                              fillColor: const Color(0xFFF9FAFB),
+                                              border: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(8),
+                                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                              ),
+                                              enabledBorder: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(8),
+                                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                              ),
+                                            ),
+                                            onChanged: (val) => _updateCustomPropertyValue(index, val),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 48),
+                                      ],
+                                    )
+                                  else if (prop.type == CustomPropertyType.numeric)
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          flex: 2,
+                                          child: SearchableSelectField<int?>(
+                                            tapTargetKey: ValueKey<String>('die-custom-property-unit-$index'),
+                                            value: prop.unitId,
+                                            decoration: const InputDecoration(
+                                              labelText: 'Unit (Optional)',
+                                              filled: true,
+                                              fillColor: Color(0xFFF9FAFB),
+                                            ),
+                                            dialogTitle: 'Select Unit',
+                                            options: [
+                                              const SearchableSelectOption<int?>(value: null, label: 'None'),
+                                              ...context.watch<UnitsProvider>().activeUnits.map((u) {
+                                                return SearchableSelectOption<int?>(
+                                                  value: u.id,
+                                                  label: u.symbol,
+                                                );
+                                              }),
+                                            ],
+                                            onChanged: (val) => _updateCustomPropertyUnit(index, val),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          flex: 3,
+                                          child: TextFormField(
+                                            initialValue: prop.value,
+                                            keyboardType: TextInputType.number,
+                                            decoration: InputDecoration(
+                                              labelText: 'Value',
+                                              hintText: 'Enter numeric value...',
+                                              filled: true,
+                                              fillColor: const Color(0xFFF9FAFB),
+                                              border: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(8),
+                                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                              ),
+                                              enabledBorder: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(8),
+                                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                              ),
+                                            ),
+                                            onChanged: (val) => _updateCustomPropertyValue(index, val),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 48),
+                                      ],
+                                    )
+                                  else if (prop.type == CustomPropertyType.dropdown)
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          flex: 2,
+                                          child: TextFormField(
+                                            initialValue: prop.options.join(', '),
+                                            decoration: InputDecoration(
+                                              labelText: 'Dropdown Options',
+                                              hintText: 'A, B, C (comma separated)',
+                                              filled: true,
+                                              fillColor: const Color(0xFFF9FAFB),
+                                              border: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(8),
+                                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                              ),
+                                              enabledBorder: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(8),
+                                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                              ),
+                                            ),
+                                            onChanged: (val) => _updateCustomPropertyOptions(index, val),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          flex: 3,
+                                          child: SearchableSelectField<String>(
+                                            tapTargetKey: ValueKey<String>('die-custom-property-value-$index'),
+                                            value: prop.options.contains(prop.value) ? prop.value : null,
+                                            decoration: const InputDecoration(
+                                              labelText: 'Select Value',
+                                              filled: true,
+                                              fillColor: Color(0xFFF9FAFB),
+                                            ),
+                                            dialogTitle: 'Select Value',
+                                            options: prop.options.map((opt) {
+                                              return SearchableSelectOption<String>(
+                                                value: opt,
+                                                label: opt,
+                                              );
+                                            }).toList(),
+                                            onChanged: (val) {
+                                              if (val != null) _updateCustomPropertyValue(index, val);
+                                            },
+                                          ),
+                                        ),
+                                        const SizedBox(width: 48),
+                                      ],
+                                    ),
+                                  const Divider(height: 24),
+                                ],
+                              ),
+                            );
+                          }),
+                        const SizedBox(height: 12),
+                        AppButton(
+                          label: 'Add Property',
+                          icon: Icons.add,
+                          variant: AppButtonVariant.secondary,
+                          onPressed: _addCustomProperty,
                         ),
                       ],
                     ),
@@ -292,28 +522,6 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ErpDialogSectionCard(
-                    title: 'Status',
-                    subtitle: 'Current operational state.',
-                    child: SearchableSelectField<DieStatus>(
-                      tapTargetKey: const ValueKey<String>('die-status-field'),
-                      value: _status,
-                      decoration: const InputDecoration(
-                        labelText: 'Status',
-                      ),
-                      dialogTitle: 'Status',
-                      options: DieStatus.values.map((s) {
-                        return SearchableSelectOption(
-                          value: s,
-                          label: s.name.toUpperCase(),
-                        );
-                      }).toList(),
-                      onChanged: (val) {
-                        if (val != null) setState(() => _status = val);
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 16),
                   ErpDialogSectionCard(
                     title: 'Photos',
                     subtitle: 'Multiple images of the die, setup conditions, or parts.',
@@ -431,21 +639,31 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
   void _submit() async {
     if (!_formKey.currentState!.validate()) return;
     
+    // Construct Custom Properties list
+    final customPropsList = <CustomProperty>[];
+    for (var prop in _customProperties) {
+      if (prop.key.trim().isNotEmpty) {
+        customPropsList.add(CustomProperty(
+          key: prop.key.trim(), 
+          value: prop.value.trim(),
+          type: prop.type,
+          unitId: prop.unitId,
+          options: prop.options,
+        ));
+      }
+    }
+
     final newDie = Die(
       id: widget.die?.id ?? '',
+      name: _nameController.text.trim(),
       toolCode: _toolCodeController.text.trim(),
-      producedPartNumbers: _partsController.text.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList(),
       photoUrls: _photoUrls,
       operationalNotes: _operationalNotesController.text.trim(),
       compatibleMachineGroupIds: _compatibleMachineGroupIds,
-      strokeCount: int.tryParse(_strokeCountController.text.trim()),
+      strokeCount: widget.die?.strokeCount ?? 0,
       storageLocation: _storageLocationController.text.trim(),
-      numberOfCavities: int.tryParse(_numberOfCavitiesController.text.trim()),
-      physicalSpecs: {
-        'bedSize': _bedSizeController.text.trim(),
-        'tonnage': _tonnageController.text.trim(),
-        'shutHeight': _shutHeightController.text.trim(),
-      },
+      numberOfCavities: widget.die?.numberOfCavities,
+      physicalSpecs: customPropsList,
       status: _status,
       ownership: _ownership,
       createdAt: widget.die?.createdAt ?? DateTime.now(),
