@@ -4,6 +4,7 @@ import 'process_node.dart';
 class PipelineTemplate {
   const PipelineTemplate({
     required this.id,
+    this.shopFloorId,
     required this.name,
     required this.description,
     required this.stageLabels,
@@ -13,6 +14,7 @@ class PipelineTemplate {
   });
 
   final String id;
+  final String? shopFloorId;
   final String name;
   final String description;
   final List<String> stageLabels;
@@ -20,9 +22,12 @@ class PipelineTemplate {
   final List<ProcessNode> nodes;
   final List<MaterialFlow> flows;
 
+  List<ProcessNode> get stages => nodes;
+
   factory PipelineTemplate.fromJson(Map<String, dynamic> json) {
     return PipelineTemplate(
       id: json['id'] as String? ?? '',
+      shopFloorId: json['shopFloorId'] as String?,
       name: json['name'] as String? ?? '',
       description: json['description'] as String? ?? '',
       stageLabels: List<String>.from(
@@ -42,6 +47,7 @@ class PipelineTemplate {
 
   PipelineTemplate copyWith({
     String? id,
+    String? shopFloorId,
     String? name,
     String? description,
     List<String>? stageLabels,
@@ -51,6 +57,7 @@ class PipelineTemplate {
   }) {
     return PipelineTemplate(
       id: id ?? this.id,
+      shopFloorId: shopFloorId ?? this.shopFloorId,
       name: name ?? this.name,
       description: description ?? this.description,
       stageLabels: stageLabels ?? this.stageLabels,
@@ -63,6 +70,7 @@ class PipelineTemplate {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'shopFloorId': shopFloorId,
       'name': name,
       'description': description,
       'stageLabels': stageLabels,

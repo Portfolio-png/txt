@@ -15,12 +15,14 @@ typedef ProductionBufferCommitter =
 class ProductionRunCommit {
   const ProductionRunCommit({
     required this.runId,
+    required this.stageId,
     required this.goodYield,
     required this.setupScrap,
     required this.state,
   });
 
   final String runId;
+  final String stageId;
   final int goodYield;
   final int setupScrap;
   final ProductionState state;
@@ -175,6 +177,7 @@ class ProductionRunProvider extends ChangeNotifier {
       await committer(
         ProductionRunCommit(
           runId: runId,
+          stageId: stageId ?? '',
           goodYield: _currentYield,
           setupScrap: _currentScrap,
           state: _state,
@@ -328,6 +331,7 @@ class ProductionRunProvider extends ChangeNotifier {
       await committer(
         ProductionRunCommit(
           runId: runId,
+          stageId: _stageId ?? '',
           goodYield: _currentYield,
           setupScrap: _currentScrap,
           state: _state,
@@ -418,6 +422,7 @@ class ProductionRunProvider extends ChangeNotifier {
         try {
           final commit = ProductionRunCommit(
             runId: log.runId,
+            stageId: log.stageId,
             goodYield: log.payload['goodYield'] as int? ?? 0,
             setupScrap: log.payload['setupScrap'] as int? ?? 0,
             state: ProductionState.completed,

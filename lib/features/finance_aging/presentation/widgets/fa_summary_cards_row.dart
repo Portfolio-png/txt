@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../domain/models/aging_row.dart';
 
-class PPSummaryCardsRow extends StatelessWidget {
-  const PPSummaryCardsRow({
+class FASummaryCardsRow extends StatelessWidget {
+  const FASummaryCardsRow({
     super.key,
     required this.cards,
     required this.compact,

@@ -6,8 +6,8 @@ const double _partyColumnWidth = 336;
 const double _valueColumnWidth = 120;
 const double _columnGap = 69;
 
-class PPAgingTable extends StatelessWidget {
-  const PPAgingTable({
+class FAAgingTable extends StatelessWidget {
+  const FAAgingTable({
     super.key,
     required this.rows,
     required this.onToggleRow,

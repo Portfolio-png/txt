@@ -1,9 +1,9 @@
 import '../../domain/models/aging_row.dart';
 
-class ProductionPipelinesState {
+class FinanceAgingState {
   static const Object _noChange = Object();
 
-  const ProductionPipelinesState({
+  const FinanceAgingState({
     required this.selectedSidebarKey,
     required this.selectedFilters,
     required this.selectedRowIds,
@@ -23,7 +23,7 @@ class ProductionPipelinesState {
   final List<SummaryMetric> summaryCards;
   final List<AgingRow> rows;
 
-  ProductionPipelinesState copyWith({
+  FinanceAgingState copyWith({
     String? selectedSidebarKey,
     Map<String, String>? selectedFilters,
     Set<String>? selectedRowIds,
@@ -33,7 +33,7 @@ class ProductionPipelinesState {
     List<SummaryMetric>? summaryCards,
     List<AgingRow>? rows,
   }) {
-    return ProductionPipelinesState(
+    return FinanceAgingState(
       selectedSidebarKey: selectedSidebarKey ?? this.selectedSidebarKey,
       selectedFilters: selectedFilters ?? this.selectedFilters,
       selectedRowIds: selectedRowIds ?? this.selectedRowIds,

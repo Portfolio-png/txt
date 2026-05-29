@@ -1,0 +1,201 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../providers/production_provider.dart';
+import '../providers/production_run_provider.dart';
+import 'material_ledger_closure_dialog.dart';
+import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
+import '../../production_pipelines/domain/pipeline_run.dart';
+
+class RemoteActionConsole extends StatelessWidget {
+  const RemoteActionConsole({super.key, required this.provider});
+
+  final ProductionProvider provider;
+
+  @override
+  Widget build(BuildContext context) {
+    final runState = context.select<ProductionRunProvider, ProductionState>(
+      (p) => p.state,
+    );
+    final isRunning = runState == ProductionState.running;
+    final isPaused = runState == ProductionState.paused;
+    final isInputLocked = context.select<ProductionRunProvider, bool>(
+      (p) => p.isInputLocked,
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _ConsoleAction(
+              label: isRunning ? 'DEPLOYED TO MACHINE' : 'DEPLOY & START RUN',
+              icon: Icons.rocket_launch,
+              color: const Color(0xFF10B981),
+              onPressed: isRunning || isInputLocked
+                  ? null
+                  : () => _deployAndStart(context),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: _ConsoleAction(
+              label: isPaused ? 'RESUME EXECUTION' : 'HALT / PAUSE',
+              icon: isPaused ? Icons.play_arrow : Icons.stop_circle_outlined,
+              color: const Color(0xFFF59E0B),
+              onPressed: isRunning || (isPaused && !isInputLocked)
+                  ? () => _togglePause(context, isPaused)
+                  : null,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: _ConsoleAction(
+              label: 'FORCE LEDGER CLOSURE',
+              icon: Icons.inventory_2_outlined,
+              color: const Color(0xFF64748B),
+              onPressed: isRunning || isPaused
+                  ? () => _openClosure(context)
+                  : null,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deployAndStart(BuildContext context) async {
+    final production = context.read<ProductionProvider>();
+    final run = context.read<ProductionRunProvider>();
+    
+    // Simulate remote deployment confirmation
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        title: const Text('Deploy Configuration', style: TextStyle(color: Color(0xFF0F172A))),
+        content: const Text(
+          'This will push the active routing specs to the physical machine and initialize the run.',
+          style: TextStyle(color: Color(0xFF475569)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('CANCEL', style: TextStyle(color: Color(0xFF64748B))),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981)),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('DEPLOY', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && context.mounted) {
+      final repo = context.read<PipelineRunRepository>();
+      final template = production.template;
+
+      PipelineRun newRun;
+      try {
+        newRun = await repo.createRun(template.id, name: '${template.name} Run');
+      } catch (e) {
+        // Fallback: create template first if it doesn't exist
+        await repo.createTemplate(template);
+        newRun = await repo.createRun(template.id, name: '${template.name} Run');
+      }
+
+      if (context.mounted) {
+        production.startRun();
+        run.startRun(runId: newRun.id);
+      }
+    }
+  }
+
+  Future<void> _togglePause(BuildContext context, bool isPaused) async {
+    final production = context.read<ProductionProvider>();
+    final run = context.read<ProductionRunProvider>();
+    if (isPaused) {
+      // It is essentially starting the run again from paused state
+      production.startRun(); 
+      run.resumeRun();
+      return;
+    }
+    production.pauseRun();
+    await run.pauseRun();
+  }
+
+  Future<void> _openClosure(BuildContext context) async {
+    final production = context.read<ProductionProvider>();
+    final run = context.read<ProductionRunProvider>();
+    production.initiateClosure();
+    await run.pauseRun();
+    if (!context.mounted) return;
+    
+    final committed = await showDialog<bool>(
+      context: context,
+      builder: (_) => MultiProvider(
+        providers: [
+          ChangeNotifierProvider<ProductionProvider>.value(value: production),
+          ChangeNotifierProvider<ProductionRunProvider>.value(value: run),
+        ],
+        child: const MaterialLedgerClosureDialog(),
+      ),
+    );
+    if (!context.mounted) return;
+    if (committed == true) {
+      await run.completeRun();
+      production.completeClosure();
+    } else {
+      production.cancelClosure();
+      run.resumeRun();
+    }
+  }
+}
+
+class _ConsoleAction extends StatelessWidget {
+  const _ConsoleAction({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.onPressed,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final disabled = onPressed == null;
+    return ElevatedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 20),
+      label: Text(
+        label,
+        style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: 0.5),
+      ),
+      style: ElevatedButton.styleFrom(
+        foregroundColor: disabled ? const Color(0xFF94A3B8) : color.withValues(alpha: 0.9),
+        backgroundColor: disabled ? const Color(0xFFF1F5F9) : color.withValues(alpha: 0.1),
+        disabledBackgroundColor: const Color(0xFFF1F5F9),
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(
+            color: disabled ? const Color(0xFFE2E8F0) : color.withValues(alpha: 0.3),
+            width: 2,
+          ),
+        ),
+      ),
+    );
+  }
+}

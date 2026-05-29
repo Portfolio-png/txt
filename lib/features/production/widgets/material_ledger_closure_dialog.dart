@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../domain/utils/material_ledger_distributor.dart';
 import '../providers/production_provider.dart';
 
 class MaterialLedgerClosureDialog extends StatefulWidget {
@@ -13,41 +14,19 @@ class MaterialLedgerClosureDialog extends StatefulWidget {
 
 class _MaterialLedgerClosureDialogState
     extends State<MaterialLedgerClosureDialog> {
-  late double _parentKg;
-  late double _goodKg;
-  late double _setupKg;
-  late double _processKg;
-  late int _yieldUnits;
-  late double _scrapKg;
+  late LedgerWeights _weights;
 
   @override
   void initState() {
     super.initState();
     final provider = context.read<ProductionProvider>();
-    _parentKg = provider.parentReelConsumedKg;
-    _yieldUnits = provider.goodYieldCount == 0
-        ? provider.selectedStage?.targetOutputUnits ?? 0
-        : provider.goodYieldCount;
-    _scrapKg = provider.scrapWeightKg;
-
-    // Distribute scrap and good yield weight
-    final calculatedGoodKg = _yieldUnits * 0.1;
-    if (calculatedGoodKg > 0 && calculatedGoodKg <= _parentKg) {
-      _goodKg = calculatedGoodKg;
-      final remaining = _parentKg - _goodKg;
-      if (_scrapKg > 0) {
-        _setupKg = _scrapKg * 0.6;
-        _processKg = _scrapKg * 0.4;
-      } else {
-        _setupKg = remaining * 0.6;
-        _processKg = remaining * 0.4;
-        _scrapKg = _setupKg + _processKg;
-      }
-    } else {
-      _goodKg = (_parentKg - _scrapKg).clamp(0.0, _parentKg);
-      _setupKg = _scrapKg * 0.6;
-      _processKg = _scrapKg * 0.4;
-    }
+    _weights = MaterialLedgerDistributor.initialDistribution(
+      parentKg: provider.parentReelConsumedKg,
+      initialYieldCount: provider.goodYieldCount == 0
+          ? 0
+          : provider.goodYieldCount,
+      initialScrapWeightKg: provider.scrapWeightKg,
+    );
   }
 
   void _update({
@@ -60,99 +39,27 @@ class _MaterialLedgerClosureDialogState
   }) {
     setState(() {
       if (parentKg != null) {
-        final oldParent = _parentKg;
-        _parentKg = parentKg.clamp(1.0, double.infinity);
-        final ratio = _parentKg / oldParent;
-        _goodKg = (_goodKg * ratio).clamp(0.0, _parentKg);
-        _setupKg = (_setupKg * ratio).clamp(0.0, _parentKg);
-        _processKg = (_processKg * ratio).clamp(0.0, _parentKg);
-        _yieldUnits = (_goodKg / 0.1).round();
-        _scrapKg = _setupKg + _processKg;
+        _weights = MaterialLedgerDistributor.updateParent(_weights, parentKg);
       } else if (yieldUnits != null) {
-        _yieldUnits = yieldUnits.clamp(0, 99999999);
-        _goodKg = (_yieldUnits * 0.1).clamp(0.0, _parentKg);
-        final remaining = _parentKg - _goodKg;
-        final currentScrapTotal = _setupKg + _processKg;
-        if (currentScrapTotal > 0) {
-          _setupKg = remaining * (_setupKg / currentScrapTotal);
-          _processKg = remaining * (_processKg / currentScrapTotal);
-        } else {
-          _setupKg = remaining * 0.6;
-          _processKg = remaining * 0.4;
-        }
-        _scrapKg = _setupKg + _processKg;
+        _weights = MaterialLedgerDistributor.updateYield(_weights, yieldUnits);
       } else if (scrapKg != null) {
-        _scrapKg = scrapKg.clamp(0.0, _parentKg);
-        _goodKg = _parentKg - _scrapKg;
-        _yieldUnits = (_goodKg / 0.1).round();
-        final currentScrapTotal = _setupKg + _processKg;
-        if (currentScrapTotal > 0) {
-          _setupKg = _scrapKg * (_setupKg / currentScrapTotal);
-          _processKg = _scrapKg * (_processKg / currentScrapTotal);
-        } else {
-          _setupKg = _scrapKg * 0.6;
-          _processKg = _scrapKg * 0.4;
-        }
+        _weights = MaterialLedgerDistributor.updateScrap(_weights, scrapKg);
       } else if (goodKg != null) {
-        _adjustWeights(goodKg: goodKg);
+        _weights = MaterialLedgerDistributor.adjustWeights(_weights, goodKg: goodKg);
       } else if (setupKg != null) {
-        _adjustWeights(setupKg: setupKg);
+        _weights = MaterialLedgerDistributor.adjustWeights(_weights, setupKg: setupKg);
       } else if (processKg != null) {
-        _adjustWeights(processKg: processKg);
+        _weights = MaterialLedgerDistributor.adjustWeights(_weights, processKg: processKg);
       }
     });
     _syncProvider();
   }
 
-  void _adjustWeights({double? goodKg, double? setupKg, double? processKg}) {
-    final total = _parentKg;
-    if (goodKg != null) {
-      final newGood = goodKg.clamp(0.0, total);
-      final remaining = total - newGood;
-      final currentScrapTotal = _setupKg + _processKg;
-      if (currentScrapTotal > 0) {
-        _setupKg = remaining * (_setupKg / currentScrapTotal);
-        _processKg = remaining * (_processKg / currentScrapTotal);
-      } else {
-        _setupKg = remaining * 0.6;
-        _processKg = remaining * 0.4;
-      }
-      _goodKg = newGood;
-    } else if (setupKg != null) {
-      final newSetup = setupKg.clamp(0.0, total);
-      final remaining = total - newSetup;
-      final currentOtherTotal = _goodKg + _processKg;
-      if (currentOtherTotal > 0) {
-        _goodKg = remaining * (_goodKg / currentOtherTotal);
-        _processKg = remaining * (_processKg / currentOtherTotal);
-      } else {
-        _goodKg = remaining * 0.9;
-        _processKg = remaining * 0.1;
-      }
-      _setupKg = newSetup;
-    } else if (processKg != null) {
-      final newProcess = processKg.clamp(0.0, total);
-      final remaining = total - newProcess;
-      final currentOtherTotal = _goodKg + _setupKg;
-      if (currentOtherTotal > 0) {
-        _goodKg = remaining * (_goodKg / currentOtherTotal);
-        _setupKg = remaining * (_setupKg / currentOtherTotal);
-      } else {
-        _goodKg = remaining * 0.9;
-        _setupKg = remaining * 0.1;
-      }
-      _processKg = newProcess;
-    }
-
-    _yieldUnits = (_goodKg / 0.1).round();
-    _scrapKg = _setupKg + _processKg;
-  }
-
   void _syncProvider() {
     context.read<ProductionProvider>().updateClosureValues(
-      parentReelConsumedKg: _parentKg,
-      goodYieldCount: _yieldUnits,
-      scrapWeightKg: _scrapKg,
+      parentReelConsumedKg: _weights.parentKg,
+      goodYieldCount: _weights.yieldUnits,
+      scrapWeightKg: _weights.scrapKg,
     );
   }
 
@@ -219,12 +126,12 @@ class _MaterialLedgerClosureDialogState
                   builder: (context, constraints) {
                     final isWide = constraints.maxWidth >= 850;
                     final editor = _LedgerEditor(
-                      parentKg: _parentKg,
-                      yieldUnits: _yieldUnits,
-                      scrapKg: _scrapKg,
-                      goodKg: _goodKg,
-                      setupKg: _setupKg,
-                      processKg: _processKg,
+                      parentKg: _weights.parentKg,
+                      yieldUnits: _weights.yieldUnits,
+                      scrapKg: _weights.scrapKg,
+                      goodKg: _weights.goodKg,
+                      setupKg: _weights.setupKg,
+                      processKg: _weights.processKg,
                       onParentChanged: (value) => _update(parentKg: value),
                       onYieldChanged: (value) => _update(yieldUnits: value),
                       onScrapChanged: (value) => _update(scrapKg: value),

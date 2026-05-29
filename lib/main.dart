@@ -29,7 +29,9 @@ import 'package:core_erp/features/items/presentation/providers/items_provider.da
 import 'package:core_erp/features/orders/data/repositories/api_order_repository.dart';
 import 'package:core_erp/features/orders/data/repositories/order_repository.dart';
 import 'package:core_erp/features/orders/presentation/providers/orders_provider.dart';
-import 'features/production_pipelines/data/repositories/mock_pipeline_run_repository.dart';
+import 'features/production_pipelines/data/repositories/sqlite_pipeline_run_repository.dart';
+import 'features/production/data/repositories/production_repository.dart';
+import 'features/production/data/repositories/sqlite_production_repository.dart';
 import 'features/production_pipelines/data/repositories/pipeline_run_repository.dart';
 import 'package:core_erp/features/units/data/repositories/api_unit_repository.dart';
 import 'package:core_erp/features/units/data/repositories/unit_repository.dart';
@@ -43,6 +45,9 @@ import 'features/machines/presentation/providers/machine_provider.dart';
 import 'features/dies/data/die_repository.dart';
 import 'features/dies/data/api_die_repository.dart';
 import 'features/dies/presentation/providers/die_provider.dart';
+import 'features/production/providers/production_provider.dart';
+import 'features/production/providers/production_run_provider.dart';
+import 'features/production_pipelines/domain/node_run_status.dart';
 
 
 const _isDemoMode = bool.fromEnvironment(
@@ -258,9 +263,10 @@ class MyApp extends StatelessWidget {
               _buildDeliveryChallanRepository(context.read<AuthProvider>()),
         ),
         Provider<PipelineRunRepository>(
-          create: (context) =>
-              pipelineRunRepository ??
-              _buildPipelineRunRepository(context.read<AuthProvider>()),
+          create: (_) => SqlitePipelineRunRepository(),
+        ),
+        Provider<ProductionRepository>(
+          create: (_) => SqliteProductionRepository(),
         ),
         Provider<MachineRepository>(
           create: (context) =>
@@ -356,6 +362,37 @@ class MyApp extends StatelessWidget {
               previous ?? DiesProvider(repository: repository)
                 ..initialize(),
         ),
+        ChangeNotifierProvider(create: (_) => ProductionProvider.seeded()),
+        ChangeNotifierProxyProvider<PipelineRunRepository, ProductionRunProvider>(
+          create: (context) => ProductionRunProvider(),
+          update: (context, repo, previous) {
+            return previous ?? ProductionRunProvider(
+              bufferCommitter: (commit) async {
+                if (commit.stageId.isEmpty) return;
+                
+                NodeRunStatus nodeStatus;
+                switch (commit.state) {
+                  case ProductionState.running:
+                  case ProductionState.paused:
+                    nodeStatus = NodeRunStatus.active;
+                    break;
+                  case ProductionState.completed:
+                    nodeStatus = NodeRunStatus.done;
+                    break;
+                  default:
+                    nodeStatus = NodeRunStatus.pending;
+                }
+
+                await repo.updateNodeStatus(
+                  runId: commit.runId,
+                  nodeId: commit.stageId,
+                  status: nodeStatus,
+                  batchQuantity: commit.goodYield,
+                );
+              },
+            );
+          },
+        ),
       ],
       child: MaterialApp(
         title: 'Paper',
@@ -441,12 +478,7 @@ class MyApp extends StatelessWidget {
 
   PipelineRunRepository _buildPipelineRunRepository(AuthProvider auth) {
     if (_effectiveDemoMode) {
-      final injectedInventoryRepository = inventoryRepository;
-      final resolvedInventoryRepository =
-          injectedInventoryRepository ?? _buildInventoryRepository(auth);
-      return MockPipelineRunRepository(
-        inventoryRepository: resolvedInventoryRepository,
-      );
+      return SqlitePipelineRunRepository();
     }
     return ApiPipelineRunRepository(
       baseUrl: _apiBaseUrl,

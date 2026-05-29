@@ -103,6 +103,7 @@ class ItemDto {
     required this.updatedAt,
     required this.variationTree,
     required this.propertySchema,
+    this.photoUrl = '',
   });
 
   final int id;
@@ -120,6 +121,7 @@ class ItemDto {
   final DateTime updatedAt;
   final List<ItemVariationNodeDto> variationTree;
   final List<ItemPropertySchemaEntryDto> propertySchema;
+  final String photoUrl;
 
   factory ItemDto.fromJson(Map<String, dynamic> json) {
     return ItemDto(
@@ -160,6 +162,7 @@ class ItemDto {
             ),
           )
           .toList(growable: false),
+      photoUrl: json['photoUrl'] as String? ?? '',
     );
   }
 
@@ -186,6 +189,7 @@ class ItemDto {
       propertySchema: propertySchema
           .map((entry) => entry.toDomain())
           .toList(growable: false),
+      photoUrl: photoUrl,
     );
   }
 }
@@ -380,6 +384,7 @@ class CreateItemRequest {
     required this.unitConversions,
     required this.namingFormat,
     required this.variationTree,
+    this.photoUrl = '',
   });
 
   final String name;
@@ -390,6 +395,7 @@ class CreateItemRequest {
   final List<ItemUnitConversionRequest> unitConversions;
   final List<String> namingFormat;
   final List<ItemVariationNodeRequest> variationTree;
+  final String photoUrl;
 
   factory CreateItemRequest.fromInput(CreateItemInput input) {
     return CreateItemRequest(
@@ -405,6 +411,7 @@ class CreateItemRequest {
       variationTree: input.variationTree
           .map(ItemVariationNodeRequest.fromInput)
           .toList(growable: false),
+      photoUrl: input.photoUrl,
     );
   }
 
@@ -422,6 +429,7 @@ class CreateItemRequest {
       'variationTree': variationTree
           .map((entry) => entry.toJson())
           .toList(growable: false),
+      'photoUrl': photoUrl,
     };
   }
 }
@@ -436,6 +444,7 @@ class UpdateItemRequest {
     required this.unitConversions,
     required this.namingFormat,
     required this.variationTree,
+    this.photoUrl = '',
   });
 
   final String name;
@@ -446,6 +455,7 @@ class UpdateItemRequest {
   final List<ItemUnitConversionRequest> unitConversions;
   final List<String> namingFormat;
   final List<ItemVariationNodeRequest> variationTree;
+  final String photoUrl;
 
   factory UpdateItemRequest.fromInput(UpdateItemInput input) {
     return UpdateItemRequest(
@@ -461,6 +471,7 @@ class UpdateItemRequest {
       variationTree: input.variationTree
           .map(ItemVariationNodeRequest.fromInput)
           .toList(growable: false),
+      photoUrl: input.photoUrl,
     );
   }
 
@@ -478,6 +489,7 @@ class UpdateItemRequest {
       'variationTree': variationTree
           .map((entry) => entry.toJson())
           .toList(growable: false),
+      'photoUrl': photoUrl,
     };
   }
 }

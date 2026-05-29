@@ -74,6 +74,8 @@ class ApiClientRepository implements ClientRepository {
         usageCount: 0,
         createdAt: now,
         updatedAt: now,
+        logoUrl: input.logoUrl.trim(),
+        photoUrl: input.photoUrl.trim(),
       );
       _mockClients.add(created);
       return created;
@@ -121,6 +123,8 @@ class ApiClientRepository implements ClientRepository {
         usageCount: current.usageCount,
         createdAt: current.createdAt,
         updatedAt: DateTime.now(),
+        logoUrl: input.logoUrl.trim(),
+        photoUrl: input.photoUrl.trim(),
       );
       _mockClients[index] = updated;
       return updated;
@@ -175,6 +179,8 @@ class ApiClientRepository implements ClientRepository {
         usageCount: current.usageCount,
         createdAt: current.createdAt,
         updatedAt: DateTime.now(),
+        logoUrl: current.logoUrl,
+        photoUrl: current.photoUrl,
       );
       _mockClients[index] = updated;
       return updated;

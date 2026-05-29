@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-class PPTopBar extends StatelessWidget {
-  const PPTopBar({super.key, required this.compact});
+class FATopBar extends StatelessWidget {
+  const FATopBar({super.key, required this.compact});
 
   final bool compact;
 

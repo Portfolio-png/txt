@@ -1,30 +1,30 @@
 import 'package:flutter/material.dart';
 
-import '../../data/mock_production_pipelines_data.dart';
+import '../../data/mock_finance_aging_data.dart';
 import '../../domain/models/aging_row.dart';
-import 'production_pipelines_state.dart';
+import 'finance_aging_state.dart';
 
-class ProductionPipelinesController extends ChangeNotifier {
-  ProductionPipelinesController()
-    : _state = ProductionPipelinesState(
-        selectedSidebarKey: 'production_pipelines',
-        selectedFilters: const {
-          'Party': kAllValue,
-          'Group': kAllValue,
-          'Outstanding': kAllValue,
-          'Status': kAllValue,
-        },
-        selectedRowIds: <String>{},
-        selectedSummaryCardId: null,
-        sortBy: 'partyName',
-        sortAscending: true,
-        summaryCards: MockProductionPipelinesData.summaryCards,
-        rows: MockProductionPipelinesData.rows,
-      );
+class FinanceAgingController extends ChangeNotifier {
+  FinanceAgingController()
+      : _state = FinanceAgingState(
+          selectedSidebarKey: 'finance_aging',
+          selectedFilters: const {
+            'Party': kAllValue,
+            'Group': kAllValue,
+            'Outstanding': kAllValue,
+            'Status': kAllValue,
+          },
+          selectedRowIds: <String>{},
+          selectedSummaryCardId: null,
+          sortBy: 'partyName',
+          sortAscending: true,
+          summaryCards: MockFinanceAgingData.summaryCards,
+          rows: MockFinanceAgingData.rows,
+        );
 
-  ProductionPipelinesState _state;
+  FinanceAgingState _state;
 
-  ProductionPipelinesState get state => _state;
+  FinanceAgingState get state => _state;
 
   List<SummaryMetric> get summaryCards => _state.summaryCards;
 

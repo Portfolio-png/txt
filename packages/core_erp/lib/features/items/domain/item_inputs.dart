@@ -40,6 +40,7 @@ class CreateItemInput {
     this.unitConversions = const [],
     this.namingFormat = const [],
     this.variationTree = const [],
+    this.photoUrl = '',
   });
 
   final String name;
@@ -50,6 +51,7 @@ class CreateItemInput {
   final List<ItemUnitConversionInput> unitConversions;
   final List<String> namingFormat;
   final List<ItemVariationNodeInput> variationTree;
+  final String photoUrl;
 }
 
 class UpdateItemInput {
@@ -63,6 +65,7 @@ class UpdateItemInput {
     this.unitConversions = const [],
     this.namingFormat = const [],
     this.variationTree = const [],
+    this.photoUrl = '',
   });
 
   final int id;
@@ -74,4 +77,5 @@ class UpdateItemInput {
   final List<ItemUnitConversionInput> unitConversions;
   final List<String> namingFormat;
   final List<ItemVariationNodeInput> variationTree;
+  final String photoUrl;
 }

@@ -12,6 +12,7 @@ class ProcessNode {
     required this.inputs,
     required this.outputs,
     required this.machine,
+    required this.dieId,
     required this.durationHours,
     required this.status,
     required this.isIntermediate,
@@ -26,10 +27,13 @@ class ProcessNode {
   final List<String> inputs;
   final List<String> outputs;
   final String machine;
+  final String dieId;
   final double durationHours;
   final String status;
   final bool isIntermediate;
   final List<BarcodeInput> scannedInputs;
+
+  String get machineId => machine;
 
   factory ProcessNode.fromJson(Map<String, dynamic> json) {
     return ProcessNode(
@@ -41,6 +45,7 @@ class ProcessNode {
       inputs: List<String>.from(json['inputs'] as List<dynamic>? ?? const []),
       outputs: List<String>.from(json['outputs'] as List<dynamic>? ?? const []),
       machine: json['machine'] as String? ?? '',
+      dieId: json['dieId'] as String? ?? '',
       durationHours: (json['durationHours'] as num?)?.toDouble() ?? 0,
       status: json['status'] as String? ?? 'Queued',
       isIntermediate: json['isIntermediate'] as bool? ?? false,
@@ -59,6 +64,7 @@ class ProcessNode {
     List<String>? inputs,
     List<String>? outputs,
     String? machine,
+    String? dieId,
     double? durationHours,
     String? status,
     bool? isIntermediate,
@@ -73,6 +79,7 @@ class ProcessNode {
       inputs: inputs ?? this.inputs,
       outputs: outputs ?? this.outputs,
       machine: machine ?? this.machine,
+      dieId: dieId ?? this.dieId,
       durationHours: durationHours ?? this.durationHours,
       status: status ?? this.status,
       isIntermediate: isIntermediate ?? this.isIntermediate,
@@ -103,6 +110,7 @@ class ProcessNode {
       'inputs': inputs,
       'outputs': outputs,
       'machine': machine,
+      'dieId': dieId,
       'durationHours': durationHours,
       'status': status,
       'isIntermediate': isIntermediate,

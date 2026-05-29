@@ -2,7 +2,7 @@ import '../domain/models/aging_row.dart';
 
 const String kAllValue = 'All';
 
-class MockProductionPipelinesData {
+class MockFinanceAgingData {
   static const List<String> partyOptions = [
     kAllValue,
     'Acme Corporation Ltd.',

@@ -18084,6 +18084,101 @@ app.put('/runs/:id/node-status', async (req, res) => {
       'UPDATE pipeline_runs SET node_status_json = ?, overrides_json = ? WHERE id = ?',
       [JSON.stringify(nodeStatuses), JSON.stringify(overrides), req.params.id],
     );
+
+    // Check if the overall pipeline run is completed
+    const templateRow = await get('SELECT * FROM pipeline_templates WHERE id = ?', [
+      runRow.template_id,
+    ]);
+    if (templateRow) {
+      const template = rowToTemplate(templateRow);
+      const allDone = template.nodes.every((node) => {
+        const s = nodeStatuses[node.id];
+        return s === 'done' || s === 'skipped';
+      });
+
+      if (allDone && runRow.status !== 'completed') {
+        const now = new Date().toISOString();
+        await run(
+          "UPDATE pipeline_runs SET status = 'completed', completed_at = ? WHERE id = ?",
+          [now, req.params.id],
+        );
+
+        // Find item ID to link to the flat production run
+        let itemId = null;
+        let variationLeafNodeId = 0;
+        let variationPathLabel = '';
+
+        const lastNode = template.nodes.find((n) => !n.isIntermediate) || template.nodes[template.nodes.length - 1];
+        const finalOutput = lastNode && lastNode.outputs && lastNode.outputs[0];
+        if (finalOutput) {
+          const matchedItem = await get(
+            'SELECT * FROM items WHERE LOWER(name) = ? OR LOWER(display_name) = ? OR LOWER(alias) = ?',
+            [finalOutput.toLowerCase(), finalOutput.toLowerCase(), finalOutput.toLowerCase()]
+          );
+          if (matchedItem) {
+            itemId = matchedItem.id;
+            const variationRow = await get(
+              'SELECT * FROM item_variations WHERE item_id = ? AND is_leaf = 1 LIMIT 1',
+              [itemId]
+            );
+            if (variationRow) {
+              variationLeafNodeId = variationRow.id;
+              variationPathLabel = variationRow.path_label || '';
+            }
+          }
+        }
+
+        if (!itemId) {
+          const fallbackItem = await get('SELECT * FROM items LIMIT 1');
+          if (fallbackItem) {
+            itemId = fallbackItem.id;
+            const variationRow = await get(
+              'SELECT * FROM item_variations WHERE item_id = ? AND is_leaf = 1 LIMIT 1',
+              [itemId]
+            );
+            if (variationRow) {
+              variationLeafNodeId = variationRow.id;
+              variationPathLabel = variationRow.path_label || '';
+            }
+          }
+        }
+
+        if (itemId) {
+          const batchQuantity = (lastNode && overrides.batchQuantityByNode[lastNode.id]) || 1;
+          const runCode = `RUN-${req.params.id.substring(0, 8).toUpperCase()}`;
+          
+          // Check if this run code already exists in production_runs
+          const exists = await get('SELECT id FROM production_runs WHERE run_code = ?', [runCode]);
+          if (!exists) {
+            await run(
+              `
+              INSERT INTO production_runs (
+                run_code, status, completed_at, item_id, variation_leaf_node_id,
+                variation_path_label, output_quantity, uom, location,
+                source_metadata_json, created_at, updated_at
+              ) VALUES (?, 'completed', ?, ?, ?, ?, ?, 'pcs', 'Production Output', ?, ?, ?)
+              `,
+              [
+                runCode,
+                now,
+                itemId,
+                variationLeafNodeId,
+                variationPathLabel,
+                batchQuantity,
+                JSON.stringify({
+                  pipelineRunId: req.params.id,
+                  pipelineTemplateId: runRow.template_id,
+                  pipelineName: runRow.name,
+                }),
+                now,
+                now,
+              ]
+            );
+          }
+        }
+      }
+    }
+
     const updatedRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [
       req.params.id,
     ]);

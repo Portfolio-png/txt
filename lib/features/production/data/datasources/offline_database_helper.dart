@@ -61,8 +61,27 @@ class OfflineSyncDbHelper {
     final dbPath = p.join(directory.path, 'paper_production_offline.db');
     return await openDatabase(
       dbPath,
-      version: 1,
+      version: 3,
       onCreate: (db, version) async {
+        await db.execute('''
+          CREATE TABLE factories (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            code TEXT NOT NULL,
+            location TEXT NOT NULL,
+            created_at TEXT NOT NULL
+          )
+        ''');
+        await db.execute('''
+          CREATE TABLE shop_floors (
+            id TEXT PRIMARY KEY,
+            factory_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            code TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (factory_id) REFERENCES factories (id) ON DELETE CASCADE
+          )
+        ''');
         await db.execute('''
           CREATE TABLE offline_stage_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,6 +92,76 @@ class OfflineSyncDbHelper {
             sync_status TEXT NOT NULL
           )
         ''');
+        await db.execute('''
+          CREATE TABLE pipeline_templates (
+            id TEXT PRIMARY KEY,
+            shop_floor_id TEXT,
+            name TEXT NOT NULL,
+            data TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (shop_floor_id) REFERENCES shop_floors (id) ON DELETE CASCADE
+          )
+        ''');
+        await db.execute('''
+          CREATE TABLE pipeline_runs (
+            id TEXT PRIMARY KEY,
+            template_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            start_time TEXT,
+            end_time TEXT,
+            good_yield INTEGER DEFAULT 0,
+            setup_scrap INTEGER DEFAULT 0,
+            parent_reel_consumed REAL DEFAULT 0.0,
+            data TEXT NOT NULL
+          )
+        ''');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute('''
+            CREATE TABLE pipeline_templates (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              data TEXT NOT NULL,
+              created_at TEXT NOT NULL
+            )
+          ''');
+          await db.execute('''
+            CREATE TABLE pipeline_runs (
+              id TEXT PRIMARY KEY,
+              template_id TEXT NOT NULL,
+              status TEXT NOT NULL,
+              start_time TEXT,
+              end_time TEXT,
+              good_yield INTEGER DEFAULT 0,
+              setup_scrap INTEGER DEFAULT 0,
+              parent_reel_consumed REAL DEFAULT 0.0,
+              data TEXT NOT NULL
+            )
+          ''');
+        }
+        if (oldVersion < 3) {
+          await db.execute('''
+            CREATE TABLE factories (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              code TEXT NOT NULL,
+              location TEXT NOT NULL,
+              created_at TEXT NOT NULL
+            )
+          ''');
+          await db.execute('''
+            CREATE TABLE shop_floors (
+              id TEXT PRIMARY KEY,
+              factory_id TEXT NOT NULL,
+              name TEXT NOT NULL,
+              code TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              FOREIGN KEY (factory_id) REFERENCES factories (id) ON DELETE CASCADE
+            )
+          ''');
+          await db.execute('ALTER TABLE pipeline_templates ADD COLUMN shop_floor_id TEXT');
+        }
       },
     );
   }

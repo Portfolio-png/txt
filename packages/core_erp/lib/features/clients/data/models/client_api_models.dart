@@ -12,6 +12,8 @@ class ClientDto {
     required this.usageCount,
     required this.createdAt,
     required this.updatedAt,
+    this.logoUrl = '',
+    this.photoUrl = '',
   });
 
   final int id;
@@ -23,6 +25,8 @@ class ClientDto {
   final int usageCount;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final String logoUrl;
+  final String photoUrl;
 
   factory ClientDto.fromJson(Map<String, dynamic> json) {
     return ClientDto(
@@ -39,6 +43,8 @@ class ClientDto {
       updatedAt:
           DateTime.tryParse(json['updatedAt'] as String? ?? '') ??
           DateTime.now(),
+      logoUrl: json['logoUrl'] as String? ?? '',
+      photoUrl: json['photoUrl'] as String? ?? '',
     );
   }
 
@@ -53,6 +59,8 @@ class ClientDto {
       usageCount: usageCount,
       createdAt: createdAt,
       updatedAt: updatedAt,
+      logoUrl: logoUrl,
+      photoUrl: photoUrl,
     );
   }
 }
@@ -97,12 +105,16 @@ class CreateClientRequest {
     required this.alias,
     required this.gstNumber,
     required this.address,
+    this.logoUrl = '',
+    this.photoUrl = '',
   });
 
   final String name;
   final String alias;
   final String gstNumber;
   final String address;
+  final String logoUrl;
+  final String photoUrl;
 
   factory CreateClientRequest.fromInput(CreateClientInput input) {
     return CreateClientRequest(
@@ -110,6 +122,8 @@ class CreateClientRequest {
       alias: input.alias,
       gstNumber: input.gstNumber,
       address: input.address,
+      logoUrl: input.logoUrl,
+      photoUrl: input.photoUrl,
     );
   }
 
@@ -119,6 +133,8 @@ class CreateClientRequest {
       'alias': alias,
       'gstNumber': gstNumber,
       'address': address,
+      'logoUrl': logoUrl,
+      'photoUrl': photoUrl,
     };
   }
 }
@@ -129,12 +145,16 @@ class UpdateClientRequest {
     required this.alias,
     required this.gstNumber,
     required this.address,
+    this.logoUrl = '',
+    this.photoUrl = '',
   });
 
   final String name;
   final String alias;
   final String gstNumber;
   final String address;
+  final String logoUrl;
+  final String photoUrl;
 
   factory UpdateClientRequest.fromInput(UpdateClientInput input) {
     return UpdateClientRequest(
@@ -142,6 +162,8 @@ class UpdateClientRequest {
       alias: input.alias,
       gstNumber: input.gstNumber,
       address: input.address,
+      logoUrl: input.logoUrl,
+      photoUrl: input.photoUrl,
     );
   }
 
@@ -151,6 +173,8 @@ class UpdateClientRequest {
       'alias': alias,
       'gstNumber': gstNumber,
       'address': address,
+      'logoUrl': logoUrl,
+      'photoUrl': photoUrl,
     };
   }
 }

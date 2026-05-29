@@ -651,6 +651,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   late final TextEditingController _nameController;
   late final TextEditingController _aliasController;
   late final TextEditingController _displayNameController;
+  late final TextEditingController _photoUrlController;
   final List<_NodeDraft> _rootNodes = [];
   final ScrollController _variationTreeScrollController = ScrollController();
   int? _selectedGroupId;
@@ -674,6 +675,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     _aliasController = TextEditingController(text: widget.item?.alias ?? '');
     _displayNameController = TextEditingController(
       text: widget.item?.displayName ?? '',
+    );
+    _photoUrlController = TextEditingController(
+      text: widget.item?.photoUrl ?? '',
     );
     _selectedGroupId = widget.item?.groupId ?? widget.initialGroupId;
     _selectedUnitId = widget.item?.unitId;
@@ -1165,6 +1169,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     _nameController.dispose();
     _aliasController.dispose();
     _displayNameController.dispose();
+    _photoUrlController.dispose();
     _variationTreeScrollController.dispose();
     for (final node in _rootNodes) {
       node.dispose();
@@ -1488,6 +1493,13 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
         ],
       ),
     );
+    final photoSection = _SectionCard(
+      title: 'Item Photo',
+      child: _ItemPhotoPickerField(
+        controller: _photoUrlController,
+        readOnly: _isReadOnly,
+      ),
+    );
     final variationTreeSection = _SectionCard(
       title: 'Variation Tree',
       action: _isReadOnly
@@ -1764,7 +1776,16 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                         return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(flex: 5, child: detailsSection),
+                            Expanded(
+                              flex: 5,
+                              child: Column(
+                                children: [
+                                  detailsSection,
+                                  const SizedBox(height: 16),
+                                  photoSection,
+                                ],
+                              ),
+                            ),
                             const SizedBox(width: 18),
                             Expanded(
                               flex: 6,
@@ -1783,6 +1804,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           detailsSection,
+                          const SizedBox(height: 16),
+                          photoSection,
                           const SizedBox(height: 16),
                           variationTreeSection,
                           const SizedBox(height: 16),
@@ -2135,6 +2158,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   .toList(growable: false),
               namingFormat: _activeNamingFormat,
               variationTree: _variationTreeInputs,
+              photoUrl: _photoUrlController.text.trim(),
             ),
           )
         : await itemsProvider.updateItem(
@@ -2155,6 +2179,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   .toList(growable: false),
               namingFormat: _activeNamingFormat,
               variationTree: _variationTreeInputs,
+              photoUrl: _photoUrlController.text.trim(),
             ),
           );
 
@@ -2962,6 +2987,110 @@ class _UnitConversionRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Item Photo Picker
+// ---------------------------------------------------------------------------
+
+class _ItemPhotoPickerField extends StatefulWidget {
+  const _ItemPhotoPickerField({
+    required this.controller,
+    required this.readOnly,
+  });
+
+  final TextEditingController controller;
+  final bool readOnly;
+
+  @override
+  State<_ItemPhotoPickerField> createState() => _ItemPhotoPickerFieldState();
+}
+
+class _ItemPhotoPickerFieldState extends State<_ItemPhotoPickerField> {
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_rebuild);
+  }
+
+  void _rebuild() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_rebuild);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final url = widget.controller.text.trim();
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Square preview
+        Container(
+          width: 96,
+          height: 96,
+          decoration: BoxDecoration(
+            color: const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFDDE1F0)),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: url.isNotEmpty
+              ? Image.network(
+                  url,
+                  fit: BoxFit.cover,
+                  errorBuilder: (ctx, err, e) => const Icon(
+                    Icons.inventory_2_outlined,
+                    size: 40,
+                    color: Color(0xFFCBD5E1),
+                  ),
+                )
+              : const Icon(
+                  Icons.inventory_2_outlined,
+                  size: 40,
+                  color: Color(0xFFCBD5E1),
+                ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextFormField(
+                controller: widget.controller,
+                readOnly: widget.readOnly,
+                decoration: InputDecoration(
+                  labelText: 'Photo URL',
+                  hintText: 'Paste an image URL to preview\u2026',
+                  helperText: 'Optional product or reference photo',
+                  filled: true,
+                  fillColor: const Color(0xFFF9FAFB),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                  ),
+                  suffixIcon: url.isNotEmpty && !widget.readOnly
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () => widget.controller.clear(),
+                        )
+                      : null,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

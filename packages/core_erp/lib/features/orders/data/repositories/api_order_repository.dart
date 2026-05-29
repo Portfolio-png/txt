@@ -59,8 +59,12 @@ class ApiOrderRepository implements OrderRepository {
 
   @override
   Future<OrderEntry> createOrder(CreateOrderInput input) async {
+    final resolvedOrderNo = input.orderNo.trim().isNotEmpty
+        ? input.orderNo.trim()
+        : 'ORD-${DateTime.now().millisecondsSinceEpoch}';
+
     if (useMockResponses) {
-      final normalizedOrderNo = _normalize(input.orderNo);
+      final normalizedOrderNo = _normalize(resolvedOrderNo);
       final normalizedPoNumber = _normalize(input.poNumber);
       final index = _mockOrders.indexWhere(
         (order) =>
@@ -77,7 +81,7 @@ class ApiOrderRepository implements OrderRepository {
         final existing = _mockOrders[index];
         final updated = OrderEntry(
           id: existing.id,
-          orderNo: input.orderNo.trim(),
+          orderNo: resolvedOrderNo,
           clientId: input.clientId,
           clientName: input.clientName.trim(),
           poNumber: input.poNumber.trim(),
@@ -116,7 +120,7 @@ class ApiOrderRepository implements OrderRepository {
 
       final created = OrderEntry(
         id: _mockNextId++,
-        orderNo: input.orderNo.trim(),
+        orderNo: resolvedOrderNo,
         clientId: input.clientId,
         clientName: input.clientName.trim(),
         poNumber: input.poNumber.trim(),
@@ -151,7 +155,29 @@ class ApiOrderRepository implements OrderRepository {
     }
 
     final uri = Uri.parse('$baseUrl/api/orders');
-    final request = CreateOrderRequest.fromInput(input);
+    final requestInput = CreateOrderInput(
+      orderNo: resolvedOrderNo,
+      clientId: input.clientId,
+      clientName: input.clientName,
+      poNumber: input.poNumber,
+      clientCode: input.clientCode,
+      itemId: input.itemId,
+      itemName: input.itemName,
+      variationLeafNodeId: input.variationLeafNodeId,
+      variationPathLabel: input.variationPathLabel,
+      variationPathNodeIds: input.variationPathNodeIds,
+      quantity: input.quantity,
+      unitId: input.unitId,
+      unitName: input.unitName,
+      unitSymbol: input.unitSymbol,
+      status: input.status,
+      unitPrice: input.unitPrice,
+      totalInvoicedQty: input.totalInvoicedQty,
+      startDate: input.startDate,
+      endDate: input.endDate,
+      poDocumentIds: input.poDocumentIds,
+    );
+    final request = CreateOrderRequest.fromInput(requestInput);
     final response = await _client.post(
       uri,
       headers: const {'Content-Type': 'application/json'},

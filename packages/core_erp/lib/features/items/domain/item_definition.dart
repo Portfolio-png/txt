@@ -99,6 +99,7 @@ class ItemDefinition {
     required this.createdAt,
     required this.updatedAt,
     required this.variationTree,
+    this.photoUrl = '',
   });
 
   final int id;
@@ -116,6 +117,7 @@ class ItemDefinition {
   final DateTime createdAt;
   final DateTime updatedAt;
   final List<ItemVariationNodeDefinition> variationTree;
+  final String photoUrl;
 
   bool get isUsed => usageCount > 0;
 

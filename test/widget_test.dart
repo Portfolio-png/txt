@@ -51,8 +51,87 @@ import 'package:core_erp/features/vendors/presentation/providers/vendors_provide
 import 'package:core_erp/features/vendors/presentation/screens/vendors_screen.dart';
 import 'package:core_erp/app/preferences/preferences_provider.dart';
 import 'package:paper/main.dart';
+import 'package:paper/features/production/data/datasources/offline_database_helper.dart';
+import 'package:sqflite/sqflite.dart';
 
 void _noop() {}
+
+class MockDatabase implements Database {
+  final List<Map<String, dynamic>> logs = [];
+  int _nextId = 1;
+
+  @override
+  Future<int> insert(
+    String table,
+    Map<String, Object?> values, {
+    String? nullColumnHack,
+    ConflictAlgorithm? conflictAlgorithm,
+  }) async {
+    final Map<String, dynamic> row = Map.from(values);
+    if (!row.containsKey('id')) {
+      row['id'] = _nextId++;
+    }
+    logs.add(row);
+    return row['id'] as int;
+  }
+
+  @override
+  Future<List<Map<String, Object?>>> query(
+    String table, {
+    bool? distinct,
+    List<String>? columns,
+    String? where,
+    List<Object?>? whereArgs,
+    String? groupBy,
+    String? having,
+    String? orderBy,
+    int? limit,
+    int? offset,
+  }) async {
+    if (table == 'offline_stage_logs') {
+      return logs;
+    }
+    return <Map<String, Object?>>[];
+  }
+
+  @override
+  Future<int> delete(
+    String table, {
+    String? where,
+    List<Object?>? whereArgs,
+  }) async {
+    if (whereArgs != null && whereArgs.isNotEmpty) {
+      final id = whereArgs.first as int;
+      logs.removeWhere((item) => item['id'] == id);
+      return 1;
+    }
+    logs.clear();
+    return 0;
+  }
+
+  @override
+  Future<int> update(
+    String table,
+    Map<String, Object?> values, {
+    String? where,
+    List<Object?>? whereArgs,
+    ConflictAlgorithm? conflictAlgorithm,
+  }) async {
+    if (whereArgs != null && whereArgs.isNotEmpty) {
+      final id = whereArgs.first as int;
+      for (final item in logs) {
+        if (item['id'] == id) {
+          item.addAll(values);
+        }
+      }
+      return 1;
+    }
+    return 0;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 class FakeInventoryRepository extends InventoryRepository {
   FakeInventoryRepository({
@@ -3317,6 +3396,10 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
+
+    final mockDb = MockDatabase();
+    OfflineSyncDbHelper.setMockDatabase(mockDb);
+    addTearDown(() => OfflineSyncDbHelper.setMockDatabase(null));
 
     await tester.pumpWidget(
       MyApp(
@@ -7215,6 +7298,75 @@ void main() {
         deliveryChallanRepository.getChallansCalls,
         greaterThan(initialChallanFetches),
       );
+    },
+  );
+
+  testWidgets(
+    'quick-create client from order editor selects the created client',
+    (tester) async {
+      final clientRepository = FakeClientRepository();
+      await pumpApp(
+        tester,
+        clientRepository: clientRepository,
+        viewSize: const Size(1440, 900),
+      );
+
+      await openOrdersScreen(tester);
+
+      // Open the order editor
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Create New Order'), findsOneWidget);
+
+      // Tap on the Client Name dropdown field
+      final clientField = find.byKey(const ValueKey<String>('orders-editor-client-field'));
+      expect(clientField, findsOneWidget);
+      await tester.tap(clientField);
+      await tester.pumpAndSettle();
+
+      // Verify the search searchable select dialog is shown
+      expect(find.text('Client'), findsOneWidget);
+
+      // Type a query that doesn't exist
+      await tester.enterText(find.byType(TextField).last, 'Dynamic Client XYZ');
+      await tester.pumpAndSettle();
+
+      // Find and tap the Create tile
+      final createTile = find.text('Create "Dynamic Client XYZ"');
+      expect(createTile, findsOneWidget);
+      await tester.tap(createTile);
+      // Wait for the client creation dialog to animate in. Since the create tile
+      // shows a progress indicator, pumpAndSettle would time out here.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      // Verify the client creation dialog is open
+      expect(find.text('Create Client'), findsNWidgets(2));
+
+      // Verify name is pre-populated
+      final nameField = find.widgetWithText(TextFormField, 'Name');
+      expect(nameField, findsOneWidget);
+      final textFormField = tester.widget<TextFormField>(nameField);
+      expect(textFormField.controller?.text, 'Dynamic Client XYZ');
+
+      // Submit the form (tap "Create Client" button)
+      final submitButton = find.widgetWithText(ElevatedButton, 'Create Client');
+      expect(submitButton, findsOneWidget);
+      await tester.tap(submitButton);
+      // Wait for saving to complete and dialogs to close.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pumpAndSettle();
+
+      // Verify the client dialog closed and the new client is selected
+      expect(find.text('Create Client'), findsNothing);
+      expect(find.text('Client'), findsNothing); // select dialog also closed
+
+      // Let's verify that the newly created client's name is selected in the field
+      expect(find.text('Dynamic Client XYZ'), findsOneWidget);
     },
   );
 }

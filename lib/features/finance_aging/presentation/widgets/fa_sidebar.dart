@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-class PPSidebar extends StatelessWidget {
-  const PPSidebar({
+class FASidebar extends StatelessWidget {
+  const FASidebar({
     super.key,
     required this.selectedKey,
     required this.onTap,

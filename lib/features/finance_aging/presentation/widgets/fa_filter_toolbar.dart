@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'package:core_erp/core/widgets/searchable_select.dart';
 
-class PPFilterToolbar extends StatelessWidget {
-  const PPFilterToolbar({
+class FAFilterToolbar extends StatelessWidget {
+  const FAFilterToolbar({
     super.key,
     required this.selectedFilters,
     required this.filterOptions,
@@ -606,14 +606,14 @@ class _TextActionButton extends StatelessWidget {
           foregroundColor: isPrimary
               ? Colors.white
               : isActiveTertiary
-              ? const Color(0xFF6049E3)
-              : const Color(0xFF5E5E5E),
+                  ? const Color(0xFF6049E3)
+                  : const Color(0xFF5E5E5E),
           side: BorderSide(
             color: isPrimary
                 ? const Color(0xFF6049E3)
                 : isActiveTertiary
-                ? const Color(0xFF8E7EF5)
-                : const Color(0xFFDCDCDC),
+                    ? const Color(0xFF8E7EF5)
+                    : const Color(0xFFDCDCDC),
             width: isActiveTertiary ? 2 : 1,
           ),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),

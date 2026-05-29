@@ -103,6 +103,7 @@ class ApiItemRepository implements ItemRepository {
         createdAt: now,
         updatedAt: now,
         variationTree: tree,
+        photoUrl: input.photoUrl.trim(),
       );
       _mockItems.add(created);
       return created;
@@ -177,6 +178,7 @@ class ApiItemRepository implements ItemRepository {
         createdAt: current.createdAt,
         updatedAt: now,
         variationTree: tree,
+        photoUrl: input.photoUrl.trim(),
       );
       _mockItems[index] = updated;
       return updated;

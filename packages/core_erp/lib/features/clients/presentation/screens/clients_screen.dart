@@ -9,6 +9,7 @@ import '../../../../core/widgets/soft_primitives.dart';
 import '../../domain/client_definition.dart';
 import '../../domain/client_inputs.dart';
 import '../providers/clients_provider.dart';
+import '../../../orders/presentation/providers/orders_provider.dart';
 
 class ClientsScreen extends StatelessWidget {
   const ClientsScreen({super.key});
@@ -55,12 +56,13 @@ class ClientsScreen extends StatelessWidget {
   static Future<ClientDefinition?> openEditor(
     BuildContext context, {
     ClientDefinition? client,
+    String? initialName,
   }) {
     return showErpFormDialog<ClientDefinition?>(
       context,
       maxWidth: 760,
       maxHeight: 760,
-      child: _ClientEditorSheet(client: client),
+      child: _ClientEditorSheet(client: client, initialName: initialName),
     );
   }
 
@@ -185,6 +187,17 @@ class _ClientRow extends StatelessWidget {
             runSpacing: 8,
             children: [
               SoftActionLink(
+                label: 'Purchases',
+                onTap: () {
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (context) => _ClientPurchasesSheet(client: client),
+                  );
+                },
+              ),
+              SoftActionLink(
                 label: 'Edit',
                 onTap: () => ClientsScreen.openEditor(context, client: client),
               ),
@@ -209,9 +222,10 @@ class _ClientRow extends StatelessWidget {
 }
 
 class _ClientEditorSheet extends StatefulWidget {
-  const _ClientEditorSheet({this.client});
+  const _ClientEditorSheet({this.client, this.initialName});
 
   final ClientDefinition? client;
+  final String? initialName;
 
   @override
   State<_ClientEditorSheet> createState() => _ClientEditorSheetState();
@@ -223,12 +237,16 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
   late final TextEditingController _aliasController;
   late final TextEditingController _gstController;
   late final TextEditingController _addressController;
+  late final TextEditingController _logoUrlController;
+  late final TextEditingController _photoUrlController;
   String? _localError;
 
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.client?.name ?? '');
+    _nameController = TextEditingController(
+      text: widget.client?.name ?? widget.initialName ?? '',
+    );
     _aliasController = TextEditingController(text: widget.client?.alias ?? '');
     _gstController = TextEditingController(
       text: widget.client?.gstNumber ?? '',
@@ -236,9 +254,13 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
     _addressController = TextEditingController(
       text: widget.client?.address ?? '',
     );
+    _logoUrlController = TextEditingController(text: widget.client?.logoUrl ?? '');
+    _photoUrlController = TextEditingController(text: widget.client?.photoUrl ?? '');
     _nameController.addListener(_handleChange);
     _aliasController.addListener(_handleChange);
     _gstController.addListener(_handleChange);
+    _logoUrlController.addListener(_handleChange);
+    _photoUrlController.addListener(_handleChange);
   }
 
   void _handleChange() {
@@ -252,10 +274,14 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
     _nameController.removeListener(_handleChange);
     _aliasController.removeListener(_handleChange);
     _gstController.removeListener(_handleChange);
+    _logoUrlController.removeListener(_handleChange);
+    _photoUrlController.removeListener(_handleChange);
     _nameController.dispose();
     _aliasController.dispose();
     _gstController.dispose();
     _addressController.dispose();
+    _logoUrlController.dispose();
+    _photoUrlController.dispose();
     super.dispose();
   }
 
@@ -303,6 +329,29 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
                     helper: 'Optional. Must stay unique when provided',
                     required: false,
                     textCapitalization: TextCapitalization.characters,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            ErpDialogSectionCard(
+              title: 'Photos',
+              subtitle:
+                  'Optional logo and contact photo for quick visual identification.',
+              child: Column(
+                children: [
+                  _ClientImagePickerField(
+                    controller: _logoUrlController,
+                    label: 'Logo',
+                    hintText: 'Paste logo image URL…',
+                    placeholderIcon: Icons.business_rounded,
+                  ),
+                  const SizedBox(height: 16),
+                  _ClientImagePickerField(
+                    controller: _photoUrlController,
+                    label: 'Client Photo',
+                    hintText: 'Paste contact photo URL…',
+                    placeholderIcon: Icons.person_rounded,
                   ),
                 ],
               ),
@@ -423,6 +472,8 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
               alias: _aliasController.text.trim(),
               gstNumber: normalizedGst,
               address: _addressController.text.trim(),
+              logoUrl: _logoUrlController.text.trim(),
+              photoUrl: _photoUrlController.text.trim(),
             ),
           )
         : await provider.updateClient(
@@ -432,6 +483,8 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
               alias: _aliasController.text.trim(),
               gstNumber: normalizedGst,
               address: _addressController.text.trim(),
+              logoUrl: _logoUrlController.text.trim(),
+              photoUrl: _photoUrlController.text.trim(),
             ),
           );
 
@@ -582,6 +635,89 @@ class _ClientWarningText extends StatelessWidget {
   }
 }
 
+class _ClientPurchasesSheet extends StatelessWidget {
+  const _ClientPurchasesSheet({required this.client});
+
+  final ClientDefinition client;
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<OrdersProvider>();
+    final purchases = provider.orders
+        .where((o) => o.clientId == client.id)
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+        top: 64,
+      ),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Purchases: ${client.name}',
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1E293B),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: purchases.isEmpty
+                  ? const Center(child: Text('No past purchases found.'))
+                  : ListView.separated(
+                      padding: const EdgeInsets.all(24),
+                      itemCount: purchases.length,
+                      separatorBuilder: (context, index) => const Divider(),
+                      itemBuilder: (context, index) {
+                        final order = purchases[index];
+                        return ListTile(
+                          title: Text(order.itemName),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(order.variationPathLabel),
+                              Text(
+                                'Order No: ${order.orderNo} • Qty: ${order.quantity} ${order.unitSymbol}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF64748B),
+                                ),
+                              ),
+                            ],
+                          ),
+                          isThreeLine: true,
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ClientsMessageBanner extends StatelessWidget {
   const _ClientsMessageBanner({required this.message, required this.isError});
 
@@ -591,5 +727,117 @@ class _ClientsMessageBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ErpFormMessageBanner(message: message, isError: isError);
+  }
+}
+
+class _ClientImagePickerField extends StatefulWidget {
+  const _ClientImagePickerField({
+    required this.controller,
+    required this.label,
+    required this.hintText,
+    required this.placeholderIcon,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final String hintText;
+  final IconData placeholderIcon;
+
+  @override
+  State<_ClientImagePickerField> createState() =>
+      _ClientImagePickerFieldState();
+}
+
+class _ClientImagePickerFieldState extends State<_ClientImagePickerField> {
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_rebuild);
+  }
+
+  void _rebuild() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_rebuild);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final url = widget.controller.text.trim();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          widget.label,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF475569),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Image preview
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFDDE1F0)),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: url.isNotEmpty
+                  ? Image.network(
+                      url,
+                      fit: BoxFit.cover,
+                      errorBuilder: (ctx, err, e) => Icon(
+                        widget.placeholderIcon,
+                        size: 36,
+                        color: const Color(0xFFCBD5E1),
+                      ),
+                    )
+                  : Icon(
+                      widget.placeholderIcon,
+                      size: 36,
+                      color: const Color(0xFFCBD5E1),
+                    ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextFormField(
+                controller: widget.controller,
+                decoration: InputDecoration(
+                  hintText: widget.hintText,
+                  helperText: 'Paste an image URL to preview',
+                  filled: true,
+                  fillColor: const Color(0xFFF9FAFB),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                  ),
+                  suffixIcon: url.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () => widget.controller.clear(),
+                        )
+                      : null,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
   }
 }

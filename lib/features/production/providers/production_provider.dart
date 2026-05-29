@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../production_pipelines/domain/pipeline_template.dart';
+import '../../production_pipelines/domain/process_node.dart';
+
 enum ProductionRunPhase {
   idle,
   verifyingSetup,
@@ -21,82 +24,10 @@ class ProductionSetupException implements Exception {
   String toString() => message;
 }
 
-class PipelineBlueprint {
-  const PipelineBlueprint({
-    required this.id,
-    required this.name,
-    required this.stages,
-  });
-
-  final String id;
-  final String name;
-  final List<PipelineStage> stages;
-
-  PipelineBlueprint copyWith({
-    String? id,
-    String? name,
-    List<PipelineStage>? stages,
-  }) {
-    return PipelineBlueprint(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      stages: stages ?? this.stages,
-    );
-  }
-}
-
-class PipelineStage {
-  const PipelineStage({
-    required this.id,
-    required this.name,
-    required this.machineId,
-    required this.dieId,
-    required this.inputMaterial,
-    required this.machineAction,
-    required this.outputMaterial,
-    required this.scrapPolicy,
-    required this.targetOutputUnits,
-  });
-
-  final String id;
-  final String name;
-  final String machineId;
-  final String dieId;
-  final String inputMaterial;
-  final String machineAction;
-  final String outputMaterial;
-  final String scrapPolicy;
-  final int targetOutputUnits;
-
-  PipelineStage copyWith({
-    String? id,
-    String? name,
-    String? machineId,
-    String? dieId,
-    String? inputMaterial,
-    String? machineAction,
-    String? outputMaterial,
-    String? scrapPolicy,
-    int? targetOutputUnits,
-  }) {
-    return PipelineStage(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      machineId: machineId ?? this.machineId,
-      dieId: dieId ?? this.dieId,
-      inputMaterial: inputMaterial ?? this.inputMaterial,
-      machineAction: machineAction ?? this.machineAction,
-      outputMaterial: outputMaterial ?? this.outputMaterial,
-      scrapPolicy: scrapPolicy ?? this.scrapPolicy,
-      targetOutputUnits: targetOutputUnits ?? this.targetOutputUnits,
-    );
-  }
-}
-
 class ActiveProductionRun {
   const ActiveProductionRun({
     required this.id,
-    required this.blueprintId,
+    required this.templateId,
     required this.phase,
     required this.logs,
     required this.startedAt,
@@ -104,23 +35,23 @@ class ActiveProductionRun {
   });
 
   final String id;
-  final String blueprintId;
+  final String templateId;
   final ProductionRunPhase phase;
-  final List<StageExecutionLog> logs;
+  final List<NodeExecutionLog> logs;
   final DateTime startedAt;
   final DateTime? closedAt;
 
   ActiveProductionRun copyWith({
     String? id,
-    String? blueprintId,
+    String? templateId,
     ProductionRunPhase? phase,
-    List<StageExecutionLog>? logs,
+    List<NodeExecutionLog>? logs,
     DateTime? startedAt,
     DateTime? closedAt,
   }) {
     return ActiveProductionRun(
       id: id ?? this.id,
-      blueprintId: blueprintId ?? this.blueprintId,
+      templateId: templateId ?? this.templateId,
       phase: phase ?? this.phase,
       logs: logs ?? this.logs,
       startedAt: startedAt ?? this.startedAt,
@@ -129,9 +60,9 @@ class ActiveProductionRun {
   }
 }
 
-class StageExecutionLog {
-  const StageExecutionLog({
-    required this.stageId,
+class NodeExecutionLog {
+  const NodeExecutionLog({
+    required this.nodeId,
     required this.machineId,
     required this.dieId,
     required this.startedAt,
@@ -140,7 +71,7 @@ class StageExecutionLog {
     this.scrapWeightKg = 0,
   });
 
-  final String stageId;
+  final String nodeId;
   final String machineId;
   final String dieId;
   final DateTime startedAt;
@@ -148,8 +79,8 @@ class StageExecutionLog {
   final int goodYieldCount;
   final double scrapWeightKg;
 
-  StageExecutionLog copyWith({
-    String? stageId,
+  NodeExecutionLog copyWith({
+    String? nodeId,
     String? machineId,
     String? dieId,
     DateTime? startedAt,
@@ -157,8 +88,8 @@ class StageExecutionLog {
     int? goodYieldCount,
     double? scrapWeightKg,
   }) {
-    return StageExecutionLog(
-      stageId: stageId ?? this.stageId,
+    return NodeExecutionLog(
+      nodeId: nodeId ?? this.nodeId,
       machineId: machineId ?? this.machineId,
       dieId: dieId ?? this.dieId,
       startedAt: startedAt ?? this.startedAt,
@@ -216,137 +147,85 @@ class MaterialLedgerPreview {
   }
 }
 
-class StageDraftControllerPool {
-  StageDraftControllerPool(PipelineStage stage)
-    : name = TextEditingController(text: stage.name),
-      machineId = TextEditingController(text: stage.machineId),
-      dieId = TextEditingController(text: stage.dieId),
-      inputMaterial = TextEditingController(text: stage.inputMaterial),
-      machineAction = TextEditingController(text: stage.machineAction),
-      outputMaterial = TextEditingController(text: stage.outputMaterial),
-      scrapPolicy = TextEditingController(text: stage.scrapPolicy),
-      targetOutputUnits = TextEditingController(
-        text: stage.targetOutputUnits.toString(),
-      );
-
-  final TextEditingController name;
-  final TextEditingController machineId;
-  final TextEditingController dieId;
-  final TextEditingController inputMaterial;
-  final TextEditingController machineAction;
-  final TextEditingController outputMaterial;
-  final TextEditingController scrapPolicy;
-  final TextEditingController targetOutputUnits;
-
-  PipelineStage toStage(PipelineStage current) {
-    return current.copyWith(
-      name: name.text.trim().isEmpty ? current.name : name.text.trim(),
-      machineId: machineId.text.trim().isEmpty
-          ? current.machineId
-          : machineId.text.trim(),
-      dieId: dieId.text.trim().isEmpty ? current.dieId : dieId.text.trim(),
-      inputMaterial: inputMaterial.text.trim().isEmpty
-          ? current.inputMaterial
-          : inputMaterial.text.trim(),
-      machineAction: machineAction.text.trim().isEmpty
-          ? current.machineAction
-          : machineAction.text.trim(),
-      outputMaterial: outputMaterial.text.trim().isEmpty
-          ? current.outputMaterial
-          : outputMaterial.text.trim(),
-      scrapPolicy: scrapPolicy.text.trim().isEmpty
-          ? current.scrapPolicy
-          : scrapPolicy.text.trim(),
-      targetOutputUnits:
-          int.tryParse(targetOutputUnits.text.trim()) ??
-          current.targetOutputUnits,
-    );
-  }
-
-  void dispose() {
-    name.dispose();
-    machineId.dispose();
-    dieId.dispose();
-    inputMaterial.dispose();
-    machineAction.dispose();
-    outputMaterial.dispose();
-    scrapPolicy.dispose();
-    targetOutputUnits.dispose();
-  }
-}
-
 class ProductionProvider extends ChangeNotifier {
-  ProductionProvider({required PipelineBlueprint blueprint})
-    : _blueprint = blueprint {
-    if (blueprint.stages.isNotEmpty) {
-      _selectedStageId = blueprint.stages.first.id;
-    }
-    for (final stage in blueprint.stages) {
-      _draftPools[stage.id] = StageDraftControllerPool(stage);
+  ProductionProvider({required PipelineTemplate template})
+    : _template = template {
+    if (template.nodes.isNotEmpty) {
+      _selectedNodeId = template.nodes.first.id;
     }
   }
 
   factory ProductionProvider.seeded() {
     return ProductionProvider(
-      blueprint: const PipelineBlueprint(
+      template: const PipelineTemplate(
         id: 'paper-board-high-throughput',
-        name: 'Paper Board High Throughput Line',
-        stages: [
-          PipelineStage(
+        shopFloorId: 'mock-floor',
+        name: 'Mock Pipeline',
+        description: 'For testing',
+        stageLabels: ['Stage 1', 'Stage 2', 'Stage 3'],
+        laneLabels: ['Main'],
+        nodes: [
+          ProcessNode(
             id: 'stage-slitting',
             name: 'Reel Slitting',
-            machineId: 'MC-SLIT-01',
+            processType: 'Slitting',
+            stageIndex: 0,
+            laneIndex: 0,
+            inputs: [],
+            outputs: [],
+            machine: 'MC-SLIT-01',
             dieId: 'DIE-1450-A',
-            inputMaterial: 'Parent kraft reel, 510 Kg',
-            machineAction: 'Slit parent reel into board-width webs',
-            outputMaterial: 'WIP board lot',
-            scrapPolicy: 'Setup trim and edge dust routed to core shredding',
-            targetOutputUnits: 4850,
+            durationHours: 1,
+            status: 'queued',
+            isIntermediate: false,
           ),
-          PipelineStage(
+          ProcessNode(
             id: 'stage-punching',
             name: 'Die Punching',
-            machineId: 'MC-PUNCH-03',
+            processType: 'Punching',
+            stageIndex: 1,
+            laneIndex: 0,
+            inputs: [],
+            outputs: [],
+            machine: 'MC-PUNCH-03',
             dieId: 'DIE-CARTON-22',
-            inputMaterial: 'WIP board lot',
-            machineAction: 'Punch blanks using locked die settings',
-            outputMaterial: 'Carton blank stack',
-            scrapPolicy: 'Punch skeleton scrap weighed by bin',
-            targetOutputUnits: 4700,
+            durationHours: 1,
+            status: 'queued',
+            isIntermediate: false,
           ),
-          PipelineStage(
+          ProcessNode(
             id: 'stage-folding',
             name: 'Folding + Glue',
-            machineId: 'MC-FOLD-02',
+            processType: 'Folding',
+            stageIndex: 2,
+            laneIndex: 0,
+            inputs: [],
+            outputs: [],
+            machine: 'MC-FOLD-02',
             dieId: 'DIE-GLUE-08',
-            inputMaterial: 'Carton blank stack',
-            machineAction: 'Fold, glue, count, and bundle finished output',
-            outputMaterial: 'Finished carton bundles',
-            scrapPolicy: 'Rejected setup bundles logged as production scrap',
-            targetOutputUnits: 4600,
+            durationHours: 1,
+            status: 'queued',
+            isIntermediate: false,
           ),
         ],
+        flows: [],
       ),
     );
   }
 
   String _activeOperator = 'FLOOR-ADMIN';
-  PipelineBlueprint _blueprint;
+  PipelineTemplate _template;
   ActiveProductionRun? _activeRun;
   ProductionRunPhase _phase = ProductionRunPhase.idle;
-  String? _selectedStageId;
+  String? _selectedNodeId;
   String? _currentMachineId;
   String? _currentDieId;
-  DateTime? _stageStartedAt;
+  DateTime? _nodeStartedAt;
   Duration _bankedElapsed = Duration.zero;
   int _goodYieldCount = 0;
   double _scrapWeightKg = 0;
   double _parentReelConsumedKg = 510;
   String? _validationErrorMessage;
-  PipelineStage? _lastDeletedStage;
-  int? _lastDeletedIndex;
-  Timer? _clock;
-  final Map<String, StageDraftControllerPool> _draftPools = {};
 
   String get activeOperator => _activeOperator;
 
@@ -357,10 +236,12 @@ class ProductionProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  PipelineBlueprint get blueprint => _blueprint;
+  PipelineTemplate get template => _template;
+  PipelineTemplate get blueprint => _template;
+  ProcessNode? get selectedStage => selectedNode;
   ActiveProductionRun? get activeRun => _activeRun;
   ProductionRunPhase get phase => _phase;
-  String? get selectedStageId => _selectedStageId;
+  String? get selectedNodeId => _selectedNodeId;
   String? get currentMachineId => _currentMachineId;
   String? get currentDieId => _currentDieId;
   int get elapsedSeconds => _currentElapsed.inSeconds;
@@ -368,8 +249,6 @@ class ProductionProvider extends ChangeNotifier {
   double get scrapWeightKg => _scrapWeightKg;
   double get parentReelConsumedKg => _parentReelConsumedKg;
   String? get validationErrorMessage => _validationErrorMessage;
-  bool get hasUndoDelete =>
-      _lastDeletedStage != null && _lastDeletedIndex != null;
 
   bool get isIdle => _phase == ProductionRunPhase.idle;
   bool get isVerifyingSetup => _phase == ProductionRunPhase.verifyingSetup;
@@ -377,17 +256,15 @@ class ProductionProvider extends ChangeNotifier {
   bool get isPaused => _phase == ProductionRunPhase.paused;
   bool get isLoggingClosure => _phase == ProductionRunPhase.loggingClosure;
 
-  PipelineStage? get selectedStage {
-    final selectedId = _selectedStageId;
+  ProcessNode? get selectedNode {
+    final selectedId = _selectedNodeId;
     if (selectedId == null) {
       return null;
     }
-    return _blueprint.stages
-        .where((stage) => stage.id == selectedId)
+    return _template.nodes
+        .where((node) => node.id == selectedId)
         .firstOrNull;
   }
-
-  StageDraftControllerPool? draftFor(String stageId) => _draftPools[stageId];
 
   MaterialLedgerPreview get ledgerPreview => MaterialLedgerPreview(
     parentReelStockKg: -_parentReelConsumedKg,
@@ -406,7 +283,7 @@ class ProductionProvider extends ChangeNotifier {
   }
 
   Duration get _currentElapsed {
-    final startedAt = _stageStartedAt;
+    final startedAt = _nodeStartedAt;
     if (isRunning && startedAt != null) {
       final liveDelta = DateTime.now().difference(startedAt);
       if (liveDelta.isNegative) {
@@ -417,23 +294,37 @@ class ProductionProvider extends ChangeNotifier {
     return _bankedElapsed;
   }
 
-  void selectStage(String stageId) {
-    if (_selectedStageId == stageId) {
+  void loadTemplate(PipelineTemplate template) {
+    _template = template;
+    if (template.nodes.isNotEmpty) {
+      _selectedNodeId = template.nodes.first.id;
+    } else {
+      _selectedNodeId = null;
+    }
+    _phase = ProductionRunPhase.idle;
+    _currentMachineId = null;
+    _currentDieId = null;
+    _validationErrorMessage = null;
+    notifyListeners();
+  }
+
+  void selectNode(String nodeId) {
+    if (_selectedNodeId == nodeId) {
       return;
     }
-    final nextStage = _blueprint.stages
-        .where((stage) => stage.id == stageId)
+    final nextNode = _template.nodes
+        .where((node) => node.id == nodeId)
         .firstOrNull;
-    if (nextStage == null) {
+    if (nextNode == null) {
       return;
     }
-    _selectedStageId = stageId;
+    _selectedNodeId = nodeId;
     _validationErrorMessage = null;
     if (!isRunning && !isPaused && !isLoggingClosure) {
-      final setupMatchesStage =
-          _currentMachineId == nextStage.machineId &&
-          _currentDieId == nextStage.dieId;
-      if (!setupMatchesStage) {
+      final setupMatchesNode =
+          _currentMachineId == nextNode.machine &&
+          _currentDieId == nextNode.dieId;
+      if (!setupMatchesNode) {
         _phase = ProductionRunPhase.idle;
         _currentMachineId = null;
         _currentDieId = null;
@@ -442,99 +333,19 @@ class ProductionProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  PipelineStage appendStage() {
-    final nextNumber = _blueprint.stages.length + 1;
-    final stage = PipelineStage(
-      id: 'stage-${DateTime.now().microsecondsSinceEpoch}',
-      name: 'Production Step $nextNumber',
-      machineId: 'MC-NEW-$nextNumber',
-      dieId: 'DIE-NEW-$nextNumber',
-      inputMaterial: 'Input material',
-      machineAction: 'Machine action',
-      outputMaterial: 'Target output',
-      scrapPolicy: 'Setup scrap weighed and logged',
-      targetOutputUnits: 1000,
-    );
-    _blueprint = _blueprint.copyWith(stages: [..._blueprint.stages, stage]);
-    _draftPools[stage.id] = StageDraftControllerPool(stage);
-    _selectedStageId = stage.id;
-    notifyListeners();
-    return stage;
-  }
-
-  PipelineStage? deleteSelectedStage() {
-    final selectedId = _selectedStageId;
-    if (selectedId == null || _blueprint.stages.length <= 1) {
-      return null;
+  void beginSetup() {
+    final node = selectedNode;
+    if (node == null) {
+      throw const ProductionSetupException('No active process node selected.');
     }
-    final index = _blueprint.stages.indexWhere(
-      (stage) => stage.id == selectedId,
-    );
-    if (index == -1) {
-      return null;
-    }
-    final removed = _blueprint.stages[index];
-    final updated = [..._blueprint.stages]..removeAt(index);
-    _lastDeletedStage = removed;
-    _lastDeletedIndex = index;
-    _draftPools.remove(removed.id)?.dispose();
-    _blueprint = _blueprint.copyWith(stages: updated);
-    _selectedStageId = updated[index.clamp(0, updated.length - 1)].id;
-    notifyListeners();
-    return removed;
-  }
-
-  void reorderStages(int oldIndex, int newIndex) {
-    if (oldIndex < 0 || oldIndex >= _blueprint.stages.length) return;
-    if (newIndex < 0 || newIndex > _blueprint.stages.length) return;
-
-    final stages = [..._blueprint.stages];
-    final item = stages.removeAt(oldIndex);
-    var targetIndex = newIndex;
-    if (oldIndex < targetIndex) {
-      targetIndex -= 1;
-    }
-    stages.insert(targetIndex, item);
-    _blueprint = _blueprint.copyWith(stages: stages);
-    notifyListeners();
-  }
-
-  void undoLastStageDelete() {
-    final stage = _lastDeletedStage;
-    final index = _lastDeletedIndex;
-    if (stage == null || index == null) {
-      return;
-    }
-    final updated = [..._blueprint.stages];
-    updated.insert(index.clamp(0, updated.length), stage);
-    _blueprint = _blueprint.copyWith(stages: updated);
-    _draftPools[stage.id] = StageDraftControllerPool(stage);
-    _selectedStageId = stage.id;
-    _lastDeletedStage = null;
-    _lastDeletedIndex = null;
-    notifyListeners();
-  }
-
-  void saveStageDraft(String stageId) {
-    final draft = _draftPools[stageId];
-    if (draft == null) {
-      return;
-    }
-    final updatedStages = _blueprint.stages
-        .map((stage) {
-          if (stage.id != stageId) {
-            return stage;
-          }
-          return draft.toStage(stage);
-        })
-        .toList(growable: false);
-    _blueprint = _blueprint.copyWith(stages: updatedStages);
+    _phase = ProductionRunPhase.verifyingSetup;
+    _validationErrorMessage = null;
     notifyListeners();
   }
 
   void verifyAssetSetup(String scannedMachineCode, String scannedDieCode) {
-    final stage = selectedStage;
-    if (stage == null) {
+    final node = selectedNode;
+    if (node == null) {
       throw const ProductionSetupException('Select a production step first.');
     }
 
@@ -544,182 +355,36 @@ class ProductionProvider extends ChangeNotifier {
 
     final scannedMachineId = _normalizeAssetCode(scannedMachineCode);
     final scannedDieId = _normalizeAssetCode(scannedDieCode);
-    final expectedMachineId = _normalizeAssetCode(stage.machineId);
-    final expectedDieId = _normalizeAssetCode(stage.dieId);
+    final expectedMachineId = _normalizeAssetCode(node.machine);
+    final expectedDieId = _normalizeAssetCode(node.dieId);
 
     if (scannedMachineId != expectedMachineId) {
       _validationErrorMessage =
-          'Machine lock-key mismatch. Expected ${stage.machineId}, scanned $scannedMachineCode.';
+          'Machine lock-key mismatch. Expected ${node.machine}, scanned $scannedMachineCode.';
       _phase = ProductionRunPhase.idle;
       notifyListeners();
       throw ProductionSetupException(_validationErrorMessage!);
     }
 
-    if (scannedDieId != expectedDieId) {
+    if (node.dieId.isNotEmpty && scannedDieId != expectedDieId) {
       _validationErrorMessage =
-          'Die lock-key mismatch. Expected ${stage.dieId}, scanned $scannedDieCode.';
+          'Die lock-key mismatch. Expected ${node.dieId}, scanned $scannedDieCode.';
       _phase = ProductionRunPhase.idle;
       notifyListeners();
       throw ProductionSetupException(_validationErrorMessage!);
     }
 
-    _currentMachineId = stage.machineId;
-    _currentDieId = stage.dieId;
+    _currentMachineId = node.machine;
+    _currentDieId = node.dieId;
     _phase = ProductionRunPhase.setupVerified;
-    notifyListeners();
-  }
-
-  void startRun() {
-    final stage = selectedStage;
-    if (stage == null) {
-      return;
-    }
-    if (_phase != ProductionRunPhase.setupVerified ||
-        _currentMachineId != stage.machineId ||
-        _currentDieId != stage.dieId) {
-      _validationErrorMessage =
-          'Verify the machine and die lock-key setup before starting.';
-      notifyListeners();
-      return;
-    }
-    final now = DateTime.now();
-    final log = StageExecutionLog(
-      stageId: stage.id,
-      machineId: _currentMachineId ?? stage.machineId,
-      dieId: _currentDieId ?? stage.dieId,
-      startedAt: now,
-    );
-    _activeRun = ActiveProductionRun(
-      id: 'run-${now.microsecondsSinceEpoch}',
-      blueprintId: _blueprint.id,
-      phase: ProductionRunPhase.running,
-      logs: [log],
-      startedAt: now,
-    );
-    _phase = ProductionRunPhase.running;
-    _bankedElapsed = Duration.zero;
-    _stageStartedAt = now;
-    _validationErrorMessage = null;
-    _startClock();
-    notifyListeners();
-  }
-
-  void pauseRun() {
-    if (!isRunning) {
-      return;
-    }
-    _bankElapsed();
-    _phase = ProductionRunPhase.paused;
-    _activeRun = _activeRun?.copyWith(phase: _phase);
-    _clock?.cancel();
-    notifyListeners();
-  }
-
-  void resumeRun() {
-    if (!isPaused) {
-      return;
-    }
-    _phase = ProductionRunPhase.running;
-    _stageStartedAt = DateTime.now();
-    _activeRun = _activeRun?.copyWith(phase: _phase);
-    _startClock();
-    notifyListeners();
-  }
-
-  void beginClosure() {
-    if (!isRunning && !isPaused) {
-      return;
-    }
-    _bankElapsed();
-    _phase = ProductionRunPhase.loggingClosure;
-    _activeRun = _activeRun?.copyWith(phase: _phase);
-    _clock?.cancel();
-    notifyListeners();
-  }
-
-  void cancelClosure() {
-    if (!isLoggingClosure) {
-      return;
-    }
-    _phase = ProductionRunPhase.paused;
-    _activeRun = _activeRun?.copyWith(phase: _phase);
-    notifyListeners();
-  }
-
-  void updateClosureValues({
-    double? parentReelConsumedKg,
-    int? goodYieldCount,
-    double? scrapWeightKg,
-  }) {
-    _parentReelConsumedKg = (parentReelConsumedKg ?? _parentReelConsumedKg)
-        .clamp(0, double.infinity);
-    _goodYieldCount = (goodYieldCount ?? _goodYieldCount).clamp(0, 999999999);
-    _scrapWeightKg = (scrapWeightKg ?? _scrapWeightKg).clamp(
-      0,
-      double.infinity,
-    );
-    notifyListeners();
-  }
-
-  void commitClosure() {
-    final run = _activeRun;
-    if (run == null) {
-      return;
-    }
-    final logs = run.logs.isEmpty
-        ? run.logs
-        : [
-            ...run.logs.take(run.logs.length - 1),
-            run.logs.last.copyWith(
-              completedAt: DateTime.now(),
-              goodYieldCount: _goodYieldCount,
-              scrapWeightKg: _scrapWeightKg,
-            ),
-          ];
-    _phase = ProductionRunPhase.closed;
-    _activeRun = run.copyWith(
-      phase: _phase,
-      logs: logs,
-      closedAt: DateTime.now(),
-    );
-    _stageStartedAt = null;
-    _clock?.cancel();
-    notifyListeners();
-  }
-
-  void resetRun() {
-    _clock?.cancel();
-    _activeRun = null;
-    _phase = ProductionRunPhase.idle;
-    _currentMachineId = null;
-    _currentDieId = null;
-    _stageStartedAt = null;
-    _bankedElapsed = Duration.zero;
-    _goodYieldCount = 0;
-    _scrapWeightKg = 0;
     _validationErrorMessage = null;
     notifyListeners();
   }
 
-  void _startClock() {
-    _clock?.cancel();
-    _clock = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (isRunning) {
-        notifyListeners();
-      }
-    });
-  }
-
-  void _bankElapsed() {
-    final startedAt = _stageStartedAt;
-    if (startedAt == null) {
-      return;
-    }
-    final delta = DateTime.now().difference(startedAt);
-    if (!delta.isNegative) {
-      _bankedElapsed += delta;
-    }
-    _stageStartedAt = null;
+  void verifySetup(String scannedMachineId, String scannedDieId) {
+    try {
+      verifyAssetSetup(scannedMachineId, scannedDieId);
+    } catch (_) {}
   }
 
   String _normalizeAssetCode(String value) {
@@ -733,16 +398,171 @@ class ProductionProvider extends ChangeNotifier {
     return upper;
   }
 
-  @override
-  void dispose() {
-    _clock?.cancel();
-    for (final draft in _draftPools.values) {
-      draft.dispose();
-    }
-    super.dispose();
-  }
-}
+  void selectStage(String stageId) => selectNode(stageId);
+  void resumeRun() => startRun();
+  void beginClosure() => initiateClosure();
 
-extension<T> on Iterable<T> {
-  T? get firstOrNull => isEmpty ? null : first;
+  void reorderStages(int oldIndex, int newIndex) {
+    if (oldIndex < 0 || oldIndex >= _template.nodes.length) return;
+    if (newIndex < 0 || newIndex > _template.nodes.length) return;
+
+    final nodes = [..._template.nodes];
+    final item = nodes.removeAt(oldIndex);
+    var targetIndex = newIndex;
+    if (oldIndex < targetIndex) {
+      targetIndex -= 1;
+    }
+    nodes.insert(targetIndex, item);
+    _template = _template.copyWith(nodes: nodes);
+    notifyListeners();
+  }
+
+  void cancelSetup() {
+    _phase = ProductionRunPhase.idle;
+    _currentMachineId = null;
+    _currentDieId = null;
+    _validationErrorMessage = null;
+    notifyListeners();
+  }
+
+  void startRun() {
+    final node = selectedNode;
+    if (node == null) {
+      return;
+    }
+    final isAllowedPhase = _phase == ProductionRunPhase.setupVerified ||
+        _phase == ProductionRunPhase.paused;
+    if (!isAllowedPhase ||
+        _currentMachineId != node.machine ||
+        _currentDieId != node.dieId) {
+      _validationErrorMessage =
+          'Verify the machine and die lock-key setup before starting.';
+      notifyListeners();
+      return;
+    }
+    if (_activeRun == null) {
+      _activeRun = ActiveProductionRun(
+        id: 'run-${DateTime.now().microsecondsSinceEpoch}',
+        templateId: _template.id,
+        phase: ProductionRunPhase.running,
+        logs: [],
+        startedAt: DateTime.now(),
+      );
+    } else {
+      _activeRun = _activeRun!.copyWith(phase: ProductionRunPhase.running);
+    }
+    _phase = ProductionRunPhase.running;
+    _nodeStartedAt = DateTime.now();
+    _validationErrorMessage = null;
+    notifyListeners();
+  }
+
+  void pauseRun() {
+    if (_phase != ProductionRunPhase.running) return;
+    _bankElapsed();
+    _phase = ProductionRunPhase.paused;
+    _activeRun = _activeRun?.copyWith(phase: ProductionRunPhase.paused);
+    notifyListeners();
+  }
+
+  void incrementYield(int amount) {
+    if (!isRunning) return;
+    _goodYieldCount += amount;
+    _parentReelConsumedKg += amount * 0.15;
+    notifyListeners();
+  }
+
+  void decrementYield(int amount) {
+    if (!isRunning || _goodYieldCount < amount) return;
+    _goodYieldCount -= amount;
+    _parentReelConsumedKg -= amount * 0.15;
+    notifyListeners();
+  }
+
+  void logScrap(double weightKg) {
+    if (!isRunning && !isPaused) return;
+    _scrapWeightKg += weightKg;
+    _parentReelConsumedKg += weightKg;
+    notifyListeners();
+  }
+
+  void initiateClosure() {
+    if (!isRunning && !isPaused) return;
+    _bankElapsed();
+    _phase = ProductionRunPhase.loggingClosure;
+    _activeRun = _activeRun?.copyWith(phase: ProductionRunPhase.loggingClosure);
+    notifyListeners();
+  }
+
+  void completeClosure() {
+    if (_phase != ProductionRunPhase.loggingClosure) return;
+    
+    final node = selectedNode;
+    if (node != null && _activeRun != null) {
+      final log = NodeExecutionLog(
+        nodeId: node.id,
+        machineId: _currentMachineId ?? 'UNKNOWN',
+        dieId: _currentDieId ?? 'UNKNOWN',
+        startedAt: _nodeStartedAt ?? DateTime.now(),
+        completedAt: DateTime.now(),
+        goodYieldCount: _goodYieldCount,
+        scrapWeightKg: _scrapWeightKg,
+      );
+      _activeRun = _activeRun!.copyWith(
+        phase: ProductionRunPhase.closed,
+        closedAt: DateTime.now(),
+        logs: [..._activeRun!.logs, log],
+      );
+    }
+    
+    _phase = ProductionRunPhase.closed;
+    _currentMachineId = null;
+    _currentDieId = null;
+    notifyListeners();
+
+    // Reset for next node
+    Future.delayed(const Duration(seconds: 2), () {
+      _phase = ProductionRunPhase.idle;
+      _goodYieldCount = 0;
+      _scrapWeightKg = 0;
+      _bankedElapsed = Duration.zero;
+      _nodeStartedAt = null;
+      _validationErrorMessage = null;
+      notifyListeners();
+    });
+  }
+
+  void commitClosure() {
+    // Legacy support for the UI dialog saving data
+    completeClosure();
+  }
+
+  void updateClosureValues({
+    required double parentReelConsumedKg,
+    required int goodYieldCount,
+    required double scrapWeightKg,
+  }) {
+    _parentReelConsumedKg = parentReelConsumedKg;
+    _goodYieldCount = goodYieldCount;
+    _scrapWeightKg = scrapWeightKg;
+    notifyListeners();
+  }
+
+  void cancelClosure() {
+    if (_phase != ProductionRunPhase.loggingClosure) return;
+    _phase = ProductionRunPhase.paused;
+    _activeRun = _activeRun?.copyWith(phase: ProductionRunPhase.paused);
+    notifyListeners();
+  }
+
+  void _bankElapsed() {
+    final startedAt = _nodeStartedAt;
+    if (startedAt != null) {
+      final delta = DateTime.now().difference(startedAt);
+      if (!delta.isNegative) {
+        _bankedElapsed += delta;
+      }
+    }
+    _nodeStartedAt = null;
+  }
 }

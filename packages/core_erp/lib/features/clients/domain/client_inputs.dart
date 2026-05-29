@@ -4,12 +4,16 @@ class CreateClientInput {
     this.alias = '',
     this.gstNumber = '',
     this.address = '',
+    this.logoUrl = '',
+    this.photoUrl = '',
   });
 
   final String name;
   final String alias;
   final String gstNumber;
   final String address;
+  final String logoUrl;
+  final String photoUrl;
 }
 
 class UpdateClientInput {
@@ -19,6 +23,8 @@ class UpdateClientInput {
     this.alias = '',
     this.gstNumber = '',
     this.address = '',
+    this.logoUrl = '',
+    this.photoUrl = '',
   });
 
   final int id;
@@ -26,4 +32,6 @@ class UpdateClientInput {
   final String alias;
   final String gstNumber;
   final String address;
+  final String logoUrl;
+  final String photoUrl;
 }

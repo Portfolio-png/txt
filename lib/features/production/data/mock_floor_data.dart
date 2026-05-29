@@ -1,0 +1,307 @@
+import 'package:flutter/material.dart';
+import '../domain/models/floor_view_models.dart';
+
+class FloorMockData {
+  final floor = const FloorSummary(
+    id: 'floor-2',
+    name: 'Floor 2',
+    areaName: 'Fabrication',
+    oee: 82.4,
+    oeeTrend: KpiTrend(label: 'vs last shift', delta: -3.1),
+    totalYield: 18420,
+    yieldTarget: 22000,
+    activeMachines: 19,
+    totalMachines: 25,
+    operatorHeadcount: 34,
+    topBottleneckPipelineId: 'press-brake',
+  );
+
+  final pipelines = const [
+    PipelineSummary(
+      id: 'laser-line-a',
+      name: 'Laser Cutting Line A',
+      status: PipelineStatus.running,
+      oee: 86.8,
+      outputActual: 4820,
+      outputTarget: 6000,
+      queueMinutes: 12,
+      stationCount: 6,
+      activeOperators: 8,
+      alertCount: 1,
+      bottleneckReason: 'Deburr buffer is close to queue limit',
+      bottleneckImpact: 'Estimated -180 units by shift end',
+    ),
+    PipelineSummary(
+      id: 'press-brake',
+      name: 'Press Brake Cell B',
+      status: PipelineStatus.blocked,
+      oee: 68.5,
+      outputActual: 3150,
+      outputTarget: 5500,
+      queueMinutes: 24,
+      stationCount: 5,
+      activeOperators: 7,
+      alertCount: 3,
+      bottleneckReason: 'Press Brake queue exceeds 18m',
+      bottleneckImpact: 'Estimated -640 units by shift end',
+    ),
+    PipelineSummary(
+      id: 'welding-main',
+      name: 'Welding Cells 1-4',
+      status: PipelineStatus.waiting,
+      oee: 77.2,
+      outputActual: 2680,
+      outputTarget: 4200,
+      queueMinutes: 18,
+      stationCount: 4,
+      activeOperators: 6,
+      alertCount: 2,
+      bottleneckReason: 'Fixtures waiting after brake release',
+      bottleneckImpact: 'Estimated -310 units by shift end',
+    ),
+    PipelineSummary(
+      id: 'qa-pack',
+      name: 'QA + Packing Flow',
+      status: PipelineStatus.running,
+      oee: 91.4,
+      outputActual: 5240,
+      outputTarget: 5600,
+      queueMinutes: 6,
+      stationCount: 4,
+      activeOperators: 5,
+      alertCount: 0,
+      bottleneckReason: 'No active bottleneck',
+      bottleneckImpact: 'Tracking within shift plan',
+    ),
+    PipelineSummary(
+      id: 'punch-press',
+      name: 'Punch Press Loop',
+      status: PipelineStatus.idle,
+      oee: 0,
+      outputActual: 0,
+      outputTarget: 2200,
+      queueMinutes: 0,
+      stationCount: 3,
+      activeOperators: 0,
+      alertCount: 0,
+      bottleneckReason: 'Idle by schedule',
+      bottleneckImpact: 'No shift impact',
+    ),
+  ];
+
+  final zones = const [
+    ProductionZone(
+      id: 'raw-sheet',
+      name: 'Raw Material Storage',
+      rect: Rect.fromLTWH(0.08, 0.16, 0.19, 0.16),
+      type: 'Inbound',
+      status: ZoneStatus.normal,
+    ),
+    ProductionZone(
+      id: 'laser',
+      name: 'Laser Cutting',
+      rect: Rect.fromLTWH(0.36, 0.13, 0.21, 0.18),
+      type: 'Cutting',
+      status: ZoneStatus.active,
+    ),
+    ProductionZone(
+      id: 'punch',
+      name: 'Punch Press',
+      rect: Rect.fromLTWH(0.08, 0.45, 0.20, 0.17),
+      type: 'Press',
+      status: ZoneStatus.normal,
+    ),
+    ProductionZone(
+      id: 'brake',
+      name: 'Press Brake',
+      rect: Rect.fromLTWH(0.37, 0.45, 0.21, 0.18),
+      type: 'Forming',
+      status: ZoneStatus.blocked,
+    ),
+    ProductionZone(
+      id: 'welding',
+      name: 'Welding Cells',
+      rect: Rect.fromLTWH(0.66, 0.19, 0.23, 0.22),
+      type: 'Assembly',
+      status: ZoneStatus.constrained,
+    ),
+    ProductionZone(
+      id: 'deburr',
+      name: 'Deburr / Grind',
+      rect: Rect.fromLTWH(0.66, 0.52, 0.20, 0.15),
+      type: 'Surface prep',
+      status: ZoneStatus.constrained,
+    ),
+    ProductionZone(
+      id: 'qa',
+      name: 'QA',
+      rect: Rect.fromLTWH(0.43, 0.76, 0.17, 0.13),
+      type: 'Inspection',
+      status: ZoneStatus.active,
+    ),
+    ProductionZone(
+      id: 'packing',
+      name: 'Packing',
+      rect: Rect.fromLTWH(0.74, 0.75, 0.19, 0.14),
+      type: 'Outbound',
+      status: ZoneStatus.active,
+    ),
+  ];
+
+  final routes = const [
+    PipelineRoute(
+      id: 'route-laser',
+      pipelineId: 'laser-line-a',
+      points: [
+        Offset(0.17, 0.24),
+        Offset(0.47, 0.23),
+        Offset(0.76, 0.59),
+        Offset(0.52, 0.82),
+        Offset(0.83, 0.82),
+      ],
+      status: PipelineStatus.running,
+    ),
+    PipelineRoute(
+      id: 'route-brake',
+      pipelineId: 'press-brake',
+      points: [
+        Offset(0.17, 0.24),
+        Offset(0.47, 0.23),
+        Offset(0.48, 0.54),
+        Offset(0.76, 0.59),
+        Offset(0.52, 0.82),
+      ],
+      status: PipelineStatus.blocked,
+    ),
+    PipelineRoute(
+      id: 'route-welding',
+      pipelineId: 'welding-main',
+      points: [
+        Offset(0.48, 0.54),
+        Offset(0.77, 0.31),
+        Offset(0.76, 0.59),
+        Offset(0.52, 0.82),
+      ],
+      status: PipelineStatus.waiting,
+    ),
+    PipelineRoute(
+      id: 'route-qa',
+      pipelineId: 'qa-pack',
+      points: [Offset(0.76, 0.59), Offset(0.52, 0.82), Offset(0.83, 0.82)],
+      status: PipelineStatus.running,
+    ),
+    PipelineRoute(
+      id: 'route-punch',
+      pipelineId: 'punch-press',
+      points: [Offset(0.17, 0.24), Offset(0.18, 0.54), Offset(0.48, 0.54)],
+      status: PipelineStatus.idle,
+    ),
+  ];
+
+  final stations = const [
+    StationNode(
+      id: 'st-raw',
+      label: 'Sheet pick',
+      zoneId: 'raw-sheet',
+      position: Offset(0.17, 0.24),
+      status: PipelineStatus.running,
+      pipelineId: 'laser-line-a',
+    ),
+    StationNode(
+      id: 'st-laser',
+      label: 'Cutting output',
+      zoneId: 'laser',
+      position: Offset(0.47, 0.23),
+      status: PipelineStatus.running,
+      pipelineId: 'laser-line-a',
+    ),
+    StationNode(
+      id: 'st-deburr',
+      label: 'Deburr buffer',
+      zoneId: 'deburr',
+      position: Offset(0.76, 0.59),
+      status: PipelineStatus.waiting,
+      pipelineId: 'laser-line-a',
+      isBottleneck: true,
+    ),
+    StationNode(
+      id: 'st-brake',
+      label: 'Brake queue',
+      zoneId: 'brake',
+      position: Offset(0.48, 0.54),
+      status: PipelineStatus.blocked,
+      pipelineId: 'press-brake',
+      isBottleneck: true,
+    ),
+    StationNode(
+      id: 'st-weld',
+      label: 'Welding intake',
+      zoneId: 'welding',
+      position: Offset(0.77, 0.31),
+      status: PipelineStatus.waiting,
+      pipelineId: 'welding-main',
+      isBottleneck: true,
+    ),
+    StationNode(
+      id: 'st-qa',
+      label: 'QA gate',
+      zoneId: 'qa',
+      position: Offset(0.52, 0.82),
+      status: PipelineStatus.running,
+      pipelineId: 'qa-pack',
+    ),
+    StationNode(
+      id: 'st-pack',
+      label: 'Packing release',
+      zoneId: 'packing',
+      position: Offset(0.83, 0.82),
+      status: PipelineStatus.running,
+      pipelineId: 'qa-pack',
+    ),
+    StationNode(
+      id: 'st-punch',
+      label: 'Punch loop',
+      zoneId: 'punch',
+      position: Offset(0.18, 0.54),
+      status: PipelineStatus.idle,
+      pipelineId: 'punch-press',
+    ),
+  ];
+
+  final alerts = const [
+    FloorAlert(
+      severity: AlertSeverity.warning,
+      title: 'Press Brake queue',
+      message: 'Queue exceeds 18m and is holding downstream welding.',
+      position: Offset(0.48, 0.47),
+      relatedPipelineId: 'press-brake',
+    ),
+    FloorAlert(
+      severity: AlertSeverity.danger,
+      title: 'Blocked transfer route',
+      message: 'Brake-to-deburr transfer blocked by WIP stack.',
+      position: Offset(0.61, 0.56),
+      relatedPipelineId: 'press-brake',
+    ),
+    FloorAlert(
+      severity: AlertSeverity.warning,
+      title: 'Quality hold',
+      message: 'QA sampling frequency increased for formed brackets.',
+      position: Offset(0.52, 0.75),
+      relatedPipelineId: 'qa-pack',
+    ),
+    FloorAlert(
+      severity: AlertSeverity.info,
+      title: 'Tooling warnings',
+      message: 'Two floor-level tooling warnings active this shift.',
+      position: Offset(0.39, 0.16),
+    ),
+  ];
+
+  PipelineSummary pipelineById(String id) {
+    return pipelines.firstWhere(
+      (pipeline) => pipeline.id == id,
+      orElse: () => pipelines.first,
+    );
+  }
+}

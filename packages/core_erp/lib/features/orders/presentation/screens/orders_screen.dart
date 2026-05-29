@@ -15,6 +15,7 @@ import '../../../../core/widgets/soft_primitives.dart';
 import 'package:core_erp/core/navigation/app_navigation.dart';
 import '../../../clients/domain/client_definition.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
+import '../../../clients/presentation/screens/clients_screen.dart';
 import '../../../delivery_challans/domain/delivery_challan.dart';
 import '../../../delivery_challans/presentation/providers/delivery_challan_provider.dart';
 import '../../../delivery_challans/presentation/screens/delivery_challan_screen.dart';
@@ -2315,9 +2316,13 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                     ),
                   )
                   .toList(growable: false),
+              onCreateOption: (query) => _quickCreateClient(context, name: query),
               onChanged: (value) {
                 setState(() {
                   _selectedClientId = value;
+                  for (final line in _lines) {
+                    _tryAutoFillClientCode(line);
+                  }
                 });
               },
               validator: (value) {
@@ -2511,20 +2516,40 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
             child: _buildCompletionDateFieldForLine(context, index),
           ),
         ],
-        if (index > 0) ...[
-          const SizedBox(height: 10),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: () => _removeLine(index),
-              icon: const Icon(Icons.delete_outline_rounded, size: 18),
-              label: const Text('Remove item'),
+        const SizedBox(height: 10),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            TextButton.icon(
+              onPressed: () => _showGlobalItemHistoryDialog(index),
+              icon: const Icon(Icons.history_rounded, size: 18),
+              label: const Text('History'),
               style: TextButton.styleFrom(
-                foregroundColor: SoftErpTheme.dangerText,
+                foregroundColor: SoftErpTheme.accent,
               ),
             ),
-          ),
-        ],
+            const SizedBox(width: 8),
+            TextButton.icon(
+              onPressed: () => _duplicateLine(index),
+              icon: const Icon(Icons.copy_rounded, size: 18),
+              label: const Text('Duplicate'),
+              style: TextButton.styleFrom(
+                foregroundColor: SoftErpTheme.textSecondary,
+              ),
+            ),
+            if (index > 0) ...[
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: () => _removeLine(index),
+                icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                label: const Text('Remove item'),
+                style: TextButton.styleFrom(
+                  foregroundColor: SoftErpTheme.dangerText,
+                ),
+              ),
+            ],
+          ],
+        ),
       ],
     );
   }
@@ -2546,6 +2571,8 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
         items,
         index,
       ),
+      onHistory: () => _showGlobalItemHistoryDialog(index),
+      onDuplicate: () => _duplicateLine(index),
       onDelete: index == 0 ? null : () => _removeLine(index),
     );
   }
@@ -2969,6 +2996,23 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     );
   }
 
+  Future<SearchableSelectOption<int>?> _quickCreateClient(
+    BuildContext context, {
+    required String name,
+  }) async {
+    final created = await ClientsScreen.openEditor(
+      context,
+      initialName: name.trim(),
+    );
+    if (!mounted || created == null) {
+      return null;
+    }
+    return SearchableSelectOption<int>(
+      value: created.id,
+      label: created.displayLabel,
+    );
+  }
+
   Future<SearchableSelectOption<int>?> _quickAddUnitConversionForLine(
     BuildContext context, {
     required List<ItemDefinition> items,
@@ -3187,6 +3231,74 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
         _recalculateOrderCompletionFromLines();
       }
     });
+  }
+
+  void _duplicateLine(int index) {
+    if (index < 0 || index >= _lines.length) return;
+    
+    final source = _lines[index];
+    final newLine = _OrderLineDraft(id: DateTime.now().microsecondsSinceEpoch);
+    
+    newLine.selectedItemId = source.selectedItemId;
+    newLine.selectedVariationLeafId = source.selectedVariationLeafId;
+    newLine.selectedRootPropertyId = source.selectedRootPropertyId;
+    newLine.selectedVariationValueNodeIds = List<int>.from(source.selectedVariationValueNodeIds);
+    newLine.selectedUnitId = source.selectedUnitId;
+    newLine.clientCodeController.text = source.clientCodeController.text;
+    newLine.quantityController.text = source.quantityController.text;
+    newLine.completionDate = source.completionDate;
+    newLine.completionDateController.text = source.completionDateController.text;
+    
+    setState(() {
+      _lines.insert(index + 1, newLine);
+      if (_itemWiseCompletionDate) {
+        _recalculateOrderCompletionFromLines();
+      }
+    });
+  }
+
+  Future<void> _showGlobalItemHistoryDialog(int lineIndex) async {
+    final provider = context.read<OrdersProvider>();
+    final pastOrders = provider.orders;
+
+    final uniqueVariations = <String, OrderEntry>{};
+    for (final order in pastOrders) {
+      if (order.variationLeafNodeId > 0) {
+        final key = '${order.itemId}-${order.variationLeafNodeId}';
+        if (!uniqueVariations.containsKey(key)) {
+          uniqueVariations[key] = order;
+        }
+      }
+    }
+
+    if (uniqueVariations.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No previous item history found.')),
+        );
+      }
+      return;
+    }
+
+    final result = await showDialog<OrderEntry>(
+      context: context,
+      builder: (context) {
+        return _GlobalItemHistoryDialog(
+          history: uniqueVariations.values.toList(),
+        );
+      },
+    );
+
+    if (result != null && mounted) {
+      final line = _lines[lineIndex];
+      setState(() {
+        line.selectedItemId = result.itemId;
+        line.selectedVariationLeafId = result.variationLeafNodeId;
+        line.selectedVariationValueNodeIds = List<int>.from(result.variationPathNodeIds);
+        line.selectedUnitId = result.unitId;
+      });
+      _tryAutoFillClientCode(line);
+    }
   }
 
   void _removeLine(int index) {
@@ -3707,6 +3819,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       line.selectedVariationLeafId =
           leaf?.id ?? _selectedTerminalLeafForValues(item, selectedValues)?.id;
       line.variationPathError = null;
+      _tryAutoFillClientCode(line);
       return;
     }
 
@@ -3722,7 +3835,27 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     line.selectedVariationValueNodeIds = nextValueNodeIds;
     line.selectedVariationLeafId = nextLeaf?.id;
     line.variationPathError = null;
+    _tryAutoFillClientCode(line);
   }
+
+  void _tryAutoFillClientCode(_OrderLineDraft line) {
+    if (_selectedClientId == null) return;
+    if (line.selectedItemId == null || line.selectedVariationLeafId == null) return;
+    if (line.clientCodeController.text.trim().isNotEmpty) return;
+
+    final pastOrders = context.read<OrdersProvider>().orders;
+    final match = pastOrders.where((o) =>
+        o.clientId == _selectedClientId &&
+        o.itemId == line.selectedItemId &&
+        o.variationLeafNodeId == line.selectedVariationLeafId &&
+        o.clientCode.trim().isNotEmpty
+    ).firstOrNull;
+
+    if (match != null) {
+      line.clientCodeController.text = match.clientCode;
+    }
+  }
+
 
   ItemVariationNodeDefinition? _selectedTerminalLeafForValues(
     ItemDefinition item,
@@ -6421,6 +6554,8 @@ class _OrderItemsRow extends StatelessWidget {
     required this.unitField,
     this.completionDateField,
     this.variationPathField,
+    this.onHistory,
+    this.onDuplicate,
     this.onDelete,
   });
 
@@ -6430,6 +6565,8 @@ class _OrderItemsRow extends StatelessWidget {
   final Widget unitField;
   final Widget? completionDateField;
   final Widget? variationPathField;
+  final VoidCallback? onHistory;
+  final VoidCallback? onDuplicate;
   final VoidCallback? onDelete;
 
   @override
@@ -6460,17 +6597,62 @@ class _OrderItemsRow extends StatelessWidget {
               ],
               const SizedBox(width: 12),
               SizedBox(
-                width: 36,
+                width: 108,
                 height: 52,
-                child: IconButton(
-                  tooltip: 'Remove item',
-                  padding: EdgeInsets.zero,
-                  onPressed: onDelete,
-                  icon: const Icon(
-                    Icons.delete_outline_rounded,
-                    size: 18,
-                    color: Color(0xFFEF4444),
-                  ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (onHistory != null)
+                      Tooltip(
+                        message: 'Fetch from history',
+                        child: InkWell(
+                          onTap: onHistory,
+                          borderRadius: BorderRadius.circular(16),
+                          child: const SizedBox(
+                            width: 32,
+                            height: 32,
+                            child: Icon(
+                              Icons.history_rounded,
+                              size: 18,
+                              color: SoftErpTheme.accent,
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (onDuplicate != null)
+                      Tooltip(
+                        message: 'Duplicate item',
+                        child: InkWell(
+                          onTap: onDuplicate,
+                          borderRadius: BorderRadius.circular(16),
+                          child: const SizedBox(
+                            width: 32,
+                            height: 32,
+                            child: Icon(
+                              Icons.copy_rounded,
+                              size: 18,
+                              color: SoftErpTheme.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    Tooltip(
+                      message: 'Remove item',
+                      child: InkWell(
+                        onTap: onDelete,
+                        borderRadius: BorderRadius.circular(16),
+                        child: const SizedBox(
+                          width: 32,
+                          height: 32,
+                          child: Icon(
+                            Icons.delete_outline_rounded,
+                            size: 18,
+                            color: Color(0xFFEF4444),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -6808,6 +6990,75 @@ extension on OrderStatus {
       OrderStatus.completed => 'Completed',
       OrderStatus.delayed => 'Delayed',
     };
+  }
+}
+
+class _GlobalItemHistoryDialog extends StatefulWidget {
+  const _GlobalItemHistoryDialog({required this.history});
+
+  final List<OrderEntry> history;
+
+  @override
+  State<_GlobalItemHistoryDialog> createState() =>
+      _GlobalItemHistoryDialogState();
+}
+
+class _GlobalItemHistoryDialogState extends State<_GlobalItemHistoryDialog> {
+  String _searchQuery = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = widget.history.where((e) {
+      final query = _searchQuery.toLowerCase();
+      return e.itemName.toLowerCase().contains(query) ||
+          e.variationPathLabel.toLowerCase().contains(query);
+    }).toList();
+
+    return AlertDialog(
+      title: const Text('Select from History'),
+      content: SizedBox(
+        width: 600,
+        height: 400,
+        child: Column(
+          children: [
+            TextField(
+              decoration: const InputDecoration(
+                hintText: 'Search items or variations...',
+                prefixIcon: Icon(Icons.search),
+              ),
+              onChanged: (val) => setState(() => _searchQuery = val),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: filtered.isEmpty
+                  ? const Center(child: Text('No matches found.'))
+                  : ListView.separated(
+                      itemCount: filtered.length,
+                      separatorBuilder: (context, index) => const Divider(),
+                      itemBuilder: (context, index) {
+                        final entry = filtered[index];
+                        return ListTile(
+                          title: Text(entry.itemName),
+                          subtitle: Text(entry.variationPathLabel),
+                          trailing: const Icon(
+                            Icons.arrow_forward_ios_rounded,
+                            size: 16,
+                          ),
+                          onTap: () => Navigator.pop(context, entry),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+      ],
+    );
   }
 }
 

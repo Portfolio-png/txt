@@ -1,507 +1,225 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:paper/features/production/providers/production_provider.dart';
 import 'package:paper/features/production/providers/production_run_provider.dart';
+import 'package:paper/features/production/providers/pipeline_editor_provider.dart';
+import 'package:paper/features/production/screens/floor_view_screen.dart';
 import 'package:paper/features/production/screens/pipeline_builder_screen.dart';
-import 'package:paper/features/production/screens/shop_floor_kiosk_screen.dart';
-import 'package:paper/features/production/widgets/lock_key_setup_modal.dart';
-import 'package:paper/features/production/widgets/material_ledger_closure_dialog.dart';
+import 'package:paper/features/production_pipelines/domain/material_flow.dart';
+import 'package:paper/features/production_pipelines/domain/pipeline_template.dart';
+import 'package:paper/features/production_pipelines/domain/process_node.dart';
 import 'package:provider/provider.dart';
 
 void main() {
-  testWidgets('builder inspector keeps draft state when switching stages', (
+  testWidgets('builder renders the current graph editor surface', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1400, 900));
     final provider = ProductionProvider.seeded();
+    final editor = PipelineEditorProvider(template: _testTemplate());
     addTearDown(provider.dispose);
+    addTearDown(editor.dispose);
 
     await tester.pumpWidget(
       _ProductionHarness(
         provider: provider,
-        child: const PipelineBuilderScreen(),
+        editor: editor,
+        child: const PipelineBuilderScreen(shopFloorId: 'floor-1'),
       ),
     );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Demo Fabrication Pipeline'), findsOneWidget);
+    expect(
+      find.text(
+        'Route builder: drag stages across the floor sequence, click a node to edit.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Laser Cut'), findsWidgets);
+  });
+
+  testWidgets('builder add node action updates the editor provider', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    final provider = ProductionProvider.seeded();
+    final editor = PipelineEditorProvider(template: _testTemplate());
+    addTearDown(provider.dispose);
+    addTearDown(editor.dispose);
+
+    await tester.pumpWidget(
+      _ProductionHarness(
+        provider: provider,
+        editor: editor,
+        child: const PipelineBuilderScreen(shopFloorId: 'floor-1'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final initialCount = editor.template.nodes.length;
+    await tester.tap(find.text('Add Node'));
+    await tester.pumpAndSettle();
+
+    expect(editor.template.nodes.length, initialCount + 1);
+    expect(find.text('Process ${initialCount + 1}'), findsWidgets);
+  });
+
+  testWidgets('builder details action updates pipeline metadata', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    final provider = ProductionProvider.seeded();
+    final editor = PipelineEditorProvider(template: _testTemplate());
+    addTearDown(provider.dispose);
+    addTearDown(editor.dispose);
+
+    await tester.pumpWidget(
+      _ProductionHarness(
+        provider: provider,
+        editor: editor,
+        child: const PipelineBuilderScreen(shopFloorId: 'floor-1'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Details'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pipeline Details'), findsOneWidget);
 
     await tester.enterText(
-      find.widgetWithText(TextField, 'Reel Slitting'),
-      'Edited Slitting',
+      find.widgetWithText(TextField, 'Pipeline Name'),
+      'Precision Forming Line',
     );
-    await tester.tap(find.textContaining('FLR-01'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.textContaining('PIPE-A'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.textContaining('Die Punching'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.textContaining('Reel Slitting').first);
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Short Description'),
+      'High priority production route',
+    );
+    await tester.tap(find.text('Apply'));
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(TextField, 'Edited Slitting'), findsOneWidget);
+    expect(editor.template.name, 'Precision Forming Line');
+    expect(editor.template.description, 'High priority production route');
+    expect(find.text('Precision Forming Line'), findsOneWidget);
   });
 
-  testWidgets('N adds a stage and Delete removes selected stage with undo', (
+  testWidgets('builder control panel adds stage lane and connected next step', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1400, 900));
     final provider = ProductionProvider.seeded();
+    final editor = PipelineEditorProvider(template: _testTemplate());
     addTearDown(provider.dispose);
+    addTearDown(editor.dispose);
 
     await tester.pumpWidget(
       _ProductionHarness(
         provider: provider,
-        child: const PipelineBuilderScreen(),
-      ),
-    );
-    final initialCount = provider.blueprint.stages.length;
-
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.keyN);
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.keyN);
-    await tester.pumpAndSettle();
-    expect(provider.blueprint.stages.length, initialCount + 1);
-
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.delete);
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.delete);
-    await tester.pumpAndSettle();
-    expect(provider.blueprint.stages.length, initialCount);
-
-    await tester.tap(find.text('Undo'));
-    await tester.pumpAndSettle();
-    expect(provider.blueprint.stages.length, initialCount + 1);
-  });
-
-  testWidgets('builder renders stages on a zoomable canvas', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(1400, 900));
-    final provider = ProductionProvider.seeded();
-    addTearDown(provider.dispose);
-
-    await tester.pumpWidget(
-      _ProductionHarness(
-        provider: provider,
-        child: const PipelineBuilderScreen(),
+        editor: editor,
+        child: const PipelineBuilderScreen(shopFloorId: 'floor-1'),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.byType(InteractiveViewer), findsOneWidget);
-    expect(find.text('CANVAS'), findsOneWidget);
-    expect(find.byIcon(Icons.center_focus_strong), findsOneWidget);
+    expect(find.text('Pipeline Control'), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.add_rounded));
+    await tester.tap(find.text('Add Stage'));
     await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('builder drills from factory floors to machine telemetry', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1400, 900));
-    final provider = ProductionProvider.seeded();
-    addTearDown(provider.dispose);
-
-    await tester.pumpWidget(
-      _ProductionHarness(
-        provider: provider,
-        child: const PipelineBuilderScreen(),
-      ),
-    );
+    await tester.tap(find.text('Add Lane'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('FLR-01'), findsOneWidget);
-    expect(find.textContaining('Factory View'), findsOneWidget);
+    expect(editor.template.stageLabels.length, 3);
+    expect(editor.template.laneLabels.length, 2);
 
-    await tester.tap(find.textContaining('FLR-01'));
+    await tester.tap(find.text('Add Next Step'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('SPD: 420u/m'), findsOneWidget);
-    expect(find.textContaining('PIPE-A'), findsOneWidget);
-
-    await tester.tap(find.textContaining('PIPE-A'));
-    await tester.pumpAndSettle();
-
-    expect(find.textContaining('ACT_DIE'), findsWidgets);
-    expect(find.textContaining('MTL_IN'), findsWidgets);
-    expect(find.textContaining('STRK_CNT'), findsWidgets);
-  });
-
-  testWidgets('kiosk macro buttons keep 64dp minimum target height', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1200, 800));
-    final provider = ProductionProvider.seeded();
-    addTearDown(provider.dispose);
-
-    await tester.pumpWidget(
-      _ProductionHarness(
-        provider: provider,
-        child: const ShopFloorKioskScreen(),
-      ),
-    );
-
+    expect(editor.template.nodes.length, 2);
+    expect(editor.template.flows.length, 1);
+    expect(editor.template.flows.single.fromNodeId, 'node-cut');
     expect(
-      tester.getSize(find.byKey(const Key('verify_start_button'))).height,
-      64,
+      editor.template.flows.single.toNodeId,
+      editor.template.nodes.last.id,
     );
-    expect(
-      tester.getSize(find.byKey(const Key('pause_resume_button'))).height,
-      64,
-    );
-    expect(tester.getSize(find.byKey(const Key('closure_button'))).height, 64);
   });
 
-  testWidgets('kiosk setup sheet keeps route-scoped production provider', (
+  testWidgets('builder control panel edits selected node inline', (
     tester,
   ) async {
-    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
     final provider = ProductionProvider.seeded();
+    final editor = PipelineEditorProvider(template: _testTemplate());
     addTearDown(provider.dispose);
+    addTearDown(editor.dispose);
+
+    await tester.pumpWidget(
+      _ProductionHarness(
+        provider: provider,
+        editor: editor,
+        child: const PipelineBuilderScreen(shopFloorId: 'floor-1'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Node Name'),
+      'Precision Laser Cut',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Action'),
+      'Laser profiling',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Inputs'),
+      'Sheet, Nesting Program',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Outputs'),
+      'Profiled Blank',
+    );
+    final applyButton = find.ancestor(
+      of: find.text('Apply Node Changes'),
+      matching: find.byType(InkWell),
+    );
+    await tester.ensureVisible(applyButton);
+    await tester.tap(applyButton);
+    await tester.pumpAndSettle();
+
+    final updated = editor.template.nodes.first;
+    expect(updated.name, 'Precision Laser Cut');
+    expect(updated.processType, 'Laser profiling');
+    expect(updated.inputs, ['Sheet', 'Nesting Program']);
+    expect(updated.outputs, ['Profiled Blank']);
+  });
+
+  testWidgets('floor map renders saved pipeline templates as live routes', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
 
     await tester.pumpWidget(
       MaterialApp(
-        home: MultiProvider(
-          providers: [
-            ChangeNotifierProvider<ProductionProvider>.value(value: provider),
-            ChangeNotifierProvider<ProductionRunProvider>(
-              create: (_) => ProductionRunProvider(),
-            ),
-          ],
-          child: const Scaffold(body: ShopFloorKioskScreen()),
-        ),
+        home: FloorViewScreen(pipelineTemplates: [_mappedFloorTemplate()]),
       ),
     );
+    await tester.pump(const Duration(milliseconds: 120));
 
-    await tester.tap(find.byKey(const Key('verify_start_button')));
-    await tester.pumpAndSettle();
-
-    expect(tester.takeException(), isNull);
-    expect(find.text('LOCK-KEY ASSET VERIFICATION'), findsOneWidget);
-  });
-
-  testWidgets('lock-key modal autofocuses machine scanner input', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(900, 700));
-    final provider = ProductionProvider.seeded();
-    addTearDown(provider.dispose);
-
-    await tester.pumpWidget(
-      _ProductionHarness(
-        provider: provider,
-        child: Builder(
-          builder: (context) {
-            return FilledButton(
-              onPressed: () => showDialog<void>(
-                context: context,
-                builder: (_) => const LockKeySetupModal(),
-              ),
-              child: const Text('Open setup'),
-            );
-          },
-        ),
-      ),
-    );
-
-    await tester.tap(find.text('Open setup'));
-    await tester.pumpAndSettle();
-
-    final scanner = find.descendant(
-      of: find.byKey(const Key('machine_scanner_field')),
-      matching: find.byType(TextField),
-    );
-    final machineField = tester.widget<TextField>(scanner);
-    expect(machineField.focusNode?.hasFocus, isTrue);
-  });
-
-  testWidgets('lock-key modal sequential scanning logic', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(1000, 800));
-    final provider = ProductionProvider.seeded();
-    addTearDown(provider.dispose);
-
-    await tester.pumpWidget(
-      _ProductionHarness(
-        provider: provider,
-        child: Builder(
-          builder: (context) {
-            return FilledButton(
-              onPressed: () => showDialog<void>(
-                context: context,
-                builder: (_) => const LockKeySetupModal(),
-              ),
-              child: const Text('Open setup'),
-            );
-          },
-        ),
-      ),
-    );
-
-    await tester.tap(find.text('Open setup'));
-    await tester.pumpAndSettle();
-
-    final scanner = find.descendant(
-      of: find.byKey(const Key('machine_scanner_field')),
-      matching: find.byType(TextField),
-    );
-
-    // 1. Initially, we should be prompted to scan machine
-    expect(find.text('Scan Machine Barcode...'), findsOneWidget);
-
-    // 2. Scan correct machine
-    await tester.enterText(scanner, 'MC-SLIT-01');
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tester.pumpAndSettle();
-
-    // 3. Prompt should change to scan die
-    expect(find.text('Scan Die Barcode...'), findsOneWidget);
-
-    // 4. Scan WRONG die to trigger mismatch
-    await tester.enterText(scanner, 'DIE-WRONG');
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tester.pumpAndSettle();
-
-    // 5. Warning chip should show mismatch error, and Start button is disabled
-    expect(find.textContaining('MISMATCH'), findsOneWidget);
-    final startButtonFinder = find.byKey(const Key('confirm_start_button'));
-    if (startButtonFinder.evaluate().isNotEmpty) {
-      final startButton = tester.widget<ElevatedButton>(startButtonFinder);
-      expect(startButton.onPressed, isNull);
-    }
-
-    // 6. Reset scanner
-    await tester.tap(find.byTooltip('Reset Scanner'));
-    await tester.pumpAndSettle();
-
-    // 7. Prompt is back to scan machine
-    expect(find.text('Scan Machine Barcode...'), findsOneWidget);
-
-    // 8. Scan correct machine and correct die
-    await tester.enterText(scanner, 'MC-SLIT-01');
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tester.pumpAndSettle();
-
-    await tester.enterText(scanner, 'DIE-1450-A');
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tester.pumpAndSettle();
-
-    // 9. Start button should be enabled
-    final startButtonFinder2 = find.byKey(const Key('confirm_start_button'));
-    final startButton2 = tester.widget<ElevatedButton>(startButtonFinder2);
-    expect(startButton2.onPressed, isNotNull);
-  });
-
-  testWidgets('ledger closure dialog tactile buttons and balanced sliders', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1200, 900));
-    final provider = ProductionProvider.seeded();
-    addTearDown(provider.dispose);
-
-    // Setup run to be able to open ledger closure
-    provider.verifyAssetSetup('MC-SLIT-01', 'DIE-1450-A');
-    provider.startRun();
-    provider.beginClosure();
-
-    await tester.pumpWidget(
-      _ProductionHarness(
-        provider: provider,
-        child: const MaterialLedgerClosureDialog(),
-      ),
-    );
-
-    // Verify initial values
-    expect(find.textContaining('510.00 Kg'), findsWidgets);
-
-    // Tap Produced (+100) increment button (at index 1)
-    await tester.tap(find.byIcon(Icons.add_rounded).at(1));
-    await tester.pumpAndSettle();
-
-    // Verify yield units changed
-    expect(provider.goodYieldCount, 4950); // 4850 + 100
-
-    // Drag the Good Yield slider
-    final slider = find.byType(Slider).at(0);
-    await tester.drag(slider, const Offset(-50, 0));
-    await tester.pumpAndSettle();
-
-    // Verify that the preview updates reactively
-    expect(find.textContaining('STOCK_REEL_8821'), findsWidgets);
-  });
-
-  testWidgets('operator switcher dialog updates activeOperator in provider', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1200, 800));
-    final provider = ProductionProvider.seeded();
-    addTearDown(provider.dispose);
-
-    await tester.pumpWidget(
-      _ProductionHarness(
-        provider: provider,
-        child: const ShopFloorKioskScreen(),
-      ),
-    );
-
-    // Find the profile switcher button and tap it
-    await tester.tap(find.text('FL'));
-    await tester.pumpAndSettle();
-
-    // Verify that Operator Switcher Dialog is visible
-    expect(find.text('OPERATOR SWITCHER'), findsOneWidget);
-
-    // Press PIN digits 1, 2, 3, 4
-    await tester.tap(find.text('1'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('2'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('3'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('4'));
-    await tester.pumpAndSettle();
-
-    // Dialog should dismiss and active operator updates to OPERATOR-A
-    expect(find.text('OPERATOR SWITCHER'), findsNothing);
-    expect(provider.activeOperator, 'OPERATOR-A');
-  });
-
-  testWidgets('wedge keyboard buffering, verification, and start flow', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1200, 800));
-    final provider = ProductionProvider.seeded();
-
-    await tester.pumpWidget(
-      _ProductionHarness(
-        provider: provider,
-        child: const ShopFloorKioskScreen(),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    // Helper to send characters simulating a rapid keyboard wedge scan
-    Future<void> sendWedgeBarcode(String barcode) async {
-      for (var i = 0; i < barcode.length; i++) {
-        final char = barcode[i];
-        final key = _getLogicalKeyFromChar(char);
-        await tester.sendKeyDownEvent(key, character: char);
-        await tester.sendKeyUpEvent(key);
-        await tester.pump(const Duration(milliseconds: 2));
-      }
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
-      await tester.pump();
-    }
-
-    // 1. Initially, we are in setup phase
-    expect(provider.phase, ProductionRunPhase.idle);
-
-    // 2. Scan machine
-    await sendWedgeBarcode('MC-SLIT-01');
-
-    final runProvider = Provider.of<ProductionRunProvider>(
-      tester.element(find.byType(ShopFloorKioskScreen)),
-      listen: false,
-    );
-    expect(runProvider.scannedMachineId, 'MC-SLIT-01');
-    expect(runProvider.barcodeErrorMessage, isNull);
-
-    // 3. Scan die
-    await sendWedgeBarcode('DIE-1450-A');
-
-    // Scanned die should be updated, and the run should auto-start
-    expect(runProvider.scannedDieId, 'DIE-1450-A');
-    expect(runProvider.barcodeErrorMessage, isNull);
-    expect(provider.phase, ProductionRunPhase.running);
-
-    provider.dispose();
-  });
-
-  testWidgets('wedge barcode mismatch shows error message', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(1200, 800));
-    final provider = ProductionProvider.seeded();
-    addTearDown(provider.dispose);
-
-    await tester.pumpWidget(
-      _ProductionHarness(
-        provider: provider,
-        child: const ShopFloorKioskScreen(),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    Future<void> sendWedgeBarcode(String barcode) async {
-      for (var i = 0; i < barcode.length; i++) {
-        final char = barcode[i];
-        final key = _getLogicalKeyFromChar(char);
-        await tester.sendKeyDownEvent(key, character: char);
-        await tester.sendKeyUpEvent(key);
-        await tester.pump(const Duration(milliseconds: 2));
-      }
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
-      await tester.pump();
-    }
-
-    // Scan wrong machine barcode
-    await sendWedgeBarcode('MC-WRONG');
-
-    // Screen should render the barcode error message
-    expect(
-      find.textContaining('does not match expected assets'),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('debounce timer clears wedge buffer on slow inputs', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1200, 800));
-    final provider = ProductionProvider.seeded();
-    addTearDown(provider.dispose);
-
-    await tester.pumpWidget(
-      _ProductionHarness(
-        provider: provider,
-        child: const ShopFloorKioskScreen(),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    // Type "MC-"
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.keyM, character: 'M');
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.keyM);
-    await tester.pump(const Duration(milliseconds: 2));
-
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.keyC, character: 'C');
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.keyC);
-    await tester.pump(const Duration(milliseconds: 2));
-
-    // Wait more than 50ms (debounce timeout)
-    await tester.pump(const Duration(milliseconds: 100));
-
-    // Type the rest "SLIT-01"
-    for (final char in ['-', 'S', 'L', 'I', 'T', '-', '0', '1']) {
-      final key = _getLogicalKeyFromChar(char);
-      await tester.sendKeyDownEvent(key, character: char);
-      await tester.sendKeyUpEvent(key);
-      await tester.pump(const Duration(milliseconds: 2));
-    }
-
-    // Press enter
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
-    await tester.pumpAndSettle();
-
-    // Since "MC-" was cleared from the buffer after 50ms, only "-SLIT-01" was sent, which is invalid
-    expect(
-      find.textContaining('does not match expected assets'),
-      findsOneWidget,
-    );
+    expect(find.text('Mapped Finishing Route'), findsWidgets);
+    expect(find.text('Saved shop-floor pipelines'), findsOneWidget);
+    expect(find.textContaining('3 stations'), findsWidgets);
   });
 }
 
 class _ProductionHarness extends StatelessWidget {
-  const _ProductionHarness({required this.provider, required this.child});
+  const _ProductionHarness({
+    required this.provider,
+    required this.editor,
+    required this.child,
+  });
 
   final ProductionProvider provider;
+  final PipelineEditorProvider editor;
   final Widget child;
 
   @override
@@ -512,41 +230,106 @@ class _ProductionHarness extends StatelessWidget {
         ChangeNotifierProvider<ProductionRunProvider>(
           create: (_) => ProductionRunProvider(),
         ),
+        ChangeNotifierProvider<PipelineEditorProvider>.value(value: editor),
       ],
       child: MaterialApp(home: Scaffold(body: child)),
     );
   }
 }
 
-LogicalKeyboardKey _getLogicalKeyFromChar(String char) {
-  switch (char.toUpperCase()) {
-    case 'M':
-      return LogicalKeyboardKey.keyM;
-    case 'C':
-      return LogicalKeyboardKey.keyC;
-    case 'S':
-      return LogicalKeyboardKey.keyS;
-    case 'L':
-      return LogicalKeyboardKey.keyL;
-    case 'I':
-      return LogicalKeyboardKey.keyI;
-    case 'T':
-      return LogicalKeyboardKey.keyT;
-    case 'D':
-      return LogicalKeyboardKey.keyD;
-    case 'A':
-      return LogicalKeyboardKey.keyA;
-    case '-':
-      return LogicalKeyboardKey.minus;
-    case '0':
-      return LogicalKeyboardKey.digit0;
-    case '1':
-      return LogicalKeyboardKey.digit1;
-    case '4':
-      return LogicalKeyboardKey.digit4;
-    case '5':
-      return LogicalKeyboardKey.digit5;
-    default:
-      return LogicalKeyboardKey.space;
-  }
+PipelineTemplate _testTemplate() {
+  return const PipelineTemplate(
+    id: 'tpl-test',
+    shopFloorId: 'floor-1',
+    name: 'Demo Fabrication Pipeline',
+    description: 'Widget-test pipeline',
+    stageLabels: ['Cut', 'Form'],
+    laneLabels: ['Main'],
+    nodes: [
+      ProcessNode(
+        id: 'node-cut',
+        name: 'Laser Cut',
+        processType: 'Cutting',
+        stageIndex: 0,
+        laneIndex: 0,
+        inputs: ['Sheet'],
+        outputs: ['Blank'],
+        machine: 'LC-01',
+        dieId: '',
+        durationHours: 1,
+        status: 'Ready',
+        isIntermediate: false,
+      ),
+    ],
+    flows: [],
+  );
+}
+
+PipelineTemplate _mappedFloorTemplate() {
+  return const PipelineTemplate(
+    id: 'mapped-route',
+    shopFloorId: 'floor-1',
+    name: 'Mapped Finishing Route',
+    description: 'Saved pipeline rendered on the floor map',
+    stageLabels: ['Cut', 'Form', 'QA'],
+    laneLabels: ['Main'],
+    nodes: [
+      ProcessNode(
+        id: 'mapped-cut',
+        name: 'Laser Nesting',
+        processType: 'Cutting',
+        stageIndex: 0,
+        laneIndex: 0,
+        inputs: ['Sheet'],
+        outputs: ['Blank'],
+        machine: 'LC-01',
+        dieId: '',
+        durationHours: 1,
+        status: 'Active',
+        isIntermediate: false,
+      ),
+      ProcessNode(
+        id: 'mapped-form',
+        name: 'Brake Form',
+        processType: 'Forming',
+        stageIndex: 1,
+        laneIndex: 0,
+        inputs: ['Blank'],
+        outputs: ['Formed Part'],
+        machine: 'PB-02',
+        dieId: '',
+        durationHours: 1,
+        status: 'Waiting',
+        isIntermediate: false,
+      ),
+      ProcessNode(
+        id: 'mapped-qa',
+        name: 'QA Gate',
+        processType: 'Inspection',
+        stageIndex: 2,
+        laneIndex: 0,
+        inputs: ['Formed Part'],
+        outputs: ['Released Part'],
+        machine: 'QA-01',
+        dieId: '',
+        durationHours: 1,
+        status: 'Ready',
+        isIntermediate: false,
+      ),
+    ],
+    flows: [
+      MaterialFlow(
+        id: 'flow-cut-form',
+        fromNodeId: 'mapped-cut',
+        toNodeId: 'mapped-form',
+        materialName: 'Blank',
+      ),
+      MaterialFlow(
+        id: 'flow-form-qa',
+        fromNodeId: 'mapped-form',
+        toNodeId: 'mapped-qa',
+        materialName: 'Formed Part',
+      ),
+    ],
+  );
 }

@@ -1,0 +1,59 @@
+Analyzing Paper...                                              
+
+   info • Don't invoke 'print' in production code • backend/test_variation_label.dart:10:3 • avoid_print
+   info • Unnecessary use of multiple underscores • lib/features/dies/presentation/screens/die_form_screen.dart:571:57 • unnecessary_underscores
+   info • Unnecessary use of multiple underscores • lib/features/dies/presentation/screens/die_form_screen.dart:571:61 • unnecessary_underscores
+warning • A value for optional parameter 'isNumber' isn't ever given • lib/features/dies/presentation/screens/die_form_screen.dart:692:10 • unused_element_parameter
+   info • Unnecessary use of multiple underscores • lib/features/dies/presentation/screens/die_list_screen.dart:343:53 • unnecessary_underscores
+   info • Unnecessary use of multiple underscores • lib/features/dies/presentation/screens/die_list_screen.dart:604:41 • unnecessary_underscores
+   info • Unnecessary use of multiple underscores • lib/features/machines/presentation/screens/machine_form_screen.dart:624:31 • unnecessary_underscores
+   info • Unnecessary use of multiple underscores • lib/features/machines/presentation/screens/machine_form_screen.dart:624:35 • unnecessary_underscores
+   info • Unnecessary use of multiple underscores • lib/features/machines/presentation/screens/machine_list_screen.dart:390:53 • unnecessary_underscores
+   info • Unnecessary use of multiple underscores • lib/features/machines/presentation/screens/machine_list_screen.dart:653:41 • unnecessary_underscores
+warning • Unused import: '../../../production_pipelines/domain/pipeline_template.dart' • lib/features/production/domain/models/floor_view_models.dart:2:8 • unused_import
+warning • Unused import: '../../production_pipelines/domain/material_flow.dart' • lib/features/production/providers/production_provider.dart:5:8 • unused_import
+warning • Unused import: '../../production_pipelines/domain/material_flow.dart' • lib/features/production/screens/pipeline_builder_screen.dart:7:8 • unused_import
+   info • The imported package 'collection' isn't a dependency of the importing package • lib/features/production/widgets/graph_edges_painter.dart:2:8 • depend_on_referenced_packages
+  error • The getter 'selectedStage' isn't defined for the type 'ProductionProvider' • lib/features/production/widgets/lock_key_setup_modal.dart:177:54 • undefined_getter
+  error • The method 'verifyAssetSetup' isn't defined for the type 'ProductionProvider' • lib/features/production/widgets/lock_key_setup_modal.dart:218:44 • undefined_method
+  error • The getter 'selectedStage' isn't defined for the type 'ProductionProvider' • lib/features/production/widgets/lock_key_setup_modal.dart:234:28 • undefined_getter
+warning • The declaration '_buildPipelineRunRepository' isn't referenced • lib/main.dart:479:25 • unused_element
+   info • Don't use 'BuildContext's across async gaps • packages/core_erp/lib/features/delivery_challans/presentation/screens/delivery_challan_screen.dart:313:28 • use_build_context_synchronously
+   info • Don't use 'BuildContext's across async gaps • packages/core_erp/lib/features/delivery_challans/presentation/screens/delivery_challan_screen.dart:432:9 • use_build_context_synchronously
+   info • 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre • packages/core_erp/lib/features/delivery_challans/presentation/screens/delivery_challan_screen.dart:708:9 • deprecated_member_use
+   info • 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre • packages/core_erp/lib/features/delivery_challans/presentation/screens/delivery_challan_screen.dart:1584:15 • deprecated_member_use
+   info • Don't use 'BuildContext's across async gaps • packages/core_erp/lib/features/delivery_challans/presentation/screens/delivery_challan_screen.dart:2454:42 • use_build_context_synchronously
+   info • 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre • packages/core_erp/lib/features/delivery_challans/presentation/screens/delivery_challan_screen.dart:2621:7 • deprecated_member_use
+   info • 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre • packages/core_erp/lib/features/delivery_challans/presentation/screens/delivery_challan_screen.dart:2679:7 • deprecated_member_use
+   info • 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre • packages/core_erp/lib/features/delivery_challans/presentation/screens/delivery_challan_screen.dart:2734:7 • deprecated_member_use
+   info • Don't use 'BuildContext's across async gaps • packages/core_erp/lib/features/delivery_challans/presentation/screens/delivery_challan_screen.dart:3150:31 • use_build_context_synchronously
+   info • 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre • packages/core_erp/lib/features/delivery_challans/presentation/screens/delivery_challan_screen.dart:3830:17 • deprecated_member_use
+   info • 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre • packages/core_erp/lib/features/delivery_challans/presentation/screens/delivery_challan_screen.dart:4164:7 • deprecated_member_use
+warning • A value for optional parameter 'variationPathNodeIds' isn't ever given • packages/core_erp/lib/features/delivery_challans/presentation/screens/delivery_challan_screen.dart:4605:10 • unused_element_parameter
+   info • The 'if' statement could be replaced by a null-aware assignment • packages/core_erp/lib/features/delivery_challans/presentation/screens/delivery_challan_screen.dart:4755:5 • prefer_conditional_assignment
+   info • 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre • packages/core_erp/lib/features/delivery_challans/presentation/screens/delivery_challan_screen.dart:5505:13 • deprecated_member_use
+  error • The getter 'selectedStage' isn't defined for the type 'ProductionProvider' • test/features/production/production_provider_test.dart:8:30 • undefined_getter
+  error • The method 'verifyAssetSetup' isn't defined for the type 'ProductionProvider' • test/features/production/production_provider_test.dart:10:16 • undefined_method
+  error • The getter 'selectedStage' isn't defined for the type 'ProductionProvider' • test/features/production/production_provider_test.dart:24:30 • undefined_getter
+  error • The method 'verifyAssetSetup' isn't defined for the type 'ProductionProvider' • test/features/production/production_provider_test.dart:27:24 • undefined_method
+  error • The getter 'selectedStage' isn't defined for the type 'ProductionProvider' • test/features/production/production_provider_test.dart:44:30 • undefined_getter
+  error • The method 'verifyAssetSetup' isn't defined for the type 'ProductionProvider' • test/features/production/production_provider_test.dart:47:24 • undefined_method
+  error • The getter 'selectedStage' isn't defined for the type 'ProductionProvider' • test/features/production/production_provider_test.dart:66:30 • undefined_getter
+  error • The method 'verifyAssetSetup' isn't defined for the type 'ProductionProvider' • test/features/production/production_provider_test.dart:68:16 • undefined_method
+  error • The method 'resumeRun' isn't defined for the type 'ProductionProvider' • test/features/production/production_provider_test.dart:75:16 • undefined_method
+  error • The method 'beginClosure' isn't defined for the type 'ProductionProvider' • test/features/production/production_provider_test.dart:78:16 • undefined_method
+  error • The getter 'selectedStage' isn't defined for the type 'ProductionProvider' • test/features/production/production_provider_test.dart:105:35 • undefined_getter
+  error • The getter 'blueprint' isn't defined for the type 'ProductionProvider' • test/features/production/production_provider_test.dart:106:36 • undefined_getter
+  error • The method 'verifyAssetSetup' isn't defined for the type 'ProductionProvider' • test/features/production/production_provider_test.dart:108:16 • undefined_method
+  error • The method 'selectStage' isn't defined for the type 'ProductionProvider' • test/features/production/production_provider_test.dart:109:16 • undefined_method
+  error • The getter 'selectedStage' isn't defined for the type 'ProductionProvider' • test/features/production/production_provider_test.dart:120:30 • undefined_getter
+  error • The method 'verifyAssetSetup' isn't defined for the type 'ProductionProvider' • test/features/production/production_provider_test.dart:122:16 • undefined_method
+  error • The method 'beginClosure' isn't defined for the type 'ProductionProvider' • test/features/production/production_provider_test.dart:124:16 • undefined_method
+  error • The getter 'blueprint' isn't defined for the type 'ProductionProvider' • test/features/production/production_provider_test.dart:135:31 • undefined_getter
+  error • The method 'reorderStages' isn't defined for the type 'ProductionProvider' • test/features/production/production_provider_test.dart:139:16 • undefined_method
+  error • The getter 'blueprint' isn't defined for the type 'ProductionProvider' • test/features/production/production_provider_test.dart:141:23 • undefined_getter
+  error • The getter 'blueprint' isn't defined for the type 'ProductionProvider' • test/features/production/production_provider_test.dart:142:23 • undefined_getter
+   info • The import of 'dart:async' is unnecessary because all of the used elements are also provided by the import of 'package:flutter_test/flutter_test.dart' • test/features/production/production_run_provider_test.dart:1:8 • unnecessary_import
+warning • Unused import: 'package:core_erp/features/clients/presentation/providers/clients_provider.dart' • test/job_work_stock_balance_test.dart:8:8 • unused_import
+warning • Unused import: 'package:core_erp/features/delivery_challans/presentation/providers/delivery_challan_provider.dart' • test/job_work_stock_balance_test.dart:9:8 • unused_import
+
