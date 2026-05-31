@@ -1,12 +1,14 @@
 import '../domain/material_flow.dart';
 import '../domain/pipeline_template.dart';
 import '../domain/process_node.dart';
+import 'default_pipeline_templates.dart';
 
 class MockPipelineTemplatesRepository {
   const MockPipelineTemplatesRepository();
 
   List<PipelineTemplate> getTemplates() {
     return const [
+      sheetMetalPipelineTemplate,
       PipelineTemplate(
         id: 'dolly',
         name: 'Dolly Production',

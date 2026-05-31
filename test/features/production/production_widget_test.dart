@@ -1,16 +1,48 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:core_erp/features/items/data/repositories/item_repository.dart';
+import 'package:core_erp/features/items/domain/item_asset.dart';
+import 'package:core_erp/features/items/domain/item_definition.dart';
+import 'package:core_erp/features/items/domain/item_inputs.dart';
+import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
+import 'package:core_erp/features/units/data/repositories/unit_repository.dart';
+import 'package:core_erp/features/units/domain/unit_definition.dart';
+import 'package:core_erp/features/units/domain/unit_inputs.dart';
+import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
 import 'package:paper/features/production/providers/production_provider.dart';
 import 'package:paper/features/production/providers/production_run_provider.dart';
 import 'package:paper/features/production/providers/pipeline_editor_provider.dart';
 import 'package:paper/features/production/screens/floor_view_screen.dart';
 import 'package:paper/features/production/screens/pipeline_builder_screen.dart';
+import 'package:paper/features/production_pipelines/data/default_pipeline_templates.dart';
 import 'package:paper/features/production_pipelines/domain/material_flow.dart';
 import 'package:paper/features/production_pipelines/domain/pipeline_template.dart';
 import 'package:paper/features/production_pipelines/domain/process_node.dart';
 import 'package:provider/provider.dart';
 
 void main() {
+  test('sheet metal process template keeps the requested floor context', () {
+    expect(sheetMetalPipelineTemplate.factoryId, '1');
+    expect(sheetMetalPipelineTemplate.shopFloorId, '1');
+    expect(sheetMetalPipelineTemplate.stageLabels, [
+      'Input Stage',
+      'Blank Cutting',
+      'Piercing',
+      'Bending',
+      'Drilling',
+      'Packaging',
+    ]);
+    expect(sheetMetalPipelineTemplate.nodes.map((node) => node.machine), [
+      'Input Stage',
+      'Blank Cutting',
+      'Handpress',
+      'PP',
+      'Drill Machine',
+      'Packaging',
+    ]);
+    expect(sheetMetalPipelineTemplate.flows.length, 5);
+  });
+
   testWidgets('builder renders the current graph editor surface', (
     tester,
   ) async {
@@ -30,12 +62,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Demo Fabrication Pipeline'), findsOneWidget);
-    expect(
-      find.text(
-        'Route builder: drag stages across the floor sequence, click a node to edit.',
-      ),
-      findsOneWidget,
-    );
+    expect(find.text('Pipeline Control'), findsOneWidget);
     expect(find.text('Laser Cut'), findsWidgets);
   });
 
@@ -58,7 +85,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final initialCount = editor.template.nodes.length;
-    await tester.tap(find.text('Add Node'));
+    await tester.tap(find.text('Add Flow Step'));
     await tester.pumpAndSettle();
 
     expect(editor.template.nodes.length, initialCount + 1);
@@ -104,9 +131,7 @@ void main() {
     expect(find.text('Precision Forming Line'), findsOneWidget);
   });
 
-  testWidgets('builder control panel adds stage lane and connected next step', (
-    tester,
-  ) async {
+  testWidgets('builder header adds connected next step', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1400, 900));
     final provider = ProductionProvider.seeded();
     final editor = PipelineEditorProvider(template: _testTemplate());
@@ -124,15 +149,7 @@ void main() {
 
     expect(find.text('Pipeline Control'), findsOneWidget);
 
-    await tester.tap(find.text('Add Stage'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Add Lane'));
-    await tester.pumpAndSettle();
-
-    expect(editor.template.stageLabels.length, 3);
-    expect(editor.template.laneLabels.length, 2);
-
-    await tester.tap(find.text('Add Next Step'));
+    await tester.tap(find.text('Add Flow Step'));
     await tester.pumpAndSettle();
 
     expect(editor.template.nodes.length, 2);
@@ -144,7 +161,29 @@ void main() {
     );
   });
 
-  testWidgets('builder control panel edits selected node inline', (
+  test('editor canvas actions duplicate and disconnect selected node', () {
+    final editor = PipelineEditorProvider(template: _mappedFloorTemplate());
+    addTearDown(editor.dispose);
+
+    editor.selectNode('mapped-form');
+    editor.duplicateSelectedNode();
+
+    expect(editor.template.nodes.length, 4);
+    expect(editor.selectedNode?.name, 'Brake Form Copy');
+
+    editor.selectNode('mapped-form');
+    editor.disconnectSelectedNode();
+
+    expect(
+      editor.template.flows.any(
+        (flow) =>
+            flow.fromNodeId == 'mapped-form' || flow.toNodeId == 'mapped-form',
+      ),
+      isFalse,
+    );
+  });
+
+  testWidgets('builder sidebar shows selected node summary only', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1400, 900));
@@ -162,35 +201,55 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.enterText(
-      find.widgetWithText(TextField, 'Node Name'),
-      'Precision Laser Cut',
+    expect(find.text('Laser Cut'), findsWidgets);
+    expect(find.text('Machine'), findsOneWidget);
+    expect(find.text('LC-01'), findsWidgets);
+    expect(find.text('Apply Node Changes'), findsNothing);
+    expect(find.textContaining('Use the floating toolbar'), findsOneWidget);
+  });
+
+  testWidgets('builder edit dialog assigns input and output item masters', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    final provider = ProductionProvider.seeded();
+    final editor = PipelineEditorProvider(template: _testTemplate());
+    addTearDown(provider.dispose);
+    addTearDown(editor.dispose);
+
+    await tester.pumpWidget(
+      _ProductionHarness(
+        provider: provider,
+        editor: editor,
+        child: const PipelineBuilderScreen(shopFloorId: 'floor-1'),
+      ),
     );
-    await tester.enterText(
-      find.widgetWithText(TextField, 'Action'),
-      'Laser profiling',
-    );
-    await tester.enterText(
-      find.widgetWithText(TextField, 'Inputs'),
-      'Sheet, Nesting Program',
-    );
-    await tester.enterText(
-      find.widgetWithText(TextField, 'Outputs'),
-      'Profiled Blank',
-    );
-    final applyButton = find.ancestor(
-      of: find.text('Apply Node Changes'),
-      matching: find.byType(InkWell),
-    );
-    await tester.ensureVisible(applyButton);
-    await tester.tap(applyButton);
     await tester.pumpAndSettle();
 
-    final updated = editor.template.nodes.first;
-    expect(updated.name, 'Precision Laser Cut');
-    expect(updated.processType, 'Laser profiling');
-    expect(updated.inputs, ['Sheet', 'Nesting Program']);
-    expect(updated.outputs, ['Profiled Blank']);
+    await tester.tap(find.byTooltip('Edit block'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('pipeline-node-input-item')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sheet Metal (kg)').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('pipeline-node-output-item')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Blank Profile (g)').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Save Changes'));
+    await tester.pumpAndSettle();
+
+    final node = editor.template.nodes.singleWhere(
+      (node) => node.id == 'node-cut',
+    );
+    expect(node.inputItem?.itemName, 'Sheet Metal');
+    expect(node.outputItem?.itemName, 'Blank Profile');
+    expect(node.inputs, ['Sheet Metal']);
+    expect(node.outputs, ['Blank Profile']);
+    expect(find.text('Apply Node Changes'), findsNothing);
   });
 
   testWidgets('floor map renders saved pipeline templates as live routes', (
@@ -206,7 +265,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 120));
 
     expect(find.text('Mapped Finishing Route'), findsWidgets);
-    expect(find.text('Saved shop-floor pipelines'), findsOneWidget);
+    expect(find.text('Saved floor pipelines'), findsOneWidget);
     expect(find.textContaining('3 stations'), findsWidgets);
   });
 }
@@ -231,6 +290,15 @@ class _ProductionHarness extends StatelessWidget {
           create: (_) => ProductionRunProvider(),
         ),
         ChangeNotifierProvider<PipelineEditorProvider>.value(value: editor),
+        ChangeNotifierProvider<UnitsProvider>(
+          create: (_) => UnitsProvider(
+            repository: _FakeUnitRepository(_unitDefinitions()),
+          ),
+        ),
+        ChangeNotifierProvider<ItemsProvider>(
+          create: (_) =>
+              ItemsProvider(repository: _FakeItemRepository(_itemMasters())),
+        ),
       ],
       child: MaterialApp(home: Scaffold(body: child)),
     );
@@ -332,4 +400,165 @@ PipelineTemplate _mappedFloorTemplate() {
       ),
     ],
   );
+}
+
+class _FakeUnitRepository implements UnitRepository {
+  const _FakeUnitRepository(this.seedUnits);
+
+  final List<UnitDefinition> seedUnits;
+
+  @override
+  Future<void> init() async {}
+
+  @override
+  Future<List<UnitDefinition>> getUnits() async =>
+      List<UnitDefinition>.from(seedUnits);
+
+  @override
+  Future<UnitDefinition> createUnit(CreateUnitInput input) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<UnitDefinition> updateUnit(UpdateUnitInput input) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<UnitDefinition> archiveUnit(int id) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<UnitDefinition> restoreUnit(int id) {
+    throw UnimplementedError();
+  }
+}
+
+class _FakeItemRepository implements ItemRepository {
+  const _FakeItemRepository(this.seedItems);
+
+  final List<ItemDefinition> seedItems;
+
+  @override
+  Future<void> init() async {}
+
+  @override
+  Future<List<ItemDefinition>> getItems() async =>
+      List<ItemDefinition>.from(seedItems);
+
+  @override
+  Future<ItemDefinition> createItem(CreateItemInput input) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<ItemDefinition> updateItem(UpdateItemInput input) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<ItemDefinition> archiveItem(int id) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<ItemDefinition> restoreItem(int id) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<List<ItemAsset>> getItemAssets(int itemId) async => const [];
+
+  @override
+  Future<ItemAssetUploadIntent> createAssetUploadIntent(
+    ItemAssetUploadIntentInput input,
+  ) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<ItemAsset> completeAssetUpload(CompleteItemAssetUploadInput input) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<ItemAsset> setPrimaryAsset(int assetId) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> deleteAsset(int assetId) {
+    throw UnimplementedError();
+  }
+}
+
+List<UnitDefinition> _unitDefinitions() {
+  final now = DateTime(2026);
+  return [
+    UnitDefinition(
+      id: 1,
+      name: 'Kilogram',
+      symbol: 'kg',
+      notes: '',
+      unitGroupId: 1,
+      unitGroupName: 'Mass',
+      conversionFactor: 1,
+      conversionBaseUnitId: null,
+      conversionBaseUnitName: null,
+      isArchived: false,
+      usageCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    ),
+    UnitDefinition(
+      id: 2,
+      name: 'Gram',
+      symbol: 'g',
+      notes: '',
+      unitGroupId: 1,
+      unitGroupName: 'Mass',
+      conversionFactor: 0.001,
+      conversionBaseUnitId: 1,
+      conversionBaseUnitName: 'Kilogram',
+      isArchived: false,
+      usageCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    ),
+  ];
+}
+
+List<ItemDefinition> _itemMasters() {
+  final now = DateTime(2026);
+  return [
+    ItemDefinition(
+      id: 1,
+      name: 'Sheet Metal',
+      alias: '',
+      displayName: 'Sheet Metal',
+      quantity: 0,
+      groupId: 1,
+      unitId: 1,
+      isArchived: false,
+      usageCount: 0,
+      createdAt: now,
+      updatedAt: now,
+      variationTree: const [],
+    ),
+    ItemDefinition(
+      id: 2,
+      name: 'Blank Profile',
+      alias: '',
+      displayName: 'Blank Profile',
+      quantity: 0,
+      groupId: 1,
+      unitId: 2,
+      isArchived: false,
+      usageCount: 0,
+      createdAt: now,
+      updatedAt: now,
+      variationTree: const [],
+    ),
+  ];
 }

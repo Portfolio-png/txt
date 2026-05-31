@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
 import '../../production_pipelines/domain/pipeline_template.dart';
 import '../../production_pipelines/domain/process_node.dart';
+import '../domain/default_floor_context.dart';
 import '../domain/models/floor_view_models.dart';
 import '../widgets/floor_map_painter.dart';
 import '../widgets/floor_widgets.dart';
@@ -89,7 +90,7 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
       final repo = context.read<PipelineRunRepository>();
       final templates = await repo.getTemplates();
       final floorTemplates = templates
-          .where((template) => template.shopFloorId == widget.shopFloorId)
+          .where(_templateBelongsToCurrentFloor)
           .toList(growable: false);
       if (!mounted) return;
       setState(() {
@@ -134,9 +135,10 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
         : _data.floor;
     final selectedPipelineId =
         pipelines.any((pipeline) => pipeline.id == _selectedPipelineId)
-            ? _selectedPipelineId
-            : pipelines.first.id;
-    final selectedPipeline = pipelines
+        ? _selectedPipelineId
+        : pipelines.first.id;
+    final selectedPipeline =
+        pipelines
             .where((pipeline) => pipeline.id == selectedPipelineId)
             .firstOrNull ??
         pipelines.first;
@@ -209,7 +211,9 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
                   }
 
                   final leftWidth = constraints.maxWidth < 1280 ? 286.0 : 312.0;
-                  final rightWidth = constraints.maxWidth < 1280 ? 300.0 : 330.0;
+                  final rightWidth = constraints.maxWidth < 1280
+                      ? 300.0
+                      : 330.0;
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -274,58 +278,75 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
   }
 
   String _routeSourceLabel(bool hasTemplateRoutes) {
-    return hasTemplateRoutes
-        ? 'Saved shop-floor pipelines'
-        : 'Demo floor routes';
+    return hasTemplateRoutes ? 'Saved floor pipelines' : 'Demo floor routes';
+  }
+
+  bool _templateBelongsToCurrentFloor(PipelineTemplate template) {
+    if (widget.shopFloorId == defaultProductionShopFloorId) {
+      return true;
+    }
+    if (template.shopFloorId == widget.shopFloorId) {
+      return true;
+    }
+    return belongsToDefaultFloor(template.shopFloorId);
   }
 
   List<PipelineSummary> _pipelineSummariesFromTemplates(
     List<PipelineTemplate> templates,
   ) {
-    return templates.map((template) {
-      final status = _statusForTemplate(template);
-      final nodeCount = template.nodes.length;
-      final requiredFlows = math.max(1, nodeCount - 1);
-      final progress = nodeCount == 0
-          ? 0.0
-          : (template.flows.length / requiredFlows).clamp(0, 1).toDouble();
-      final target = math.max(1000, nodeCount * 1200);
-      final statusFactor = switch (status) {
-        PipelineStatus.running => 0.84,
-        PipelineStatus.waiting => 0.58,
-        PipelineStatus.blocked => 0.36,
-        PipelineStatus.idle => 0.0,
-      };
-      final queueMinutes = switch (status) {
-        PipelineStatus.running => 6,
-        PipelineStatus.waiting => 14,
-        PipelineStatus.blocked => 26,
-        PipelineStatus.idle => 0,
-      };
-      final alertCount = template.nodes
-              .where((node) => _nodeStatus(node) != PipelineStatus.running)
-              .length +
-          (nodeCount > 1 && template.flows.isEmpty ? 1 : 0);
+    return templates
+        .map((template) {
+          final status = _statusForTemplate(template);
+          final nodeCount = template.nodes.length;
+          final requiredFlows = math.max(1, nodeCount - 1);
+          final progress = nodeCount == 0
+              ? 0.0
+              : (template.flows.length / requiredFlows).clamp(0, 1).toDouble();
+          final target = math.max(1000, nodeCount * 1200);
+          final statusFactor = switch (status) {
+            PipelineStatus.running => 0.84,
+            PipelineStatus.waiting => 0.58,
+            PipelineStatus.blocked => 0.36,
+            PipelineStatus.idle => 0.0,
+          };
+          final queueMinutes = switch (status) {
+            PipelineStatus.running => 6,
+            PipelineStatus.waiting => 14,
+            PipelineStatus.blocked => 26,
+            PipelineStatus.idle => 0,
+          };
+          final alertCount =
+              template.nodes
+                  .where((node) => _nodeStatus(node) != PipelineStatus.running)
+                  .length +
+              (nodeCount > 1 && template.flows.isEmpty ? 1 : 0);
 
-      return PipelineSummary(
-        id: template.id,
-        name: template.name.trim().isEmpty ? 'Unnamed Pipeline' : template.name,
-        status: status,
-        oee: nodeCount == 0 ? 0 : (statusFactor * 100).clamp(0, 96).toDouble(),
-        outputActual: (target * math.max(progress, 0.35) * statusFactor).round(),
-        outputTarget: target,
-        queueMinutes: queueMinutes,
-        stationCount: nodeCount,
-        activeOperators: math.max(1, (nodeCount / 2).ceil()),
-        alertCount: alertCount,
-        bottleneckReason: _bottleneckReason(template, status),
-        bottleneckImpact: _bottleneckImpact(status),
-      );
-    }).toList(growable: false);
+          return PipelineSummary(
+            id: template.id,
+            name: template.name.trim().isEmpty
+                ? 'Unnamed Pipeline'
+                : template.name,
+            status: status,
+            oee: nodeCount == 0
+                ? 0
+                : (statusFactor * 100).clamp(0, 96).toDouble(),
+            outputActual: (target * math.max(progress, 0.35) * statusFactor)
+                .round(),
+            outputTarget: target,
+            queueMinutes: queueMinutes,
+            stationCount: nodeCount,
+            activeOperators: math.max(1, (nodeCount / 2).ceil()),
+            alertCount: alertCount,
+            bottleneckReason: _bottleneckReason(template, status),
+            bottleneckImpact: _bottleneckImpact(status),
+          );
+        })
+        .toList(growable: false);
   }
 
   FloorSummary _floorSummaryFromPipelines(List<PipelineSummary> pipelines) {
-    final topBottleneck = pipelines.where((pipeline) {
+    final topBottleneck =
+        pipelines.where((pipeline) {
           return pipeline.status == PipelineStatus.blocked ||
               pipeline.status == PipelineStatus.waiting;
         }).firstOrNull ??
@@ -351,11 +372,11 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
     final oee = pipelines.isEmpty
         ? 0.0
         : pipelines.fold<double>(0, (sum, pipeline) => sum + pipeline.oee) /
-            pipelines.length;
+              pipelines.length;
 
     return FloorSummary(
-      id: widget.shopFloorId ?? 'selected-floor',
-      name: 'Selected Floor',
+      id: widget.shopFloorId ?? defaultProductionShopFloorId,
+      name: 'Unified Floor Map',
       areaName: 'Mapped Pipelines',
       oee: oee,
       oeeTrend: const KpiTrend(label: 'from saved routes', delta: 0),
@@ -392,9 +413,11 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
 
   List<StationNode> _stationsFromTemplates(List<PipelineTemplate> templates) {
     return [
-      for (var templateIndex = 0;
-          templateIndex < templates.length;
-          templateIndex += 1)
+      for (
+        var templateIndex = 0;
+        templateIndex < templates.length;
+        templateIndex += 1
+      )
         for (final node in templates[templateIndex].nodes)
           StationNode(
             id: node.id,
@@ -408,7 +431,8 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
             ),
             status: _nodeStatus(node),
             pipelineId: templates[templateIndex].id,
-            isBottleneck: _nodeStatus(node) == PipelineStatus.blocked ||
+            isBottleneck:
+                _nodeStatus(node) == PipelineStatus.blocked ||
                 node.status.toLowerCase().contains('bottleneck'),
           ),
     ];
@@ -416,9 +440,11 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
 
   List<FloorAlert> _alertsFromTemplates(List<PipelineTemplate> templates) {
     final alerts = <FloorAlert>[];
-    for (var templateIndex = 0;
-        templateIndex < templates.length;
-        templateIndex += 1) {
+    for (
+      var templateIndex = 0;
+      templateIndex < templates.length;
+      templateIndex += 1
+    ) {
       final template = templates[templateIndex];
       for (final node in template.nodes) {
         final status = _nodeStatus(node);
@@ -466,12 +492,11 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
   }
 
   List<ProcessNode> _orderedNodes(PipelineTemplate template) {
-    return List<ProcessNode>.of(template.nodes)
-      ..sort((a, b) {
-        final stageCompare = a.stageIndex.compareTo(b.stageIndex);
-        if (stageCompare != 0) return stageCompare;
-        return a.laneIndex.compareTo(b.laneIndex);
-      });
+    return List<ProcessNode>.of(template.nodes)..sort((a, b) {
+      final stageCompare = a.stageIndex.compareTo(b.stageIndex);
+      if (stageCompare != 0) return stageCompare;
+      return a.laneIndex.compareTo(b.laneIndex);
+    });
   }
 
   List<ProcessNode> _routeNodes(PipelineTemplate template) {
@@ -490,17 +515,18 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
 
     while (visited.add(current.id)) {
       route.add(current);
-      final nextFlows = template.flows
-          .where((flow) => flow.fromNodeId == current.id)
-          .where((flow) => nodeById.containsKey(flow.toNodeId))
-          .toList()
-        ..sort((a, b) {
-          final aNode = nodeById[a.toNodeId]!;
-          final bNode = nodeById[b.toNodeId]!;
-          final stageCompare = aNode.stageIndex.compareTo(bNode.stageIndex);
-          if (stageCompare != 0) return stageCompare;
-          return aNode.laneIndex.compareTo(bNode.laneIndex);
-        });
+      final nextFlows =
+          template.flows
+              .where((flow) => flow.fromNodeId == current.id)
+              .where((flow) => nodeById.containsKey(flow.toNodeId))
+              .toList()
+            ..sort((a, b) {
+              final aNode = nodeById[a.toNodeId]!;
+              final bNode = nodeById[b.toNodeId]!;
+              final stageCompare = aNode.stageIndex.compareTo(bNode.stageIndex);
+              if (stageCompare != 0) return stageCompare;
+              return aNode.laneIndex.compareTo(bNode.laneIndex);
+            });
       final next = nextFlows
           .map((flow) => nodeById[flow.toNodeId]!)
           .where((node) => !visited.contains(node.id))
@@ -659,7 +685,7 @@ class FloorTopBar extends StatelessWidget {
                 ),
               ),
               Text(
-                'Factory / Floor 2 / Fabrication',
+                'Unified editable floor canvas',
                 style: TextStyle(
                   color: tokens.textSecondary,
                   fontSize: 11,
@@ -687,7 +713,7 @@ class FloorTopBar extends StatelessWidget {
           FilledButton.icon(
             onPressed: onDispatch,
             icon: const Icon(Icons.add_road_rounded, size: 16),
-            label: const Text('Dispatch'),
+            label: const Text('Refresh Map'),
             style: FilledButton.styleFrom(
               backgroundColor: tokens.selection,
               foregroundColor: Colors.white,
@@ -1270,10 +1296,11 @@ class _StationMarker extends StatelessWidget {
                       height: markerSize + 22,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: (station.status == PipelineStatus.blocked
-                                ? tokens.danger
-                                : tokens.warning)
-                            .withValues(alpha: 0.14),
+                        color:
+                            (station.status == PipelineStatus.blocked
+                                    ? tokens.danger
+                                    : tokens.warning)
+                                .withValues(alpha: 0.14),
                       ),
                     ),
                   Container(
@@ -1454,8 +1481,8 @@ class _RoutePulsePanel extends StatelessWidget {
                     status == PipelineStatus.blocked
                         ? 'Transfer interrupted'
                         : status == PipelineStatus.waiting
-                            ? 'Queue building'
-                            : 'Material moving',
+                        ? 'Queue building'
+                        : 'Material moving',
                     style: TextStyle(
                       color: tokens.textPrimary,
                       fontSize: 11,
@@ -1622,7 +1649,7 @@ class _OpenPipelineControl extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Open Pipeline',
+              'Edit Pipeline',
               style: TextStyle(
                 color: tokens.textPrimary,
                 fontSize: 12,

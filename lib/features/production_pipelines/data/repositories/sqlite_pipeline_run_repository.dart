@@ -8,6 +8,7 @@ import '../../domain/pipeline_template.dart';
 import '../../domain/run_overrides.dart';
 import 'pipeline_run_repository.dart';
 import '../../../production/data/datasources/offline_database_helper.dart';
+import '../default_pipeline_templates.dart';
 
 class SqlitePipelineRunRepository implements PipelineRunRepository {
   final _dbHelper = OfflineSyncDbHelper.instance;
@@ -16,19 +17,34 @@ class SqlitePipelineRunRepository implements PipelineRunRepository {
   @override
   Future<List<PipelineTemplate>> getTemplates() async {
     final db = await _dbHelper.database;
-    final maps = await db.query('pipeline_templates', orderBy: 'created_at DESC');
-    return maps.map((m) {
+    final maps = await db.query(
+      'pipeline_templates',
+      orderBy: 'created_at DESC',
+    );
+    
+    final templates = maps.map((m) {
       final data = jsonDecode(m['data'] as String) as Map<String, dynamic>;
       return PipelineTemplate.fromJson(data);
     }).toList();
+
+    if (!templates.any((t) => t.id == sheetMetalPipelineTemplate.id)) {
+      await createTemplate(sheetMetalPipelineTemplate);
+      templates.insert(0, sheetMetalPipelineTemplate);
+    }
+
+    return templates;
   }
 
   @override
   Future<PipelineTemplate> createTemplate(PipelineTemplate template) async {
     final db = await _dbHelper.database;
-    final newTemplate = template.copyWith(id: template.id.isEmpty ? _uuid.v4() : template.id);
+    await _ensureTemplateColumns(db);
+    final newTemplate = template.copyWith(
+      id: template.id.isEmpty ? _uuid.v4() : template.id,
+    );
     await db.insert('pipeline_templates', {
       'id': newTemplate.id,
+      'shop_floor_id': newTemplate.shopFloorId,
       'name': newTemplate.name,
       'data': jsonEncode(newTemplate.toJson()),
       'created_at': DateTime.now().toIso8601String(),
@@ -39,10 +55,12 @@ class SqlitePipelineRunRepository implements PipelineRunRepository {
   @override
   Future<PipelineTemplate> updateTemplate(PipelineTemplate template) async {
     final db = await _dbHelper.database;
+    await _ensureTemplateColumns(db);
     await db.update(
       'pipeline_templates',
       {
         'name': template.name,
+        'shop_floor_id': template.shopFloorId,
         'data': jsonEncode(template.toJson()),
       },
       where: 'id = ?',
@@ -51,12 +69,29 @@ class SqlitePipelineRunRepository implements PipelineRunRepository {
     return template;
   }
 
+  Future<void> _ensureTemplateColumns(dynamic db) async {
+    final columns = await db.rawQuery('PRAGMA table_info(pipeline_templates)');
+    final names = columns
+        .map((column) => column['name'] as String? ?? '')
+        .toSet();
+    if (!names.contains('shop_floor_id')) {
+      await db.execute(
+        'ALTER TABLE pipeline_templates ADD COLUMN shop_floor_id TEXT',
+      );
+    }
+  }
+
   @override
   Future<PipelineTemplate?> getTemplate(String id) async {
     final db = await _dbHelper.database;
-    final maps = await db.query('pipeline_templates', where: 'id = ?', whereArgs: [id]);
+    final maps = await db.query(
+      'pipeline_templates',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
     if (maps.isEmpty) return null;
-    final data = jsonDecode(maps.first['data'] as String) as Map<String, dynamic>;
+    final data =
+        jsonDecode(maps.first['data'] as String) as Map<String, dynamic>;
     return PipelineTemplate.fromJson(data);
   }
 
@@ -65,7 +100,12 @@ class SqlitePipelineRunRepository implements PipelineRunRepository {
     final db = await _dbHelper.database;
     final List<Map<String, Object?>> maps;
     if (templateId != null) {
-      maps = await db.query('pipeline_runs', where: 'template_id = ?', whereArgs: [templateId], orderBy: 'start_time DESC');
+      maps = await db.query(
+        'pipeline_runs',
+        where: 'template_id = ?',
+        whereArgs: [templateId],
+        orderBy: 'start_time DESC',
+      );
     } else {
       maps = await db.query('pipeline_runs', orderBy: 'start_time DESC');
     }
@@ -91,7 +131,7 @@ class SqlitePipelineRunRepository implements PipelineRunRepository {
       status: 'planned',
       overrides: const RunOverrides(),
       nodeStatuses: {
-        for (final node in template.nodes) node.id: NodeRunStatus.pending
+        for (final node in template.nodes) node.id: NodeRunStatus.pending,
       },
       attachedBarcodeInputs: {},
       createdAt: DateTime.now(),
@@ -116,12 +156,17 @@ class SqlitePipelineRunRepository implements PipelineRunRepository {
   @override
   Future<PipelineRun?> getRun(String id) async {
     final db = await _dbHelper.database;
-    final maps = await db.query('pipeline_runs', where: 'id = ?', whereArgs: [id]);
+    final maps = await db.query(
+      'pipeline_runs',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
     if (maps.isEmpty) return null;
-    final data = jsonDecode(maps.first['data'] as String) as Map<String, dynamic>;
+    final data =
+        jsonDecode(maps.first['data'] as String) as Map<String, dynamic>;
     return PipelineRun.fromJson(data);
   }
-  
+
   Future<void> saveRun(PipelineRun run) async {
     final db = await _dbHelper.database;
     await db.update(
@@ -152,7 +197,8 @@ class SqlitePipelineRunRepository implements PipelineRunRepository {
     final updatedStatuses = Map<String, NodeRunStatus>.from(run.nodeStatuses);
     updatedStatuses[nodeId] = status;
 
-    final allCompleted = updatedStatuses.isNotEmpty &&
+    final allCompleted =
+        updatedStatuses.isNotEmpty &&
         updatedStatuses.values.every(
           (s) => s == NodeRunStatus.done || s == NodeRunStatus.skipped,
         );
@@ -172,16 +218,24 @@ class SqlitePipelineRunRepository implements PipelineRunRepository {
             },
       machineOverrideByNode:
           machineOverride == null || machineOverride.trim().isEmpty
-              ? run.overrides.machineOverrideByNode
-              : <String, String>{
-                  ...run.overrides.machineOverrideByNode,
-                  nodeId: machineOverride.trim(),
-                },
+          ? run.overrides.machineOverrideByNode
+          : <String, String>{
+              ...run.overrides.machineOverrideByNode,
+              nodeId: machineOverride.trim(),
+            },
     );
 
-    final bool anyActiveOrDone = updatedStatuses.values.any((s) => s == NodeRunStatus.active || s == NodeRunStatus.done || s == NodeRunStatus.skipped);
-    final String runStatus = allCompleted ? 'completed' : (anyActiveOrDone ? 'active' : 'planned');
-    final DateTime? startedAt = run.startedAt ?? (anyActiveOrDone ? DateTime.now() : null);
+    final bool anyActiveOrDone = updatedStatuses.values.any(
+      (s) =>
+          s == NodeRunStatus.active ||
+          s == NodeRunStatus.done ||
+          s == NodeRunStatus.skipped,
+    );
+    final String runStatus = allCompleted
+        ? 'completed'
+        : (anyActiveOrDone ? 'active' : 'planned');
+    final DateTime? startedAt =
+        run.startedAt ?? (anyActiveOrDone ? DateTime.now() : null);
 
     final updatedRun = run.copyWith(
       nodeStatuses: updatedStatuses,
@@ -207,31 +261,36 @@ class SqlitePipelineRunRepository implements PipelineRunRepository {
     final trimmed = barcode.trim();
     if (trimmed.isEmpty) return run;
 
-    final existingList = run.attachedBarcodeInputs[nodeId] ?? const <BarcodeInput>[];
-    
+    final existingList =
+        run.attachedBarcodeInputs[nodeId] ?? const <BarcodeInput>[];
+
     final updatedList = <BarcodeInput>[];
     bool found = false;
     for (final item in existingList) {
       if (item.barcode == trimmed) {
-        updatedList.add(BarcodeInput(
-          barcode: item.barcode,
-          materialName: item.materialName,
-          materialType: item.materialType,
-          scanCount: item.scanCount + 1,
-        ));
+        updatedList.add(
+          BarcodeInput(
+            barcode: item.barcode,
+            materialName: item.materialName,
+            materialType: item.materialType,
+            scanCount: item.scanCount + 1,
+          ),
+        );
         found = true;
       } else {
         updatedList.add(item);
       }
     }
-    
+
     if (!found) {
-      updatedList.add(BarcodeInput(
-        barcode: trimmed,
-        materialName: 'Material $trimmed',
-        materialType: 'Scanned Input',
-        scanCount: 1,
-      ));
+      updatedList.add(
+        BarcodeInput(
+          barcode: trimmed,
+          materialName: 'Material $trimmed',
+          materialType: 'Scanned Input',
+          scanCount: 1,
+        ),
+      );
     }
 
     final updatedRun = run.copyWith(

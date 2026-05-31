@@ -72,7 +72,14 @@ class MockDatabase implements Database {
       row['id'] = _nextId++;
     }
     logs.add(row);
-    return row['id'] as int;
+    final idVal = row['id'];
+    if (idVal is int) {
+      return idVal;
+    }
+    if (idVal is String) {
+      return int.tryParse(idVal) ?? _nextId++;
+    }
+    return _nextId++;
   }
 
   @override
@@ -128,6 +135,22 @@ class MockDatabase implements Database {
     }
     return 0;
   }
+
+  @override
+  Future<List<Map<String, Object?>>> rawQuery(String sql, [List<Object?>? arguments]) async {
+    if (sql.contains('table_info(pipeline_templates)')) {
+      return <Map<String, Object?>>[
+        {'name': 'id'},
+        {'name': 'name'},
+        {'name': 'shop_floor_id'},
+        {'name': 'data'},
+      ];
+    }
+    return <Map<String, Object?>>[];
+  }
+
+  @override
+  Future<void> execute(String sql, [List<Object?>? arguments]) async {}
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

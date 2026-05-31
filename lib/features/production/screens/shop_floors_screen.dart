@@ -216,7 +216,7 @@ class _ShopFloorMapCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.88),
             borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: const Color(0xFFD9DEDA)),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.035),
@@ -241,7 +241,7 @@ class _ShopFloorMapCard extends StatelessWidget {
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFE7F0EE),
+                            color: const Color(0xFFEFF6FF),
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
@@ -249,7 +249,7 @@ class _ShopFloorMapCard extends StatelessWidget {
                                 ? 'FLOOR'
                                 : floor.code.trim().toUpperCase(),
                             style: const TextStyle(
-                              color: Color(0xFF256D66),
+                              color: Color(0xFF3B82F6),
                               fontSize: 11,
                               fontWeight: FontWeight.w900,
                               letterSpacing: 0.2,
@@ -260,7 +260,7 @@ class _ShopFloorMapCard extends StatelessWidget {
                         const Text(
                           'Open map',
                           style: TextStyle(
-                            color: Color(0xFF6A7572),
+                            color: Color(0xFF64748B),
                             fontSize: 12,
                             fontWeight: FontWeight.w800,
                           ),
@@ -269,7 +269,7 @@ class _ShopFloorMapCard extends StatelessWidget {
                         const Icon(
                           Icons.north_east_rounded,
                           size: 17,
-                          color: Color(0xFF6A7572),
+                          color: Color(0xFF64748B),
                         ),
                       ],
                     ),
@@ -279,7 +279,7 @@ class _ShopFloorMapCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color: Color(0xFF263130),
+                        color: Color(0xFF1E293B),
                         fontSize: 20,
                         fontWeight: FontWeight.w900,
                       ),
@@ -290,7 +290,7 @@ class _ShopFloorMapCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: Color(0xFF6A7572),
+                        color: Color(0xFF64748B),
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                       ),
@@ -328,7 +328,7 @@ class _MiniFloorStat extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: const Color(0xFFF0F1EC).withValues(alpha: 0.76),
+          color: const Color(0xFFF1F5F9).withValues(alpha: 0.76),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
@@ -337,7 +337,7 @@ class _MiniFloorStat extends StatelessWidget {
             Text(
               value,
               style: const TextStyle(
-                color: Color(0xFF263130),
+                color: Color(0xFF1E293B),
                 fontSize: 13,
                 fontWeight: FontWeight.w900,
               ),
@@ -345,7 +345,7 @@ class _MiniFloorStat extends StatelessWidget {
             Text(
               label,
               style: const TextStyle(
-                color: Color(0xFF6A7572),
+                color: Color(0xFF64748B),
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
               ),
@@ -361,7 +361,7 @@ class _FloorCardPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final gridPaint = Paint()
-      ..color = const Color(0xFFDADDD6).withValues(alpha: 0.36)
+      ..color = const Color(0xFFE2E8F0).withValues(alpha: 0.36)
       ..strokeWidth = 1;
     for (var x = 0.0; x < size.width; x += 30) {
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
@@ -371,7 +371,7 @@ class _FloorCardPainter extends CustomPainter {
     }
 
     final routePaint = Paint()
-      ..color = const Color(0xFF73A7A0).withValues(alpha: 0.34)
+      ..color = const Color(0xFF3B82F6).withValues(alpha: 0.34)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3
       ..strokeCap = StrokeCap.round;
@@ -391,9 +391,9 @@ class _FloorCardPainter extends CustomPainter {
       );
     canvas.drawPath(route, routePaint);
 
-    final blockPaint = Paint()..color = const Color(0xFFE8EBE5);
+    final blockPaint = Paint()..color = const Color(0xFFF1F5F9);
     final borderPaint = Paint()
-      ..color = const Color(0xFFCDD3CC)
+      ..color = const Color(0xFFE2E8F0)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
     final blocks = [
@@ -407,7 +407,7 @@ class _FloorCardPainter extends CustomPainter {
       canvas.drawRRect(rrect, borderPaint);
     }
 
-    final nodePaint = Paint()..color = const Color(0xFF256D66);
+    final nodePaint = Paint()..color = const Color(0xFF3B82F6);
     for (final point in [
       Offset(size.width * 0.10, size.height * 0.48),
       Offset(size.width * 0.50, size.height * 0.52),
@@ -451,7 +451,7 @@ class _ShopFloorDirectoryShell extends StatelessWidget {
                     Text(
                       title,
                       style: const TextStyle(
-                        color: Color(0xFF263130),
+                        color: Color(0xFF1E293B),
                         fontSize: 24,
                         fontWeight: FontWeight.w900,
                       ),
@@ -460,7 +460,7 @@ class _ShopFloorDirectoryShell extends StatelessWidget {
                     Text(
                       subtitle,
                       style: const TextStyle(
-                        color: Color(0xFF6A7572),
+                        color: Color(0xFF64748B),
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
@@ -473,7 +473,7 @@ class _ShopFloorDirectoryShell extends StatelessWidget {
                 icon: const Icon(Icons.add_rounded, size: 18),
                 label: Text(actionLabel),
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF256D66),
+                  backgroundColor: const Color(0xFF3B82F6),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -516,14 +516,14 @@ class _ShopFloorEmptyState extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.82),
           borderRadius: BorderRadius.circular(26),
-          border: Border.all(color: const Color(0xFFD9DEDA)),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(
               Icons.grid_view_rounded,
-              color: Color(0xFF256D66),
+              color: Color(0xFF3B82F6),
               size: 38,
             ),
             const SizedBox(height: 14),
@@ -531,7 +531,7 @@ class _ShopFloorEmptyState extends StatelessWidget {
               title,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                color: Color(0xFF263130),
+                color: Color(0xFF1E293B),
                 fontSize: 20,
                 fontWeight: FontWeight.w900,
               ),
@@ -541,7 +541,7 @@ class _ShopFloorEmptyState extends StatelessWidget {
               message,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                color: Color(0xFF6A7572),
+                color: Color(0xFF64748B),
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
                 height: 1.35,
@@ -568,17 +568,17 @@ class _ShopFloorGateMessage extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.82),
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: const Color(0xFFD9DEDA)),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
         ),
         child: const Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.domain_rounded, size: 34, color: Color(0xFF256D66)),
+            Icon(Icons.domain_rounded, size: 34, color: Color(0xFF3B82F6)),
             SizedBox(height: 12),
             Text(
               'Select a factory',
               style: TextStyle(
-                color: Color(0xFF263130),
+                color: Color(0xFF1E293B),
                 fontSize: 18,
                 fontWeight: FontWeight.w900,
               ),
@@ -588,7 +588,7 @@ class _ShopFloorGateMessage extends StatelessWidget {
               'Choose a factory first. Its shop floors will appear here.',
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: Color(0xFF6A7572),
+                color: Color(0xFF64748B),
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
                 height: 1.35,

@@ -1,16 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
+import 'package:core_erp/features/orders/presentation/providers/orders_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
 import '../../production_pipelines/domain/pipeline_template.dart';
+import '../../production_pipelines/domain/process_node.dart';
+import '../domain/default_floor_context.dart';
 import '../providers/pipeline_editor_provider.dart';
 import '../providers/production_provider.dart';
 import 'live_production_monitor_screen.dart';
 import 'pipeline_builder_screen.dart';
 
 class PipelinesScreen extends StatefulWidget {
-  const PipelinesScreen({super.key, required this.shopFloorId});
+  const PipelinesScreen({
+    super.key,
+    this.factoryId = defaultProductionFactoryId,
+    this.shopFloorId = defaultProductionShopFloorId,
+  });
 
+  final String factoryId;
   final String shopFloorId;
 
   @override
@@ -43,7 +52,7 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
       final repo = context.read<PipelineRunRepository>();
       final allTemplates = await repo.getTemplates();
       final floorTemplates = allTemplates
-          .where((template) => template.shopFloorId == widget.shopFloorId)
+          .where(_belongsToActiveFloor)
           .toList(growable: false);
       if (!mounted) return;
       setState(() => _templates = floorTemplates);
@@ -52,19 +61,196 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
     }
   }
 
-  void _createNew() {
-    setState(() {
-      _editingTemplate = PipelineTemplate(
-        id: 'tpl-${DateTime.now().microsecondsSinceEpoch}',
-        shopFloorId: widget.shopFloorId,
-        name: 'New Pipeline',
-        description: '',
-        stageLabels: const ['Stage 1'],
-        laneLabels: const ['Main'],
-        nodes: const [],
-        flows: const [],
-      );
-    });
+  Future<void> _createNew() async {
+    final nameCtrl = TextEditingController(text: 'New Pipeline');
+    final descCtrl = TextEditingController();
+    
+    InventoryProvider? inventoryProvider;
+    try {
+      inventoryProvider = context.read<InventoryProvider>();
+    } catch (_) {}
+    final materials = inventoryProvider?.materials ?? const [];
+    final uniqueMaterialNames = materials.map((m) => m.name).toSet().toList();
+    
+    OrdersProvider? ordersProvider;
+    try {
+      ordersProvider = context.read<OrdersProvider>();
+    } catch (_) {}
+    final orders = ordersProvider?.orders ?? const [];
+    final uniqueOrderItems = orders.map((o) => o.itemName).toSet().toList();
+    
+    final inputCtrl = TextEditingController(
+      text: uniqueMaterialNames.isNotEmpty ? uniqueMaterialNames.first : '',
+    );
+    final outputCtrl = TextEditingController(
+      text: uniqueOrderItems.isNotEmpty ? uniqueOrderItems.first : '',
+    );
+
+    final formKey = GlobalKey<FormState>();
+
+    final result = await showDialog<PipelineTemplate>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Create New Pipeline'),
+        content: SizedBox(
+          width: 460,
+          child: SingleChildScrollView(
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(labelText: 'Pipeline Name'),
+                    validator: (value) =>
+                        value == null || value.trim().isEmpty
+                            ? 'Name is required'
+                            : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: descCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Description (Optional)',
+                    ),
+                    minLines: 2,
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: uniqueMaterialNames.contains(inputCtrl.text)
+                        ? inputCtrl.text
+                        : (uniqueMaterialNames.isNotEmpty ? uniqueMaterialNames.first : null),
+                    decoration: const InputDecoration(
+                      labelText: 'Input Material',
+                    ),
+                    items: {
+                      if (inputCtrl.text.isNotEmpty && !uniqueMaterialNames.contains(inputCtrl.text))
+                        inputCtrl.text,
+                      ...uniqueMaterialNames,
+                    }.map((name) {
+                      return DropdownMenuItem<String>(
+                        value: name,
+                        child: Text(name),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        inputCtrl.text = val;
+                      }
+                    },
+                    validator: (value) =>
+                        value == null || value.trim().isEmpty
+                            ? 'Input material is required'
+                            : null,
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: uniqueOrderItems.contains(outputCtrl.text)
+                        ? outputCtrl.text
+                        : (uniqueOrderItems.isNotEmpty ? uniqueOrderItems.first : null),
+                    decoration: const InputDecoration(
+                      labelText: 'Output Material',
+                    ),
+                    items: {
+                      if (outputCtrl.text.isNotEmpty && !uniqueOrderItems.contains(outputCtrl.text))
+                        outputCtrl.text,
+                      ...uniqueOrderItems,
+                    }.map((name) {
+                      return DropdownMenuItem<String>(
+                        value: name,
+                        child: Text(name),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        outputCtrl.text = val;
+                      }
+                    },
+                    validator: (value) =>
+                        value == null || value.trim().isEmpty
+                            ? 'Output material is required'
+                            : null,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState?.validate() == true) {
+                final name = nameCtrl.text.trim();
+                final desc = descCtrl.text.trim();
+                final input = inputCtrl.text.trim();
+                final output = outputCtrl.text.trim();
+                final id = 'tpl-${DateTime.now().microsecondsSinceEpoch}';
+
+                final inputNode = ProcessNode(
+                  id: 'node-input-${DateTime.now().microsecondsSinceEpoch}',
+                  name: 'Input Stage',
+                  processType: 'Input',
+                  stageIndex: 0,
+                  laneIndex: 0,
+                  inputs: [input],
+                  outputs: [input],
+                  machine: 'Input Stage',
+                  dieId: '',
+                  durationHours: 0.25,
+                  status: 'Ready',
+                  isIntermediate: false,
+                );
+
+                final outputNode = ProcessNode(
+                  id: 'node-output-${DateTime.now().microsecondsSinceEpoch}',
+                  name: 'Output Stage',
+                  processType: 'Output',
+                  stageIndex: 1,
+                  laneIndex: 0,
+                  inputs: [output],
+                  outputs: [output],
+                  machine: 'Output Stage',
+                  dieId: '',
+                  durationHours: 0.25,
+                  status: 'Queued',
+                  isIntermediate: false,
+                );
+
+                Navigator.pop(
+                  context,
+                  PipelineTemplate(
+                    id: id,
+                    factoryId: widget.factoryId,
+                    shopFloorId: widget.shopFloorId,
+                    name: name,
+                    description: desc,
+                    stageLabels: const ['Input', 'Output'],
+                    laneLabels: const ['Main'],
+                    nodes: [inputNode, outputNode],
+                    flows: const [],
+                    inputMaterial: input,
+                    outputMaterial: output,
+                  ),
+                );
+              }
+            },
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        _editingTemplate = result;
+      });
+    }
   }
 
   void _edit(PipelineTemplate template) {
@@ -93,15 +279,17 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
         onBack: _closeEditorAndReload,
         child: ChangeNotifierProvider(
           create: (_) => PipelineEditorProvider(template: editingTemplate),
-          child: PipelineBuilderScreen(shopFloorId: widget.shopFloorId),
+          child: PipelineBuilderScreen(
+            factoryId: widget.factoryId,
+            shopFloorId: widget.shopFloorId,
+          ),
         ),
       );
     }
 
     return _PipelineLibraryShell(
-      title: 'Pipelines',
-      subtitle:
-          'Build and run production routes for the selected shop floor map.',
+      title: 'Floor Pipelines',
+      subtitle: 'Build and run production routes on the unified floor map.',
       actionLabel: 'New Pipeline',
       onAction: _createNew,
       child: AnimatedSwitcher(
@@ -110,7 +298,7 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
             ? const _PipelineLoading(label: 'Loading pipelines')
             : _templates.isEmpty
             ? _PipelineEmptyState(
-                title: 'No pipelines on this floor',
+                title: 'No pipelines on this map',
                 message:
                     'Create a production route to connect stages, machines, and live run execution.',
                 actionLabel: 'Create Pipeline',
@@ -146,6 +334,16 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
       ),
     );
   }
+
+  bool _belongsToActiveFloor(PipelineTemplate template) {
+    if (widget.shopFloorId == defaultProductionShopFloorId) {
+      return true;
+    }
+    if (template.shopFloorId == widget.shopFloorId) {
+      return true;
+    }
+    return belongsToDefaultFloor(template.shopFloorId);
+  }
 }
 
 class _PipelineEditorShell extends StatelessWidget {
@@ -170,7 +368,7 @@ class _PipelineEditorShell extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.84),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFFD9DEDA)),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
             ),
             child: Row(
               children: [
@@ -179,7 +377,7 @@ class _PipelineEditorShell extends StatelessWidget {
                   icon: const Icon(Icons.arrow_back_rounded),
                   label: const Text('Back to pipelines'),
                   style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF256D66),
+                    foregroundColor: const Color(0xFF3B82F6),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -190,7 +388,7 @@ class _PipelineEditorShell extends StatelessWidget {
                         : templateName,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      color: Color(0xFF263130),
+                      color: Color(0xFF1E293B),
                       fontSize: 15,
                       fontWeight: FontWeight.w900,
                     ),
@@ -234,7 +432,7 @@ class _PipelineTemplateCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.88),
             borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: const Color(0xFFD9DEDA)),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.035),
@@ -254,7 +452,7 @@ class _PipelineTemplateCard extends StatelessWidget {
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.all(18),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -266,13 +464,13 @@ class _PipelineTemplateCard extends StatelessWidget {
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFE7F0EE),
+                            color: const Color(0xFFEFF6FF),
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: const Text(
                             'ROUTE',
                             style: TextStyle(
-                              color: Color(0xFF256D66),
+                              color: Color(0xFF3B82F6),
                               fontSize: 11,
                               fontWeight: FontWeight.w900,
                               letterSpacing: 0.2,
@@ -294,25 +492,25 @@ class _PipelineTemplateCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color: Color(0xFF263130),
-                        fontSize: 20,
+                        color: Color(0xFF1E293B),
+                        fontSize: 18,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 4),
                     Text(
                       template.description.trim().isEmpty
-                          ? 'Production route for the selected floor'
+                          ? 'Production route for the unified floor map'
                           : template.description,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color: Color(0xFF6A7572),
+                        color: Color(0xFF64748B),
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 6),
                     Row(
                       children: [
                         _RouteBadge(label: 'Stages', value: '$stageCount'),
@@ -322,7 +520,7 @@ class _PipelineTemplateCard extends StatelessWidget {
                         _RouteBadge(label: 'Flows', value: '$flowCount'),
                       ],
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 6),
                     Row(
                       children: [
                         Expanded(
@@ -331,8 +529,8 @@ class _PipelineTemplateCard extends StatelessWidget {
                             icon: const Icon(Icons.edit_rounded, size: 17),
                             label: const Text('Edit'),
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFF263130),
-                              side: const BorderSide(color: Color(0xFFD9DEDA)),
+                              foregroundColor: const Color(0xFF1E293B),
+                              side: const BorderSide(color: Color(0xFFE2E8F0)),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(14),
                               ),
@@ -349,7 +547,7 @@ class _PipelineTemplateCard extends StatelessWidget {
                             ),
                             label: const Text('Run'),
                             style: FilledButton.styleFrom(
-                              backgroundColor: const Color(0xFF256D66),
+                              backgroundColor: const Color(0xFF3B82F6),
                               foregroundColor: Colors.white,
                               disabledBackgroundColor: const Color(0xFFE1E5DF),
                               disabledForegroundColor: const Color(0xFF8A948F),
@@ -383,16 +581,16 @@ class _PipelineStatusBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: active ? const Color(0xFFE8F3EA) : const Color(0xFFF0F1EC),
+        color: active ? const Color(0xFFEFF6FF) : const Color(0xFFF1F5F9),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
-          color: active ? const Color(0xFFBFD9C4) : const Color(0xFFD9DEDA),
+          color: active ? const Color(0xFFBFDBFE) : const Color(0xFFE2E8F0),
         ),
       ),
       child: Text(
         label,
         style: TextStyle(
-          color: active ? const Color(0xFF287248) : const Color(0xFF6A7572),
+          color: active ? const Color(0xFF1D4ED8) : const Color(0xFF64748B),
           fontSize: 11,
           fontWeight: FontWeight.w900,
         ),
@@ -411,9 +609,9 @@ class _RouteBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
-          color: const Color(0xFFF0F1EC).withValues(alpha: 0.78),
+          color: const Color(0xFFF1F5F9).withValues(alpha: 0.78),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
@@ -423,7 +621,7 @@ class _RouteBadge extends StatelessWidget {
               value,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                color: Color(0xFF263130),
+                color: Color(0xFF1E293B),
                 fontSize: 13,
                 fontWeight: FontWeight.w900,
               ),
@@ -432,7 +630,7 @@ class _RouteBadge extends StatelessWidget {
               label,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                color: Color(0xFF6A7572),
+                color: Color(0xFF64748B),
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
               ),
@@ -456,7 +654,7 @@ class _PipelineCardPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final gridPaint = Paint()
-      ..color = const Color(0xFFDADDD6).withValues(alpha: 0.34)
+      ..color = const Color(0xFFE2E8F0).withValues(alpha: 0.34)
       ..strokeWidth = 1;
     for (var x = 0.0; x < size.width; x += 32) {
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
@@ -466,7 +664,7 @@ class _PipelineCardPainter extends CustomPainter {
     }
 
     final routePaint = Paint()
-      ..color = const Color(0xFF73A7A0).withValues(alpha: 0.42)
+      ..color = const Color(0xFF3B82F6).withValues(alpha: 0.42)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 4
       ..strokeCap = StrokeCap.round;
@@ -490,8 +688,8 @@ class _PipelineCardPainter extends CustomPainter {
 
     final nodePaint = Paint()
       ..color = nodeCount > 0
-          ? const Color(0xFF256D66)
-          : const Color(0xFFB5BDB8);
+          ? const Color(0xFF3B82F6)
+          : const Color(0xFFCBD5E1);
     final ringPaint = Paint()
       ..color = const Color(0xFFFFFFFF)
       ..style = PaintingStyle.stroke
@@ -560,7 +758,7 @@ class _PipelineLibraryShell extends StatelessWidget {
                     Text(
                       title,
                       style: const TextStyle(
-                        color: Color(0xFF263130),
+                        color: Color(0xFF1E293B),
                         fontSize: 24,
                         fontWeight: FontWeight.w900,
                       ),
@@ -569,7 +767,7 @@ class _PipelineLibraryShell extends StatelessWidget {
                     Text(
                       subtitle,
                       style: const TextStyle(
-                        color: Color(0xFF6A7572),
+                        color: Color(0xFF64748B),
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
@@ -582,7 +780,7 @@ class _PipelineLibraryShell extends StatelessWidget {
                 icon: const Icon(Icons.add_rounded, size: 18),
                 label: Text(actionLabel),
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF256D66),
+                  backgroundColor: const Color(0xFF3B82F6),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -625,14 +823,14 @@ class _PipelineEmptyState extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.82),
           borderRadius: BorderRadius.circular(26),
-          border: Border.all(color: const Color(0xFFD9DEDA)),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(
               Icons.account_tree_rounded,
-              color: Color(0xFF256D66),
+              color: Color(0xFF3B82F6),
               size: 38,
             ),
             const SizedBox(height: 14),
@@ -640,7 +838,7 @@ class _PipelineEmptyState extends StatelessWidget {
               title,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                color: Color(0xFF263130),
+                color: Color(0xFF1E293B),
                 fontSize: 20,
                 fontWeight: FontWeight.w900,
               ),
@@ -650,7 +848,7 @@ class _PipelineEmptyState extends StatelessWidget {
               message,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                color: Color(0xFF6A7572),
+                color: Color(0xFF64748B),
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
                 height: 1.35,
@@ -685,7 +883,7 @@ class _PipelineLoading extends StatelessWidget {
           Text(
             label,
             style: const TextStyle(
-              color: Color(0xFF6A7572),
+              color: Color(0xFF64748B),
               fontSize: 13,
               fontWeight: FontWeight.w700,
             ),

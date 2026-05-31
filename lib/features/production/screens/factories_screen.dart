@@ -195,7 +195,7 @@ class _FactoryMapCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.86),
             borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: const Color(0xFFD9DEDA)),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.035),
@@ -220,13 +220,13 @@ class _FactoryMapCard extends StatelessWidget {
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFE7F0EE),
+                            color: const Color(0xFFEFF6FF),
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
                             factory.code.isEmpty ? 'FACTORY' : factory.code,
                             style: const TextStyle(
-                              color: Color(0xFF256D66),
+                              color: Color(0xFF3B82F6),
                               fontSize: 11,
                               fontWeight: FontWeight.w900,
                               letterSpacing: 0.2,
@@ -237,7 +237,7 @@ class _FactoryMapCard extends StatelessWidget {
                         const Icon(
                           Icons.north_east_rounded,
                           size: 18,
-                          color: Color(0xFF6A7572),
+                          color: Color(0xFF64748B),
                         ),
                       ],
                     ),
@@ -247,7 +247,7 @@ class _FactoryMapCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color: Color(0xFF263130),
+                        color: Color(0xFF1E293B),
                         fontSize: 20,
                         fontWeight: FontWeight.w900,
                       ),
@@ -258,7 +258,7 @@ class _FactoryMapCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color: Color(0xFF6A7572),
+                        color: Color(0xFF64748B),
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
@@ -296,7 +296,7 @@ class _MiniFactoryStat extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: const Color(0xFFF0F1EC).withValues(alpha: 0.76),
+          color: const Color(0xFFF1F5F9).withValues(alpha: 0.76),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
@@ -305,7 +305,7 @@ class _MiniFactoryStat extends StatelessWidget {
             Text(
               value,
               style: const TextStyle(
-                color: Color(0xFF263130),
+                color: Color(0xFF1E293B),
                 fontSize: 13,
                 fontWeight: FontWeight.w900,
               ),
@@ -313,7 +313,7 @@ class _MiniFactoryStat extends StatelessWidget {
             Text(
               label,
               style: const TextStyle(
-                color: Color(0xFF6A7572),
+                color: Color(0xFF64748B),
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
               ),
@@ -389,7 +389,7 @@ class _ProductionDirectoryShell extends StatelessWidget {
                     Text(
                       title,
                       style: const TextStyle(
-                        color: Color(0xFF263130),
+                        color: Color(0xFF1E293B),
                         fontSize: 24,
                         fontWeight: FontWeight.w900,
                       ),
@@ -398,7 +398,7 @@ class _ProductionDirectoryShell extends StatelessWidget {
                     Text(
                       subtitle,
                       style: const TextStyle(
-                        color: Color(0xFF6A7572),
+                        color: Color(0xFF64748B),
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
@@ -411,7 +411,7 @@ class _ProductionDirectoryShell extends StatelessWidget {
                 icon: const Icon(Icons.add_rounded, size: 18),
                 label: Text(actionLabel),
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF256D66),
+                  backgroundColor: const Color(0xFF3B82F6),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -454,21 +454,21 @@ class _ProductionEmptyState extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.82),
           borderRadius: BorderRadius.circular(26),
-          border: Border.all(color: const Color(0xFFD9DEDA)),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(
               Icons.map_outlined,
-              color: Color(0xFF256D66),
+              color: Color(0xFF3B82F6),
               size: 38,
             ),
             const SizedBox(height: 14),
             Text(
               title,
               style: const TextStyle(
-                color: Color(0xFF263130),
+                color: Color(0xFF1E293B),
                 fontSize: 20,
                 fontWeight: FontWeight.w900,
               ),
@@ -478,7 +478,7 @@ class _ProductionEmptyState extends StatelessWidget {
               message,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                color: Color(0xFF6A7572),
+                color: Color(0xFF64748B),
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
                 height: 1.35,
@@ -513,7 +513,7 @@ class _ProductionLoading extends StatelessWidget {
           Text(
             label,
             style: const TextStyle(
-              color: Color(0xFF6A7572),
+              color: Color(0xFF64748B),
               fontSize: 13,
               fontWeight: FontWeight.w700,
             ),

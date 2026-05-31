@@ -1651,6 +1651,8 @@ function rowToTemplate(row) {
   }
   return {
     id: row.id,
+    factoryId: row.factory_id || '',
+    shopFloorId: row.shop_floor_id || '',
     name: row.name,
     description: row.description || '',
     version: row.version || 1,
@@ -1701,6 +1703,118 @@ async function rowToRun(row) {
 
 function buildSeedTemplates() {
   return [
+    {
+      id: 'sheet-metal-flow',
+      factoryId: '1',
+      shopFloorId: '1',
+      name: 'Sheet Metal Process',
+      description:
+        'Input Stage: Sheet metal goes in at this stage, then flows through blank cutting, piercing, bending, drilling, and packaging.',
+      version: 1,
+      status: 'published',
+      stageLabels: [
+        'Input Stage',
+        'Blank Cutting',
+        'Piercing',
+        'Bending',
+        'Drilling',
+        'Packaging',
+      ],
+      laneLabels: ['Main'],
+      nodes: [
+        {
+          id: 'sheet-metal-input',
+          name: 'Sheet Metal Input',
+          processType: 'Input',
+          stageIndex: 0,
+          laneIndex: 0,
+          inputs: ['Sheet metal'],
+          outputs: ['Sheet metal'],
+          machine: 'Input Stage',
+          durationHours: 0.25,
+          status: 'Ready',
+          isIntermediate: false,
+          scannedInputs: [],
+        },
+        {
+          id: 'sheet-metal-blank-cutting',
+          name: 'Blank Cutting',
+          processType: 'Cutting',
+          stageIndex: 1,
+          laneIndex: 0,
+          inputs: ['Sheet metal'],
+          outputs: ['Blank cut sheet'],
+          machine: 'Blank Cutting',
+          durationHours: 1,
+          status: 'Ready',
+          isIntermediate: true,
+          scannedInputs: [],
+        },
+        {
+          id: 'sheet-metal-piercing',
+          name: 'Piercing',
+          processType: 'Piercing',
+          stageIndex: 2,
+          laneIndex: 0,
+          inputs: ['Blank cut sheet'],
+          outputs: ['Pierced sheet'],
+          machine: 'Handpress',
+          durationHours: 0.5,
+          status: 'Ready',
+          isIntermediate: true,
+          scannedInputs: [],
+        },
+        {
+          id: 'sheet-metal-bending',
+          name: 'Bending',
+          processType: 'Bending',
+          stageIndex: 3,
+          laneIndex: 0,
+          inputs: ['Pierced sheet'],
+          outputs: ['Bent sheet'],
+          machine: 'PP',
+          durationHours: 0.75,
+          status: 'Ready',
+          isIntermediate: true,
+          scannedInputs: [],
+        },
+        {
+          id: 'sheet-metal-drilling',
+          name: 'Drilling',
+          processType: 'Drilling',
+          stageIndex: 4,
+          laneIndex: 0,
+          inputs: ['Bent sheet'],
+          outputs: ['Drilled sheet'],
+          machine: 'Drill Machine',
+          durationHours: 0.75,
+          status: 'Ready',
+          isIntermediate: true,
+          scannedInputs: [],
+        },
+        {
+          id: 'sheet-metal-packaging',
+          name: 'Packaging',
+          processType: 'Packaging',
+          stageIndex: 5,
+          laneIndex: 0,
+          inputs: ['Drilled sheet'],
+          outputs: ['Packed sheet metal'],
+          machine: 'Packaging',
+          durationHours: 0.5,
+          status: 'Ready',
+          isIntermediate: false,
+          scannedInputs: [],
+        },
+      ],
+      flows: [
+        { id: 'sheet-metal-flow-1', fromNodeId: 'sheet-metal-input', toNodeId: 'sheet-metal-blank-cutting', materialName: 'Sheet metal', barcode: null, isSplit: false, isMerge: false },
+        { id: 'sheet-metal-flow-2', fromNodeId: 'sheet-metal-blank-cutting', toNodeId: 'sheet-metal-piercing', materialName: 'Blank cut sheet', barcode: null, isSplit: false, isMerge: false },
+        { id: 'sheet-metal-flow-3', fromNodeId: 'sheet-metal-piercing', toNodeId: 'sheet-metal-bending', materialName: 'Pierced sheet', barcode: null, isSplit: false, isMerge: false },
+        { id: 'sheet-metal-flow-4', fromNodeId: 'sheet-metal-bending', toNodeId: 'sheet-metal-drilling', materialName: 'Bent sheet', barcode: null, isSplit: false, isMerge: false },
+        { id: 'sheet-metal-flow-5', fromNodeId: 'sheet-metal-drilling', toNodeId: 'sheet-metal-packaging', materialName: 'Drilled sheet', barcode: null, isSplit: false, isMerge: false },
+      ],
+    },
     {
       id: 'dolly',
       name: 'Dolly Production',
@@ -3125,6 +3239,8 @@ async function initDb() {
   await run(`
     CREATE TABLE IF NOT EXISTS pipeline_templates (
       id TEXT PRIMARY KEY,
+      factory_id TEXT DEFAULT '',
+      shop_floor_id TEXT DEFAULT '',
       name TEXT NOT NULL,
       description TEXT DEFAULT '',
       version INTEGER NOT NULL DEFAULT 1,
@@ -3137,6 +3253,9 @@ async function initDb() {
       updated_at TEXT DEFAULT (datetime('now'))
     )
   `);
+
+  await ensureColumnExists('pipeline_templates', 'factory_id', "TEXT DEFAULT ''");
+  await ensureColumnExists('pipeline_templates', 'shop_floor_id', "TEXT DEFAULT ''");
 
   await run(`
     CREATE TABLE IF NOT EXISTS pipeline_runs (
@@ -3795,23 +3914,21 @@ async function seedMachinesAndDiesIfEmpty() {
 }
 
 async function seedTemplatesIfEmpty() {
-  const countRow = await get('SELECT COUNT(*) AS count FROM pipeline_templates');
-  if ((countRow?.count || 0) > 0) {
-    return;
-  }
-
   const templates = buildSeedTemplates();
-  for (const template of templates) {
+  const insertSeedTemplate = async (template) => {
     const now = new Date().toISOString();
     await run(
       `
       INSERT INTO pipeline_templates (
-        id, name, description, version, status, stage_labels_json,
-        lane_labels_json, nodes_json, flows_json, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, factory_id, shop_floor_id, name, description, version, status,
+        stage_labels_json, lane_labels_json, nodes_json, flows_json,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         template.id,
+        template.factoryId || '',
+        template.shopFloorId || '',
         template.name,
         template.description,
         template.version,
@@ -3824,6 +3941,23 @@ async function seedTemplatesIfEmpty() {
         now,
       ],
     );
+  };
+
+  const countRow = await get('SELECT COUNT(*) AS count FROM pipeline_templates');
+  if ((countRow?.count || 0) > 0) {
+    const sheetMetalTemplate = templates.find((template) => template.id === 'sheet-metal-flow');
+    const existingSheetMetal = await get(
+      'SELECT id FROM pipeline_templates WHERE id = ?',
+      [sheetMetalTemplate.id],
+    );
+    if (!existingSheetMetal) {
+      await insertSeedTemplate(sheetMetalTemplate);
+    }
+    return;
+  }
+
+  for (const template of templates) {
+    await insertSeedTemplate(template);
   }
 }
 
@@ -17895,12 +18029,14 @@ app.post('/templates', async (req, res) => {
     await run(
       `
       INSERT INTO pipeline_templates (
-        id, name, description, version, status, stage_labels_json, lane_labels_json,
+        id, factory_id, shop_floor_id, name, description, version, status, stage_labels_json, lane_labels_json,
         nodes_json, flows_json, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         payload.id,
+        payload.factoryId || payload.factory_id || '',
+        payload.shopFloorId || payload.shop_floor_id || '',
         payload.name,
         payload.description || '',
         1,
@@ -17939,11 +18075,13 @@ app.put('/templates/:id', async (req, res) => {
     await run(
       `
       UPDATE pipeline_templates
-      SET name = ?, description = ?, version = ?, status = ?, stage_labels_json = ?,
+      SET factory_id = ?, shop_floor_id = ?, name = ?, description = ?, version = ?, status = ?, stage_labels_json = ?,
           lane_labels_json = ?, nodes_json = ?, flows_json = ?, updated_at = ?
       WHERE id = ?
       `,
       [
+        payload.factoryId || payload.factory_id || existing.factory_id || '',
+        payload.shopFloorId || payload.shop_floor_id || existing.shop_floor_id || '',
         payload.name || existing.name,
         payload.description || existing.description || '',
         nextVersion,

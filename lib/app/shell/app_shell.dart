@@ -581,7 +581,9 @@ class _ShellContentSwitcher extends StatelessWidget {
               'configurator_groups' => const ItemsScreen(initialTab: 1),
               'configurator_units' => const UnitsScreen(),
               'configurator_machines' => const MachinesScreen(initialTab: 0),
-              'configurator_machine_groups' => const MachinesScreen(initialTab: 1),
+              'configurator_machine_groups' => const MachinesScreen(
+                initialTab: 1,
+              ),
               'configurator_dies' => const DiesScreen(),
               'user_management' => const UserManagementScreen(),
               _ => const DashboardScreen(),

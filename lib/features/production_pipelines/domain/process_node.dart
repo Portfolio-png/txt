@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 import 'barcode_input.dart';
+import 'pipeline_item_endpoint.dart';
+
+const Object _unset = Object();
 
 class ProcessNode {
   const ProcessNode({
@@ -17,6 +20,9 @@ class ProcessNode {
     required this.status,
     required this.isIntermediate,
     this.scannedInputs = const [],
+    this.inputItem,
+    this.outputItem,
+    this.unitConversionMultiplier,
   });
 
   final String id;
@@ -32,6 +38,9 @@ class ProcessNode {
   final String status;
   final bool isIntermediate;
   final List<BarcodeInput> scannedInputs;
+  final PipelineItemEndpoint? inputItem;
+  final PipelineItemEndpoint? outputItem;
+  final double? unitConversionMultiplier;
 
   String get machineId => machine;
 
@@ -52,6 +61,10 @@ class ProcessNode {
       scannedInputs: (json['scannedInputs'] as List<dynamic>? ?? const [])
           .map((item) => BarcodeInput.fromJson(item as Map<String, dynamic>))
           .toList(growable: false),
+      inputItem: _endpointFromJson(json['inputItem']),
+      outputItem: _endpointFromJson(json['outputItem']),
+      unitConversionMultiplier: (json['unitConversionMultiplier'] as num?)
+          ?.toDouble(),
     );
   }
 
@@ -69,6 +82,9 @@ class ProcessNode {
     String? status,
     bool? isIntermediate,
     List<BarcodeInput>? scannedInputs,
+    Object? inputItem = _unset,
+    Object? outputItem = _unset,
+    Object? unitConversionMultiplier = _unset,
   }) {
     return ProcessNode(
       id: id ?? this.id,
@@ -84,6 +100,15 @@ class ProcessNode {
       status: status ?? this.status,
       isIntermediate: isIntermediate ?? this.isIntermediate,
       scannedInputs: scannedInputs ?? this.scannedInputs,
+      inputItem: identical(inputItem, _unset)
+          ? this.inputItem
+          : inputItem as PipelineItemEndpoint?,
+      outputItem: identical(outputItem, _unset)
+          ? this.outputItem
+          : outputItem as PipelineItemEndpoint?,
+      unitConversionMultiplier: identical(unitConversionMultiplier, _unset)
+          ? this.unitConversionMultiplier
+          : (unitConversionMultiplier as num?)?.toDouble(),
     );
   }
 
@@ -115,6 +140,19 @@ class ProcessNode {
       'status': status,
       'isIntermediate': isIntermediate,
       'scannedInputs': scannedInputs.map((item) => item.toJson()).toList(),
+      'inputItem': inputItem?.toJson(),
+      'outputItem': outputItem?.toJson(),
+      'unitConversionMultiplier': unitConversionMultiplier,
     };
+  }
+
+  static PipelineItemEndpoint? _endpointFromJson(Object? value) {
+    if (value is Map<String, dynamic>) {
+      return PipelineItemEndpoint.fromJson(value);
+    }
+    if (value is Map) {
+      return PipelineItemEndpoint.fromJson(Map<String, dynamic>.from(value));
+    }
+    return null;
   }
 }

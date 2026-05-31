@@ -4,6 +4,7 @@ import 'process_node.dart';
 class PipelineTemplate {
   const PipelineTemplate({
     required this.id,
+    this.factoryId,
     this.shopFloorId,
     required this.name,
     required this.description,
@@ -11,9 +12,12 @@ class PipelineTemplate {
     required this.laneLabels,
     required this.nodes,
     required this.flows,
+    this.inputMaterial = '',
+    this.outputMaterial = '',
   });
 
   final String id;
+  final String? factoryId;
   final String? shopFloorId;
   final String name;
   final String description;
@@ -21,13 +25,17 @@ class PipelineTemplate {
   final List<String> laneLabels;
   final List<ProcessNode> nodes;
   final List<MaterialFlow> flows;
+  final String inputMaterial;
+  final String outputMaterial;
 
   List<ProcessNode> get stages => nodes;
 
   factory PipelineTemplate.fromJson(Map<String, dynamic> json) {
     return PipelineTemplate(
       id: json['id'] as String? ?? '',
-      shopFloorId: json['shopFloorId'] as String?,
+      factoryId: json['factoryId'] as String? ?? json['factory_id'] as String?,
+      shopFloorId:
+          json['shopFloorId'] as String? ?? json['shop_floor_id'] as String?,
       name: json['name'] as String? ?? '',
       description: json['description'] as String? ?? '',
       stageLabels: List<String>.from(
@@ -42,11 +50,14 @@ class PipelineTemplate {
       flows: (json['flows'] as List<dynamic>? ?? const [])
           .map((item) => MaterialFlow.fromJson(item as Map<String, dynamic>))
           .toList(growable: false),
+      inputMaterial: json['inputMaterial'] as String? ?? '',
+      outputMaterial: json['outputMaterial'] as String? ?? '',
     );
   }
 
   PipelineTemplate copyWith({
     String? id,
+    String? factoryId,
     String? shopFloorId,
     String? name,
     String? description,
@@ -54,9 +65,12 @@ class PipelineTemplate {
     List<String>? laneLabels,
     List<ProcessNode>? nodes,
     List<MaterialFlow>? flows,
+    String? inputMaterial,
+    String? outputMaterial,
   }) {
     return PipelineTemplate(
       id: id ?? this.id,
+      factoryId: factoryId ?? this.factoryId,
       shopFloorId: shopFloorId ?? this.shopFloorId,
       name: name ?? this.name,
       description: description ?? this.description,
@@ -64,12 +78,15 @@ class PipelineTemplate {
       laneLabels: laneLabels ?? this.laneLabels,
       nodes: nodes ?? this.nodes,
       flows: flows ?? this.flows,
+      inputMaterial: inputMaterial ?? this.inputMaterial,
+      outputMaterial: outputMaterial ?? this.outputMaterial,
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'factoryId': factoryId,
       'shopFloorId': shopFloorId,
       'name': name,
       'description': description,
@@ -77,6 +94,8 @@ class PipelineTemplate {
       'laneLabels': laneLabels,
       'nodes': nodes.map((node) => node.toJson()).toList(),
       'flows': flows.map((flow) => flow.toJson()).toList(),
+      'inputMaterial': inputMaterial,
+      'outputMaterial': outputMaterial,
     };
   }
 }
