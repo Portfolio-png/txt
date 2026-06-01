@@ -1662,15 +1662,35 @@ class _InventoryScreenState extends State<InventoryScreen> {
       await _openCreateGroupEditor(initialRecord: record);
       return;
     }
-    await showDialog<void>(
-      context: context,
-      builder: (context) => Dialog(
-        insetPadding: const EdgeInsets.all(32),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
-          child: _EditMaterialSheet(record: record),
-        ),
-      ),
+
+    final itemsProvider = context.read<ItemsProvider>();
+    final linkedItemId = record.linkedItemId;
+    ItemDefinition? linkedItem;
+    if (linkedItemId != null) {
+      linkedItem = itemsProvider.items.where((i) => i.id == linkedItemId).firstOrNull;
+    } else {
+      final normalizedRecordName = record.name.trim().toLowerCase();
+      if (normalizedRecordName.isNotEmpty) {
+        final exactMatches = itemsProvider.items
+            .where((item) =>
+                item.name.trim().toLowerCase() == normalizedRecordName &&
+                (record.unitId == null || item.unitId == record.unitId))
+            .toList(growable: false);
+        if (exactMatches.isNotEmpty) {
+          linkedItem = exactMatches.last;
+        }
+      }
+    }
+
+    if (linkedItem != null) {
+      await ItemsScreen.openEditor(context, item: linkedItem);
+      return;
+    }
+
+    await ItemsScreen.openEditor(
+      context,
+      initialName: record.name.trim(),
+      initialGroupId: record.linkedGroupId ?? _resolveParentGroupIdForInventoryRecord(record),
     );
   }
 

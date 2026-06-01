@@ -105,11 +105,15 @@ class MaterialLedgerPreview {
     required this.parentReelStockKg,
     required this.wipBoardLotUnits,
     required this.coreShreddingScrapKg,
+    this.producedItemName = 'WIP_BOARD_LOT_B42',
+    this.lotNumber = 1,
   });
 
   final double parentReelStockKg;
   final int wipBoardLotUnits;
   final double coreShreddingScrapKg;
+  final String producedItemName;
+  final int lotNumber;
 
   List<String> get lines => [
     'Parent Reel Stock: ${_signedKg(parentReelStockKg)}',
@@ -119,7 +123,7 @@ class MaterialLedgerPreview {
 
   List<String> get diffLines => [
     '- STOCK_REEL_8821       [ ${parentReelStockKg.abs().toStringAsFixed(2).padLeft(6)} Kg ]  (Consumed)',
-    '+ WIP_BOARD_LOT_B42     [ ${_formatInt(wipBoardLotUnits.abs()).padLeft(5)} Pcs ]  (Produced)',
+    '+ ${producedItemName}_$lotNumber     [ ${_formatInt(wipBoardLotUnits.abs()).padLeft(5)} Pcs ]  (Produced)',
     '+ SCRAP_SHRED_CORE      [ ${coreShreddingScrapKg.abs().toStringAsFixed(2).padLeft(6)} Kg ]  (Wastage)',
   ];
 
@@ -266,11 +270,19 @@ class ProductionProvider extends ChangeNotifier {
         .firstOrNull;
   }
 
-  MaterialLedgerPreview get ledgerPreview => MaterialLedgerPreview(
-    parentReelStockKg: -_parentReelConsumedKg,
-    wipBoardLotUnits: _goodYieldCount,
-    coreShreddingScrapKg: _scrapWeightKg,
-  );
+  int _currentLotNumber = 1;
+
+  MaterialLedgerPreview get ledgerPreview {
+    final node = selectedNode;
+    final producedItemName = node?.outputItem?.itemName ?? node?.outputs.firstOrNull ?? 'WIP_LOT';
+    return MaterialLedgerPreview(
+      parentReelStockKg: -_parentReelConsumedKg,
+      wipBoardLotUnits: _goodYieldCount,
+      coreShreddingScrapKg: _scrapWeightKg,
+      producedItemName: producedItemName,
+      lotNumber: _currentLotNumber,
+    );
+  }
 
   String get formattedElapsed {
     final totalSeconds = _currentElapsed.inSeconds;
@@ -518,6 +530,7 @@ class ProductionProvider extends ChangeNotifier {
     _phase = ProductionRunPhase.closed;
     _currentMachineId = null;
     _currentDieId = null;
+    _currentLotNumber++;
     notifyListeners();
 
     // Reset for next node

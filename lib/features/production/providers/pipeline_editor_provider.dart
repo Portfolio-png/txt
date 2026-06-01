@@ -16,7 +16,9 @@ class ProcessNodeDraftController {
       dieId = TextEditingController(text: node.dieId),
       processType = TextEditingController(text: node.processType),
       inputs = TextEditingController(text: node.inputs.join(', ')),
-      outputs = TextEditingController(text: node.outputs.join(', '));
+      outputs = TextEditingController(text: node.outputs.join(', ')),
+      durationHours = TextEditingController(
+          text: node.durationHours > 0 ? node.durationHours.toString() : '');
 
   final TextEditingController name;
   final TextEditingController machine;
@@ -24,6 +26,7 @@ class ProcessNodeDraftController {
   final TextEditingController processType;
   final TextEditingController inputs;
   final TextEditingController outputs;
+  final TextEditingController durationHours;
 
   ProcessNode toNode(ProcessNode current) {
     return current.copyWith(
@@ -45,6 +48,7 @@ class ProcessNodeDraftController {
           .map((e) => e.trim())
           .where((e) => e.isNotEmpty)
           .toList(),
+      durationHours: double.tryParse(durationHours.text.trim()) ?? current.durationHours,
     );
   }
 
@@ -55,6 +59,7 @@ class ProcessNodeDraftController {
     processType.dispose();
     inputs.dispose();
     outputs.dispose();
+    durationHours.dispose();
   }
 }
 
@@ -181,13 +186,60 @@ class PipelineEditorProvider extends ChangeNotifier {
       return;
     }
 
+    final fromNode = _template.nodes.firstWhere((n) => n.id == fromId);
+    final toNode = _template.nodes.firstWhere((n) => n.id == toId);
+
+    final materialName = fromNode.outputs.isEmpty ? 'Material' : fromNode.outputs.first;
     final flow = MaterialFlow(
       id: _newFlowId(),
       fromNodeId: fromId,
       toNodeId: toId,
-      materialName: 'Material',
+      materialName: materialName,
     );
-    _template = _template.copyWith(flows: [..._template.flows, flow]);
+
+    // Auto-inherit input mapping from upstream node
+    ProcessNode updatedToNode = toNode.copyWith(
+      inputItem: fromNode.outputItem,
+      inputs: [fromNode.outputItem?.itemName ?? materialName],
+    );
+
+    // Auto-generate output naming if it hasn't been mapped yet
+    if (updatedToNode.outputItem == null) {
+      final originalItemName = _getOriginalItemName(fromNode.id);
+      final stageName = _template.stageLabels.length > updatedToNode.stageIndex 
+          ? _template.stageLabels[updatedToNode.stageIndex] 
+          : 'Stage ${updatedToNode.stageIndex + 1}';
+      
+      final defaultOutputName = '${stageName}_${updatedToNode.processType}_$originalItemName';
+      
+      final outputItem = PipelineItemEndpoint(
+        itemId: DateTime.now().microsecondsSinceEpoch,
+        itemName: defaultOutputName,
+        unitId: fromNode.outputItem?.unitId ?? 0,
+        unitName: fromNode.outputItem?.unitName ?? 'Pieces',
+        unitSymbol: fromNode.outputItem?.unitSymbol ?? 'Pcs',
+      );
+      
+      updatedToNode = updatedToNode.copyWith(
+        outputItem: outputItem,
+        outputs: [defaultOutputName],
+      );
+    }
+
+    final updatedNodes = _template.nodes.map((n) {
+      if (n.id == updatedToNode.id) return updatedToNode;
+      return n;
+    }).toList();
+
+    _template = _template.copyWith(
+      nodes: updatedNodes,
+      flows: [..._template.flows, flow],
+    );
+
+    if (_drafts.containsKey(updatedToNode.id)) {
+      _drafts[updatedToNode.id] = ProcessNodeDraftController(updatedToNode);
+    }
+    
     notifyListeners();
   }
 
@@ -227,6 +279,32 @@ class PipelineEditorProvider extends ChangeNotifier {
     final updatedLaneLabels = [..._template.laneLabels];
     updatedLaneLabels.add('Lane ${updatedLaneLabels.length + 1}');
     _template = _template.copyWith(laneLabels: updatedLaneLabels);
+    notifyListeners();
+  }
+
+  void insertNodeAtStage(int targetStageIndex, {List<UnitDefinition> units = const []}) {
+    final shiftedNodes = _template.nodes.map((node) {
+      if (node.stageIndex >= targetStageIndex) {
+        return node.copyWith(stageIndex: node.stageIndex + 1);
+      }
+      return node;
+    }).toList();
+
+    final node = _buildNode(targetStageIndex, 0);
+    final newNodesList = [...shiftedNodes, node];
+    
+    int maxStage = 0;
+    for (final n in newNodesList) {
+      if (n.stageIndex > maxStage) maxStage = n.stageIndex;
+    }
+
+    _template = _template.copyWith(
+      nodes: newNodesList,
+      stageLabels: _stageLabelsFor(maxStage),
+    );
+    _drafts[node.id] = ProcessNodeDraftController(node);
+    _selectedNodeId = node.id;
+    _connectingFromNodeId = null;
     notifyListeners();
   }
 
@@ -282,14 +360,29 @@ class PipelineEditorProvider extends ChangeNotifier {
       name: namePrefix == null ? null : '$namePrefix $nextNumber',
     );
 
+    final originalItemName = _getOriginalItemName(source.id);
+    final stageName = _template.stageLabels.length > source.stageIndex + 1 
+        ? _template.stageLabels[source.stageIndex + 1] 
+        : 'Stage ${source.stageIndex + 2}';
+    
+    final defaultOutputName = '${stageName}_${processType}_$originalItemName';
+    
+    final outputItem = PipelineItemEndpoint(
+      itemId: DateTime.now().microsecondsSinceEpoch,
+      itemName: defaultOutputName,
+      unitId: source.outputItem?.unitId ?? 0,
+      unitName: source.outputItem?.unitName ?? 'Pieces',
+      unitSymbol: source.outputItem?.unitSymbol ?? 'Pcs',
+    );
+
     final inputMaterial = source.outputs.isEmpty
         ? 'Material'
         : source.outputs.first;
-    final defaultOutput = '${node.name} Output';
     final updatedNode = node.copyWith(
-      inputs: [inputMaterial],
-      outputs: [defaultOutput],
+      inputs: [source.outputItem?.itemName ?? inputMaterial],
+      outputs: [defaultOutputName],
       inputItem: source.outputItem,
+      outputItem: outputItem,
     );
 
     final insertStage = source.stageIndex + 1;
@@ -327,6 +420,17 @@ class PipelineEditorProvider extends ChangeNotifier {
     _connectingFromNodeId = null;
     _applyUnitContinuityAutoFixes(units);
     notifyListeners();
+  }
+
+  String _getOriginalItemName(String startNodeId) {
+    String currentId = startNodeId;
+    while (true) {
+      final flow = _template.flows.where((f) => f.toNodeId == currentId).firstOrNull;
+      if (flow == null) break;
+      currentId = flow.fromNodeId;
+    }
+    final firstNode = _template.nodes.where((n) => n.id == currentId).firstOrNull;
+    return firstNode?.inputItem?.itemName ?? firstNode?.inputs.firstOrNull ?? 'Material';
   }
 
   ProcessNode _buildNode(
@@ -406,19 +510,66 @@ class PipelineEditorProvider extends ChangeNotifier {
   void deleteSelectedNode() {
     if (_selectedNodeId == null) return;
 
+    final targetId = _selectedNodeId!;
+    final incoming = _template.flows.where((f) => f.toNodeId == targetId).toList();
+    final outgoing = _template.flows.where((f) => f.fromNodeId == targetId).toList();
+
     final updatedNodes = _template.nodes
-        .where((n) => n.id != _selectedNodeId)
+        .where((n) => n.id != targetId)
         .toList();
-    final updatedFlows = _template.flows
+    
+    var updatedFlows = _template.flows
         .where(
           (f) =>
-              f.fromNodeId != _selectedNodeId && f.toNodeId != _selectedNodeId,
+              f.fromNodeId != targetId && f.toNodeId != targetId,
         )
         .toList();
 
-    _drafts.remove(_selectedNodeId)?.dispose();
+    // Auto-heal: If deleted node has exactly one predecessor and one successor, connect them directly
+    if (incoming.length == 1 && outgoing.length == 1) {
+      final inFlow = incoming.first;
+      final outFlow = outgoing.first;
+      final healedFlow = MaterialFlow(
+        id: 'flow-${DateTime.now().microsecondsSinceEpoch}',
+        fromNodeId: inFlow.fromNodeId,
+        toNodeId: outFlow.toNodeId,
+        materialName: inFlow.materialName.isNotEmpty ? inFlow.materialName : outFlow.materialName,
+      );
+      updatedFlows.add(healedFlow);
+    }
+
+    _drafts.remove(targetId)?.dispose();
     _template = _template.copyWith(nodes: updatedNodes, flows: updatedFlows);
     _selectedNodeId = null;
+    notifyListeners();
+  }
+
+  void moveSelectedNodeEarlier() {
+    if (_selectedNodeId == null) return;
+    final node = _template.nodes.firstWhere((n) => n.id == _selectedNodeId);
+    if (node.stageIndex > 0) {
+      _updateNodeStage(node.id, node.stageIndex - 1);
+    }
+  }
+
+  void moveSelectedNodeLater() {
+    if (_selectedNodeId == null) return;
+    final node = _template.nodes.firstWhere((n) => n.id == _selectedNodeId);
+    _updateNodeStage(node.id, node.stageIndex + 1);
+  }
+
+  void _updateNodeStage(String nodeId, int newStageIndex) {
+    final updatedNodes = _template.nodes.map((n) {
+      if (n.id == nodeId) {
+        return n.copyWith(stageIndex: newStageIndex);
+      }
+      return n;
+    }).toList();
+    
+    _template = _template.copyWith(
+      nodes: updatedNodes,
+      stageLabels: _stageLabelsFor(newStageIndex),
+    );
     notifyListeners();
   }
 
@@ -441,6 +592,7 @@ class PipelineEditorProvider extends ChangeNotifier {
     PipelineItemEndpoint? inputItem,
     PipelineItemEndpoint? outputItem,
     List<UnitDefinition> units = const [],
+    bool propagate = false,
   }) {
     final updatedNodes = _template.nodes.map((node) {
       if (node.id != nodeId) {
@@ -465,6 +617,60 @@ class PipelineEditorProvider extends ChangeNotifier {
       }
     }
     _applyUnitContinuityAutoFixes(units);
+    if (propagate) {
+      propagateItemChanges(nodeId);
+    }
+    notifyListeners();
+  }
+
+  void propagateItemChanges(String startNodeId) {
+    final startNode = _template.nodes.firstWhere((n) => n.id == startNodeId);
+    if (startNode.outputItem == null) return;
+
+    List<ProcessNode> updatedNodes = [..._template.nodes];
+    final originalItemName = _getOriginalItemName(startNodeId);
+    
+    final queue = [startNodeId];
+    
+    while (queue.isNotEmpty) {
+      final currentId = queue.removeAt(0);
+      final currentNode = updatedNodes.firstWhere((n) => n.id == currentId);
+      
+      final outgoingFlows = _template.flows.where((f) => f.fromNodeId == currentId);
+      for (final flow in outgoingFlows) {
+        final toIndex = updatedNodes.indexWhere((n) => n.id == flow.toNodeId);
+        if (toIndex == -1) continue;
+        
+        final toNode = updatedNodes[toIndex];
+        
+        final newInputItem = currentNode.outputItem;
+        
+        final stageName = _template.stageLabels.length > toNode.stageIndex 
+            ? _template.stageLabels[toNode.stageIndex] 
+            : 'Stage ${toNode.stageIndex + 1}';
+            
+        final defaultOutputName = '${stageName}_${toNode.processType}_$originalItemName';
+        
+        final newOutputItem = PipelineItemEndpoint(
+          itemId: DateTime.now().microsecondsSinceEpoch + toIndex,
+          itemName: defaultOutputName,
+          unitId: newInputItem?.unitId ?? 0,
+          unitName: newInputItem?.unitName ?? 'Pieces',
+          unitSymbol: newInputItem?.unitSymbol ?? 'Pcs',
+        );
+        
+        updatedNodes[toIndex] = toNode.copyWith(
+          inputItem: newInputItem,
+          outputItem: newOutputItem,
+          inputs: [newInputItem?.itemName ?? 'Material'],
+          outputs: [defaultOutputName],
+        );
+        
+        queue.add(flow.toNodeId);
+      }
+    }
+    
+    _template = _template.copyWith(nodes: updatedNodes);
     notifyListeners();
   }
 

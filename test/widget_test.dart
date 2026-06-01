@@ -3818,6 +3818,15 @@ void main() {
       find.byKey(const ValueKey<String>('sidebar_tile_configurator_units')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey<String>('sidebar_tile_production_pipelines')),
+      findsOneWidget,
+    );
+    expect(find.text('Pipelines'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('sidebar_tile_production')),
+      findsOneWidget,
+    );
 
     await tester.tap(
       find.byKey(const ValueKey<String>('sidebar_tile_configurator')),
@@ -3827,6 +3836,14 @@ void main() {
     expect(
       find.byKey(const ValueKey<String>('sidebar_tile_configurator_units')),
       findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('sidebar_tile_production_pipelines')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('sidebar_tile_production')),
+      findsOneWidget,
     );
     var chevronRotation = tester.widget<AnimatedRotation>(
       find.descendant(
@@ -3843,6 +3860,10 @@ void main() {
 
     expect(
       find.byKey(const ValueKey<String>('sidebar_tile_configurator_units')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('sidebar_tile_production_pipelines')),
       findsOneWidget,
     );
     chevronRotation = tester.widget<AnimatedRotation>(
@@ -4909,13 +4930,19 @@ void main() {
       final navigation = NavigationProvider(initialKey: 'configurator_units');
       addTearDown(navigation.dispose);
 
-      expect(navigation.currentTabIndex, 6);
+      expect(navigation.currentTabIndex, 5);
 
       navigation.select('inventory_scan');
       expect(navigation.currentTabIndex, 3);
 
       navigation.select('challan_invoice_report');
       expect(navigation.currentTabIndex, 2);
+
+      navigation.select('production');
+      expect(navigation.currentTabIndex, 4);
+
+      navigation.select('production_pipelines');
+      expect(navigation.currentTabIndex, 5);
 
       navigation.setTab(2);
       expect(navigation.selectedKey, 'delivery_challans');
@@ -4955,8 +4982,27 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.digit5);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pumpAndSettle();
-    expect(navigation.selectedKey, 'production_pipelines');
+    expect(navigation.selectedKey, 'production');
     expect(navigation.currentTabIndex, 4);
+    expect(
+      find.byKey(const ValueKey<String>('sidebar_tile_inventory')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('shell_top_strip_search_field')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('collapsed')),
+      findsOneWidget,
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit6);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(navigation.selectedKey, 'configurator');
+    expect(navigation.currentTabIndex, 5);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.home);
     await tester.pumpAndSettle();

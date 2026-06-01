@@ -7,9 +7,43 @@ import 'package:core_erp/core/widgets/searchable_select.dart';
 import 'package:core_erp/core/navigation/app_navigation.dart';
 import 'package:core_erp/features/groups/presentation/screens/groups_screen.dart';
 import '../../domain/machine.dart';
+import '../../domain/machine_capability.dart';
 import '../providers/machine_provider.dart';
 import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
 import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
+import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
+
+class _MutableCapability {
+  _MutableCapability({
+    this.id,
+    this.processType = '',
+    this.inputMaterialBarcode = '',
+    this.inputMaterialName = '',
+    this.inputUnitId,
+    this.outputMaterialBarcode = '',
+    this.outputMaterialName = '',
+    this.outputUnitId,
+    this.dieId,
+    this.dieName,
+    this.expectedYieldRatio,
+    this.conversionFactor,
+    this.durationPerUnit,
+  });
+
+  String? id;
+  String processType;
+  String inputMaterialBarcode;
+  String inputMaterialName;
+  int? inputUnitId;
+  String outputMaterialBarcode;
+  String outputMaterialName;
+  int? outputUnitId;
+  String? dieId;
+  String? dieName;
+  double? expectedYieldRatio;
+  double? conversionFactor;
+  double? durationPerUnit;
+}
 
 class _MutableProperty {
   _MutableProperty({
@@ -56,6 +90,9 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
   
   // Custom properties as a list of mutable objects for editing
   final List<_MutableProperty> _customProperties = [];
+
+  // Capabilities as a list of mutable objects for editing
+  final List<_MutableCapability> _capabilities = [];
 
   @override
   void initState() {
@@ -104,6 +141,24 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
           type: prop.type,
           unitId: prop.unitId,
           options: List.from(prop.options),
+        ));
+      }
+
+      for (var cap in widget.machine!.capabilities) {
+        _capabilities.add(_MutableCapability(
+          id: cap.id,
+          processType: cap.processType,
+          inputMaterialBarcode: cap.inputMaterialBarcode,
+          inputMaterialName: cap.inputMaterialName,
+          inputUnitId: cap.inputUnitId,
+          outputMaterialBarcode: cap.outputMaterialBarcode,
+          outputMaterialName: cap.outputMaterialName,
+          outputUnitId: cap.outputUnitId,
+          dieId: cap.dieId,
+          dieName: cap.dieName,
+          expectedYieldRatio: cap.expectedYieldRatio,
+          conversionFactor: cap.conversionFactor,
+          durationPerUnit: cap.durationPerUnit,
         ));
       }
     }
@@ -172,6 +227,18 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
           !_customProperties[index].options.contains(_customProperties[index].value)) {
         _customProperties[index].value = '';
       }
+    });
+  }
+
+  void _addCapability() {
+    setState(() {
+      _capabilities.add(_MutableCapability());
+    });
+  }
+
+  void _removeCapability(int index) {
+    setState(() {
+      _capabilities.removeAt(index);
     });
   }
 
@@ -509,6 +576,8 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 16),
+                  _buildCapabilitiesSection(context),
                 ],
               ),
             ),
@@ -561,6 +630,245 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
     );
   }
 
+  Widget _buildCapabilitiesSection(BuildContext context) {
+    return ErpDialogSectionCard(
+      title: 'Capabilities — What This Machine Does',
+      subtitle: 'Define the material transformations this machine can perform.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (_capabilities.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              child: Text(
+                'No capabilities defined yet.',
+                style: TextStyle(color: Colors.grey[600], fontSize: 13),
+              ),
+            )
+          else
+            ..._capabilities.asMap().entries.map((entry) {
+              final index = entry.key;
+              final cap = entry.value;
+              return Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Capability #${index + 1}',
+                            style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF475569))),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () => _removeCapability(index),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 1,
+                          child: TextFormField(
+                            initialValue: cap.processType,
+                            decoration: InputDecoration(
+                              labelText: 'Process Type',
+                              hintText: 'e.g. Slitting, Punching',
+                              filled: true,
+                              fillColor: const Color(0xFFF9FAFB),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFD7DBE7))),
+                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFD7DBE7))),
+                            ),
+                            onChanged: (val) => setState(() => cap.processType = val),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 1,
+                          child: TextFormField(
+                            initialValue: cap.dieName,
+                            decoration: InputDecoration(
+                              labelText: 'Die/Tooling (Optional)',
+                              hintText: 'e.g. Die-A',
+                              filled: true,
+                              fillColor: const Color(0xFFF9FAFB),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFD7DBE7))),
+                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFD7DBE7))),
+                            ),
+                            onChanged: (val) => setState(() => cap.dieName = val),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12.0),
+                      child: Divider(height: 1),
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('INPUT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF64748B))),
+                              const SizedBox(height: 8),
+                              SearchableSelectField<String>(
+                                tapTargetKey: ValueKey<String>('machine-cap-input-mat-$index'),
+                                value: cap.inputMaterialBarcode.isEmpty ? null : cap.inputMaterialBarcode,
+                                decoration: const InputDecoration(labelText: 'Material', filled: true, fillColor: Color(0xFFF9FAFB)),
+                                dialogTitle: 'Select Input Material',
+                                options: context.watch<InventoryProvider>().materials.map((m) {
+                                  return SearchableSelectOption<String>(value: m.barcode, label: '${m.name} (${m.barcode})');
+                                }).toList(),
+                                onChanged: (val) {
+                                  if (val != null) {
+                                    setState(() {
+                                      cap.inputMaterialBarcode = val;
+                                      cap.inputMaterialName = context.read<InventoryProvider>().materials.firstWhere((m) => m.barcode == val).name;
+                                    });
+                                  }
+                                },
+                              ),
+                              const SizedBox(height: 8),
+                              SearchableSelectField<int>(
+                                tapTargetKey: ValueKey<String>('machine-cap-input-unit-$index'),
+                                value: cap.inputUnitId,
+                                decoration: const InputDecoration(labelText: 'Unit', filled: true, fillColor: Color(0xFFF9FAFB)),
+                                dialogTitle: 'Select Input Unit',
+                                options: context.watch<UnitsProvider>().activeUnits.map((u) {
+                                  return SearchableSelectOption<int>(value: u.id, label: u.symbol);
+                                }).toList(),
+                                onChanged: (val) {
+                                  if (val != null) setState(() => cap.inputUnitId = val);
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        const Icon(Icons.arrow_forward, color: Color(0xFF94A3B8)),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('OUTPUT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF64748B))),
+                              const SizedBox(height: 8),
+                              SearchableSelectField<String>(
+                                tapTargetKey: ValueKey<String>('machine-cap-output-mat-$index'),
+                                value: cap.outputMaterialBarcode.isEmpty ? null : cap.outputMaterialBarcode,
+                                decoration: const InputDecoration(labelText: 'Material', filled: true, fillColor: Color(0xFFF9FAFB)),
+                                dialogTitle: 'Select Output Material',
+                                options: context.watch<InventoryProvider>().materials.map((m) {
+                                  return SearchableSelectOption<String>(value: m.barcode, label: '${m.name} (${m.barcode})');
+                                }).toList(),
+                                onChanged: (val) {
+                                  if (val != null) {
+                                    setState(() {
+                                      cap.outputMaterialBarcode = val;
+                                      cap.outputMaterialName = context.read<InventoryProvider>().materials.firstWhere((m) => m.barcode == val).name;
+                                    });
+                                  }
+                                },
+                              ),
+                              const SizedBox(height: 8),
+                              SearchableSelectField<int>(
+                                tapTargetKey: ValueKey<String>('machine-cap-output-unit-$index'),
+                                value: cap.outputUnitId,
+                                decoration: const InputDecoration(labelText: 'Unit', filled: true, fillColor: Color(0xFFF9FAFB)),
+                                dialogTitle: 'Select Output Unit',
+                                options: context.watch<UnitsProvider>().activeUnits.map((u) {
+                                  return SearchableSelectOption<int>(value: u.id, label: u.symbol);
+                                }).toList(),
+                                onChanged: (val) {
+                                  if (val != null) setState(() => cap.outputUnitId = val);
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12.0),
+                      child: Divider(height: 1),
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: cap.expectedYieldRatio?.toString(),
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: 'Yield % (Optional)',
+                              hintText: 'e.g. 0.95',
+                              filled: true,
+                              fillColor: const Color(0xFFF9FAFB),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFD7DBE7))),
+                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFD7DBE7))),
+                            ),
+                            onChanged: (val) => setState(() => cap.expectedYieldRatio = double.tryParse(val)),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: cap.conversionFactor?.toString(),
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: 'Conversion Factor',
+                              hintText: 'e.g. 150',
+                              filled: true,
+                              fillColor: const Color(0xFFF9FAFB),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFD7DBE7))),
+                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFD7DBE7))),
+                            ),
+                            onChanged: (val) => setState(() => cap.conversionFactor = double.tryParse(val)),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: cap.durationPerUnit?.toString(),
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: 'Hrs/Unit',
+                              hintText: 'e.g. 0.05',
+                              filled: true,
+                              fillColor: const Color(0xFFF9FAFB),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFD7DBE7))),
+                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFD7DBE7))),
+                            ),
+                            onChanged: (val) => setState(() => cap.durationPerUnit = double.tryParse(val)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            }),
+          const SizedBox(height: 12),
+          AppButton(
+            label: 'Add Capability',
+            icon: Icons.add,
+            variant: AppButtonVariant.secondary,
+            onPressed: _addCapability,
+          ),
+        ],
+      ),
+    );
+  }
+
   void _submit() async {
     if (!_formKey.currentState!.validate()) return;
     
@@ -578,6 +886,29 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
       }
     }
 
+    final capabilitiesList = <MachineCapability>[];
+    for (var cap in _capabilities) {
+      if (cap.processType.trim().isNotEmpty && cap.inputUnitId != null && cap.outputUnitId != null) {
+        capabilitiesList.add(MachineCapability(
+          id: cap.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+          processType: cap.processType.trim(),
+          inputMaterialBarcode: cap.inputMaterialBarcode.trim(),
+          inputMaterialName: cap.inputMaterialName.trim(),
+          inputUnitId: cap.inputUnitId!,
+          inputUnitLabel: context.read<UnitsProvider>().findById(cap.inputUnitId)?.symbol ?? '',
+          outputMaterialBarcode: cap.outputMaterialBarcode.trim(),
+          outputMaterialName: cap.outputMaterialName.trim(),
+          outputUnitId: cap.outputUnitId!,
+          outputUnitLabel: context.read<UnitsProvider>().findById(cap.outputUnitId)?.symbol ?? '',
+          dieId: cap.dieId?.trim().isEmpty ?? true ? null : cap.dieId?.trim(),
+          dieName: cap.dieName?.trim().isEmpty ?? true ? null : cap.dieName?.trim(),
+          expectedYieldRatio: cap.expectedYieldRatio,
+          conversionFactor: cap.conversionFactor,
+          durationPerUnit: cap.durationPerUnit,
+        ));
+      }
+    }
+
     final newMachine = Machine(
       id: widget.machine?.id ?? '',
       name: _nameController.text.trim(),
@@ -590,6 +921,7 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
       installationDate: null,
       status: _status,
       customProperties: customPropsList,
+      capabilities: capabilitiesList,
       createdAt: widget.machine?.createdAt ?? DateTime.now(),
       updatedAt: DateTime.now(),
     );
@@ -621,7 +953,7 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
           child: Image.network(
             url,
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => _buildPlaceholderUploadBox(),
+            errorBuilder: (_, _, _) => _buildPlaceholderUploadBox(),
           ),
         ),
       );

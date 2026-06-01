@@ -7,7 +7,7 @@ const List<String> kSidebarNavigationOrder = <String>[
   'orders',
   'delivery_challans',
   'inventory',
-  'production_pipelines',
+  'production',
   'pm',
   'configurator',
   'configurator_clients',
@@ -18,6 +18,7 @@ const List<String> kSidebarNavigationOrder = <String>[
   'configurator_machines',
   'configurator_machine_groups',
   'configurator_dies',
+  'production_pipelines',
   'user_management',
 ];
 
@@ -31,6 +32,7 @@ const Set<String> kConfiguratorNavigationKeys = <String>{
   'configurator_machines',
   'configurator_machine_groups',
   'configurator_dies',
+  'production_pipelines',
 };
 
 const List<String> kPrimaryTabNavigationKeys = <String>[
@@ -38,8 +40,7 @@ const List<String> kPrimaryTabNavigationKeys = <String>[
   'orders',
   'delivery_challans',
   'inventory',
-  'production_pipelines',
-  'pm',
+  'production',
   'configurator',
 ];
 
@@ -49,9 +50,8 @@ int primaryTabIndexForKey(String key) {
     'orders' => 1,
     'delivery_challans' || 'challan_invoice_report' => 2,
     'inventory' || 'inventory_scan' => 3,
-    'production_pipelines' => 4,
-    'pm' => 5,
-    _ when kConfiguratorNavigationKeys.contains(key) => 6,
+    'production' => 4,
+    _ when kConfiguratorNavigationKeys.contains(key) => 5,
     _ => -1,
   };
 }
@@ -62,9 +62,8 @@ String? primaryTabKeyForIndex(int index) {
     1 => 'orders',
     2 => 'delivery_challans',
     3 => 'inventory',
-    4 => 'production_pipelines',
-    5 => 'pm',
-    6 => 'configurator',
+    4 => 'production',
+    5 => 'configurator',
     _ => null,
   };
 }
@@ -94,14 +93,14 @@ class NavigationProvider extends ChangeNotifier implements AppNavigation {
       _skipNextContentTransition = true;
     }
 
-    final wasProduction = _selectedKey == 'production_pipelines';
-    final isProduction = key == 'production_pipelines';
+    final wasProduction = _selectedKey == 'production' || _selectedKey == 'production_pipelines';
+    final isProduction = key == 'production' || key == 'production_pipelines';
 
     _selectedKey = key;
     notifyListeners();
 
-    if (!wasProduction && isProduction) {
-      _toggleFullscreen(true);
+    if (wasProduction != isProduction) {
+      _toggleFullscreen(isProduction);
     }
   }
 

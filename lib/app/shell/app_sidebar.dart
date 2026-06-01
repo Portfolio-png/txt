@@ -49,9 +49,9 @@ class _AppSidebarState extends State<AppSidebar> {
     ),
     _SidebarItemData('inventory', 'Inventory', Icons.inventory_2_outlined),
     _SidebarItemData(
-      'production_pipelines',
+      'production',
       'Production',
-      Icons.account_tree_outlined,
+      Icons.precision_manufacturing_outlined,
     ),
     _SidebarItemData('pm', 'PM', Icons.widgets_outlined),
   ];
@@ -65,8 +65,17 @@ class _AppSidebarState extends State<AppSidebar> {
     ),
     _SidebarItemData('configurator_items', 'Items', Icons.inventory_outlined),
     _SidebarItemData('configurator_units', 'Units', Icons.straighten_outlined),
-    _SidebarItemData('configurator_machines', 'Machines', Icons.precision_manufacturing_outlined),
+    _SidebarItemData(
+      'configurator_machines',
+      'Machines',
+      Icons.precision_manufacturing_outlined,
+    ),
     _SidebarItemData('configurator_dies', 'Dies', Icons.build_circle_outlined),
+    _SidebarItemData(
+      'production_pipelines',
+      'Pipelines',
+      Icons.account_tree_outlined,
+    ),
   ];
 
   static const List<_SidebarItemData> _adminItems = <_SidebarItemData>[
@@ -713,195 +722,207 @@ class _SettingsPreferencesDialogState
           child: Padding(
             padding: const EdgeInsets.fromLTRB(24, 22, 24, 20),
             child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Settings & Preferences',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: SoftErpTheme.textPrimary,
-                  fontWeight: FontWeight.w700,
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Settings & Preferences',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: SoftErpTheme.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                'Clear operational data or rebuild a fresh demo workspace. Users, sessions, permissions, and audit data stay intact.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: SoftErpTheme.textSecondary,
-                  height: 1.45,
+                const SizedBox(height: 10),
+                Text(
+                  'Clear operational data or rebuild a fresh demo workspace. Users, sessions, permissions, and audit data stay intact.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: SoftErpTheme.textSecondary,
+                    height: 1.45,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 20),
-              Consumer<PreferencesProvider>(
-                builder: (context, preferences, _) {
-                  return Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: SoftErpTheme.cardSurfaceAlt,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: SoftErpTheme.border),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SwitchListTile.adaptive(
-                          contentPadding: EdgeInsets.zero,
-                          value: preferences.maintainStocks,
-                          onChanged: preferences.toggleMaintainStocks,
-                          title: const Text(
-                            'Maintain Stocks',
-                            style: TextStyle(
-                              color: SoftErpTheme.textPrimary,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          subtitle: const Text(
-                            'Turn off for typewriter challans that print documents without touching inventory.',
-                            style: TextStyle(color: SoftErpTheme.textSecondary),
-                          ),
-                        ),
-                        const Divider(height: 24),
-                        SwitchListTile.adaptive(
-                          contentPadding: EdgeInsets.zero,
-                          value: preferences.enableTrading,
-                          onChanged: preferences.toggleTrading,
-                          title: const Text(
-                            'Trading Mode',
-                            style: TextStyle(
-                              color: SoftErpTheme.textPrimary,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          subtitle: const Text(
-                            'Enable direct buy/sell flow and standard retail/wholesale inventory stock.',
-                            style: TextStyle(color: SoftErpTheme.textSecondary),
-                          ),
-                        ),
-                        const Divider(height: 24),
-                        SwitchListTile.adaptive(
-                          contentPadding: EdgeInsets.zero,
-                          value: preferences.enableManufacturing,
-                          onChanged: preferences.toggleManufacturing,
-                          title: const Text(
-                            'Manufacturing Mode',
-                            style: TextStyle(
-                              color: SoftErpTheme.textPrimary,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          subtitle: const Text(
-                            'Enable linkage to production runs, tracking raw material vs. finished goods.',
-                            style: TextStyle(color: SoftErpTheme.textSecondary),
-                          ),
-                        ),
-                        const Divider(height: 24),
-                        SwitchListTile.adaptive(
-                          contentPadding: EdgeInsets.zero,
-                          value: preferences.enableServiceMode,
-                          onChanged: preferences.toggleServiceMode,
-                          title: const Text(
-                            'Service (Job Work) Mode',
-                            style: TextStyle(
-                              color: SoftErpTheme.textPrimary,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          subtitle: const Text(
-                            'Enable customer-owned stock receipt (Inward), printing/processing, and return.',
-                            style: TextStyle(color: SoftErpTheme.textSecondary),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 16),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFF7F5),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: const Color(0xFFF4D4CB)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Workspace Data Controls',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: SoftErpTheme.textPrimary,
-                        fontWeight: FontWeight.w700,
+                const SizedBox(height: 20),
+                Consumer<PreferencesProvider>(
+                  builder: (context, preferences, _) {
+                    return Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: SoftErpTheme.cardSurfaceAlt,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: SoftErpTheme.border),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Clear Data leaves only the minimum app baseline. Reset + Reseed Demo clears operational data and rebuilds the seeded demo workspace.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: SoftErpTheme.textSecondary,
-                        height: 1.45,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SwitchListTile.adaptive(
+                            contentPadding: EdgeInsets.zero,
+                            value: preferences.maintainStocks,
+                            onChanged: preferences.toggleMaintainStocks,
+                            title: const Text(
+                              'Maintain Stocks',
+                              style: TextStyle(
+                                color: SoftErpTheme.textPrimary,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            subtitle: const Text(
+                              'Turn off for typewriter challans that print documents without touching inventory.',
+                              style: TextStyle(
+                                color: SoftErpTheme.textSecondary,
+                              ),
+                            ),
+                          ),
+                          const Divider(height: 24),
+                          SwitchListTile.adaptive(
+                            contentPadding: EdgeInsets.zero,
+                            value: preferences.enableTrading,
+                            onChanged: preferences.toggleTrading,
+                            title: const Text(
+                              'Trading Mode',
+                              style: TextStyle(
+                                color: SoftErpTheme.textPrimary,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            subtitle: const Text(
+                              'Enable direct buy/sell flow and standard retail/wholesale inventory stock.',
+                              style: TextStyle(
+                                color: SoftErpTheme.textSecondary,
+                              ),
+                            ),
+                          ),
+                          const Divider(height: 24),
+                          SwitchListTile.adaptive(
+                            contentPadding: EdgeInsets.zero,
+                            value: preferences.enableManufacturing,
+                            onChanged: preferences.toggleManufacturing,
+                            title: const Text(
+                              'Manufacturing Mode',
+                              style: TextStyle(
+                                color: SoftErpTheme.textPrimary,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            subtitle: const Text(
+                              'Enable linkage to production runs, tracking raw material vs. finished goods.',
+                              style: TextStyle(
+                                color: SoftErpTheme.textSecondary,
+                              ),
+                            ),
+                          ),
+                          const Divider(height: 24),
+                          SwitchListTile.adaptive(
+                            contentPadding: EdgeInsets.zero,
+                            value: preferences.enableServiceMode,
+                            onChanged: preferences.toggleServiceMode,
+                            title: const Text(
+                              'Service (Job Work) Mode',
+                              style: TextStyle(
+                                color: SoftErpTheme.textPrimary,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            subtitle: const Text(
+                              'Enable customer-owned stock receipt (Inward), printing/processing, and return.',
+                              style: TextStyle(
+                                color: SoftErpTheme.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 14),
-                    Wrap(
-                      alignment: WrapAlignment.end,
-                      runAlignment: WrapAlignment.end,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 10,
-                      runSpacing: 10,
-                      children: [
-                        OutlinedButton(
-                          onPressed: _isResetting
-                              ? null
-                              : _handleResetAndReseed,
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: SoftErpTheme.accent,
-                            side: const BorderSide(color: SoftErpTheme.accent),
-                            minimumSize: const Size(168, 44),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF7F5),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: const Color(0xFFF4D4CB)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Workspace Data Controls',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: SoftErpTheme.textPrimary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Clear Data leaves only the minimum app baseline. Reset + Reseed Demo clears operational data and rebuilds the seeded demo workspace.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: SoftErpTheme.textSecondary,
+                          height: 1.45,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Wrap(
+                        alignment: WrapAlignment.end,
+                        runAlignment: WrapAlignment.end,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          OutlinedButton(
+                            onPressed: _isResetting
+                                ? null
+                                : _handleResetAndReseed,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: SoftErpTheme.accent,
+                              side: const BorderSide(
+                                color: SoftErpTheme.accent,
+                              ),
+                              minimumSize: const Size(168, 44),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            child: Text(
+                              _isResetting ? 'Working…' : 'Reset + Reseed Demo',
                             ),
                           ),
-                          child: Text(
-                            _isResetting ? 'Working…' : 'Reset + Reseed Demo',
-                          ),
-                        ),
-                        FilledButton(
-                          onPressed: _isResetting ? null : _handleClear,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: SoftErpTheme.accent,
-                            foregroundColor: Colors.white,
-                            minimumSize: const Size(120, 44),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
+                          FilledButton(
+                            onPressed: _isResetting ? null : _handleClear,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: SoftErpTheme.accent,
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size(120, 44),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            child: Text(
+                              _isResetting ? 'Working…' : 'Clear Data',
                             ),
                           ),
-                          child: Text(_isResetting ? 'Working…' : 'Clear Data'),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: _isResetting
-                      ? null
-                      : () => Navigator.of(context).pop(),
-                  child: const Text('Close'),
+                const SizedBox(height: 16),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: _isResetting
+                        ? null
+                        : () => Navigator.of(context).pop(),
+                    child: const Text('Close'),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 }
 
 class _SidebarTile extends StatelessWidget {

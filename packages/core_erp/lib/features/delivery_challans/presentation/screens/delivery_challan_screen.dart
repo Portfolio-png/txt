@@ -310,6 +310,7 @@ class _ChallanScreenState extends State<ChallanScreen> {
     if (!context.mounted) return;
     if (cancelled != null) {
       await context.read<InventoryProvider>().refresh();
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Cancelled challan ${challan.challanNo}.')),
       );
@@ -428,6 +429,7 @@ class _ChallanScreenState extends State<ChallanScreen> {
             )..sort(),
           );
       final bytes = await _buildClientStatementPdf(report, reportGroupCode);
+      if (!context.mounted) return;
       showDialog<void>(
         context: context,
         builder: (dialogContext) => Dialog(
@@ -705,7 +707,7 @@ class _Filters extends StatelessWidget {
     final groupSelector = SizedBox(
       width: 260,
       child: DropdownButtonFormField<String>(
-        value: selectedReportGroupCode,
+        initialValue: selectedReportGroupCode,
         isExpanded: true,
         icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
         dropdownColor: Colors.white,
@@ -1581,7 +1583,7 @@ class _ChallanTemplatePreviewPaneState
           if (_templates.isNotEmpty) ...[
             const SizedBox(height: 10),
             DropdownButtonFormField<int>(
-              value: _selectedTemplate?.id,
+              initialValue: _selectedTemplate?.id,
               isExpanded: true,
               icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
               dropdownColor: Colors.white,
@@ -2449,10 +2451,10 @@ class _ChallanEditorState extends State<_ChallanEditor> {
                           widget.challan!.id,
                         );
                         if (cancelled != null) {
-                          if (context.mounted) {
-                            await context.read<InventoryProvider>().refresh();
-                            Navigator.of(context).pop();
-                          }
+                          if (!context.mounted) return;
+                          await context.read<InventoryProvider>().refresh();
+                          if (!context.mounted) return;
+                          Navigator.of(context).pop();
                         }
                       },
               ),
@@ -2618,7 +2620,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
         .where((vendor) => !vendor.isArchived)
         .toList(growable: false);
     return DropdownButtonFormField<int>(
-      value: _selectedVendorId,
+      initialValue: _selectedVendorId,
       isExpanded: true,
       icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
       dropdownColor: Colors.white,
@@ -2676,7 +2678,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
         .where((client) => !client.isArchived)
         .toList(growable: false);
     return DropdownButtonFormField<int>(
-      value: _selectedClientId,
+      initialValue: _selectedClientId,
       isExpanded: true,
       icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
       dropdownColor: Colors.white,
@@ -2731,7 +2733,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
 
   Widget _purposeSelector(List<ChallanPurpose> activePurposes) {
     return DropdownButtonFormField<ChallanPurpose>(
-      value: _selectedPurpose,
+      initialValue: _selectedPurpose,
       isExpanded: true,
       icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
       dropdownColor: Colors.white,
@@ -3147,6 +3149,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
       }
     }
 
+    if (!mounted) return;
     final inventoryProvider = context.read<InventoryProvider>();
     final saved = _editingExisting && _matchesSourceDraft(input)
         ? widget.challan
@@ -3827,7 +3830,7 @@ class _ItemsEditor extends StatelessWidget {
                 key: ValueKey<String>(
                   '$index-${draft.orderItemId}-${orderOptions.length}',
                 ),
-                value: draft.orderItemId,
+                initialValue: draft.orderItemId,
                 isExpanded: true,
                 icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
                 dropdownColor: Colors.white,
@@ -4161,7 +4164,7 @@ class _ItemsEditor extends StatelessWidget {
       return const SizedBox.shrink();
     }
     return DropdownButtonFormField<int>(
-      value: draft.selectedUnitId,
+      initialValue: draft.selectedUnitId,
       isExpanded: true,
       icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
       dropdownColor: Colors.white,
@@ -4602,7 +4605,6 @@ class _ItemDraft {
     this.productionRunId,
     this.itemId,
     this.variationLeafNodeId = 0,
-    this.variationPathNodeIds = const <int>[],
     this.particulars = '',
     this.hsnCode = '',
     this.variationPathLabel = '',
@@ -4618,7 +4620,7 @@ class _ItemDraft {
   int? productionRunId;
   int? itemId;
   int variationLeafNodeId;
-  List<int> variationPathNodeIds;
+  List<int> variationPathNodeIds = const <int>[];
   String particulars;
   String hsnCode;
   String variationPathLabel;
@@ -4645,7 +4647,7 @@ class _ItemDraft {
   factory _ItemDraft.blank(int lineNo) => _ItemDraft();
 
   factory _ItemDraft.fromOrderOption(_OrderItemOption? option) {
-    return _ItemDraft(
+    final draft = _ItemDraft(
       orderItemId: option?.orderItemId,
       itemId: option?.itemId,
       variationLeafNodeId: option?.variationLeafNodeId ?? 0,
@@ -4655,6 +4657,10 @@ class _ItemDraft {
       selectedUnitId: option?.unitId,
       enteredValue: (option != null && option.quantity > 0) ? option.quantity.toString() : '',
     );
+    if (option != null) {
+      draft.variationPathNodeIds = option.variationPathNodeIds;
+    }
+    return draft;
   }
 
   factory _ItemDraft.fromItem(DeliveryChallanItem item) {
@@ -4752,9 +4758,7 @@ class _ItemDraft {
     final units = getAvailableUnits(item, unitsProvider);
     if (units.isEmpty) return;
 
-    if (selectedUnitId == null) {
-      selectedUnitId = units.first.id;
-    }
+    selectedUnitId ??= units.first.id;
 
     final val = double.tryParse(enteredValue.trim());
     if (val == null || val <= 0) {
@@ -5502,7 +5506,7 @@ class _SelectedTemplateStrip extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           DropdownButtonFormField<int>(
-            value: selectedTemplate.id,
+            initialValue: selectedTemplate.id,
             isExpanded: true,
             icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
             dropdownColor: Colors.white,

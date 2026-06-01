@@ -387,7 +387,7 @@ class _MachineCardState extends State<_MachineCard> {
                               ? Image.network(
                                   machine.primaryPhotoUrl,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, __, _) =>
+                                  errorBuilder: (_, _, _) =>
                                       _buildPlaceholder(),
                                 )
                               : _buildPlaceholder(),
@@ -424,6 +424,27 @@ class _MachineCardState extends State<_MachineCard> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               const SizedBox(height: 8),
+                              if (machine.capabilities.isNotEmpty) ...[
+                                Row(
+                                  children: [
+                                    const Icon(Icons.settings_suggest_outlined, size: 12, color: SoftErpTheme.textSecondary),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        '${machine.capabilities.first.processType} · ${machine.capabilities.first.inputMaterialName} → ${machine.capabilities.first.outputMaterialName}',
+                                        style: const TextStyle(
+                                          color: SoftErpTheme.textSecondary,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                              ],
                               SoftStatusPill(
                                 label: machine.status.name.toUpperCase(),
                                 background: statusColor.$1,
@@ -607,11 +628,12 @@ class _MachinesTable extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SoftMasterTable(
-      minWidth: 1080,
+      minWidth: 1200,
       columns: const [
         SoftTableColumn('Photo', flex: 1),
         SoftTableColumn('Name & Model', flex: 3),
         SoftTableColumn('Group', flex: 2),
+        SoftTableColumn('Capabilities', flex: 2),
         SoftTableColumn('Status', flex: 2),
         SoftTableColumn('Actions', flex: 2),
       ],
@@ -650,7 +672,7 @@ class _MachineRow extends StatelessWidget {
                       width: 48,
                       height: 48,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, _) => _buildThumb(),
+                      errorBuilder: (_, _, _) => _buildThumb(),
                     ),
                   ),
                 )
@@ -672,6 +694,27 @@ class _MachineRow extends StatelessWidget {
           ),
         ),
         Expanded(flex: 2, child: SoftInlineText(groupName)),
+        Expanded(
+          flex: 2,
+          child: machine.capabilities.isEmpty
+              ? const SoftInlineText('—')
+              : Wrap(
+                  children: machine.capabilities.map((c) => Container(
+                    margin: const EdgeInsets.only(bottom: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      '${c.processType}: ${c.inputMaterialName}→${c.outputMaterialName}',
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF475569)),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  )).toList(),
+                ),
+        ),
         Expanded(
           flex: 2,
           child: Align(

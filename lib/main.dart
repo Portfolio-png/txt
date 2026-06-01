@@ -476,15 +476,6 @@ class MyApp extends StatelessWidget {
     );
   }
 
-  PipelineRunRepository _buildPipelineRunRepository(AuthProvider auth) {
-    if (_effectiveDemoMode) {
-      return SqlitePipelineRunRepository();
-    }
-    return ApiPipelineRunRepository(
-      baseUrl: _apiBaseUrl,
-      client: _authClient(auth),
-    );
-  }
 
   MachineRepository _buildMachineRepository(AuthProvider auth) {
     return ApiMachineRepository(

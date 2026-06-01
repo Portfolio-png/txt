@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
-import 'package:core_erp/features/orders/presentation/providers/orders_provider.dart';
+import 'package:core_erp/core/theme/soft_erp_theme.dart';
+import 'package:core_erp/core/widgets/searchable_select.dart';
+import 'package:core_erp/features/items/domain/item_definition.dart';
+import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
+import 'package:core_erp/features/items/presentation/screens/items_screen.dart';
+import 'package:core_erp/features/units/domain/unit_definition.dart';
+import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
+import '../../production_pipelines/domain/pipeline_item_endpoint.dart';
 import '../../production_pipelines/domain/pipeline_template.dart';
 import '../../production_pipelines/domain/process_node.dart';
 import '../domain/default_floor_context.dart';
@@ -30,10 +36,16 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
   bool _isLoading = true;
   List<PipelineTemplate> _templates = [];
   PipelineTemplate? _editingTemplate;
+  PipelineTemplateStatus _filterStatus = PipelineTemplateStatus.active;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _initializeItemMasterData();
+      }
+    });
     _loadTemplates();
   }
 
@@ -44,6 +56,17 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
       _editingTemplate = null;
       _loadTemplates();
     }
+  }
+
+  Future<void> _initializeItemMasterData() async {
+    final futures = <Future<void>>[];
+    try {
+      futures.add(context.read<ItemsProvider>().initialize());
+    } catch (_) {}
+    try {
+      futures.add(context.read<UnitsProvider>().initialize());
+    } catch (_) {}
+    await Future.wait(futures);
   }
 
   Future<void> _loadTemplates() async {
@@ -62,194 +85,231 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
   }
 
   Future<void> _createNew() async {
+    await _initializeItemMasterData();
+    if (!mounted) {
+      return;
+    }
     final nameCtrl = TextEditingController(text: 'New Pipeline');
     final descCtrl = TextEditingController();
-    
-    InventoryProvider? inventoryProvider;
-    try {
-      inventoryProvider = context.read<InventoryProvider>();
-    } catch (_) {}
-    final materials = inventoryProvider?.materials ?? const [];
-    final uniqueMaterialNames = materials.map((m) => m.name).toSet().toList();
-    
-    OrdersProvider? ordersProvider;
-    try {
-      ordersProvider = context.read<OrdersProvider>();
-    } catch (_) {}
-    final orders = ordersProvider?.orders ?? const [];
-    final uniqueOrderItems = orders.map((o) => o.itemName).toSet().toList();
-    
-    final inputCtrl = TextEditingController(
-      text: uniqueMaterialNames.isNotEmpty ? uniqueMaterialNames.first : '',
-    );
-    final outputCtrl = TextEditingController(
-      text: uniqueOrderItems.isNotEmpty ? uniqueOrderItems.first : '',
-    );
+    final items = _activeItemsFromContext(context);
+    final units = _activeUnitsFromContext(context);
+    int? inputItemId = items.isNotEmpty ? items.first.id : null;
+    int? outputItemId = items.length > 1 ? items[1].id : inputItemId;
 
     final formKey = GlobalKey<FormState>();
 
     final result = await showDialog<PipelineTemplate>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Create New Pipeline'),
-        content: SizedBox(
-          width: 460,
-          child: SingleChildScrollView(
-            child: Form(
-              key: formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(
-                    controller: nameCtrl,
-                    decoration: const InputDecoration(labelText: 'Pipeline Name'),
-                    validator: (value) =>
-                        value == null || value.trim().isEmpty
-                            ? 'Name is required'
-                            : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: descCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Description (Optional)',
+      builder: (dialogContext) {
+        var currentItems = items;
+        var currentUnits = units;
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Create New Pipeline'),
+              content: SizedBox(
+                width: 460,
+                child: SingleChildScrollView(
+                  child: Form(
+                    key: formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextFormField(
+                          controller: nameCtrl,
+                          decoration: _softInputDecoration(
+                            label: 'Pipeline Name',
+                          ),
+                          validator: (value) =>
+                              value == null || value.trim().isEmpty
+                              ? 'Name is required'
+                              : null,
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: descCtrl,
+                          decoration: _softInputDecoration(
+                            label: 'Description (Optional)',
+                          ),
+                          minLines: 2,
+                          maxLines: 3,
+                        ),
+                        const SizedBox(height: 12),
+                        _PipelineItemSelectField(
+                          tapTargetKey: const ValueKey(
+                            'create-pipeline-input-item-field',
+                          ),
+                          label: 'Input Material',
+                          dialogTitle: 'Input Material',
+                          selectedItemId: inputItemId,
+                          items: currentItems,
+                          units: currentUnits,
+                          onChanged: (item) {
+                            setDialogState(() {
+                              inputItemId = item.id;
+                            });
+                          },
+                          onCreated: (item) {
+                            setDialogState(() {
+                              currentItems = _activeItemsFromContext(context);
+                              currentUnits = _activeUnitsFromContext(context);
+                              inputItemId = item.id;
+                            });
+                          },
+                          validator: (value) => value == null
+                              ? 'Input material is required'
+                              : null,
+                        ),
+                        const SizedBox(height: 12),
+                        _PipelineItemSelectField(
+                          tapTargetKey: const ValueKey(
+                            'create-pipeline-output-item-field',
+                          ),
+                          label: 'Output Material',
+                          dialogTitle: 'Output Material',
+                          selectedItemId: outputItemId,
+                          items: currentItems,
+                          units: currentUnits,
+                          onChanged: (item) {
+                            setDialogState(() {
+                              outputItemId = item.id;
+                            });
+                          },
+                          onCreated: (item) {
+                            setDialogState(() {
+                              currentItems = _activeItemsFromContext(context);
+                              currentUnits = _activeUnitsFromContext(context);
+                              outputItemId = item.id;
+                            });
+                          },
+                          validator: (value) => value == null
+                              ? 'Output material is required'
+                              : null,
+                        ),
+                      ],
                     ),
-                    minLines: 2,
-                    maxLines: 3,
                   ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: uniqueMaterialNames.contains(inputCtrl.text)
-                        ? inputCtrl.text
-                        : (uniqueMaterialNames.isNotEmpty ? uniqueMaterialNames.first : null),
-                    decoration: const InputDecoration(
-                      labelText: 'Input Material',
-                    ),
-                    items: {
-                      if (inputCtrl.text.isNotEmpty && !uniqueMaterialNames.contains(inputCtrl.text))
-                        inputCtrl.text,
-                      ...uniqueMaterialNames,
-                    }.map((name) {
-                      return DropdownMenuItem<String>(
-                        value: name,
-                        child: Text(name),
-                      );
-                    }).toList(),
-                    onChanged: (val) {
-                      if (val != null) {
-                        inputCtrl.text = val;
-                      }
-                    },
-                    validator: (value) =>
-                        value == null || value.trim().isEmpty
-                            ? 'Input material is required'
-                            : null,
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: uniqueOrderItems.contains(outputCtrl.text)
-                        ? outputCtrl.text
-                        : (uniqueOrderItems.isNotEmpty ? uniqueOrderItems.first : null),
-                    decoration: const InputDecoration(
-                      labelText: 'Output Material',
-                    ),
-                    items: {
-                      if (outputCtrl.text.isNotEmpty && !uniqueOrderItems.contains(outputCtrl.text))
-                        outputCtrl.text,
-                      ...uniqueOrderItems,
-                    }.map((name) {
-                      return DropdownMenuItem<String>(
-                        value: name,
-                        child: Text(name),
-                      );
-                    }).toList(),
-                    onChanged: (val) {
-                      if (val != null) {
-                        outputCtrl.text = val;
-                      }
-                    },
-                    validator: (value) =>
-                        value == null || value.trim().isEmpty
-                            ? 'Output material is required'
-                            : null,
-                  ),
-                ],
+                ),
               ),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (formKey.currentState?.validate() == true) {
-                final name = nameCtrl.text.trim();
-                final desc = descCtrl.text.trim();
-                final input = inputCtrl.text.trim();
-                final output = outputCtrl.text.trim();
-                final id = 'tpl-${DateTime.now().microsecondsSinceEpoch}';
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    if (formKey.currentState?.validate() == true) {
+                      final name = nameCtrl.text.trim();
+                      final desc = descCtrl.text.trim();
+                      final inputItem = _itemById(currentItems, inputItemId);
+                      final outputItem = _itemById(currentItems, outputItemId);
+                      if (inputItem == null || outputItem == null) {
+                        return;
+                      }
+                      final inputEndpoint = _endpointForItem(
+                        inputItem,
+                        currentUnits,
+                      );
+                      final outputEndpoint = _endpointForItem(
+                        outputItem,
+                        currentUnits,
+                      );
+                      final input = inputEndpoint.itemName;
+                      final output = outputEndpoint.itemName;
+                      final now = DateTime.now().microsecondsSinceEpoch;
+                      final id = 'tpl-$now';
 
-                final inputNode = ProcessNode(
-                  id: 'node-input-${DateTime.now().microsecondsSinceEpoch}',
-                  name: 'Input Stage',
-                  processType: 'Input',
-                  stageIndex: 0,
-                  laneIndex: 0,
-                  inputs: [input],
-                  outputs: [input],
-                  machine: 'Input Stage',
-                  dieId: '',
-                  durationHours: 0.25,
-                  status: 'Ready',
-                  isIntermediate: false,
-                );
+                      final inputNode = ProcessNode(
+                        id: 'node-input-$now',
+                        name: 'Input Stage',
+                        processType: 'Input',
+                        stageIndex: 0,
+                        laneIndex: 0,
+                        inputs: [input],
+                        outputs: [input],
+                        machine: 'Input Stage',
+                        dieId: '',
+                        durationHours: 0.25,
+                        status: 'Ready',
+                        isIntermediate: false,
+                        inputItem: inputEndpoint,
+                        outputItem: inputEndpoint,
+                      );
 
-                final outputNode = ProcessNode(
-                  id: 'node-output-${DateTime.now().microsecondsSinceEpoch}',
-                  name: 'Output Stage',
-                  processType: 'Output',
-                  stageIndex: 1,
-                  laneIndex: 0,
-                  inputs: [output],
-                  outputs: [output],
-                  machine: 'Output Stage',
-                  dieId: '',
-                  durationHours: 0.25,
-                  status: 'Queued',
-                  isIntermediate: false,
-                );
+                      final outputNode = ProcessNode(
+                        id: 'node-output-${now + 1}',
+                        name: 'Output Stage',
+                        processType: 'Output',
+                        stageIndex: 1,
+                        laneIndex: 0,
+                        inputs: [output],
+                        outputs: [output],
+                        machine: 'Output Stage',
+                        dieId: '',
+                        durationHours: 0.25,
+                        status: 'Queued',
+                        isIntermediate: false,
+                        inputItem: outputEndpoint,
+                        outputItem: outputEndpoint,
+                      );
 
-                Navigator.pop(
-                  context,
-                  PipelineTemplate(
-                    id: id,
-                    factoryId: widget.factoryId,
-                    shopFloorId: widget.shopFloorId,
-                    name: name,
-                    description: desc,
-                    stageLabels: const ['Input', 'Output'],
-                    laneLabels: const ['Main'],
-                    nodes: [inputNode, outputNode],
-                    flows: const [],
-                    inputMaterial: input,
-                    outputMaterial: output,
-                  ),
-                );
-              }
-            },
-            child: const Text('Create'),
-          ),
-        ],
-      ),
+                      Navigator.pop(
+                        context,
+                        PipelineTemplate(
+                          id: id,
+                          factoryId: widget.factoryId,
+                          shopFloorId: widget.shopFloorId,
+                          name: name,
+                          description: desc,
+                          stageLabels: const ['Input', 'Output'],
+                          laneLabels: const ['Main'],
+                          nodes: [inputNode, outputNode],
+                          flows: const [],
+                          inputMaterial: input,
+                          outputMaterial: output,
+                        ),
+                      );
+                    }
+                  },
+                  child: const Text('Create'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
 
     if (result != null && mounted) {
       setState(() {
         _editingTemplate = result;
       });
+    }
+    // Delay controller disposal to allow the dialog pop animation to finish completely
+    Future.delayed(const Duration(milliseconds: 500), () {
+      nameCtrl.dispose();
+      descCtrl.dispose();
+    });
+  }
+
+  Future<void> _duplicateTemplate(PipelineTemplate template) async {
+    setState(() => _isLoading = true);
+    try {
+      final repo = context.read<PipelineRunRepository>();
+      final now = DateTime.now().microsecondsSinceEpoch;
+      
+      final duplicate = template.copyWith(
+        id: 'tpl-$now',
+        name: '${template.name} (Copy)',
+        status: PipelineTemplateStatus.draft,
+      );
+      
+      await repo.createTemplate(duplicate);
+      await _loadTemplates();
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -287,50 +347,50 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
       );
     }
 
+    final filteredTemplates = _templates.where((t) => t.status == _filterStatus).toList();
+
     return _PipelineLibraryShell(
       title: 'Floor Pipelines',
       subtitle: 'Build and run production routes on the unified floor map.',
       actionLabel: 'New Pipeline',
       onAction: _createNew,
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 180),
-        child: _isLoading
-            ? const _PipelineLoading(label: 'Loading pipelines')
-            : _templates.isEmpty
-            ? _PipelineEmptyState(
-                title: 'No pipelines on this map',
-                message:
-                    'Create a production route to connect stages, machines, and live run execution.',
-                actionLabel: 'Create Pipeline',
-                onAction: _createNew,
-              )
-            : LayoutBuilder(
-                builder: (context, constraints) {
-                  final columns = constraints.maxWidth >= 1220
-                      ? 3
-                      : constraints.maxWidth >= 820
-                      ? 2
-                      : 1;
-                  return GridView.builder(
-                    padding: EdgeInsets.zero,
-                    itemCount: _templates.length,
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: columns,
-                      crossAxisSpacing: 14,
-                      mainAxisSpacing: 14,
-                      childAspectRatio: columns == 1 ? 3.05 : 2.25,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+            child: SegmentedButton<PipelineTemplateStatus>(
+              segments: const [
+                ButtonSegment(value: PipelineTemplateStatus.active, label: Text('Active')),
+                ButtonSegment(value: PipelineTemplateStatus.draft, label: Text('Drafts')),
+                ButtonSegment(value: PipelineTemplateStatus.archived, label: Text('Archived')),
+              ],
+              selected: {_filterStatus},
+              onSelectionChanged: (Set<PipelineTemplateStatus> newSelection) {
+                setState(() => _filterStatus = newSelection.first);
+              },
+            ),
+          ),
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              child: _isLoading
+                  ? const _PipelineLoading(label: 'Loading pipelines')
+                  : filteredTemplates.isEmpty
+                  ? _PipelineEmptyState(
+                      title: 'No pipelines found',
+                      message: 'No pipelines match the current status filter.',
+                      actionLabel: 'Create Pipeline',
+                      onAction: _createNew,
+                    )
+                  : _PipelineTemplateList(
+                      templates: filteredTemplates,
+                      onEdit: _edit,
+                      onRun: _run,
+                      onDuplicate: _duplicateTemplate,
                     ),
-                    itemBuilder: (context, index) {
-                      final template = _templates[index];
-                      return _PipelineTemplateCard(
-                        template: template,
-                        onEdit: () => _edit(template),
-                        onRun: () => _run(template),
-                      );
-                    },
-                  );
-                },
-              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -344,6 +404,209 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
     }
     return belongsToDefaultFloor(template.shopFloorId);
   }
+}
+
+class _PipelineItemSelectField extends StatelessWidget {
+  const _PipelineItemSelectField({
+    required this.tapTargetKey,
+    required this.label,
+    required this.dialogTitle,
+    required this.selectedItemId,
+    required this.items,
+    required this.units,
+    required this.onChanged,
+    required this.onCreated,
+    required this.validator,
+  });
+
+  final Key tapTargetKey;
+  final String label;
+  final String dialogTitle;
+  final int? selectedItemId;
+  final List<ItemDefinition> items;
+  final List<UnitDefinition> units;
+  final ValueChanged<ItemDefinition> onChanged;
+  final ValueChanged<ItemDefinition> onCreated;
+  final FormFieldValidator<int> validator;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasSelection = items.any((item) => item.id == selectedItemId);
+    final options = items
+        .map(
+          (item) => SearchableSelectOption<int>(
+            value: item.id,
+            label: _materialOptionLabel(item, units),
+            searchText: _materialOptionSearchText(item, units),
+          ),
+        )
+        .toList(growable: false);
+
+    return SearchableSelectField<int>(
+      tapTargetKey: tapTargetKey,
+      value: hasSelection ? selectedItemId : null,
+      decoration: _softInputDecoration(
+        label: label,
+        helper: 'Search item masters or create a new item.',
+      ),
+      dialogTitle: dialogTitle,
+      searchHintText: 'Search item master',
+      emptyText: 'No item masters found',
+      options: options,
+      canCreateOption: (query, allOptions) {
+        final normalized = query.trim().toLowerCase();
+        return normalized.isNotEmpty &&
+            items.every(
+              (item) => _itemName(item).trim().toLowerCase() != normalized,
+            );
+      },
+      onCreateOption: (query) async {
+        final created = await ItemsScreen.openEditor(
+          context,
+          initialName: query.trim(),
+        );
+        if (!context.mounted || created == null) {
+          return null;
+        }
+        try {
+          await context.read<ItemsProvider>().refresh();
+        } catch (_) {}
+        if (!context.mounted) {
+          return null;
+        }
+        final refreshedUnits = _activeUnitsFromContext(context);
+        onCreated(created);
+        return SearchableSelectOption<int>(
+          value: created.id,
+          label: _materialOptionLabel(created, refreshedUnits),
+          searchText: _materialOptionSearchText(created, refreshedUnits),
+        );
+      },
+      createOptionLabelBuilder: (query) => 'Create item "$query"',
+      onChanged: (value) {
+        final item = _itemById(items, value);
+        if (item != null) {
+          onChanged(item);
+        }
+      },
+      validator: validator,
+    );
+  }
+}
+
+InputDecoration _softInputDecoration({required String label, String? helper}) {
+  return InputDecoration(
+    labelText: label,
+    helperText: helper,
+    filled: true,
+    fillColor: SoftErpTheme.cardSurfaceAlt,
+    labelStyle: const TextStyle(
+      color: SoftErpTheme.textSecondary,
+      fontWeight: FontWeight.w700,
+    ),
+    helperStyle: const TextStyle(
+      color: SoftErpTheme.textSecondary,
+      fontWeight: FontWeight.w600,
+    ),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: SoftErpTheme.border),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: SoftErpTheme.border),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: SoftErpTheme.accent, width: 1.4),
+    ),
+  );
+}
+
+List<ItemDefinition> _activeItemsFromContext(BuildContext context) {
+  try {
+    return context
+        .read<ItemsProvider>()
+        .items
+        .where((item) => !item.isArchived)
+        .toList(growable: false);
+  } catch (_) {
+    return const [];
+  }
+}
+
+List<UnitDefinition> _activeUnitsFromContext(BuildContext context) {
+  try {
+    return context.read<UnitsProvider>().activeUnits;
+  } catch (_) {
+    return const [];
+  }
+}
+
+ItemDefinition? _itemById(List<ItemDefinition> items, int? id) {
+  if (id == null) {
+    return null;
+  }
+  for (final item in items) {
+    if (item.id == id) {
+      return item;
+    }
+  }
+  return null;
+}
+
+String _itemName(ItemDefinition item) {
+  final displayName = item.displayName.trim();
+  return displayName.isNotEmpty ? displayName : item.name;
+}
+
+String _materialOptionLabel(ItemDefinition item, List<UnitDefinition> units) {
+  return '${_itemName(item)} (${_unitLabel(item.unitId, units)})';
+}
+
+String _materialOptionSearchText(
+  ItemDefinition item,
+  List<UnitDefinition> units,
+) {
+  return [
+    item.name,
+    item.displayName,
+    item.alias,
+    _unitLabel(item.unitId, units),
+  ].where((part) => part.trim().isNotEmpty).join(' ');
+}
+
+String _unitLabel(int unitId, List<UnitDefinition> units) {
+  for (final unit in units) {
+    if (unit.id == unitId) {
+      final symbol = unit.symbol.trim();
+      if (symbol.isNotEmpty) {
+        return symbol;
+      }
+      return unit.name;
+    }
+  }
+  return 'Unit #$unitId';
+}
+
+PipelineItemEndpoint _endpointForItem(
+  ItemDefinition item,
+  List<UnitDefinition> units,
+) {
+  UnitDefinition? unit;
+  for (final candidate in units) {
+    if (candidate.id == item.unitId) {
+      unit = candidate;
+      break;
+    }
+  }
+  return PipelineItemEndpoint(
+    itemId: item.id,
+    itemName: _itemName(item),
+    unitId: item.unitId,
+    unitName: unit?.name ?? '',
+    unitSymbol: unit?.symbol ?? '',
+  );
 }
 
 class _PipelineEditorShell extends StatelessWidget {
@@ -405,16 +668,109 @@ class _PipelineEditorShell extends StatelessWidget {
   }
 }
 
+class _PipelineTemplateList extends StatelessWidget {
+  const _PipelineTemplateList({
+    required this.templates,
+    required this.onEdit,
+    required this.onRun,
+    required this.onDuplicate,
+  });
+
+  final List<PipelineTemplate> templates;
+  final ValueChanged<PipelineTemplate> onEdit;
+  final ValueChanged<PipelineTemplate> onRun;
+  final ValueChanged<PipelineTemplate> onDuplicate;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const _PipelineListHeader(),
+        const SizedBox(height: 12),
+        Expanded(
+          child: ListView.separated(
+            padding: EdgeInsets.zero,
+            itemCount: templates.length,
+            separatorBuilder: (context, index) => const SizedBox(height: 12),
+            itemBuilder: (context, index) {
+              final template = templates[index];
+              return _PipelineTemplateCard(
+                template: template,
+                onEdit: () => onEdit(template),
+                onRun: () => onRun(template),
+                onDuplicate: () => onDuplicate(template),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PipelineListHeader extends StatelessWidget {
+  const _PipelineListHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 54,
+      padding: const EdgeInsets.symmetric(horizontal: 22),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE9EEF9).withValues(alpha: 0.86),
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: const Row(
+        children: [
+          _PipelineHeaderCell(label: 'Pipeline', flex: 4),
+          _PipelineHeaderCell(label: 'Material Flow', flex: 3),
+          _PipelineHeaderCell(label: 'Stages', flex: 1),
+          _PipelineHeaderCell(label: 'Nodes', flex: 1),
+          _PipelineHeaderCell(label: 'Flows', flex: 1),
+          _PipelineHeaderCell(label: 'Status', flex: 1),
+          _PipelineHeaderCell(label: 'Actions', flex: 2),
+        ],
+      ),
+    );
+  }
+}
+
+class _PipelineHeaderCell extends StatelessWidget {
+  const _PipelineHeaderCell({required this.label, required this.flex});
+
+  final String label;
+  final int flex;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      flex: flex,
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: Color(0xFF1E293B),
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
 class _PipelineTemplateCard extends StatelessWidget {
   const _PipelineTemplateCard({
     required this.template,
     required this.onEdit,
     required this.onRun,
+    required this.onDuplicate,
   });
 
   final PipelineTemplate template;
   final VoidCallback onEdit;
   final VoidCallback onRun;
+  final VoidCallback onDuplicate;
 
   @override
   Widget build(BuildContext context) {
@@ -422,144 +778,256 @@ class _PipelineTemplateCard extends StatelessWidget {
     final flowCount = template.flows.length;
     final stageCount = template.stageLabels.length;
     final hasRunnableRoute = nodeCount > 0;
+    final routeText = [
+      template.inputMaterial.trim().isEmpty
+          ? 'Input material'
+          : template.inputMaterial,
+      template.outputMaterial.trim().isEmpty
+          ? 'Output material'
+          : template.outputMaterial,
+    ].join(' -> ');
+
+    final sortedNodes = template.nodes.toList()..sort((a, b) => a.stageIndex.compareTo(b.stageIndex));
+    final miniFlow = sortedNodes.map((n) => n.processType).join(' ➔ ');
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onEdit,
-        borderRadius: BorderRadius.circular(22),
-        child: Ink(
+        borderRadius: BorderRadius.circular(24),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 86),
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.88),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-            boxShadow: [
+            color: Colors.white.withValues(alpha: 0.92),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: const Color(0xFFE5EAF4)),
+            boxShadow: const [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.035),
+                color: Color(0x0C000000),
                 blurRadius: 18,
-                offset: const Offset(0, 8),
+                offset: Offset(0, 8),
               ),
             ],
           ),
-          child: Stack(
+          child: Row(
             children: [
-              Positioned.fill(
-                child: CustomPaint(
-                  painter: _PipelineCardPainter(
-                    nodeCount: nodeCount,
-                    flowCount: flowCount,
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              Expanded(
+                flex: 4,
+                child: Row(
                   children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFEFF6FF),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: const Text(
-                            'ROUTE',
-                            style: TextStyle(
-                              color: Color(0xFF3B82F6),
-                              fontSize: 11,
+                    SizedBox(
+                      width: 112,
+                      height: 54,
+                      child: CustomPaint(
+                        painter: _PipelineCardPainter(
+                          nodeCount: nodeCount,
+                          flowCount: flowCount,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            template.name.trim().isEmpty
+                                ? 'Unnamed pipeline'
+                                : template.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Color(0xFF1E293B),
+                              fontSize: 15,
                               fontWeight: FontWeight.w900,
-                              letterSpacing: 0.2,
                             ),
                           ),
-                        ),
-                        const Spacer(),
-                        _PipelineStatusBadge(
-                          label: hasRunnableRoute ? 'Ready' : 'Draft',
-                          active: hasRunnableRoute,
-                        ),
-                      ],
-                    ),
-                    const Spacer(),
-                    Text(
-                      template.name.trim().isEmpty
-                          ? 'Unnamed pipeline'
-                          : template.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF1E293B),
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
+                          const SizedBox(height: 5),
+                          Text(
+                            template.description.trim().isEmpty
+                                ? 'Production route for the unified floor map'
+                                : template.description,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Color(0xFF64748B),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      template.description.trim().isEmpty
-                          ? 'Production route for the unified floor map'
-                          : template.description,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF64748B),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        _RouteBadge(label: 'Stages', value: '$stageCount'),
-                        const SizedBox(width: 8),
-                        _RouteBadge(label: 'Nodes', value: '$nodeCount'),
-                        const SizedBox(width: 8),
-                        _RouteBadge(label: 'Flows', value: '$flowCount'),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: onEdit,
-                            icon: const Icon(Icons.edit_rounded, size: 17),
-                            label: const Text('Edit'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFF1E293B),
-                              side: const BorderSide(color: Color(0xFFE2E8F0)),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed: hasRunnableRoute ? onRun : null,
-                            icon: const Icon(
-                              Icons.play_arrow_rounded,
-                              size: 18,
-                            ),
-                            label: const Text('Run'),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: const Color(0xFF3B82F6),
-                              foregroundColor: Colors.white,
-                              disabledBackgroundColor: const Color(0xFFE1E5DF),
-                              disabledForegroundColor: const Color(0xFF8A948F),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
                     ),
                   ],
+                ),
+              ),
+              _PipelineCardCell(
+                flex: 3,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      routeText,
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    if (miniFlow.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        miniFlow,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF94A3B8),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              _PipelineMetricCell(value: '$stageCount'),
+              _PipelineMetricCell(value: '$nodeCount'),
+              _PipelineMetricCell(value: '$flowCount'),
+              _PipelineCardCell(
+                flex: 1,
+                child: _PipelineStatusBadge(
+                  label: template.status.name.toUpperCase(),
+                  active: template.status == PipelineTemplateStatus.active,
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.copy, size: 20, color: Color(0xFF64748B)),
+                      onPressed: onDuplicate,
+                      tooltip: 'Duplicate Pipeline',
+                    ),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.edit_rounded,
+                        size: 20,
+                        color: Color(0xFF64748B),
+                      ),
+                      onPressed: onEdit,
+                      tooltip: 'Edit pipeline',
+                    ),
+                    const SizedBox(width: 4),
+                    if (template.status == PipelineTemplateStatus.active)
+                      FilledButton.icon(
+                        onPressed: hasRunnableRoute ? onRun : null,
+                        icon: const Icon(Icons.play_arrow_rounded, size: 16),
+                        label: const Text('Run'),
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PipelineCardCell extends StatelessWidget {
+  const _PipelineCardCell({required this.flex, required this.child});
+  final int flex;
+  final Widget child;
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(flex: flex, child: Align(alignment: Alignment.centerLeft, child: child));
+  }
+}
+
+class _PipelineMetricCell extends StatelessWidget {
+  const _PipelineMetricCell({required this.value});
+
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      flex: 1,
+      child: Text(
+        value,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: Color(0xFF1E293B),
+          fontSize: 14,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _PipelineActionButton extends StatelessWidget {
+  const _PipelineActionButton({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    required this.filled,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback? onTap;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    return Material(
+      color: filled
+          ? (enabled ? const Color(0xFF3B82F6) : const Color(0xFFE1E5DF))
+          : const Color(0xFFF1F3FF),
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: filled
+                    ? (enabled ? Colors.white : const Color(0xFF8A948F))
+                    : const Color(0xFF4F46E5),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: filled
+                      ? (enabled ? Colors.white : const Color(0xFF8A948F))
+                      : const Color(0xFF4F46E5),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
             ],

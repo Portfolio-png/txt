@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../domain/machine.dart';
+import '../domain/machine_capability.dart';
 import 'machine_repository.dart';
 
 class ApiMachineRepository implements MachineRepository {
@@ -223,6 +224,9 @@ class ApiMachineRepository implements MachineRepository {
       customProperties: (json['customProperties'] as List<dynamic>? ?? [])
           .map((p) => _propertyFromJson(p as Map<String, dynamic>))
           .toList(),
+      capabilities: (json['capabilities'] as List<dynamic>? ?? [])
+          .map((c) => MachineCapability.fromJson(c as Map<String, dynamic>))
+          .toList(),
       createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt'] as String) ?? DateTime.now() : DateTime.now(),
       updatedAt: json['updatedAt'] != null ? DateTime.tryParse(json['updatedAt'] as String) ?? DateTime.now() : DateTime.now(),
     );
@@ -241,6 +245,7 @@ class ApiMachineRepository implements MachineRepository {
       'installationDate': m.installationDate?.toIso8601String(),
       'status': _statusToString(m.status),
       'customProperties': m.customProperties.map(_propertyToJson).toList(),
+      'capabilities': m.capabilities.map((c) => c.toJson()).toList(),
       'createdAt': m.createdAt.toIso8601String(),
       'updatedAt': m.updatedAt.toIso8601String(),
     };

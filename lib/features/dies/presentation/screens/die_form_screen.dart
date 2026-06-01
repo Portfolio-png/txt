@@ -568,7 +568,7 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                                     child: Image.network(
                                       url,
                                       fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 24, color: Colors.grey),
+                                      errorBuilder: (_, _, _) => const Icon(Icons.broken_image, size: 24, color: Colors.grey),
                                     ),
                                   ),
                                 ),
@@ -689,7 +689,6 @@ class _DieTextField extends StatelessWidget {
     required this.helper,
     this.required = true,
     this.maxLines = 1,
-    this.isNumber = false,
   });
 
   final TextEditingController controller;
@@ -697,14 +696,12 @@ class _DieTextField extends StatelessWidget {
   final String helper;
   final bool required;
   final int maxLines;
-  final bool isNumber;
 
   @override
   Widget build(BuildContext context) {
     return TextFormField(
       controller: controller,
       maxLines: maxLines,
-      keyboardType: isNumber ? TextInputType.number : null,
       decoration: InputDecoration(
         labelText: label,
         helperText: helper,

@@ -159,8 +159,10 @@ ShellTopStripConfig resolveTopStrip(String selectedKey, BuildContext context) {
       return const ShellTopStripConfig(title: 'Challans');
     case 'challan_invoice_report':
       return const ShellTopStripConfig(title: 'Report');
+    case 'production':
+      return const ShellTopStripConfig(title: 'Production');
     case 'production_pipelines':
-      return const ShellTopStripConfig(title: 'Production Pipelines');
+      return const ShellTopStripConfig(title: 'Pipelines');
     case 'configurator':
       return const ShellTopStripConfig(title: 'Configurator');
     case 'configurator_vendors':

@@ -14,11 +14,18 @@ import 'package:paper/features/production/providers/production_run_provider.dart
 import 'package:paper/features/production/providers/pipeline_editor_provider.dart';
 import 'package:paper/features/production/screens/floor_view_screen.dart';
 import 'package:paper/features/production/screens/pipeline_builder_screen.dart';
+import 'package:paper/features/production/screens/pipelines_screen.dart';
 import 'package:paper/features/production_pipelines/data/default_pipeline_templates.dart';
+import 'package:paper/features/production_pipelines/data/repositories/pipeline_run_repository.dart';
 import 'package:paper/features/production_pipelines/domain/material_flow.dart';
+import 'package:paper/features/production_pipelines/domain/node_run_status.dart';
+import 'package:paper/features/production_pipelines/domain/pipeline_run.dart';
 import 'package:paper/features/production_pipelines/domain/pipeline_template.dart';
 import 'package:paper/features/production_pipelines/domain/process_node.dart';
 import 'package:provider/provider.dart';
+import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
+import 'package:core_erp/features/inventory/domain/material_record.dart';
+import '../../widget_test.dart';
 
 void main() {
   test('sheet metal process template keeps the requested floor context', () {
@@ -131,6 +138,92 @@ void main() {
     expect(find.text('Precision Forming Line'), findsOneWidget);
   });
 
+  testWidgets('builder details popup selects item masters for materials', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    final provider = ProductionProvider.seeded();
+    final editor = PipelineEditorProvider(template: _testTemplate());
+    addTearDown(provider.dispose);
+    addTearDown(editor.dispose);
+
+    await tester.pumpWidget(
+      _ProductionHarness(
+        provider: provider,
+        editor: editor,
+        child: const PipelineBuilderScreen(shopFloorId: 'floor-1'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Details'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('pipeline-details-input-material-field')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sheet Metal (kg)').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('pipeline-details-output-material-field')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Blank Profile (g)').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Apply'));
+    await tester.pumpAndSettle();
+
+    expect(editor.template.inputMaterial, 'Sheet Metal');
+    expect(editor.template.outputMaterial, 'Blank Profile');
+  });
+
+  testWidgets('pipeline create dialog uses searchable item master pickers', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    final provider = ProductionProvider.seeded();
+    final editor = PipelineEditorProvider(template: _testTemplate());
+    addTearDown(provider.dispose);
+    addTearDown(editor.dispose);
+
+    await tester.pumpWidget(
+      _ProductionHarness(
+        provider: provider,
+        editor: editor,
+        pipelineRunRepository: _FakePipelineRunRepository(),
+        child: const PipelinesScreen(shopFloorId: 'floor-1'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('New Pipeline'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Create New Pipeline'), findsOneWidget);
+    expect(find.text('Sheet Metal (kg)'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('create-pipeline-input-item-field')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.widgetWithText(TextField, 'Search item master'),
+      findsOneWidget,
+    );
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Search item master'),
+      'Custom Resin',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Create item "Custom Resin"'), findsOneWidget);
+  });
+
   testWidgets('builder header adds connected next step', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1400, 900));
     final provider = ProductionProvider.seeded();
@@ -181,6 +274,25 @@ void main() {
       ),
       isFalse,
     );
+  });
+
+  test('editor deletes node and auto-heals sequential flows', () {
+    final editor = PipelineEditorProvider(template: _mappedFloorTemplate());
+    addTearDown(editor.dispose);
+
+    // Initial state: mapped-cut -> mapped-form -> mapped-qa
+    expect(editor.template.nodes.length, 3);
+    expect(editor.template.flows.length, 2);
+
+    editor.selectNode('mapped-form');
+    editor.deleteSelectedNode();
+
+    // After deleting mapped-form, it should auto-heal by connecting mapped-cut directly to mapped-qa
+    expect(editor.template.nodes.length, 2);
+    expect(editor.template.flows.length, 1);
+    expect(editor.template.flows.first.fromNodeId, 'mapped-cut');
+    expect(editor.template.flows.first.toNodeId, 'mapped-qa');
+    expect(editor.template.flows.first.materialName, 'Blank');
   });
 
   testWidgets('builder sidebar shows selected node summary only', (
@@ -275,11 +387,13 @@ class _ProductionHarness extends StatelessWidget {
     required this.provider,
     required this.editor,
     required this.child,
+    this.pipelineRunRepository,
   });
 
   final ProductionProvider provider;
   final PipelineEditorProvider editor;
   final Widget child;
+  final PipelineRunRepository? pipelineRunRepository;
 
   @override
   Widget build(BuildContext context) {
@@ -290,6 +404,9 @@ class _ProductionHarness extends StatelessWidget {
           create: (_) => ProductionRunProvider(),
         ),
         ChangeNotifierProvider<PipelineEditorProvider>.value(value: editor),
+        Provider<PipelineRunRepository>.value(
+          value: pipelineRunRepository ?? _FakePipelineRunRepository(),
+        ),
         ChangeNotifierProvider<UnitsProvider>(
           create: (_) => UnitsProvider(
             repository: _FakeUnitRepository(_unitDefinitions()),
@@ -299,9 +416,123 @@ class _ProductionHarness extends StatelessWidget {
           create: (_) =>
               ItemsProvider(repository: _FakeItemRepository(_itemMasters())),
         ),
+        ChangeNotifierProvider<InventoryProvider>(
+          create: (_) => InventoryProvider(
+            repository: FakeInventoryRepository(
+              seedMaterials: [
+                MaterialRecord(
+                  id: 1,
+                  barcode: 'Sheet Metal',
+                  name: 'Sheet Metal',
+                  type: 'Raw Material',
+                  grade: 'A1',
+                  thickness: '1.2 mm',
+                  supplier: 'Seed Supplier',
+                  unitId: 1,
+                  unit: 'kg',
+                  createdAt: DateTime(2026),
+                  kind: 'parent',
+                  parentBarcode: null,
+                  numberOfChildren: 0,
+                  linkedChildBarcodes: const [],
+                  scanCount: 0,
+                  linkedItemId: 1,
+                ),
+                MaterialRecord(
+                  id: 2,
+                  barcode: 'Blank Profile',
+                  name: 'Blank Profile',
+                  type: 'Raw Material',
+                  grade: 'A1',
+                  thickness: '1.2 mm',
+                  supplier: 'Seed Supplier',
+                  unitId: 2,
+                  unit: 'g',
+                  createdAt: DateTime(2026),
+                  kind: 'parent',
+                  parentBarcode: null,
+                  numberOfChildren: 0,
+                  linkedChildBarcodes: const [],
+                  scanCount: 0,
+                  linkedItemId: 2,
+                ),
+              ],
+            ),
+          )..initialize(),
+        ),
       ],
       child: MaterialApp(home: Scaffold(body: child)),
     );
+  }
+}
+
+class _FakePipelineRunRepository implements PipelineRunRepository {
+  _FakePipelineRunRepository({List<PipelineTemplate> seedTemplates = const []})
+    : _templates = List<PipelineTemplate>.from(seedTemplates);
+
+  final List<PipelineTemplate> _templates;
+
+  @override
+  Future<List<PipelineTemplate>> getTemplates() async =>
+      List<PipelineTemplate>.from(_templates);
+
+  @override
+  Future<PipelineTemplate> createTemplate(PipelineTemplate template) async {
+    _templates.add(template);
+    return template;
+  }
+
+  @override
+  Future<PipelineTemplate> updateTemplate(PipelineTemplate template) async {
+    final index = _templates.indexWhere((item) => item.id == template.id);
+    if (index == -1) {
+      _templates.add(template);
+    } else {
+      _templates[index] = template;
+    }
+    return template;
+  }
+
+  @override
+  Future<PipelineTemplate?> getTemplate(String id) async {
+    for (final template in _templates) {
+      if (template.id == id) {
+        return template;
+      }
+    }
+    return null;
+  }
+
+  @override
+  Future<List<PipelineRun>> getRuns({String? templateId}) async => const [];
+
+  @override
+  Future<PipelineRun> createRun(String templateId, {String? name}) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<PipelineRun?> getRun(String id) async => null;
+
+  @override
+  Future<PipelineRun> updateNodeStatus({
+    required String runId,
+    required String nodeId,
+    required NodeRunStatus status,
+    double? actualDurationHours,
+    int? batchQuantity,
+    String? machineOverride,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<PipelineRun> attachBarcodeToRunNode({
+    required String runId,
+    required String nodeId,
+    required String barcode,
+  }) {
+    throw UnimplementedError();
   }
 }
 

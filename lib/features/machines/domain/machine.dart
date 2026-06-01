@@ -1,3 +1,5 @@
+import 'machine_capability.dart';
+
 enum MachineStatus { active, maintenance, decommissioned }
 
 enum CustomPropertyType { text, numeric, dropdown }
@@ -49,6 +51,7 @@ class Machine {
     this.installationDate,
     required this.status,
     this.customProperties = const [],
+    this.capabilities = const [],
     required this.createdAt,
     required this.updatedAt,
   });
@@ -64,6 +67,7 @@ class Machine {
   final DateTime? installationDate;
   final MachineStatus status;
   final List<CustomProperty> customProperties;
+  final List<MachineCapability> capabilities;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -79,6 +83,7 @@ class Machine {
     DateTime? installationDate,
     MachineStatus? status,
     List<CustomProperty>? customProperties,
+    List<MachineCapability>? capabilities,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -94,6 +99,7 @@ class Machine {
       installationDate: installationDate ?? this.installationDate,
       status: status ?? this.status,
       customProperties: customProperties ?? this.customProperties,
+      capabilities: capabilities ?? this.capabilities,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

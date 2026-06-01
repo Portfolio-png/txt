@@ -1,6 +1,8 @@
 import 'material_flow.dart';
 import 'process_node.dart';
 
+enum PipelineTemplateStatus { draft, active, archived }
+
 class PipelineTemplate {
   const PipelineTemplate({
     required this.id,
@@ -14,6 +16,7 @@ class PipelineTemplate {
     required this.flows,
     this.inputMaterial = '',
     this.outputMaterial = '',
+    this.status = PipelineTemplateStatus.draft,
   });
 
   final String id;
@@ -27,6 +30,7 @@ class PipelineTemplate {
   final List<MaterialFlow> flows;
   final String inputMaterial;
   final String outputMaterial;
+  final PipelineTemplateStatus status;
 
   List<ProcessNode> get stages => nodes;
 
@@ -52,6 +56,10 @@ class PipelineTemplate {
           .toList(growable: false),
       inputMaterial: json['inputMaterial'] as String? ?? '',
       outputMaterial: json['outputMaterial'] as String? ?? '',
+      status: PipelineTemplateStatus.values.firstWhere(
+        (e) => e.name == json['status'],
+        orElse: () => PipelineTemplateStatus.draft,
+      ),
     );
   }
 
@@ -67,6 +75,7 @@ class PipelineTemplate {
     List<MaterialFlow>? flows,
     String? inputMaterial,
     String? outputMaterial,
+    PipelineTemplateStatus? status,
   }) {
     return PipelineTemplate(
       id: id ?? this.id,
@@ -80,6 +89,7 @@ class PipelineTemplate {
       flows: flows ?? this.flows,
       inputMaterial: inputMaterial ?? this.inputMaterial,
       outputMaterial: outputMaterial ?? this.outputMaterial,
+      status: status ?? this.status,
     );
   }
 
@@ -96,6 +106,7 @@ class PipelineTemplate {
       'flows': flows.map((flow) => flow.toJson()).toList(),
       'inputMaterial': inputMaterial,
       'outputMaterial': outputMaterial,
+      'status': status.name,
     };
   }
 }

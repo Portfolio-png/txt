@@ -5,8 +5,6 @@ import 'package:core_erp/app/preferences/preferences_provider.dart';
 import 'package:paper/app/shell/navigation_provider.dart';
 import 'package:core_erp/features/clients/domain/client_definition.dart';
 import 'package:core_erp/features/delivery_challans/domain/delivery_challan.dart';
-import 'package:core_erp/features/clients/presentation/providers/clients_provider.dart';
-import 'package:core_erp/features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
 import 'package:paper/main.dart';
 
 import 'widget_test.dart';

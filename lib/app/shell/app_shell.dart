@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 
 import 'package:core_erp/features/auth/domain/auth_user.dart';
 import 'package:core_erp/features/auth/presentation/providers/auth_provider.dart';
+
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
 import 'package:core_erp/core/widgets/soft_primitives.dart';
 import 'package:core_erp/app/reports/views/challan_invoice_reconciliation_screen.dart';
@@ -42,7 +43,7 @@ class AppShell extends StatelessWidget {
     final selectedKey = context.select<NavigationProvider, String>(
       (navigation) => navigation.selectedKey,
     );
-    final isProduction = selectedKey == 'production_pipelines';
+    final isProduction = selectedKey == 'production' || selectedKey == 'production_pipelines';
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -129,8 +130,7 @@ class AppShell extends StatelessWidget {
                                   width: isProduction
                                       ? 0
                                       : sidebarWidth +
-                                            _ShellLayoutMetrics
-                                                .sidebarLeftInset +
+                                            _ShellLayoutMetrics.sidebarLeftInset +
                                             _ShellLayoutMetrics.sidebarRightGap,
                                   child: ClipRect(
                                     child: OverflowBox(
@@ -145,14 +145,11 @@ class AppShell extends StatelessWidget {
                                           _ShellLayoutMetrics.sidebarLeftInset,
                                           _ShellLayoutMetrics.sidebarTopGap,
                                           _ShellLayoutMetrics.sidebarRightGap,
-                                          _ShellLayoutMetrics
-                                              .sidebarBottomInset,
+                                          _ShellLayoutMetrics.sidebarBottomInset,
                                         ),
                                         child: SizedBox(
                                           width: sidebarWidth,
-                                          child: const AppSidebar(
-                                            compact: false,
-                                          ),
+                                          child: const AppSidebar(compact: false),
                                         ),
                                       ),
                                     ),
@@ -230,6 +227,8 @@ class _PaperShortcutManagerState extends State<PaperShortcutManager> {
             navProvider.setTab(3),
         const SingleActivator(LogicalKeyboardKey.digit5, control: true): () =>
             navProvider.setTab(4),
+        const SingleActivator(LogicalKeyboardKey.digit6, control: true): () =>
+            navProvider.setTab(5),
         const SingleActivator(LogicalKeyboardKey.tab, control: true): () =>
             navProvider.selectRelativeSidebarItem(),
         const SingleActivator(
@@ -561,6 +560,9 @@ class _ShellContentSwitcher extends StatelessWidget {
             child: switch (key) {
               'inventory' => const InventoryScreen(),
               'inventory_scan' => const MaterialScanScreen(),
+              'production' => const ProductionPipelinesScreen(
+                embeddedInShell: true,
+              ),
               'production_pipelines' => const ProductionPipelinesScreen(
                 embeddedInShell: true,
               ),

@@ -340,7 +340,7 @@ class _DieCardState extends State<_DieCard> {
                               ? Image.network(
                                   die.photoUrls.first,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, __, _) =>
+                                  errorBuilder: (_, _, _) =>
                                       _buildPlaceholder(),
                                 )
                               : _buildPlaceholder(),
@@ -601,7 +601,7 @@ class _DieRow extends StatelessWidget {
                       width: 48,
                       height: 48,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, _) => _buildThumb(),
+                      errorBuilder: (_, _, _) => _buildThumb(),
                     ),
                   ),
                 )

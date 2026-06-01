@@ -7,5 +7,6 @@ void main() {
       valueName.isEmpty ? propertyName : '$propertyName: $valueName',
     );
   }
+  // ignore: avoid_print
   print(segments.join(' / '));
 }
