@@ -92,6 +92,49 @@ class PipelineEditorProvider extends ChangeNotifier {
   final Map<String, ProcessNodeDraftController> _drafts = {};
   String? _selectedNodeId;
   String? _connectingFromNodeId;
+  
+  final List<PipelineTemplate> _undoStack = [];
+  final List<PipelineTemplate> _redoStack = [];
+
+  void _pushHistory() {
+    _undoStack.add(_template);
+    if (_undoStack.length > 50) _undoStack.removeAt(0);
+    _redoStack.clear();
+  }
+
+  bool get canUndo => _undoStack.isNotEmpty;
+  bool get canRedo => _redoStack.isNotEmpty;
+
+  void undo() {
+    if (!canUndo) return;
+    _redoStack.add(_template);
+    _template = _undoStack.removeLast();
+    _rebuildDrafts();
+    notifyListeners();
+  }
+
+  void redo() {
+    if (!canRedo) return;
+    _undoStack.add(_template);
+    _template = _redoStack.removeLast();
+    _rebuildDrafts();
+    notifyListeners();
+  }
+
+  void _rebuildDrafts() {
+    for (final draft in _drafts.values) {
+      draft.dispose();
+    }
+    _drafts.clear();
+    for (final node in _template.nodes) {
+      _drafts[node.id] = ProcessNodeDraftController(node);
+    }
+    if (_selectedNodeId != null) {
+      if (!_template.nodes.any((n) => n.id == _selectedNodeId)) {
+        _selectedNodeId = null;
+      }
+    }
+  }
 
   PipelineTemplate get template => _template;
   String? get selectedNodeId => _selectedNodeId;
@@ -140,6 +183,7 @@ class PipelineEditorProvider extends ChangeNotifier {
     String? inputMaterial,
     String? outputMaterial,
   }) {
+    _pushHistory();
     _template = _template.copyWith(
       name: name == null || name.trim().isEmpty ? _template.name : name.trim(),
       description: description == null
@@ -231,6 +275,7 @@ class PipelineEditorProvider extends ChangeNotifier {
       return n;
     }).toList();
 
+    _pushHistory();
     _template = _template.copyWith(
       nodes: updatedNodes,
       flows: [..._template.flows, flow],
@@ -257,6 +302,7 @@ class PipelineEditorProvider extends ChangeNotifier {
     );
     final updatedNodes = [..._template.nodes, node];
 
+    _pushHistory();
     _template = _template.copyWith(
       nodes: updatedNodes,
       stageLabels: _stageLabelsFor(stageIndex),
@@ -271,6 +317,7 @@ class PipelineEditorProvider extends ChangeNotifier {
   void addStage() {
     final updatedStageLabels = [..._template.stageLabels];
     updatedStageLabels.add('Stage ${updatedStageLabels.length + 1}');
+    _pushHistory();
     _template = _template.copyWith(stageLabels: updatedStageLabels);
     notifyListeners();
   }
@@ -278,6 +325,7 @@ class PipelineEditorProvider extends ChangeNotifier {
   void addLane() {
     final updatedLaneLabels = [..._template.laneLabels];
     updatedLaneLabels.add('Lane ${updatedLaneLabels.length + 1}');
+    _pushHistory();
     _template = _template.copyWith(laneLabels: updatedLaneLabels);
     notifyListeners();
   }
@@ -298,6 +346,7 @@ class PipelineEditorProvider extends ChangeNotifier {
       if (n.stageIndex > maxStage) maxStage = n.stageIndex;
     }
 
+    _pushHistory();
     _template = _template.copyWith(
       nodes: newNodesList,
       stageLabels: _stageLabelsFor(maxStage),
@@ -408,6 +457,7 @@ class PipelineEditorProvider extends ChangeNotifier {
       if (n.stageIndex > maxStage) maxStage = n.stageIndex;
     }
 
+    _pushHistory();
     _template = _template.copyWith(
       nodes: newNodesList,
       flows: newFlowsList,
@@ -481,6 +531,7 @@ class PipelineEditorProvider extends ChangeNotifier {
       name: '${source.name} Copy',
       stageIndex: source.stageIndex + 1,
     );
+    _pushHistory();
     _template = _template.copyWith(
       nodes: [..._template.nodes, node],
       stageLabels: _stageLabelsFor(node.stageIndex),
@@ -502,15 +553,17 @@ class PipelineEditorProvider extends ChangeNotifier {
               flow.toNodeId != _selectedNodeId,
         )
         .toList();
+    _pushHistory();
     _template = _template.copyWith(flows: updatedFlows);
     _connectingFromNodeId = null;
     notifyListeners();
   }
 
-  void deleteSelectedNode() {
-    if (_selectedNodeId == null) return;
+  String? deleteSelectedNode() {
+    if (_selectedNodeId == null) return null;
 
     final targetId = _selectedNodeId!;
+    final targetNode = _template.nodes.firstWhere((n) => n.id == targetId);
     final incoming = _template.flows.where((f) => f.toNodeId == targetId).toList();
     final outgoing = _template.flows.where((f) => f.fromNodeId == targetId).toList();
 
@@ -525,6 +578,8 @@ class PipelineEditorProvider extends ChangeNotifier {
         )
         .toList();
 
+    String? message;
+
     // Auto-heal: If deleted node has exactly one predecessor and one successor, connect them directly
     if (incoming.length == 1 && outgoing.length == 1) {
       final inFlow = incoming.first;
@@ -536,12 +591,20 @@ class PipelineEditorProvider extends ChangeNotifier {
         materialName: inFlow.materialName.isNotEmpty ? inFlow.materialName : outFlow.materialName,
       );
       updatedFlows.add(healedFlow);
+
+      final fromNode = updatedNodes.firstWhere((n) => n.id == healedFlow.fromNodeId, orElse: () => targetNode);
+      final toNode = updatedNodes.firstWhere((n) => n.id == healedFlow.toNodeId, orElse: () => targetNode);
+      message = 'Deleted ${targetNode.name}. Re-wired ${fromNode.name} to ${toNode.name}.';
+    } else {
+      message = 'Deleted ${targetNode.name}.';
     }
 
+    _pushHistory();
     _drafts.remove(targetId)?.dispose();
     _template = _template.copyWith(nodes: updatedNodes, flows: updatedFlows);
     _selectedNodeId = null;
     notifyListeners();
+    return message;
   }
 
   void moveSelectedNodeEarlier() {
@@ -559,6 +622,7 @@ class PipelineEditorProvider extends ChangeNotifier {
   }
 
   void _updateNodeStage(String nodeId, int newStageIndex) {
+    _pushHistory();
     final updatedNodes = _template.nodes.map((n) {
       if (n.id == nodeId) {
         return n.copyWith(stageIndex: newStageIndex);
@@ -573,6 +637,10 @@ class PipelineEditorProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void moveNodeToStage(String nodeId, int newStageIndex) {
+    _updateNodeStage(nodeId, newStageIndex);
+  }
+
   void saveNodeDraft(String id, {List<UnitDefinition> units = const []}) {
     final draft = _drafts[id];
     if (draft == null) return;
@@ -582,6 +650,7 @@ class PipelineEditorProvider extends ChangeNotifier {
       return draft.toNode(n);
     }).toList();
 
+    _pushHistory();
     _template = _template.copyWith(nodes: updatedNodes);
     _applyUnitContinuityAutoFixes(units);
     notifyListeners();
@@ -594,6 +663,7 @@ class PipelineEditorProvider extends ChangeNotifier {
     List<UnitDefinition> units = const [],
     bool propagate = false,
   }) {
+    _pushHistory();
     final updatedNodes = _template.nodes.map((node) {
       if (node.id != nodeId) {
         return node;
@@ -627,6 +697,7 @@ class PipelineEditorProvider extends ChangeNotifier {
     final startNode = _template.nodes.firstWhere((n) => n.id == startNodeId);
     if (startNode.outputItem == null) return;
 
+    _pushHistory();
     List<ProcessNode> updatedNodes = [..._template.nodes];
     final originalItemName = _getOriginalItemName(startNodeId);
     
@@ -698,6 +769,7 @@ class PipelineEditorProvider extends ChangeNotifier {
       updatedLaneLabels.add('Lane ${updatedLaneLabels.length + 1}');
     }
 
+    _pushHistory();
     _template = _template.copyWith(
       nodes: updatedNodes,
       stageLabels: updatedStageLabels,
@@ -708,6 +780,7 @@ class PipelineEditorProvider extends ChangeNotifier {
 
   void renameStage(int index, String newName) {
     if (index < 0 || index >= _template.stageLabels.length) return;
+    _pushHistory();
     final updatedLabels = [..._template.stageLabels];
     updatedLabels[index] = newName;
     _template = _template.copyWith(stageLabels: updatedLabels);

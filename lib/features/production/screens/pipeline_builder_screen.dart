@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
+import 'dart:async';
 import 'package:provider/provider.dart';
 import 'package:core_erp/features/items/domain/item_definition.dart';
 import 'package:core_erp/features/items/presentation/screens/items_screen.dart';
@@ -9,6 +12,8 @@ import 'package:core_erp/core/theme/soft_erp_theme.dart';
 import 'package:core_erp/core/widgets/searchable_select.dart';
 import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
 import 'package:core_erp/features/inventory/domain/material_record.dart';
+import 'package:core_erp/features/items/domain/item_inputs.dart';
+import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
 
 import '../providers/pipeline_editor_provider.dart';
 import '../providers/production_provider.dart';
@@ -73,6 +78,29 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
     super.dispose();
   }
 
+  Future<void> _savePipeline(BuildContext context) async {
+    final provider = context.read<PipelineEditorProvider>();
+    final repo = context.read<PipelineRunRepository>();
+    try {
+      if (provider.template.status == PipelineTemplateStatus.draft) {
+        await repo.createTemplate(provider.template);
+      } else {
+        await repo.updateTemplate(provider.template);
+      }
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Pipeline saved.')),
+        );
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to save pipeline.')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<PipelineEditorProvider>();
@@ -83,6 +111,43 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
     return Focus(
       focusNode: _focusNode,
       autofocus: true,
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent) {
+          final bool isMac = defaultTargetPlatform == TargetPlatform.macOS;
+          final bool isModifier = isMac ? HardwareKeyboard.instance.isMetaPressed : HardwareKeyboard.instance.isControlPressed;
+          
+          if (isModifier) {
+            if (event.logicalKey == LogicalKeyboardKey.keyS) {
+              _savePipeline(context);
+              return KeyEventResult.handled;
+            } else if (event.logicalKey == LogicalKeyboardKey.keyN) {
+              provider.addNextStepFromSelection(units: units);
+              return KeyEventResult.handled;
+            } else if (event.logicalKey == LogicalKeyboardKey.keyZ) {
+              if (HardwareKeyboard.instance.isShiftPressed) {
+                provider.redo();
+              } else {
+                provider.undo();
+              }
+              return KeyEventResult.handled;
+            }
+          } else if (event.logicalKey == LogicalKeyboardKey.delete || event.logicalKey == LogicalKeyboardKey.backspace) {
+             if (FocusManager.instance.primaryFocus?.context?.widget is EditableText) {
+                return KeyEventResult.ignored;
+             }
+             if (provider.selectedNodeId != null) {
+                final message = provider.deleteSelectedNode();
+                if (message != null && context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(message)),
+                  );
+                }
+                return KeyEventResult.handled;
+             }
+          }
+        }
+        return KeyEventResult.ignored;
+      },
       child: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 980;
@@ -142,14 +207,44 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
             ),
           );
 
-          // Right flowchart panel
-          final rightFlowchartPanel = Container(
+          // Middle flowchart panel
+          final middleFlowchartPanel = Container(
             decoration: BoxDecoration(
               color: const Color(0xFFF8FAFC),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: const Color(0xFFE2E8F0)),
             ),
-            child: _FlowchartSequencePanel(provider: provider),
+            child: Stack(
+              children: [
+                _FlowchartSequencePanel(provider: provider),
+                Positioned(
+                  bottom: 16,
+                  right: 16,
+                  child: Row(
+                    children: [
+                      IconButton.filledTonal(
+                        icon: const Icon(Icons.undo_rounded),
+                        onPressed: provider.canUndo ? () => provider.undo() : null,
+                        tooltip: 'Undo (Ctrl/Cmd + Z)',
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton.filledTonal(
+                        icon: const Icon(Icons.redo_rounded),
+                        onPressed: provider.canRedo ? () => provider.redo() : null,
+                        tooltip: 'Redo (Shift + Ctrl/Cmd + Z)',
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+
+          // Right quick add panel
+          final rightQuickAddPanel = _QuickAddPanel(
+            provider: provider,
+            items: items,
+            units: units,
           );
 
           // Header widget
@@ -166,7 +261,9 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
                 children: [
                   headerWidget,
                   const SizedBox(height: 16),
-                  Expanded(child: rightFlowchartPanel),
+                  Expanded(child: middleFlowchartPanel),
+                  const SizedBox(height: 16),
+                  SizedBox(height: 250, child: rightQuickAddPanel),
                   const SizedBox(height: 16),
                   SizedBox(height: 380, child: leftPropertiesPanel),
                 ],
@@ -183,9 +280,11 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        SizedBox(width: 400, child: leftPropertiesPanel),
+                        SizedBox(width: 340, child: leftPropertiesPanel),
                         const SizedBox(width: 20),
-                        Expanded(child: rightFlowchartPanel),
+                        Expanded(child: middleFlowchartPanel),
+                        const SizedBox(width: 20),
+                        SizedBox(width: 280, child: rightQuickAddPanel),
                       ],
                     ),
                   ),
@@ -964,34 +1063,26 @@ class _BuilderHeader extends StatelessWidget {
         provider.template.nodes.isNotEmpty && !production.isRunning && allValid;
 
     return Material(
-      color: Colors.transparent,
+      color: Colors.white,
+      elevation: 0,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.90),
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.045),
-              blurRadius: 22,
-              offset: const Offset(0, 10),
-            ),
-          ],
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
         ),
         child: Row(
           children: [
             Container(
-              width: 38,
-              height: 38,
+              width: 32,
+              height: 32,
               decoration: BoxDecoration(
                 color: const Color(0xFF1E293B),
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(
                 Icons.account_tree_rounded,
                 color: Colors.white,
-                size: 19,
+                size: 16,
               ),
             ),
             const SizedBox(width: 12),
@@ -1004,121 +1095,116 @@ class _BuilderHeader extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontSize: 18,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w800,
                   color: Color(0xFF1E293B),
                 ),
               ),
             ),
             const SizedBox(width: 10),
-            Flexible(
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerRight,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      PopupMenuButton<_TemplateAction>(
-                        tooltip: 'Templates',
-                        position: PopupMenuPosition.under,
-                        onSelected: (action) =>
-                            _applyTemplateAction(context, action),
-                        itemBuilder: (context) => const [
-                          PopupMenuItem(
-                            value: _TemplateAction.sheetMetal,
-                            child: _TemplateMenuItem(
-                              icon: Icons.precision_manufacturing_rounded,
-                              title: 'Sheet Metal',
-                              subtitle:
-                                  'Input, cutting, piercing, bend, drill, pack',
-                            ),
-                          ),
-                          PopupMenuDivider(),
-                          PopupMenuItem(
-                            value: _TemplateAction.blank,
-                            child: _TemplateMenuItem(
-                              icon: Icons.note_add_outlined,
-                              title: 'Blank Canvas',
-                              subtitle: 'Start without stages or flows',
-                            ),
-                          ),
-                        ],
-                        child: const _HeaderMenuButton(
-                          icon: Icons.dashboard_customize_rounded,
-                          label: 'Templates',
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        icon: const Icon(
-                          Icons.drive_file_rename_outline_rounded,
-                          size: 17,
-                        ),
-                        label: const Text('Details'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF1E293B),
-                          side: const BorderSide(color: Color(0xFFE2E8F0)),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                        onPressed: () => _showPipelineDetailsDialog(context),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton.icon(
-                        icon: const Icon(Icons.add_rounded, size: 18),
-                        label: const Text('Add Flow Step'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF3B82F6),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                        onPressed: () => provider.addNextStepFromSelection(
-                          units: _activeUnitsFromContext(context),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton.icon(
-                        icon: Icon(
-                          production.isRunning
-                              ? Icons.play_circle_filled_rounded
-                              : Icons.play_arrow_rounded,
-                          size: 18,
-                        ),
-                        label: Text(
-                          production.isRunning ? 'Running' : 'Start Flow',
-                        ),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF1E293B),
-                          foregroundColor: Colors.white,
-                          disabledBackgroundColor: const Color(0xFF8E9995),
-                          disabledForegroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                        onPressed: canStart ? () => _startFlow(context) : null,
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        icon: const Icon(Icons.save_rounded, size: 17),
-                        label: const Text('Save'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF1E293B),
-                          side: const BorderSide(color: Color(0xFFE2E8F0)),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                        onPressed: allValid ? () => _saveAndNotify(context) : null,
-                      ),
-                    ],
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FilledButton.icon(
+                  icon: const Icon(Icons.add_rounded, size: 16),
+                  label: const Text('Add Step'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF3B82F6),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  ),
+                  onPressed: () => provider.addNextStepFromSelection(
+                    units: _activeUnitsFromContext(context),
                   ),
                 ),
-              ),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  icon: Icon(
+                    production.isRunning
+                        ? Icons.play_circle_filled_rounded
+                        : Icons.play_arrow_rounded,
+                    size: 16,
+                  ),
+                  label: Text(
+                    production.isRunning ? 'Running' : 'Start',
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF1E293B),
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: const Color(0xFF8E9995),
+                    disabledForegroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  ),
+                  onPressed: canStart ? () => _startFlow(context) : null,
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.save_rounded, size: 16),
+                  label: const Text('Save'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF1E293B),
+                    side: const BorderSide(color: Color(0xFFE2E8F0)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  ),
+                  onPressed: allValid ? () => _saveAndNotify(context) : null,
+                ),
+                const SizedBox(width: 8),
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert_rounded, color: Color(0xFF64748B)),
+                  tooltip: 'More options',
+                  position: PopupMenuPosition.under,
+                  onSelected: (action) {
+                    if (action == 'details') {
+                      _showPipelineDetailsDialog(context);
+                    } else if (action == 'template_sheet_metal') {
+                      _applyTemplateAction(context, _TemplateAction.sheetMetal);
+                    } else if (action == 'template_blank') {
+                      _applyTemplateAction(context, _TemplateAction.blank);
+                    }
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                      value: 'details',
+                      child: Row(
+                        children: [
+                          Icon(Icons.drive_file_rename_outline_rounded, size: 18),
+                          SizedBox(width: 10),
+                          Text('Edit Details'),
+                        ],
+                      ),
+                    ),
+                    PopupMenuDivider(),
+                    PopupMenuItem(
+                      value: 'template_sheet_metal',
+                      child: Row(
+                        children: [
+                          Icon(Icons.precision_manufacturing_rounded, size: 18),
+                          SizedBox(width: 10),
+                          Text('Load Sheet Metal Template'),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'template_blank',
+                      child: Row(
+                        children: [
+                          Icon(Icons.note_add_outlined, size: 18),
+                          SizedBox(width: 10),
+                          Text('Load Blank Canvas'),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ],
         ),
@@ -1446,9 +1532,12 @@ class _PipelineMaterialSelectField extends StatelessWidget {
     String query,
     List<UnitDefinition> units,
   ) async {
-    final created = await ItemsScreen.openEditor(
-      context,
-      initialName: query.trim(),
+    final created = await showDialog<ItemDefinition>(
+      context: context,
+      builder: (context) => _QuickItemCreateDialog(
+        initialName: query,
+        units: units,
+      ),
     );
     if (!context.mounted || created == null) {
       return null;
@@ -1512,204 +1601,6 @@ String _materialOptionSearchText(
   ].where((part) => part.trim().isNotEmpty).join(' ');
 }
 
-class _NodeEditDialog extends StatefulWidget {
-  const _NodeEditDialog({
-    required this.node,
-    required this.draft,
-    required this.provider,
-    required this.items,
-    required this.units,
-  });
-
-  final ProcessNode node;
-  final ProcessNodeDraftController draft;
-  final PipelineEditorProvider provider;
-  final List<ItemDefinition> items;
-  final List<UnitDefinition> units;
-
-  @override
-  State<_NodeEditDialog> createState() => _NodeEditDialogState();
-}
-
-class _NodeEditDialogState extends State<_NodeEditDialog> {
-  int? _inputItemId;
-  int? _outputItemId;
-
-  @override
-  void initState() {
-    super.initState();
-    _inputItemId = widget.node.inputItem?.itemId;
-    _outputItemId = widget.node.outputItem?.itemId;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text('Edit ${widget.node.name}'),
-      content: SizedBox(
-        width: 480,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _DialogField('Name', widget.draft.name),
-              _ItemEndpointDropdown(
-                tapTargetKey: const ValueKey('pipeline-node-input-item'),
-                label: 'Input Item',
-                selectedItemId: _inputItemId,
-                items: widget.items,
-                units: widget.units,
-                onChanged: (itemId) => setState(() => _inputItemId = itemId),
-              ),
-              const SizedBox(height: 12),
-              _ItemEndpointDropdown(
-                tapTargetKey: const ValueKey('pipeline-node-output-item'),
-                label: 'Output Item',
-                selectedItemId: _outputItemId,
-                items: widget.items,
-                units: widget.units,
-                onChanged: (itemId) => setState(() => _outputItemId = itemId),
-              ),
-              const SizedBox(height: 12),
-              _MachineDropdownField(
-                controller: widget.draft.machine,
-                onMachineSelected: (machine) {
-                  if (machine.capabilities.isNotEmpty) {
-                    final cap = machine.capabilities.first;
-                    setState(() {
-                      widget.draft.processType.text = cap.processType;
-                      widget.draft.inputs.text = cap.inputMaterialName;
-                      widget.draft.outputs.text = cap.outputMaterialName;
-                      final materials = context
-                          .read<InventoryProvider>()
-                          .materials;
-                      MaterialRecord? inputMat;
-                      for (final m in materials) {
-                        if (m.barcode == cap.inputMaterialBarcode) {
-                          inputMat = m;
-                          break;
-                        }
-                      }
-                      _inputItemId = inputMat?.linkedItemId;
-
-                      MaterialRecord? outputMat;
-                      for (final m in materials) {
-                        if (m.barcode == cap.outputMaterialBarcode) {
-                          outputMat = m;
-                          break;
-                        }
-                      }
-                      _outputItemId = outputMat?.linkedItemId;
-                      if (cap.dieId != null && cap.dieId!.isNotEmpty) {
-                        widget.draft.dieId.text = cap.dieId!;
-                      }
-                    });
-                  }
-                },
-              ),
-              _DieDropdownField(controller: widget.draft.dieId),
-              _DialogField('Process Action', widget.draft.processType),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      widget.provider.beginConnecting(widget.node.id);
-                    },
-                    icon: const Icon(Icons.arrow_right_alt),
-                    label: const Text('Connect to...'),
-                  ),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      widget.provider.selectNode(
-                        widget.node.id,
-                        units: widget.units,
-                      );
-                      widget.provider.deleteSelectedNode();
-                      Navigator.pop(context);
-                    },
-                    icon: const Icon(Icons.delete),
-                    label: const Text('Delete'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        ElevatedButton(
-          onPressed: () {
-            widget.provider.saveNodeDraft(widget.node.id);
-            widget.provider.updateNodeItems(
-              nodeId: widget.node.id,
-              inputItem: _endpointFor(
-                _inputItemId,
-                fallback: widget.node.inputItem,
-              ),
-              outputItem: _endpointFor(
-                _outputItemId,
-                fallback: widget.node.outputItem,
-              ),
-              units: widget.units,
-            );
-            Navigator.pop(context);
-          },
-          child: const Text('Save Changes'),
-        ),
-      ],
-    );
-  }
-
-  PipelineItemEndpoint? _endpointFor(
-    int? itemId, {
-    PipelineItemEndpoint? fallback,
-  }) {
-    if (itemId == null) {
-      return null;
-    }
-    final item = _itemById(itemId);
-    if (item == null) {
-      return fallback?.itemId == itemId ? fallback : null;
-    }
-    final unit = _unitById(item.unitId);
-    return PipelineItemEndpoint(
-      itemId: item.id,
-      itemName: _itemName(item),
-      unitId: item.unitId,
-      unitName: unit?.name ?? '',
-      unitSymbol: unit?.symbol ?? '',
-    );
-  }
-
-  ItemDefinition? _itemById(int id) {
-    for (final item in widget.items) {
-      if (item.id == id) {
-        return item;
-      }
-    }
-    return null;
-  }
-
-  UnitDefinition? _unitById(int id) {
-    for (final unit in widget.units) {
-      if (unit.id == id) {
-        return unit;
-      }
-    }
-    return null;
-  }
-}
 
 class _ItemEndpointDropdown extends StatelessWidget {
   const _ItemEndpointDropdown({
@@ -1774,9 +1665,12 @@ class _ItemEndpointDropdown extends StatelessWidget {
     BuildContext context,
     String query,
   ) async {
-    final created = await ItemsScreen.openEditor(
-      context,
-      initialName: query.trim(),
+    final created = await showDialog<ItemDefinition>(
+      context: context,
+      builder: (context) => _QuickItemCreateDialog(
+        initialName: query,
+        units: units,
+      ),
     );
     if (!context.mounted || created == null) {
       return null;
@@ -1891,28 +1785,6 @@ class _GitGraphCanvas extends StatelessWidget {
   static const double nodeHeight = 52;
   static const double columnWidth = 240;
   static const double rowHeight = 112;
-
-  void _showEditDialog(
-    BuildContext context,
-    ProcessNode node,
-    PipelineEditorProvider provider,
-  ) {
-    final draft = provider.draftFor(node.id);
-    if (draft == null) return;
-    final items = _activeItemsFromContext(context);
-    final units = _activeUnitsFromContext(context);
-
-    showDialog(
-      context: context,
-      builder: (context) => _NodeEditDialog(
-        node: node,
-        draft: draft,
-        provider: provider,
-        items: items,
-        units: units,
-      ),
-    );
-  }
 
   void _showStageRenameDialog(
     BuildContext context,
@@ -2134,7 +2006,10 @@ class _GitGraphCanvas extends StatelessWidget {
                           );
                         },
                         onDoubleTap: () {
-                          _showEditDialog(context, node, provider);
+                          provider.selectNode(
+                            node.id,
+                            units: _activeUnitsFromContext(context),
+                          );
                         },
                         child: nodeWidget,
                       ),
@@ -2148,11 +2023,23 @@ class _GitGraphCanvas extends StatelessWidget {
                         onAddNext: () => provider.addNextStepFromSelection(
                           units: _activeUnitsFromContext(context),
                         ),
-                        onEdit: () => _showEditDialog(context, node, provider),
+                        onEdit: () {
+                          provider.selectNode(
+                            node.id,
+                            units: _activeUnitsFromContext(context),
+                          );
+                        },
                         onConnect: () => provider.beginConnecting(node.id),
                         onDuplicate: provider.duplicateSelectedNode,
                         onDisconnect: provider.disconnectSelectedNode,
-                        onDelete: provider.deleteSelectedNode,
+                        onDelete: () {
+                          final message = provider.deleteSelectedNode();
+                          if (message != null && context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(message)),
+                            );
+                          }
+                        },
                       ),
                     ),
                 ];
@@ -2310,7 +2197,7 @@ class _FlowStageBlock extends StatelessWidget {
                   ? (target ? const Color(0xFF10B981) : const Color(0xFFF59E0B))
                   : const Color(0xFFE2E8F0)));
 
-    return Container(
+    final container = Container(
       width: width,
       height: height,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -2388,6 +2275,8 @@ class _FlowStageBlock extends StatelessWidget {
         ),
       ),
     );
+    
+    return container;
   }
 }
 
@@ -2878,17 +2767,59 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
   bool _propagateDownstream = true;
   int? _selectedMachineGroupId;
   Machine? _selectedMachine;
+  Timer? _debounce;
+
+  void _onDraftChanged() {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        widget.provider.saveNodeDraft(widget.node.id, units: widget.units);
+      }
+    });
+  }
+
+  void _attachListeners(ProcessNodeDraftController draft) {
+    draft.name.addListener(_onDraftChanged);
+    draft.machine.addListener(_onDraftChanged);
+    draft.dieId.addListener(_onDraftChanged);
+    draft.processType.addListener(_onDraftChanged);
+    draft.inputs.addListener(_onDraftChanged);
+    draft.outputs.addListener(_onDraftChanged);
+    draft.durationHours.addListener(_onDraftChanged);
+  }
+
+  void _detachListeners(ProcessNodeDraftController draft) {
+    draft.name.removeListener(_onDraftChanged);
+    draft.machine.removeListener(_onDraftChanged);
+    draft.dieId.removeListener(_onDraftChanged);
+    draft.processType.removeListener(_onDraftChanged);
+    draft.inputs.removeListener(_onDraftChanged);
+    draft.outputs.removeListener(_onDraftChanged);
+    draft.durationHours.removeListener(_onDraftChanged);
+  }
 
   @override
   void initState() {
     super.initState();
     _inputItemId = widget.node.inputItem?.itemId;
     _outputItemId = widget.node.outputItem?.itemId;
+    _attachListeners(widget.draft);
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _detachListeners(widget.draft);
+    super.dispose();
   }
 
   @override
   void didUpdateWidget(_NodePropertiesPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.draft != widget.draft) {
+      _detachListeners(oldWidget.draft);
+      _attachListeners(widget.draft);
+    }
     if (oldWidget.node.id != widget.node.id) {
       _inputItemId = widget.node.inputItem?.itemId;
       _outputItemId = widget.node.outputItem?.itemId;
@@ -2955,7 +2886,10 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
               selectedItemId: _inputItemId,
               items: widget.items,
               units: widget.units,
-              onChanged: (itemId) => setState(() => _inputItemId = itemId),
+              onChanged: (itemId) {
+                setState(() => _inputItemId = itemId);
+                _saveItems();
+              },
             ),
             const SizedBox(height: 12),
             _ItemEndpointDropdown(
@@ -2964,7 +2898,10 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
               selectedItemId: _outputItemId,
               items: widget.items,
               units: widget.units,
-              onChanged: (itemId) => setState(() => _outputItemId = itemId),
+              onChanged: (itemId) {
+                setState(() => _outputItemId = itemId);
+                _saveItems();
+              },
             ),
             const SizedBox(height: 12),
             _MachineDropdownField(
@@ -3057,46 +2994,6 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
             Row(
               children: [
                 Expanded(
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF3B82F6),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    onPressed: () {
-                      widget.provider.saveNodeDraft(
-                        widget.node.id,
-                        units: widget.units,
-                      );
-                      widget.provider.updateNodeItems(
-                        nodeId: widget.node.id,
-                        inputItem: _endpointFor(
-                          _inputItemId,
-                          fallback: widget.node.inputItem,
-                        ),
-                        outputItem: _endpointFor(
-                          _outputItemId,
-                          fallback: widget.node.outputItem,
-                        ),
-                        units: widget.units,
-                        propagate: _propagateDownstream,
-                      );
-                    },
-                    child: const Text(
-                      'Save Changes',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () {
                       widget.provider.beginConnecting(widget.node.id);
@@ -3154,6 +3051,22 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
           ],
         ),
       ),
+    );
+  }
+
+  void _saveItems() {
+    widget.provider.updateNodeItems(
+      nodeId: widget.node.id,
+      inputItem: _endpointFor(
+        _inputItemId,
+        fallback: widget.node.inputItem,
+      ),
+      outputItem: _endpointFor(
+        _outputItemId,
+        fallback: widget.node.outputItem,
+      ),
+      units: widget.units,
+      propagate: _propagateDownstream,
     );
   }
 
@@ -3301,30 +3214,44 @@ class _FlowchartSequencePanel extends StatelessWidget {
                   ? template.stageLabels[stageIndex]
                   : 'Stage ${stageIndex + 1}';
 
-              return Column(
-                children: [
-                  _buildStageHeader(context, stageIndex, stageName),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 16,
-                    runSpacing: 16,
-                    alignment: WrapAlignment.center,
-                    children: stageNodes
-                        .map((node) => _buildNodeItem(context, node, units))
-                        .toList(),
-                  ),
-                  if (index < sortedStageIndices.length - 1)
-                    _buildFlowConnector(context, stageIndex, units)
-                  else
-                    Padding(
-                      padding: const EdgeInsets.only(top: 16.0),
-                      child: OutlinedButton.icon(
-                        icon: const Icon(Icons.add_rounded, size: 16),
-                        label: const Text('Add Next Stage'),
-                        onPressed: () => provider.addNextStepFromSelection(units: units),
+              return DragTarget<String>(
+                onAcceptWithDetails: (details) {
+                  provider.moveNodeToStage(details.data, stageIndex);
+                },
+                builder: (context, candidateData, rejectedData) {
+                  return Column(
+                    children: [
+                      _buildStageHeader(context, stageIndex, stageName),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: candidateData.isNotEmpty ? Colors.blue.withValues(alpha: 0.1) : Colors.transparent,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Wrap(
+                          spacing: 16,
+                          runSpacing: 16,
+                          alignment: WrapAlignment.center,
+                          children: stageNodes
+                              .map((node) => _buildNodeItem(context, node, units))
+                              .toList(),
+                        ),
                       ),
-                    ),
-                ],
+                      if (index < sortedStageIndices.length - 1)
+                        _buildFlowConnector(context, stageIndex, units)
+                      else
+                        Padding(
+                          padding: const EdgeInsets.only(top: 16.0),
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.add_rounded, size: 16),
+                            label: const Text('Add Next Stage'),
+                            onPressed: () => provider.addNextStepFromSelection(units: units),
+                          ),
+                        ),
+                    ],
+                  );
+                },
               );
             },
           ),
@@ -3404,6 +3331,25 @@ class _FlowchartSequencePanel extends StatelessWidget {
       isSelected: isSelected,
     );
 
+    final draggableWidget = LongPressDraggable<String>(
+      data: node.id,
+      feedback: Material(
+        color: Colors.transparent,
+        child: Opacity(
+          opacity: 0.8,
+          child: Transform.scale(
+            scale: 1.05,
+            child: nodeWidget,
+          ),
+        ),
+      ),
+      childWhenDragging: Opacity(
+        opacity: 0.3,
+        child: nodeWidget,
+      ),
+      child: nodeWidget,
+    );
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -3411,7 +3357,7 @@ class _FlowchartSequencePanel extends StatelessWidget {
           onTap: () {
             provider.selectNode(node.id, units: units);
           },
-          child: nodeWidget,
+          child: draggableWidget,
         ),
         if (isSelected) ...[
           const SizedBox(height: 8),
@@ -3556,6 +3502,269 @@ class _FlowchartSequencePanel extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _QuickAddPanel extends StatefulWidget {
+  const _QuickAddPanel({
+    required this.provider,
+    required this.items,
+    required this.units,
+  });
+
+  final PipelineEditorProvider provider;
+  final List<ItemDefinition> items;
+  final List<UnitDefinition> units;
+
+  @override
+  State<_QuickAddPanel> createState() => _QuickAddPanelState();
+}
+
+class _QuickAddPanelState extends State<_QuickAddPanel> {
+  final List<String> _batchProcesses = [];
+  final List<String> _availableProcesses = ['Cut', 'Bend', 'Weld', 'Drill', 'Paint', 'Assemble', 'Pack'];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              'Quick Actions',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF1E293B),
+              ),
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Common Materials',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF64748B),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _QuickMaterialChip(label: 'Steel Sheet'),
+                      _QuickMaterialChip(label: 'Aluminum Billet'),
+                      _QuickMaterialChip(label: 'Plastic Resin'),
+                      _QuickMaterialChip(label: 'Cardboard Box'),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Batch Add Flow',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF64748B),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Select processes in order to generate a sequence.',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF94A3B8),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ..._availableProcesses.map((process) {
+                    final isSelected = _batchProcesses.contains(process);
+                    return CheckboxListTile(
+                      title: Text(
+                        process,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                      value: isSelected,
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      onChanged: (val) {
+                        setState(() {
+                          if (val == true) {
+                            _batchProcesses.add(process);
+                          } else {
+                            _batchProcesses.remove(process);
+                          }
+                        });
+                      },
+                    );
+                  }),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: _batchProcesses.isEmpty
+                        ? null
+                        : () {
+                            // Implement batch add logic in provider
+                            // For now, just clear
+                            setState(() => _batchProcesses.clear());
+                          },
+                    icon: const Icon(Icons.playlist_add_rounded, size: 16),
+                    label: const Text('Generate Flow'),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 40),
+                      backgroundColor: const Color(0xFF1E293B),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QuickMaterialChip extends StatelessWidget {
+  const _QuickMaterialChip({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return ActionChip(
+      label: Text(label, style: const TextStyle(fontSize: 11)),
+      backgroundColor: const Color(0xFFF1F5F9),
+      side: BorderSide.none,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      onPressed: () {},
+    );
+  }
+}
+
+class _QuickItemCreateDialog extends StatefulWidget {
+  const _QuickItemCreateDialog({
+    super.key,
+    required this.initialName,
+    required this.units,
+  });
+
+  final String initialName;
+  final List<UnitDefinition> units;
+
+  @override
+  State<_QuickItemCreateDialog> createState() => _QuickItemCreateDialogState();
+}
+
+class _QuickItemCreateDialogState extends State<_QuickItemCreateDialog> {
+  late final TextEditingController _nameController;
+  int? _selectedUnitId;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.initialName);
+    _selectedUnitId = widget.units.where((u) => u.symbol == 'Pcs').firstOrNull?.id ?? widget.units.firstOrNull?.id;
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _create() async {
+    final name = _nameController.text.trim();
+    if (name.isEmpty || _selectedUnitId == null) return;
+
+    setState(() => _isLoading = true);
+    
+    try {
+      final itemsProvider = context.read<ItemsProvider>();
+      int groupId = 0;
+      try {
+        final groups = context.read<GroupsProvider>().groups;
+        if (groups.isNotEmpty) {
+          groupId = groups.first.id;
+        }
+      } catch (_) {}
+
+      final input = CreateItemInput(
+        name: name,
+        displayName: name,
+        groupId: groupId,
+        unitId: _selectedUnitId!,
+      );
+
+      final created = await itemsProvider.createItem(input);
+      if (mounted) {
+        Navigator.pop(context, created);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to create item: $e')),
+        );
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Quick Create Item'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _nameController,
+            decoration: const InputDecoration(labelText: 'Item Name'),
+            autofocus: true,
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<int>(
+            value: _selectedUnitId,
+            decoration: const InputDecoration(labelText: 'Primary Unit'),
+            items: widget.units.map((u) {
+              return DropdownMenuItem<int>(
+                value: u.id,
+                child: Text('${u.displayLabel} (${u.symbol})'),
+              );
+            }).toList(),
+            onChanged: (val) {
+              if (val != null) setState(() => _selectedUnitId = val);
+            },
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _isLoading ? null : _create,
+          child: _isLoading ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Create'),
+        ),
+      ],
     );
   }
 }

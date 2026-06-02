@@ -263,7 +263,9 @@ class MyApp extends StatelessWidget {
               _buildDeliveryChallanRepository(context.read<AuthProvider>()),
         ),
         Provider<PipelineRunRepository>(
-          create: (_) => SqlitePipelineRunRepository(),
+          create: (context) =>
+              pipelineRunRepository ??
+              _buildPipelineRunRepository(context.read<AuthProvider>()),
         ),
         Provider<ProductionRepository>(
           create: (_) => SqliteProductionRepository(),
@@ -473,6 +475,16 @@ class MyApp extends StatelessWidget {
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
       useMockResponses: _effectiveDemoMode,
+    );
+  }
+
+  PipelineRunRepository _buildPipelineRunRepository(AuthProvider auth) {
+    if (_effectiveDemoMode) {
+      return SqlitePipelineRunRepository();
+    }
+    return ApiPipelineRunRepository(
+      client: _authClient(auth),
+      baseUrl: _apiBaseUrl,
     );
   }
 
