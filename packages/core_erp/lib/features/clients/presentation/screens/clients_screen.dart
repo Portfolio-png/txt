@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:crypto/crypto.dart';
+import 'package:file_selector/file_selector.dart';
+import 'package:http/http.dart' as http;
+import 'package:mime/mime.dart';
 
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_empty_state.dart';
@@ -10,6 +14,7 @@ import '../../domain/client_definition.dart';
 import '../../domain/client_inputs.dart';
 import '../providers/clients_provider.dart';
 import '../../../orders/presentation/providers/orders_provider.dart';
+import '../../../../core/services/generic_asset_service.dart';
 
 class ClientsScreen extends StatelessWidget {
   const ClientsScreen({super.key});
@@ -749,6 +754,8 @@ class _ClientImagePickerField extends StatefulWidget {
 }
 
 class _ClientImagePickerFieldState extends State<_ClientImagePickerField> {
+  bool _isUploading = false;
+
   @override
   void initState() {
     super.initState();
@@ -757,6 +764,85 @@ class _ClientImagePickerFieldState extends State<_ClientImagePickerField> {
 
   void _rebuild() {
     if (mounted) setState(() {});
+  }
+
+  String _contentTypeFromExtension(String fileName) {
+    final ext = fileName.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'png': return 'image/png';
+      case 'jpg':
+      case 'jpeg': return 'image/jpeg';
+      case 'webp': return 'image/webp';
+      default: return 'application/octet-stream';
+    }
+  }
+
+  Future<void> _pickAndUploadImage() async {
+    final file = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(
+          label: 'Images',
+          mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
+          extensions: ['png', 'jpg', 'jpeg', 'webp'],
+        ),
+      ],
+    );
+    if (file == null || !mounted) {
+      return;
+    }
+
+    setState(() => _isUploading = true);
+    final messenger = ScaffoldMessenger.of(context);
+    final baseUrl = const String.fromEnvironment('PAPER_API_BASE_URL', defaultValue: 'http://localhost:8080');
+    final service = GenericAssetService(baseUrl: baseUrl);
+
+    try {
+      final bytes = await file.readAsBytes();
+      final digest = sha256.convert(bytes).toString();
+      final contentType =
+          file.mimeType ??
+          lookupMimeType(file.name, headerBytes: bytes.take(24).toList()) ??
+          _contentTypeFromExtension(file.name);
+      
+      final intent = await service.createUploadIntent(
+        GenericAssetUploadIntentInput(
+          fileName: file.name,
+          contentType: contentType,
+          sizeBytes: bytes.length,
+          sha256: digest,
+        ),
+      );
+
+      if (intent.uploadUrl.host != 'mock.local') {
+        final response = await http.put(
+          intent.uploadUrl,
+          headers: intent.headers,
+          body: bytes,
+        );
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          throw Exception(
+            'Image upload failed with status ${response.statusCode}.',
+          );
+        }
+      }
+
+      if (intent.readUrl == null) {
+        throw Exception('Failed to get read URL from intent.');
+      }
+
+      widget.controller.text = intent.readUrl!;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Image uploaded successfully.')),
+      );
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Image upload failed: $error')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
+      }
+    }
   }
 
   @override
@@ -810,6 +896,7 @@ class _ClientImagePickerFieldState extends State<_ClientImagePickerField> {
                     ),
             ),
             const SizedBox(width: 12),
+            // URL Input and Upload button
             Expanded(
               child: TextFormField(
                 controller: widget.controller,
@@ -834,6 +921,14 @@ class _ClientImagePickerFieldState extends State<_ClientImagePickerField> {
                       : null,
                 ),
               ),
+            ),
+            const SizedBox(width: 8),
+            AppButton(
+              label: 'Upload',
+              icon: Icons.upload_file,
+              variant: AppButtonVariant.secondary,
+              isLoading: _isUploading,
+              onPressed: _pickAndUploadImage,
             ),
           ],
         ),

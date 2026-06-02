@@ -82,4 +82,20 @@ class MockDieRepository implements DieRepository {
     await Future.delayed(const Duration(milliseconds: 400));
     _dies.removeWhere((d) => d.id == id);
   }
+
+  @override
+  Future<DieAssetUploadIntent?> createAssetUploadIntent(DieAssetUploadIntentInput input) async {
+    await Future.delayed(const Duration(milliseconds: 300));
+    return DieAssetUploadIntent(
+      alreadyUploaded: true,
+      photoUrl: 'https://images.unsplash.com/photo-1590494165264-1ebe3602eb80?auto=format&fit=crop&q=80',
+      upload: null,
+    );
+  }
+
+  @override
+  Future<String?> completeAssetUpload(CompleteDieAssetUploadInput input) async {
+    await Future.delayed(const Duration(milliseconds: 300));
+    return 'https://images.unsplash.com/photo-1590494165264-1ebe3602eb80?auto=format&fit=crop&q=80';
+  }
 }

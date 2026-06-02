@@ -71,4 +71,20 @@ class MockMachineRepository implements MachineRepository {
     await Future.delayed(const Duration(milliseconds: 400));
     _machines.removeWhere((m) => m.id == id);
   }
+
+  @override
+  Future<MachineAssetUploadIntent?> createAssetUploadIntent(MachineAssetUploadIntentInput input) async {
+    await Future.delayed(const Duration(milliseconds: 300));
+    return MachineAssetUploadIntent(
+      alreadyUploaded: true,
+      photoUrl: 'https://images.unsplash.com/photo-1590494165264-1ebe3602eb80?auto=format&fit=crop&q=80',
+      upload: null,
+    );
+  }
+
+  @override
+  Future<String?> completeAssetUpload(CompleteMachineAssetUploadInput input) async {
+    await Future.delayed(const Duration(milliseconds: 300));
+    return 'https://images.unsplash.com/photo-1590494165264-1ebe3602eb80?auto=format&fit=crop&q=80';
+  }
 }

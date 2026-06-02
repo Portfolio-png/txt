@@ -49,6 +49,8 @@ class ApiVendorRepository implements VendorRepository {
         usageCount: 0,
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
+        logoUrl: input.logoUrl,
+        photoUrl: input.photoUrl,
       );
       _mockVendors.add(created);
       return created;
@@ -64,6 +66,8 @@ class ApiVendorRepository implements VendorRepository {
         'contactName': input.contactName,
         'phone': input.phone,
         'email': input.email,
+        'logoUrl': input.logoUrl,
+        'photoUrl': input.photoUrl,
       },
     );
     return _vendorFromJson(payload['vendor'] as Map<String, dynamic>);
@@ -87,6 +91,8 @@ class ApiVendorRepository implements VendorRepository {
         usageCount: current.usageCount,
         createdAt: current.createdAt,
         updatedAt: DateTime.now(),
+        logoUrl: input.logoUrl,
+        photoUrl: input.photoUrl,
       );
       _mockVendors[index] = updated;
       return updated;
@@ -102,6 +108,8 @@ class ApiVendorRepository implements VendorRepository {
         'contactName': input.contactName,
         'phone': input.phone,
         'email': input.email,
+        'logoUrl': input.logoUrl,
+        'photoUrl': input.photoUrl,
       },
     );
     return _vendorFromJson(payload['vendor'] as Map<String, dynamic>);
@@ -215,6 +223,8 @@ class ApiVendorRepository implements VendorRepository {
           '',
       phone: json['phone'] as String? ?? '',
       email: json['email'] as String? ?? '',
+      logoUrl: json['logoUrl'] as String? ?? json['logo_url'] as String? ?? '',
+      photoUrl: json['photoUrl'] as String? ?? json['photo_url'] as String? ?? '',
       isArchived: json['isArchived'] as bool? ?? json['is_archived'] == 1,
       usageCount:
           json['usageCount'] as int? ?? json['usage_count'] as int? ?? 0,

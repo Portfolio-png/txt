@@ -138,6 +138,90 @@ class ApiMachineRepository implements MachineRepository {
     }
   }
 
+  @override
+  Future<MachineAssetUploadIntent?> createAssetUploadIntent(MachineAssetUploadIntentInput input) async {
+    if (useMockResponses) {
+      await Future.delayed(const Duration(milliseconds: 300));
+      return MachineAssetUploadIntent(
+        alreadyUploaded: true,
+        photoUrl: 'https://images.unsplash.com/photo-1590494165264-1ebe3602eb80?auto=format&fit=crop&q=80',
+        upload: null,
+      );
+    }
+    
+    final uri = Uri.parse('$baseUrl/api/machines/${input.machineId}/assets/upload-intent');
+    final response = await _client.post(
+      uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'fileName': input.fileName,
+        'contentType': input.contentType,
+        'sizeBytes': input.sizeBytes,
+        'sha256': input.sha256,
+        'isPrimary': input.isPrimary,
+      }),
+    );
+    
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] != true) {
+      throw Exception(payload['error'] as String? ?? 'Failed to create upload intent');
+    }
+    
+    final data = payload['intent'] as Map<String, dynamic>;
+    final alreadyUploaded = data['alreadyUploaded'] as bool? ?? false;
+    
+    MachineAssetUploadTarget? uploadTarget;
+    if (data['upload'] != null) {
+      final uploadMap = data['upload'] as Map<String, dynamic>;
+      final headersMap = uploadMap['headers'] as Map<String, dynamic>? ?? {};
+      uploadTarget = MachineAssetUploadTarget(
+        uploadSessionId: uploadMap['uploadSessionId'] as String? ?? '',
+        objectKey: uploadMap['objectKey'] as String? ?? '',
+        uploadUrl: Uri.parse(uploadMap['uploadUrl'] as String? ?? ''),
+        headers: headersMap.map((k, v) => MapEntry(k, v.toString())),
+        expiresAt: uploadMap['expiresAt'] != null ? DateTime.tryParse(uploadMap['expiresAt'] as String) : null,
+      );
+    }
+    
+    String? finalUrl;
+    if (alreadyUploaded && data['asset'] != null) {
+      final assetMap = data['asset'] as Map<String, dynamic>;
+      finalUrl = assetMap['readUrl'] as String?;
+    }
+    
+    return MachineAssetUploadIntent(
+      alreadyUploaded: alreadyUploaded,
+      photoUrl: finalUrl,
+      upload: uploadTarget,
+    );
+  }
+
+  @override
+  Future<String?> completeAssetUpload(CompleteMachineAssetUploadInput input) async {
+    if (useMockResponses) {
+      await Future.delayed(const Duration(milliseconds: 300));
+      return 'https://images.unsplash.com/photo-1590494165264-1ebe3602eb80?auto=format&fit=crop&q=80';
+    }
+    
+    final uri = Uri.parse('$baseUrl/api/machines/${input.machineId}/assets/upload-complete');
+    final response = await _client.post(
+      uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'uploadSessionId': input.uploadSessionId,
+        'objectKey': input.objectKey,
+      }),
+    );
+    
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] != true) {
+      throw Exception(payload['error'] as String? ?? 'Failed to complete upload');
+    }
+    
+    final asset = payload['asset'] as Map<String, dynamic>?;
+    return asset?['readUrl'] as String?;
+  }
+
   Map<String, dynamic> _decodeJsonObject(String body) {
     final decoded = jsonDecode(body);
     if (decoded is! Map<String, dynamic>) {

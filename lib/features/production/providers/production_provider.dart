@@ -265,16 +265,15 @@ class ProductionProvider extends ChangeNotifier {
     if (selectedId == null) {
       return null;
     }
-    return _template.nodes
-        .where((node) => node.id == selectedId)
-        .firstOrNull;
+    return _template.nodes.where((node) => node.id == selectedId).firstOrNull;
   }
 
   int _currentLotNumber = 1;
 
   MaterialLedgerPreview get ledgerPreview {
     final node = selectedNode;
-    final producedItemName = node?.outputItem?.itemName ?? node?.outputs.firstOrNull ?? 'WIP_LOT';
+    final producedItemName =
+        node?.outputItem?.itemName ?? node?.outputs.firstOrNull ?? 'WIP_LOT';
     return MaterialLedgerPreview(
       parentReelStockKg: -_parentReelConsumedKg,
       wipBoardLotUnits: _goodYieldCount,
@@ -334,7 +333,7 @@ class ProductionProvider extends ChangeNotifier {
     _validationErrorMessage = null;
     if (!isRunning && !isPaused && !isLoggingClosure) {
       final setupMatchesNode =
-          _currentMachineId == nextNode.machine &&
+          _currentMachineId == nextNode.machineAssignmentLabel &&
           _currentDieId == nextNode.dieId;
       if (!setupMatchesNode) {
         _phase = ProductionRunPhase.idle;
@@ -370,7 +369,8 @@ class ProductionProvider extends ChangeNotifier {
     final expectedMachineId = _normalizeAssetCode(node.machine);
     final expectedDieId = _normalizeAssetCode(node.dieId);
 
-    if (scannedMachineId != expectedMachineId) {
+    if (node.machine.trim().isNotEmpty &&
+        scannedMachineId != expectedMachineId) {
       _validationErrorMessage =
           'Machine lock-key mismatch. Expected ${node.machine}, scanned $scannedMachineCode.';
       _phase = ProductionRunPhase.idle;
@@ -386,7 +386,7 @@ class ProductionProvider extends ChangeNotifier {
       throw ProductionSetupException(_validationErrorMessage!);
     }
 
-    _currentMachineId = node.machine;
+    _currentMachineId = node.machineAssignmentLabel;
     _currentDieId = node.dieId;
     _phase = ProductionRunPhase.setupVerified;
     _validationErrorMessage = null;
@@ -442,7 +442,8 @@ class ProductionProvider extends ChangeNotifier {
     if (node == null) {
       return;
     }
-    final isAllowedPhase = _phase == ProductionRunPhase.setupVerified ||
+    final isAllowedPhase =
+        _phase == ProductionRunPhase.setupVerified ||
         _phase == ProductionRunPhase.paused;
     if (!isAllowedPhase ||
         _currentMachineId != node.machine ||
@@ -508,7 +509,7 @@ class ProductionProvider extends ChangeNotifier {
 
   void completeClosure() {
     if (_phase != ProductionRunPhase.loggingClosure) return;
-    
+
     final node = selectedNode;
     if (node != null && _activeRun != null) {
       final log = NodeExecutionLog(
@@ -526,7 +527,7 @@ class ProductionProvider extends ChangeNotifier {
         logs: [..._activeRun!.logs, log],
       );
     }
-    
+
     _phase = ProductionRunPhase.closed;
     _currentMachineId = null;
     _currentDieId = null;

@@ -20,6 +20,8 @@ class ProcessNode {
     required this.status,
     required this.isIntermediate,
     this.scannedInputs = const [],
+    this.machineGroupId,
+    this.machineGroupName,
     this.inputItem,
     this.outputItem,
     this.unitConversionMultiplier,
@@ -38,11 +40,31 @@ class ProcessNode {
   final String status;
   final bool isIntermediate;
   final List<BarcodeInput> scannedInputs;
+  final int? machineGroupId;
+  final String? machineGroupName;
   final PipelineItemEndpoint? inputItem;
   final PipelineItemEndpoint? outputItem;
   final double? unitConversionMultiplier;
 
   String get machineId => machine;
+
+  bool get hasMachineAssignment =>
+      machine.trim().isNotEmpty || machineGroupId != null;
+
+  String get machineAssignmentLabel {
+    final machineLabel = machine.trim();
+    if (machineLabel.isNotEmpty) {
+      return machineLabel;
+    }
+    final groupLabel = machineGroupName?.trim() ?? '';
+    if (groupLabel.isNotEmpty) {
+      return groupLabel;
+    }
+    if (machineGroupId != null) {
+      return 'Group #$machineGroupId';
+    }
+    return '';
+  }
 
   factory ProcessNode.fromJson(Map<String, dynamic> json) {
     return ProcessNode(
@@ -61,6 +83,8 @@ class ProcessNode {
       scannedInputs: (json['scannedInputs'] as List<dynamic>? ?? const [])
           .map((item) => BarcodeInput.fromJson(item as Map<String, dynamic>))
           .toList(growable: false),
+      machineGroupId: (json['machineGroupId'] as num?)?.toInt(),
+      machineGroupName: json['machineGroupName'] as String?,
       inputItem: _endpointFromJson(json['inputItem']),
       outputItem: _endpointFromJson(json['outputItem']),
       unitConversionMultiplier: (json['unitConversionMultiplier'] as num?)
@@ -82,6 +106,8 @@ class ProcessNode {
     String? status,
     bool? isIntermediate,
     List<BarcodeInput>? scannedInputs,
+    Object? machineGroupId = _unset,
+    Object? machineGroupName = _unset,
     Object? inputItem = _unset,
     Object? outputItem = _unset,
     Object? unitConversionMultiplier = _unset,
@@ -100,6 +126,12 @@ class ProcessNode {
       status: status ?? this.status,
       isIntermediate: isIntermediate ?? this.isIntermediate,
       scannedInputs: scannedInputs ?? this.scannedInputs,
+      machineGroupId: identical(machineGroupId, _unset)
+          ? this.machineGroupId
+          : machineGroupId as int?,
+      machineGroupName: identical(machineGroupName, _unset)
+          ? this.machineGroupName
+          : machineGroupName as String?,
       inputItem: identical(inputItem, _unset)
           ? this.inputItem
           : inputItem as PipelineItemEndpoint?,
@@ -140,6 +172,8 @@ class ProcessNode {
       'status': status,
       'isIntermediate': isIntermediate,
       'scannedInputs': scannedInputs.map((item) => item.toJson()).toList(),
+      'machineGroupId': machineGroupId,
+      'machineGroupName': machineGroupName,
       'inputItem': inputItem?.toJson(),
       'outputItem': outputItem?.toJson(),
       'unitConversionMultiplier': unitConversionMultiplier,

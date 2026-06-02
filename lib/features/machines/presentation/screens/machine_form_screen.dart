@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:crypto/crypto.dart';
+import 'package:file_selector/file_selector.dart';
+import 'package:http/http.dart' as http;
+import 'package:mime/mime.dart';
 
 import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:core_erp/core/widgets/erp_form_dialog.dart';
@@ -87,6 +91,7 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
   
   int? _groupId;
   MachineStatus _status = MachineStatus.active;
+  bool _isUploading = false;
   
   // Custom properties as a list of mutable objects for editing
   final List<_MutableProperty> _customProperties = [];
@@ -240,6 +245,109 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
     setState(() {
       _capabilities.removeAt(index);
     });
+  }
+
+  String _contentTypeFromExtension(String fileName) {
+    final ext = fileName.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'png': return 'image/png';
+      case 'jpg':
+      case 'jpeg': return 'image/jpeg';
+      case 'webp': return 'image/webp';
+      default: return 'application/octet-stream';
+    }
+  }
+
+  Future<void> _pickAndUploadImage() async {
+    // If we're creating a new machine, we don't have an ID yet.
+    // So we can only upload photos for existing machines right now,
+    // or we'd have to pre-generate an ID.
+    // Let's use the ID if we have it, else generate one that will be used for creation.
+    final machineId = widget.machine?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
+
+    final file = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(
+          label: 'Images',
+          mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
+          extensions: ['png', 'jpg', 'jpeg', 'webp'],
+        ),
+      ],
+    );
+    if (file == null || !mounted) {
+      return;
+    }
+
+    setState(() => _isUploading = true);
+    final messenger = ScaffoldMessenger.of(context);
+    final provider = context.read<MachinesProvider>();
+    try {
+      final bytes = await file.readAsBytes();
+      final digest = sha256.convert(bytes).toString();
+      final contentType =
+          file.mimeType ??
+          lookupMimeType(file.name, headerBytes: bytes.take(24).toList()) ??
+          _contentTypeFromExtension(file.name);
+      
+      final intent = await provider.createAssetUploadIntent(
+        MachineAssetUploadIntentInput(
+          machineId: machineId,
+          fileName: file.name,
+          contentType: contentType,
+          sizeBytes: bytes.length,
+          sha256: digest,
+          isPrimary: true,
+        ),
+      );
+      if (intent == null) {
+        throw Exception(provider.errorMessage ?? 'Failed to prepare upload.');
+      }
+      if (intent.alreadyUploaded && intent.photoUrl != null) {
+        _photoUrlController.text = intent.photoUrl!;
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Image already uploaded.')),
+        );
+        return;
+      }
+      final upload = intent.upload;
+      if (upload == null) {
+        throw Exception('Upload target was not returned.');
+      }
+      if (upload.uploadUrl.host != 'mock.local') {
+        final response = await http.put(
+          upload.uploadUrl,
+          headers: upload.headers,
+          body: bytes,
+        );
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          throw Exception(
+            'Image upload failed with status ${response.statusCode}.',
+          );
+        }
+      }
+      final finalUrl = await provider.completeAssetUpload(
+        CompleteMachineAssetUploadInput(
+          uploadSessionId: upload.uploadSessionId,
+          objectKey: upload.objectKey,
+          machineId: machineId,
+        ),
+      );
+      if (finalUrl == null) {
+        throw Exception(provider.errorMessage ?? 'Failed to finish upload.');
+      }
+      _photoUrlController.text = finalUrl;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Machine photo uploaded.')),
+      );
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Image upload failed: $error')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
+      }
+    }
   }
 
   @override
@@ -909,8 +1017,13 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
       }
     }
 
+    // If we're creating a new machine, use the ID we might have generated during image upload
+    // If _photoUrlController has text and we generated an ID, let's just use a timestamp if we didn't store it.
+    // Wait, the id generation should be consistent.
+    final id = widget.machine?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
+    
     final newMachine = Machine(
-      id: widget.machine?.id ?? '',
+      id: id,
       name: _nameController.text.trim(),
       assetId: _assetIdController.text.trim(),
       primaryPhotoUrl: _photoUrlController.text.trim(),
@@ -980,7 +1093,8 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
           AppButton(
             label: 'Select Image',
             variant: AppButtonVariant.secondary,
-            onPressed: () {},
+            isLoading: _isUploading,
+            onPressed: _pickAndUploadImage,
           ),
         ],
       ),

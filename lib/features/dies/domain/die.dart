@@ -76,3 +76,61 @@ class Die {
     );
   }
 }
+
+class DieAssetUploadIntentInput {
+  const DieAssetUploadIntentInput({
+    required this.dieId,
+    required this.fileName,
+    required this.contentType,
+    required this.sizeBytes,
+    required this.sha256,
+    this.isPrimary = false,
+  });
+
+  final String dieId;
+  final String fileName;
+  final String contentType;
+  final int sizeBytes;
+  final String sha256;
+  final bool isPrimary;
+}
+
+class DieAssetUploadIntent {
+  const DieAssetUploadIntent({
+    required this.alreadyUploaded,
+    this.photoUrl,
+    this.upload,
+  });
+
+  final bool alreadyUploaded;
+  final String? photoUrl; // the final url if already uploaded
+  final DieAssetUploadTarget? upload;
+}
+
+class DieAssetUploadTarget {
+  const DieAssetUploadTarget({
+    required this.uploadSessionId,
+    required this.objectKey,
+    required this.uploadUrl,
+    required this.headers,
+    this.expiresAt,
+  });
+
+  final String uploadSessionId;
+  final String objectKey;
+  final Uri uploadUrl;
+  final Map<String, String> headers;
+  final DateTime? expiresAt;
+}
+
+class CompleteDieAssetUploadInput {
+  const CompleteDieAssetUploadInput({
+    required this.uploadSessionId,
+    required this.objectKey,
+    required this.dieId,
+  });
+
+  final String uploadSessionId;
+  final String objectKey;
+  final String dieId;
+}

@@ -12,6 +12,7 @@ class MachinesProvider extends ChangeNotifier {
   List<Machine> _machines = const [];
   bool _isLoading = false;
   bool _isSaving = false;
+  bool _isAssetUploading = false;
   String? _errorMessage;
   String _searchQuery = '';
   bool _initialized = false;
@@ -19,6 +20,7 @@ class MachinesProvider extends ChangeNotifier {
   List<Machine> get machines => _machines;
   bool get isLoading => _isLoading;
   bool get isSaving => _isSaving;
+  bool get isAssetUploading => _isAssetUploading;
   String? get errorMessage => _errorMessage;
   String get searchQuery => _searchQuery;
 
@@ -125,6 +127,36 @@ class MachinesProvider extends ChangeNotifier {
       notifyListeners();
     } finally {
       _isSaving = false;
+      notifyListeners();
+    }
+  }
+
+  Future<MachineAssetUploadIntent?> createAssetUploadIntent(MachineAssetUploadIntentInput input) async {
+    _isAssetUploading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      return await _repository.createAssetUploadIntent(input);
+    } catch (e) {
+      _errorMessage = e.toString();
+      return null;
+    } finally {
+      _isAssetUploading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<String?> completeAssetUpload(CompleteMachineAssetUploadInput input) async {
+    _isAssetUploading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      return await _repository.completeAssetUpload(input);
+    } catch (e) {
+      _errorMessage = e.toString();
+      return null;
+    } finally {
+      _isAssetUploading = false;
       notifyListeners();
     }
   }

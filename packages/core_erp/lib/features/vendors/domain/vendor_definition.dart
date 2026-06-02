@@ -12,6 +12,8 @@ class VendorDefinition {
     required this.usageCount,
     required this.createdAt,
     required this.updatedAt,
+    this.logoUrl = '',
+    this.photoUrl = '',
   });
 
   final int id;
@@ -26,6 +28,8 @@ class VendorDefinition {
   final int usageCount;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final String logoUrl;
+  final String photoUrl;
 
   String get displayLabel {
     if (alias.trim().isEmpty) {

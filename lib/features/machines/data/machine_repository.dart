@@ -6,4 +6,6 @@ abstract class MachineRepository {
   Future<Machine> getMachine(String id);
   Future<void> saveMachine(Machine machine);
   Future<void> deleteMachine(String id);
+  Future<MachineAssetUploadIntent?> createAssetUploadIntent(MachineAssetUploadIntentInput input);
+  Future<String?> completeAssetUpload(CompleteMachineAssetUploadInput input);
 }

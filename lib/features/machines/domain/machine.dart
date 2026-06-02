@@ -105,3 +105,61 @@ class Machine {
     );
   }
 }
+
+class MachineAssetUploadIntentInput {
+  const MachineAssetUploadIntentInput({
+    required this.machineId,
+    required this.fileName,
+    required this.contentType,
+    required this.sizeBytes,
+    required this.sha256,
+    this.isPrimary = true,
+  });
+
+  final String machineId;
+  final String fileName;
+  final String contentType;
+  final int sizeBytes;
+  final String sha256;
+  final bool isPrimary;
+}
+
+class MachineAssetUploadIntent {
+  const MachineAssetUploadIntent({
+    required this.alreadyUploaded,
+    this.photoUrl,
+    this.upload,
+  });
+
+  final bool alreadyUploaded;
+  final String? photoUrl; // the final url if already uploaded
+  final MachineAssetUploadTarget? upload;
+}
+
+class MachineAssetUploadTarget {
+  const MachineAssetUploadTarget({
+    required this.uploadSessionId,
+    required this.objectKey,
+    required this.uploadUrl,
+    required this.headers,
+    this.expiresAt,
+  });
+
+  final String uploadSessionId;
+  final String objectKey;
+  final Uri uploadUrl;
+  final Map<String, String> headers;
+  final DateTime? expiresAt;
+}
+
+class CompleteMachineAssetUploadInput {
+  const CompleteMachineAssetUploadInput({
+    required this.uploadSessionId,
+    required this.objectKey,
+    required this.machineId,
+  });
+
+  final String uploadSessionId;
+  final String objectKey;
+  final String machineId;
+}

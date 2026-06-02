@@ -12,6 +12,7 @@ class DiesProvider extends ChangeNotifier {
   List<Die> _dies = const [];
   bool _isLoading = false;
   bool _isSaving = false;
+  bool _isAssetUploading = false;
   String? _errorMessage;
   String _searchQuery = '';
   bool _initialized = false;
@@ -19,6 +20,7 @@ class DiesProvider extends ChangeNotifier {
   List<Die> get dies => _dies;
   bool get isLoading => _isLoading;
   bool get isSaving => _isSaving;
+  bool get isAssetUploading => _isAssetUploading;
   String? get errorMessage => _errorMessage;
   String get searchQuery => _searchQuery;
 
@@ -117,6 +119,36 @@ class DiesProvider extends ChangeNotifier {
       notifyListeners();
     } finally {
       _isSaving = false;
+      notifyListeners();
+    }
+  }
+
+  Future<DieAssetUploadIntent?> createAssetUploadIntent(DieAssetUploadIntentInput input) async {
+    _isAssetUploading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      return await _repository.createAssetUploadIntent(input);
+    } catch (e) {
+      _errorMessage = e.toString();
+      return null;
+    } finally {
+      _isAssetUploading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<String?> completeAssetUpload(CompleteDieAssetUploadInput input) async {
+    _isAssetUploading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      return await _repository.completeAssetUpload(input);
+    } catch (e) {
+      _errorMessage = e.toString();
+      return null;
+    } finally {
+      _isAssetUploading = false;
       notifyListeners();
     }
   }

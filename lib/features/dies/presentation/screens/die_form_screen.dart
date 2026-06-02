@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:crypto/crypto.dart';
+import 'package:file_selector/file_selector.dart';
+import 'package:http/http.dart' as http;
+import 'package:mime/mime.dart';
 
 import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:core_erp/core/widgets/erp_form_dialog.dart';
@@ -54,6 +58,7 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
   
   DieStatus _status = DieStatus.ready;
   DieOwnership _ownership = DieOwnership.inHouse;
+  bool _isUploading = false;
   
   // Custom properties as a list of mutable objects for editing
   final List<_MutableProperty> _customProperties = [];
@@ -158,10 +163,107 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
     });
   }
 
-  void _addPhotoPlaceholder() {
-    setState(() {
-      _photoUrls.add('https://images.unsplash.com/photo-1590494165264-1ebe3602eb80?auto=format&fit=crop&q=80');
-    });
+  String _contentTypeFromExtension(String fileName) {
+    final ext = fileName.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'png': return 'image/png';
+      case 'jpg':
+      case 'jpeg': return 'image/jpeg';
+      case 'webp': return 'image/webp';
+      default: return 'application/octet-stream';
+    }
+  }
+
+  Future<void> _pickAndUploadImage() async {
+    final dieId = widget.die?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
+
+    final file = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(
+          label: 'Images',
+          mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
+          extensions: ['png', 'jpg', 'jpeg', 'webp'],
+        ),
+      ],
+    );
+    if (file == null || !mounted) {
+      return;
+    }
+
+    setState(() => _isUploading = true);
+    final messenger = ScaffoldMessenger.of(context);
+    final provider = context.read<DiesProvider>();
+    try {
+      final bytes = await file.readAsBytes();
+      final digest = sha256.convert(bytes).toString();
+      final contentType =
+          file.mimeType ??
+          lookupMimeType(file.name, headerBytes: bytes.take(24).toList()) ??
+          _contentTypeFromExtension(file.name);
+      
+      final intent = await provider.createAssetUploadIntent(
+        DieAssetUploadIntentInput(
+          dieId: dieId,
+          fileName: file.name,
+          contentType: contentType,
+          sizeBytes: bytes.length,
+          sha256: digest,
+          isPrimary: _photoUrls.isEmpty,
+        ),
+      );
+      if (intent == null) {
+        throw Exception(provider.errorMessage ?? 'Failed to prepare upload.');
+      }
+      if (intent.alreadyUploaded && intent.photoUrl != null) {
+        setState(() {
+          _photoUrls.add(intent.photoUrl!);
+        });
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Image already uploaded.')),
+        );
+        return;
+      }
+      final upload = intent.upload;
+      if (upload == null) {
+        throw Exception('Upload target was not returned.');
+      }
+      if (upload.uploadUrl.host != 'mock.local') {
+        final response = await http.put(
+          upload.uploadUrl,
+          headers: upload.headers,
+          body: bytes,
+        );
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          throw Exception(
+            'Image upload failed with status ${response.statusCode}.',
+          );
+        }
+      }
+      final finalUrl = await provider.completeAssetUpload(
+        CompleteDieAssetUploadInput(
+          uploadSessionId: upload.uploadSessionId,
+          objectKey: upload.objectKey,
+          dieId: dieId,
+        ),
+      );
+      if (finalUrl == null) {
+        throw Exception(provider.errorMessage ?? 'Failed to finish upload.');
+      }
+      setState(() {
+        _photoUrls.add(finalUrl);
+      });
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Die photo uploaded.')),
+      );
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Image upload failed: $error')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
+      }
+    }
   }
 
   void _removePhoto(int index) {
@@ -543,7 +645,8 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                               AppButton(
                                 label: 'Upload New Photo',
                                 variant: AppButtonVariant.secondary,
-                                onPressed: _addPhotoPlaceholder,
+                                isLoading: _isUploading,
+                                onPressed: _pickAndUploadImage,
                               ),
                             ],
                           ),
@@ -653,8 +756,10 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
       }
     }
 
+    final id = widget.die?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
+
     final newDie = Die(
-      id: widget.die?.id ?? '',
+      id: id,
       name: _nameController.text.trim(),
       toolCode: _toolCodeController.text.trim(),
       photoUrls: _photoUrls,

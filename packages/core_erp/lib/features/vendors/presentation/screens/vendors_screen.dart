@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:crypto/crypto.dart';
+import 'package:file_selector/file_selector.dart';
+import 'package:http/http.dart' as http;
+import 'package:mime/mime.dart';
+import '../../../../core/services/generic_asset_service.dart';
 
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_empty_state.dart';
@@ -232,6 +237,8 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
   late final TextEditingController _contactController;
   late final TextEditingController _phoneController;
   late final TextEditingController _emailController;
+  late final TextEditingController _logoUrlController;
+  late final TextEditingController _photoUrlController;
   String? _localError;
 
   @override
@@ -245,6 +252,8 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
     _contactController = TextEditingController(text: vendor?.contactName ?? '');
     _phoneController = TextEditingController(text: vendor?.phone ?? '');
     _emailController = TextEditingController(text: vendor?.email ?? '');
+    _logoUrlController = TextEditingController(text: vendor?.logoUrl ?? '');
+    _photoUrlController = TextEditingController(text: vendor?.photoUrl ?? '');
     for (final controller in [
       _nameController,
       _aliasController,
@@ -253,6 +262,8 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
       _contactController,
       _phoneController,
       _emailController,
+      _logoUrlController,
+      _photoUrlController,
     ]) {
       controller.addListener(_handleChange);
     }
@@ -284,6 +295,8 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
     _contactController.dispose();
     _phoneController.dispose();
     _emailController.dispose();
+    _logoUrlController.dispose();
+    _photoUrlController.dispose();
     super.dispose();
   }
 
@@ -364,6 +377,29 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
               ),
             ),
             const SizedBox(height: 16),
+
+            const SizedBox(height: 16),
+            ErpDialogSectionCard(
+              title: 'Photos',
+              subtitle: 'Optional logo and contact photo for quick visual identification.',
+              child: Column(
+                children: [
+                  _VendorImagePickerField(
+                    controller: _logoUrlController,
+                    label: 'Logo',
+                    hintText: 'Paste logo image URL…',
+                    placeholderIcon: Icons.storefront_outlined,
+                  ),
+                  const SizedBox(height: 12),
+                  _VendorImagePickerField(
+                    controller: _photoUrlController,
+                    label: 'Vendor Photo',
+                    hintText: 'Paste contact photo URL…',
+                    placeholderIcon: Icons.person_outline,
+                  ),
+                ],
+              ),
+            ),
             ErpDialogSectionCard(
               title: 'Contacts & Address',
               subtitle:
@@ -504,6 +540,8 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
               contactName: _contactController.text,
               phone: _phoneController.text,
               email: _emailController.text,
+              logoUrl: _logoUrlController.text,
+              photoUrl: _photoUrlController.text,
             ),
           )
         : await provider.updateVendor(
@@ -516,6 +554,8 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
               contactName: _contactController.text,
               phone: _phoneController.text,
               email: _emailController.text,
+              logoUrl: _logoUrlController.text,
+              photoUrl: _photoUrlController.text,
             ),
           );
     if (saved != null && mounted && provider.errorMessage == null) {
@@ -562,5 +602,204 @@ class _MessageBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ErpFormMessageBanner(message: message, isError: isError);
+  }
+}
+
+
+class _VendorImagePickerField extends StatefulWidget {
+  const _VendorImagePickerField({
+    required this.controller,
+    required this.label,
+    required this.hintText,
+    required this.placeholderIcon,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final String hintText;
+  final IconData placeholderIcon;
+
+  @override
+  State<_VendorImagePickerField> createState() =>
+      _VendorImagePickerFieldState();
+}
+
+class _VendorImagePickerFieldState extends State<_VendorImagePickerField> {
+  bool _isUploading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_rebuild);
+  }
+
+  void _rebuild() {
+    if (mounted) setState(() {});
+  }
+
+  String _contentTypeFromExtension(String fileName) {
+    final ext = fileName.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'png': return 'image/png';
+      case 'jpg':
+      case 'jpeg': return 'image/jpeg';
+      case 'webp': return 'image/webp';
+      default: return 'application/octet-stream';
+    }
+  }
+
+  Future<void> _pickAndUploadImage() async {
+    final file = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(
+          label: 'Images',
+          mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
+          extensions: ['png', 'jpg', 'jpeg', 'webp'],
+        ),
+      ],
+    );
+    if (file == null || !mounted) {
+      return;
+    }
+
+    setState(() => _isUploading = true);
+    final messenger = ScaffoldMessenger.of(context);
+    final baseUrl = const String.fromEnvironment('PAPER_API_BASE_URL', defaultValue: 'http://localhost:8080');
+    final service = GenericAssetService(baseUrl: baseUrl);
+
+    try {
+      final bytes = await file.readAsBytes();
+      final digest = sha256.convert(bytes).toString();
+      final contentType =
+          file.mimeType ??
+          lookupMimeType(file.name, headerBytes: bytes.take(24).toList()) ??
+          _contentTypeFromExtension(file.name);
+      
+      final intent = await service.createUploadIntent(
+        GenericAssetUploadIntentInput(
+          fileName: file.name,
+          contentType: contentType,
+          sizeBytes: bytes.length,
+          sha256: digest,
+        ),
+      );
+
+      if (intent.uploadUrl.host != 'mock.local') {
+        final response = await http.put(
+          intent.uploadUrl,
+          headers: intent.headers,
+          body: bytes,
+        );
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          throw Exception(
+            'Image upload failed with status ${response.statusCode}.',
+          );
+        }
+      }
+
+      if (intent.readUrl == null) {
+        throw Exception('Failed to get read URL from intent.');
+      }
+
+      widget.controller.text = intent.readUrl!;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Image uploaded successfully.')),
+      );
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Image upload failed: $error')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_rebuild);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final url = widget.controller.text.trim();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          widget.label,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Image preview
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: url.isNotEmpty
+                  ? Image.network(
+                      url,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Icon(
+                        widget.placeholderIcon,
+                        color: const Color(0xFF94A3B8),
+                        size: 32,
+                      ),
+                    )
+                  : Icon(
+                      widget.placeholderIcon,
+                      color: const Color(0xFF94A3B8),
+                      size: 32,
+                    ),
+            ),
+            const SizedBox(width: 12),
+            // URL Input and Upload button
+            Expanded(
+              child: TextFormField(
+                controller: widget.controller,
+                decoration: InputDecoration(
+                  hintText: widget.hintText,
+                  helperText: 'Paste an image URL to preview',
+                  filled: true,
+                  fillColor: const Color(0xFFF9FAFB),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                  ),
+                  suffixIcon: url.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () => widget.controller.clear(),
+                        )
+                      : null,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            AppButton(
+              label: 'Upload',
+              icon: Icons.upload_file,
+              variant: AppButtonVariant.secondary,
+              isLoading: _isUploading,
+              onPressed: _pickAndUploadImage,
+            ),
+          ],
+        ),
+      ],
+    );
   }
 }

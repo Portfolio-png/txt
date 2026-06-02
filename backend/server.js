@@ -2016,6 +2016,13 @@ function buildSeedTemplates() {
 
 async function initDb() {
   await enableForeignKeys();
+
+  // Migration for clients and vendors
+  try { await run("ALTER TABLE clients ADD COLUMN logo_url TEXT DEFAULT ''"); } catch(e){}
+  try { await run("ALTER TABLE clients ADD COLUMN photo_url TEXT DEFAULT ''"); } catch(e){}
+  try { await run("ALTER TABLE vendors ADD COLUMN logo_url TEXT DEFAULT ''"); } catch(e){}
+  try { await run("ALTER TABLE vendors ADD COLUMN photo_url TEXT DEFAULT ''"); } catch(e){}
+
   await run(`
     CREATE TABLE IF NOT EXISTS materials (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2338,6 +2345,8 @@ async function initDb() {
       conversion_base_unit_id INTEGER REFERENCES units(id),
       notes TEXT DEFAULT '',
       is_archived INTEGER NOT NULL DEFAULT 0,
+      logo_url TEXT DEFAULT '',
+      photo_url TEXT DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
@@ -4574,7 +4583,7 @@ async function findClientDuplicate({ name, gstNumber = '', excludeId = null }) {
   }) || null;
 }
 
-async function saveClient({ name, alias = '', gstNumber = '', address = '', id = null }) {
+async function saveClient({ name, alias = '', gstNumber = '', address = '', logoUrl = '', photoUrl = '', id = null }) {
   const trimmedName = String(name || '').trim();
   const trimmedAlias = String(alias || '').trim();
   const trimmedGstNumber = normalizeGstNumber(gstNumber);
@@ -4611,9 +4620,9 @@ async function saveClient({ name, alias = '', gstNumber = '', address = '', id =
     const result = await run(
       `
       INSERT INTO clients (name, alias, gst_number, address, is_archived, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 0, ?, ?)
+      logo_url, photo_url) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)
       `,
-      [trimmedName, trimmedAlias, trimmedGstNumber, trimmedAddress, now, now],
+      [trimmedName, trimmedAlias, trimmedGstNumber, trimmedAddress, now, now, String(logoUrl || '').trim(), String(photoUrl || '').trim()],
     );
     return getClientRowById(result.lastID);
   }
@@ -4649,8 +4658,8 @@ async function saveClient({ name, alias = '', gstNumber = '', address = '', id =
   }
 
   await run(
-    'UPDATE clients SET name = ?, alias = ?, gst_number = ?, address = ?, updated_at = ? WHERE id = ?',
-    [trimmedName, trimmedAlias, trimmedGstNumber, trimmedAddress, now, id],
+    'UPDATE clients SET name = ?, alias = ?, gst_number = ?, address = ?, updated_at = ?, logo_url = ?, photo_url = ? WHERE id = ?',
+    [trimmedName, trimmedAlias, trimmedGstNumber, trimmedAddress, now, String(logoUrl || '').trim(), String(photoUrl || '').trim(), id],
   );
   return getClientRowById(id);
 }
@@ -4829,7 +4838,7 @@ async function saveVendor({
       INSERT INTO vendors (
         name, alias, gst_number, address, contact_name, phone, email, is_archived, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+      logo_url, photo_url) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
       `,
       [
         trimmedName,
@@ -4856,7 +4865,7 @@ async function saveVendor({
   await run(
     `
     UPDATE vendors
-    SET name = ?, alias = ?, gst_number = ?, address = ?, contact_name = ?, phone = ?, email = ?, updated_at = ?
+    SET name = ?, alias = ?, gst_number = ?, address = ?, contact_name = ?, phone = ?, email = ?, updated_at = ?, logo_url = ?, photo_url = ?
     WHERE id = ?
     `,
     [
@@ -17195,6 +17204,62 @@ app.post('/api/order-po-uploads/complete', requirePermission('config.write'), as
     res.status(error.statusCode || 500).json({
       success: false,
       document: null,
+      error: error.message,
+    });
+  }
+});
+
+
+app.post('/api/upload/generic', requirePermission('config.write'), async (req, res) => {
+  try {
+    const { fileName, contentType, sha256 } = req.body || {};
+    if (!fileName || !contentType) {
+      const error = new Error('fileName and contentType are required.');
+      error.statusCode = 400;
+      throw error;
+    }
+    
+    const normalizedName = normalizeAssetFileName(fileName);
+    const uniqueStem = `${Date.now()}-${String(sha256 || '').slice(0, 12)}`;
+    const objectKey = `generic/${uniqueStem}-${normalizedName}`;
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
+    const uploadSessionId = `generic-upload-${now.getTime()}-${crypto.randomBytes(8).toString('hex')}`;
+    
+    const uploadUrl = await presignS3Url({
+      method: 'PUT',
+      objectKey,
+      contentType,
+      expiresSeconds: 900,
+    });
+    
+    const readUrl = await presignS3Url({
+      method: 'GET',
+      objectKey,
+      expiresSeconds: 7 * 24 * 60 * 60, // 7 days (maximum for presigned URLs typically)
+    });
+
+    const intent = {
+      alreadyUploaded: false,
+      upload: {
+        uploadSessionId,
+        objectKey,
+        uploadUrl,
+        headers: { 'Content-Type': contentType },
+        expiresAt,
+        readUrl,
+      }
+    };
+
+    res.status(201).json({
+      success: true,
+      intent,
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      intent: null,
       error: error.message,
     });
   }

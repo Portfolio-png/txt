@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
 import 'package:core_erp/core/widgets/searchable_select.dart';
 import 'package:core_erp/features/items/domain/item_definition.dart';
+import 'package:core_erp/features/items/domain/item_inputs.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
-import 'package:core_erp/features/items/presentation/screens/items_screen.dart';
 import 'package:core_erp/features/units/domain/unit_definition.dart';
 import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
+import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
@@ -18,15 +20,19 @@ import '../providers/production_provider.dart';
 import 'live_production_monitor_screen.dart';
 import 'pipeline_builder_screen.dart';
 
+enum PipelinesScreenMode { manage, production }
+
 class PipelinesScreen extends StatefulWidget {
   const PipelinesScreen({
     super.key,
     this.factoryId = defaultProductionFactoryId,
     this.shopFloorId = defaultProductionShopFloorId,
+    this.mode = PipelinesScreenMode.manage,
   });
 
   final String factoryId;
   final String shopFloorId;
+  final PipelinesScreenMode mode;
 
   @override
   State<PipelinesScreen> createState() => _PipelinesScreenState();
@@ -105,175 +111,197 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
         var currentUnits = units;
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text('Create New Pipeline'),
-              content: SizedBox(
-                width: 460,
-                child: SingleChildScrollView(
-                  child: Form(
-                    key: formKey,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        TextFormField(
-                          controller: nameCtrl,
-                          decoration: _softInputDecoration(
-                            label: 'Pipeline Name',
+            void submit() {
+              if (formKey.currentState?.validate() == true) {
+                final name = nameCtrl.text.trim();
+                final desc = descCtrl.text.trim();
+                final inputItem = _itemById(currentItems, inputItemId);
+                final outputItem = _itemById(currentItems, outputItemId);
+                if (inputItem == null || outputItem == null) {
+                  return;
+                }
+                final inputEndpoint = _endpointForItem(inputItem, currentUnits);
+                final outputEndpoint = _endpointForItem(
+                  outputItem,
+                  currentUnits,
+                );
+                final input = inputEndpoint.itemName;
+                final output = outputEndpoint.itemName;
+                final now = DateTime.now().microsecondsSinceEpoch;
+                final id = 'tpl-$now';
+
+                final inputNode = ProcessNode(
+                  id: 'node-input-$now',
+                  name: 'Input Stage',
+                  processType: 'Input',
+                  stageIndex: 0,
+                  laneIndex: 0,
+                  inputs: [input],
+                  outputs: [input],
+                  machine: 'Input Stage',
+                  dieId: '',
+                  durationHours: 0.25,
+                  status: 'Ready',
+                  isIntermediate: false,
+                  inputItem: inputEndpoint,
+                  outputItem: inputEndpoint,
+                );
+
+                final outputNode = ProcessNode(
+                  id: 'node-output-${now + 1}',
+                  name: 'Output Stage',
+                  processType: 'Output',
+                  stageIndex: 1,
+                  laneIndex: 0,
+                  inputs: [output],
+                  outputs: [output],
+                  machine: 'Output Stage',
+                  dieId: '',
+                  durationHours: 0.25,
+                  status: 'Queued',
+                  isIntermediate: false,
+                  inputItem: outputEndpoint,
+                  outputItem: outputEndpoint,
+                );
+
+                Navigator.pop(
+                  context,
+                  PipelineTemplate(
+                    id: id,
+                    factoryId: widget.factoryId,
+                    shopFloorId: widget.shopFloorId,
+                    name: name,
+                    description: desc,
+                    stageLabels: const ['Input', 'Output'],
+                    laneLabels: const ['Main'],
+                    nodes: [inputNode, outputNode],
+                    flows: const [],
+                    inputMaterial: input,
+                    outputMaterial: output,
+                  ),
+                );
+              }
+            }
+
+            return CallbackShortcuts(
+              bindings: {
+                const SingleActivator(LogicalKeyboardKey.enter, meta: true):
+                    submit,
+                const SingleActivator(LogicalKeyboardKey.enter, control: true):
+                    submit,
+              },
+              child: AlertDialog(
+                title: const Text('Create New Pipeline'),
+                content: SizedBox(
+                  width: 460,
+                  child: SingleChildScrollView(
+                    child: Form(
+                      key: formKey,
+                      autovalidateMode: AutovalidateMode.onUserInteraction,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          TextFormField(
+                            controller: nameCtrl,
+                            autofocus: true,
+                            textInputAction: TextInputAction.next,
+                            decoration: _softInputDecoration(
+                              label: 'Pipeline Name',
+                            ),
+                            validator: (value) =>
+                                value == null || value.trim().isEmpty
+                                ? 'Name is required'
+                                : null,
+                            onFieldSubmitted: (_) => submit(),
                           ),
-                          validator: (value) =>
-                              value == null || value.trim().isEmpty
-                              ? 'Name is required'
-                              : null,
-                        ),
-                        const SizedBox(height: 12),
-                        TextFormField(
-                          controller: descCtrl,
-                          decoration: _softInputDecoration(
-                            label: 'Description (Optional)',
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            controller: descCtrl,
+                            textInputAction: TextInputAction.next,
+                            decoration: _softInputDecoration(
+                              label: 'Description (Optional)',
+                            ),
+                            minLines: 2,
+                            maxLines: 3,
                           ),
-                          minLines: 2,
-                          maxLines: 3,
-                        ),
-                        const SizedBox(height: 12),
-                        _PipelineItemSelectField(
-                          tapTargetKey: const ValueKey(
-                            'create-pipeline-input-item-field',
+                          const SizedBox(height: 12),
+                          _PipelineItemSelectField(
+                            tapTargetKey: const ValueKey(
+                              'create-pipeline-input-item-field',
+                            ),
+                            label: 'Input Material',
+                            dialogTitle: 'Input Material',
+                            selectedItemId: inputItemId,
+                            items: currentItems,
+                            units: currentUnits,
+                            onChanged: (item) {
+                              setDialogState(() {
+                                inputItemId = item.id;
+                                if (outputItemId == null ||
+                                    outputItemId == items.firstOrNull?.id ||
+                                    outputItemId == inputItemId) {
+                                  final idx = currentItems.indexWhere(
+                                    (i) => i.id == item.id,
+                                  );
+                                  if (idx != -1 &&
+                                      idx + 1 < currentItems.length) {
+                                    outputItemId = currentItems[idx + 1].id;
+                                  } else {
+                                    outputItemId = item.id;
+                                  }
+                                }
+                              });
+                            },
+                            onCreated: (item) {
+                              setDialogState(() {
+                                currentItems = _activeItemsFromContext(context);
+                                currentUnits = _activeUnitsFromContext(context);
+                                inputItemId = item.id;
+                              });
+                            },
+                            validator: (value) => value == null
+                                ? 'Input material is required'
+                                : null,
                           ),
-                          label: 'Input Material',
-                          dialogTitle: 'Input Material',
-                          selectedItemId: inputItemId,
-                          items: currentItems,
-                          units: currentUnits,
-                          onChanged: (item) {
-                            setDialogState(() {
-                              inputItemId = item.id;
-                            });
-                          },
-                          onCreated: (item) {
-                            setDialogState(() {
-                              currentItems = _activeItemsFromContext(context);
-                              currentUnits = _activeUnitsFromContext(context);
-                              inputItemId = item.id;
-                            });
-                          },
-                          validator: (value) => value == null
-                              ? 'Input material is required'
-                              : null,
-                        ),
-                        const SizedBox(height: 12),
-                        _PipelineItemSelectField(
-                          tapTargetKey: const ValueKey(
-                            'create-pipeline-output-item-field',
+                          const SizedBox(height: 12),
+                          _PipelineItemSelectField(
+                            tapTargetKey: const ValueKey(
+                              'create-pipeline-output-item-field',
+                            ),
+                            label: 'Output Material',
+                            dialogTitle: 'Output Material',
+                            selectedItemId: outputItemId,
+                            items: currentItems,
+                            units: currentUnits,
+                            onChanged: (item) {
+                              setDialogState(() {
+                                outputItemId = item.id;
+                              });
+                            },
+                            onCreated: (item) {
+                              setDialogState(() {
+                                currentItems = _activeItemsFromContext(context);
+                                currentUnits = _activeUnitsFromContext(context);
+                                outputItemId = item.id;
+                              });
+                            },
+                            validator: (value) => value == null
+                                ? 'Output material is required'
+                                : null,
                           ),
-                          label: 'Output Material',
-                          dialogTitle: 'Output Material',
-                          selectedItemId: outputItemId,
-                          items: currentItems,
-                          units: currentUnits,
-                          onChanged: (item) {
-                            setDialogState(() {
-                              outputItemId = item.id;
-                            });
-                          },
-                          onCreated: (item) {
-                            setDialogState(() {
-                              currentItems = _activeItemsFromContext(context);
-                              currentUnits = _activeUnitsFromContext(context);
-                              outputItemId = item.id;
-                            });
-                          },
-                          validator: (value) => value == null
-                              ? 'Output material is required'
-                              : null,
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancel'),
+                  ),
+                  FilledButton(onPressed: submit, child: const Text('Create')),
+                ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    if (formKey.currentState?.validate() == true) {
-                      final name = nameCtrl.text.trim();
-                      final desc = descCtrl.text.trim();
-                      final inputItem = _itemById(currentItems, inputItemId);
-                      final outputItem = _itemById(currentItems, outputItemId);
-                      if (inputItem == null || outputItem == null) {
-                        return;
-                      }
-                      final inputEndpoint = _endpointForItem(
-                        inputItem,
-                        currentUnits,
-                      );
-                      final outputEndpoint = _endpointForItem(
-                        outputItem,
-                        currentUnits,
-                      );
-                      final input = inputEndpoint.itemName;
-                      final output = outputEndpoint.itemName;
-                      final now = DateTime.now().microsecondsSinceEpoch;
-                      final id = 'tpl-$now';
-
-                      final inputNode = ProcessNode(
-                        id: 'node-input-$now',
-                        name: 'Input Stage',
-                        processType: 'Input',
-                        stageIndex: 0,
-                        laneIndex: 0,
-                        inputs: [input],
-                        outputs: [input],
-                        machine: 'Input Stage',
-                        dieId: '',
-                        durationHours: 0.25,
-                        status: 'Ready',
-                        isIntermediate: false,
-                        inputItem: inputEndpoint,
-                        outputItem: inputEndpoint,
-                      );
-
-                      final outputNode = ProcessNode(
-                        id: 'node-output-${now + 1}',
-                        name: 'Output Stage',
-                        processType: 'Output',
-                        stageIndex: 1,
-                        laneIndex: 0,
-                        inputs: [output],
-                        outputs: [output],
-                        machine: 'Output Stage',
-                        dieId: '',
-                        durationHours: 0.25,
-                        status: 'Queued',
-                        isIntermediate: false,
-                        inputItem: outputEndpoint,
-                        outputItem: outputEndpoint,
-                      );
-
-                      Navigator.pop(
-                        context,
-                        PipelineTemplate(
-                          id: id,
-                          factoryId: widget.factoryId,
-                          shopFloorId: widget.shopFloorId,
-                          name: name,
-                          description: desc,
-                          stageLabels: const ['Input', 'Output'],
-                          laneLabels: const ['Main'],
-                          nodes: [inputNode, outputNode],
-                          flows: const [],
-                          inputMaterial: input,
-                          outputMaterial: output,
-                        ),
-                      );
-                    }
-                  },
-                  child: const Text('Create'),
-                ),
-              ],
             );
           },
         );
@@ -297,13 +325,13 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
     try {
       final repo = context.read<PipelineRunRepository>();
       final now = DateTime.now().microsecondsSinceEpoch;
-      
+
       final duplicate = template.copyWith(
         id: 'tpl-$now',
         name: '${template.name} (Copy)',
         status: PipelineTemplateStatus.draft,
       );
-      
+
       await repo.createTemplate(duplicate);
       await _loadTemplates();
     } finally {
@@ -332,8 +360,9 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isManageMode = widget.mode == PipelinesScreenMode.manage;
     final editingTemplate = _editingTemplate;
-    if (editingTemplate != null) {
+    if (isManageMode && editingTemplate != null) {
       return _PipelineEditorShell(
         templateName: editingTemplate.name,
         onBack: _closeEditorAndReload,
@@ -347,46 +376,67 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
       );
     }
 
-    final filteredTemplates = _templates.where((t) => t.status == _filterStatus).toList();
+    final visibleTemplates = isManageMode
+        ? _templates.where((t) => t.status == _filterStatus).toList()
+        : _templates
+              .where((t) => t.status != PipelineTemplateStatus.archived)
+              .toList();
 
     return _PipelineLibraryShell(
-      title: 'Floor Pipelines',
-      subtitle: 'Build and run production routes on the unified floor map.',
-      actionLabel: 'New Pipeline',
-      onAction: _createNew,
+      title: isManageMode ? 'Floor Pipelines' : 'Production',
+      subtitle: isManageMode
+          ? 'Build and run production routes on the unified floor map.'
+          : 'Select a saved pipeline to start production.',
+      actionLabel: isManageMode ? 'New Pipeline' : null,
+      onAction: isManageMode ? _createNew : null,
       child: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-            child: SegmentedButton<PipelineTemplateStatus>(
-              segments: const [
-                ButtonSegment(value: PipelineTemplateStatus.active, label: Text('Active')),
-                ButtonSegment(value: PipelineTemplateStatus.draft, label: Text('Drafts')),
-                ButtonSegment(value: PipelineTemplateStatus.archived, label: Text('Archived')),
-              ],
-              selected: {_filterStatus},
-              onSelectionChanged: (Set<PipelineTemplateStatus> newSelection) {
-                setState(() => _filterStatus = newSelection.first);
-              },
+          if (isManageMode)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              child: SegmentedButton<PipelineTemplateStatus>(
+                segments: const [
+                  ButtonSegment(
+                    value: PipelineTemplateStatus.active,
+                    label: Text('Active'),
+                  ),
+                  ButtonSegment(
+                    value: PipelineTemplateStatus.draft,
+                    label: Text('Drafts'),
+                  ),
+                  ButtonSegment(
+                    value: PipelineTemplateStatus.archived,
+                    label: Text('Archived'),
+                  ),
+                ],
+                selected: {_filterStatus},
+                onSelectionChanged: (Set<PipelineTemplateStatus> newSelection) {
+                  setState(() => _filterStatus = newSelection.first);
+                },
+              ),
             ),
-          ),
           Expanded(
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 180),
               child: _isLoading
                   ? const _PipelineLoading(label: 'Loading pipelines')
-                  : filteredTemplates.isEmpty
+                  : visibleTemplates.isEmpty
                   ? _PipelineEmptyState(
-                      title: 'No pipelines found',
-                      message: 'No pipelines match the current status filter.',
-                      actionLabel: 'Create Pipeline',
-                      onAction: _createNew,
+                      title: isManageMode
+                          ? 'No pipelines found'
+                          : 'No saved pipelines',
+                      message: isManageMode
+                          ? 'No pipelines match the current status filter.'
+                          : 'Create and edit pipeline routes from Masters > Pipelines. They will appear here when saved.',
+                      actionLabel: isManageMode ? 'Create Pipeline' : null,
+                      onAction: isManageMode ? _createNew : null,
                     )
                   : _PipelineTemplateList(
-                      templates: filteredTemplates,
-                      onEdit: _edit,
+                      templates: visibleTemplates,
+                      showManagementActions: isManageMode,
+                      onEdit: isManageMode ? _edit : null,
                       onRun: _run,
-                      onDuplicate: _duplicateTemplate,
+                      onDuplicate: isManageMode ? _duplicateTemplate : null,
                     ),
             ),
           ),
@@ -429,6 +479,8 @@ class _PipelineItemSelectField extends StatelessWidget {
   final ValueChanged<ItemDefinition> onCreated;
   final FormFieldValidator<int> validator;
 
+  static int? _lastUsedUnitId;
+
   @override
   Widget build(BuildContext context) {
     final hasSelection = items.any((item) => item.id == selectedItemId);
@@ -461,15 +513,87 @@ class _PipelineItemSelectField extends StatelessWidget {
             );
       },
       onCreateOption: (query) async {
-        final created = await ItemsScreen.openEditor(
-          context,
-          initialName: query.trim(),
-        );
-        if (!context.mounted || created == null) {
+        final ctrl = TextEditingController(text: query.trim());
+        final formKey = GlobalKey<FormState>();
+        final defaultUnitId =
+            _PipelineItemSelectField._lastUsedUnitId ??
+            _activeUnitsFromContext(context).firstOrNull?.id;
+
+        if (defaultUnitId == null) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('No active units available.')),
+            );
+          }
           return null;
         }
+
+        final dialogResult = await showDialog<String>(
+          context: context,
+          builder: (context) {
+            void submit() {
+              if (formKey.currentState?.validate() == true) {
+                Navigator.pop(context, ctrl.text.trim());
+              }
+            }
+
+            return CallbackShortcuts(
+              bindings: {
+                const SingleActivator(LogicalKeyboardKey.enter, meta: true):
+                    submit,
+                const SingleActivator(LogicalKeyboardKey.enter, control: true):
+                    submit,
+              },
+              child: AlertDialog(
+                title: const Text('Quick Create Item'),
+                content: Form(
+                  key: formKey,
+                  autovalidateMode: AutovalidateMode.onUserInteraction,
+                  child: TextFormField(
+                    controller: ctrl,
+                    autofocus: true,
+                    decoration: _softInputDecoration(label: 'Item Name'),
+                    validator: (val) => val == null || val.trim().isEmpty
+                        ? 'Name is required'
+                        : null,
+                    onFieldSubmitted: (_) => submit(),
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancel'),
+                  ),
+                  FilledButton(onPressed: submit, child: const Text('Create')),
+                ],
+              ),
+            );
+          },
+        );
+
+        if (dialogResult == null || !context.mounted) return null;
+
+        final itemsProvider = context.read<ItemsProvider>();
+        final defaultGroupId =
+            context.read<GroupsProvider>().groups.firstOrNull?.id ?? 1;
+
+        ItemDefinition? created;
         try {
-          await context.read<ItemsProvider>().refresh();
+          _PipelineItemSelectField._lastUsedUnitId = defaultUnitId;
+          created = await itemsProvider.createItem(
+            CreateItemInput(
+              name: dialogResult,
+              displayName: dialogResult,
+              groupId: defaultGroupId,
+              unitId: defaultUnitId,
+            ),
+          );
+        } catch (_) {}
+
+        if (created == null) return null;
+
+        try {
+          await itemsProvider.refresh();
         } catch (_) {}
         if (!context.mounted) {
           return null;
@@ -671,15 +795,17 @@ class _PipelineEditorShell extends StatelessWidget {
 class _PipelineTemplateList extends StatelessWidget {
   const _PipelineTemplateList({
     required this.templates,
+    required this.showManagementActions,
     required this.onEdit,
     required this.onRun,
     required this.onDuplicate,
   });
 
   final List<PipelineTemplate> templates;
-  final ValueChanged<PipelineTemplate> onEdit;
+  final bool showManagementActions;
+  final ValueChanged<PipelineTemplate>? onEdit;
   final ValueChanged<PipelineTemplate> onRun;
-  final ValueChanged<PipelineTemplate> onDuplicate;
+  final ValueChanged<PipelineTemplate>? onDuplicate;
 
   @override
   Widget build(BuildContext context) {
@@ -696,9 +822,12 @@ class _PipelineTemplateList extends StatelessWidget {
               final template = templates[index];
               return _PipelineTemplateCard(
                 template: template,
-                onEdit: () => onEdit(template),
+                showManagementActions: showManagementActions,
+                onEdit: onEdit == null ? null : () => onEdit!(template),
                 onRun: () => onRun(template),
-                onDuplicate: () => onDuplicate(template),
+                onDuplicate: onDuplicate == null
+                    ? null
+                    : () => onDuplicate!(template),
               );
             },
           ),
@@ -762,15 +891,17 @@ class _PipelineHeaderCell extends StatelessWidget {
 class _PipelineTemplateCard extends StatelessWidget {
   const _PipelineTemplateCard({
     required this.template,
+    required this.showManagementActions,
     required this.onEdit,
     required this.onRun,
     required this.onDuplicate,
   });
 
   final PipelineTemplate template;
-  final VoidCallback onEdit;
+  final bool showManagementActions;
+  final VoidCallback? onEdit;
   final VoidCallback onRun;
-  final VoidCallback onDuplicate;
+  final VoidCallback? onDuplicate;
 
   @override
   Widget build(BuildContext context) {
@@ -787,13 +918,18 @@ class _PipelineTemplateCard extends StatelessWidget {
           : template.outputMaterial,
     ].join(' -> ');
 
-    final sortedNodes = template.nodes.toList()..sort((a, b) => a.stageIndex.compareTo(b.stageIndex));
+    final sortedNodes = template.nodes.toList()
+      ..sort((a, b) => a.stageIndex.compareTo(b.stageIndex));
     final miniFlow = sortedNodes.map((n) => n.processType).join(' ➔ ');
+    final canRun =
+        hasRunnableRoute &&
+        (!showManagementActions ||
+            template.status == PipelineTemplateStatus.active);
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: onEdit,
+        onTap: showManagementActions ? onEdit : (canRun ? onRun : null),
         borderRadius: BorderRadius.circular(24),
         child: Container(
           constraints: const BoxConstraints(minHeight: 86),
@@ -907,36 +1043,39 @@ class _PipelineTemplateCard extends StatelessWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    IconButton(
-                      icon: const Icon(Icons.copy, size: 20, color: Color(0xFF64748B)),
-                      onPressed: onDuplicate,
-                      tooltip: 'Duplicate Pipeline',
-                    ),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.edit_rounded,
-                        size: 20,
-                        color: Color(0xFF64748B),
+                    if (showManagementActions) ...[
+                      IconButton(
+                        icon: const Icon(
+                          Icons.copy,
+                          size: 20,
+                          color: Color(0xFF64748B),
+                        ),
+                        onPressed: onDuplicate,
+                        tooltip: 'Duplicate Pipeline',
                       ),
-                      onPressed: onEdit,
-                      tooltip: 'Edit pipeline',
-                    ),
-                    const SizedBox(width: 4),
-                    if (template.status == PipelineTemplateStatus.active)
-                      FilledButton.icon(
-                        onPressed: hasRunnableRoute ? onRun : null,
-                        icon: const Icon(Icons.play_arrow_rounded, size: 16),
-                        label: const Text('Run'),
-                        style: FilledButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                          ),
-                          textStyle: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.edit_rounded,
+                          size: 20,
+                          color: Color(0xFF64748B),
+                        ),
+                        onPressed: onEdit,
+                        tooltip: 'Edit pipeline',
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                    FilledButton.icon(
+                      onPressed: canRun ? onRun : null,
+                      icon: const Icon(Icons.play_arrow_rounded, size: 16),
+                      label: const Text('Run'),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        textStyle: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
+                    ),
                   ],
                 ),
               ),
@@ -954,7 +1093,10 @@ class _PipelineCardCell extends StatelessWidget {
   final Widget child;
   @override
   Widget build(BuildContext context) {
-    return Expanded(flex: flex, child: Align(alignment: Alignment.centerLeft, child: child));
+    return Expanded(
+      flex: flex,
+      child: Align(alignment: Alignment.centerLeft, child: child),
+    );
   }
 }
 
@@ -975,63 +1117,6 @@ class _PipelineMetricCell extends StatelessWidget {
           color: Color(0xFF1E293B),
           fontSize: 14,
           fontWeight: FontWeight.w900,
-        ),
-      ),
-    );
-  }
-}
-
-class _PipelineActionButton extends StatelessWidget {
-  const _PipelineActionButton({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-    required this.filled,
-  });
-
-  final String label;
-  final IconData icon;
-  final VoidCallback? onTap;
-  final bool filled;
-
-  @override
-  Widget build(BuildContext context) {
-    final enabled = onTap != null;
-    return Material(
-      color: filled
-          ? (enabled ? const Color(0xFF3B82F6) : const Color(0xFFE1E5DF))
-          : const Color(0xFFF1F3FF),
-      borderRadius: BorderRadius.circular(999),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 16,
-                color: filled
-                    ? (enabled ? Colors.white : const Color(0xFF8A948F))
-                    : const Color(0xFF4F46E5),
-              ),
-              const SizedBox(width: 5),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: filled
-                      ? (enabled ? Colors.white : const Color(0xFF8A948F))
-                      : const Color(0xFF4F46E5),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );
@@ -1200,15 +1285,15 @@ class _PipelineLibraryShell extends StatelessWidget {
   const _PipelineLibraryShell({
     required this.title,
     required this.subtitle,
-    required this.actionLabel,
-    required this.onAction,
     required this.child,
+    this.actionLabel,
+    this.onAction,
   });
 
   final String title;
   final String subtitle;
-  final String actionLabel;
-  final VoidCallback onAction;
+  final String? actionLabel;
+  final VoidCallback? onAction;
   final Widget child;
 
   @override
@@ -1243,22 +1328,23 @@ class _PipelineLibraryShell extends StatelessWidget {
                   ],
                 ),
               ),
-              FilledButton.icon(
-                onPressed: onAction,
-                icon: const Icon(Icons.add_rounded, size: 18),
-                label: Text(actionLabel),
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF3B82F6),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+              if (actionLabel != null && onAction != null)
+                FilledButton.icon(
+                  onPressed: onAction,
+                  icon: const Icon(Icons.add_rounded, size: 18),
+                  label: Text(actionLabel!),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF3B82F6),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
                 ),
-              ),
             ],
           ),
           const SizedBox(height: 18),
@@ -1273,14 +1359,14 @@ class _PipelineEmptyState extends StatelessWidget {
   const _PipelineEmptyState({
     required this.title,
     required this.message,
-    required this.actionLabel,
-    required this.onAction,
+    this.actionLabel,
+    this.onAction,
   });
 
   final String title;
   final String message;
-  final String actionLabel;
-  final VoidCallback onAction;
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -1322,8 +1408,10 @@ class _PipelineEmptyState extends StatelessWidget {
                 height: 1.35,
               ),
             ),
-            const SizedBox(height: 18),
-            FilledButton(onPressed: onAction, child: Text(actionLabel)),
+            if (actionLabel != null && onAction != null) ...[
+              const SizedBox(height: 18),
+              FilledButton(onPressed: onAction, child: Text(actionLabel!)),
+            ],
           ],
         ),
       ),

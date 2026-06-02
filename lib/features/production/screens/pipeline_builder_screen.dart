@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'package:provider/provider.dart';
 import 'package:core_erp/features/items/domain/item_definition.dart';
-import 'package:core_erp/features/items/presentation/screens/items_screen.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 import 'package:core_erp/features/units/domain/unit_definition.dart';
 import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
@@ -13,7 +12,9 @@ import 'package:core_erp/core/widgets/searchable_select.dart';
 import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
 import 'package:core_erp/features/inventory/domain/material_record.dart';
 import 'package:core_erp/features/items/domain/item_inputs.dart';
+import 'package:core_erp/features/groups/domain/group_definition.dart';
 import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
+import 'package:core_erp/features/groups/presentation/screens/groups_screen.dart';
 
 import '../providers/pipeline_editor_provider.dart';
 import '../providers/production_provider.dart';
@@ -70,6 +71,9 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
     try {
       context.read<DiesProvider>().initialize();
     } catch (_) {}
+    try {
+      context.read<GroupsProvider>().initialize();
+    } catch (_) {}
   }
 
   @override
@@ -88,9 +92,9 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
         await repo.updateTemplate(provider.template);
       }
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Pipeline saved.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Pipeline saved.')));
       }
     } catch (_) {
       if (context.mounted) {
@@ -114,8 +118,10 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
       onKeyEvent: (node, event) {
         if (event is KeyDownEvent) {
           final bool isMac = defaultTargetPlatform == TargetPlatform.macOS;
-          final bool isModifier = isMac ? HardwareKeyboard.instance.isMetaPressed : HardwareKeyboard.instance.isControlPressed;
-          
+          final bool isModifier = isMac
+              ? HardwareKeyboard.instance.isMetaPressed
+              : HardwareKeyboard.instance.isControlPressed;
+
           if (isModifier) {
             if (event.logicalKey == LogicalKeyboardKey.keyS) {
               _savePipeline(context);
@@ -131,19 +137,21 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
               }
               return KeyEventResult.handled;
             }
-          } else if (event.logicalKey == LogicalKeyboardKey.delete || event.logicalKey == LogicalKeyboardKey.backspace) {
-             if (FocusManager.instance.primaryFocus?.context?.widget is EditableText) {
-                return KeyEventResult.ignored;
-             }
-             if (provider.selectedNodeId != null) {
-                final message = provider.deleteSelectedNode();
-                if (message != null && context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(message)),
-                  );
-                }
-                return KeyEventResult.handled;
-             }
+          } else if (event.logicalKey == LogicalKeyboardKey.delete ||
+              event.logicalKey == LogicalKeyboardKey.backspace) {
+            if (FocusManager.instance.primaryFocus?.context?.widget
+                is EditableText) {
+              return KeyEventResult.ignored;
+            }
+            if (provider.selectedNodeId != null) {
+              final message = provider.deleteSelectedNode();
+              if (message != null && context.mounted) {
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text(message)));
+              }
+              return KeyEventResult.handled;
+            }
           }
         }
         return KeyEventResult.ignored;
@@ -224,13 +232,17 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
                     children: [
                       IconButton.filledTonal(
                         icon: const Icon(Icons.undo_rounded),
-                        onPressed: provider.canUndo ? () => provider.undo() : null,
+                        onPressed: provider.canUndo
+                            ? () => provider.undo()
+                            : null,
                         tooltip: 'Undo (Ctrl/Cmd + Z)',
                       ),
                       const SizedBox(width: 8),
                       IconButton.filledTonal(
                         icon: const Icon(Icons.redo_rounded),
-                        onPressed: provider.canRedo ? () => provider.redo() : null,
+                        onPressed: provider.canRedo
+                            ? () => provider.redo()
+                            : null,
                         tooltip: 'Redo (Shift + Ctrl/Cmd + Z)',
                       ),
                     ],
@@ -833,6 +845,11 @@ class _SelectedNodeCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
+          if (node.machineGroupId != null)
+            _NodeFact(
+              label: 'Machine Group',
+              value: node.machineAssignmentLabel,
+            ),
           _NodeFact(label: 'Machine', value: node.machine),
           _NodeFact(label: 'Die', value: node.dieId),
           _NodeFact(
@@ -1058,7 +1075,10 @@ class _BuilderHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final production = context.watch<ProductionProvider>();
-    final allValid = provider.template.nodes.every((n) => n.machine.isNotEmpty && n.inputItem != null && n.outputItem != null);
+    final allValid = provider.template.nodes.every(
+      (n) =>
+          n.hasMachineAssignment && n.inputItem != null && n.outputItem != null,
+    );
     final canStart =
         provider.template.nodes.isNotEmpty && !production.isRunning && allValid;
 
@@ -1113,7 +1133,10 @@ class _BuilderHeader extends StatelessWidget {
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
                   ),
                   onPressed: () => provider.addNextStepFromSelection(
                     units: _activeUnitsFromContext(context),
@@ -1127,9 +1150,7 @@ class _BuilderHeader extends StatelessWidget {
                         : Icons.play_arrow_rounded,
                     size: 16,
                   ),
-                  label: Text(
-                    production.isRunning ? 'Running' : 'Start',
-                  ),
+                  label: Text(production.isRunning ? 'Running' : 'Start'),
                   style: FilledButton.styleFrom(
                     backgroundColor: const Color(0xFF1E293B),
                     foregroundColor: Colors.white,
@@ -1138,7 +1159,10 @@ class _BuilderHeader extends StatelessWidget {
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
                   ),
                   onPressed: canStart ? () => _startFlow(context) : null,
                 ),
@@ -1152,13 +1176,19 @@ class _BuilderHeader extends StatelessWidget {
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
                   ),
                   onPressed: allValid ? () => _saveAndNotify(context) : null,
                 ),
                 const SizedBox(width: 8),
                 PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_vert_rounded, color: Color(0xFF64748B)),
+                  icon: const Icon(
+                    Icons.more_vert_rounded,
+                    color: Color(0xFF64748B),
+                  ),
                   tooltip: 'More options',
                   position: PopupMenuPosition.under,
                   onSelected: (action) {
@@ -1175,9 +1205,12 @@ class _BuilderHeader extends StatelessWidget {
                       value: 'details',
                       child: Row(
                         children: [
-                          Icon(Icons.drive_file_rename_outline_rounded, size: 18),
+                          Icon(
+                            Icons.drive_file_rename_outline_rounded,
+                            size: 18,
+                          ),
                           SizedBox(width: 10),
-                          Text('Edit Details'),
+                          Expanded(child: Text('Edit Details')),
                         ],
                       ),
                     ),
@@ -1188,7 +1221,7 @@ class _BuilderHeader extends StatelessWidget {
                         children: [
                           Icon(Icons.precision_manufacturing_rounded, size: 18),
                           SizedBox(width: 10),
-                          Text('Load Sheet Metal Template'),
+                          Expanded(child: Text('Load Sheet Metal Template')),
                         ],
                       ),
                     ),
@@ -1198,7 +1231,7 @@ class _BuilderHeader extends StatelessWidget {
                         children: [
                           Icon(Icons.note_add_outlined, size: 18),
                           SizedBox(width: 10),
-                          Text('Load Blank Canvas'),
+                          Expanded(child: Text('Load Blank Canvas')),
                         ],
                       ),
                     ),
@@ -1208,103 +1241,6 @@ class _BuilderHeader extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _HeaderMenuButton extends StatelessWidget {
-  const _HeaderMenuButton({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 38,
-      padding: const EdgeInsets.symmetric(horizontal: 13),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 17, color: const Color(0xFF1E293B)),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xFF1E293B),
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TemplateMenuItem extends StatelessWidget {
-  const _TemplateMenuItem({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 252,
-      child: Row(
-        children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: const Color(0xFFEFF6FF),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, size: 17, color: const Color(0xFF2563EB)),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF1E293B),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF64748B),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -1534,10 +1470,8 @@ class _PipelineMaterialSelectField extends StatelessWidget {
   ) async {
     final created = await showDialog<ItemDefinition>(
       context: context,
-      builder: (context) => _QuickItemCreateDialog(
-        initialName: query,
-        units: units,
-      ),
+      builder: (context) =>
+          _QuickItemCreateDialog(initialName: query, units: units),
     );
     if (!context.mounted || created == null) {
       return null;
@@ -1600,7 +1534,6 @@ String _materialOptionSearchText(
     _unitLabel(item.unitId, units),
   ].where((part) => part.trim().isNotEmpty).join(' ');
 }
-
 
 class _ItemEndpointDropdown extends StatelessWidget {
   const _ItemEndpointDropdown({
@@ -1667,10 +1600,8 @@ class _ItemEndpointDropdown extends StatelessWidget {
   ) async {
     final created = await showDialog<ItemDefinition>(
       context: context,
-      builder: (context) => _QuickItemCreateDialog(
-        initialName: query,
-        units: units,
-      ),
+      builder: (context) =>
+          _QuickItemCreateDialog(initialName: query, units: units),
     );
     if (!context.mounted || created == null) {
       return null;
@@ -1711,41 +1642,17 @@ String _quickMasterCode(String prefix) {
   return '$prefix-${DateTime.now().microsecondsSinceEpoch}';
 }
 
-String _machineOptionLabel(Machine machine) {
-  final asset = machine.assetId.trim();
-  return asset.isEmpty ? machine.name : '${machine.name} ($asset)';
-}
 
-String _machineOptionSearchText(Machine machine) {
-  return [
-    machine.name,
-    machine.assetId,
-    machine.makeModel,
-    machine.serialNumber,
-    machine.location ?? '',
-  ].where((part) => part.trim().isNotEmpty).join(' ');
-}
 
-Machine? _machineById(List<Machine> machines, String id) {
-  for (final machine in machines) {
-    if (machine.id == id) {
-      return machine;
-    }
+String? _machineGroupNameFor(BuildContext context, int? groupId) {
+  if (groupId == null) {
+    return null;
   }
-  return null;
-}
-
-Machine? _newestMachineByName(List<Machine> machines, String name) {
-  Machine? match;
-  for (final machine in machines) {
-    if (machine.name.trim().toLowerCase() != name.trim().toLowerCase()) {
-      continue;
-    }
-    if (match == null || machine.createdAt.isAfter(match.createdAt)) {
-      match = machine;
-    }
+  try {
+    return context.read<GroupsProvider>().findById(groupId)?.name;
+  } catch (_) {
+    return null;
   }
-  return match;
 }
 
 String _dieOptionLabel(Die die) {
@@ -1949,7 +1856,11 @@ class _GitGraphCanvas extends StatelessWidget {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.add_rounded, color: Color(0xFF94A3B8), size: 32),
+                            Icon(
+                              Icons.add_rounded,
+                              color: Color(0xFF94A3B8),
+                              size: 32,
+                            ),
                             SizedBox(height: 8),
                             Text(
                               'Add first step\n(e.g. Raw Material Input)',
@@ -2035,9 +1946,9 @@ class _GitGraphCanvas extends StatelessWidget {
                         onDelete: () {
                           final message = provider.deleteSelectedNode();
                           if (message != null && context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text(message)),
-                            );
+                            ScaffoldMessenger.of(
+                              context,
+                            ).showSnackBar(SnackBar(content: Text(message)));
                           }
                         },
                       ),
@@ -2187,15 +2098,20 @@ class _FlowStageBlock extends StatelessWidget {
       _ => const Color(0xFF94A3B8),
     };
 
-    final isValid = node.machine.isNotEmpty && node.inputItem != null && node.outputItem != null;
+    final isValid =
+        node.hasMachineAssignment &&
+        node.inputItem != null &&
+        node.outputItem != null;
     final isHighlighted = isSelected || emphasized;
     final borderColor = !isValid
         ? Colors.red
         : (isSelected
-            ? const Color(0xFF3B82F6)
-            : (emphasized
-                  ? (target ? const Color(0xFF10B981) : const Color(0xFFF59E0B))
-                  : const Color(0xFFE2E8F0)));
+              ? const Color(0xFF3B82F6)
+              : (emphasized
+                    ? (target
+                          ? const Color(0xFF10B981)
+                          : const Color(0xFFF59E0B))
+                    : const Color(0xFFE2E8F0)));
 
     final container = Container(
       width: width,
@@ -2247,7 +2163,9 @@ class _FlowStageBlock extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    node.machine.trim().isEmpty ? 'Unassigned' : node.machine,
+                    node.machineAssignmentLabel.isEmpty
+                        ? 'Unassigned'
+                        : node.machineAssignmentLabel,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -2264,18 +2182,22 @@ class _FlowStageBlock extends StatelessWidget {
                 padding: const EdgeInsets.only(left: 4),
                 child: Tooltip(
                   message: [
-                    if (node.machine.isEmpty) 'Missing Machine',
+                    if (!node.hasMachineAssignment) 'Missing Machine / Group',
                     if (node.inputItem == null) 'Missing Input Item',
                     if (node.outputItem == null) 'Missing Output Item',
                   ].join('\n'),
-                  child: const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 16),
+                  child: const Icon(
+                    Icons.warning_amber_rounded,
+                    color: Colors.red,
+                    size: 16,
+                  ),
                 ),
               ),
           ],
         ),
       ),
     );
-    
+
     return container;
   }
 }
@@ -2293,7 +2215,9 @@ class _DialogField extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 16),
       child: TextField(
         controller: controller,
-        keyboardType: isNumeric ? const TextInputType.numberWithOptions(decimal: true) : null,
+        keyboardType: isNumeric
+            ? const TextInputType.numberWithOptions(decimal: true)
+            : null,
         decoration: InputDecoration(
           labelText: label,
           border: const OutlineInputBorder(),
@@ -2303,237 +2227,109 @@ class _DialogField extends StatelessWidget {
   }
 }
 
-class _MachineDropdownField extends StatefulWidget {
-  const _MachineDropdownField({
-    required this.controller,
-    this.onMachineSelected,
-    this.requiredProcessType,
+class _MachineGroupDropdownField extends StatefulWidget {
+  const _MachineGroupDropdownField({
+    required this.selectedGroupId,
+    required this.onChanged,
   });
-  final TextEditingController controller;
-  final ValueChanged<Machine>? onMachineSelected;
-  final String? requiredProcessType;
+
+  final int? selectedGroupId;
+  final ValueChanged<GroupDefinition?> onChanged;
 
   @override
-  State<_MachineDropdownField> createState() => _MachineDropdownFieldState();
+  State<_MachineGroupDropdownField> createState() =>
+      _MachineGroupDropdownFieldState();
 }
 
-class _MachineDropdownFieldState extends State<_MachineDropdownField> {
-  List<Machine>? _machines;
-  bool _isLoading = true;
-
+class _MachineGroupDropdownFieldState
+    extends State<_MachineGroupDropdownField> {
   @override
   void initState() {
     super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      final provider = context.read<MachinesProvider>();
-      await provider.initialize();
-      if (!mounted) return;
-      setState(() {
-        _machines = provider.machines;
-        if (widget.requiredProcessType != null && widget.requiredProcessType!.trim().isNotEmpty) {
-           _machines = _machines?.where((m) => m.capabilities.any((c) => c.processType.trim().toLowerCase() == widget.requiredProcessType!.trim().toLowerCase())).toList();
-        }
-        _isLoading = false;
-
-        if (_machines != null && _machines!.length == 1 && widget.controller.text.isEmpty) {
-          final autoMachine = _machines!.first;
-          widget.controller.text = autoMachine.name;
-          if (widget.onMachineSelected != null) {
-            widget.onMachineSelected!(autoMachine);
-          }
-        }
-      });
-      return;
-    } catch (_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       try {
-        final repo = context.read<MachineRepository>();
-        final m = await repo.fetchMachines();
-        if (!mounted) return;
-        setState(() {
-          _machines = m;
-          _isLoading = false;
-
-          if (_machines != null && _machines!.length == 1 && widget.controller.text.isEmpty) {
-            final autoMachine = _machines!.first;
-            widget.controller.text = autoMachine.name;
-            if (widget.onMachineSelected != null) {
-              widget.onMachineSelected!(autoMachine);
-            }
-          }
-        });
-      } catch (_) {
-        if (!mounted) return;
-        setState(() {
-          _machines = const [];
-          _isLoading = false;
-        });
-      }
-    }
+        context.read<GroupsProvider>().initialize();
+      } catch (_) {}
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Padding(
-        padding: EdgeInsets.only(bottom: 16),
-        child: CircularProgressIndicator(),
-      );
-    }
-    final machines = _machines ?? [];
-    final currentValue = widget.controller.text.trim();
-    final hasMatch = machines.any((m) => m.id == currentValue);
-    final options = <SearchableSelectOption<String>>[
-      if (!hasMatch && currentValue.isNotEmpty)
-        SearchableSelectOption<String>(
-          value: currentValue,
-          label: '$currentValue (typed)',
-          searchText: currentValue,
-        ),
-      ...machines.map(
-        (machine) => SearchableSelectOption<String>(
-          value: machine.id,
-          label: _machineOptionLabel(machine),
-          searchText: _machineOptionSearchText(machine),
+    GroupsProvider? provider;
+    try {
+      provider = context.watch<GroupsProvider>();
+    } catch (_) {}
+    final groups = provider?.activeGroups ?? const <GroupDefinition>[];
+    final selectedExists = groups.any(
+      (group) => group.id == widget.selectedGroupId,
+    );
+    final options = <SearchableSelectOption<int?>>[
+      const SearchableSelectOption<int?>(
+        value: null,
+        label: 'No machine group',
+        searchText: 'no machine group unassigned none',
+      ),
+      ...groups.map(
+        (group) => SearchableSelectOption<int?>(
+          value: group.id,
+          label: group.name,
+          searchText: group.name,
         ),
       ),
+      if (widget.selectedGroupId != null && !selectedExists)
+        SearchableSelectOption<int?>(
+          value: widget.selectedGroupId,
+          label: 'Group #${widget.selectedGroupId}',
+          searchText: '${widget.selectedGroupId}',
+        ),
     ];
-    final canCreate = _canCreateMachine(context);
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: SearchableSelectField<String>(
-        value: currentValue.isEmpty ? null : currentValue,
-        decoration: _softSearchDecoration(
-          label: 'Machine',
-          helper: machines.isEmpty
-              ? 'Search or create a machine master.'
-              : 'Search machine masters or create one.',
-        ),
-        dialogTitle: 'Assign Machine',
-        searchHintText: 'Search machine master',
-        emptyText: 'No machines found',
-        options: options,
-        canCreateOption: canCreate
-            ? (query, allOptions) {
-                final normalized = query.trim().toLowerCase();
-                return normalized.isNotEmpty &&
-                    machines.every(
-                      (machine) =>
-                          machine.name.trim().toLowerCase() != normalized &&
-                          machine.assetId.trim().toLowerCase() != normalized,
-                    );
-              }
-            : null,
-        onCreateOption: canCreate
-            ? (query) => _createMachineOption(context, query)
-            : null,
-        createOptionLabelBuilder: (query) => 'Create machine "$query"',
-        onChanged: (val) {
-          if (val == null) {
-            return;
-          }
-          widget.controller.text = val;
-          if (widget.onMachineSelected != null) {
-            final selectedMachine = _machineById(_machines ?? machines, val);
-            if (selectedMachine != null) {
-              widget.onMachineSelected!(selectedMachine);
-            }
-          }
-        },
+    return SearchableSelectField<int?>(
+      tapTargetKey: const ValueKey('pipeline-node-machine-group'),
+      value: widget.selectedGroupId,
+      decoration: _softSearchDecoration(
+        label: 'Machine Group',
+        helper: 'Assign the process to a machine group.',
       ),
+      dialogTitle: 'Assign Machine Group',
+      searchHintText: 'Search machine groups',
+      emptyText: 'No machine groups found',
+      options: options,
+      canCreateOption: provider == null
+          ? null
+          : (query, allOptions) {
+              final normalized = query.trim().toLowerCase();
+              return normalized.isNotEmpty &&
+                  groups.every(
+                    (group) => group.name.trim().toLowerCase() != normalized,
+                  );
+            },
+      onCreateOption: provider == null
+          ? null
+          : (query) async {
+              final created = await GroupsScreen.openEditor(
+                context,
+                initialName: query.trim(),
+              );
+              if (!context.mounted || created == null) {
+                return null;
+              }
+              await context.read<GroupsProvider>().refresh();
+              return SearchableSelectOption<int?>(
+                value: created.id,
+                label: created.name,
+                searchText: created.name,
+              );
+            },
+      createOptionLabelBuilder: (query) => 'Create group "$query"',
+      onChanged: (value) {
+        final group = value == null ? null : provider?.findById(value);
+        widget.onChanged(group);
+      },
     );
-  }
-
-  bool _canCreateMachine(BuildContext context) {
-    try {
-      context.read<MachinesProvider>();
-      return true;
-    } catch (_) {
-      try {
-        context.read<MachineRepository>();
-        return true;
-      } catch (_) {
-        return false;
-      }
-    }
-  }
-
-  Future<SearchableSelectOption<String>?> _createMachineOption(
-    BuildContext context,
-    String query,
-  ) async {
-    final name = query.trim();
-    if (name.isEmpty) {
-      return null;
-    }
-    final now = DateTime.now();
-    final machine = Machine(
-      id: '',
-      name: name,
-      assetId: _quickMasterCode('MAC'),
-      primaryPhotoUrl: '',
-      groupId: null,
-      makeModel: '',
-      serialNumber: '',
-      status: MachineStatus.active,
-      createdAt: now,
-      updatedAt: now,
-    );
-
-    MachinesProvider? provider;
-    try {
-      provider = context.read<MachinesProvider>();
-    } catch (_) {}
-    MachineRepository? fallbackRepo;
-    try {
-      fallbackRepo = context.read<MachineRepository>();
-    } catch (_) {}
-
-    if (provider != null) {
-      try {
-        await provider.createMachine(machine);
-        if (!mounted) {
-          return null;
-        }
-        final machines = provider.machines;
-        final created = _newestMachineByName(machines, name);
-        if (created == null) {
-          return null;
-        }
-        setState(() => _machines = machines);
-        return SearchableSelectOption<String>(
-          value: created.id,
-          label: _machineOptionLabel(created),
-          searchText: _machineOptionSearchText(created),
-        );
-      } catch (_) {}
-    }
-
-    if (fallbackRepo == null) {
-      return null;
-    }
-    try {
-      await fallbackRepo.saveMachine(machine);
-      final machines = await fallbackRepo.fetchMachines();
-      final created = _newestMachineByName(machines, name);
-      if (!mounted || created == null) {
-        return null;
-      }
-      setState(() => _machines = machines);
-      return SearchableSelectOption<String>(
-        value: created.id,
-        label: _machineOptionLabel(created),
-        searchText: _machineOptionSearchText(created),
-      );
-    } catch (_) {
-      return null;
-    }
   }
 }
+
 
 class _DieDropdownField extends StatefulWidget {
   const _DieDropdownField({
@@ -2565,7 +2361,13 @@ class _DieDropdownFieldState extends State<_DieDropdownField> {
       setState(() {
         _dies = provider.dies;
         if (widget.requiredMachineGroupId != null) {
-          _dies = _dies?.where((d) => d.compatibleMachineGroupIds.contains(widget.requiredMachineGroupId)).toList();
+          _dies = _dies
+              ?.where(
+                (d) => d.compatibleMachineGroupIds.contains(
+                  widget.requiredMachineGroupId,
+                ),
+              )
+              .toList();
         }
         _isLoading = false;
       });
@@ -2766,7 +2568,6 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
   int? _outputItemId;
   bool _propagateDownstream = true;
   int? _selectedMachineGroupId;
-  Machine? _selectedMachine;
   Timer? _debounce;
 
   void _onDraftChanged() {
@@ -2803,6 +2604,7 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
     super.initState();
     _inputItemId = widget.node.inputItem?.itemId;
     _outputItemId = widget.node.outputItem?.itemId;
+    _selectedMachineGroupId = widget.node.machineGroupId;
     _attachListeners(widget.draft);
   }
 
@@ -2823,6 +2625,7 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
     if (oldWidget.node.id != widget.node.id) {
       _inputItemId = widget.node.inputItem?.itemId;
       _outputItemId = widget.node.outputItem?.itemId;
+      _selectedMachineGroupId = widget.node.machineGroupId;
     }
   }
 
@@ -2904,53 +2707,20 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
               },
             ),
             const SizedBox(height: 12),
-            _MachineDropdownField(
-              controller: widget.draft.machine,
-              requiredProcessType: widget.draft.processType.text,
-              onMachineSelected: (machine) {
+            _MachineGroupDropdownField(
+              selectedGroupId: _selectedMachineGroupId,
+              onChanged: (group) {
                 setState(() {
-                  _selectedMachineGroupId = machine.groupId;
-                  _selectedMachine = machine;
+                  _selectedMachineGroupId = group?.id;
                 });
-                if (machine.capabilities.isNotEmpty) {
-                  final cap = machine.capabilities.first;
-                  setState(() {
-                    if (widget.draft.processType.text.isEmpty) {
-                      widget.draft.processType.text = cap.processType;
-                    }
-                    if (widget.draft.inputs.text.isEmpty) {
-                      widget.draft.inputs.text = cap.inputMaterialName;
-                    }
-                    if (widget.draft.outputs.text.isEmpty) {
-                      widget.draft.outputs.text = cap.outputMaterialName;
-                    }
-                    final materials = context
-                        .read<InventoryProvider>()
-                        .materials;
-                    MaterialRecord? inputMat;
-                    for (final m in materials) {
-                      if (m.barcode == cap.inputMaterialBarcode) {
-                        inputMat = m;
-                        break;
-                      }
-                    }
-                    _inputItemId = inputMat?.linkedItemId;
-
-                    MaterialRecord? outputMat;
-                    for (final m in materials) {
-                      if (m.barcode == cap.outputMaterialBarcode) {
-                        outputMat = m;
-                        break;
-                      }
-                    }
-                    _outputItemId = outputMat?.linkedItemId;
-                    if (cap.dieId != null && cap.dieId!.isNotEmpty) {
-                      widget.draft.dieId.text = cap.dieId!;
-                    }
-                  });
-                }
+                widget.provider.updateNodeMachineGroup(
+                  nodeId: widget.node.id,
+                  machineGroupId: group?.id,
+                  machineGroupName: group?.name,
+                );
               },
             ),
+
             _DieDropdownField(
               controller: widget.draft.dieId,
               requiredMachineGroupId: _selectedMachineGroupId,
@@ -2959,26 +2729,13 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
             Row(
               children: [
                 Expanded(
-                  child: _DialogField('Duration (Hours)', widget.draft.durationHours, isNumeric: true),
+                  child: _DialogField(
+                    'Duration (Hours)',
+                    widget.draft.durationHours,
+                    isNumeric: true,
+                  ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.calculate, color: Color(0xFF3B82F6)),
-                  tooltip: 'Calculate estimated duration',
-                  onPressed: () {
-                    if (_selectedMachine != null && _selectedMachine!.capabilities.isNotEmpty) {
-                      final cap = _selectedMachine!.capabilities.firstWhere(
-                        (c) => c.processType.toLowerCase() == widget.draft.processType.text.trim().toLowerCase(),
-                        orElse: () => _selectedMachine!.capabilities.first,
-                      );
-                      if (cap.durationPerUnit != null) {
-                        setState(() {
-                           // Arbitrary 1000 units target for demo
-                           widget.draft.durationHours.text = (cap.durationPerUnit! * 1000 / 3600).toStringAsFixed(2);
-                        });
-                      }
-                    }
-                  },
-                ),
+
               ],
             ),
             CheckboxListTile(
@@ -3057,14 +2814,8 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
   void _saveItems() {
     widget.provider.updateNodeItems(
       nodeId: widget.node.id,
-      inputItem: _endpointFor(
-        _inputItemId,
-        fallback: widget.node.inputItem,
-      ),
-      outputItem: _endpointFor(
-        _outputItemId,
-        fallback: widget.node.outputItem,
-      ),
+      inputItem: _endpointFor(_inputItemId, fallback: widget.node.inputItem),
+      outputItem: _endpointFor(_outputItemId, fallback: widget.node.outputItem),
       units: widget.units,
       propagate: _propagateDownstream,
     );
@@ -3226,7 +2977,9 @@ class _FlowchartSequencePanel extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: candidateData.isNotEmpty ? Colors.blue.withValues(alpha: 0.1) : Colors.transparent,
+                          color: candidateData.isNotEmpty
+                              ? Colors.blue.withValues(alpha: 0.1)
+                              : Colors.transparent,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Wrap(
@@ -3234,7 +2987,9 @@ class _FlowchartSequencePanel extends StatelessWidget {
                           runSpacing: 16,
                           alignment: WrapAlignment.center,
                           children: stageNodes
-                              .map((node) => _buildNodeItem(context, node, units))
+                              .map(
+                                (node) => _buildNodeItem(context, node, units),
+                              )
                               .toList(),
                         ),
                       ),
@@ -3246,7 +3001,8 @@ class _FlowchartSequencePanel extends StatelessWidget {
                           child: OutlinedButton.icon(
                             icon: const Icon(Icons.add_rounded, size: 16),
                             label: const Text('Add Next Stage'),
-                            onPressed: () => provider.addNextStepFromSelection(units: units),
+                            onPressed: () =>
+                                provider.addNextStepFromSelection(units: units),
                           ),
                         ),
                     ],
@@ -3337,16 +3093,10 @@ class _FlowchartSequencePanel extends StatelessWidget {
         color: Colors.transparent,
         child: Opacity(
           opacity: 0.8,
-          child: Transform.scale(
-            scale: 1.05,
-            child: nodeWidget,
-          ),
+          child: Transform.scale(scale: 1.05, child: nodeWidget),
         ),
       ),
-      childWhenDragging: Opacity(
-        opacity: 0.3,
-        child: nodeWidget,
-      ),
+      childWhenDragging: Opacity(opacity: 0.3, child: nodeWidget),
       child: nodeWidget,
     );
 
@@ -3422,9 +3172,17 @@ class _FlowchartSequencePanel extends StatelessWidget {
     );
   }
 
-  Widget _buildFlowConnector(BuildContext context, int stageIndex, List<UnitDefinition> units) {
-    final currentStageNodes = provider.template.nodes.where((n) => n.stageIndex == stageIndex).toList();
-    final nextStageNodes = provider.template.nodes.where((n) => n.stageIndex == stageIndex + 1).toList();
+  Widget _buildFlowConnector(
+    BuildContext context,
+    int stageIndex,
+    List<UnitDefinition> units,
+  ) {
+    final currentStageNodes = provider.template.nodes
+        .where((n) => n.stageIndex == stageIndex)
+        .toList();
+    final nextStageNodes = provider.template.nodes
+        .where((n) => n.stageIndex == stageIndex + 1)
+        .toList();
 
     bool isSplit = false;
     bool isMerge = false;
@@ -3441,32 +3199,40 @@ class _FlowchartSequencePanel extends StatelessWidget {
         alignment: Alignment.center,
         children: [
           if (isSplit || isMerge)
-             Icon(isSplit ? Icons.call_split_rounded : Icons.merge_type_rounded, color: const Color(0xFFCBD5E1), size: 32)
+            Icon(
+              isSplit ? Icons.call_split_rounded : Icons.merge_type_rounded,
+              color: const Color(0xFFCBD5E1),
+              size: 32,
+            )
           else
-             Container(
-               width: 2,
-               height: 32,
-               decoration: BoxDecoration(
-                 color: const Color(0xFFCBD5E1),
-                 borderRadius: BorderRadius.circular(1),
-               ),
-             ),
+            Container(
+              width: 2,
+              height: 32,
+              decoration: BoxDecoration(
+                color: const Color(0xFFCBD5E1),
+                borderRadius: BorderRadius.circular(1),
+              ),
+            ),
           Container(
-             decoration: BoxDecoration(
-               color: Colors.white,
-               shape: BoxShape.circle,
-               border: Border.all(color: const Color(0xFFE2E8F0)),
-             ),
-             child: InkWell(
-               onTap: () {
-                 provider.insertNodeAtStage(stageIndex + 1, units: units);
-               },
-               borderRadius: BorderRadius.circular(12),
-               child: const Padding(
-                 padding: EdgeInsets.all(4.0),
-                 child: Icon(Icons.add_rounded, size: 14, color: Color(0xFF64748B)),
-               ),
-             ),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: InkWell(
+              onTap: () {
+                provider.insertNodeAtStage(stageIndex + 1, units: units);
+              },
+              borderRadius: BorderRadius.circular(12),
+              child: const Padding(
+                padding: EdgeInsets.all(4.0),
+                child: Icon(
+                  Icons.add_rounded,
+                  size: 14,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -3523,7 +3289,15 @@ class _QuickAddPanel extends StatefulWidget {
 
 class _QuickAddPanelState extends State<_QuickAddPanel> {
   final List<String> _batchProcesses = [];
-  final List<String> _availableProcesses = ['Cut', 'Bend', 'Weld', 'Drill', 'Paint', 'Assemble', 'Pack'];
+  final List<String> _availableProcesses = [
+    'Cut',
+    'Bend',
+    'Weld',
+    'Drill',
+    'Paint',
+    'Assemble',
+    'Pack',
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -3585,29 +3359,61 @@ class _QuickAddPanelState extends State<_QuickAddPanel> {
                   const SizedBox(height: 4),
                   const Text(
                     'Select processes in order to generate a sequence.',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Color(0xFF94A3B8),
-                    ),
+                    style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
                   ),
                   const SizedBox(height: 8),
                   ..._availableProcesses.map((process) {
-                    final isSelected = _batchProcesses.contains(process);
-                    return CheckboxListTile(
+                    final index = _batchProcesses.indexOf(process);
+                    final isSelected = index != -1;
+                    return ListTile(
                       title: Text(
                         process,
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: isSelected
+                              ? FontWeight.bold
+                              : FontWeight.w600,
+                          color: isSelected
+                              ? const Color(0xFF1E293B)
+                              : const Color(0xFF64748B),
+                        ),
                       ),
-                      value: isSelected,
+                      leading: Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? const Color(0xFF3B82F6)
+                              : Colors.transparent,
+                          border: Border.all(
+                            color: isSelected
+                                ? const Color(0xFF3B82F6)
+                                : const Color(0xFFCBD5E1),
+                            width: 1.5,
+                          ),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
+                          child: isSelected
+                              ? Text(
+                                  '${index + 1}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                )
+                              : null,
+                        ),
+                      ),
                       dense: true,
                       contentPadding: EdgeInsets.zero,
-                      controlAffinity: ListTileControlAffinity.leading,
-                      onChanged: (val) {
+                      onTap: () {
                         setState(() {
-                          if (val == true) {
-                            _batchProcesses.add(process);
-                          } else {
+                          if (isSelected) {
                             _batchProcesses.remove(process);
+                          } else {
+                            _batchProcesses.add(process);
                           }
                         });
                       },
@@ -3660,7 +3466,6 @@ class _QuickMaterialChip extends StatelessWidget {
 
 class _QuickItemCreateDialog extends StatefulWidget {
   const _QuickItemCreateDialog({
-    super.key,
     required this.initialName,
     required this.units,
   });
@@ -3681,7 +3486,9 @@ class _QuickItemCreateDialogState extends State<_QuickItemCreateDialog> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.initialName);
-    _selectedUnitId = widget.units.where((u) => u.symbol == 'Pcs').firstOrNull?.id ?? widget.units.firstOrNull?.id;
+    _selectedUnitId =
+        widget.units.where((u) => u.symbol == 'Pcs').firstOrNull?.id ??
+        widget.units.firstOrNull?.id;
   }
 
   @override
@@ -3695,7 +3502,7 @@ class _QuickItemCreateDialogState extends State<_QuickItemCreateDialog> {
     if (name.isEmpty || _selectedUnitId == null) return;
 
     setState(() => _isLoading = true);
-    
+
     try {
       final itemsProvider = context.read<ItemsProvider>();
       int groupId = 0;
@@ -3719,9 +3526,9 @@ class _QuickItemCreateDialogState extends State<_QuickItemCreateDialog> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to create item: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to create item: $e')));
         setState(() => _isLoading = false);
       }
     }
@@ -3738,10 +3545,11 @@ class _QuickItemCreateDialogState extends State<_QuickItemCreateDialog> {
             controller: _nameController,
             decoration: const InputDecoration(labelText: 'Item Name'),
             autofocus: true,
+            onSubmitted: (_) => _create(),
           ),
           const SizedBox(height: 16),
           DropdownButtonFormField<int>(
-            value: _selectedUnitId,
+            initialValue: _selectedUnitId,
             decoration: const InputDecoration(labelText: 'Primary Unit'),
             items: widget.units.map((u) {
               return DropdownMenuItem<int>(
@@ -3762,7 +3570,13 @@ class _QuickItemCreateDialogState extends State<_QuickItemCreateDialog> {
         ),
         FilledButton(
           onPressed: _isLoading ? null : _create,
-          child: _isLoading ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Create'),
+          child: _isLoading
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Create'),
         ),
       ],
     );

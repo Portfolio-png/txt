@@ -7,6 +7,8 @@ class CreateVendorInput {
     this.contactName = '',
     this.phone = '',
     this.email = '',
+    this.logoUrl = '',
+    this.photoUrl = '',
   });
 
   final String name;
@@ -16,6 +18,8 @@ class CreateVendorInput {
   final String contactName;
   final String phone;
   final String email;
+  final String logoUrl;
+  final String photoUrl;
 }
 
 class UpdateVendorInput {
@@ -28,6 +32,8 @@ class UpdateVendorInput {
     this.contactName = '',
     this.phone = '',
     this.email = '',
+    this.logoUrl = '',
+    this.photoUrl = '',
   });
 
   final int id;
@@ -38,4 +44,6 @@ class UpdateVendorInput {
   final String contactName;
   final String phone;
   final String email;
+  final String logoUrl;
+  final String photoUrl;
 }

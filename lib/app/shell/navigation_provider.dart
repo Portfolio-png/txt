@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:core_erp/core/navigation/app_navigation.dart';
 
 const List<String> kSidebarNavigationOrder = <String>[
@@ -92,36 +91,8 @@ class NavigationProvider extends ChangeNotifier implements AppNavigation {
     if (skipTransition) {
       _skipNextContentTransition = true;
     }
-
-    final wasProduction = _selectedKey == 'production' || _selectedKey == 'production_pipelines';
-    final isProduction = key == 'production' || key == 'production_pipelines';
-
     _selectedKey = key;
     notifyListeners();
-
-    if (wasProduction != isProduction) {
-      _toggleFullscreen(isProduction);
-    }
-  }
-
-  Future<void> _toggleFullscreen(bool enabled) async {
-    try {
-      await const MethodChannel('paper/window_control').invokeMethod(
-        'setFullscreen',
-        <String, dynamic>{'enabled': enabled},
-      );
-    } catch (e) {
-      debugPrint('Error calling setFullscreen method channel: $e');
-    }
-    try {
-      if (enabled) {
-        await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-      } else {
-        await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-      }
-    } catch (e) {
-      debugPrint('Error setting system UI mode: $e');
-    }
   }
 
   void selectRelativeSidebarItem({bool reverse = false}) {

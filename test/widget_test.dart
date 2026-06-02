@@ -4990,12 +4990,9 @@ void main() {
     );
     expect(
       find.byKey(const ValueKey<String>('shell_top_strip_search_field')),
-      findsNothing,
-    );
-    expect(
-      find.byKey(const ValueKey<String>('collapsed')),
       findsOneWidget,
     );
+    expect(find.byKey(const ValueKey<String>('collapsed')), findsNothing);
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.digit6);

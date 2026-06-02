@@ -5,6 +5,7 @@ import 'package:core_erp/features/items/domain/item_asset.dart';
 import 'package:core_erp/features/items/domain/item_definition.dart';
 import 'package:core_erp/features/items/domain/item_inputs.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
+import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
 import 'package:core_erp/features/units/data/repositories/unit_repository.dart';
 import 'package:core_erp/features/units/domain/unit_definition.dart';
 import 'package:core_erp/features/units/domain/unit_inputs.dart';
@@ -50,6 +51,35 @@ void main() {
     expect(sheetMetalPipelineTemplate.flows.length, 5);
   });
 
+  test('process node persists optional machine group assignment', () {
+    final node = _testTemplate().nodes.single.copyWith(
+      machineGroupId: 2,
+      machineGroupName: 'Press Brake Group',
+    );
+
+    final restored = ProcessNode.fromJson(node.toJson());
+    final legacy = ProcessNode.fromJson({
+      'id': 'legacy',
+      'name': 'Legacy Node',
+      'processType': 'Action',
+      'stageIndex': 0,
+      'laneIndex': 0,
+      'inputs': const <String>[],
+      'outputs': const <String>[],
+      'machine': '',
+      'dieId': '',
+      'durationHours': 1,
+      'status': 'Ready',
+      'isIntermediate': false,
+    });
+
+    expect(restored.machineGroupId, 2);
+    expect(restored.machineGroupName, 'Press Brake Group');
+    expect(restored.hasMachineAssignment, isTrue);
+    expect(legacy.machineGroupId, isNull);
+    expect(legacy.machineGroupName, isNull);
+  });
+
   testWidgets('builder renders the current graph editor surface', (
     tester,
   ) async {
@@ -92,7 +122,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final initialCount = editor.template.nodes.length;
-    await tester.tap(find.text('Add Flow Step'));
+    await tester.tap(find.text('Add Step'));
     await tester.pumpAndSettle();
 
     expect(editor.template.nodes.length, initialCount + 1);
@@ -117,7 +147,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Details'));
+    await tester.tap(find.byTooltip('More options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit Details'));
     await tester.pumpAndSettle();
 
     expect(find.text('Pipeline Details'), findsOneWidget);
@@ -156,7 +188,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Details'));
+    await tester.tap(find.byTooltip('More options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit Details'));
     await tester.pumpAndSettle();
 
     await tester.tap(
@@ -224,6 +258,56 @@ void main() {
     expect(find.text('Create item "Custom Resin"'), findsOneWidget);
   });
 
+  testWidgets('production pipelines screen is run only for saved routes', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    final provider = ProductionProvider.seeded();
+    final editor = PipelineEditorProvider(template: _testTemplate());
+    addTearDown(provider.dispose);
+    addTearDown(editor.dispose);
+
+    final activeTemplate = _mappedFloorTemplate().copyWith(
+      name: 'Active Production Route',
+      status: PipelineTemplateStatus.active,
+    );
+    final draftTemplate = _testTemplate().copyWith(
+      id: 'draft-production-route',
+      name: 'Draft Production Route',
+      status: PipelineTemplateStatus.draft,
+    );
+    final archivedTemplate = _testTemplate().copyWith(
+      id: 'archived-production-route',
+      name: 'Archived Production Route',
+      status: PipelineTemplateStatus.archived,
+    );
+
+    await tester.pumpWidget(
+      _ProductionHarness(
+        provider: provider,
+        editor: editor,
+        pipelineRunRepository: _FakePipelineRunRepository(
+          seedTemplates: [activeTemplate, draftTemplate, archivedTemplate],
+        ),
+        child: const PipelinesScreen(
+          shopFloorId: 'floor-1',
+          mode: PipelinesScreenMode.production,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Production'), findsOneWidget);
+    expect(find.text('Active Production Route'), findsOneWidget);
+    expect(find.text('Draft Production Route'), findsOneWidget);
+    expect(find.text('Archived Production Route'), findsNothing);
+    expect(find.text('New Pipeline'), findsNothing);
+    expect(find.text('Create Pipeline'), findsNothing);
+    expect(find.byTooltip('Edit pipeline'), findsNothing);
+    expect(find.byTooltip('Duplicate Pipeline'), findsNothing);
+    expect(find.text('Run'), findsNWidgets(2));
+  });
+
   testWidgets('builder header adds connected next step', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1400, 900));
     final provider = ProductionProvider.seeded();
@@ -242,7 +326,7 @@ void main() {
 
     expect(find.text('Pipeline Control'), findsOneWidget);
 
-    await tester.tap(find.text('Add Flow Step'));
+    await tester.tap(find.text('Add Step'));
     await tester.pumpAndSettle();
 
     expect(editor.template.nodes.length, 2);
@@ -314,7 +398,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Laser Cut'), findsWidgets);
-    expect(find.text('Machine'), findsOneWidget);
+    expect(find.text('Machine Group'), findsOneWidget);
     expect(find.text('LC-01'), findsWidgets);
     expect(find.text('Apply Node Changes'), findsNothing);
     expect(find.textContaining('Use the floating toolbar'), findsOneWidget);
@@ -351,9 +435,6 @@ void main() {
     await tester.tap(find.text('Blank Profile (g)').last);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Save Changes'));
-    await tester.pumpAndSettle();
-
     final node = editor.template.nodes.singleWhere(
       (node) => node.id == 'node-cut',
     );
@@ -362,6 +443,37 @@ void main() {
     expect(node.inputs, ['Sheet Metal']);
     expect(node.outputs, ['Blank Profile']);
     expect(find.text('Apply Node Changes'), findsNothing);
+  });
+
+  testWidgets('builder assigns machine group to selected process', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    final provider = ProductionProvider.seeded();
+    final editor = PipelineEditorProvider(template: _testTemplate());
+    addTearDown(provider.dispose);
+    addTearDown(editor.dispose);
+
+    await tester.pumpWidget(
+      _ProductionHarness(
+        provider: provider,
+        editor: editor,
+        child: const PipelineBuilderScreen(shopFloorId: 'floor-1'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('pipeline-node-machine-group')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Kraft').last);
+    await tester.pumpAndSettle();
+
+    final node = editor.template.nodes.singleWhere(
+      (node) => node.id == 'node-cut',
+    );
+    expect(node.machineGroupId, 2);
+    expect(node.machineGroupName, 'Kraft');
+    expect(find.text('Kraft'), findsWidgets);
   });
 
   testWidgets('floor map renders saved pipeline templates as live routes', (
@@ -411,6 +523,9 @@ class _ProductionHarness extends StatelessWidget {
           create: (_) => UnitsProvider(
             repository: _FakeUnitRepository(_unitDefinitions()),
           ),
+        ),
+        ChangeNotifierProvider<GroupsProvider>(
+          create: (_) => GroupsProvider(repository: FakeGroupRepository()),
         ),
         ChangeNotifierProvider<ItemsProvider>(
           create: (_) =>
