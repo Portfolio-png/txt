@@ -543,7 +543,7 @@ class _SidebarExpandableHeader extends StatelessWidget {
             borderRadius: BorderRadius.circular(compact ? 16 : 34),
             onTap: () {
               focusNode.requestFocus();
-              onTap();
+              onChevronTap();
             },
             child: Container(
               height: compact ? 42 : 56,
@@ -954,7 +954,7 @@ class _SidebarTile extends StatelessWidget {
             ? 14.5
             : 16.0;
         final hasFocus = focusNode.hasFocus;
-        final foreground = isSelected || hasFocus
+        final foreground = isSelected
             ? Colors.white
             : SoftErpTheme.textPrimary;
 

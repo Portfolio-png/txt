@@ -1,0 +1,31 @@
+--- lib/features/production/screens/pipeline_builder_screen.dart
++++ lib/features/production/screens/pipeline_builder_screen.dart
+@@ -3416,28 +3416,8 @@
+                 borderRadius: BorderRadius.circular(1),
+               ),
+             ),
+-          Container(
+-            decoration: BoxDecoration(
+-              color: Colors.white,
+-              shape: BoxShape.circle,
+-              border: Border.all(color: const Color(0xFFE2E8F0)),
+-            ),
+-            child: InkWell(
+-              onTap: () {
+-                provider.insertNodeAtStage(stageIndex + 1, units: units);
+-              },
+-              borderRadius: BorderRadius.circular(12),
+-              child: const Padding(
+-                padding: EdgeInsets.all(4.0),
+-                child: Icon(
+-                  Icons.add_rounded,
+-                  size: 14,
+-                  color: Color(0xFF64748B),
+-                ),
+-              ),
+-            ),
+-          ),
++          _HoverFlowInsertButton(provider: provider, stageIndex: stageIndex, units: units),
+         ],
+       ),
+     );

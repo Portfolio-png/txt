@@ -36,6 +36,9 @@ class AppShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final navProvider = context.watch<NavigationProvider>();
+    final isSidebarVisible = navProvider.isSidebarVisible;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final isMobile =
@@ -45,6 +48,16 @@ class AppShell extends StatelessWidget {
         final sidebarWidth = compact
             ? _ShellLayoutMetrics.compactSidebarWidth
             : _ShellLayoutMetrics.sidebarWidth;
+
+        final actualSidebarWidth = isSidebarVisible ? sidebarWidth : 0.0;
+        final actualLeftInset = isSidebarVisible
+            ? _ShellLayoutMetrics.sidebarLeftInset
+            : 0.0;
+        final actualRightGap = isSidebarVisible
+            ? _ShellLayoutMetrics.sidebarRightGap
+            : 0.0;
+        final totalSidebarSpace =
+            actualSidebarWidth + actualLeftInset + actualRightGap;
 
         return PaperShortcutManager(
           child: Scaffold(
@@ -86,11 +99,12 @@ class AppShell extends StatelessWidget {
                                 child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    SizedBox(
-                                      width:
-                                          sidebarWidth +
-                                          _ShellLayoutMetrics.sidebarLeftInset +
-                                          _ShellLayoutMetrics.sidebarRightGap,
+                                    AnimatedContainer(
+                                      duration: const Duration(
+                                        milliseconds: 250,
+                                      ),
+                                      curve: Curves.easeOutCubic,
+                                      width: totalSidebarSpace,
                                       child: const Padding(
                                         padding: EdgeInsets.fromLTRB(
                                           _ShellLayoutMetrics.brandLeftInset,
@@ -114,10 +128,7 @@ class AppShell extends StatelessWidget {
                                 AnimatedContainer(
                                   duration: const Duration(milliseconds: 250),
                                   curve: Curves.easeOutCubic,
-                                  width:
-                                      sidebarWidth +
-                                      _ShellLayoutMetrics.sidebarLeftInset +
-                                      _ShellLayoutMetrics.sidebarRightGap,
+                                  width: totalSidebarSpace,
                                   child: ClipRect(
                                     child: OverflowBox(
                                       minWidth: 0,
@@ -425,16 +436,16 @@ class _ShellCompanyBrand extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            width: 49,
-            height: 49,
+            width: 36,
+            height: 36,
             decoration: const BoxDecoration(
               shape: BoxShape.circle,
               gradient: SoftErpTheme.accentGradient,
             ),
             child: Center(
               child: Container(
-                width: 24,
-                height: 24,
+                width: 20,
+                height: 20,
                 decoration: const BoxDecoration(
                   shape: BoxShape.circle,
                   color: Color(0xFFF3F5FE),
@@ -442,17 +453,20 @@ class _ShellCompanyBrand extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 13),
+          const SizedBox(width: 6),
           Expanded(
-            child: Text(
-              'Sarvadnya Udyog Private Limited',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: SoftErpTheme.textPrimary,
-                fontWeight: FontWeight.w500,
-                fontSize: 16,
-                height: 1.0,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Sarvadnya Udyog Private Limited',
+                maxLines: 1,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: SoftErpTheme.textPrimary,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 16,
+                  height: 1.0,
+                ),
               ),
             ),
           ),

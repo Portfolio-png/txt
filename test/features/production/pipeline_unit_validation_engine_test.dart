@@ -192,6 +192,47 @@ void main() {
         1,
       );
     });
+
+    test('inserted stage does not steal the shifted output stage label', () {
+      final editor = PipelineEditorProvider(
+        template: PipelineTemplate(
+          id: 'tpl-insert-labels',
+          name: 'Insert Labels',
+          description: '',
+          stageLabels: const ['Input Stage', 'Output Stage'],
+          laneLabels: const ['Main'],
+          nodes: [
+            _node(id: 'input', name: 'Input Stage', outputs: const ['Sheet']),
+            _node(
+              id: 'output',
+              name: 'Output Stage',
+              stageIndex: 1,
+              inputs: const ['Sheet'],
+            ),
+          ],
+          flows: const [],
+        ),
+      );
+      addTearDown(editor.dispose);
+
+      editor.selectNode('input');
+      editor.addNextStepFromSelection();
+
+      final inserted = editor.template.nodes.singleWhere(
+        (node) => node.id != 'input' && node.id != 'output',
+      );
+      final output = editor.template.nodes.singleWhere(
+        (node) => node.id == 'output',
+      );
+
+      expect(inserted.stageIndex, 1);
+      expect(output.stageIndex, 2);
+      expect(editor.template.stageLabels, [
+        'Input Stage',
+        inserted.name,
+        'Output Stage',
+      ]);
+    });
   });
 }
 

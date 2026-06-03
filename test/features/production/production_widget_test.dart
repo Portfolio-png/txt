@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:core_erp/features/items/data/repositories/item_repository.dart';
 import 'package:core_erp/features/items/domain/item_asset.dart';
+import 'package:paper/app/shell/navigation_provider.dart';
 import 'package:core_erp/features/items/domain/item_definition.dart';
 import 'package:core_erp/features/items/domain/item_inputs.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
@@ -93,7 +94,10 @@ void main() {
       _ProductionHarness(
         provider: provider,
         editor: editor,
-        child: const PipelineBuilderScreen(shopFloorId: 'floor-1'),
+        child: const PipelineBuilderScreen(
+          factoryId: 'default',
+          shopFloorId: 'floor-1',
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -116,7 +120,10 @@ void main() {
       _ProductionHarness(
         provider: provider,
         editor: editor,
-        child: const PipelineBuilderScreen(shopFloorId: 'floor-1'),
+        child: const PipelineBuilderScreen(
+          factoryId: 'default',
+          shopFloorId: 'floor-1',
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -142,7 +149,10 @@ void main() {
       _ProductionHarness(
         provider: provider,
         editor: editor,
-        child: const PipelineBuilderScreen(shopFloorId: 'floor-1'),
+        child: const PipelineBuilderScreen(
+          factoryId: 'default',
+          shopFloorId: 'floor-1',
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -183,7 +193,10 @@ void main() {
       _ProductionHarness(
         provider: provider,
         editor: editor,
-        child: const PipelineBuilderScreen(shopFloorId: 'floor-1'),
+        child: const PipelineBuilderScreen(
+          factoryId: 'default',
+          shopFloorId: 'floor-1',
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -319,7 +332,10 @@ void main() {
       _ProductionHarness(
         provider: provider,
         editor: editor,
-        child: const PipelineBuilderScreen(shopFloorId: 'floor-1'),
+        child: const PipelineBuilderScreen(
+          factoryId: 'default',
+          shopFloorId: 'floor-1',
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -392,7 +408,10 @@ void main() {
       _ProductionHarness(
         provider: provider,
         editor: editor,
-        child: const PipelineBuilderScreen(shopFloorId: 'floor-1'),
+        child: const PipelineBuilderScreen(
+          factoryId: 'default',
+          shopFloorId: 'floor-1',
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -402,6 +421,87 @@ void main() {
     expect(find.text('LC-01'), findsWidgets);
     expect(find.text('Apply Node Changes'), findsNothing);
     expect(find.textContaining('Use the floating toolbar'), findsOneWidget);
+  });
+
+  testWidgets('builder pins input and output stages while middle scrolls', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    final provider = ProductionProvider.seeded();
+    final editor = PipelineEditorProvider(template: _pinnedEndpointTemplate());
+    addTearDown(provider.dispose);
+    addTearDown(editor.dispose);
+
+    await tester.pumpWidget(
+      _ProductionHarness(
+        provider: provider,
+        editor: editor,
+        child: const PipelineBuilderScreen(
+          factoryId: 'default',
+          shopFloorId: 'floor-1',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final inputFinder = find.byKey(
+      const ValueKey('pipeline-pinned-input-stage'),
+    );
+    final outputFinder = find.byKey(
+      const ValueKey('pipeline-pinned-output-stage'),
+    );
+    final middleFinder = find.byKey(
+      const ValueKey('pipeline-middle-stage-scroll'),
+    );
+
+    expect(inputFinder, findsOneWidget);
+    expect(outputFinder, findsOneWidget);
+    expect(middleFinder, findsOneWidget);
+
+    final inputTop = tester.getTopLeft(inputFinder).dy;
+    final outputTop = tester.getTopLeft(outputFinder).dy;
+
+    await tester.drag(middleFinder, const Offset(0, -260));
+    await tester.pumpAndSettle();
+
+    expect(tester.getTopLeft(inputFinder).dy, moreOrLessEquals(inputTop));
+    expect(tester.getTopLeft(outputFinder).dy, moreOrLessEquals(outputTop));
+  });
+
+  testWidgets('builder keeps default inserted process node white', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    final provider = ProductionProvider.seeded();
+    final editor = PipelineEditorProvider(
+      template: _defaultInsertedProcessTemplate(),
+    );
+    addTearDown(provider.dispose);
+    addTearDown(editor.dispose);
+
+    await tester.pumpWidget(
+      _ProductionHarness(
+        provider: provider,
+        editor: editor,
+        child: const PipelineBuilderScreen(
+          factoryId: 'default',
+          shopFloorId: 'floor-1',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Default Inserted Process'), findsWidgets);
+
+    final hasEndpointFill = tester
+        .widgetList<Container>(find.byType(Container))
+        .any((container) {
+          final decoration = container.decoration;
+          return decoration is BoxDecoration &&
+              (decoration.color == const Color(0xFFDBEAFE) ||
+                  decoration.color == const Color(0xFFD1FAE5));
+        });
+    expect(hasEndpointFill, isFalse);
   });
 
   testWidgets('builder edit dialog assigns input and output item masters', (
@@ -417,12 +517,15 @@ void main() {
       _ProductionHarness(
         provider: provider,
         editor: editor,
-        child: const PipelineBuilderScreen(shopFloorId: 'floor-1'),
+        child: const PipelineBuilderScreen(
+          factoryId: 'default',
+          shopFloorId: 'floor-1',
+        ),
       ),
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Edit block'));
+    await tester.tap(find.text('Laser Cut').first);
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('pipeline-node-input-item')));
@@ -458,13 +561,27 @@ void main() {
       _ProductionHarness(
         provider: provider,
         editor: editor,
-        child: const PipelineBuilderScreen(shopFloorId: 'floor-1'),
+        child: const PipelineBuilderScreen(
+          factoryId: 'default',
+          shopFloorId: 'floor-1',
+        ),
       ),
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('pipeline-node-machine-group')));
+    await tester.tap(find.text('Laser Cut').first);
     await tester.pumpAndSettle();
+
+    final nodeFinder = find.byKey(
+      const ValueKey('pipeline-node-machine-group'),
+    );
+    await tester.ensureVisible(nodeFinder);
+    await tester.pumpAndSettle();
+
+    await tester.tap(nodeFinder);
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('Kraft').last);
     await tester.tap(find.text('Kraft').last);
     await tester.pumpAndSettle();
 
@@ -516,6 +633,9 @@ class _ProductionHarness extends StatelessWidget {
           create: (_) => ProductionRunProvider(),
         ),
         ChangeNotifierProvider<PipelineEditorProvider>.value(value: editor),
+        ChangeNotifierProvider<NavigationProvider>(
+          create: (_) => NavigationProvider(),
+        ),
         Provider<PipelineRunRepository>.value(
           value: pipelineRunRepository ?? _FakePipelineRunRepository(),
         ),
@@ -745,6 +865,90 @@ PipelineTemplate _mappedFloorTemplate() {
         materialName: 'Formed Part',
       ),
     ],
+  );
+}
+
+PipelineTemplate _pinnedEndpointTemplate() {
+  final nodes = List<ProcessNode>.generate(12, (index) {
+    final isInput = index == 0;
+    final isOutput = index == 11;
+    return ProcessNode(
+      id: 'pinned-node-$index',
+      name: isInput
+          ? 'Input Stage'
+          : isOutput
+          ? 'Output Stage'
+          : 'Process Stage ${index + 1}',
+      processType: isInput
+          ? 'Input'
+          : isOutput
+          ? 'Output'
+          : 'Process',
+      stageIndex: index,
+      laneIndex: 0,
+      inputs: const ['Material'],
+      outputs: const ['Material'],
+      machine: 'MC-${index + 1}',
+      dieId: '',
+      durationHours: 1,
+      status: 'Ready',
+      isIntermediate: false,
+    );
+  });
+
+  return PipelineTemplate(
+    id: 'tpl-pinned-endpoints',
+    shopFloorId: 'floor-1',
+    name: 'Pinned Endpoint Pipeline',
+    description: 'Pipeline with fixed endpoint stages',
+    stageLabels: List<String>.generate(12, (index) {
+      if (index == 0) {
+        return 'Input';
+      }
+      if (index == 11) {
+        return 'Output';
+      }
+      return 'Stage ${index + 1}';
+    }),
+    laneLabels: const ['Main'],
+    nodes: nodes,
+    flows: List<MaterialFlow>.generate(
+      11,
+      (index) => MaterialFlow(
+        id: 'pinned-flow-$index',
+        fromNodeId: 'pinned-node-$index',
+        toNodeId: 'pinned-node-${index + 1}',
+        materialName: 'Material',
+      ),
+    ),
+  );
+}
+
+PipelineTemplate _defaultInsertedProcessTemplate() {
+  return const PipelineTemplate(
+    id: 'tpl-default-inserted-process',
+    shopFloorId: 'floor-1',
+    name: 'Default Inserted Process Pipeline',
+    description: 'Normal inserted process node with default IO text',
+    stageLabels: ['Process'],
+    laneLabels: ['Main'],
+    nodes: [
+      ProcessNode(
+        id: 'default-inserted-process',
+        name: 'Default Inserted Process',
+        processType: 'Action',
+        stageIndex: 0,
+        laneIndex: 0,
+        inputs: ['Input'],
+        outputs: ['Output'],
+        machine: 'MC-NEW',
+        dieId: '',
+        durationHours: 1,
+        status: 'Ready',
+        isIntermediate: false,
+      ),
+    ],
+    flows: [],
   );
 }
 

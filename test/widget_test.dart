@@ -3789,6 +3789,28 @@ void main() {
     );
   });
 
+  testWidgets('desktop shell navbar collapse toggle updates sidebar state', (
+    tester,
+  ) async {
+    await pumpApp(tester, viewSize: const Size(1440, 900));
+
+    final context = tester.element(find.byType(Scaffold).first);
+    final navigation = context.read<NavigationProvider>();
+    expect(navigation.isSidebarVisible, isTrue);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('shell_sidebar_toggle_button')),
+    );
+    await tester.pumpAndSettle();
+    expect(navigation.isSidebarVisible, isFalse);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('shell_sidebar_toggle_button')),
+    );
+    await tester.pumpAndSettle();
+    expect(navigation.isSidebarVisible, isTrue);
+  });
+
   testWidgets('desktop shell top strip switches config by navigation key', (
     tester,
   ) async {

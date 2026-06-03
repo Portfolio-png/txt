@@ -82,6 +82,13 @@ class NavigationProvider extends ChangeNotifier implements AppNavigation {
   int get currentTabIndex => primaryTabIndexForKey(_selectedKey);
   int get topStripSearchTextRevision => _topStripSearchTextRevision;
   bool _skipNextContentTransition = false;
+  bool _isSidebarVisible = true;
+  bool get isSidebarVisible => _isSidebarVisible;
+
+  void toggleSidebar() {
+    _isSidebarVisible = !_isSidebarVisible;
+    notifyListeners();
+  }
 
   @override
   void select(String key, {bool skipTransition = false}) {

@@ -1,0 +1,53 @@
+--- lib/features/production/screens/pipeline_builder_screen.dart
++++ lib/features/production/screens/pipeline_builder_screen.dart
+@@ -3424,6 +3424,46 @@
+   }
+ 
++class _HoverFlowInsertButton extends StatefulWidget {
++  const _HoverFlowInsertButton({required this.provider, required this.stageIndex, required this.units});
++  final PipelineEditorProvider provider;
++  final int stageIndex;
++  final List<UnitDefinition> units;
++
++  @override
++  State<_HoverFlowInsertButton> createState() => _HoverFlowInsertButtonState();
++}
++
++class _HoverFlowInsertButtonState extends State<_HoverFlowInsertButton> {
++  bool _isHovered = false;
++
++  @override
++  Widget build(BuildContext context) {
++    return MouseRegion(
++      onEnter: (_) => setState(() => _isHovered = true),
++      onExit: (_) => setState(() => _isHovered = false),
++      child: AnimatedOpacity(
++        opacity: _isHovered ? 1.0 : 0.0,
++        duration: const Duration(milliseconds: 150),
++        child: Container(
++          decoration: BoxDecoration(
++            color: Colors.white,
++            shape: BoxShape.circle,
++            border: Border.all(color: const Color(0xFFE2E8F0)),
++          ),
++          child: InkWell(
++            onTap: () {
++              widget.provider.insertNodeAtStage(widget.stageIndex + 1, units: widget.units);
++            },
++            borderRadius: BorderRadius.circular(12),
++            child: const Padding(
++              padding: EdgeInsets.all(4.0),
++              child: Icon(
++                Icons.add_rounded,
++                size: 14,
++                color: Color(0xFF64748B),
++              ),
++            ),
++          ),
++        ),
++      ),
++    );
++  }
++}
++
+   void _showStageRenameDialog(

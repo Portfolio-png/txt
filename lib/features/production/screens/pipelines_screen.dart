@@ -363,15 +363,12 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
     final isManageMode = widget.mode == PipelinesScreenMode.manage;
     final editingTemplate = _editingTemplate;
     if (isManageMode && editingTemplate != null) {
-      return _PipelineEditorShell(
-        templateName: editingTemplate.name,
-        onBack: _closeEditorAndReload,
-        child: ChangeNotifierProvider(
-          create: (_) => PipelineEditorProvider(template: editingTemplate),
-          child: PipelineBuilderScreen(
-            factoryId: widget.factoryId,
-            shopFloorId: widget.shopFloorId,
-          ),
+      return ChangeNotifierProvider(
+        create: (_) => PipelineEditorProvider(template: editingTemplate),
+        child: PipelineBuilderScreen(
+          factoryId: widget.factoryId,
+          shopFloorId: widget.shopFloorId,
+          onBack: _closeEditorAndReload,
         ),
       );
     }

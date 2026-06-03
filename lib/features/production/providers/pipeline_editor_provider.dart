@@ -361,7 +361,10 @@ class PipelineEditorProvider extends ChangeNotifier {
     _pushHistory();
     _template = _template.copyWith(
       nodes: newNodesList,
-      stageLabels: _stageLabelsFor(maxStage),
+      stageLabels: _stageLabelsWithInsertedStage(
+        targetStageIndex,
+        _stageLabelForNode(node),
+      ),
     );
     _drafts[node.id] = ProcessNodeDraftController(node);
     _selectedNodeId = node.id;
@@ -422,9 +425,7 @@ class PipelineEditorProvider extends ChangeNotifier {
     );
 
     final originalItemName = _getOriginalItemName(source.id);
-    final stageName = _template.stageLabels.length > source.stageIndex + 1
-        ? _template.stageLabels[source.stageIndex + 1]
-        : 'Stage ${source.stageIndex + 2}';
+    final stageName = _stageLabelForNode(node);
 
     final defaultOutputName = '${stageName}_${processType}_$originalItemName';
 
@@ -473,13 +474,201 @@ class PipelineEditorProvider extends ChangeNotifier {
     _template = _template.copyWith(
       nodes: newNodesList,
       flows: newFlowsList,
-      stageLabels: _stageLabelsFor(maxStage),
+      stageLabels: _stageLabelsWithInsertedStage(
+        insertStage,
+        _stageLabelForNode(updatedNode),
+      ),
       laneLabels: _laneLabelsFor(source.laneIndex),
     );
 
     _drafts[updatedNode.id] = ProcessNodeDraftController(updatedNode);
     _selectedNodeId = updatedNode.id;
     _connectingFromNodeId = null;
+    _applyUnitContinuityAutoFixes(units);
+    notifyListeners();
+  }
+
+  void generateBatchFlow(
+    List<String> processTypes, {
+    List<UnitDefinition> units = const [],
+  }) {
+    if (processTypes.isEmpty) return;
+
+    _pushHistory();
+
+    // Find where to append
+    int startStage = 0;
+    ProcessNode? lastNode;
+    ProcessNode? outputNode;
+    
+    if (_template.nodes.isNotEmpty) {
+      for (final n in _template.nodes) {
+        if (n.name.toLowerCase().contains('output')) {
+          outputNode = n;
+        }
+        if (n.stageIndex >= startStage) {
+          startStage = n.stageIndex + 1;
+          lastNode = n;
+        }
+      }
+    }
+
+    final newNodes = List<ProcessNode>.from(_template.nodes);
+    final newFlows = List<MaterialFlow>.from(_template.flows);
+
+    bool insertBeforeOutput = false;
+    ProcessNode? nodeToConnectFrom = lastNode;
+    int insertStageIndex = startStage;
+
+    if (outputNode != null && outputNode.id == lastNode?.id) {
+      insertBeforeOutput = true;
+      insertStageIndex = outputNode.stageIndex;
+      
+      final incomingFlows = _template.flows.where((f) => f.toNodeId == outputNode!.id).toList();
+      if (incomingFlows.isNotEmpty) {
+        final incomingFlow = incomingFlows.first;
+        nodeToConnectFrom = _template.nodes.where((n) => n.id == incomingFlow.fromNodeId).firstOrNull;
+        newFlows.removeWhere((f) => f.toNodeId == outputNode!.id);
+      } else {
+        nodeToConnectFrom = null;
+      }
+    }
+
+    String? currentInputItem = nodeToConnectFrom?.outputItem?.itemName ?? 'Material';
+    PipelineItemEndpoint? currentInputEndpoint = nodeToConnectFrom?.outputItem;
+    ProcessNode? lastAddedNode = nodeToConnectFrom;
+
+    for (int i = 0; i < processTypes.length; i++) {
+      final processType = processTypes[i];
+      final stageIndex = insertStageIndex + i;
+      final isLast = i == processTypes.length - 1 && !insertBeforeOutput;
+
+      final nextNumber = newNodes.length + 1;
+      final outputName = isLast
+          ? 'Final Product'
+          : '${processType}_Output_$nextNumber';
+
+      final outputEndpoint = PipelineItemEndpoint(
+        itemId: DateTime.now().microsecondsSinceEpoch + i,
+        itemName: outputName,
+        unitId: currentInputEndpoint?.unitId ?? 0,
+        unitName: currentInputEndpoint?.unitName ?? 'Pieces',
+        unitSymbol: currentInputEndpoint?.unitSymbol ?? 'Pcs',
+      );
+
+      final node =
+          _buildNode(
+            stageIndex,
+            0,
+            processType: processType,
+            name: processType,
+          ).copyWith(
+            inputs: [currentInputItem ?? 'Material'],
+            outputs: [outputName],
+            inputItem: currentInputEndpoint,
+            outputItem: outputEndpoint,
+          );
+
+      newNodes.add(node);
+      _drafts[node.id] = ProcessNodeDraftController(node);
+
+      if (lastAddedNode != null) {
+        newFlows.add(
+          MaterialFlow(
+            id: _newFlowId(),
+            fromNodeId: lastAddedNode.id,
+            toNodeId: node.id,
+            materialName: currentInputItem ?? 'Material',
+          ),
+        );
+      }
+
+      lastAddedNode = node;
+      currentInputItem = outputName;
+      currentInputEndpoint = outputEndpoint;
+    }
+
+    if (insertBeforeOutput && outputNode != null) {
+      final shiftedOutputNode = outputNode.copyWith(
+        stageIndex: insertStageIndex + processTypes.length,
+        inputItem: currentInputEndpoint,
+        inputs: [currentInputItem ?? 'Material'],
+      );
+      
+      final outputNodeIndex = newNodes.indexWhere((n) => n.id == outputNode!.id);
+      if (outputNodeIndex != -1) {
+        newNodes[outputNodeIndex] = shiftedOutputNode;
+        _drafts[outputNode.id]?.inputs.text = currentInputItem ?? 'Material';
+      }
+
+      if (lastAddedNode != null) {
+        newFlows.add(
+          MaterialFlow(
+            id: _newFlowId(),
+            fromNodeId: lastAddedNode.id,
+            toNodeId: outputNode.id,
+            materialName: currentInputItem ?? 'Material',
+          ),
+        );
+      }
+      
+      lastNode = shiftedOutputNode;
+    } else {
+      lastNode = lastAddedNode;
+    }
+    
+    int maxStage = 0;
+    for (final n in newNodes) {
+      if (n.stageIndex > maxStage) maxStage = n.stageIndex;
+    }
+
+    _template = _template.copyWith(
+      nodes: newNodes,
+      flows: newFlows,
+      stageLabels: _stageLabelsFor(maxStage),
+    );
+
+    _selectedNodeId = lastNode?.id;
+    _connectingFromNodeId = null;
+    _applyUnitContinuityAutoFixes(units);
+    notifyListeners();
+  }
+
+  void setCommonMaterial(
+    String materialName, {
+    List<UnitDefinition> units = const [],
+  }) {
+    if (_template.nodes.isEmpty) {
+      addNode(0, 0, processType: 'Input', name: 'Raw Material');
+    }
+
+    final targetId = _selectedNodeId ?? _template.nodes.first.id;
+    final targetNode = _template.nodes.firstWhere((n) => n.id == targetId);
+
+    _pushHistory();
+
+    final endpoint = PipelineItemEndpoint(
+      itemId: DateTime.now().microsecondsSinceEpoch,
+      itemName: materialName,
+      unitId: 0,
+      unitName: 'Pieces',
+      unitSymbol: 'Pcs',
+    );
+
+    final updatedNode = targetNode.copyWith(
+      inputs: [materialName],
+      inputItem: endpoint,
+    );
+
+    _template = _template.copyWith(
+      nodes: _template.nodes
+          .map((n) => n.id == targetId ? updatedNode : n)
+          .toList(),
+    );
+
+    _drafts[targetId]?.dispose();
+    _drafts[targetId] = ProcessNodeDraftController(updatedNode);
+
     _applyUnitContinuityAutoFixes(units);
     notifyListeners();
   }
@@ -530,6 +719,34 @@ class PipelineEditorProvider extends ChangeNotifier {
       updatedStageLabels.add('Stage ${updatedStageLabels.length + 1}');
     }
     return updatedStageLabels;
+  }
+
+  String _stageLabelForNode(ProcessNode node) {
+    final name = node.name.trim();
+    if (name.isNotEmpty) {
+      return name;
+    }
+    final processType = node.processType.trim();
+    if (processType.isNotEmpty) {
+      return processType;
+    }
+    return 'Stage ${node.stageIndex + 1}';
+  }
+
+  List<String> _stageLabelsWithInsertedStage(int insertStage, String label) {
+    final labels = [..._template.stageLabels];
+    while (labels.length < insertStage) {
+      labels.add('Stage ${labels.length + 1}');
+    }
+    final resolvedLabel = label.trim().isEmpty
+        ? 'Stage ${insertStage + 1}'
+        : label.trim();
+    if (insertStage >= labels.length) {
+      labels.add(resolvedLabel);
+    } else {
+      labels.insert(insertStage, resolvedLabel);
+    }
+    return labels;
   }
 
   List<String> _laneLabelsFor(int laneIndex) {
@@ -737,6 +954,23 @@ class PipelineEditorProvider extends ChangeNotifier {
       );
     }).toList();
     _template = _template.copyWith(nodes: updatedNodes);
+    notifyListeners();
+  }
+
+  void updateNodeMachine({required String nodeId, required String machineId}) {
+    _pushHistory();
+    final updatedNodes = _template.nodes.map((node) {
+      if (node.id != nodeId) {
+        return node;
+      }
+      return node.copyWith(machine: machineId);
+    }).toList();
+
+    _template = _template.copyWith(nodes: updatedNodes);
+    final draft = _drafts[nodeId];
+    if (draft != null) {
+      draft.machine.text = machineId;
+    }
     notifyListeners();
   }
 
