@@ -166,6 +166,16 @@ class AppShell extends StatelessWidget {
                         ),
                       ],
                     ),
+                    if (!isSidebarVisible && !isMobile)
+                      Positioned(
+                        top: 28,
+                        left: 0,
+                        child: _FloatingSidebarHandle(
+                          isLeft: true,
+                          icon: Icons.menu_rounded,
+                          onTap: () => context.read<NavigationProvider>().toggleSidebar(),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -470,6 +480,12 @@ class _ShellCompanyBrand extends StatelessWidget {
               ),
             ),
           ),
+          IconButton(
+            tooltip: 'Collapse navbar',
+            icon: const Icon(Icons.menu_open_rounded, size: 20),
+            color: SoftErpTheme.textSecondary,
+            onPressed: () => context.read<NavigationProvider>().toggleSidebar(),
+          ),
         ],
       ),
     );
@@ -635,6 +651,40 @@ class _ModulePlaceholder extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FloatingSidebarHandle extends StatelessWidget {
+  const _FloatingSidebarHandle({
+    required this.isLeft,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final bool isLeft;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      elevation: 3,
+      shadowColor: const Color(0x33000000),
+      borderRadius: isLeft
+          ? const BorderRadius.horizontal(right: Radius.circular(12))
+          : const BorderRadius.horizontal(left: Radius.circular(12)),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: isLeft
+            ? const BorderRadius.horizontal(right: Radius.circular(12))
+            : const BorderRadius.horizontal(left: Radius.circular(12)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Icon(icon, size: 20, color: SoftErpTheme.textPrimary),
         ),
       ),
     );

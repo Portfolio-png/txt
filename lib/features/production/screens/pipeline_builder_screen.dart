@@ -47,6 +47,7 @@ class PipelineBuilderScreen extends StatefulWidget {
 
 class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
   final FocusNode _focusNode = FocusNode(debugLabel: 'pipeline_builder');
+  bool _showQuickAddPanel = true;
 
   @override
   void initState() {
@@ -267,6 +268,11 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
             provider: provider,
             items: items,
             units: units,
+            onClose: () {
+              setState(() {
+                _showQuickAddPanel = false;
+              });
+            },
           );
 
           // Header widget
@@ -277,23 +283,38 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
             onBack: widget.onBack,
           );
 
+          Widget layoutChild;
           if (compact) {
-            return Padding(
+            layoutChild = Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
                   headerWidget,
                   const SizedBox(height: 16),
                   Expanded(child: middleFlowchartPanel),
-                  const SizedBox(height: 16),
-                  SizedBox(height: 250, child: rightQuickAddPanel),
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeOutCubic,
+                    height: _showQuickAddPanel ? 266 : 0,
+                    child: ClipRect(
+                      child: OverflowBox(
+                        minHeight: 0,
+                        maxHeight: 266,
+                        alignment: Alignment.topCenter,
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 16),
+                          child: SizedBox(height: 250, child: rightQuickAddPanel),
+                        ),
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 16),
                   SizedBox(height: 380, child: leftPropertiesPanel),
                 ],
               ),
             );
           } else {
-            return Padding(
+            layoutChild = Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
                 children: [
@@ -306,8 +327,22 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
                         SizedBox(width: 340, child: leftPropertiesPanel),
                         const SizedBox(width: 20),
                         Expanded(child: middleFlowchartPanel),
-                        const SizedBox(width: 20),
-                        SizedBox(width: 280, child: rightQuickAddPanel),
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeOutCubic,
+                          width: _showQuickAddPanel ? 300 : 0,
+                          child: ClipRect(
+                            child: OverflowBox(
+                              minWidth: 0,
+                              maxWidth: 300,
+                              alignment: Alignment.topLeft,
+                              child: Padding(
+                                padding: const EdgeInsets.only(left: 20),
+                                child: SizedBox(width: 280, child: rightQuickAddPanel),
+                              ),
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -315,6 +350,43 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
               ),
             );
           }
+
+          return Stack(
+            children: [
+              layoutChild,
+              if (!_showQuickAddPanel)
+                Positioned(
+                  top: compact ? null : 100,
+                  bottom: compact ? 396 : null,
+                  right: 0,
+                  child: Material(
+                    color: Colors.white,
+                    elevation: 3,
+                    shadowColor: const Color(0x33000000),
+                    borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
+                    child: InkWell(
+                      onTap: () {
+                        setState(() {
+                          _showQuickAddPanel = true;
+                        });
+                      },
+                      borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        child: Transform.flip(
+                          flipX: true,
+                          child: const Icon(
+                            Icons.menu_rounded,
+                            size: 20,
+                            color: Color(0xFF1E293B),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
         },
       ),
     );
@@ -2925,96 +2997,114 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
             ),
             const SizedBox(height: 16),
             _DialogField('Name', widget.draft.name),
-            _ItemEndpointDropdown(
-              tapTargetKey: const ValueKey('pipeline-node-input-item'),
-              label: 'Input Item',
-              selectedItem: widget.node.inputItem,
-              items: widget.items,
-              units: widget.units,
-              onChanged: (itemId) {
-                setState(() => _inputItemId = itemId);
-                _saveItems();
-              },
-            ),
-            const SizedBox(height: 12),
-            _ItemEndpointDropdown(
-              tapTargetKey: const ValueKey('pipeline-node-output-item'),
-              label: 'Output Item',
-              selectedItem: widget.node.outputItem,
-              items: widget.items,
-              units: widget.units,
-              onChanged: (itemId) {
-                setState(() => _outputItemId = itemId);
-                _saveItems();
-              },
-            ),
-            const SizedBox(height: 12),
-            _UnifiedMachineField(
-              selectedGroupId: _selectedMachineGroupId,
-              selectedMachineId: widget.node.machine.isEmpty
-                  ? null
-                  : widget.node.machine,
-              onChanged: (groupId, groupName, machine) {
-                setState(() {
-                  _selectedMachineGroupId = machine?.groupId ?? groupId;
-                });
-                widget.provider.updateNodeMachineGroup(
-                  nodeId: widget.node.id,
-                  machineGroupId: machine?.groupId ?? groupId,
-                  machineGroupName: groupName,
-                );
-                widget.provider.updateNodeMachine(
-                  nodeId: widget.node.id,
-                  machineId: machine?.id ?? '',
-                );
-              },
-            ),
-
-            _DieDropdownField(
-              controller: widget.draft.dieId,
-              requiredMachineGroupId: _selectedMachineGroupId,
-            ),
-            _DialogField('Process Action', widget.draft.processType),
-            Row(
-              children: [
-                Expanded(
-                  child: _DialogField(
-                    'Duration (Hours)',
-                    widget.draft.durationHours,
-                    isNumeric: true,
-                    enabled: widget.draft.durationHours.text != '-1',
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Checkbox(
-                      value: widget.draft.durationHours.text == '-1',
-                      onChanged: (val) {
-                        setState(() {
-                          if (val == true) {
-                            widget.draft.durationHours.text = '-1';
-                          } else {
-                            widget.draft.durationHours.text = '';
-                          }
-                        });
-                      },
+            
+            if (widget.node.processType != 'Output') ...[
+              _ItemEndpointDropdown(
+                tapTargetKey: const ValueKey('pipeline-node-input-item'),
+                label: widget.node.processType == 'Input' ? 'Material' : 'Input Item',
+                selectedItem: widget.node.inputItem,
+                items: widget.items,
+                units: widget.units,
+                onChanged: (itemId) {
+                  setState(() {
+                    _inputItemId = itemId;
+                    if (widget.node.processType == 'Input') {
+                      _outputItemId = itemId;
+                    }
+                  });
+                  _saveItems();
+                },
+              ),
+            ],
+            
+            if (widget.node.processType != 'Input') ...[
+              if (widget.node.processType != 'Output') const SizedBox(height: 12),
+              _ItemEndpointDropdown(
+                tapTargetKey: const ValueKey('pipeline-node-output-item'),
+                label: widget.node.processType == 'Output' ? 'Material' : 'Output Item',
+                selectedItem: widget.node.outputItem,
+                items: widget.items,
+                units: widget.units,
+                onChanged: (itemId) {
+                  setState(() {
+                    _outputItemId = itemId;
+                    if (widget.node.processType == 'Output') {
+                      _inputItemId = itemId;
+                    }
+                  });
+                  _saveItems();
+                },
+              ),
+            ],
+            
+            if (widget.node.processType != 'Input' && widget.node.processType != 'Output') ...[
+              const SizedBox(height: 12),
+              _UnifiedMachineField(
+                selectedGroupId: _selectedMachineGroupId,
+                selectedMachineId: widget.node.machine.isEmpty
+                    ? null
+                    : widget.node.machine,
+                onChanged: (groupId, groupName, machine) {
+                  setState(() {
+                    _selectedMachineGroupId = machine?.groupId ?? groupId;
+                  });
+                  widget.provider.updateNodeMachineGroup(
+                    nodeId: widget.node.id,
+                    machineGroupId: machine?.groupId ?? groupId,
+                    machineGroupName: groupName,
+                  );
+                  widget.provider.updateNodeMachine(
+                    nodeId: widget.node.id,
+                    machineId: machine?.id ?? '',
+                  );
+                },
+              ),
+              _DieDropdownField(
+                controller: widget.draft.dieId,
+                requiredMachineGroupId: _selectedMachineGroupId,
+              ),
+              _DialogField('Process Action', widget.draft.processType),
+              Row(
+                children: [
+                  Expanded(
+                    child: _DialogField(
+                      'Duration (Hours)',
+                      widget.draft.durationHours,
+                      isNumeric: true,
+                      enabled: widget.draft.durationHours.text != '-1',
                     ),
-                    const Text('Variable'),
-                  ],
-                ),
-              ],
-            ),
-            CheckboxListTile(
-              title: const Text('Propagate changes downstream'),
-              value: _propagateDownstream,
-              onChanged: (val) {
-                if (val != null) setState(() => _propagateDownstream = val);
-              },
-              controlAffinity: ListTileControlAffinity.leading,
-              contentPadding: EdgeInsets.zero,
-            ),
+                  ),
+                  const SizedBox(width: 12),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Checkbox(
+                        value: widget.draft.durationHours.text == '-1',
+                        onChanged: (val) {
+                          setState(() {
+                            if (val == true) {
+                              widget.draft.durationHours.text = '-1';
+                            } else {
+                              widget.draft.durationHours.text = '';
+                            }
+                          });
+                        },
+                      ),
+                      const Text('Variable'),
+                    ],
+                  ),
+                ],
+              ),
+              CheckboxListTile(
+                title: const Text('Propagate changes downstream'),
+                value: _propagateDownstream,
+                onChanged: (val) {
+                  if (val != null) setState(() => _propagateDownstream = val);
+                },
+                controlAffinity: ListTileControlAffinity.leading,
+                contentPadding: EdgeInsets.zero,
+              ),
+            ],
           ],
         ),
       ),
@@ -3521,11 +3611,13 @@ class _QuickAddPanel extends StatefulWidget {
     required this.provider,
     required this.items,
     required this.units,
+    this.onClose,
   });
 
   final PipelineEditorProvider provider;
   final List<ItemDefinition> items;
   final List<UnitDefinition> units;
+  final VoidCallback? onClose;
 
   @override
   State<_QuickAddPanel> createState() => _QuickAddPanelState();
@@ -3554,15 +3646,34 @@ class _QuickAddPanelState extends State<_QuickAddPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text(
-              'Quick Actions',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF1E293B),
-              ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Quick Actions',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF1E293B),
+                    ),
+                  ),
+                ),
+                if (widget.onClose != null)
+                  IconButton(
+                    icon: Transform.flip(
+                      flipX: true,
+                      child: const Icon(
+                        Icons.menu_open_rounded,
+                        color: Color(0xFF64748B),
+                        size: 20,
+                      ),
+                    ),
+                    tooltip: 'Collapse panel',
+                    onPressed: widget.onClose,
+                  ),
+              ],
             ),
           ),
           const Divider(height: 1, color: Color(0xFFF1F5F9)),

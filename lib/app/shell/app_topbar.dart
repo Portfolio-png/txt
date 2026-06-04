@@ -191,9 +191,7 @@ class AppTopBar extends StatelessWidget {
     final selectedKey = context.select<NavigationProvider, String>(
       (navigation) => navigation.selectedKey,
     );
-    final isSidebarVisible = context.select<NavigationProvider, bool>(
-      (navigation) => navigation.isSidebarVisible,
-    );
+
     final config = resolveTopStrip(selectedKey, context);
     final currentUser = context.select<AuthProvider, AuthUser?>(
       (auth) => auth.user,
@@ -226,19 +224,6 @@ class AppTopBar extends StatelessWidget {
           return Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              IconButton(
-                key: const ValueKey<String>('shell_sidebar_toggle_button'),
-                tooltip: isSidebarVisible ? 'Collapse navbar' : 'Expand navbar',
-                onPressed: () =>
-                    context.read<NavigationProvider>().toggleSidebar(),
-                icon: Icon(
-                  isSidebarVisible
-                      ? Icons.menu_open_rounded
-                      : Icons.menu_rounded,
-                  color: SoftErpTheme.textPrimary,
-                ),
-              ),
-              const SizedBox(width: 8),
               Expanded(
                 child: config.search != null
                     ? Center(

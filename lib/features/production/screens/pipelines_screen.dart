@@ -11,6 +11,7 @@ import 'package:core_erp/features/groups/presentation/providers/groups_provider.
 import 'package:provider/provider.dart';
 
 import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
+import '../../production_pipelines/domain/material_flow.dart';
 import '../../production_pipelines/domain/pipeline_item_endpoint.dart';
 import '../../production_pipelines/domain/pipeline_template.dart';
 import '../../production_pipelines/domain/process_node.dart';
@@ -147,11 +148,34 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
                   outputItem: inputEndpoint,
                 );
 
+                final intermediateNode = ProcessNode(
+                  id: 'node-action-${now + 1}',
+                  name: 'Stage 1',
+                  processType: 'Action',
+                  stageIndex: 1,
+                  laneIndex: 0,
+                  inputs: [input],
+                  outputs: ['Process Output'],
+                  machine: '',
+                  dieId: '',
+                  durationHours: 1.0,
+                  status: 'Queued',
+                  isIntermediate: true,
+                  inputItem: inputEndpoint,
+                  outputItem: PipelineItemEndpoint(
+                    itemId: now + 1,
+                    itemName: 'Process Output',
+                    unitId: outputEndpoint.unitId,
+                    unitName: outputEndpoint.unitName,
+                    unitSymbol: outputEndpoint.unitSymbol,
+                  ),
+                );
+
                 final outputNode = ProcessNode(
-                  id: 'node-output-${now + 1}',
+                  id: 'node-output-${now + 2}',
                   name: 'Output Stage',
                   processType: 'Output',
-                  stageIndex: 1,
+                  stageIndex: 2,
                   laneIndex: 0,
                   inputs: [output],
                   outputs: [output],
@@ -164,6 +188,20 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
                   outputItem: outputEndpoint,
                 );
 
+                final flow1 = MaterialFlow(
+                  id: 'flow-$now-1',
+                  fromNodeId: inputNode.id,
+                  toNodeId: intermediateNode.id,
+                  materialName: input,
+                );
+
+                final flow2 = MaterialFlow(
+                  id: 'flow-$now-2',
+                  fromNodeId: intermediateNode.id,
+                  toNodeId: outputNode.id,
+                  materialName: 'Process Output',
+                );
+
                 Navigator.pop(
                   context,
                   PipelineTemplate(
@@ -172,10 +210,10 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
                     shopFloorId: widget.shopFloorId,
                     name: name,
                     description: desc,
-                    stageLabels: const ['Input', 'Output'],
+                    stageLabels: const ['Input', 'Stage 1', 'Output'],
                     laneLabels: const ['Main'],
-                    nodes: [inputNode, outputNode],
-                    flows: const [],
+                    nodes: [inputNode, intermediateNode, outputNode],
+                    flows: [flow1, flow2],
                     inputMaterial: input,
                     outputMaterial: output,
                   ),

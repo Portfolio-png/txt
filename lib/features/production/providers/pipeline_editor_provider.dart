@@ -699,7 +699,7 @@ class PipelineEditorProvider extends ChangeNotifier {
     final nextNumber = _template.nodes.length + 1;
     return ProcessNode(
       id: 'node-${DateTime.now().microsecondsSinceEpoch}',
-      name: name ?? 'Process $nextNumber',
+      name: name ?? 'Stage $nextNumber',
       processType: processType,
       stageIndex: stageIndex,
       laneIndex: laneIndex,
@@ -799,6 +799,11 @@ class PipelineEditorProvider extends ChangeNotifier {
 
     final targetId = _selectedNodeId!;
     final targetNode = _template.nodes.firstWhere((n) => n.id == targetId);
+
+    if (targetNode.processType == 'Input' || targetNode.processType == 'Output') {
+      return 'Cannot delete ${targetNode.name} as it is required for the pipeline.';
+    }
+
     final incoming = _template.flows
         .where((f) => f.toNodeId == targetId)
         .toList();
