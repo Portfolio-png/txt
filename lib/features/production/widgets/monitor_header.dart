@@ -55,6 +55,13 @@ class MonitorHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
+          IconButton(
+            onPressed: () => Navigator.pop(context),
+            icon: const Icon(Icons.arrow_back_rounded),
+            color: const Color(0xFF64748B),
+            tooltip: 'Exit Production Canvas',
+          ),
+          const SizedBox(width: 8),
           _PulsingDot(color: statusColor, isPulsing: running),
           const SizedBox(width: 16),
           _HeaderData(label: 'SYSTEM STATE', value: text, color: statusColor),

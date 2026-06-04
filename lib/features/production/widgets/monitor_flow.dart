@@ -13,15 +13,23 @@ class MonitorPipelineFlow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final nodes = provider.template.nodes;
+    final Map<int, List<ProcessNode>> nodesByStage = {};
+    for (final node in nodes) {
+      nodesByStage.putIfAbsent(node.stageIndex, () => []).add(node);
+    }
+    final stages = nodesByStage.keys.toList()..sort();
+    
     final selectedId = provider.selectedNodeId;
-    final selectedIndex = nodes.indexWhere((n) => n.id == selectedId);
+    final selectedNode = nodes.firstWhere((n) => n.id == selectedId, orElse: () => nodes.first);
+    final selectedStageIndex = selectedNode.stageIndex;
+
     final runState = context.select<ProductionRunProvider, ProductionState>(
       (p) => p.state,
     );
 
     return Container(
       width: double.infinity,
-      height: 120,
+      height: 160,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -30,9 +38,9 @@ class MonitorPipelineFlow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: nodes.length,
+        itemCount: stages.length,
         separatorBuilder: (context, index) {
-          final isPast = index < selectedIndex;
+          final isPast = stages[index] < selectedStageIndex;
           return Container(
             width: 40,
             alignment: Alignment.center,
@@ -43,19 +51,28 @@ class MonitorPipelineFlow extends StatelessWidget {
           );
         },
         itemBuilder: (context, index) {
-          final isSelected = nodes[index].id == selectedId;
-          final isCompleted = index < selectedIndex;
-          final isActive = isSelected &&
-              (runState == ProductionState.running ||
-                  runState == ProductionState.paused);
+          final stageNodes = nodesByStage[stages[index]]!;
           return Center(
-            child: _FlowNode(
-              node: nodes[index],
-              index: index,
-              isSelected: isSelected,
-              isCompleted: isCompleted,
-              isActive: isActive,
-              onTap: () => provider.selectNode(nodes[index].id),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: stageNodes.map((node) {
+                final isSelected = node.id == selectedId;
+                final isCompleted = node.stageIndex < selectedStageIndex || node.status == 'Reversed' || node.status == 'Skipped';
+                final isActive = isSelected &&
+                    (runState == ProductionState.running ||
+                        runState == ProductionState.paused);
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: _FlowNode(
+                    node: node,
+                    index: node.stageIndex,
+                    isSelected: isSelected,
+                    isCompleted: isCompleted,
+                    isActive: isActive,
+                    onTap: () => provider.selectNode(node.id),
+                  ),
+                );
+              }).toList(),
             ),
           );
         },
@@ -124,16 +141,19 @@ class _FlowNode extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'NODE ${index + 1}',
+                    node.status == 'Reversed' ? 'REWORK / REVERSED' : 
+                    node.status == 'Skipped' ? 'SKIPPED' : 'STAGE ${index + 1}',
                     style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w900,
-                      color: isCompleted
+                      color: node.status == 'Reversed' ? const Color(0xFFEF4444) :
+                             node.status == 'Skipped' ? const Color(0xFFF59E0B) :
+                             isCompleted
                           ? const Color(0xFF10B981)
                           : const Color(0xFF64748B),
                     ),
                   ),
-                  if (isCompleted)
+                  if (isCompleted && node.status != 'Reversed' && node.status != 'Skipped')
                     const Icon(Icons.check_circle,
                         size: 14, color: Color(0xFF10B981)),
                 ],

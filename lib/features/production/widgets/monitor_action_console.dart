@@ -7,6 +7,7 @@ import '../providers/production_run_provider.dart';
 import 'material_ledger_closure_dialog.dart';
 import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
 import '../../production_pipelines/domain/pipeline_run.dart';
+import '../../production_pipelines/domain/pipeline_template.dart';
 
 class RemoteActionConsole extends StatelessWidget {
   const RemoteActionConsole({super.key, required this.provider});
@@ -31,40 +32,77 @@ class RemoteActionConsole extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: _ConsoleAction(
-              label: isRunning ? 'DEPLOYED TO MACHINE' : 'DEPLOY & START RUN',
-              icon: Icons.rocket_launch,
-              color: const Color(0xFF10B981),
-              onPressed: isRunning || isInputLocked
-                  ? null
-                  : () => _deployAndStart(context),
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: _ConsoleAction(
+                  label: isRunning ? 'DEPLOYED TO MACHINE' : 'DEPLOY & START RUN',
+                  icon: Icons.rocket_launch,
+                  color: const Color(0xFF10B981),
+                  onPressed: isRunning || isInputLocked
+                      ? null
+                      : () => _deployAndStart(context),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _ConsoleAction(
+                  label: isPaused ? 'RESUME EXECUTION' : 'HALT / PAUSE',
+                  icon: isPaused ? Icons.play_arrow : Icons.stop_circle_outlined,
+                  color: const Color(0xFFF59E0B),
+                  onPressed: isRunning || (isPaused && !isInputLocked)
+                      ? () => _togglePause(context, isPaused)
+                      : null,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _ConsoleAction(
+                  label: 'FORCE LEDGER CLOSURE',
+                  icon: Icons.inventory_2_outlined,
+                  color: const Color(0xFF64748B),
+                  onPressed: isRunning || isPaused
+                      ? () => _openClosure(context)
+                      : null,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: _ConsoleAction(
-              label: isPaused ? 'RESUME EXECUTION' : 'HALT / PAUSE',
-              icon: isPaused ? Icons.play_arrow : Icons.stop_circle_outlined,
-              color: const Color(0xFFF59E0B),
-              onPressed: isRunning || (isPaused && !isInputLocked)
-                  ? () => _togglePause(context, isPaused)
-                  : null,
+          if (isRunning || isPaused) ...[
+            const SizedBox(height: 16),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _DynamicsAction(
+                    label: 'BRANCH',
+                    icon: Icons.call_split_outlined,
+                    onPressed: () => _handleBranch(context),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _DynamicsAction(
+                    label: 'REVERSE',
+                    icon: Icons.undo_outlined,
+                    onPressed: () => _handleReverse(context),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _DynamicsAction(
+                    label: 'SKIP',
+                    icon: Icons.fast_forward_outlined,
+                    onPressed: () => _handleSkip(context),
+                  ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: _ConsoleAction(
-              label: 'FORCE LEDGER CLOSURE',
-              icon: Icons.inventory_2_outlined,
-              color: const Color(0xFF64748B),
-              onPressed: isRunning || isPaused
-                  ? () => _openClosure(context)
-                  : null,
-            ),
-          ),
+          ],
         ],
       ),
     );
@@ -150,12 +188,49 @@ class RemoteActionConsole extends StatelessWidget {
     );
     if (!context.mounted) return;
     if (committed == true) {
+      final repo = context.read<PipelineRunRepository>();
+      final workingTemplate = production.template;
+      final blueprint = production.blueprint;
+      
+      // If the template was structurally modified by dynamics (branch, reverse, skip)
+      if (workingTemplate.id != blueprint.id) {
+        try {
+          await repo.createTemplate(
+            workingTemplate.copyWith(
+              name: '${blueprint.name} (Production Route)',
+              status: PipelineTemplateStatus.active,
+            ),
+          );
+        } catch (e) {
+          debugPrint('Failed to save dynamic pipeline route: $e');
+        }
+      }
+
       await run.completeRun();
       production.completeClosure();
     } else {
       production.cancelClosure();
       run.resumeRun();
     }
+  }
+
+  void _handleBranch(BuildContext context) {
+    final provider = context.read<ProductionProvider>();
+    if (provider.selectedNodeId == null) return;
+    // For now, hardcode splitting into 2 branches
+    provider.branchOutput(provider.selectedNodeId!, 2);
+  }
+
+  void _handleReverse(BuildContext context) {
+    final provider = context.read<ProductionProvider>();
+    if (provider.selectedNodeId == null) return;
+    provider.reverseNode(provider.selectedNodeId!, reason: 'Operator requested rework');
+  }
+
+  void _handleSkip(BuildContext context) {
+    final provider = context.read<ProductionProvider>();
+    if (provider.selectedNodeId == null) return;
+    provider.skipNode(provider.selectedNodeId!);
   }
 }
 
@@ -194,6 +269,42 @@ class _ConsoleAction extends StatelessWidget {
             color: disabled ? const Color(0xFFE2E8F0) : color.withValues(alpha: 0.3),
             width: 2,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DynamicsAction extends StatelessWidget {
+  const _DynamicsAction({
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 16, color: const Color(0xFF64748B)),
+      label: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.5,
+          color: Color(0xFF475569),
+        ),
+      ),
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        side: const BorderSide(color: Color(0xFFE2E8F0)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
         ),
       ),
     );

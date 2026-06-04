@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:provider/provider.dart';
 import 'package:core_erp/features/items/domain/item_definition.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
@@ -1923,6 +1924,17 @@ class _GitGraphCanvas extends StatelessWidget {
     final flows = provider.template.flows;
     final stageLabels = provider.template.stageLabels;
 
+    int maxStageIndex = 0;
+    int maxLaneIndex = 0;
+    for (final node in nodes) {
+      if (node.stageIndex > maxStageIndex) maxStageIndex = node.stageIndex;
+      if (node.laneIndex > maxLaneIndex) maxLaneIndex = node.laneIndex;
+    }
+    
+    // Ensure we always show at least a few columns/rows, and at least +2 from the current max
+    final sMax = math.max(3, maxStageIndex + 2);
+    final lMax = math.max(3, maxLaneIndex + 2);
+
     return DecoratedBox(
       decoration: const BoxDecoration(color: Color(0xFFF8FAFC)),
       child: GestureDetector(
@@ -1947,8 +1959,8 @@ class _GitGraphCanvas extends StatelessWidget {
                 ),
               ),
               // Drag Targets Grid
-              for (int s = 0; s < 15; s++)
-                for (int l = 0; l < 15; l++)
+              for (int s = 0; s < sMax; s++)
+                for (int l = 0; l < lMax; l++)
                   Positioned(
                     left: 100 + (s * columnWidth),
                     top: 100 + (l * rowHeight),
@@ -3002,7 +3014,7 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
               _ItemEndpointDropdown(
                 tapTargetKey: const ValueKey('pipeline-node-input-item'),
                 label: widget.node.processType == 'Input' ? 'Material' : 'Input Item',
-                selectedItem: widget.node.inputItem,
+                selectedItem: widget.node.inputItem ?? _getInheritedInput(),
                 items: widget.items,
                 units: widget.units,
                 onChanged: (itemId) {
@@ -3022,7 +3034,7 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
               _ItemEndpointDropdown(
                 tapTargetKey: const ValueKey('pipeline-node-output-item'),
                 label: widget.node.processType == 'Output' ? 'Material' : 'Output Item',
-                selectedItem: widget.node.outputItem,
+                selectedItem: widget.node.outputItem ?? _getInheritedOutput(),
                 items: widget.items,
                 units: widget.units,
                 onChanged: (itemId) {
@@ -3111,11 +3123,37 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
     );
   }
 
+  PipelineItemEndpoint? _getInheritedInput() {
+    final flow = widget.provider.template.flows
+        .where((f) => f.toNodeId == widget.node.id)
+        .firstOrNull;
+    if (flow != null) {
+      final upstream = widget.provider.template.nodes
+          .where((n) => n.id == flow.fromNodeId)
+          .firstOrNull;
+      return upstream?.outputItem;
+    }
+    return null;
+  }
+
+  PipelineItemEndpoint? _getInheritedOutput() {
+    final flow = widget.provider.template.flows
+        .where((f) => f.fromNodeId == widget.node.id)
+        .firstOrNull;
+    if (flow != null) {
+      final downstream = widget.provider.template.nodes
+          .where((n) => n.id == flow.toNodeId)
+          .firstOrNull;
+      return downstream?.inputItem;
+    }
+    return null;
+  }
+
   void _saveItems() {
     widget.provider.updateNodeItems(
       nodeId: widget.node.id,
-      inputItem: _endpointFor(_inputItemId, fallback: widget.node.inputItem),
-      outputItem: _endpointFor(_outputItemId, fallback: widget.node.outputItem),
+      inputItem: _endpointFor(_inputItemId, fallback: widget.node.inputItem ?? _getInheritedInput()),
+      outputItem: _endpointFor(_outputItemId, fallback: widget.node.outputItem ?? _getInheritedOutput()),
       units: widget.units,
       propagate: _propagateDownstream,
     );
@@ -3126,7 +3164,7 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
     PipelineItemEndpoint? fallback,
   }) {
     if (itemId == null) {
-      return null;
+      return fallback;
     }
     final item = _itemById(itemId);
     if (item == null) {
@@ -3168,7 +3206,7 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
   }
 }
 
-class _FlowchartSequencePanel extends StatelessWidget {
+class _FlowchartSequencePanel extends StatefulWidget {
   const _FlowchartSequencePanel({
     required this.provider,
     required this.onCanvasTap,
@@ -3178,8 +3216,49 @@ class _FlowchartSequencePanel extends StatelessWidget {
   final VoidCallback onCanvasTap;
 
   @override
+  State<_FlowchartSequencePanel> createState() => _FlowchartSequencePanelState();
+}
+
+class _FlowchartSequencePanelState extends State<_FlowchartSequencePanel> {
+  final ScrollController _scrollController = ScrollController();
+  bool _canScrollUp = false;
+  bool _canScrollDown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_updateScrollState);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateScrollState());
+  }
+
+  @override
+  void didUpdateWidget(covariant _FlowchartSequencePanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateScrollState());
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_updateScrollState);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _updateScrollState() {
+    if (!_scrollController.hasClients) return;
+    final canScrollUp = _scrollController.position.pixels > 0;
+    final canScrollDown = _scrollController.position.pixels < _scrollController.position.maxScrollExtent;
+    if (canScrollUp != _canScrollUp || canScrollDown != _canScrollDown) {
+      setState(() {
+        _canScrollUp = canScrollUp;
+        _canScrollDown = canScrollDown;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final template = provider.template;
+    final template = widget.provider.template;
     final nodes = template.nodes;
     final units = _activeUnitsFromContext(context);
 
@@ -3221,7 +3300,7 @@ class _FlowchartSequencePanel extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              onPressed: () => provider.addNextStepFromSelection(units: units),
+              onPressed: () => widget.provider.addNextStepFromSelection(units: units),
             ),
           ],
         ),
@@ -3264,11 +3343,11 @@ class _FlowchartSequencePanel extends StatelessWidget {
             ],
           ),
         ),
-        Expanded(
+        Flexible(
           child: GestureDetector(
             onTap: () {
-              provider.clearSelection();
-              onCanvasTap();
+              widget.provider.clearSelection();
+              widget.onCanvasTap();
             },
             behavior: HitTestBehavior.translucent,
             child: Column(
@@ -3281,33 +3360,45 @@ class _FlowchartSequencePanel extends StatelessWidget {
                     stageNodes: stages[inputStageIndex]!,
                     stageName: _stageName(template, inputStageIndex),
                     units: units,
-                    onCanvasTap: onCanvasTap,
+                    onCanvasTap: widget.onCanvasTap,
                     showConnector: outputStageIndex != null,
                     key: const ValueKey('pipeline-pinned-input-stage'),
                   ),
                 ),
-                Expanded(
+                if (_canScrollUp)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 4),
+                    child: Icon(Icons.more_horiz_rounded, color: Color(0xFF94A3B8), size: 24),
+                  ),
+                Flexible(
                   child: middleStageIndices.isEmpty
-                      ? const SizedBox.expand()
+                      ? const SizedBox.shrink()
                       : ListView.builder(
                           key: const ValueKey('pipeline-middle-stage-scroll'),
-                            primary: false,
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            itemCount: middleStageIndices.length,
-                            itemBuilder: (context, index) {
-                              final stageIndex = middleStageIndices[index];
-                              return _buildStageSection(
-                                context,
-                                stageIndex: stageIndex,
-                                stageNodes: stages[stageIndex]!,
-                                stageName: _stageName(template, stageIndex),
-                                units: units,
-                                onCanvasTap: onCanvasTap,
-                                showConnector: true,
-                              );
-                            },
+                          controller: _scrollController,
+                          shrinkWrap: true,
+                          primary: false,
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          itemCount: middleStageIndices.length,
+                          itemBuilder: (context, index) {
+                            final stageIndex = middleStageIndices[index];
+                            return _buildStageSection(
+                              context,
+                              stageIndex: stageIndex,
+                              stageNodes: stages[stageIndex]!,
+                              stageName: _stageName(template, stageIndex),
+                              units: units,
+                              onCanvasTap: widget.onCanvasTap,
+                              showConnector: true,
+                            );
+                          },
                         ),
                 ),
+                if (_canScrollDown)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 4),
+                    child: Icon(Icons.more_horiz_rounded, color: Color(0xFF94A3B8), size: 24),
+                  ),
                 if (outputStageIndex != null)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
@@ -3317,7 +3408,7 @@ class _FlowchartSequencePanel extends StatelessWidget {
                       stageNodes: stages[outputStageIndex]!,
                       stageName: _stageName(template, outputStageIndex),
                       units: units,
-                      onCanvasTap: onCanvasTap,
+                      onCanvasTap: widget.onCanvasTap,
                       showAddNext: true,
                       key: const ValueKey('pipeline-pinned-output-stage'),
                     ),
@@ -3329,7 +3420,7 @@ class _FlowchartSequencePanel extends StatelessWidget {
                       icon: const Icon(Icons.add_rounded, size: 16),
                       label: const Text('Add Next Stage'),
                       onPressed: () =>
-                          provider.addNextStepFromSelection(units: units),
+                          widget.provider.addNextStepFromSelection(units: units),
                     ),
                   ),
               ],
@@ -3374,7 +3465,7 @@ class _FlowchartSequencePanel extends StatelessWidget {
     return DragTarget<String>(
       key: key,
       onAcceptWithDetails: (details) {
-        provider.moveNodeToStage(details.data, stageIndex);
+        widget.provider.moveNodeToStage(details.data, stageIndex);
       },
       builder: (context, candidateData, rejectedData) {
         return Column(
@@ -3410,7 +3501,7 @@ class _FlowchartSequencePanel extends StatelessWidget {
                   icon: const Icon(Icons.add_rounded, size: 16),
                   label: const Text('Add Next Stage'),
                   onPressed: () =>
-                      provider.addNextStepFromSelection(units: units),
+                      widget.provider.addNextStepFromSelection(units: units),
                 ),
               ),
           ],
@@ -3479,11 +3570,11 @@ class _FlowchartSequencePanel extends StatelessWidget {
     List<UnitDefinition> units,
     VoidCallback onCanvasTap,
   ) {
-    final isSelected = node.id == provider.selectedNodeId;
-    final isConnecting = provider.connectingFromNodeId == node.id;
+    final isSelected = node.id == widget.provider.selectedNodeId;
+    final isConnecting = widget.provider.connectingFromNodeId == node.id;
     final isTarget =
-        provider.connectingFromNodeId != null &&
-        provider.connectingFromNodeId != node.id;
+        widget.provider.connectingFromNodeId != null &&
+        widget.provider.connectingFromNodeId != node.id;
 
     // Use the exact current node UI as requested
     final nodeWidget = _FlowStageBlock(
@@ -3513,7 +3604,7 @@ class _FlowchartSequencePanel extends StatelessWidget {
       children: [
         GestureDetector(
           onTap: () {
-            provider.selectNode(node.id, units: units);
+            widget.provider.selectNode(node.id, units: units);
             onCanvasTap();
           },
           child: draggableWidget,
@@ -3527,10 +3618,10 @@ class _FlowchartSequencePanel extends StatelessWidget {
     int stageIndex,
     List<UnitDefinition> units,
   ) {
-    final currentStageNodes = provider.template.nodes
+    final currentStageNodes = widget.provider.template.nodes
         .where((n) => n.stageIndex == stageIndex)
         .toList();
-    final nextStageNodes = provider.template.nodes
+    final nextStageNodes = widget.provider.template.nodes
         .where((n) => n.stageIndex == stageIndex + 1)
         .toList();
 
@@ -3564,7 +3655,7 @@ class _FlowchartSequencePanel extends StatelessWidget {
               ),
             ),
           _HoverFlowInsertButton(
-            provider: provider,
+            provider: widget.provider,
             insertStageIndex: stageIndex + 1,
             units: units,
           ),
@@ -3595,7 +3686,7 @@ class _FlowchartSequencePanel extends StatelessWidget {
           ),
           ElevatedButton(
             onPressed: () {
-              provider.renameStage(stageIndex, controller.text);
+              widget.provider.renameStage(stageIndex, controller.text);
               Navigator.pop(context);
             },
             child: const Text('Save'),

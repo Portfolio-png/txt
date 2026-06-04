@@ -443,8 +443,13 @@ class _ShellCompanyBrand extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       height: 49,
-      child: Row(
-        children: [
+      child: ClipRect(
+        child: OverflowBox(
+          alignment: Alignment.centerLeft,
+          maxWidth: double.infinity,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
           Container(
             width: 36,
             height: 36,
@@ -464,7 +469,8 @@ class _ShellCompanyBrand extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 6),
-          Expanded(
+          SizedBox(
+            width: 180,
             child: FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
@@ -487,6 +493,8 @@ class _ShellCompanyBrand extends StatelessWidget {
             onPressed: () => context.read<NavigationProvider>().toggleSidebar(),
           ),
         ],
+          ),
+        ),
       ),
     );
   }

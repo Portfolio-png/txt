@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../production_pipelines/domain/pipeline_template.dart';
 import '../../production_pipelines/domain/process_node.dart';
+import '../../production_pipelines/domain/material_flow.dart';
 
 enum ProductionRunPhase {
   idle,
@@ -219,6 +220,7 @@ class ProductionProvider extends ChangeNotifier {
 
   String _activeOperator = 'FLOOR-ADMIN';
   PipelineTemplate _template;
+  PipelineTemplate? _workingTemplate;
   ActiveProductionRun? _activeRun;
   ProductionRunPhase _phase = ProductionRunPhase.idle;
   String? _selectedNodeId;
@@ -240,7 +242,7 @@ class ProductionProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  PipelineTemplate get template => _template;
+  PipelineTemplate get template => _workingTemplate ?? _template;
   PipelineTemplate get blueprint => _template;
   ProcessNode? get selectedStage => selectedNode;
   ActiveProductionRun? get activeRun => _activeRun;
@@ -265,7 +267,7 @@ class ProductionProvider extends ChangeNotifier {
     if (selectedId == null) {
       return null;
     }
-    return _template.nodes.where((node) => node.id == selectedId).firstOrNull;
+    return template.nodes.where((node) => node.id == selectedId).firstOrNull;
   }
 
   int _currentLotNumber = 1;
@@ -307,6 +309,11 @@ class ProductionProvider extends ChangeNotifier {
 
   void loadTemplate(PipelineTemplate template) {
     _template = template;
+    _workingTemplate = template.copyWith(
+      id: 'run-${DateTime.now().microsecondsSinceEpoch}',
+      name: '${template.name} (Active Run)',
+      status: PipelineTemplateStatus.draft,
+    );
     if (template.nodes.isNotEmpty) {
       _selectedNodeId = template.nodes.first.id;
     } else {
@@ -323,7 +330,7 @@ class ProductionProvider extends ChangeNotifier {
     if (_selectedNodeId == nodeId) {
       return;
     }
-    final nextNode = _template.nodes
+    final nextNode = template.nodes
         .where((node) => node.id == nodeId)
         .firstOrNull;
     if (nextNode == null) {
@@ -415,17 +422,94 @@ class ProductionProvider extends ChangeNotifier {
   void beginClosure() => initiateClosure();
 
   void reorderStages(int oldIndex, int newIndex) {
-    if (oldIndex < 0 || oldIndex >= _template.nodes.length) return;
-    if (newIndex < 0 || newIndex > _template.nodes.length) return;
+    final nodes = [...template.nodes];
+    if (oldIndex < 0 || oldIndex >= nodes.length) return;
+    if (newIndex < 0 || newIndex > nodes.length) return;
 
-    final nodes = [..._template.nodes];
     final item = nodes.removeAt(oldIndex);
     var targetIndex = newIndex;
     if (oldIndex < targetIndex) {
       targetIndex -= 1;
     }
     nodes.insert(targetIndex, item);
-    _template = _template.copyWith(nodes: nodes);
+    _workingTemplate = template.copyWith(nodes: nodes);
+    notifyListeners();
+  }
+
+  // --- Production Dynamics: Branching, Merging, Reversing ---
+
+  void updateWorkingTemplate(PipelineTemplate newTemplate) {
+    _workingTemplate = newTemplate;
+    notifyListeners();
+  }
+
+  void skipNode(String nodeId) {
+    final nodes = [...template.nodes];
+    final idx = nodes.indexWhere((n) => n.id == nodeId);
+    if (idx != -1) {
+      nodes[idx] = nodes[idx].copyWith(status: 'Skipped');
+      _workingTemplate = template.copyWith(nodes: nodes);
+      notifyListeners();
+    }
+  }
+
+  void reverseNode(String nodeId, {required String reason}) {
+    // In a real flow, this would locate the upstream node, 
+    // inject a backward flow, and mark the upstream node for 'rework'.
+    // For now, mark the current node as 'Reversed'.
+    final nodes = [...template.nodes];
+    final idx = nodes.indexWhere((n) => n.id == nodeId);
+    if (idx != -1) {
+      nodes[idx] = nodes[idx].copyWith(status: 'Reversed');
+      _workingTemplate = template.copyWith(nodes: nodes);
+      notifyListeners();
+    }
+  }
+
+  void branchOutput(String nodeId, int numBranches) {
+    // Basic structural branch creation for the UI.
+    final nodes = [...template.nodes];
+    final flows = [...template.flows];
+    final sourceNode = nodes.firstWhere((n) => n.id == nodeId);
+    
+    // Add parallel nodes in the next stage
+    final nextStageIndex = sourceNode.stageIndex + 1;
+    for (int i = 0; i < numBranches; i++) {
+      final newId = 'node-branch-${DateTime.now().microsecondsSinceEpoch}-$i';
+      nodes.add(ProcessNode(
+        id: newId,
+        name: '${sourceNode.name} Branch ${i+1}',
+        processType: sourceNode.processType,
+        stageIndex: nextStageIndex,
+        laneIndex: i, // Parallel lanes
+        inputs: sourceNode.outputs,
+        outputs: sourceNode.outputs,
+        machine: '',
+        dieId: '',
+        durationHours: sourceNode.durationHours,
+        status: 'queued',
+        isIntermediate: true,
+      ));
+      flows.add(MaterialFlow(
+        id: 'flow-$nodeId-$newId',
+        fromNodeId: nodeId,
+        toNodeId: newId,
+        materialName: sourceNode.outputs.firstOrNull ?? '',
+        isSplit: true,
+      ));
+    }
+    
+    // Adjust lane labels if needed
+    final lanes = [...template.laneLabels];
+    while (lanes.length < numBranches) {
+      lanes.add('Lane ${lanes.length + 1}');
+    }
+
+    _workingTemplate = template.copyWith(
+      nodes: nodes, 
+      flows: flows,
+      laneLabels: lanes,
+    );
     notifyListeners();
   }
 
@@ -456,7 +540,7 @@ class ProductionProvider extends ChangeNotifier {
     if (_activeRun == null) {
       _activeRun = ActiveProductionRun(
         id: 'run-${DateTime.now().microsecondsSinceEpoch}',
-        templateId: _template.id,
+        templateId: template.id,
         phase: ProductionRunPhase.running,
         logs: [],
         startedAt: DateTime.now(),
