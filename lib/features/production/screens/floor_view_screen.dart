@@ -8,7 +8,9 @@ import '../../production_pipelines/domain/pipeline_template.dart';
 import '../../production_pipelines/domain/process_node.dart';
 import '../domain/default_floor_context.dart';
 import '../domain/models/floor_view_models.dart';
+import '../providers/production_provider.dart';
 import '../widgets/floor_map_painter.dart';
+import '../widgets/floor_node_terminal.dart';
 import '../widgets/floor_widgets.dart';
 import '../data/mock_floor_data.dart';
 
@@ -41,7 +43,9 @@ class FloorViewScreen extends StatefulWidget {
 class _FloorViewScreenState extends State<FloorViewScreen> {
   final _data = FloorMockData();
   late String _selectedPipelineId;
+  String? _selectedStationId;
   List<PipelineTemplate> _loadedTemplates = const [];
+  Set<String> _stalledMaterialPipelines = const {};
   bool _isLoadingTemplates = false;
   String? _templateLoadError;
 
@@ -88,13 +92,30 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
 
     try {
       final repo = context.read<PipelineRunRepository>();
+      final inventoryRepo = context.read<InventoryRepository>();
+      
       final templates = await repo.getTemplates();
+      final allMaterials = await inventoryRepo.getAllMaterials();
+      
       final floorTemplates = templates
           .where(_templateBelongsToCurrentFloor)
+          .where((t) => t.status == PipelineTemplateStatus.active)
           .toList(growable: false);
+          
+      final Set<String> stalledMaterialPipelines = {};
+      for (final t in floorTemplates) {
+        if (t.inputMaterial.trim().isNotEmpty) {
+          final requiredMaterial = t.inputMaterial.trim().toLowerCase();
+          final available = allMaterials.where((m) => m.name.toLowerCase() == requiredMaterial && m.onHand > 0);
+          if (available.isEmpty) {
+            stalledMaterialPipelines.add(t.id);
+          }
+        }
+      }
       if (!mounted) return;
       setState(() {
         _loadedTemplates = floorTemplates;
+        _stalledMaterialPipelines = stalledMaterialPipelines;
         if (floorTemplates.isNotEmpty &&
             !floorTemplates.any(
               (template) => template.id == _selectedPipelineId,
@@ -110,6 +131,54 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
       });
     } finally {
       if (mounted) setState(() => _isLoadingTemplates = false);
+    }
+  Future<void> _showStartPipelineDialog() async {
+    final repo = context.read<PipelineRunRepository>();
+    final templates = await repo.getTemplates();
+    
+    if (!mounted) return;
+
+    final selectedTemplate = await showDialog<PipelineTemplate>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Start Pipeline'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: templates.length,
+              itemBuilder: (context, index) {
+                final template = templates[index];
+                return ListTile(
+                  title: Text(template.name.isEmpty ? 'Unnamed Pipeline' : template.name),
+                  subtitle: Text('${template.nodes.length} stations'),
+                  onTap: () {
+                    Navigator.pop(context, template);
+                  },
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (selectedTemplate != null) {
+      final activeClone = selectedTemplate.copyWith(
+        id: '', // Empty ID forces creation of a new entry
+        name: '${selectedTemplate.name} (Active Run)',
+        status: PipelineTemplateStatus.active,
+      );
+
+      await repo.createTemplate(activeClone);
+      _loadTemplatesForShopFloor();
     }
   }
 
@@ -148,7 +217,11 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            FloorTopBar(tokens: tokens, onDispatch: widget.onOpenFloorSettings),
+            FloorTopBar(
+              tokens: tokens,
+              onDispatch: widget.onOpenFloorSettings,
+              onStartPipeline: _showStartPipelineDialog,
+            ),
             Expanded(
               child: LayoutBuilder(
                 builder: (context, constraints) {
@@ -189,9 +262,16 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
                                         ? 'Loading saved pipeline routes...'
                                         : _templateLoadError,
                                     onPipelineSelected: _selectPipeline,
+                                    onStationSelected: (id) {
+                                      setState(() {
+                                        _selectedStationId = id;
+                                      });
+                                    },
+                                    selectedStationId: _selectedStationId,
                                     onOpenPipeline: () => widget.onOpenPipeline
                                         ?.call(selectedPipelineId),
                                     onOpenAlert: widget.onOpenAlert,
+                                    selectedTemplate: selectedTemplate,
                                   ),
                                 ),
                                 const SizedBox(height: 14),
@@ -245,9 +325,16 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
                                 ? 'Loading saved pipeline routes...'
                                 : _templateLoadError,
                             onPipelineSelected: _selectPipeline,
+                            onStationSelected: (id) {
+                              setState(() {
+                                _selectedStationId = id;
+                              });
+                            },
+                            selectedStationId: _selectedStationId,
                             onOpenPipeline: () =>
                                 widget.onOpenPipeline?.call(selectedPipelineId),
                             onOpenAlert: widget.onOpenAlert,
+                            selectedTemplate: selectedTemplate,
                           ),
                         ),
                       ),
@@ -273,7 +360,10 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
   }
 
   void _selectPipeline(String pipelineId) {
-    setState(() => _selectedPipelineId = pipelineId);
+    setState(() {
+      _selectedPipelineId = pipelineId;
+      _selectedStationId = null; // Clear station selection when pipeline changes
+    });
     widget.onPipelineSelected?.call(pipelineId);
   }
 
@@ -471,21 +561,42 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
         );
       }
       if (template.nodes.length > 1 && template.flows.isEmpty) {
-        final firstNode = _orderedNodes(template).first;
-        alerts.add(
-          FloorAlert(
-            severity: AlertSeverity.warning,
-            title: 'Route not connected',
-            message: '${template.name} has stations but no material flow links',
-            position: _nodeMapPosition(
-              firstNode,
-              template,
-              templateIndex,
-              templates.length,
+        final firstNode = _orderedNodes(template).firstOrNull;
+        if (firstNode != null) {
+          alerts.add(
+            FloorAlert(
+              severity: AlertSeverity.warning,
+              title: 'Route not connected',
+              message: '${template.name} has stations but no material flow links',
+              position: _nodeMapPosition(
+                firstNode,
+                template,
+                templateIndex,
+                templates.length,
+              ),
+              relatedPipelineId: template.id,
             ),
-            relatedPipelineId: template.id,
-          ),
-        );
+          );
+        }
+      }
+      if (_stalledMaterialPipelines.contains(template.id)) {
+        final firstNode = _orderedNodes(template).firstOrNull;
+        if (firstNode != null) {
+          alerts.add(
+            FloorAlert(
+              severity: AlertSeverity.warning,
+              title: 'Material Shortage',
+              message: 'Stalled due to material inconvenience: ${template.inputMaterial}',
+              position: _nodeMapPosition(
+                firstNode,
+                template,
+                templateIndex,
+                templates.length,
+              ),
+              relatedPipelineId: template.id,
+            ),
+          );
+        }
       }
     }
     return alerts;
@@ -571,6 +682,9 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
 
   PipelineStatus _statusForTemplate(PipelineTemplate template) {
     if (template.nodes.isEmpty) return PipelineStatus.idle;
+    if (_stalledMaterialPipelines.contains(template.id)) {
+      return PipelineStatus.blocked;
+    }
     final statuses = template.nodes.map(_nodeStatus).toList(growable: false);
     if (statuses.contains(PipelineStatus.blocked)) {
       return PipelineStatus.blocked;
@@ -600,6 +714,9 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
   }
 
   String _bottleneckReason(PipelineTemplate template, PipelineStatus status) {
+    if (_stalledMaterialPipelines.contains(template.id)) {
+      return 'Stalled due to material inconvenience (${template.inputMaterial})';
+    }
     final blockedNode = template.nodes
         .where((node) => _nodeStatus(node) == PipelineStatus.blocked)
         .firstOrNull;
@@ -642,10 +759,11 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
 }
 
 class FloorTopBar extends StatelessWidget {
-  const FloorTopBar({super.key, required this.tokens, this.onDispatch});
+  const FloorTopBar({super.key, required this.tokens, this.onDispatch, this.onStartPipeline});
 
   final FloorOpsTokens tokens;
   final VoidCallback? onDispatch;
+  final VoidCallback? onStartPipeline;
 
   @override
   Widget build(BuildContext context) {
@@ -709,17 +827,33 @@ class FloorTopBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           _TimeRangeButton(tokens: tokens),
-          const SizedBox(width: 8),
+          if (onStartPipeline != null) ...[
+            FilledButton.icon(
+              onPressed: onStartPipeline,
+              icon: const Icon(Icons.play_arrow_rounded, size: 16),
+              label: const Text('Start Pipeline'),
+              style: FilledButton.styleFrom(
+                backgroundColor: tokens.selection,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
           FilledButton.icon(
             onPressed: onDispatch,
-            icon: const Icon(Icons.add_road_rounded, size: 16),
+            icon: const Icon(Icons.refresh_rounded, size: 16),
             label: const Text('Refresh Map'),
             style: FilledButton.styleFrom(
-              backgroundColor: tokens.selection,
-              foregroundColor: Colors.white,
+              backgroundColor: tokens.surfacePanel,
+              foregroundColor: tokens.textPrimary,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
+                side: BorderSide(color: tokens.borderSubtle),
               ),
             ),
           ),
@@ -1039,11 +1173,14 @@ class FloorMapCanvas extends StatefulWidget {
     required this.stations,
     required this.alerts,
     required this.selectedPipelineId,
+    this.selectedStationId,
     required this.routeSourceLabel,
     this.loadMessage,
     this.onPipelineSelected,
+    this.onStationSelected,
     this.onOpenPipeline,
     this.onOpenAlert,
+    this.selectedTemplate,
   });
 
   final FloorOpsTokens tokens;
@@ -1052,11 +1189,14 @@ class FloorMapCanvas extends StatefulWidget {
   final List<StationNode> stations;
   final List<FloorAlert> alerts;
   final String selectedPipelineId;
+  final String? selectedStationId;
   final String routeSourceLabel;
   final String? loadMessage;
   final ValueChanged<String>? onPipelineSelected;
+  final ValueChanged<String>? onStationSelected;
   final VoidCallback? onOpenPipeline;
   final ValueChanged<FloorAlert>? onOpenAlert;
+  final PipelineTemplate? selectedTemplate;
 
   @override
   State<FloorMapCanvas> createState() => _FloorMapCanvasState();
@@ -1117,6 +1257,14 @@ class _FloorMapCanvasState extends State<FloorMapCanvas>
                   (station) => station.pipelineId == widget.selectedPipelineId,
                 )
                 .toList(growable: false);
+
+            ProcessNode? selectedNode;
+            if (widget.selectedStationId != null && widget.selectedTemplate != null) {
+              selectedNode = widget.selectedTemplate!.nodes
+                  .where((n) => n.id == widget.selectedStationId)
+                  .firstOrNull;
+            }
+
             return Stack(
               children: [
                 AnimatedBuilder(
@@ -1151,10 +1299,13 @@ class _FloorMapCanvasState extends State<FloorMapCanvas>
                                 size: size,
                                 selected:
                                     station.pipelineId ==
-                                    widget.selectedPipelineId,
-                                onTap: () => widget.onPipelineSelected?.call(
-                                  station.pipelineId,
-                                ),
+                                  widget.selectedPipelineId,
+                                onTap: () {
+                                  widget.onPipelineSelected?.call(
+                                    station.pipelineId,
+                                  );
+                                  widget.onStationSelected?.call(station.id);
+                                },
                               ),
                             for (final alert in widget.alerts)
                               _AlertPin(
@@ -1240,6 +1391,17 @@ class _FloorMapCanvasState extends State<FloorMapCanvas>
                     onPressed: widget.onOpenPipeline,
                   ),
                 ),
+                if (selectedNode != null)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: FloorNodeTerminal(
+                      node: selectedNode,
+                      tokens: widget.tokens,
+                      onClose: () => widget.onStationSelected?.call(''),
+                    ),
+                  ),
               ],
             );
           },

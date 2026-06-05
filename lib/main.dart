@@ -45,6 +45,7 @@ import 'features/machines/presentation/providers/machine_provider.dart';
 import 'features/dies/data/die_repository.dart';
 import 'features/dies/data/api_die_repository.dart';
 import 'features/dies/presentation/providers/die_provider.dart';
+import 'features/machines/presentation/providers/telemetry_provider.dart';
 import 'features/production/providers/production_provider.dart';
 import 'features/production/providers/production_run_provider.dart';
 import 'features/production_pipelines/domain/node_run_status.dart';
@@ -364,6 +365,7 @@ class MyApp extends StatelessWidget {
               previous ?? DiesProvider(repository: repository)
                 ..initialize(),
         ),
+        ChangeNotifierProvider(create: (_) => TelemetryProvider()),
         ChangeNotifierProvider(create: (_) => ProductionProvider.seeded()),
         ChangeNotifierProxyProvider<PipelineRunRepository, ProductionRunProvider>(
           create: (context) => ProductionRunProvider(),

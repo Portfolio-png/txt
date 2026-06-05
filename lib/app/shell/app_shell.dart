@@ -24,6 +24,7 @@ import 'package:core_erp/features/vendors/presentation/screens/vendors_screen.da
 import '../../features/machines/presentation/screens/machine_list_screen.dart';
 import '../../features/dies/presentation/screens/die_list_screen.dart';
 import '../../features/production_pipelines/presentation/screens/production_pipelines_screen.dart';
+import '../../features/machines/presentation/screens/machine_telemetry_screen.dart';
 import 'app_sidebar.dart';
 import 'app_topbar.dart';
 import 'navigation_provider.dart';
@@ -590,6 +591,7 @@ class _ShellContentSwitcher extends StatelessWidget {
                 mode: ProductionPipelinesScreenMode.manage,
               ),
               'pm' => const PMScreen(),
+              'telemetry' => const MachineTelemetryScreen(),
               'orders' => const OrdersScreen(),
               'delivery_challans' => const ChallanScreen(),
               'challan_invoice_report' =>

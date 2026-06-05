@@ -17,6 +17,9 @@ class PipelineTemplate {
     this.inputMaterial = '',
     this.outputMaterial = '',
     this.status = PipelineTemplateStatus.draft,
+    this.linkedOrderId,
+    this.linkedOrderNo,
+    this.linkedClientName,
   });
 
   final String id;
@@ -31,6 +34,9 @@ class PipelineTemplate {
   final String inputMaterial;
   final String outputMaterial;
   final PipelineTemplateStatus status;
+  final int? linkedOrderId;
+  final String? linkedOrderNo;
+  final String? linkedClientName;
 
   List<ProcessNode> get stages => nodes;
 
@@ -60,6 +66,9 @@ class PipelineTemplate {
         (e) => e.name == json['status'],
         orElse: () => PipelineTemplateStatus.draft,
       ),
+      linkedOrderId: json['linkedOrderId'] as int?,
+      linkedOrderNo: json['linkedOrderNo'] as String?,
+      linkedClientName: json['linkedClientName'] as String?,
     );
   }
 
@@ -76,6 +85,9 @@ class PipelineTemplate {
     String? inputMaterial,
     String? outputMaterial,
     PipelineTemplateStatus? status,
+    int? linkedOrderId,
+    String? linkedOrderNo,
+    String? linkedClientName,
   }) {
     return PipelineTemplate(
       id: id ?? this.id,
@@ -90,6 +102,9 @@ class PipelineTemplate {
       inputMaterial: inputMaterial ?? this.inputMaterial,
       outputMaterial: outputMaterial ?? this.outputMaterial,
       status: status ?? this.status,
+      linkedOrderId: linkedOrderId ?? this.linkedOrderId,
+      linkedOrderNo: linkedOrderNo ?? this.linkedOrderNo,
+      linkedClientName: linkedClientName ?? this.linkedClientName,
     );
   }
 
@@ -107,6 +122,9 @@ class PipelineTemplate {
       'inputMaterial': inputMaterial,
       'outputMaterial': outputMaterial,
       'status': status.name,
+      'linkedOrderId': linkedOrderId,
+      'linkedOrderNo': linkedOrderNo,
+      'linkedClientName': linkedClientName,
     };
   }
 }

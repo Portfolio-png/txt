@@ -5,9 +5,13 @@ import 'package:provider/provider.dart';
 import '../providers/production_provider.dart';
 import '../providers/production_run_provider.dart';
 import 'material_ledger_closure_dialog.dart';
+import 'order_fulfillment_prompt_dialog.dart';
 import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
 import '../../production_pipelines/domain/pipeline_run.dart';
 import '../../production_pipelines/domain/pipeline_template.dart';
+import 'package:core_erp/features/orders/domain/order_inputs.dart';
+import 'package:core_erp/features/orders/domain/order_entry.dart';
+import 'package:core_erp/features/orders/presentation/providers/orders_provider.dart';
 
 class RemoteActionConsole extends StatelessWidget {
   const RemoteActionConsole({super.key, required this.provider});
@@ -71,38 +75,6 @@ class RemoteActionConsole extends StatelessWidget {
               ),
             ],
           ),
-          if (isRunning || isPaused) ...[
-            const SizedBox(height: 16),
-            const Divider(height: 1, color: Color(0xFFE2E8F0)),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: _DynamicsAction(
-                    label: 'BRANCH',
-                    icon: Icons.call_split_outlined,
-                    onPressed: () => _handleBranch(context),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _DynamicsAction(
-                    label: 'REVERSE',
-                    icon: Icons.undo_outlined,
-                    onPressed: () => _handleReverse(context),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _DynamicsAction(
-                    label: 'SKIP',
-                    icon: Icons.fast_forward_outlined,
-                    onPressed: () => _handleSkip(context),
-                  ),
-                ),
-              ],
-            ),
-          ],
         ],
       ),
     );
@@ -152,6 +124,19 @@ class RemoteActionConsole extends StatelessWidget {
       if (context.mounted) {
         production.startRun();
         run.startRun(runId: newRun.id);
+
+        if (template.linkedOrderId != null) {
+          try {
+            await context.read<OrdersProvider>().updateOrderLifecycle(
+              UpdateOrderLifecycleInput(
+                id: template.linkedOrderId!,
+                status: OrderStatus.inProgress,
+              ),
+            );
+          } catch (e) {
+            debugPrint('Failed to update order status: $e');
+          }
+        }
       }
     }
   }
@@ -207,7 +192,31 @@ class RemoteActionConsole extends StatelessWidget {
       }
 
       await run.completeRun();
+      final yieldProduced = production.goodYieldCount;
+      final linkedOrderId = production.linkedOrderId;
+
       production.completeClosure();
+
+      if (linkedOrderId != null && yieldProduced > 0) {
+        if (!context.mounted) return;
+        final orders = context.read<OrdersProvider>().orders;
+        final index = orders.indexWhere((o) => o.id == linkedOrderId);
+        if (index >= 0) {
+          final order = orders[index];
+          // Determine if we should show the prompt
+          final totalNow = order.totalDeliveredQty + yieldProduced;
+          if (totalNow >= order.quantity * 0.95) {
+             await showDialog(
+               context: context,
+               builder: (_) => OrderFulfillmentPromptDialog(
+                 order: order,
+                 yieldProduced: yieldProduced.toInt(),
+               ),
+             );
+          }
+        }
+      }
+
     } else {
       production.cancelClosure();
       run.resumeRun();

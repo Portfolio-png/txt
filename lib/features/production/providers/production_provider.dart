@@ -250,6 +250,10 @@ class ProductionProvider extends ChangeNotifier {
   String? get selectedNodeId => _selectedNodeId;
   String? get currentMachineId => _currentMachineId;
   String? get currentDieId => _currentDieId;
+  DateTime? get nodeStartedAt => _nodeStartedAt;
+  int? get linkedOrderId => template.linkedOrderId;
+  String? get linkedOrderNo => template.linkedOrderNo;
+  String? get linkedClientName => template.linkedClientName;
   int get elapsedSeconds => _currentElapsed.inSeconds;
   int get goodYieldCount => _goodYieldCount;
   double get scrapWeightKg => _scrapWeightKg;
@@ -307,15 +311,28 @@ class ProductionProvider extends ChangeNotifier {
     return _bankedElapsed;
   }
 
-  void loadTemplate(PipelineTemplate template) {
-    _template = template;
-    _workingTemplate = template.copyWith(
+  void loadTemplate(
+    PipelineTemplate newTemplate, {
+    int? orderId,
+    String? orderNo,
+    String? clientName,
+  }) {
+    if (newTemplate.id.isEmpty && newTemplate.name.isEmpty) return;
+
+    final stampedTemplate = newTemplate.copyWith(
+      linkedOrderId: orderId ?? newTemplate.linkedOrderId,
+      linkedOrderNo: orderNo ?? newTemplate.linkedOrderNo,
+      linkedClientName: clientName ?? newTemplate.linkedClientName,
+    );
+
+    _template = stampedTemplate;
+    _workingTemplate = stampedTemplate.copyWith(
       id: 'run-${DateTime.now().microsecondsSinceEpoch}',
-      name: '${template.name} (Active Run)',
+      name: '${stampedTemplate.name} (Active Run)',
       status: PipelineTemplateStatus.draft,
     );
-    if (template.nodes.isNotEmpty) {
-      _selectedNodeId = template.nodes.first.id;
+    if (stampedTemplate.nodes.isNotEmpty) {
+      _selectedNodeId = stampedTemplate.nodes.first.id;
     } else {
       _selectedNodeId = null;
     }
@@ -323,6 +340,11 @@ class ProductionProvider extends ChangeNotifier {
     _currentMachineId = null;
     _currentDieId = null;
     _validationErrorMessage = null;
+    notifyListeners();
+  }
+
+  void clearNodeSelection() {
+    _selectedNodeId = null;
     notifyListeners();
   }
 

@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'package:core_erp/features/inventory/data/repositories/inventory_repository.dart';
+import 'package:core_erp/features/inventory/domain/inventory_control_tower.dart';
+import 'package:core_erp/features/inventory/domain/material_inputs.dart';
+import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
+import 'package:core_erp/features/inventory/domain/material_record.dart';
+
 import '../domain/utils/material_ledger_distributor.dart';
 import '../providers/production_provider.dart';
 
@@ -15,6 +21,8 @@ class MaterialLedgerClosureDialog extends StatefulWidget {
 class _MaterialLedgerClosureDialogState
     extends State<MaterialLedgerClosureDialog> {
   late LedgerWeights _weights;
+  bool _isCommitting = false;
+  String? _selectedParentBarcode;
 
   @override
   void initState() {
@@ -125,13 +133,17 @@ class _MaterialLedgerClosureDialogState
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final isWide = constraints.maxWidth >= 850;
+                    final inventory = context.watch<InventoryProvider>();
                     final editor = _LedgerEditor(
+                      materials: inventory.materials,
+                      selectedParentBarcode: _selectedParentBarcode,
                       parentKg: _weights.parentKg,
                       yieldUnits: _weights.yieldUnits,
                       scrapKg: _weights.scrapKg,
                       goodKg: _weights.goodKg,
                       setupKg: _weights.setupKg,
                       processKg: _weights.processKg,
+                      onParentBarcodeSelected: (val) => setState(() => _selectedParentBarcode = val),
                       onParentChanged: (value) => _update(parentKg: value),
                       onYieldChanged: (value) => _update(yieldUnits: value),
                       onScrapChanged: (value) => _update(scrapKg: value),
@@ -198,15 +210,20 @@ class _MaterialLedgerClosureDialogState
                           borderRadius: BorderRadius.circular(6),
                         ),
                       ),
-                      onPressed: () {
-                        _syncProvider();
-                        context.read<ProductionProvider>().commitClosure();
-                        Navigator.of(context).pop(true);
-                      },
-                      icon: const Icon(Icons.save_rounded),
-                      label: const Text(
-                        'Commit Ledger',
-                        style: TextStyle(fontWeight: FontWeight.w900),
+                      onPressed: _isCommitting ? null : _commitLedger,
+                      icon: _isCommitting
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFF09090B),
+                              ),
+                            )
+                          : const Icon(Icons.save_rounded),
+                      label: Text(
+                        _isCommitting ? 'Committing...' : 'Commit Ledger',
+                        style: const TextStyle(fontWeight: FontWeight.w900),
                       ),
                     ),
                   ),
@@ -218,16 +235,106 @@ class _MaterialLedgerClosureDialogState
       ),
     );
   }
+
+  Future<void> _commitLedger() async {
+    if (_isCommitting) return;
+    setState(() => _isCommitting = true);
+
+    try {
+      final provider = context.read<ProductionProvider>();
+      final repo = context.read<InventoryRepository>();
+      final activeOperator = provider.activeOperator;
+
+      // Sync local provider UI values just in case
+      _syncProvider();
+
+      if (_selectedParentBarcode == null) {
+        throw Exception('Please select the consumed material from the dropdown.');
+      }
+
+      // 1. Consume Parent Stock
+      await repo.createInventoryMovement(
+        CreateInventoryMovementInput(
+          materialBarcode: _selectedParentBarcode!,
+          movementType: InventoryMovementType.consume,
+          qty: _weights.parentKg,
+          reasonCode: 'PRODUCTION_CONSUME',
+          actor: activeOperator,
+        ),
+      );
+
+      // 2. Adjust Scrap out
+      if (_weights.scrapKg > 0) {
+        await repo.createInventoryMovement(
+          CreateInventoryMovementInput(
+            materialBarcode: _selectedParentBarcode!,
+            movementType: InventoryMovementType.adjust,
+            qty: -_weights.scrapKg,
+            reasonCode: 'SCRAP_WASTAGE',
+            actor: activeOperator,
+          ),
+        );
+      }
+
+      // 3. Receive Yield
+      if (_weights.yieldUnits > 0) {
+        // Create a new child material for this yield lot
+        final yieldLot = await repo.createChildMaterial(
+          CreateChildMaterialInput(
+            parentBarcode: _selectedParentBarcode!,
+            name: 'Yield from Run ${provider.activeRun?.id ?? "UNKNOWN"}',
+          ),
+        );
+
+        final outputItem = provider.selectedNode?.outputItem;
+        if (outputItem != null) {
+          await repo.linkMaterialToItem(yieldLot.barcode, outputItem.itemId);
+        }
+
+        // Receive the output into inventory
+        await repo.createInventoryMovement(
+          CreateInventoryMovementInput(
+            materialBarcode: yieldLot.barcode,
+            movementType: InventoryMovementType.receive,
+            qty: _weights.yieldUnits.toDouble(),
+            reasonCode: 'PRODUCTION_YIELD',
+            actor: activeOperator,
+          ),
+        );
+      }
+
+      if (!mounted) return;
+      context.read<ProductionProvider>().commitClosure();
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      debugPrint('Failed to commit ledger to inventory: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to commit ledger: $e'),
+            backgroundColor: const Color(0xFFEF4444),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isCommitting = false);
+      }
+    }
+  }
 }
 
 class _LedgerEditor extends StatelessWidget {
   const _LedgerEditor({
+    required this.materials,
+    required this.selectedParentBarcode,
     required this.parentKg,
     required this.yieldUnits,
     required this.scrapKg,
     required this.goodKg,
     required this.setupKg,
     required this.processKg,
+    required this.onParentBarcodeSelected,
     required this.onParentChanged,
     required this.onYieldChanged,
     required this.onScrapChanged,
@@ -236,6 +343,9 @@ class _LedgerEditor extends StatelessWidget {
     required this.onProcessKgChanged,
   });
 
+  final List<MaterialRecord> materials;
+  final String? selectedParentBarcode;
+
   final double parentKg;
   final int yieldUnits;
   final double scrapKg;
@@ -243,6 +353,7 @@ class _LedgerEditor extends StatelessWidget {
   final double setupKg;
   final double processKg;
 
+  final ValueChanged<String?> onParentBarcodeSelected;
   final ValueChanged<double> onParentChanged;
   final ValueChanged<int> onYieldChanged;
   final ValueChanged<double> onScrapChanged;
@@ -257,11 +368,17 @@ class _LedgerEditor extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const _LedgerHeader(),
+          const SizedBox(height: 16),
+          _MaterialSelector(
+            materials: materials,
+            selectedBarcode: selectedParentBarcode,
+            onChanged: onParentBarcodeSelected,
+          ),
           const SizedBox(height: 8),
 
           // Consumed Row
           _EditableLedgerRow<double>(
-            code: 'STOCK_REEL_8821',
+            code: selectedParentBarcode ?? 'SELECT_MATERIAL',
             label: 'Consumed',
             value: parentKg,
             unit: 'Kg',
@@ -890,4 +1007,65 @@ String _formatInt(int value) {
     }
   }
   return buffer.toString();
+}
+
+class _MaterialSelector extends StatelessWidget {
+  const _MaterialSelector({
+    required this.materials,
+    required this.selectedBarcode,
+    required this.onChanged,
+  });
+
+  final List<MaterialRecord> materials;
+  final String? selectedBarcode;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'SELECT CONSUMED MATERIAL',
+          style: TextStyle(
+            fontFamily: 'monospace',
+            fontSize: 10,
+            color: Color(0xFFA1A1AA),
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<String>(
+          initialValue: selectedBarcode,
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: const Color(0xFF18181B),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide.none,
+            ),
+          ),
+          dropdownColor: const Color(0xFF18181B),
+          style: const TextStyle(
+            fontFamily: 'monospace',
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+          items: materials.map((m) {
+            return DropdownMenuItem<String>(
+              value: m.barcode,
+              child: Text('${m.name} (${m.barcode})'),
+            );
+          }).toList(),
+          onChanged: onChanged,
+          hint: const Text(
+            'Select Material',
+            style: TextStyle(color: Color(0xFFA1A1AA)),
+          ),
+        ),
+      ],
+    );
+  }
 }

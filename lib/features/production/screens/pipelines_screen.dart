@@ -18,8 +18,12 @@ import '../../production_pipelines/domain/process_node.dart';
 import '../domain/default_floor_context.dart';
 import '../providers/pipeline_editor_provider.dart';
 import '../providers/production_provider.dart';
+import 'package:core_erp/features/orders/domain/order_entry.dart';
+import 'package:core_erp/features/orders/presentation/providers/orders_provider.dart';
+
 import 'live_production_monitor_screen.dart';
 import 'pipeline_builder_screen.dart';
+import '../widgets/order_picker_dialog.dart';
 
 enum PipelinesScreenMode { manage, production }
 
@@ -383,8 +387,23 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
     setState(() => _editingTemplate = template);
   }
 
-  void _run(PipelineTemplate template) {
-    context.read<ProductionProvider>().loadTemplate(template);
+  Future<void> _run(PipelineTemplate template) async {
+    final order = await showDialog<OrderEntry?>(
+      context: context,
+      builder: (_) => ChangeNotifierProvider.value(
+        value: context.read<OrdersProvider>(),
+        child: const OrderPickerDialog(),
+      ),
+    );
+
+    if (!mounted) return;
+
+    context.read<ProductionProvider>().loadTemplate(
+      template,
+      orderId: order?.id,
+      orderNo: order?.orderNo,
+      clientName: order?.clientName,
+    );
 
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const LiveProductionMonitorScreen()),

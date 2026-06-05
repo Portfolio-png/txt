@@ -53,6 +53,7 @@ class _AppSidebarState extends State<AppSidebar> {
       'Production',
       Icons.precision_manufacturing_outlined,
     ),
+    _SidebarItemData('telemetry', 'Telemetry', Icons.monitor_heart_outlined),
     _SidebarItemData('pm', 'PM', Icons.widgets_outlined),
   ];
 

@@ -26,6 +26,8 @@ class MonitorHeader extends StatelessWidget {
     final operatorName = context.select<ProductionProvider, String>(
       (p) => p.activeOperator,
     );
+    final orderNo = provider.linkedOrderNo;
+    final clientName = provider.linkedClientName;
 
     final Color statusColor;
     switch (runState) {
@@ -71,6 +73,12 @@ class MonitorHeader extends StatelessWidget {
           _HeaderData(
             label: 'LEAD ENGINEER',
             value: operatorName.isEmpty ? 'ENG-ADMIN' : operatorName,
+            color: const Color(0xFF64748B),
+          ),
+          const SizedBox(width: 32),
+          _HeaderData(
+            label: 'ORDER',
+            value: orderNo != null ? '$orderNo ($clientName)' : '—',
             color: const Color(0xFF64748B),
           ),
           const Spacer(),
