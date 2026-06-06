@@ -23,8 +23,6 @@ import 'package:core_erp/widgets/variation_path_selector_dialog.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/screens/items_screen.dart';
-import '../../../production_pipelines/data/repositories/pipeline_run_repository.dart';
-import '../../../production_pipelines/domain/pipeline_run.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../units/domain/unit_definition.dart';
 import '../../../units/presentation/providers/units_provider.dart';
@@ -55,7 +53,9 @@ String _formatFileSize(int bytes) {
 }
 
 class OrdersScreen extends StatefulWidget {
-  const OrdersScreen({super.key});
+  const OrdersScreen({super.key, this.onGoToProduction});
+  
+  final void Function(BuildContext context, OrderGroup orderGroup)? onGoToProduction;
 
   static Future<void> openEditor(BuildContext context) {
     return showErpFormDialog<void>(
@@ -213,6 +213,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     height: math.min(620, constraints.maxHeight),
                     child: _OrderDetailsModal(
                       orderGroup: orderGroup,
+                      onGoToProduction: widget.onGoToProduction,
                       onEditItem: (item) {
                         Navigator.of(context).pop();
                         Future<void>.microtask(() {
@@ -4503,10 +4504,15 @@ class _OrderLifecycleEditorSheetState
 }
 
 class _OrderDetailsModal extends StatefulWidget {
-  const _OrderDetailsModal({required this.orderGroup, required this.onEditItem});
+  const _OrderDetailsModal({
+    required this.orderGroup, 
+    required this.onEditItem,
+    this.onGoToProduction,
+  });
 
   final OrderGroup orderGroup;
   final ValueChanged<OrderEntry> onEditItem;
+  final void Function(BuildContext context, OrderGroup orderGroup)? onGoToProduction;
 
   @override
   State<_OrderDetailsModal> createState() => _OrderDetailsModalState();
@@ -4514,16 +4520,22 @@ class _OrderDetailsModal extends StatefulWidget {
 
 class _OrderDetailsModalState extends State<_OrderDetailsModal> {
   int _selectedTab = 0;
+  bool _autoOpenProductionPopup = false;
 
   @override
   Widget build(BuildContext context) {
     final group = widget.orderGroup;
-    final tabs = const <String>['Details', 'Timeline', 'Audit', 'Production'];
+    final tabs = [
+      'Details', 
+      'Timeline', 
+      'Audit', 
+    ];
+    
     final selectedContent = switch (_selectedTab) {
       0 => _OrderDetailsContent(group: group, onEditItem: widget.onEditItem),
       1 => _OrderActivityTimeline(orderId: group.items.first.id), // Audit on first item for now
       2 => _OrderAuditContent(orderId: group.items.first.id),
-      _ => _OrderProductionContent(orderNo: group.orderNo),
+      _ => const SizedBox.shrink(),
     };
 
     return Material(
@@ -4556,13 +4568,14 @@ class _OrderDetailsModalState extends State<_OrderDetailsModal> {
                     right: 24,
                     child: Row(
                       children: [
-                        _OrderDetailActionButton(
-                          label: 'Go to Production',
-                          onPressed: () {
-                            Navigator.of(context).pop();
-                            context.read<AppNavigation>().select('production');
-                          },
-                        ),
+                        if (widget.onGoToProduction != null)
+                          _OrderDetailActionButton(
+                            label: 'Go to Production',
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              widget.onGoToProduction!(context, group);
+                            },
+                          ),
                         const SizedBox(width: 8),
                         _OrderDetailActionButton(
                           label: 'View Challans',
@@ -7163,236 +7176,5 @@ enum _OrderUrgency { none, nearDue, overdue }
 
 extension<T> on Iterable<T> {
   T? get firstOrNull => isEmpty ? null : first;
-}
-
-class _OrderProductionContent extends StatefulWidget {
-  const _OrderProductionContent({required this.orderNo});
-
-  final String orderNo;
-
-  @override
-  State<_OrderProductionContent> createState() => _OrderProductionContentState();
-}
-
-class _OrderProductionContentState extends State<_OrderProductionContent> {
-  bool _isLoading = true;
-  List<PipelineRun> _runs = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadRuns();
-  }
-
-  Future<void> _loadRuns() async {
-    try {
-      final repo = context.read<PipelineRunRepository>();
-      final runs = await repo.getRunsForOrder(widget.orderNo);
-      if (mounted) {
-        setState(() {
-          _runs = runs;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
-
-  Future<void> _startProduction() async {
-    final repo = context.read<PipelineRunRepository>();
-    final templates = await repo.getTemplates();
-    if (!mounted) return;
-
-    if (templates.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No pipeline templates available.')),
-      );
-      return;
-    }
-
-    final selectedTemplate = await showDialog<PipelineTemplate>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Select Pipeline Template'),
-        content: SizedBox(
-          width: 400,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: templates.length,
-            itemBuilder: (context, index) {
-              final template = templates[index];
-              return ListTile(
-                title: Text(template.name.isEmpty ? 'Unnamed Pipeline' : template.name),
-                subtitle: Text('${template.nodes.length} stations'),
-                onTap: () => Navigator.of(context).pop(template),
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
-
-    if (selectedTemplate == null || !mounted) return;
-
-    setState(() => _isLoading = true);
-    try {
-      await repo.createRun(selectedTemplate.id, orderNo: widget.orderNo);
-      await _loadRuns();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to start production: $e')),
-      );
-    }
-  }
-  @override
-  Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_runs.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.precision_manufacturing_outlined, size: 48, color: SoftErpTheme.textSecondary.withOpacity(0.5)),
-            const SizedBox(height: 16),
-            const Text(
-              'No Production Pipelines Assigned',
-              style: TextStyle(
-                color: SoftErpTheme.textSecondary,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: _startProduction,
-              icon: const Icon(Icons.play_arrow_rounded, size: 18),
-              label: const Text('Start Production'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: SoftErpTheme.accent,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.all(24),
-      itemCount: _runs.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 16),
-      itemBuilder: (context, index) {
-        final run = _runs[index];
-        return _PipelineRunMiniViewer(run: run);
-      },
-    );
-  }
-}
-
-class _PipelineRunMiniViewer extends StatelessWidget {
-  const _PipelineRunMiniViewer({required this.run});
-
-  final PipelineRun run;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: SoftErpTheme.cardSurfaceAlt,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: SoftErpTheme.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  run.name.isEmpty ? 'Unnamed Pipeline' : run.name,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: SoftErpTheme.textPrimary,
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: SoftErpTheme.accent.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  run.status.name.toUpperCase(),
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: SoftErpTheme.accent,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (run.nodeStatuses.isNotEmpty)
-            ...run.nodeStatuses.entries.map((entry) {
-              final status = entry.value;
-              final isDone = status.value == 'completed';
-              final isActive = status.value == 'active';
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  children: [
-                    Icon(
-                      isDone
-                          ? Icons.check_circle
-                          : isActive
-                              ? Icons.play_circle
-                              : Icons.radio_button_unchecked,
-                      color: isDone
-                          ? SoftErpTheme.accent
-                          : isActive
-                              ? SoftErpTheme.primary
-                              : SoftErpTheme.textSecondary,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      entry.key,
-                      style: TextStyle(
-                        color: isDone || isActive ? SoftErpTheme.textPrimary : SoftErpTheme.textSecondary,
-                        fontWeight: isDone || isActive ? FontWeight.w600 : FontWeight.normal,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }).toList()
-          else
-            const Text('No stages found.', style: TextStyle(color: SoftErpTheme.textSecondary)),
-        ],
-      ),
-    );
-  }
 }
 

@@ -2,6 +2,7 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:core_erp/core/navigation/app_navigation.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
@@ -25,6 +26,7 @@ import '../../features/machines/presentation/screens/machine_list_screen.dart';
 import '../../features/dies/presentation/screens/die_list_screen.dart';
 import '../../features/production_pipelines/presentation/screens/production_pipelines_screen.dart';
 import '../../features/machines/presentation/screens/machine_telemetry_screen.dart';
+import '../../features/production/widgets/start_production_dialog.dart';
 import 'app_sidebar.dart';
 import 'app_topbar.dart';
 import 'navigation_provider.dart';
@@ -552,7 +554,7 @@ class _ShellContentSwitcher extends StatelessWidget {
   const _ShellContentSwitcher();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext outerContext) {
     return Selector<NavigationProvider, String>(
       selector: (_, navigation) => navigation.selectedKey,
       builder: (context, key, _) {
@@ -592,7 +594,15 @@ class _ShellContentSwitcher extends StatelessWidget {
               ),
               'pm' => const PMScreen(),
               'telemetry' => const MachineTelemetryScreen(),
-              'orders' => const OrdersScreen(),
+              'orders' => OrdersScreen(
+                onGoToProduction: (screenContext, orderGroup) {
+                  final stableContext = outerContext;
+                  screenContext.read<AppNavigation>().select('production');
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    showStartProductionDialog(stableContext, orderGroup);
+                  });
+                },
+              ),
               'delivery_challans' => const ChallanScreen(),
               'challan_invoice_report' =>
                 const ChallanInvoiceReconciliationScreen(),

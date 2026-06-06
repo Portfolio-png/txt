@@ -14,6 +14,9 @@ import '../widgets/floor_node_terminal.dart';
 import '../widgets/floor_widgets.dart';
 import '../data/mock_floor_data.dart';
 
+import 'package:core_erp/features/orders/data/repositories/order_repository.dart';
+import 'package:core_erp/features/orders/domain/order_entry.dart';
+
 class FloorViewScreen extends StatefulWidget {
   const FloorViewScreen({
     super.key,
@@ -241,8 +244,10 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
                                     tokens: tokens,
                                     floor: floor,
                                     pipelines: pipelines,
-                                    selectedPipelineId: selectedPipelineId,
-                                    onPipelineSelected: _selectPipeline,
+                                    selectedPipelineId: _selectedPipelineId,
+                                    onPipelineSelected: (id) =>
+                                        setState(() => _selectedPipelineId = id),
+                                    onOrderTapped: (orderNo) => _showOrderQuickPeek(context, orderNo, tokens),
                                   ),
                                 ),
                                 const SizedBox(height: 14),
@@ -304,8 +309,10 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
                           tokens: tokens,
                           floor: floor,
                           pipelines: pipelines,
-                          selectedPipelineId: selectedPipelineId,
-                          onPipelineSelected: _selectPipeline,
+                          selectedPipelineId: _selectedPipelineId,
+                          onPipelineSelected: (id) =>
+                              setState(() => _selectedPipelineId = id),
+                          onOrderTapped: (orderNo) => _showOrderQuickPeek(context, orderNo, tokens),
                         ),
                       ),
                       Expanded(
@@ -1029,6 +1036,7 @@ class FloorOperationsPane extends StatelessWidget {
     required this.pipelines,
     required this.selectedPipelineId,
     required this.onPipelineSelected,
+    this.onOrderTapped,
   });
 
   final FloorOpsTokens tokens;
@@ -1036,6 +1044,7 @@ class FloorOperationsPane extends StatelessWidget {
   final List<PipelineSummary> pipelines;
   final String selectedPipelineId;
   final ValueChanged<String> onPipelineSelected;
+  final ValueChanged<String>? onOrderTapped;
 
   @override
   Widget build(BuildContext context) {
@@ -1116,6 +1125,7 @@ class FloorOperationsPane extends StatelessWidget {
                   pipeline: pipeline,
                   selected: pipeline.id == selectedPipelineId,
                   onTap: () => onPipelineSelected(pipeline.id),
+                  onOrderTapped: onOrderTapped,
                 );
               },
             ),
@@ -2038,4 +2048,82 @@ class _KpiBreakdown extends StatelessWidget {
       ),
     );
   }
+}
+
+Future<void> _showOrderQuickPeek(BuildContext context, String orderNo, FloorOpsTokens tokens) async {
+  showDialog(
+    context: context,
+    builder: (context) {
+      return FutureBuilder<List<OrderEntry>>(
+        future: context.read<OrderRepository>().getOrders(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final orders = snapshot.data ?? [];
+          final orderItems = orders.where((o) => o.orderNo == orderNo).toList();
+          
+          if (orderItems.isEmpty) {
+            return AlertDialog(
+              title: const Text('Order Details'),
+              content: const Text('Order not found.'),
+              actions: [
+                TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Close')),
+              ],
+            );
+          }
+          
+          final clientName = orderItems.first.clientName;
+          
+          return Dialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Container(
+              width: 400,
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Order #$orderNo', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                      IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.of(context).pop()),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(clientName, style: TextStyle(color: tokens.textSecondary, fontSize: 16)),
+                  const Divider(height: 32),
+                  const Text('Items in Production', style: TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 12),
+                  ...orderItems.map((item) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(child: Text('${item.itemName} (${item.variationPathLabel})')),
+                        Text('${item.quantity} ${item.unitSymbol}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  )),
+                  const SizedBox(height: 24),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: tokens.selection,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Close'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    },
+  );
 }

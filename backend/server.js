@@ -1687,11 +1687,11 @@ async function rowToRun(row) {
   }
 
   const orderAssignment = await get(`
-    SELECT h.order_no, c.name as client_name 
+    SELECT h.order_no, c.name as client_name, opa.order_item_id
     FROM order_pipeline_assignments opa 
     JOIN order_items i ON opa.order_item_id = i.id 
     JOIN order_headers h ON i.order_no = h.order_no 
-    JOIN clients c ON h.client_id = c.id 
+    LEFT JOIN clients c ON h.client_id = c.id 
     WHERE opa.pipeline_run_id = ?
     LIMIT 1
   `, [row.id]);
@@ -1710,6 +1710,7 @@ async function rowToRun(row) {
     createdAt: row.created_at,
     orderNo: orderAssignment?.order_no || null,
     clientName: orderAssignment?.client_name || null,
+    orderItemId: orderAssignment?.order_item_id || null,
   };
 }
 
@@ -14500,7 +14501,7 @@ async function ensureDemoMaterialsPresent() {
   }
 }
 
-async function createRunFromTemplate(templateId, name, orderNo) {
+async function createRunFromTemplate(templateId, name, orderNo, orderItemId) {
   const templateRow = await get(
     'SELECT * FROM pipeline_templates WHERE id = ?',
     [templateId],
@@ -14537,7 +14538,12 @@ async function createRunFromTemplate(templateId, name, orderNo) {
     ],
   );
 
-  if (orderNo) {
+  if (orderItemId) {
+    await run(
+      'INSERT INTO order_pipeline_assignments (order_item_id, pipeline_run_id) VALUES (?, ?)',
+      [orderItemId, runId]
+    );
+  } else if (orderNo) {
     const orderItems = await all(
       'SELECT id FROM order_items WHERE order_no = ?',
       [orderNo]
@@ -18367,7 +18373,7 @@ app.get('/runs', requirePermission('config.read'), async (req, res) => {
 
 app.post('/runs', async (req, res) => {
   try {
-    const { templateId, name, orderNo } = req.body || {};
+    const { templateId, name, orderNo, orderItemId } = req.body || {};
     if (!templateId) {
       res.status(400).json({
         success: false,
@@ -18376,7 +18382,7 @@ app.post('/runs', async (req, res) => {
       });
       return;
     }
-    const run = await createRunFromTemplate(templateId, name, orderNo);
+    const run = await createRunFromTemplate(templateId, name, orderNo, orderItemId);
     if (!run) {
       res.status(404).json({
         success: false,

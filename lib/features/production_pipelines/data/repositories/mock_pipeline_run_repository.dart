@@ -64,7 +64,13 @@ class MockPipelineRunRepository implements PipelineRunRepository {
   }
 
   @override
-  Future<PipelineRun> createRun(String templateId, {String? name}) async {
+  Future<List<PipelineRun>> getRunsForOrder(String orderNo) async {
+    _ensureSeeded();
+    return _runs.where((run) => run.orderNo == orderNo).toList();
+  }
+
+  @override
+  Future<PipelineRun> createRun(String templateId, {String? name, String? orderNo, int? orderItemId}) async {
     _ensureSeeded();
     final template = _templates!
         .where((item) => item.id == templateId)
@@ -79,7 +85,8 @@ class MockPipelineRunRepository implements PipelineRunRepository {
       templateVersion: 1,
       name: name?.trim().isNotEmpty == true
           ? name!.trim()
-          : '${template.name} Demo Run',
+          : '${template.name} #${_nextRunId - 1}',
+      orderNo: orderNo,
       status: 'active',
       overrides: const RunOverrides(),
       nodeStatuses: {

@@ -116,7 +116,7 @@ class SqlitePipelineRunRepository implements PipelineRunRepository {
   }
 
   @override
-  Future<PipelineRun> createRun(String templateId, {String? name}) async {
+  Future<PipelineRun> createRun(String templateId, {String? name, String? orderNo, int? orderItemId}) async {
     final db = await _dbHelper.database;
     final template = await getTemplate(templateId);
     if (template == null) {
@@ -302,5 +302,12 @@ class SqlitePipelineRunRepository implements PipelineRunRepository {
 
     await saveRun(updatedRun);
     return updatedRun;
+  }
+
+  @override
+  Future<List<PipelineRun>> getRunsForOrder(String orderNo) async {
+    // Basic mock implementation for offline mode
+    // Real implementation would join with order_pipeline_assignments
+    return [];
   }
 }

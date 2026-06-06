@@ -1,0 +1,382 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:core_erp/core/theme/soft_erp_theme.dart';
+import 'package:core_erp/features/orders/domain/order_entry.dart';
+import 'package:core_erp/features/orders/presentation/providers/orders_provider.dart';
+
+import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
+import '../../production_pipelines/domain/pipeline_run.dart';
+import '../../production_pipelines/domain/pipeline_template.dart';
+import '../providers/production_provider.dart';
+import 'live_production_monitor_screen.dart';
+import '../widgets/order_picker_dialog.dart';
+
+class ProductionRunsScreen extends StatefulWidget {
+  const ProductionRunsScreen({super.key});
+
+  @override
+  State<ProductionRunsScreen> createState() => _ProductionRunsScreenState();
+}
+
+class _ProductionRunsScreenState extends State<ProductionRunsScreen> {
+  bool _isLoading = true;
+  List<PipelineRun> _runs = [];
+  List<PipelineTemplate> _templates = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+    try {
+      final repo = context.read<PipelineRunRepository>();
+      final futures = await Future.wait([
+        repo.getRuns(),
+        repo.getTemplates(),
+      ]);
+      if (!mounted) return;
+      
+      final runs = futures[0] as List<PipelineRun>;
+      final templates = futures[1] as List<PipelineTemplate>;
+      
+      // Sort runs: active at the top, completed at the bottom, then by createdAt desc
+      runs.sort((a, b) {
+        final aActive = a.status != 'completed';
+        final bActive = b.status != 'completed';
+        if (aActive && !bActive) return -1;
+        if (!aActive && bActive) return 1;
+        return b.createdAt.compareTo(a.createdAt);
+      });
+
+      setState(() {
+        _runs = runs;
+        _templates = templates;
+      });
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _startProduction() async {
+    // 1. Show template picker
+    final activeTemplates = _templates.where((t) => t.status != PipelineTemplateStatus.archived).toList();
+    if (activeTemplates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No active templates available to start production.')),
+      );
+      return;
+    }
+
+    final template = await showDialog<PipelineTemplate>(
+      context: context,
+      builder: (context) => _TemplateSelectionDialog(templates: activeTemplates),
+    );
+
+    if (template == null || !mounted) return;
+
+    // 2. Show order picker
+    final order = await showDialog<OrderEntry?>(
+      context: context,
+      builder: (_) => ChangeNotifierProvider.value(
+        value: context.read<OrdersProvider>(),
+        child: const OrderPickerDialog(),
+      ),
+    );
+
+    if (order == null || !mounted) return;
+
+    // 3. Create run and navigate
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final repo = context.read<PipelineRunRepository>();
+      await repo.createRun(
+        template.id, 
+        orderNo: order.orderNo,
+        orderItemId: order.id,
+      );
+
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop(); // remove loading dialog
+
+      context.read<ProductionProvider>().loadTemplate(
+        template,
+        orderId: order.id,
+        orderNo: order.orderNo,
+        clientName: order.clientName,
+      );
+
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const LiveProductionMonitorScreen()),
+      );
+      
+      // Refresh runs in the background so it's updated when we come back
+      _loadData();
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop(); // remove loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to start production: $e')),
+      );
+    }
+  }
+
+  void _monitorRun(PipelineRun run) {
+    final template = _templates.firstWhere((t) => t.id == run.templateId, orElse: () => _templates.first);
+    context.read<ProductionProvider>().loadTemplate(
+      template,
+      orderId: run.orderItemId,
+      orderNo: run.orderNo,
+      clientName: run.clientName,
+    );
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const LiveProductionMonitorScreen()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
+      child: Column(
+        children: [
+          // Header
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Production',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.5,
+                        color: SoftErpTheme.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Monitor active production runs and start new pipelines.',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: SoftErpTheme.textSecondary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              FilledButton.icon(
+                onPressed: _startProduction,
+                icon: const Icon(Icons.play_arrow_rounded, size: 20),
+                label: const Text('Start Production'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          
+          // Content
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _runs.isEmpty
+                      ? Center(
+                          child: Text(
+                            'No production runs found.',
+                            style: TextStyle(color: SoftErpTheme.textSecondary),
+                          ),
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.only(bottom: 24),
+                          itemCount: _runs.length,
+                          separatorBuilder: (context, index) => const SizedBox(height: 12),
+                          itemBuilder: (context, index) {
+                            final run = _runs[index];
+                            final template = _templates.where((t) => t.id == run.templateId).firstOrNull;
+                            final isActive = run.status != 'completed';
+                            
+                            return _RunCard(
+                              run: run,
+                              templateName: template?.name ?? 'Unknown Pipeline',
+                              isActive: isActive,
+                              onMonitor: () => _monitorRun(run),
+                            );
+                          },
+                        ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RunCard extends StatelessWidget {
+  const _RunCard({
+    required this.run,
+    required this.templateName,
+    required this.isActive,
+    required this.onMonitor,
+  });
+
+  final PipelineRun run;
+  final String templateName;
+  final bool isActive;
+  final VoidCallback onMonitor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: SoftErpTheme.cardSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          // Info section
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      run.orderNo != null ? 'Order: ${run.orderNo}' : 'Ad-hoc Run',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: SoftErpTheme.textPrimary,
+                      ),
+                    ),
+                    if (run.clientName != null) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        '• ${run.clientName}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: SoftErpTheme.textSecondary,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(width: 12),
+                    _StatusBadge(status: run.status, isActive: isActive),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Pipeline: $templateName',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: SoftErpTheme.textPrimary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Started: ${run.createdAt.toIso8601String().split('T').first}',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: SoftErpTheme.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // Actions
+          if (isActive)
+            FilledButton.icon(
+              onPressed: onMonitor,
+              icon: const Icon(Icons.remove_red_eye, size: 18),
+              label: const Text('Monitor'),
+              style: FilledButton.styleFrom(
+                backgroundColor: SoftErpTheme.accent,
+                foregroundColor: Colors.white,
+              ),
+            )
+          else
+            OutlinedButton.icon(
+              onPressed: onMonitor,
+              icon: const Icon(Icons.history, size: 18),
+              label: const Text('View Log'),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusBadge extends StatelessWidget {
+  const _StatusBadge({required this.status, required this.isActive});
+  final String status;
+  final bool isActive;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isActive ? SoftErpTheme.accent : Colors.grey.shade600;
+    final bgColor = isActive ? SoftErpTheme.accent.withValues(alpha: 0.1) : Colors.grey.shade200;
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        status.toUpperCase(),
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
+class _TemplateSelectionDialog extends StatelessWidget {
+  const _TemplateSelectionDialog({required this.templates});
+  final List<PipelineTemplate> templates;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Select Pipeline Template'),
+      content: SizedBox(
+        width: 400,
+        height: 300,
+        child: ListView.builder(
+          itemCount: templates.length,
+          itemBuilder: (context, index) {
+            final t = templates[index];
+            return ListTile(
+              title: Text(t.name),
+              subtitle: Text('${t.nodes.length} stages'),
+              onTap: () => Navigator.of(context).pop(t),
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+      ],
+    );
+  }
+}

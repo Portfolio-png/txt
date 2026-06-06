@@ -13,7 +13,7 @@ abstract class PipelineRunRepository {
   Future<PipelineTemplate?> getTemplate(String id);
   Future<List<PipelineRun>> getRuns({String? templateId});
   Future<List<PipelineRun>> getRunsForOrder(String orderNo);
-  Future<PipelineRun> createRun(String templateId, {String? name, String? orderNo});
+  Future<PipelineRun> createRun(String templateId, {String? name, String? orderNo, int? orderItemId});
   Future<PipelineRun?> getRun(String id);
   Future<PipelineRun> updateNodeStatus({
     required String runId,
@@ -109,7 +109,7 @@ class ApiPipelineRunRepository implements PipelineRunRepository {
 
   @override
   Future<List<PipelineRun>> getRunsForOrder(String orderNo) async {
-    final orderUri = Uri.parse(baseUrl.replaceFirst('/production-pipelines', '/orders') + '/$orderNo/pipeline-runs');
+    final orderUri = Uri.parse('$baseUrl/api/orders/$orderNo/pipeline-runs');
     final response = await _client.get(orderUri);
     final payload = _decodeJson(response.body) as Map<String, dynamic>;
     _ensureSuccess(response.statusCode, payload, 'Failed to fetch runs for order.');
@@ -119,12 +119,12 @@ class ApiPipelineRunRepository implements PipelineRunRepository {
   }
 
   @override
-  Future<PipelineRun> createRun(String templateId, {String? name, String? orderNo}) async {
+  Future<PipelineRun> createRun(String templateId, {String? name, String? orderNo, int? orderItemId}) async {
     final uri = Uri.parse('$baseUrl/runs');
     final response = await _client.post(
       uri,
       headers: const {'Content-Type': 'application/json'},
-      body: jsonEncode({'templateId': templateId, 'name': name, 'orderNo': orderNo}),
+      body: jsonEncode({'templateId': templateId, 'name': name, 'orderNo': orderNo, 'orderItemId': orderItemId}),
     );
     final payload = _decodeJson(response.body) as Map<String, dynamic>;
     _ensureSuccess(response.statusCode, payload, 'Failed to create run.');

@@ -17,6 +17,7 @@ class PipelineRun {
     this.completedAt,
     this.orderNo,
     this.clientName,
+    this.orderItemId,
   });
 
   final String id;
@@ -32,6 +33,7 @@ class PipelineRun {
   final DateTime? completedAt;
   final String? orderNo;
   final String? clientName;
+  final int? orderItemId;
 
   factory PipelineRun.fromJson(Map<String, dynamic> json) {
     return PipelineRun(
@@ -71,6 +73,7 @@ class PipelineRun {
       completedAt: DateTime.tryParse(json['completedAt'] as String? ?? ''),
       orderNo: json['orderNo'] as String?,
       clientName: json['clientName'] as String?,
+      orderItemId: json['orderItemId'] as int?,
     );
   }
 
