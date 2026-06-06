@@ -751,7 +751,7 @@ test('delivery challans support multiple selected orders from the same client', 
     assert.equal(created.customer_name, selectedOrders[0].client_name);
 
     const storedLinks = await backend.all(
-      'SELECT order_id FROM delivery_challan_orders WHERE challan_id = ? ORDER BY order_id ASC',
+      'SELECT order_id FROM delivery_challan_order_items WHERE challan_id = ? ORDER BY order_id ASC',
       [created.id],
     );
     assert.deepEqual(

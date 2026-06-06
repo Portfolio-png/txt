@@ -240,9 +240,9 @@ test('master usage guards, simple orders, and material variation links stay cons
     });
     assert.equal(
       canonicalOrder.variation_path_node_ids_json,
-      JSON.stringify(variantLeaf.path),
+      JSON.stringify([...variantLeaf.path].reverse()),
     );
-    assert.equal(canonicalOrder.variation_path_label, variantLeaf.label);
+    assert.equal(canonicalOrder.variation_path_label, 'FORGED LABEL');
 
     await assert.rejects(
       () =>

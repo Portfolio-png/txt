@@ -1,0 +1,487 @@
+diff --git a/backend/server.js b/backend/server.js
+index e651615..807ce4d 100644
+--- a/backend/server.js
++++ b/backend/server.js
+@@ -2498,7 +2498,7 @@ async function initDb() {
+     CREATE TABLE IF NOT EXISTS delivery_challans (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       type TEXT NOT NULL DEFAULT 'delivery',
+-      order_id INTEGER REFERENCES orders(id),
++      order_id INTEGER REFERENCES order_items(id),
+       order_no TEXT DEFAULT '',
+       challan_no TEXT NOT NULL UNIQUE,
+       date TEXT NOT NULL,
+@@ -2546,9 +2546,9 @@ async function initDb() {
+   `);
+ 
+   await run(`
+-    CREATE TABLE IF NOT EXISTS delivery_challan_orders (
++    CREATE TABLE IF NOT EXISTS delivery_challan_order_items (
+       challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
+-      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
++      order_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+       created_at TEXT NOT NULL,
+       PRIMARY KEY (challan_id, order_id)
+     )
+@@ -2665,8 +2665,8 @@ async function initDb() {
+   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_status ON delivery_challans(status)');
+   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_date ON delivery_challans(date)');
+   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_items_challan_id ON delivery_challan_items(challan_id)');
+-  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_challan_id ON delivery_challan_orders(challan_id)');
+-  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_order_id ON delivery_challan_orders(order_id)');
++  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_challan_id ON delivery_challan_order_items(challan_id)');
++  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_order_id ON delivery_challan_order_items(order_id)');
+   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_report_groups_challan_id ON delivery_challan_report_groups(challan_id)');
+   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_report_groups_code ON delivery_challan_report_groups(report_group_code)');
+   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_activity_challan_id_created_at ON delivery_challan_activity_log(challan_id, created_at)');
+@@ -2772,9 +2772,19 @@ async function initDb() {
+   await run('CREATE INDEX IF NOT EXISTS idx_production_runs_item ON production_runs(item_id, variation_leaf_node_id)');
+ 
+   await run(`
+-    CREATE TABLE IF NOT EXISTS orders (
++    CREATE TABLE IF NOT EXISTS order_headers (
++      order_no TEXT PRIMARY KEY,
++      client_id INTEGER NOT NULL REFERENCES clients(id),
++      po_number TEXT DEFAULT '',
++      created_at TEXT NOT NULL,
++      updated_at TEXT NOT NULL DEFAULT ''
++    )
++  `);
++
++  await run(`
++    CREATE TABLE IF NOT EXISTS order_items (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+-      order_no TEXT NOT NULL,
++      order_no TEXT NOT NULL REFERENCES order_headers(order_no),
+       client_id INTEGER NOT NULL REFERENCES clients(id),
+       client_name TEXT NOT NULL DEFAULT '',
+       po_number TEXT DEFAULT '',
+@@ -2829,7 +2839,7 @@ async function initDb() {
+ 
+   await run(`
+     CREATE TABLE IF NOT EXISTS order_po_documents (
+-      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
++      order_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+       document_id INTEGER NOT NULL REFERENCES po_documents(id) ON DELETE CASCADE,
+       linked_at TEXT NOT NULL,
+       PRIMARY KEY (order_id, document_id)
+@@ -2888,7 +2898,7 @@ async function initDb() {
+   await run(`
+     CREATE TABLE IF NOT EXISTS order_material_requirements (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+-      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
++      order_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+       item_id INTEGER,
+       variation_leaf_node_id INTEGER,
+       material_id INTEGER,
+@@ -2909,7 +2919,7 @@ async function initDb() {
+   await run(`
+     CREATE TABLE IF NOT EXISTS order_status_history (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+-      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
++      order_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+       previous_status TEXT,
+       new_status TEXT NOT NULL,
+       changed_by_user_id INTEGER,
+@@ -2920,7 +2930,7 @@ async function initDb() {
+   await run(`
+     CREATE TABLE IF NOT EXISTS order_activity_log (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+-      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
++      order_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+       activity_type TEXT NOT NULL,
+       actor_user_id INTEGER,
+       actor_name TEXT,
+@@ -2972,9 +2982,9 @@ async function initDb() {
+   await ensureColumnExists('delivery_challan_items', 'variation_leaf_node_id', 'INTEGER NOT NULL DEFAULT 0');
+   await ensureColumnExists('delivery_challan_items', 'note', "TEXT DEFAULT ''");
+   await run(`
+-    CREATE TABLE IF NOT EXISTS delivery_challan_orders (
++    CREATE TABLE IF NOT EXISTS delivery_challan_order_items (
+       challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
+-      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
++      order_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+       created_at TEXT NOT NULL,
+       PRIMARY KEY (challan_id, order_id)
+     )
+@@ -3001,8 +3011,8 @@ async function initDb() {
+   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_material_owner ON delivery_challans(material_owner_client_id)');
+   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challans_type ON delivery_challans(type)');
+   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_items_challan_id ON delivery_challan_items(challan_id)');
+-  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_challan_id ON delivery_challan_orders(challan_id)');
+-  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_order_id ON delivery_challan_orders(order_id)');
++  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_challan_id ON delivery_challan_order_items(challan_id)');
++  await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_order_id ON delivery_challan_order_items(order_id)');
+   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_report_groups_challan_id ON delivery_challan_report_groups(challan_id)');
+   await run('CREATE INDEX IF NOT EXISTS idx_delivery_challan_report_groups_code ON delivery_challan_report_groups(report_group_code)');
+   await ensureColumnExists('challan_templates', 'rotation_degrees', 'REAL NOT NULL DEFAULT 0');
+@@ -3052,37 +3062,37 @@ async function initDb() {
+   await run('CREATE INDEX IF NOT EXISTS idx_inventory_set_lines_set_id ON inventory_set_lines(set_id)');
+   await run('CREATE INDEX IF NOT EXISTS idx_inventory_set_lines_item_lookup ON inventory_set_lines(item_id, variation_leaf_node_id)');
+ 
+-  await ensureColumnExists('orders', 'updated_at', "TEXT NOT NULL DEFAULT ''");
+-  await ensureColumnExists('orders', 'unit_id', 'INTEGER');
+-  await ensureColumnExists('orders', 'unit_name', "TEXT NOT NULL DEFAULT 'Pieces'");
+-  await ensureColumnExists('orders', 'unit_symbol', "TEXT NOT NULL DEFAULT 'Pieces'");
+-  await ensureColumnExists('orders', 'unit_price', 'REAL NOT NULL DEFAULT 0');
++  await ensureColumnExists('order_items', 'updated_at', "TEXT NOT NULL DEFAULT ''");
++  await ensureColumnExists('order_items', 'unit_id', 'INTEGER');
++  await ensureColumnExists('order_items', 'unit_name', "TEXT NOT NULL DEFAULT 'Pieces'");
++  await ensureColumnExists('order_items', 'unit_symbol', "TEXT NOT NULL DEFAULT 'Pieces'");
++  await ensureColumnExists('order_items', 'unit_price', 'REAL NOT NULL DEFAULT 0');
+   await ensureColumnExists(
+-    'orders',
++    'order_items',
+     'total_invoiced_qty',
+     'REAL NOT NULL DEFAULT 0',
+   );
+   await run(`
+-    UPDATE orders
++    UPDATE order_items
+     SET updated_at = CASE
+       WHEN TRIM(COALESCE(updated_at, '')) = '' THEN created_at
+       ELSE updated_at
+     END
+   `);
+   await run(`
+-    UPDATE orders
+-    SET unit_id = (SELECT items.unit_id FROM items WHERE items.id = orders.item_id)
++    UPDATE order_items
++    SET unit_id = (SELECT items.unit_id FROM items WHERE items.id = order_items.item_id)
+     WHERE unit_id IS NULL
+   `);
+   await run(`
+-    UPDATE orders
+-    SET unit_name = COALESCE((SELECT units.name FROM units WHERE units.id = orders.unit_id), unit_name, 'Pieces')
++    UPDATE order_items
++    SET unit_name = COALESCE((SELECT units.name FROM units WHERE units.id = order_items.unit_id), unit_name, 'Pieces')
+     WHERE unit_id IS NOT NULL
+       AND (TRIM(COALESCE(unit_name, '')) = '' OR TRIM(unit_name) = 'Pieces')
+   `);
+   await run(`
+-    UPDATE orders
+-    SET unit_symbol = COALESCE((SELECT units.symbol FROM units WHERE units.id = orders.unit_id), unit_symbol, unit_name, 'Pieces')
++    UPDATE order_items
++    SET unit_symbol = COALESCE((SELECT units.symbol FROM units WHERE units.id = order_items.unit_id), unit_symbol, unit_name, 'Pieces')
+     WHERE unit_id IS NOT NULL
+       AND (TRIM(COALESCE(unit_symbol, '')) = '' OR TRIM(unit_symbol) = 'Pieces')
+   `);
+@@ -4130,7 +4140,7 @@ async function getUnitRowById(id) {
+         (SELECT COUNT(*) FROM groups WHERE groups.unit_id = units.id) +
+         (SELECT COUNT(*) FROM items WHERE items.unit_id = units.id) +
+         (SELECT COUNT(*) FROM item_unit_conversions WHERE item_unit_conversions.unit_id = units.id) +
+-        (SELECT COUNT(*) FROM orders WHERE orders.unit_id = units.id) +
++        (SELECT COUNT(*) FROM order_items WHERE order_items.unit_id = units.id) +
+         (SELECT COUNT(*) FROM units AS dependent_units WHERE dependent_units.conversion_base_unit_id = units.id) +
+         (SELECT COUNT(*) FROM order_material_requirements WHERE order_material_requirements.unit_id = units.id)
+       ) AS usage_count
+@@ -4165,7 +4175,7 @@ async function getClientRowById(id) {
+     `
+     SELECT
+       clients.*,
+-      (SELECT COUNT(*) FROM orders WHERE orders.client_id = clients.id) AS usage_count
++      (SELECT COUNT(*) FROM order_items WHERE order_items.client_id = clients.id) AS usage_count
+     FROM clients
+     WHERE clients.id = ?
+     `,
+@@ -4492,7 +4502,7 @@ async function getItemRowById(id) {
+     SELECT
+       items.*,
+       (
+-        (SELECT COUNT(*) FROM orders WHERE orders.item_id = items.id) +
++        (SELECT COUNT(*) FROM order_items WHERE order_items.item_id = items.id) +
+         (SELECT COUNT(*) FROM delivery_challan_items WHERE delivery_challan_items.item_id = items.id) +
+         (SELECT COUNT(*) FROM order_material_requirements WHERE order_material_requirements.item_id = items.id) +
+         (SELECT COUNT(*) FROM materials WHERE materials.linked_item_id = items.id) +
+@@ -4510,7 +4520,7 @@ async function getItemsWithUsage() {
+     SELECT
+       items.*,
+       (
+-        (SELECT COUNT(*) FROM orders WHERE orders.item_id = items.id) +
++        (SELECT COUNT(*) FROM order_items WHERE order_items.item_id = items.id) +
+         (SELECT COUNT(*) FROM delivery_challan_items WHERE delivery_challan_items.item_id = items.id) +
+         (SELECT COUNT(*) FROM order_material_requirements WHERE order_material_requirements.item_id = items.id) +
+         (SELECT COUNT(*) FROM materials WHERE materials.linked_item_id = items.id) +
+@@ -4554,7 +4564,7 @@ async function getClientsWithUsage() {
+   return all(`
+     SELECT
+       clients.*,
+-      (SELECT COUNT(*) FROM orders WHERE orders.client_id = clients.id) AS usage_count
++      (SELECT COUNT(*) FROM order_items WHERE order_items.client_id = clients.id) AS usage_count
+     FROM clients
+     ORDER BY clients.is_archived ASC, LOWER(clients.name) ASC
+   `);
+@@ -4620,9 +4630,9 @@ async function saveClient({ name, alias = '', gstNumber = '', address = '', logo
+     const result = await run(
+       `
+       INSERT INTO clients (name, alias, gst_number, address, is_archived, created_at, updated_at)
+-      logo_url, photo_url) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)
++      VALUES (?, ?, ?, ?, 0, ?, ?)
+       `,
+-      [trimmedName, trimmedAlias, trimmedGstNumber, trimmedAddress, now, now, String(logoUrl || '').trim(), String(photoUrl || '').trim()],
++      [trimmedName, trimmedAlias, trimmedGstNumber, trimmedAddress, now, now],
+     );
+     return getClientRowById(result.lastID);
+   }
+@@ -4639,7 +4649,7 @@ async function saveClient({ name, alias = '', gstNumber = '', address = '', logo
+         await get(
+           `
+           SELECT COUNT(*) AS count
+-          FROM orders
++          FROM order_items
+           WHERE client_id = ?
+             AND status IN ('inProgress', 'completed', 'delayed')
+           `,
+@@ -4658,8 +4668,8 @@ async function saveClient({ name, alias = '', gstNumber = '', address = '', logo
+   }
+ 
+   await run(
+-    'UPDATE clients SET name = ?, alias = ?, gst_number = ?, address = ?, updated_at = ?, logo_url = ?, photo_url = ? WHERE id = ?',
+-    [trimmedName, trimmedAlias, trimmedGstNumber, trimmedAddress, now, String(logoUrl || '').trim(), String(photoUrl || '').trim(), id],
++    'UPDATE clients SET name = ?, alias = ?, gst_number = ?, address = ?, updated_at = ? WHERE id = ?',
++    [trimmedName, trimmedAlias, trimmedGstNumber, trimmedAddress, now, id],
+   );
+   return getClientRowById(id);
+ }
+@@ -4838,7 +4848,7 @@ async function saveVendor({
+       INSERT INTO vendors (
+         name, alias, gst_number, address, contact_name, phone, email, is_archived, created_at, updated_at
+       )
+-      logo_url, photo_url) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
++      VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+       `,
+       [
+         trimmedName,
+@@ -4865,7 +4875,7 @@ async function saveVendor({
+   await run(
+     `
+     UPDATE vendors
+-    SET name = ?, alias = ?, gst_number = ?, address = ?, contact_name = ?, phone = ?, email = ?, updated_at = ?, logo_url = ?, photo_url = ?
++    SET name = ?, alias = ?, gst_number = ?, address = ?, contact_name = ?, phone = ?, email = ?, updated_at = ?
+     WHERE id = ?
+     `,
+     [
+@@ -5048,7 +5058,7 @@ async function getDeliveryChallanOrderIds(challanId) {
+   const rows = await all(
+     `
+     SELECT order_id
+-    FROM delivery_challan_orders
++    FROM delivery_challan_order_items
+     WHERE challan_id = ?
+     ORDER BY order_id ASC
+     `,
+@@ -5167,7 +5177,7 @@ async function getOrderRowsByIds(orderIds = []) {
+   return all(
+     `
+     SELECT o.*, c.gst_number AS client_gstin
+-    FROM orders o
++    FROM order_items o
+     LEFT JOIN clients c ON c.id = o.client_id
+     WHERE o.id IN (${placeholders})
+     ORDER BY datetime(o.created_at) DESC, o.id DESC
+@@ -6891,7 +6901,7 @@ async function listDeliveryChallans({
+         dc.order_id = ?
+         OR EXISTS (
+           SELECT 1
+-          FROM delivery_challan_orders dco
++          FROM delivery_challan_order_items dco
+           WHERE dco.challan_id = dc.id
+             AND dco.order_id = ?
+         )
+@@ -6955,7 +6965,7 @@ async function getOrderForDeliveryChallan(orderId) {
+   const order = await get(
+     `
+     SELECT o.*, c.gst_number AS client_gstin
+-    FROM orders o
++    FROM order_items o
+     LEFT JOIN clients c ON c.id = o.client_id
+     WHERE o.id = ?
+     `,
+@@ -7464,7 +7474,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
+       }
+       const orderItemId = Number(item.orderItemId || 0);
+       if (!Number.isInteger(orderItemId) || orderItemId <= 0) {
+-        const error = new Error('Each delivery challan row must reference one of the selected orders.');
++        const error = new Error('Each delivery challan row must reference one of the selected order_items.');
+         error.statusCode = 400;
+         throw error;
+       }
+@@ -7561,7 +7571,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
+         ],
+       );
+       await run('DELETE FROM delivery_challan_items WHERE challan_id = ?', [challanId]);
+-      await run('DELETE FROM delivery_challan_orders WHERE challan_id = ?', [challanId]);
++      await run('DELETE FROM delivery_challan_order_items WHERE challan_id = ?', [challanId]);
+     } else {
+       const result = await run(
+         `
+@@ -7605,7 +7615,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
+       for (const orderId of orderIds) {
+         await run(
+           `
+-          INSERT INTO delivery_challan_orders (challan_id, order_id, created_at)
++          INSERT INTO delivery_challan_order_items (challan_id, order_id, created_at)
+           VALUES (?, ?, ?)
+           `,
+           [challanId, orderId, now],
+@@ -8749,7 +8759,7 @@ async function buildReconciliationReport() {
+            o.total_invoiced_qty AS order_total_invoiced_qty
+     FROM delivery_challan_items dci
+     JOIN delivery_challans dc ON dc.id = dci.challan_id
+-    LEFT JOIN orders o ON o.id = dci.order_item_id
++    LEFT JOIN order_items o ON o.id = dci.order_item_id
+     WHERE dc.status = 'issued'
+     ORDER BY date(dc.date) ASC, dc.id ASC, dci.line_no ASC, dci.id ASC
+     `,
+@@ -9223,7 +9233,7 @@ async function buildClientStatementReport(input = {}) {
+ }
+ 
+ async function getOrderRowById(id) {
+-  return get('SELECT * FROM orders WHERE id = ?', [id]);
++  return get('SELECT * FROM order_items WHERE id = ?', [id]);
+ }
+ 
+ async function getOrders() {
+@@ -9233,7 +9243,7 @@ async function getOrders() {
+        FROM delivery_challan_items dci 
+        JOIN delivery_challans dc ON dci.challan_id = dc.id 
+        WHERE dci.order_item_id = o.id AND dc.status != 'cancelled') as total_delivered_qty
+-    FROM orders o 
++    FROM order_items o 
+     ORDER BY datetime(o.created_at) DESC, o.id DESC
+   `);
+ }
+@@ -10435,7 +10445,7 @@ async function saveOrder({
+   try {
+     const existing = await get(
+       `
+-      SELECT * FROM orders
++      SELECT * FROM order_items
+       WHERE LOWER(TRIM(order_no)) = LOWER(TRIM(?))
+         AND client_id = ?
+         AND item_id = ?
+@@ -10476,7 +10486,7 @@ async function saveOrder({
+       finalStatus = mergedStatus;
+       await run(
+         `
+-        UPDATE orders
++        UPDATE order_items
+         SET quantity = quantity + ?,
+             client_name = ?,
+             client_code = ?,
+@@ -10530,9 +10540,18 @@ async function saveOrder({
+       }
+       orderId = existing.id;
+     } else {
++      await run(
++        `
++        INSERT INTO order_headers (order_no, client_id, po_number, created_at, updated_at)
++        VALUES (?, ?, ?, ?, ?)
++        ON CONFLICT(order_no) DO NOTHING
++        `,
++        [trimmedOrderNo, normalizedClientId, trimmedPoNumber, now, now]
++      );
++      
+       const result = await run(
+         `
+-        INSERT INTO orders (
++        INSERT INTO order_items (
+           order_no, client_id, client_name, po_number, client_code, item_id, item_name,
+           variation_leaf_node_id, variation_path_label, variation_path_node_ids_json, quantity,
+           unit_id, unit_name, unit_symbol, unit_price, total_invoiced_qty, status,
+@@ -10702,7 +10721,7 @@ async function updateOrderLifecycle({
+   await run('BEGIN TRANSACTION');
+   try {
+     await run(
+-      'UPDATE orders SET status = ?, start_date = ?, end_date = ?, updated_at = ? WHERE id = ?',
++      'UPDATE order_items SET status = ?, start_date = ?, end_date = ?, updated_at = ? WHERE id = ?',
+       [normalizedStatus, normalizedStartDate, normalizedEndDate, now, id],
+     );
+ 
+@@ -11206,7 +11225,6 @@ async function saveItem({
+         error.statusCode = 404;
+         throw error;
+       }
+-      /*
+       if ((existing.usage_count || 0) > 0) {
+         const existingTree = await getItemVariationTree(id);
+         const structuralChangeDetected =
+@@ -11222,7 +11240,6 @@ async function saveItem({
+           throw error;
+         }
+       }
+-      */
+       await run(
+         `
+         UPDATE items
+@@ -11727,7 +11744,7 @@ function findLeafVariationNodes(nodes = [], currentPath = []) {
+ }
+ 
+ async function seedOrdersIfEmpty() {
+-  const countRow = await get('SELECT COUNT(*) AS count FROM orders');
++  const countRow = await get('SELECT COUNT(*) AS count FROM order_items');
+   if ((countRow?.count || 0) > 0) {
+     return;
+   }
+@@ -12015,7 +12032,7 @@ async function getUnitsWithUsage() {
+         (SELECT COUNT(*) FROM groups WHERE groups.unit_id = units.id) +
+         (SELECT COUNT(*) FROM items WHERE items.unit_id = units.id) +
+         (SELECT COUNT(*) FROM item_unit_conversions WHERE item_unit_conversions.unit_id = units.id) +
+-        (SELECT COUNT(*) FROM orders WHERE orders.unit_id = units.id) +
++        (SELECT COUNT(*) FROM order_items WHERE order_items.unit_id = units.id) +
+         (SELECT COUNT(*) FROM units AS dependent_units WHERE dependent_units.conversion_base_unit_id = units.id) +
+         (SELECT COUNT(*) FROM order_material_requirements WHERE order_material_requirements.unit_id = units.id)
+       ) AS usage_count
+@@ -13331,7 +13348,7 @@ async function recomputeMaterialInventorySummary(materialBarcode, now = new Date
+     ? Number(
+         (
+           await get(
+-            'SELECT COUNT(*) AS count FROM orders WHERE item_id = ?',
++            'SELECT COUNT(*) AS count FROM order_items WHERE item_id = ?',
+             [material.linked_item_id],
+           )
+         )?.count || 0,
+@@ -13482,7 +13499,7 @@ async function getMaterialControlTowerDetail(barcode) {
+   const linkedOrderDemand = refreshed.linked_item_id
+     ? Number(
+         (
+-          await get('SELECT COALESCE(SUM(quantity), 0) AS qty FROM orders WHERE item_id = ?', [
++          await get('SELECT COALESCE(SUM(quantity), 0) AS qty FROM order_items WHERE item_id = ?', [
+             refreshed.linked_item_id,
+           ])
+         )?.qty || 0,
+@@ -17786,7 +17803,6 @@ app.patch('/api/items/:id/archive', requirePermission('config.write'), async (re
+       res.status(404).json({ success: false, item: null, error: 'Item not found.' });
+       return;
+     }
+-    /*
+     if ((existing.usage_count || 0) > 0) {
+       res.status(409).json({
+         success: false,
+@@ -17795,7 +17811,6 @@ app.patch('/api/items/:id/archive', requirePermission('config.write'), async (re
+       });
+       return;
+     }
+-    */
+     const now = new Date().toISOString();
+     await run('UPDATE items SET is_archived = 1, updated_at = ? WHERE id = ?', [now, id]);
+     await run('UPDATE item_variation_nodes SET is_archived = 1, updated_at = ? WHERE item_id = ?', [now, id]);
+@@ -18582,7 +18597,7 @@ async function clearAllData() {
+     await run('DELETE FROM invoice_headers');
+     await run('DELETE FROM reconciliation_waste_audit');
+     await run('DELETE FROM reconciliation_conversion_overrides');
+-    await run('DELETE FROM delivery_challan_orders');
++    await run('DELETE FROM delivery_challan_order_items');
+     await run('DELETE FROM delivery_challan_activity_log');
+     await run('DELETE FROM delivery_challan_items');
+     await run('DELETE FROM delivery_challans');
+@@ -18603,7 +18618,8 @@ async function clearAllData() {
+     await run('DELETE FROM production_runs');
+     await run('DELETE FROM inventory_set_lines');
+     await run('DELETE FROM inventory_sets');
+-    await run('DELETE FROM orders');
++    await run('DELETE FROM order_items');
++    await run('DELETE FROM order_headers');
+     await run('DELETE FROM item_variation_values');
+     await run('DELETE FROM item_variations');
+     await run('DELETE FROM item_variation_dimensions');

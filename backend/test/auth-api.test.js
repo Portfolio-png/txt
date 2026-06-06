@@ -477,7 +477,7 @@ test('clear-data preserves auth state and reset-demo-data rebuilds seeded worksp
       'SELECT COUNT(*) AS count FROM items',
     );
     const ordersAfterClear = await backend.get(
-      'SELECT COUNT(*) AS count FROM orders',
+      'SELECT COUNT(*) AS count FROM order_items',
     );
     const scanHistoryAfterClear = await backend.get(
       'SELECT COUNT(*) AS count FROM scan_history',

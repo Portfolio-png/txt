@@ -69,3 +69,39 @@ class OrderEntry {
 extension<T> on Iterable<T> {
   T? get firstOrNull => isEmpty ? null : first;
 }
+
+class OrderGroup {
+  const OrderGroup({
+    required this.orderNo,
+    required this.clientId,
+    required this.clientName,
+    required this.poNumber,
+    required this.createdAt,
+    required this.items,
+  });
+
+  final String orderNo;
+  final int clientId;
+  final String clientName;
+  final String poNumber;
+  final DateTime createdAt;
+  final List<OrderEntry> items;
+
+  OrderStatus get overallStatus {
+    if (items.isEmpty) return OrderStatus.notStarted;
+    if (items.every((i) => i.status == OrderStatus.completed)) {
+      return OrderStatus.completed;
+    }
+    if (items.every((i) => i.status == OrderStatus.draft)) {
+      return OrderStatus.draft;
+    }
+    if (items.every((i) => i.status == OrderStatus.notStarted)) {
+      return OrderStatus.notStarted;
+    }
+    if (items.any((i) => i.status == OrderStatus.delayed)) {
+      return OrderStatus.delayed;
+    }
+    return OrderStatus.inProgress;
+  }
+}
+

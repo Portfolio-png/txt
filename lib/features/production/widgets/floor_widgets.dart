@@ -8,12 +8,14 @@ class PipelineCard extends StatelessWidget {
     required this.pipeline,
     required this.selected,
     required this.onTap,
+    this.onOrderTapped,
   });
 
   final FloorOpsTokens tokens;
   final PipelineSummary pipeline;
   final bool selected;
   final VoidCallback onTap;
+  final ValueChanged<String>? onOrderTapped;
 
   @override
   Widget build(BuildContext context) {
@@ -65,6 +67,30 @@ class PipelineCard extends StatelessWidget {
                     ),
                   ],
                 ),
+                if (pipeline.orderNo != null && pipeline.orderNo!.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  GestureDetector(
+                    onTap: () => onOrderTapped?.call(pipeline.orderNo!),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: tokens.selection.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: tokens.selection.withOpacity(0.2)),
+                      ),
+                      child: Text(
+                        'Order #${pipeline.orderNo}${pipeline.clientName != null && pipeline.clientName!.isNotEmpty ? ' • ${pipeline.clientName}' : ''}',
+                        style: TextStyle(
+                          color: tokens.selection,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 10),
                 Row(
                   children: [

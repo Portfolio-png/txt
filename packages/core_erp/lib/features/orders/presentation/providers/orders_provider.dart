@@ -51,6 +51,27 @@ class OrdersProvider extends ChangeNotifier {
         .toList(growable: false);
   }
 
+  List<OrderGroup> get filteredOrderGroups {
+    final filtered = filteredOrders;
+    final map = <String, OrderGroup>{};
+    for (final order in filtered) {
+      if (map.containsKey(order.orderNo)) {
+        map[order.orderNo]!.items.add(order);
+      } else {
+        map[order.orderNo] = OrderGroup(
+          orderNo: order.orderNo,
+          clientId: order.clientId,
+          clientName: order.clientName,
+          poNumber: order.poNumber,
+          createdAt: order.createdAt,
+          items: [order],
+        );
+      }
+    }
+    return map.values.toList();
+  }
+
+
   void setSearchQuery(String value) {
     _searchQuery = value;
     notifyListeners();

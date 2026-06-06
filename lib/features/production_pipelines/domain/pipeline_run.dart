@@ -15,6 +15,8 @@ class PipelineRun {
     required this.createdAt,
     this.startedAt,
     this.completedAt,
+    this.orderNo,
+    this.clientName,
   });
 
   final String id;
@@ -28,6 +30,8 @@ class PipelineRun {
   final DateTime createdAt;
   final DateTime? startedAt;
   final DateTime? completedAt;
+  final String? orderNo;
+  final String? clientName;
 
   factory PipelineRun.fromJson(Map<String, dynamic> json) {
     return PipelineRun(
@@ -65,6 +69,8 @@ class PipelineRun {
           DateTime.now(),
       startedAt: DateTime.tryParse(json['startedAt'] as String? ?? ''),
       completedAt: DateTime.tryParse(json['completedAt'] as String? ?? ''),
+      orderNo: json['orderNo'] as String?,
+      clientName: json['clientName'] as String?,
     );
   }
 
@@ -80,6 +86,8 @@ class PipelineRun {
     DateTime? createdAt,
     DateTime? startedAt,
     DateTime? completedAt,
+    String? orderNo,
+    String? clientName,
   }) {
     return PipelineRun(
       id: id ?? this.id,
@@ -94,6 +102,8 @@ class PipelineRun {
       createdAt: createdAt ?? this.createdAt,
       startedAt: startedAt ?? this.startedAt,
       completedAt: completedAt ?? this.completedAt,
+      orderNo: orderNo ?? this.orderNo,
+      clientName: clientName ?? this.clientName,
     );
   }
 
@@ -117,6 +127,8 @@ class PipelineRun {
       'createdAt': createdAt.toIso8601String(),
       'startedAt': startedAt?.toIso8601String(),
       'completedAt': completedAt?.toIso8601String(),
+      'orderNo': orderNo,
+      'clientName': clientName,
     };
   }
 }

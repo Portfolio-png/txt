@@ -59,6 +59,8 @@ class PipelineSummary {
     required this.alertCount,
     required this.bottleneckReason,
     required this.bottleneckImpact,
+    this.orderNo,
+    this.clientName,
   });
 
   final String id;
@@ -73,6 +75,8 @@ class PipelineSummary {
   final int alertCount;
   final String bottleneckReason;
   final String bottleneckImpact;
+  final String? orderNo;
+  final String? clientName;
 
   double get progress => outputTarget == 0
       ? 0

@@ -46,7 +46,7 @@ test('demo dataset is rich enough for app walkthroughs', async () => {
       materials.some((material) => Number(material.scan_count || 0) > 0),
       'expected scan activity in inventory',
     );
-    assert.equal(templates.length, 2, 'expected two pipeline templates');
+    assert.equal(templates.length, 3, 'expected three pipeline templates');
     assert.ok(runs.length >= 3, 'expected seeded production runs');
     assert.ok(barcodeInputs.length >= 3, 'expected scanned barcode inputs in runs');
   } finally {

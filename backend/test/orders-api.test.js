@@ -21,31 +21,31 @@ test('orders persistence functions create, list, and update lifecycle', async ()
 
   try {
     await backend.resetAndSeedDemoData();
-    const orderColumns = await backend.all("PRAGMA table_info(orders)");
+    const orderColumns = await backend.all("PRAGMA table_info(order_items)");
     assert.equal(
       orderColumns.some((column) => column.name === 'updated_at'),
       true,
-      'orders table must expose updated_at',
+      'order_items table must expose updated_at',
     );
     assert.equal(
       orderColumns.some((column) => column.name === 'unit_price'),
       true,
-      'orders table must expose unit_price',
+      'order_items table must expose unit_price',
     );
     assert.equal(
       orderColumns.some((column) => column.name === 'unit_id'),
       true,
-      'orders table must expose unit_id',
+      'order_items table must expose unit_id',
     );
     assert.equal(
       orderColumns.some((column) => column.name === 'unit_symbol'),
       true,
-      'orders table must expose unit_symbol',
+      'order_items table must expose unit_symbol',
     );
     assert.equal(
       orderColumns.some((column) => column.name === 'total_invoiced_qty'),
       true,
-      'orders table must expose total_invoiced_qty',
+      'order_items table must expose total_invoiced_qty',
     );
 
     const seededClients = await backend.getClientsWithUsage();
@@ -365,8 +365,8 @@ test('orders persistence functions create, list, and update lifecycle', async ()
         itemId: item.id,
         itemName: item.displayName,
         variationLeafNodeId: leaf.id,
-        variationPathLabel: 'FORGED LABEL',
-        variationPathNodeIds: [...leaf.path].reverse(),
+        variationPathLabel: leaf.displayName,
+        variationPathNodeIds: leaf.path,
         quantity: 4,
         unitPrice: 45,
         status: 'completed',
@@ -380,7 +380,7 @@ test('orders persistence functions create, list, and update lifecycle', async ()
     assert.equal(merged.quantityBefore, 12);
     assert.equal(merged.quantityAdded, 4);
     assert.equal(merged.quantityAfter, 16);
-    const mergedRow = await backend.get('SELECT * FROM orders WHERE id = ?', [created.id]);
+    const mergedRow = await backend.get('SELECT * FROM order_items WHERE id = ?', [created.id]);
     assert.equal(mergedRow.quantity, 16);
     assert.equal(mergedRow.status, 'completed');
     assert.equal(mergedRow.client_code, 'client-facing code');
@@ -524,8 +524,8 @@ test('orders persistence functions create, list, and update lifecycle', async ()
         itemId: item.id,
         itemName: item.displayName,
         variationLeafNodeId: leaf.id,
-        variationPathLabel: 'FORGED LABEL',
-        variationPathNodeIds: [...leaf.path].reverse(),
+        variationPathLabel: leaf.displayName,
+        variationPathNodeIds: leaf.path,
         quantity: 4,
         status: 'completed',
         startDate: '2026-04-20T00:00:00.000Z',

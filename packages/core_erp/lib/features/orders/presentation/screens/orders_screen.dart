@@ -23,6 +23,8 @@ import 'package:core_erp/widgets/variation_path_selector_dialog.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/screens/items_screen.dart';
+import '../../../production_pipelines/data/repositories/pipeline_run_repository.dart';
+import '../../../production_pipelines/domain/pipeline_run.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../units/domain/unit_definition.dart';
 import '../../../units/presentation/providers/units_provider.dart';
@@ -83,7 +85,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   Widget build(BuildContext context) {
     final ordersProvider = context.watch<OrdersProvider>();
     final orders = ordersProvider.orders;
-    final visibleOrders = _applyFilters(ordersProvider.filteredOrders);
+    final visibleGroups = _applyFilters(ordersProvider.filteredOrderGroups);
     final summary = _OrderSummary.fromOrders(orders);
 
     _selectedOrderIds.removeWhere(
@@ -123,7 +125,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   const SizedBox(height: 16),
                   Expanded(
                     child: _OrdersTableCard(
-                      orders: visibleOrders,
+                      orders: visibleGroups,
                       hasAnyOrders: orders.isNotEmpty,
                       hasActiveFilters:
                           _partyFilterClientId != null ||
@@ -140,7 +142,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           }
                         });
                       },
-                      onRowTap: (order) => _openLifecycleEditor(context, order),
+                      onRowTap: (orderGroup) => _openLifecycleEditor(context, orderGroup),
                       onCreateOrder: () => OrdersScreen.openEditor(context),
                     ),
                   ),
@@ -153,17 +155,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
   }
 
-  List<OrderEntry> _applyFilters(List<OrderEntry> orders) {
-    final filtered = orders
-        .where((order) {
+  List<OrderGroup> _applyFilters(List<OrderGroup> groups) {
+    final filtered = groups
+        .where((group) {
           if (_partyFilterClientId != null &&
-              order.clientId != _partyFilterClientId) {
+              group.clientId != _partyFilterClientId) {
             return false;
           }
-          if (_itemFilterId != null && order.itemId != _itemFilterId) {
+          if (_itemFilterId != null && !group.items.any((i) => i.itemId == _itemFilterId)) {
             return false;
           }
-          if (_statusFilter != null && order.status != _statusFilter) {
+          if (_statusFilter != null && group.overallStatus != _statusFilter) {
             return false;
           }
           return true;
@@ -171,31 +173,18 @@ class _OrdersScreenState extends State<OrdersScreen> {
         .toList(growable: false);
 
     filtered.sort((a, b) {
-      final urgencyCompare = _urgencyWeight(
-        _resolveOrderUrgency(b),
-      ).compareTo(_urgencyWeight(_resolveOrderUrgency(a)));
+      final aUrgency = a.items.isEmpty ? _OrderUrgency.none : a.items.map(_resolveOrderUrgency).reduce((u1, u2) => _urgencyWeight(u1) > _urgencyWeight(u2) ? u1 : u2);
+      final bUrgency = b.items.isEmpty ? _OrderUrgency.none : b.items.map(_resolveOrderUrgency).reduce((u1, u2) => _urgencyWeight(u1) > _urgencyWeight(u2) ? u1 : u2);
+
+      final urgencyCompare = _urgencyWeight(bUrgency).compareTo(_urgencyWeight(aUrgency));
       if (urgencyCompare != 0) {
         return urgencyCompare;
       }
       final statusCompare = _statusPriorityWeight(
-        b.status,
-      ).compareTo(_statusPriorityWeight(a.status));
+        b.overallStatus,
+      ).compareTo(_statusPriorityWeight(a.overallStatus));
       if (statusCompare != 0) {
         return statusCompare;
-      }
-      final aEnd = a.endDate;
-      final bEnd = b.endDate;
-      if (aEnd == null && bEnd != null) {
-        return 1;
-      }
-      if (aEnd != null && bEnd == null) {
-        return -1;
-      }
-      if (aEnd != null && bEnd != null) {
-        final dueCompare = aEnd.compareTo(bEnd);
-        if (dueCompare != 0) {
-          return dueCompare;
-        }
       }
       return b.createdAt.compareTo(a.createdAt);
     });
@@ -206,7 +195,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     await OrdersScreen.openEditor(context);
   }
 
-  Future<void> _openLifecycleEditor(BuildContext context, OrderEntry order) {
+  Future<void> _openLifecycleEditor(BuildContext context, OrderGroup orderGroup) {
     return showGeneralDialog<void>(
       context: context,
       barrierDismissible: true,
@@ -223,22 +212,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     width: math.min(1440, constraints.maxWidth),
                     height: math.min(620, constraints.maxHeight),
                     child: _OrderDetailsModal(
-                      order: order,
-                      onEdit: () {
+                      orderGroup: orderGroup,
+                      onEditItem: (item) {
                         Navigator.of(context).pop();
                         Future<void>.microtask(() {
                           if (!mounted) {
                             return;
                           }
-                          // BUG-03: Re-read the latest version of this order
-                          // from the provider so we never edit a stale snapshot.
-                          final latestOrder =
-                              this.context
-                                  .read<OrdersProvider>()
-                                  .orders
-                                  .where((o) => o.id == order.id)
-                                  .firstOrNull ??
-                              order;
                           showDialog<void>(
                             context: this.context,
                             builder: (context) => Dialog(
@@ -248,7 +228,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                   maxWidth: 520,
                                 ),
                                 child: _OrderLifecycleEditorSheet(
-                                  order: latestOrder,
+                                  order: item,
                                 ),
                               ),
                             ),
@@ -884,19 +864,20 @@ class _OrdersTableCard extends StatelessWidget {
     required this.onCreateOrder,
   });
 
-  final List<OrderEntry> orders;
+  final List<OrderGroup> orders;
   final bool hasAnyOrders;
   final bool hasActiveFilters;
   final Set<int> selectedOrderIds;
   final void Function(int orderId, bool selected) onToggleSelection;
-  final ValueChanged<OrderEntry> onRowTap;
+  final ValueChanged<OrderGroup> onRowTap;
   final VoidCallback onCreateOrder;
 
   @override
   Widget build(BuildContext context) {
-    final hasUrgentOrders = orders.any(
-      (order) => _resolveOrderUrgency(order) != _OrderUrgency.none,
-    );
+    final hasUrgentOrders = orders.any((group) {
+      final urgency = group.items.isEmpty ? _OrderUrgency.none : group.items.map(_resolveOrderUrgency).reduce((a,b) => _urgencyWeight(a) > _urgencyWeight(b) ? a : b);
+      return urgency != _OrderUrgency.none;
+    });
     if (orders.isEmpty) {
       final title = hasActiveFilters
           ? 'No orders in this state'
@@ -1009,14 +990,19 @@ class _OrdersTableCard extends StatelessWidget {
                   itemCount: orders.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 4),
                   itemBuilder: (context, index) {
-                    final order = orders[index];
+                    final orderGroup = orders[index];
+                    // Selected if ANY item in group is selected
+                    final isSelected = orderGroup.items.any((item) => selectedOrderIds.contains(item.id));
                     return _OrderDataRow(
-                      order: order,
+                      order: orderGroup,
                       layout: layout,
-                      isSelected: selectedOrderIds.contains(order.id),
-                      onSelectionChanged: (selected) =>
-                          onToggleSelection(order.id, selected),
-                      onTap: () => onRowTap(order),
+                      isSelected: isSelected,
+                      onSelectionChanged: (selected) {
+                        for (final item in orderGroup.items) {
+                          onToggleSelection(item.id, selected);
+                        }
+                      },
+                      onTap: () => onRowTap(orderGroup),
                     );
                   },
                 ),
@@ -1094,7 +1080,7 @@ class _OrderDataRow extends StatefulWidget {
     required this.onTap,
   });
 
-  final OrderEntry order;
+  final OrderGroup order;
   final _OrdersTableLayout layout;
   final bool isSelected;
   final ValueChanged<bool> onSelectionChanged;
@@ -1110,13 +1096,13 @@ class _OrderDataRowState extends State<_OrderDataRow> {
 
   @override
   Widget build(BuildContext context) {
-    final order = widget.order;
+    final group = widget.order;
     final layout = widget.layout;
-    final urgency = _resolveOrderUrgency(order);
-    final edgeTint = _rowEdgeTint(order.status, urgency);
+    final urgency = group.items.isEmpty ? _OrderUrgency.none : group.items.map(_resolveOrderUrgency).reduce((a,b) => _urgencyWeight(a) > _urgencyWeight(b) ? a : b);
+    final edgeTint = _rowEdgeTint(group.overallStatus, urgency);
     final markerColor = _priorityMarkerColor(urgency);
-    final quickAction = _primaryQuickAction(order, urgency);
-    final isCompleted = order.status == OrderStatus.completed;
+    final quickAction = group.items.isEmpty ? const _QuickRowAction(kind: _QuickRowActionKind.view, label: 'View') : _primaryQuickAction(group.items.first, urgency);
+    final isCompleted = group.overallStatus == OrderStatus.completed;
     final baseColor = isCompleted
         ? const Color(0xFFF9FBFF).withValues(alpha: 0.8)
         : SoftErpTheme.cardSurface.withValues(alpha: 0.8);
@@ -1190,8 +1176,8 @@ class _OrderDataRowState extends State<_OrderDataRow> {
                           ),
                           _GroupedDataCell(
                             width: layout.orderDateGroupWidth,
-                            primary: order.orderNo,
-                            secondary: _formatDate(order.createdAt),
+                            primary: group.orderNo,
+                            secondary: _formatDate(group.createdAt),
                             primaryStyle: const TextStyle(
                               fontWeight: FontWeight.w800,
                               fontSize: 15.5,
@@ -1204,18 +1190,19 @@ class _OrderDataRowState extends State<_OrderDataRow> {
                           ),
                           _GroupedDataCell(
                             width: layout.partyItemGroupWidth,
-                            primary: order.clientName,
-                            secondary:
-                                order.variationPathLabel.isEmpty ||
-                                    order.variationPathLabel == order.itemName
-                                ? order.itemName
-                                : '${order.itemName} · ${order.variationPathLabel}',
+                            primary: group.clientName,
+                            secondary: group.items.length > 1
+                                ? '${group.items.length} items'
+                                : (group.items.first.variationPathLabel.isEmpty ||
+                                        group.items.first.variationPathLabel == group.items.first.itemName
+                                    ? group.items.first.itemName
+                                    : '${group.items.first.itemName} · ${group.items.first.variationPathLabel}'),
                             primaryStyle: const TextStyle(
                               fontWeight: FontWeight.w700,
                             ),
                           ),
                           _DataCell(
-                            order.poNumber.isEmpty ? '—' : order.poNumber,
+                            group.poNumber.isEmpty ? '—' : group.poNumber,
                             width: layout.poWidth,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -1225,7 +1212,7 @@ class _OrderDataRowState extends State<_OrderDataRow> {
                             ),
                           ),
                           _DataCell(
-                            '${order.quantity} ${order.unitDisplayLabel}',
+                            '${group.items.fold<int>(0, (sum, item) => sum + item.quantity)} Units',
                             width: layout.quantityWidth,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -1234,7 +1221,7 @@ class _OrderDataRowState extends State<_OrderDataRow> {
                             ),
                           ),
                           _DataCell(
-                            _formatDate(order.startDate),
+                            _formatDate(group.items.map((i) => i.startDate).whereType<DateTime>().fold<DateTime?>(null, (min, date) => min == null || date.isBefore(min) ? date : min)),
                             width: layout.startDateWidth,
                             style: const TextStyle(
                               color: SoftErpTheme.textSecondary,
@@ -1243,8 +1230,8 @@ class _OrderDataRowState extends State<_OrderDataRow> {
                             ),
                           ),
                           _DueDateCell(
-                            orderId: order.id,
-                            value: order.endDate,
+                            orderId: group.items.firstOrNull?.id ?? 0,
+                            value: group.items.map((i) => i.endDate).whereType<DateTime>().fold<DateTime?>(null, (max, date) => max == null || date.isAfter(max) ? date : max),
                             width: layout.endDateWidth,
                             urgency: urgency,
                           ),
@@ -1252,7 +1239,7 @@ class _OrderDataRowState extends State<_OrderDataRow> {
                             width: layout.statusWidth,
                             child: Align(
                               alignment: Alignment.centerLeft,
-                              child: _StatusPill(status: order.status),
+                              child: _StatusPill(status: group.overallStatus),
                             ),
                           ),
                           SizedBox(
@@ -1293,42 +1280,34 @@ class _OrderDataRowState extends State<_OrderDataRow> {
       return;
     }
     setState(() => _updatingLifecycle = true);
-    final order = widget.order;
+    final group = widget.order;
     final now = DateTime.now();
-    // BUG-04: When Quick Start assigns today as start date (because none was
-    // set), we show an explicit snackbar so the user is aware.
-    final assigningStartDateNow =
-        action.kind == _QuickRowActionKind.start && order.startDate == null;
-    final result = await context.read<OrdersProvider>().updateOrderLifecycle(
-      UpdateOrderLifecycleInput(
-        id: order.id,
-        status: action.targetStatus ?? order.status,
-        startDate: action.kind == _QuickRowActionKind.start
-            ? (order.startDate ?? now)
-            : order.startDate,
-        endDate: action.kind == _QuickRowActionKind.complete
-            ? (order.endDate ?? now)
-            : order.endDate,
-      ),
-    );
+    
+    // Group level action: apply to all items in group
+    for (final order in group.items) {
+      final assigningStartDateNow =
+          action.kind == _QuickRowActionKind.start && order.startDate == null;
+      await context.read<OrdersProvider>().updateOrderLifecycle(
+        UpdateOrderLifecycleInput(
+          id: order.id,
+          status: action.targetStatus ?? order.status,
+          startDate: action.kind == _QuickRowActionKind.start
+              ? (order.startDate ?? now)
+              : order.startDate,
+          endDate: action.kind == _QuickRowActionKind.complete
+              ? (order.endDate ?? now)
+              : order.endDate,
+        ),
+      );
+    }
+    
     if (!mounted) {
       return;
     }
     setState(() => _updatingLifecycle = false);
-    if (result == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Unable to update order right now. Please retry.'),
-        ),
-      );
-      return;
-    }
-    final message = assigningStartDateNow
-        ? 'Started ${order.orderNo} — start date set to today.'
-        : '${action.label} applied to ${order.orderNo}.';
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ).showSnackBar(SnackBar(content: Text('${action.label} applied to ${group.orderNo}.')));
   }
 
   Color _rowEdgeTint(OrderStatus status, _OrderUrgency urgency) {
@@ -3258,11 +3237,23 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
   }
 
   Future<void> _showGlobalItemHistoryDialog(int lineIndex) async {
+    if (_selectedClientId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please select a client first.')),
+        );
+      }
+      return;
+    }
+
     final provider = context.read<OrdersProvider>();
     final pastOrders = provider.orders;
 
     final uniqueVariations = <String, OrderEntry>{};
     for (final order in pastOrders) {
+      if (_selectedClientId != null && order.clientId != _selectedClientId) {
+        continue;
+      }
       if (order.variationLeafNodeId > 0) {
         final key = '${order.itemId}-${order.variationLeafNodeId}';
         if (!uniqueVariations.containsKey(key)) {
@@ -3337,6 +3328,11 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       );
       return;
     }
+
+    final String baseOrderNo = _orderNoController.text.trim().isNotEmpty
+        ? _orderNoController.text.trim()
+        : 'ORD-${DateTime.now().millisecondsSinceEpoch}';
+
     final orderLines = <CreateOrderInput>[];
     final activeUnits = context.read<UnitsProvider>().activeUnits;
     for (var index = 0; index < _lines.length; index++) {
@@ -3413,7 +3409,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
 
       orderLines.add(
         CreateOrderInput(
-          orderNo: _orderNoController.text,
+          orderNo: baseOrderNo,
           clientId: selectedClient.id,
           clientName: selectedClient.name,
           poNumber: _poNumberController.text,
@@ -4335,34 +4331,58 @@ class _OrderLifecycleEditorSheetState
               ),
             ),
             const SizedBox(height: 20),
-            SearchableSelectField<OrderStatus>(
-              key: const ValueKey<String>('orders-lifecycle-status-field'),
-              tapTargetKey: const ValueKey<String>(
-                'orders-lifecycle-status-field',
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: SoftErpTheme.cardSurfaceAlt,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: SoftErpTheme.border),
               ),
-              value: _status,
-              decoration: const InputDecoration(
-                labelText: 'Status',
-                filled: true,
-                fillColor: SoftErpTheme.cardSurfaceAlt,
-              ),
-              dialogTitle: 'Status',
-              searchHintText: 'Search status',
-              options: OrderStatus.values
-                  .map(
-                    (status) => SearchableSelectOption<OrderStatus>(
-                      value: status,
-                      label: status.label,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Status',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: SoftErpTheme.textSecondary,
                     ),
-                  )
-                  .toList(growable: false),
-              onChanged: (value) {
-                if (value != null) {
-                  setState(() {
-                    _status = value;
-                  });
-                }
-              },
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(
+                        _status == OrderStatus.completed
+                            ? Icons.check_circle_outline
+                            : _status == OrderStatus.inProgress
+                                ? Icons.sync
+                                : Icons.schedule,
+                        size: 16,
+                        color: _status == OrderStatus.completed
+                            ? Colors.green
+                            : _status == OrderStatus.inProgress
+                                ? Colors.blue
+                                : SoftErpTheme.textSecondary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _status.label,
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                      const Spacer(),
+                      const Text(
+                        'Derived from pipeline',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: SoftErpTheme.textSecondary,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 16),
             Row(
@@ -4408,6 +4428,14 @@ class _OrderLifecycleEditorSheetState
               spacing: 12,
               runSpacing: 10,
               children: [
+                AppButton(
+                  label: 'Manage in Production',
+                  variant: AppButtonVariant.primary,
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    context.read<AppNavigation>().select('production');
+                  },
+                ),
                 AppButton(
                   label: 'Close',
                   variant: AppButtonVariant.secondary,
@@ -4475,10 +4503,10 @@ class _OrderLifecycleEditorSheetState
 }
 
 class _OrderDetailsModal extends StatefulWidget {
-  const _OrderDetailsModal({required this.order, required this.onEdit});
+  const _OrderDetailsModal({required this.orderGroup, required this.onEditItem});
 
-  final OrderEntry order;
-  final VoidCallback onEdit;
+  final OrderGroup orderGroup;
+  final ValueChanged<OrderEntry> onEditItem;
 
   @override
   State<_OrderDetailsModal> createState() => _OrderDetailsModalState();
@@ -4489,12 +4517,13 @@ class _OrderDetailsModalState extends State<_OrderDetailsModal> {
 
   @override
   Widget build(BuildContext context) {
-    final order = widget.order;
-    final tabs = const <String>['Details', 'Timeline', 'Audit'];
+    final group = widget.orderGroup;
+    final tabs = const <String>['Details', 'Timeline', 'Audit', 'Production'];
     final selectedContent = switch (_selectedTab) {
-      0 => _OrderDetailsContent(order: order),
-      1 => _OrderActivityTimeline(orderId: order.id),
-      _ => _OrderAuditContent(orderId: order.id),
+      0 => _OrderDetailsContent(group: group, onEditItem: widget.onEditItem),
+      1 => _OrderActivityTimeline(orderId: group.items.first.id), // Audit on first item for now
+      2 => _OrderAuditContent(orderId: group.items.first.id),
+      _ => _OrderProductionContent(orderNo: group.orderNo),
     };
 
     return Material(
@@ -4528,23 +4557,23 @@ class _OrderDetailsModalState extends State<_OrderDetailsModal> {
                     child: Row(
                       children: [
                         _OrderDetailActionButton(
+                          label: 'Go to Production',
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            context.read<AppNavigation>().select('production');
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        _OrderDetailActionButton(
                           label: 'View Challans',
                           onPressed: () =>
-                              _viewDeliveryChallans(context, order),
+                              _viewDeliveryChallans(context, group.items.first),
                         ),
                         const SizedBox(width: 8),
                         _OrderDetailActionButton(
                           label: 'Create Delivery Challan',
                           onPressed: () =>
-                              _createDeliveryChallan(context, order),
-                        ),
-                        const SizedBox(width: 8),
-                        _OrderDetailActionButton(
-                          key: const ValueKey<String>(
-                            'orders-details-header-edit',
-                          ),
-                          label: 'Edit',
-                          onPressed: widget.onEdit,
+                              _createDeliveryChallan(context, group.items.first),
                         ),
                       ],
                     ),
@@ -4557,7 +4586,7 @@ class _OrderDetailsModalState extends State<_OrderDetailsModal> {
                 padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
                 child: Column(
                   children: [
-                    _OrderTimelineStrip(order: order),
+                    _OrderTimelineStrip(group: group),
                     const SizedBox(height: 12),
                     _OrderDetailsTabs(
                       tabs: tabs,
@@ -4588,19 +4617,9 @@ class _OrderDetailsModalState extends State<_OrderDetailsModal> {
                       key: const ValueKey<String>(
                         'orders-details-footer-cancel',
                       ),
-                      label: 'Cancel',
+                      label: 'Close',
                       variant: AppButtonVariant.secondary,
                       onPressed: () => Navigator.of(context).pop(),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  SizedBox(
-                    width: 96,
-                    height: 44,
-                    child: _OrderDetailActionButton(
-                      key: const ValueKey<String>('orders-details-footer-edit'),
-                      label: 'Edit',
-                      onPressed: widget.onEdit,
                     ),
                   ),
                 ],
@@ -4633,18 +4652,21 @@ class _OrderDetailsModalState extends State<_OrderDetailsModal> {
 }
 
 class _OrderDetailsContent extends StatelessWidget {
-  const _OrderDetailsContent({required this.order});
+  const _OrderDetailsContent({required this.group, required this.onEditItem});
 
-  final OrderEntry order;
+  final OrderGroup group;
+  final ValueChanged<OrderEntry> onEditItem;
 
   @override
   Widget build(BuildContext context) {
+    final earliestStart = group.items.map((i) => i.startDate).whereType<DateTime>().fold<DateTime?>(null, (min, date) => min == null || date.isBefore(min) ? date : min);
+    final latestEnd = group.items.map((i) => i.endDate).whereType<DateTime>().fold<DateTime?>(null, (max, date) => max == null || date.isAfter(max) ? date : max);
     final detailRows = <({String label, String value})>[
-      (label: 'Order Code', value: order.orderNo),
-      (label: 'Client Name', value: _emptyFallback(order.clientName)),
-      (label: 'Purchase order no.', value: _emptyFallback(order.poNumber)),
-      (label: 'Start Date', value: _formatDate(order.startDate)),
-      (label: 'Order completion date', value: _formatDate(order.endDate)),
+      (label: 'Order Code', value: group.orderNo),
+      (label: 'Client Name', value: _emptyFallback(group.clientName)),
+      (label: 'Purchase order no.', value: _emptyFallback(group.poNumber)),
+      (label: 'Start Date', value: _formatDate(earliestStart)),
+      (label: 'Order completion date', value: _formatDate(latestEnd)),
     ];
 
     return Row(
@@ -4670,18 +4692,18 @@ class _OrderDetailsContent extends StatelessWidget {
                     label: 'Status',
                     valueWidget: Align(
                       alignment: Alignment.centerLeft,
-                      child: _StatusPill(status: order.status),
+                      child: _StatusPill(status: group.overallStatus),
                     ),
                   ),
                   const SizedBox(height: 24),
-                  _OrderPoDocumentsSection(orderId: order.id),
+                  _OrderPoDocumentsSection(orderId: group.items.first.id),
                 ],
               ),
             ),
           ),
         ),
         const SizedBox(width: 10),
-        Expanded(child: _OrderItemsDetailCard(order: order)),
+        Expanded(child: _OrderItemsDetailCard(group: group, onEditItem: onEditItem)),
       ],
     );
   }
@@ -4701,9 +4723,9 @@ class _OrderDetailsContent extends StatelessWidget {
 }
 
 class _OrderTimelineStrip extends StatelessWidget {
-  const _OrderTimelineStrip({required this.order});
+  const _OrderTimelineStrip({required this.group});
 
-  final OrderEntry order;
+  final OrderGroup group;
 
   @override
   Widget build(BuildContext context) {
@@ -4714,7 +4736,7 @@ class _OrderTimelineStrip extends StatelessWidget {
       (label: 'Active Work', index: 3),
       (label: 'Done', index: 4),
     ];
-    final activeIndex = _activeIndex(order.status);
+    final activeIndex = _activeIndex(group.overallStatus);
 
     return Container(
       height: 96,
@@ -4737,7 +4759,7 @@ class _OrderTimelineStrip extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              if (order.status == OrderStatus.delayed) ...[
+              if (group.overallStatus == OrderStatus.delayed) ...[
                 const SizedBox(width: 10),
                 _SoftWarningBadge(label: 'Delayed'),
               ],
@@ -4754,7 +4776,7 @@ class _OrderTimelineStrip extends StatelessWidget {
                     isComplete: steps[i].index < activeIndex,
                     isActive: steps[i].index == activeIndex,
                     isWarning:
-                        order.status == OrderStatus.delayed &&
+                        group.overallStatus == OrderStatus.delayed &&
                         steps[i].index == activeIndex,
                   ),
                   if (i != steps.length - 1)
@@ -4988,9 +5010,10 @@ class _OrderDetailField extends StatelessWidget {
 }
 
 class _OrderItemsDetailCard extends StatelessWidget {
-  const _OrderItemsDetailCard({required this.order});
+  const _OrderItemsDetailCard({required this.group, required this.onEditItem});
 
-  final OrderEntry order;
+  final OrderGroup group;
+  final ValueChanged<OrderEntry> onEditItem;
 
   @override
   Widget build(BuildContext context) {
@@ -5015,16 +5038,35 @@ class _OrderItemsDetailCard extends StatelessWidget {
           const SizedBox(height: 10),
           _OrderItemsGridRow(
             isHeader: true,
-            cells: const ['Item', 'Order Quantity', 'Unit', 'Completion Date'],
+            cells: const ['Item', 'Quantity', 'Unit', 'End Date'],
           ),
           const SizedBox(height: 4),
-          _OrderItemsGridRow(
-            cells: [
-              _itemLabel(order),
-              '${order.quantity}',
-              order.unitDisplayLabel,
-              _formatDate(order.endDate),
-            ],
+          Expanded(
+            child: ListView.separated(
+              itemCount: group.items.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 4),
+              itemBuilder: (context, index) {
+                final item = group.items[index];
+                return _OrderItemsGridRow(
+                  cells: [
+                    _itemLabel(item),
+                    '${item.quantity}',
+                    item.unitDisplayLabel,
+                    _formatDate(item.endDate),
+                  ],
+                  actionWidget: IconButton(
+                    icon: const Icon(
+                      Icons.edit_outlined,
+                      size: 20,
+                      color: SoftErpTheme.accent,
+                    ),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () => onEditItem(item),
+                  ),
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -5050,10 +5092,15 @@ class _OrderItemsDetailCard extends StatelessWidget {
 }
 
 class _OrderItemsGridRow extends StatelessWidget {
-  const _OrderItemsGridRow({required this.cells, this.isHeader = false});
+  const _OrderItemsGridRow({
+    required this.cells,
+    this.isHeader = false,
+    this.actionWidget,
+  });
 
   final List<String> cells;
   final bool isHeader;
+  final Widget? actionWidget;
 
   @override
   Widget build(BuildContext context) {
@@ -5068,8 +5115,11 @@ class _OrderItemsGridRow extends StatelessWidget {
         children: [
           for (var i = 0; i < cells.length; i++)
             Expanded(
+              flex: i == 0 ? 2 : 1,
               child: Padding(
-                padding: EdgeInsets.only(right: i == cells.length - 1 ? 0 : 12),
+                padding: EdgeInsets.only(
+                  right: (i == cells.length - 1 && actionWidget == null) ? 0 : 12,
+                ),
                 child: Text(
                   cells[i],
                   maxLines: 1,
@@ -5081,6 +5131,12 @@ class _OrderItemsGridRow extends StatelessWidget {
                   ),
                 ),
               ),
+            ),
+          if (actionWidget != null || isHeader)
+            Container(
+              width: 32,
+              alignment: Alignment.centerRight,
+              child: actionWidget,
             ),
         ],
       ),
@@ -7108,3 +7164,235 @@ enum _OrderUrgency { none, nearDue, overdue }
 extension<T> on Iterable<T> {
   T? get firstOrNull => isEmpty ? null : first;
 }
+
+class _OrderProductionContent extends StatefulWidget {
+  const _OrderProductionContent({required this.orderNo});
+
+  final String orderNo;
+
+  @override
+  State<_OrderProductionContent> createState() => _OrderProductionContentState();
+}
+
+class _OrderProductionContentState extends State<_OrderProductionContent> {
+  bool _isLoading = true;
+  List<PipelineRun> _runs = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRuns();
+  }
+
+  Future<void> _loadRuns() async {
+    try {
+      final repo = context.read<PipelineRunRepository>();
+      final runs = await repo.getRunsForOrder(widget.orderNo);
+      if (mounted) {
+        setState(() {
+          _runs = runs;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _startProduction() async {
+    final repo = context.read<PipelineRunRepository>();
+    final templates = await repo.getTemplates();
+    if (!mounted) return;
+
+    if (templates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No pipeline templates available.')),
+      );
+      return;
+    }
+
+    final selectedTemplate = await showDialog<PipelineTemplate>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Select Pipeline Template'),
+        content: SizedBox(
+          width: 400,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: templates.length,
+            itemBuilder: (context, index) {
+              final template = templates[index];
+              return ListTile(
+                title: Text(template.name.isEmpty ? 'Unnamed Pipeline' : template.name),
+                subtitle: Text('${template.nodes.length} stations'),
+                onTap: () => Navigator.of(context).pop(template),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+
+    if (selectedTemplate == null || !mounted) return;
+
+    setState(() => _isLoading = true);
+    try {
+      await repo.createRun(selectedTemplate.id, orderNo: widget.orderNo);
+      await _loadRuns();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to start production: $e')),
+      );
+    }
+  }
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_runs.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.precision_manufacturing_outlined, size: 48, color: SoftErpTheme.textSecondary.withOpacity(0.5)),
+            const SizedBox(height: 16),
+            const Text(
+              'No Production Pipelines Assigned',
+              style: TextStyle(
+                color: SoftErpTheme.textSecondary,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _startProduction,
+              icon: const Icon(Icons.play_arrow_rounded, size: 18),
+              label: const Text('Start Production'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: SoftErpTheme.accent,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(24),
+      itemCount: _runs.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 16),
+      itemBuilder: (context, index) {
+        final run = _runs[index];
+        return _PipelineRunMiniViewer(run: run);
+      },
+    );
+  }
+}
+
+class _PipelineRunMiniViewer extends StatelessWidget {
+  const _PipelineRunMiniViewer({required this.run});
+
+  final PipelineRun run;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: SoftErpTheme.cardSurfaceAlt,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  run.name.isEmpty ? 'Unnamed Pipeline' : run.name,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: SoftErpTheme.textPrimary,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: SoftErpTheme.accent.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  run.status.name.toUpperCase(),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: SoftErpTheme.accent,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (run.nodeStatuses.isNotEmpty)
+            ...run.nodeStatuses.entries.map((entry) {
+              final status = entry.value;
+              final isDone = status.value == 'completed';
+              final isActive = status.value == 'active';
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Icon(
+                      isDone
+                          ? Icons.check_circle
+                          : isActive
+                              ? Icons.play_circle
+                              : Icons.radio_button_unchecked,
+                      color: isDone
+                          ? SoftErpTheme.accent
+                          : isActive
+                              ? SoftErpTheme.primary
+                              : SoftErpTheme.textSecondary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      entry.key,
+                      style: TextStyle(
+                        color: isDone || isActive ? SoftErpTheme.textPrimary : SoftErpTheme.textSecondary,
+                        fontWeight: isDone || isActive ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList()
+          else
+            const Text('No stages found.', style: TextStyle(color: SoftErpTheme.textSecondary)),
+        ],
+      ),
+    );
+  }
+}
+
