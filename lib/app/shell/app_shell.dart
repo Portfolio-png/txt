@@ -27,6 +27,8 @@ import '../../features/dies/presentation/screens/die_list_screen.dart';
 import '../../features/production_pipelines/presentation/screens/production_pipelines_screen.dart';
 import '../../features/machines/presentation/screens/machine_telemetry_screen.dart';
 import '../../features/production/widgets/start_production_dialog.dart';
+import '../../features/production_pipelines/data/repositories/pipeline_run_repository.dart';
+import 'package:core_erp/features/orders/domain/order_entry.dart'; // for OrderStatus
 import 'app_sidebar.dart';
 import 'app_topbar.dart';
 import 'navigation_provider.dart';
@@ -595,12 +597,39 @@ class _ShellContentSwitcher extends StatelessWidget {
               'pm' => const PMScreen(),
               'telemetry' => const MachineTelemetryScreen(),
               'orders' => OrdersScreen(
-                onGoToProduction: (screenContext, orderGroup) {
+                onGoToProduction: (screenContext, orderGroup, [preselectedItem]) {
                   final stableContext = outerContext;
                   screenContext.read<AppNavigation>().select('production');
                   WidgetsBinding.instance.addPostFrameCallback((_) {
-                    showStartProductionDialog(stableContext, orderGroup);
+                    showStartProductionDialog(stableContext, orderGroup, preselectedItem: preselectedItem);
                   });
+                },
+                getProductionStatus: (orderGroup) async {
+                  final repo = outerContext.read<PipelineRunRepository>();
+                  final runs = await repo.getRunsForOrder(orderGroup.orderNo);
+                  final assignedItemIds = runs.map((r) => r.orderItemId).whereType<int>().toSet();
+
+                  int activeTimelineIndex = orderGroup.overallStatus == OrderStatus.draft ? 0 : 0;
+                  if (runs.isNotEmpty) {
+                    final allItemsAssigned = assignedItemIds.length == orderGroup.items.length;
+                    final anyActive = runs.any((r) => r.status == 'active' || r.nodeStatuses.values.any((s) => s.name == 'active' || s.name == 'done'));
+                    final allCompleted = allItemsAssigned && runs.every((r) => r.status == 'completed');
+
+                    if (allCompleted) {
+                      activeTimelineIndex = 4;
+                    } else if (anyActive) {
+                      activeTimelineIndex = 3;
+                    } else if (allItemsAssigned) {
+                      activeTimelineIndex = 2;
+                    } else {
+                      activeTimelineIndex = 1;
+                    }
+                  }
+
+                  return (assignedItemIds: assignedItemIds, activeTimelineIndex: activeTimelineIndex);
+                },
+                onShowPipeline: (screenContext, orderGroup, item) {
+                  screenContext.read<AppNavigation>().select('production');
                 },
               ),
               'delivery_challans' => const ChallanScreen(),

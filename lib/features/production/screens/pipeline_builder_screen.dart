@@ -1148,9 +1148,18 @@ class _BuilderHeader extends StatelessWidget {
   }) async {
     try {
       provider.applyUnitContinuityAutoFixes(_activeUnitsFromContext(context));
+
+      final hasActionStage = provider.template.nodes.any(
+        (n) => n.processType != 'Input' && n.processType != 'Output',
+      );
+      final newStatus = hasActionStage
+          ? PipelineTemplateStatus.active
+          : PipelineTemplateStatus.draft;
+
       final template = provider.template.copyWith(
         factoryId: factoryId,
         shopFloorId: shopFloorId,
+        status: newStatus,
       );
       final repo = context.read<PipelineRunRepository>();
       final existing = await repo.getTemplate(template.id);
@@ -1860,18 +1869,7 @@ String _dieOptionSearchText(Die die) {
   ].where((part) => part.trim().isNotEmpty).join(' ');
 }
 
-Die? _newestDieByName(List<Die> dies, String name) {
-  Die? match;
-  for (final die in dies) {
-    if (die.name.trim().toLowerCase() != name.trim().toLowerCase()) {
-      continue;
-    }
-    if (match == null || die.createdAt.isAfter(match.createdAt)) {
-      match = die;
-    }
-  }
-  return match;
-}
+
 
 // ignore: unused_element
 class _GitGraphCanvas extends StatelessWidget {
@@ -2830,20 +2828,16 @@ class _DieDropdownFieldState extends State<_DieDropdownField> {
 
     if (provider != null) {
       try {
-        await provider.createDie(die);
-        if (!mounted) {
+        final savedDie = await provider.createDie(die);
+        if (!mounted || savedDie == null) {
           return null;
         }
         final dies = provider.dies;
-        final created = _newestDieByName(dies, name);
-        if (created == null) {
-          return null;
-        }
         setState(() => _dies = dies);
         return SearchableSelectOption<String>(
-          value: created.id,
-          label: _dieOptionLabel(created),
-          searchText: _dieOptionSearchText(created),
+          value: savedDie.id,
+          label: _dieOptionLabel(savedDie),
+          searchText: _dieOptionSearchText(savedDie),
         );
       } catch (_) {}
     }
@@ -2852,17 +2846,16 @@ class _DieDropdownFieldState extends State<_DieDropdownField> {
       return null;
     }
     try {
-      await fallbackRepo.saveDie(die);
+      final savedDie = await fallbackRepo.saveDie(die);
       final dies = await fallbackRepo.fetchDies();
-      final created = _newestDieByName(dies, name);
-      if (!mounted || created == null) {
+      if (!mounted) {
         return null;
       }
       setState(() => _dies = dies);
       return SearchableSelectOption<String>(
-        value: created.id,
-        label: _dieOptionLabel(created),
-        searchText: _dieOptionSearchText(created),
+        value: savedDie.id,
+        label: _dieOptionLabel(savedDie),
+        searchText: _dieOptionSearchText(savedDie),
       );
     } catch (_) {
       return null;

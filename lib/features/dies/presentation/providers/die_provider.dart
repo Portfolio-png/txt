@@ -76,9 +76,9 @@ class DiesProvider extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
     try {
-      await _repository.saveDie(die);
+      final savedDie = await _repository.saveDie(die);
       await refresh();
-      return die;
+      return savedDie;
     } catch (e) {
       _errorMessage = e.toString();
       notifyListeners();
@@ -94,9 +94,9 @@ class DiesProvider extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
     try {
-      await _repository.saveDie(die);
+      final savedDie = await _repository.saveDie(die);
       await refresh();
-      return die;
+      return savedDie;
     } catch (e) {
       _errorMessage = e.toString();
       notifyListeners();

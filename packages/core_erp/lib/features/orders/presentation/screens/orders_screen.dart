@@ -25,6 +25,7 @@ import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/screens/items_screen.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../units/domain/unit_definition.dart';
+import '../../../units/domain/unit_inputs.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../data/po_document_cache.dart';
 import '../../domain/order_entry.dart';
@@ -53,9 +54,16 @@ String _formatFileSize(int bytes) {
 }
 
 class OrdersScreen extends StatefulWidget {
-  const OrdersScreen({super.key, this.onGoToProduction});
+  const OrdersScreen({
+    super.key, 
+    this.onGoToProduction,
+    this.getProductionStatus,
+    this.onShowPipeline,
+  });
   
-  final void Function(BuildContext context, OrderGroup orderGroup)? onGoToProduction;
+  final void Function(BuildContext context, OrderGroup orderGroup, [OrderEntry? preselectedItem])? onGoToProduction;
+  final Future<({Set<int> assignedItemIds, int activeTimelineIndex})> Function(OrderGroup orderGroup)? getProductionStatus;
+  final void Function(BuildContext context, OrderGroup orderGroup, OrderEntry item)? onShowPipeline;
 
   static Future<void> openEditor(BuildContext context) {
     return showErpFormDialog<void>(
@@ -214,6 +222,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     child: _OrderDetailsModal(
                       orderGroup: orderGroup,
                       onGoToProduction: widget.onGoToProduction,
+                      getProductionStatus: widget.getProductionStatus,
+                      onShowPipeline: widget.onShowPipeline,
                       onEditItem: (item) {
                         Navigator.of(context).pop();
                         Future<void>.microtask(() {
@@ -1876,7 +1886,8 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     super.initState();
     _orderNoController = TextEditingController();
     _poNumberController = TextEditingController();
-    _startDateController = TextEditingController();
+    _startDate = DateTime.now();
+    _startDateController = TextEditingController(text: _formatDate(_startDate!));
     _endDateController = TextEditingController();
     _lines = <_OrderLineDraft>[
       _OrderLineDraft(id: DateTime.now().microsecondsSinceEpoch),
@@ -2817,6 +2828,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
           ),
           dialogTitle: 'Unit',
           searchHintText: 'Search unit',
+          emptyText: 'No units found in Master Data matching search',
           fieldEnabled: selectedItem != null && options.isNotEmpty,
           options: options
               .map(
@@ -2828,9 +2840,15 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                 ),
               )
               .toList(growable: false),
-          canCreateOption: (query, allOptions) =>
-              selectedItem != null && addableUnits.isNotEmpty,
-          createOptionLabelBuilder: (query) => 'Add conversion for "$query"',
+          canCreateOption: (query, allOptions) {
+            if (selectedItem == null || query.trim().isEmpty) return false;
+            return true;
+          },
+          createOptionLabelBuilder: (query) {
+            final match = _bestUnitMatch(query, addableUnits);
+            if (match == null) return 'Create new unit "$query"';
+            return 'Add conversion for "${match.displayLabel}"';
+          },
           onCreateOption: (query) => _quickAddUnitConversionForLine(
             context,
             items: items,
@@ -3013,7 +3031,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     }
 
     final unitsProvider = context.read<UnitsProvider>();
-    final addableUnits = _addableUnitsForItem(item, unitsProvider.activeUnits);
+    var addableUnits = _addableUnitsForItem(item, unitsProvider.activeUnits);
     if (addableUnits.isEmpty) {
       messenger.showSnackBar(
         SnackBar(
@@ -3026,13 +3044,28 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     }
 
     final initialUnit = _bestUnitMatch(query, addableUnits);
+    UnitDefinition? targetUnit = initialUnit;
+
+    if (targetUnit == null) {
+      targetUnit = await showDialog<UnitDefinition>(
+        context: context,
+        builder: (dialogContext) => _OrderCreateUnitDialog(
+          initialSymbol: query.trim(),
+        ),
+      );
+      if (!mounted || targetUnit == null) {
+        return null;
+      }
+      addableUnits = _addableUnitsForItem(item, unitsProvider.activeUnits);
+    }
+
     final result = await showDialog<_OrderUnitConversionResult>(
       context: context,
       builder: (dialogContext) => _OrderUnitConversionDialog(
         item: item,
         primaryUnit: unitsProvider.findById(item.unitId),
         candidateUnits: addableUnits,
-        initialUnitId: initialUnit?.id,
+        initialUnitId: targetUnit!.id,
       ),
     );
     if (!mounted || result == null) {
@@ -3729,13 +3762,23 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     if (normalized.isEmpty || candidates.isEmpty) {
       return null;
     }
-    return candidates
+    var match = candidates
         .where(
           (unit) =>
               unit.name.toLowerCase() == normalized ||
               unit.symbol.toLowerCase() == normalized,
         )
         .firstOrNull;
+        
+    match ??= candidates
+        .where(
+          (unit) =>
+              unit.name.toLowerCase().startsWith(normalized) ||
+              unit.symbol.toLowerCase().startsWith(normalized),
+        )
+        .firstOrNull;
+        
+    return match;
   }
 
   int? _effectiveUnitIdForLine(
@@ -4508,11 +4551,15 @@ class _OrderDetailsModal extends StatefulWidget {
     required this.orderGroup, 
     required this.onEditItem,
     this.onGoToProduction,
+    this.getProductionStatus,
+    this.onShowPipeline,
   });
 
   final OrderGroup orderGroup;
   final ValueChanged<OrderEntry> onEditItem;
-  final void Function(BuildContext context, OrderGroup orderGroup)? onGoToProduction;
+  final void Function(BuildContext context, OrderGroup orderGroup, [OrderEntry? preselectedItem])? onGoToProduction;
+  final Future<({Set<int> assignedItemIds, int activeTimelineIndex})> Function(OrderGroup orderGroup)? getProductionStatus;
+  final void Function(BuildContext context, OrderGroup orderGroup, OrderEntry item)? onShowPipeline;
 
   @override
   State<_OrderDetailsModal> createState() => _OrderDetailsModalState();
@@ -4521,6 +4568,42 @@ class _OrderDetailsModal extends StatefulWidget {
 class _OrderDetailsModalState extends State<_OrderDetailsModal> {
   int _selectedTab = 0;
   bool _autoOpenProductionPopup = false;
+  Set<int>? _assignedItemIds;
+  int? _activeTimelineIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchProductionStatus();
+  }
+
+  Future<void> _fetchProductionStatus() async {
+    if (widget.getProductionStatus != null) {
+      try {
+        final status = await widget.getProductionStatus!(widget.orderGroup);
+        if (mounted) {
+          setState(() {
+            _assignedItemIds = status.assignedItemIds;
+            _activeTimelineIndex = status.activeTimelineIndex;
+          });
+        }
+      } catch (_) {
+        if (mounted) {
+          setState(() {
+            _assignedItemIds = {};
+            _activeTimelineIndex = null;
+          });
+        }
+      }
+    } else {
+      if (mounted) {
+        setState(() {
+          _assignedItemIds = {};
+          _activeTimelineIndex = null;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -4532,7 +4615,14 @@ class _OrderDetailsModalState extends State<_OrderDetailsModal> {
     ];
     
     final selectedContent = switch (_selectedTab) {
-      0 => _OrderDetailsContent(group: group, onEditItem: widget.onEditItem),
+      0 => _OrderDetailsContent(
+          group: group, 
+          onEditItem: widget.onEditItem,
+          assignedItemIds: _assignedItemIds,
+          activeTimelineIndex: _activeTimelineIndex,
+          onIssuePipeline: widget.onGoToProduction == null ? null : (item) => widget.onGoToProduction!(context, group, item),
+          onShowPipeline: widget.onShowPipeline == null ? null : (item) => widget.onShowPipeline!(context, group, item),
+        ),
       1 => _OrderActivityTimeline(orderId: group.items.first.id), // Audit on first item for now
       2 => _OrderAuditContent(orderId: group.items.first.id),
       _ => const SizedBox.shrink(),
@@ -4568,14 +4658,6 @@ class _OrderDetailsModalState extends State<_OrderDetailsModal> {
                     right: 24,
                     child: Row(
                       children: [
-                        if (widget.onGoToProduction != null)
-                          _OrderDetailActionButton(
-                            label: 'Go to Production',
-                            onPressed: () {
-                              Navigator.of(context).pop();
-                              widget.onGoToProduction!(context, group);
-                            },
-                          ),
                         const SizedBox(width: 8),
                         _OrderDetailActionButton(
                           label: 'View Challans',
@@ -4599,7 +4681,7 @@ class _OrderDetailsModalState extends State<_OrderDetailsModal> {
                 padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
                 child: Column(
                   children: [
-                    _OrderTimelineStrip(group: group),
+                    _OrderTimelineStrip(group: group, activeIndexOverride: _activeTimelineIndex),
                     const SizedBox(height: 12),
                     _OrderDetailsTabs(
                       tabs: tabs,
@@ -4665,10 +4747,21 @@ class _OrderDetailsModalState extends State<_OrderDetailsModal> {
 }
 
 class _OrderDetailsContent extends StatelessWidget {
-  const _OrderDetailsContent({required this.group, required this.onEditItem});
+  const _OrderDetailsContent({
+    required this.group,
+    required this.onEditItem,
+    this.assignedItemIds,
+    this.activeTimelineIndex,
+    this.onIssuePipeline,
+    this.onShowPipeline,
+  });
 
   final OrderGroup group;
   final ValueChanged<OrderEntry> onEditItem;
+  final Set<int>? assignedItemIds;
+  final int? activeTimelineIndex;
+  final ValueChanged<OrderEntry>? onIssuePipeline;
+  final ValueChanged<OrderEntry>? onShowPipeline;
 
   @override
   Widget build(BuildContext context) {
@@ -4716,7 +4809,15 @@ class _OrderDetailsContent extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 10),
-        Expanded(child: _OrderItemsDetailCard(group: group, onEditItem: onEditItem)),
+        Expanded(
+          child: _OrderItemsDetailCard(
+            group: group, 
+            onEditItem: onEditItem,
+            assignedItemIds: assignedItemIds,
+            onIssuePipeline: onIssuePipeline,
+            onShowPipeline: onShowPipeline,
+          ),
+        ),
       ],
     );
   }
@@ -4736,9 +4837,10 @@ class _OrderDetailsContent extends StatelessWidget {
 }
 
 class _OrderTimelineStrip extends StatelessWidget {
-  const _OrderTimelineStrip({required this.group});
+  const _OrderTimelineStrip({required this.group, this.activeIndexOverride});
 
   final OrderGroup group;
+  final int? activeIndexOverride;
 
   @override
   Widget build(BuildContext context) {
@@ -4749,7 +4851,7 @@ class _OrderTimelineStrip extends StatelessWidget {
       (label: 'Active Work', index: 3),
       (label: 'Done', index: 4),
     ];
-    final activeIndex = _activeIndex(group.overallStatus);
+    final activeIndex = activeIndexOverride ?? _activeIndex(group.overallStatus);
 
     return Container(
       height: 96,
@@ -5023,10 +5125,19 @@ class _OrderDetailField extends StatelessWidget {
 }
 
 class _OrderItemsDetailCard extends StatelessWidget {
-  const _OrderItemsDetailCard({required this.group, required this.onEditItem});
+  const _OrderItemsDetailCard({
+    required this.group, 
+    required this.onEditItem,
+    this.assignedItemIds,
+    this.onIssuePipeline,
+    this.onShowPipeline,
+  });
 
   final OrderGroup group;
   final ValueChanged<OrderEntry> onEditItem;
+  final Set<int>? assignedItemIds;
+  final ValueChanged<OrderEntry>? onIssuePipeline;
+  final ValueChanged<OrderEntry>? onShowPipeline;
 
   @override
   Widget build(BuildContext context) {
@@ -5060,6 +5171,19 @@ class _OrderItemsDetailCard extends StatelessWidget {
               separatorBuilder: (_, _) => const SizedBox(height: 4),
               itemBuilder: (context, index) {
                 final item = group.items[index];
+                final isAssigned = assignedItemIds?.contains(item.id) ?? false;
+                final prodWidget = TextButton(
+                  onPressed: () {
+                    if (isAssigned && onShowPipeline != null) onShowPipeline!(item);
+                    if (!isAssigned && onIssuePipeline != null) onIssuePipeline!(item);
+                  },
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 28),
+                  ),
+                  child: Text(isAssigned ? 'Show pipeline' : 'Issue pipeline', style: const TextStyle(fontSize: 12)),
+                );
+
                 return _OrderItemsGridRow(
                   cells: [
                     _itemLabel(item),
@@ -5067,6 +5191,7 @@ class _OrderItemsDetailCard extends StatelessWidget {
                     item.unitDisplayLabel,
                     _formatDate(item.endDate),
                   ],
+                  productionWidget: prodWidget,
                   actionWidget: IconButton(
                     icon: const Icon(
                       Icons.edit_outlined,
@@ -5109,11 +5234,13 @@ class _OrderItemsGridRow extends StatelessWidget {
     required this.cells,
     this.isHeader = false,
     this.actionWidget,
+    this.productionWidget,
   });
 
   final List<String> cells;
   final bool isHeader;
   final Widget? actionWidget;
+  final Widget? productionWidget;
 
   @override
   Widget build(BuildContext context) {
@@ -5130,9 +5257,7 @@ class _OrderItemsGridRow extends StatelessWidget {
             Expanded(
               flex: i == 0 ? 2 : 1,
               child: Padding(
-                padding: EdgeInsets.only(
-                  right: (i == cells.length - 1 && actionWidget == null) ? 0 : 12,
-                ),
+                padding: const EdgeInsets.only(right: 12),
                 child: Text(
                   cells[i],
                   maxLines: 1,
@@ -5145,6 +5270,12 @@ class _OrderItemsGridRow extends StatelessWidget {
                 ),
               ),
             ),
+          Expanded(
+            flex: 1,
+            child: isHeader 
+              ? const Text('Production', style: TextStyle(color: Color(0xFF565168), fontSize: 14, fontWeight: FontWeight.w500))
+              : (productionWidget ?? const SizedBox.shrink()),
+          ),
           if (actionWidget != null || isHeader)
             Container(
               width: 32,
@@ -7176,5 +7307,163 @@ enum _OrderUrgency { none, nearDue, overdue }
 
 extension<T> on Iterable<T> {
   T? get firstOrNull => isEmpty ? null : first;
+}
+
+class _OrderCreateUnitDialog extends StatefulWidget {
+  const _OrderCreateUnitDialog({required this.initialSymbol});
+
+  final String initialSymbol;
+
+  @override
+  State<_OrderCreateUnitDialog> createState() => _OrderCreateUnitDialogState();
+}
+
+class _OrderCreateUnitDialogState extends State<_OrderCreateUnitDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _nameController;
+  late final TextEditingController _symbolController;
+  bool _isCreating = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.initialSymbol);
+    _symbolController = TextEditingController(text: widget.initialSymbol);
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _symbolController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _create() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+    setState(() => _isCreating = true);
+
+    final provider = context.read<UnitsProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+
+    try {
+      final newUnit = await provider.createUnit(
+        CreateUnitInput(
+          name: _nameController.text.trim(),
+          symbol: _symbolController.text.trim(),
+        ),
+      );
+      if (newUnit != null && mounted) {
+        Navigator.of(context).pop(newUnit);
+      } else if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(content: Text(provider.errorMessage ?? 'Could not create unit.')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isCreating = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 32),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 22, 24, 20),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Create new unit',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          color: SoftErpTheme.textPrimary,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close_rounded),
+                      tooltip: 'Close',
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'This unit doesn\'t exist. You can create it now.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: SoftErpTheme.textSecondary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                TextFormField(
+                  controller: _nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Unit Name',
+                    hintText: 'e.g. Kilograms',
+                    filled: true,
+                    fillColor: Color(0xFFF8F7FC),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(14)),
+                      borderSide: BorderSide(color: SoftErpTheme.border),
+                    ),
+                  ),
+                  validator: (value) =>
+                      (value?.trim().isEmpty ?? true) ? 'Name is required' : null,
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _symbolController,
+                  decoration: const InputDecoration(
+                    labelText: 'Unit Symbol',
+                    hintText: 'e.g. kgs',
+                    filled: true,
+                    fillColor: Color(0xFFF8F7FC),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(14)),
+                      borderSide: BorderSide(color: SoftErpTheme.border),
+                    ),
+                  ),
+                  validator: (value) =>
+                      (value?.trim().isEmpty ?? true) ? 'Symbol is required' : null,
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    AppButton(
+                      label: 'Cancel',
+                      variant: AppButtonVariant.secondary,
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    const SizedBox(width: 10),
+                    AppButton(
+                      label: 'Create Unit',
+                      isLoading: _isCreating,
+                      onPressed: _create,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 

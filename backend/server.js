@@ -18653,6 +18653,16 @@ async function clearAllData() {
   try {
     await run('DELETE FROM invoice_lines');
     await run('DELETE FROM invoice_headers');
+    await run('DELETE FROM order_pipeline_assignments');
+    await run('DELETE FROM delivery_challan_report_groups');
+    await run('DELETE FROM report_groups');
+    await run('DELETE FROM procurement_activity_log');
+    await run('DELETE FROM procurement_request_lines');
+    await run('DELETE FROM procurement_requests');
+    await run('DELETE FROM item_bom_lines');
+    await run('DELETE FROM orders');
+    await run('DELETE FROM dies');
+    await run('DELETE FROM machines');
     await run('DELETE FROM reconciliation_waste_audit');
     await run('DELETE FROM reconciliation_conversion_overrides');
     await run('DELETE FROM delivery_challan_order_items');

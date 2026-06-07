@@ -102,20 +102,23 @@ class ApiDieRepository implements DieRepository {
   }
 
   @override
-  Future<void> saveDie(Die die) async {
+  Future<Die> saveDie(Die die) async {
     if (useMockResponses) {
       await Future.delayed(const Duration(milliseconds: 300));
       final index = _mockDies.indexWhere((d) => d.id == die.id);
       if (index >= 0) {
-        _mockDies[index] = die.copyWith(updatedAt: DateTime.now());
+        final updated = die.copyWith(updatedAt: DateTime.now());
+        _mockDies[index] = updated;
+        return updated;
       } else {
-        _mockDies.add(die.copyWith(
+        final created = die.copyWith(
           id: DateTime.now().millisecondsSinceEpoch.toString(),
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
-        ));
+        );
+        _mockDies.add(created);
+        return created;
       }
-      return;
     }
 
     final uri = Uri.parse('$baseUrl/api/dies');
@@ -129,6 +132,7 @@ class ApiDieRepository implements DieRepository {
     if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] != true) {
       throw Exception(payload['error'] as String? ?? 'Failed to save die');
     }
+    return _dieFromJson(payload['die'] as Map<String, dynamic>);
   }
 
   @override
@@ -360,6 +364,7 @@ class ApiDieRepository implements DieRepository {
       'id': d.id,
       'name': d.name,
       'toolCode': d.toolCode,
+      'producedPartNumbers': d.name.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList(),
       'photoUrls': d.photoUrls,
       'operationalNotes': d.operationalNotes,
       'compatibleMachineGroupIds': d.compatibleMachineGroupIds,

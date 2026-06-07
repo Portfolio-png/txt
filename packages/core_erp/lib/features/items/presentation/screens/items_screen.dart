@@ -22,6 +22,12 @@ import '../providers/items_provider.dart';
 import '../widgets/item_card.dart';
 import '../widgets/item_detail_panel.dart';
 
+import 'package:file_selector/file_selector.dart';
+import 'package:crypto/crypto.dart';
+import 'package:mime/mime.dart';
+import 'package:http/http.dart' as http;
+import '../../../../core/services/generic_asset_service.dart';
+
 class ItemsScreen extends StatefulWidget {
   const ItemsScreen({super.key, this.initialTab = 0});
 
@@ -701,11 +707,14 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     }
     _hydrateExistingGroupBackedNodes();
     for (final conversion in widget.item?.unitConversions ?? const []) {
+      final unit = context.read<UnitsProvider>().findById(conversion.unitId);
+      final factorToV = conversion.factorToPrimary <= 0
+          ? 1.0
+          : 1.0 / conversion.factorToPrimary;
+      final factorToB = factorToV * (unit?.conversionFactor ?? 1.0);
       final draft = _UnitConversionDraft(
         unitId: conversion.unitId,
-        unitsPerPrimary: conversion.factorToPrimary <= 0
-            ? 1
-            : 1 / conversion.factorToPrimary,
+        unitsPerPrimary: factorToB,
       );
       draft.factorController.addListener(_handleChange);
       _secondaryUnitConversions.add(draft);
@@ -797,6 +806,67 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     ..._secondaryUnitConversions.map((draft) => draft.unitId),
   ];
 
+  bool _isDerived(int unitId) {
+    if (_selectedUnitId == null) return false;
+    final unitsProvider = context.read<UnitsProvider>();
+    final unit = unitsProvider.findById(unitId);
+    if (unit == null || unit.unitGroupId == null) return false;
+
+    for (final id in _orderedUnitIds) {
+      if (id == unitId) return false;
+      final other = unitsProvider.findById(id);
+      if (other != null && other.unitGroupId == unit.unitGroupId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  double _getDerivedUnitsPerPrimary(int unitId) {
+    if (_selectedUnitId == null) return 1.0;
+    final unitsProvider = context.read<UnitsProvider>();
+    final unit = unitsProvider.findById(unitId);
+    if (unit == null) return 1.0;
+
+    final primaryUnit = unitsProvider.findById(_selectedUnitId);
+    if (primaryUnit?.unitGroupId != null && primaryUnit!.unitGroupId == unit.unitGroupId) {
+      final factorToB = primaryUnit.conversionFactor;
+      return factorToB / unit.conversionFactor;
+    }
+
+    int? representativeId;
+    if (unit.unitGroupId != null) {
+      for (final id in _orderedUnitIds.skip(1)) {
+        final other = unitsProvider.findById(id);
+        if (other != null && other.unitGroupId == unit.unitGroupId) {
+          representativeId = id;
+          break;
+        }
+      }
+    }
+
+    if (representativeId == null) {
+      _UnitConversionDraft? draft;
+      for (final d in _secondaryUnitConversions) {
+        if (d.unitId == unitId) {
+          draft = d;
+          break;
+        }
+      }
+      return draft?.unitsPerPrimary ?? 1.0;
+    }
+
+    _UnitConversionDraft? repDraft;
+    for (final d in _secondaryUnitConversions) {
+      if (d.unitId == representativeId) {
+        repDraft = d;
+        break;
+      }
+    }
+    final factorToB = repDraft?.unitsPerPrimary ?? 1.0;
+    return factorToB / unit.conversionFactor;
+  }
+
   void _rebuildUnitOrderFrom(
     List<int> orderedUnitIds,
     Map<int, double> unitsPerOldPrimary,
@@ -812,11 +882,13 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     final newPrimaryUnitsPerOldPrimary =
         unitsPerOldPrimary[_selectedUnitId!] ?? 1;
     for (final unitId in orderedUnitIds.skip(1)) {
-      final unitsPerPrimary =
+      final unit = context.read<UnitsProvider>().findById(unitId);
+      final factorToV =
           (unitsPerOldPrimary[unitId] ?? 1) / newPrimaryUnitsPerOldPrimary;
+      final factorToB = factorToV * (unit?.conversionFactor ?? 1.0);
       final draft = _UnitConversionDraft(
         unitId: unitId,
-        unitsPerPrimary: unitsPerPrimary,
+        unitsPerPrimary: factorToB,
       );
       draft.factorController.addListener(_handleChange);
       _secondaryUnitConversions.add(draft);
@@ -840,7 +912,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     final unitsPerOldPrimary = <int, double>{
       ...?(_selectedUnitId == null ? null : <int, double>{_selectedUnitId!: 1}),
       for (final draft in _secondaryUnitConversions)
-        draft.unitId: draft.unitsPerPrimary,
+        draft.unitId: _getDerivedUnitsPerPrimary(draft.unitId),
     };
     final moved = orderedUnitIds.removeAt(oldIndex);
     orderedUnitIds.insert(newIndex, moved);
@@ -1400,11 +1472,12 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                       padding: EdgeInsets.only(
                         right: index == _orderedUnitIds.length - 1 ? 0 : 10,
                       ),
-                      child: ReorderableDelayedDragStartListener(
+                      child: ReorderableDragStartListener(
                         index: index,
                         enabled: !_isReadOnly,
                         child: _UnitSelectionBubble(
                           label: unit?.displayLabel ?? 'Unit #$unitId',
+                          showDragHandle: !_isReadOnly,
                           onRemove: _isReadOnly
                               ? null
                               : () => setState(() {
@@ -1464,28 +1537,39 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               ),
             ),
           ],
-          if (_secondaryUnitConversions.isNotEmpty) ...[
+          if (_secondaryUnitConversions.isNotEmpty && _secondaryUnitConversions.any((d) => !_isDerived(d.unitId))) ...[
             const SizedBox(height: 12),
             for (var i = 0; i < _secondaryUnitConversions.length; i++) ...[
-              _UnitConversionRow(
-                draft: _secondaryUnitConversions[i],
-                baseUnitSymbol: primaryUnitSymbol,
-                unitLabel:
-                    unitsProvider
-                        .findById(_secondaryUnitConversions[i].unitId)
-                        ?.displayLabel ??
-                    '?',
-                unitSymbol:
-                    unitsProvider
-                        .findById(_secondaryUnitConversions[i].unitId)
-                        ?.symbol ??
-                    '?',
-                onRemove: () => setState(() {
-                  _secondaryUnitConversions.removeAt(i).dispose();
-                }),
-              ),
-              if (i != _secondaryUnitConversions.length - 1)
-                const SizedBox(height: 8),
+              if (!_isDerived(_secondaryUnitConversions[i].unitId)) ...[
+                Builder(
+                  builder: (context) {
+                    final draft = _secondaryUnitConversions[i];
+                    final unit = unitsProvider.findById(draft.unitId);
+                    
+                    var displayUnit = unit;
+                    if (unit?.unitGroupId != null) {
+                      for (final u in unitsProvider.units) {
+                        if (u.unitGroupId == unit!.unitGroupId && u.isBaseUnit) {
+                          displayUnit = u;
+                          break;
+                        }
+                      }
+                    }
+
+                    return _UnitConversionRow(
+                      draft: draft,
+                      baseUnitSymbol: primaryUnitSymbol,
+                      unitLabel: displayUnit?.displayLabel ?? '?',
+                      unitSymbol: displayUnit?.symbol ?? '?',
+                      onRemove: () => setState(() {
+                        _secondaryUnitConversions.removeAt(i).dispose();
+                      }),
+                    );
+                  },
+                ),
+                if (_secondaryUnitConversions.skip(i + 1).any((d) => !_isDerived(d.unitId)))
+                  const SizedBox(height: 8),
+              ],
             ],
           ],
           const SizedBox(height: 12),
@@ -2101,7 +2185,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       return;
     }
     for (final conversion in _secondaryUnitConversions) {
-      if (conversion.unitsPerPrimary <= 0) {
+      if (_getDerivedUnitsPerPrimary(conversion.unitId) <= 0) {
         setState(() {
           _localError =
               'Every secondary unit conversion must be greater than 0.';
@@ -2152,7 +2236,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   .map(
                     (draft) => ItemUnitConversionInput(
                       unitId: draft.unitId,
-                      factorToPrimary: 1 / draft.unitsPerPrimary,
+                      factorToPrimary: 1 / _getDerivedUnitsPerPrimary(draft.unitId),
                     ),
                   )
                   .toList(growable: false),
@@ -2173,7 +2257,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   .map(
                     (draft) => ItemUnitConversionInput(
                       unitId: draft.unitId,
-                      factorToPrimary: 1 / draft.unitsPerPrimary,
+                      factorToPrimary: 1 / _getDerivedUnitsPerPrimary(draft.unitId),
                     ),
                   )
                   .toList(growable: false),
@@ -2769,10 +2853,15 @@ class _SectionCard extends StatelessWidget {
 }
 
 class _UnitSelectionBubble extends StatelessWidget {
-  const _UnitSelectionBubble({required this.label, this.onRemove});
+  const _UnitSelectionBubble({
+    required this.label,
+    this.onRemove,
+    this.showDragHandle = false,
+  });
 
   final String label;
   final VoidCallback? onRemove;
+  final bool showDragHandle;
 
   @override
   Widget build(BuildContext context) {
@@ -2781,7 +2870,12 @@ class _UnitSelectionBubble extends StatelessWidget {
     const textColor = Color(0xFF334155);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: EdgeInsets.only(
+        left: showDragHandle ? 6 : 10,
+        right: 10,
+        top: 6,
+        bottom: 6,
+      ),
       decoration: BoxDecoration(
         color: backgroundColor,
         borderRadius: BorderRadius.circular(999),
@@ -2790,6 +2884,14 @@ class _UnitSelectionBubble extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (showDragHandle) ...[
+            const Icon(
+              Icons.drag_indicator_rounded,
+              size: 14,
+              color: Color(0xFF94A3B8),
+            ),
+            const SizedBox(width: 4),
+          ],
           Text(
             label,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -3009,6 +3111,8 @@ class _ItemPhotoPickerField extends StatefulWidget {
 }
 
 class _ItemPhotoPickerFieldState extends State<_ItemPhotoPickerField> {
+  bool _isUploading = false;
+
   @override
   void initState() {
     super.initState();
@@ -3017,6 +3121,85 @@ class _ItemPhotoPickerFieldState extends State<_ItemPhotoPickerField> {
 
   void _rebuild() {
     if (mounted) setState(() {});
+  }
+
+  String _contentTypeFromExtension(String fileName) {
+    final ext = fileName.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'png': return 'image/png';
+      case 'jpg':
+      case 'jpeg': return 'image/jpeg';
+      case 'webp': return 'image/webp';
+      default: return 'application/octet-stream';
+    }
+  }
+
+  Future<void> _pickAndUploadImage() async {
+    final file = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(
+          label: 'Images',
+          mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
+          extensions: ['png', 'jpg', 'jpeg', 'webp'],
+        ),
+      ],
+    );
+    if (file == null || !mounted) {
+      return;
+    }
+
+    setState(() => _isUploading = true);
+    final messenger = ScaffoldMessenger.of(context);
+    final baseUrl = const String.fromEnvironment('PAPER_API_BASE_URL', defaultValue: 'http://localhost:8080');
+    final service = GenericAssetService(baseUrl: baseUrl);
+
+    try {
+      final bytes = await file.readAsBytes();
+      final digest = sha256.convert(bytes).toString();
+      final contentType =
+          file.mimeType ??
+          lookupMimeType(file.name, headerBytes: bytes.take(24).toList()) ??
+          _contentTypeFromExtension(file.name);
+      
+      final intent = await service.createUploadIntent(
+        GenericAssetUploadIntentInput(
+          fileName: file.name,
+          contentType: contentType,
+          sizeBytes: bytes.length,
+          sha256: digest,
+        ),
+      );
+
+      if (intent.uploadUrl.host != 'mock.local') {
+        final response = await http.put(
+          intent.uploadUrl,
+          headers: intent.headers,
+          body: bytes,
+        );
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          throw Exception(
+            'Image upload failed with status ${response.statusCode}.',
+          );
+        }
+      }
+
+      if (intent.readUrl == null) {
+        throw Exception('Failed to get read URL from intent.');
+      }
+
+      widget.controller.text = intent.readUrl!;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Image uploaded successfully.')),
+      );
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Image upload failed: $error')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
+      }
+    }
   }
 
   @override
@@ -3062,30 +3245,47 @@ class _ItemPhotoPickerFieldState extends State<_ItemPhotoPickerField> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              TextFormField(
-                controller: widget.controller,
-                readOnly: widget.readOnly,
-                decoration: InputDecoration(
-                  labelText: 'Photo URL',
-                  hintText: 'Paste an image URL to preview\u2026',
-                  helperText: 'Optional product or reference photo',
-                  filled: true,
-                  fillColor: const Color(0xFFF9FAFB),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: widget.controller,
+                      readOnly: widget.readOnly,
+                      decoration: InputDecoration(
+                        labelText: 'Photo URL',
+                        hintText: 'Paste an image URL to preview\u2026',
+                        helperText: 'Optional product or reference photo',
+                        filled: true,
+                        fillColor: const Color(0xFFF9FAFB),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                        ),
+                        suffixIcon: url.isNotEmpty && !widget.readOnly
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, size: 18),
+                                onPressed: () => widget.controller.clear(),
+                              )
+                            : null,
+                      ),
+                    ),
                   ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
-                  ),
-                  suffixIcon: url.isNotEmpty && !widget.readOnly
-                      ? IconButton(
-                          icon: const Icon(Icons.clear, size: 18),
-                          onPressed: () => widget.controller.clear(),
-                        )
-                      : null,
-                ),
+                  if (!widget.readOnly) ...[
+                    const SizedBox(width: 8),
+                    AppButton(
+                      label: 'Upload',
+                      icon: Icons.upload_file,
+                      variant: AppButtonVariant.secondary,
+                      isLoading: _isUploading,
+                      onPressed: _pickAndUploadImage,
+                    ),
+                  ],
+                ],
               ),
             ],
           ),

@@ -67,13 +67,17 @@ class MockDieRepository implements DieRepository {
   }
 
   @override
-  Future<void> saveDie(Die die) async {
+  Future<Die> saveDie(Die die) async {
     await Future.delayed(const Duration(milliseconds: 500));
     final index = _dies.indexWhere((d) => d.id == die.id);
     if (index >= 0) {
-      _dies[index] = die.copyWith(updatedAt: DateTime.now());
+      final updated = die.copyWith(updatedAt: DateTime.now());
+      _dies[index] = updated;
+      return updated;
     } else {
-      _dies.add(die.copyWith(id: DateTime.now().millisecondsSinceEpoch.toString(), createdAt: DateTime.now(), updatedAt: DateTime.now()));
+      final created = die.copyWith(id: DateTime.now().millisecondsSinceEpoch.toString(), createdAt: DateTime.now(), updatedAt: DateTime.now());
+      _dies.add(created);
+      return created;
     }
   }
 

@@ -742,9 +742,12 @@ class _FakePipelineRunRepository implements PipelineRunRepository {
   Future<List<PipelineRun>> getRuns({String? templateId}) async => const [];
 
   @override
-  Future<PipelineRun> createRun(String templateId, {String? name}) {
+  Future<PipelineRun> createRun(String templateId, {String? name, int? orderItemId, String? orderNo}) {
     throw UnimplementedError();
   }
+
+  @override
+  Future<List<PipelineRun>> getRunsForOrder(String orderNo) async => const [];
 
   @override
   Future<PipelineRun?> getRun(String id) async => null;

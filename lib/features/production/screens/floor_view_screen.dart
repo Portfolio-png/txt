@@ -16,6 +16,7 @@ import '../data/mock_floor_data.dart';
 
 import 'package:core_erp/features/orders/data/repositories/order_repository.dart';
 import 'package:core_erp/features/orders/domain/order_entry.dart';
+import 'package:core_erp/features/inventory/data/repositories/inventory_repository.dart';
 
 class FloorViewScreen extends StatefulWidget {
   const FloorViewScreen({
@@ -96,20 +97,22 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
     try {
       final repo = context.read<PipelineRunRepository>();
       final inventoryRepo = context.read<InventoryRepository>();
-      
+
       final templates = await repo.getTemplates();
       final allMaterials = await inventoryRepo.getAllMaterials();
-      
+
       final floorTemplates = templates
           .where(_templateBelongsToCurrentFloor)
           .where((t) => t.status == PipelineTemplateStatus.active)
           .toList(growable: false);
-          
+
       final Set<String> stalledMaterialPipelines = {};
       for (final t in floorTemplates) {
         if (t.inputMaterial.trim().isNotEmpty) {
           final requiredMaterial = t.inputMaterial.trim().toLowerCase();
-          final available = allMaterials.where((m) => m.name.toLowerCase() == requiredMaterial && m.onHand > 0);
+          final available = allMaterials.where(
+            (m) => m.name.toLowerCase() == requiredMaterial && m.onHand > 0,
+          );
           if (available.isEmpty) {
             stalledMaterialPipelines.add(t.id);
           }
@@ -135,10 +138,12 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
     } finally {
       if (mounted) setState(() => _isLoadingTemplates = false);
     }
+  }
+
   Future<void> _showStartPipelineDialog() async {
     final repo = context.read<PipelineRunRepository>();
     final templates = await repo.getTemplates();
-    
+
     if (!mounted) return;
 
     final selectedTemplate = await showDialog<PipelineTemplate>(
@@ -154,7 +159,9 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
               itemBuilder: (context, index) {
                 final template = templates[index];
                 return ListTile(
-                  title: Text(template.name.isEmpty ? 'Unnamed Pipeline' : template.name),
+                  title: Text(
+                    template.name.isEmpty ? 'Unnamed Pipeline' : template.name,
+                  ),
                   subtitle: Text('${template.nodes.length} stations'),
                   onTap: () {
                     Navigator.pop(context, template);
@@ -214,6 +221,8 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
             .where((pipeline) => pipeline.id == selectedPipelineId)
             .firstOrNull ??
         pipelines.first;
+    final selectedTemplate =
+        templates.where((t) => t.id == selectedPipelineId).firstOrNull;
 
     return Scaffold(
       backgroundColor: tokens.backgroundBase,
@@ -245,9 +254,15 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
                                     floor: floor,
                                     pipelines: pipelines,
                                     selectedPipelineId: _selectedPipelineId,
-                                    onPipelineSelected: (id) =>
-                                        setState(() => _selectedPipelineId = id),
-                                    onOrderTapped: (orderNo) => _showOrderQuickPeek(context, orderNo, tokens),
+                                    onPipelineSelected: (id) => setState(
+                                      () => _selectedPipelineId = id,
+                                    ),
+                                    onOrderTapped: (orderNo) =>
+                                        _showOrderQuickPeek(
+                                          context,
+                                          orderNo,
+                                          tokens,
+                                        ),
                                   ),
                                 ),
                                 const SizedBox(height: 14),
@@ -312,7 +327,8 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
                           selectedPipelineId: _selectedPipelineId,
                           onPipelineSelected: (id) =>
                               setState(() => _selectedPipelineId = id),
-                          onOrderTapped: (orderNo) => _showOrderQuickPeek(context, orderNo, tokens),
+                          onOrderTapped: (orderNo) =>
+                              _showOrderQuickPeek(context, orderNo, tokens),
                         ),
                       ),
                       Expanded(
@@ -369,7 +385,8 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
   void _selectPipeline(String pipelineId) {
     setState(() {
       _selectedPipelineId = pipelineId;
-      _selectedStationId = null; // Clear station selection when pipeline changes
+      _selectedStationId =
+          null; // Clear station selection when pipeline changes
     });
     widget.onPipelineSelected?.call(pipelineId);
   }
@@ -574,7 +591,8 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
             FloorAlert(
               severity: AlertSeverity.warning,
               title: 'Route not connected',
-              message: '${template.name} has stations but no material flow links',
+              message:
+                  '${template.name} has stations but no material flow links',
               position: _nodeMapPosition(
                 firstNode,
                 template,
@@ -593,7 +611,8 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
             FloorAlert(
               severity: AlertSeverity.warning,
               title: 'Material Shortage',
-              message: 'Stalled due to material inconvenience: ${template.inputMaterial}',
+              message:
+                  'Stalled due to material inconvenience: ${template.inputMaterial}',
               position: _nodeMapPosition(
                 firstNode,
                 template,
@@ -766,7 +785,12 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
 }
 
 class FloorTopBar extends StatelessWidget {
-  const FloorTopBar({super.key, required this.tokens, this.onDispatch, this.onStartPipeline});
+  const FloorTopBar({
+    super.key,
+    required this.tokens,
+    this.onDispatch,
+    this.onStartPipeline,
+  });
 
   final FloorOpsTokens tokens;
   final VoidCallback? onDispatch;
@@ -842,7 +866,10 @@ class FloorTopBar extends StatelessWidget {
               style: FilledButton.styleFrom(
                 backgroundColor: tokens.selection,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
                 ),
@@ -1269,7 +1296,8 @@ class _FloorMapCanvasState extends State<FloorMapCanvas>
                 .toList(growable: false);
 
             ProcessNode? selectedNode;
-            if (widget.selectedStationId != null && widget.selectedTemplate != null) {
+            if (widget.selectedStationId != null &&
+                widget.selectedTemplate != null) {
               selectedNode = widget.selectedTemplate!.nodes
                   .where((n) => n.id == widget.selectedStationId)
                   .firstOrNull;
@@ -1309,7 +1337,7 @@ class _FloorMapCanvasState extends State<FloorMapCanvas>
                                 size: size,
                                 selected:
                                     station.pipelineId ==
-                                  widget.selectedPipelineId,
+                                    widget.selectedPipelineId,
                                 onTap: () {
                                   widget.onPipelineSelected?.call(
                                     station.pipelineId,
@@ -2050,7 +2078,11 @@ class _KpiBreakdown extends StatelessWidget {
   }
 }
 
-Future<void> _showOrderQuickPeek(BuildContext context, String orderNo, FloorOpsTokens tokens) async {
+Future<void> _showOrderQuickPeek(
+  BuildContext context,
+  String orderNo,
+  FloorOpsTokens tokens,
+) async {
   showDialog(
     context: context,
     builder: (context) {
@@ -2062,21 +2094,26 @@ Future<void> _showOrderQuickPeek(BuildContext context, String orderNo, FloorOpsT
           }
           final orders = snapshot.data ?? [];
           final orderItems = orders.where((o) => o.orderNo == orderNo).toList();
-          
+
           if (orderItems.isEmpty) {
             return AlertDialog(
               title: const Text('Order Details'),
               content: const Text('Order not found.'),
               actions: [
-                TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Close')),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Close'),
+                ),
               ],
             );
           }
-          
+
           final clientName = orderItems.first.clientName;
-          
+
           return Dialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             child: Container(
               width: 400,
               padding: const EdgeInsets.all(24),
@@ -2087,25 +2124,49 @@ Future<void> _showOrderQuickPeek(BuildContext context, String orderNo, FloorOpsT
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Order #$orderNo', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                      IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.of(context).pop()),
+                      Text(
+                        'Order #$orderNo',
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Text(clientName, style: TextStyle(color: tokens.textSecondary, fontSize: 16)),
+                  Text(
+                    clientName,
+                    style: TextStyle(color: tokens.textSecondary, fontSize: 16),
+                  ),
                   const Divider(height: 32),
-                  const Text('Items in Production', style: TextStyle(fontWeight: FontWeight.w600)),
+                  const Text(
+                    'Items in Production',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
                   const SizedBox(height: 12),
-                  ...orderItems.map((item) => Padding(
-                    padding: const EdgeInsets.only(bottom: 8.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(child: Text('${item.itemName} (${item.variationPathLabel})')),
-                        Text('${item.quantity} ${item.unitSymbol}', style: const TextStyle(fontWeight: FontWeight.w600)),
-                      ],
+                  ...orderItems.map(
+                    (item) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${item.itemName} (${item.variationPathLabel})',
+                            ),
+                          ),
+                          Text(
+                            '${item.quantity} ${item.unitSymbol}',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
                     ),
-                  )),
+                  ),
                   const SizedBox(height: 24),
                   Align(
                     alignment: Alignment.centerRight,
