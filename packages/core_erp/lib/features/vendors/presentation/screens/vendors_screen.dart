@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:crypto/crypto.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:http/http.dart' as http;
 import 'package:mime/mime.dart';
 import '../../../../core/services/generic_asset_service.dart';
+import '../../../../core/widgets/export_preview_dialog.dart';
 
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_empty_state.dart';
@@ -25,29 +27,60 @@ class VendorsScreen extends StatelessWidget {
         if (vendors.isLoading && vendors.vendors.isEmpty) {
           return const Center(child: CircularProgressIndicator());
         }
-        return SoftMasterDataPage(
-          title: 'Vendors',
-          subtitle:
-              'Manage inbound supplier records used by reception challans and purchasing references.',
-          action: AppButton(
-            label: 'Add Vendor',
-            icon: Icons.add,
-            isLoading: vendors.isSaving,
-            onPressed: () => _openEditor(context),
+        return FocusableActionDetector(
+          autofocus: true,
+          shortcuts: const {
+            SingleActivator(LogicalKeyboardKey.keyP, control: true):
+                PrintIntent(),
+            SingleActivator(LogicalKeyboardKey.keyP, meta: true): PrintIntent(),
+          },
+          actions: {
+            PrintIntent: CallbackAction<PrintIntent>(
+              onInvoke: (intent) {
+                final data = vendors.filteredVendors
+                    .map(
+                      (v) => {
+                        'id': v.id,
+                        'name': v.name,
+                        'alias': v.alias,
+                        'gst_number': v.gstNumber,
+                        'address': v.address,
+                        'contact_name': v.contactName,
+                        'phone': v.phone,
+                        'email': v.email,
+                        'status': v.isArchived ? 'Archived' : 'Active',
+                      },
+                    )
+                    .toList();
+                ExportPreviewDialog.show(context, title: 'Vendors', data: data);
+                return null;
+              },
+            ),
+          },
+          child: SoftMasterDataPage(
+            title: 'Vendors',
+            subtitle:
+                'Manage inbound supplier records used by reception challans and purchasing references.',
+            action: AppButton(
+              label: 'Add Vendor',
+              icon: Icons.add,
+              isLoading: vendors.isSaving,
+              onPressed: () => _openEditor(context),
+            ),
+            toolbar: const _VendorsToolbar(),
+            messages: [
+              if (vendors.errorMessage != null)
+                _MessageBanner(message: vendors.errorMessage!, isError: true),
+            ],
+            body: vendors.filteredVendors.isEmpty
+                ? const AppEmptyState(
+                    title: 'No vendors found',
+                    message:
+                        'Add your first vendor so reception challans can point to a real inbound source.',
+                    icon: Icons.local_shipping_outlined,
+                  )
+                : _VendorsTable(vendors: vendors.filteredVendors),
           ),
-          toolbar: const _VendorsToolbar(),
-          messages: [
-            if (vendors.errorMessage != null)
-              _MessageBanner(message: vendors.errorMessage!, isError: true),
-          ],
-          body: vendors.filteredVendors.isEmpty
-              ? const AppEmptyState(
-                  title: 'No vendors found',
-                  message:
-                      'Add your first vendor so reception challans can point to a real inbound source.',
-                  icon: Icons.local_shipping_outlined,
-                )
-              : _VendorsTable(vendors: vendors.filteredVendors),
         );
       },
     );
@@ -381,7 +414,8 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
             const SizedBox(height: 16),
             ErpDialogSectionCard(
               title: 'Photos',
-              subtitle: 'Optional logo and contact photo for quick visual identification.',
+              subtitle:
+                  'Optional logo and contact photo for quick visual identification.',
               child: Column(
                 children: [
                   _VendorImagePickerField(
@@ -605,7 +639,6 @@ class _MessageBanner extends StatelessWidget {
   }
 }
 
-
 class _VendorImagePickerField extends StatefulWidget {
   const _VendorImagePickerField({
     required this.controller,
@@ -640,11 +673,15 @@ class _VendorImagePickerFieldState extends State<_VendorImagePickerField> {
   String _contentTypeFromExtension(String fileName) {
     final ext = fileName.split('.').last.toLowerCase();
     switch (ext) {
-      case 'png': return 'image/png';
+      case 'png':
+        return 'image/png';
       case 'jpg':
-      case 'jpeg': return 'image/jpeg';
-      case 'webp': return 'image/webp';
-      default: return 'application/octet-stream';
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'webp':
+        return 'image/webp';
+      default:
+        return 'application/octet-stream';
     }
   }
 
@@ -664,7 +701,10 @@ class _VendorImagePickerFieldState extends State<_VendorImagePickerField> {
 
     setState(() => _isUploading = true);
     final messenger = ScaffoldMessenger.of(context);
-    final baseUrl = const String.fromEnvironment('PAPER_API_BASE_URL', defaultValue: 'http://localhost:8080');
+    final baseUrl = const String.fromEnvironment(
+      'PAPER_API_BASE_URL',
+      defaultValue: 'http://localhost:8080',
+    );
     final service = GenericAssetService(baseUrl: baseUrl);
 
     try {
@@ -674,7 +714,7 @@ class _VendorImagePickerFieldState extends State<_VendorImagePickerField> {
           file.mimeType ??
           lookupMimeType(file.name, headerBytes: bytes.take(24).toList()) ??
           _contentTypeFromExtension(file.name);
-      
+
       final intent = await service.createUploadIntent(
         GenericAssetUploadIntentInput(
           fileName: file.name,

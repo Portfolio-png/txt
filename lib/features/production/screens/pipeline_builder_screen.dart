@@ -2890,6 +2890,26 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
   int? _selectedMachineGroupId;
   Timer? _debounce;
 
+  bool get _isInputNode {
+    final processType = widget.node.processType.trim().toLowerCase();
+    final name = widget.node.name.trim().toLowerCase();
+    return processType == 'input' ||
+        processType == 'input stage' ||
+        name == 'input' ||
+        name == 'input stage' ||
+        name.endsWith(' input');
+  }
+
+  bool get _isOutputNode {
+    final processType = widget.node.processType.trim().toLowerCase();
+    final name = widget.node.name.trim().toLowerCase();
+    return processType == 'output' ||
+        processType == 'output stage' ||
+        name == 'output' ||
+        name == 'output stage' ||
+        name.endsWith(' output');
+  }
+
   void _onDraftChanged() {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
     _debounce = Timer(const Duration(milliseconds: 300), () {
@@ -3004,17 +3024,17 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
             const SizedBox(height: 16),
             _DialogField('Name', widget.draft.name),
             
-            if (widget.node.processType != 'Output') ...[
+            if (!_isOutputNode) ...[
               _ItemEndpointDropdown(
                 tapTargetKey: const ValueKey('pipeline-node-input-item'),
-                label: widget.node.processType == 'Input' ? 'Material' : 'Input Item',
+                label: _isInputNode ? 'Material' : 'Input Item',
                 selectedItem: widget.node.inputItem ?? _getInheritedInput(),
                 items: widget.items,
                 units: widget.units,
                 onChanged: (itemId) {
                   setState(() {
                     _inputItemId = itemId;
-                    if (widget.node.processType == 'Input') {
+                    if (_isInputNode) {
                       _outputItemId = itemId;
                     }
                   });
@@ -3023,18 +3043,18 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
               ),
             ],
             
-            if (widget.node.processType != 'Input') ...[
-              if (widget.node.processType != 'Output') const SizedBox(height: 12),
+            if (!_isInputNode) ...[
+              if (!_isOutputNode) const SizedBox(height: 12),
               _ItemEndpointDropdown(
                 tapTargetKey: const ValueKey('pipeline-node-output-item'),
-                label: widget.node.processType == 'Output' ? 'Material' : 'Output Item',
+                label: _isOutputNode ? 'Material' : 'Output Item',
                 selectedItem: widget.node.outputItem ?? _getInheritedOutput(),
                 items: widget.items,
                 units: widget.units,
                 onChanged: (itemId) {
                   setState(() {
                     _outputItemId = itemId;
-                    if (widget.node.processType == 'Output') {
+                    if (_isOutputNode) {
                       _inputItemId = itemId;
                     }
                   });
@@ -3043,7 +3063,7 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
               ),
             ],
             
-            if (widget.node.processType != 'Input' && widget.node.processType != 'Output') ...[
+            if (!_isInputNode && !_isOutputNode) ...[
               const SizedBox(height: 12),
               _UnifiedMachineField(
                 selectedGroupId: _selectedMachineGroupId,

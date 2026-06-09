@@ -11,6 +11,8 @@ import '../providers/production_provider.dart';
 import '../providers/production_run_provider.dart';
 import 'live_production_monitor_screen.dart';
 import '../widgets/order_picker_dialog.dart';
+import 'package:collection/collection.dart';
+import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
 
 class ProductionRunsScreen extends StatefulWidget {
   const ProductionRunsScreen({super.key});
@@ -28,6 +30,9 @@ class _ProductionRunsScreenState extends State<ProductionRunsScreen> {
   void initState() {
     super.initState();
     _loadData();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<InventoryProvider>().initialize();
+    });
   }
 
   Future<void> _loadData() async {
@@ -146,6 +151,8 @@ class _ProductionRunsScreenState extends State<ProductionRunsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final inventoryProvider = context.watch<InventoryProvider>();
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
       child: Column(
@@ -210,10 +217,29 @@ class _ProductionRunsScreenState extends State<ProductionRunsScreen> {
                             final template = _templates.where((t) => t.id == run.templateId).firstOrNull;
                             final isActive = run.status != 'completed';
                             
+                            String? stalledMessage;
+                            if (isActive && template != null) {
+                              final inputNode = template.nodes.firstWhereOrNull((n) {
+                                final pType = n.processType.trim().toLowerCase();
+                                final name = n.name.trim().toLowerCase();
+                                return pType == 'input' || pType == 'input stage' || name == 'input' || name == 'input stage' || name.endsWith(' input');
+                              });
+                              
+                              if (inputNode != null && inputNode.inputItem != null) {
+                                final itemId = inputNode.inputItem!.itemId;
+                                final materials = inventoryProvider.materials.where((m) => m.linkedItemId == itemId).toList();
+                                final stock = materials.fold<double>(0.0, (sum, m) => sum + m.onHand);
+                                if (stock <= 0) {
+                                  stalledMessage = '${inputNode.name} stalled due to insufficient material';
+                                }
+                              }
+                            }
+                            
                             return _RunCard(
                               run: run,
                               templateName: template?.name ?? 'Unknown Pipeline',
                               isActive: isActive,
+                              stalledMessage: stalledMessage,
                               onMonitor: () => _monitorRun(run),
                             );
                           },
@@ -231,21 +257,25 @@ class _RunCard extends StatelessWidget {
     required this.run,
     required this.templateName,
     required this.isActive,
+    this.stalledMessage,
     required this.onMonitor,
   });
 
   final PipelineRun run;
   final String templateName;
   final bool isActive;
+  final String? stalledMessage;
   final VoidCallback onMonitor;
 
   @override
   Widget build(BuildContext context) {
+    final isStalled = stalledMessage != null;
+    
     return Container(
       decoration: BoxDecoration(
-        color: SoftErpTheme.cardSurface,
+        color: isStalled ? Colors.amber.shade50 : SoftErpTheme.cardSurface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: SoftErpTheme.border),
+        border: Border.all(color: isStalled ? Colors.amber.shade400 : SoftErpTheme.border),
       ),
       padding: const EdgeInsets.all(16),
       child: Row(
@@ -296,6 +326,31 @@ class _RunCard extends StatelessWidget {
                     color: SoftErpTheme.textSecondary,
                   ),
                 ),
+                if (isStalled) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade100,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.warning_amber_rounded, size: 14, color: Colors.orange),
+                        const SizedBox(width: 6),
+                        Text(
+                          stalledMessage!,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.orange,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

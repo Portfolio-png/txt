@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:crypto/crypto.dart';
 import 'package:file_selector/file_selector.dart';
@@ -15,6 +16,7 @@ import '../../domain/client_inputs.dart';
 import '../providers/clients_provider.dart';
 import '../../../orders/presentation/providers/orders_provider.dart';
 import '../../../../core/services/generic_asset_service.dart';
+import '../../../../core/widgets/export_preview_dialog.dart';
 
 class ClientsScreen extends StatelessWidget {
   const ClientsScreen({super.key});
@@ -27,32 +29,60 @@ class ClientsScreen extends StatelessWidget {
           return const Center(child: CircularProgressIndicator());
         }
 
-        return SoftMasterDataPage(
-          title: 'Clients',
-          subtitle:
-              'Manage client master data for sales flows, billing details, and downstream transaction forms.',
-          action: AppButton(
-            label: 'Add Client',
-            icon: Icons.add,
-            isLoading: clients.isSaving,
-            onPressed: () => _openClientEditor(context),
+        return FocusableActionDetector(
+          autofocus: true,
+          shortcuts: const {
+            SingleActivator(LogicalKeyboardKey.keyP, control: true):
+                PrintIntent(),
+            SingleActivator(LogicalKeyboardKey.keyP, meta: true): PrintIntent(),
+          },
+          actions: {
+            PrintIntent: CallbackAction<PrintIntent>(
+              onInvoke: (intent) {
+                final data = clients.filteredClients
+                    .map(
+                      (c) => {
+                        'id': c.id,
+                        'name': c.name,
+                        'alias': c.alias,
+                        'gst_number': c.gstNumber,
+                        'address': c.address,
+                        'status': c.isArchived ? 'Archived' : 'Active',
+                      },
+                    )
+                    .toList();
+                ExportPreviewDialog.show(context, title: 'Clients', data: data);
+                return null;
+              },
+            ),
+          },
+          child: SoftMasterDataPage(
+            title: 'Clients',
+            subtitle:
+                'Manage client master data for sales flows, billing details, and downstream transaction forms.',
+            action: AppButton(
+              label: 'Add Client',
+              icon: Icons.add,
+              isLoading: clients.isSaving,
+              onPressed: () => _openClientEditor(context),
+            ),
+            toolbar: const _ClientsToolbar(),
+            messages: [
+              if (clients.errorMessage != null)
+                _ClientsMessageBanner(
+                  message: clients.errorMessage!,
+                  isError: true,
+                ),
+            ],
+            body: clients.filteredClients.isEmpty
+                ? const AppEmptyState(
+                    title: 'No clients found',
+                    message:
+                        'Add your first client to keep names, GST numbers, and addresses consistent across the system.',
+                    icon: Icons.groups_outlined,
+                  )
+                : _ClientsTable(clients: clients.filteredClients),
           ),
-          toolbar: const _ClientsToolbar(),
-          messages: [
-            if (clients.errorMessage != null)
-              _ClientsMessageBanner(
-                message: clients.errorMessage!,
-                isError: true,
-              ),
-          ],
-          body: clients.filteredClients.isEmpty
-              ? const AppEmptyState(
-                  title: 'No clients found',
-                  message:
-                      'Add your first client to keep names, GST numbers, and addresses consistent across the system.',
-                  icon: Icons.groups_outlined,
-                )
-              : _ClientsTable(clients: clients.filteredClients),
         );
       },
     );
@@ -259,8 +289,12 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
     _addressController = TextEditingController(
       text: widget.client?.address ?? '',
     );
-    _logoUrlController = TextEditingController(text: widget.client?.logoUrl ?? '');
-    _photoUrlController = TextEditingController(text: widget.client?.photoUrl ?? '');
+    _logoUrlController = TextEditingController(
+      text: widget.client?.logoUrl ?? '',
+    );
+    _photoUrlController = TextEditingController(
+      text: widget.client?.photoUrl ?? '',
+    );
     _nameController.addListener(_handleChange);
     _aliasController.addListener(_handleChange);
     _gstController.addListener(_handleChange);
@@ -648,10 +682,9 @@ class _ClientPurchasesSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<OrdersProvider>();
-    final purchases = provider.orders
-        .where((o) => o.clientId == client.id)
-        .toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final purchases =
+        provider.orders.where((o) => o.clientId == client.id).toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
     return Padding(
       padding: EdgeInsets.only(
@@ -769,11 +802,15 @@ class _ClientImagePickerFieldState extends State<_ClientImagePickerField> {
   String _contentTypeFromExtension(String fileName) {
     final ext = fileName.split('.').last.toLowerCase();
     switch (ext) {
-      case 'png': return 'image/png';
+      case 'png':
+        return 'image/png';
       case 'jpg':
-      case 'jpeg': return 'image/jpeg';
-      case 'webp': return 'image/webp';
-      default: return 'application/octet-stream';
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'webp':
+        return 'image/webp';
+      default:
+        return 'application/octet-stream';
     }
   }
 
@@ -793,7 +830,10 @@ class _ClientImagePickerFieldState extends State<_ClientImagePickerField> {
 
     setState(() => _isUploading = true);
     final messenger = ScaffoldMessenger.of(context);
-    final baseUrl = const String.fromEnvironment('PAPER_API_BASE_URL', defaultValue: 'http://localhost:8080');
+    final baseUrl = const String.fromEnvironment(
+      'PAPER_API_BASE_URL',
+      defaultValue: 'http://localhost:8080',
+    );
     final service = GenericAssetService(baseUrl: baseUrl);
 
     try {
@@ -803,7 +843,7 @@ class _ClientImagePickerFieldState extends State<_ClientImagePickerField> {
           file.mimeType ??
           lookupMimeType(file.name, headerBytes: bytes.take(24).toList()) ??
           _contentTypeFromExtension(file.name);
-      
+
       final intent = await service.createUploadIntent(
         GenericAssetUploadIntentInput(
           fileName: file.name,

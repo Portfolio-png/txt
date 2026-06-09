@@ -597,12 +597,13 @@ class _ShellContentSwitcher extends StatelessWidget {
               'pm' => const PMScreen(),
               'telemetry' => const MachineTelemetryScreen(),
               'orders' => OrdersScreen(
-                onGoToProduction: (screenContext, orderGroup, [preselectedItem]) {
+                onGoToProduction: (screenContext, orderGroup, [preselectedItem]) async {
                   final stableContext = outerContext;
                   screenContext.read<AppNavigation>().select('production');
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    showStartProductionDialog(stableContext, orderGroup, preselectedItem: preselectedItem);
-                  });
+                  // Give navigation a frame to complete before showing dialog
+                  await Future.delayed(const Duration(milliseconds: 50));
+                  if (!stableContext.mounted) return;
+                  await showStartProductionDialog(stableContext, orderGroup, preselectedItem: preselectedItem);
                 },
                 getProductionStatus: (orderGroup) async {
                   final repo = outerContext.read<PipelineRunRepository>();

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/navigation/app_navigation.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
@@ -27,6 +28,7 @@ import 'package:crypto/crypto.dart';
 import 'package:mime/mime.dart';
 import 'package:http/http.dart' as http;
 import '../../../../core/services/generic_asset_service.dart';
+import '../../../../core/widgets/export_preview_dialog.dart';
 
 class ItemsScreen extends StatefulWidget {
   const ItemsScreen({super.key, this.initialTab = 0});
@@ -94,54 +96,91 @@ class _ItemsScreenState extends State<ItemsScreen> {
           return const Center(child: CircularProgressIndicator());
         }
 
-        return SoftMasterDataPage(
-          title: 'Items',
-          subtitle:
-              'Manage sellable catalog items with recursive property and value inheritance.',
-          action: AppButton(
-            label: 'Add Item',
-            icon: Icons.add,
-            isLoading: items.isSaving,
-            onPressed: () => ItemsScreen.openEditor(context),
+        return FocusableActionDetector(
+          autofocus: true,
+          shortcuts: const {
+            SingleActivator(LogicalKeyboardKey.keyP, control: true):
+                PrintIntent(),
+            SingleActivator(LogicalKeyboardKey.keyP, meta: true): PrintIntent(),
+          },
+          actions: {
+            PrintIntent: CallbackAction<PrintIntent>(
+              onInvoke: (intent) {
+                final data = items.filteredItems.map((i) {
+                  final groupName =
+                      groups.findById(i.groupId)?.name ?? 'Unknown';
+                  final unitLabel =
+                      units.units
+                          .where((u) => u.id == i.unitId)
+                          .firstOrNull
+                          ?.displayLabel ??
+                      'Unknown';
+                  return {
+                    'id': i.id,
+                    'name': i.displayName,
+                    'alias': i.alias,
+                    'group': groupName,
+                    'unit': unitLabel,
+                    'status': i.isArchived ? 'Archived' : 'Active',
+                  };
+                }).toList();
+                ExportPreviewDialog.show(context, title: 'Items', data: data);
+                return null;
+              },
+            ),
+          },
+          child: SoftMasterDataPage(
+            title: 'Items',
+            subtitle:
+                'Manage sellable catalog items with recursive property and value inheritance.',
+            action: AppButton(
+              label: 'Add Item',
+              icon: Icons.add,
+              isLoading: items.isSaving,
+              onPressed: () => ItemsScreen.openEditor(context),
+            ),
+            toolbar: _ItemsToolbar(
+              isGridView: _isGridView,
+              cardWidth: _cardWidth,
+              cardHeight: _cardHeight,
+              onToggleView: () {
+                setState(() {
+                  _isGridView = !_isGridView;
+                });
+              },
+              onCardWidthChanged: (value) {
+                setState(() {
+                  _cardWidth = value;
+                });
+              },
+              onCardHeightChanged: (value) {
+                setState(() {
+                  _cardHeight = value;
+                });
+              },
+            ),
+            messages: [
+              if (items.errorMessage != null)
+                _ItemsMessageBanner(
+                  message: items.errorMessage!,
+                  isError: true,
+                ),
+            ],
+            body: items.filteredItems.isEmpty
+                ? const AppEmptyState(
+                    title: 'No items found',
+                    message:
+                        'Create an item like Bottle - 100, then build recursive property branches such as Color -> Black -> Finish -> Matte.',
+                    icon: Icons.inventory_outlined,
+                  )
+                : _isGridView
+                ? _ItemsGrid(
+                    items: items.filteredItems,
+                    cardWidth: _cardWidth,
+                    cardHeight: _cardHeight,
+                  )
+                : _ItemsTable(items: items.filteredItems),
           ),
-          toolbar: _ItemsToolbar(
-            isGridView: _isGridView,
-            cardWidth: _cardWidth,
-            cardHeight: _cardHeight,
-            onToggleView: () {
-              setState(() {
-                _isGridView = !_isGridView;
-              });
-            },
-            onCardWidthChanged: (value) {
-              setState(() {
-                _cardWidth = value;
-              });
-            },
-            onCardHeightChanged: (value) {
-              setState(() {
-                _cardHeight = value;
-              });
-            },
-          ),
-          messages: [
-            if (items.errorMessage != null)
-              _ItemsMessageBanner(message: items.errorMessage!, isError: true),
-          ],
-          body: items.filteredItems.isEmpty
-              ? const AppEmptyState(
-                  title: 'No items found',
-                  message:
-                      'Create an item like Bottle - 100, then build recursive property branches such as Color -> Black -> Finish -> Matte.',
-                  icon: Icons.inventory_outlined,
-                )
-              : _isGridView
-              ? _ItemsGrid(
-                  items: items.filteredItems,
-                  cardWidth: _cardWidth,
-                  cardHeight: _cardHeight,
-                )
-              : _ItemsTable(items: items.filteredItems),
         );
       },
     );
@@ -180,14 +219,8 @@ class _ItemsToolbar extends StatelessWidget {
         }
       },
       options: const [
-        SoftSegmentOption<String>(
-          value: 'items',
-          label: 'Items Catalog',
-        ),
-        SoftSegmentOption<String>(
-          value: 'groups',
-          label: 'Item Groups',
-        ),
+        SoftSegmentOption<String>(value: 'items', label: 'Items Catalog'),
+        SoftSegmentOption<String>(value: 'groups', label: 'Item Groups'),
       ],
     );
 
@@ -547,15 +580,15 @@ class _ItemRow extends StatelessWidget {
               SoftActionLink(
                 label: item.isArchived ? 'Restore' : 'Archive',
                 onTap: itemsProvider.isSaving
-                      ? null
-                      : () {
-                          if (item.isArchived) {
-                            itemsProvider.restoreItem(item.id);
-                          } else {
-                            itemsProvider.archiveItem(item.id);
-                          }
-                        },
-                ),
+                    ? null
+                    : () {
+                        if (item.isArchived) {
+                          itemsProvider.restoreItem(item.id);
+                        } else {
+                          itemsProvider.archiveItem(item.id);
+                        }
+                      },
+              ),
             ],
           ),
         ),
@@ -829,7 +862,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     if (unit == null) return 1.0;
 
     final primaryUnit = unitsProvider.findById(_selectedUnitId);
-    if (primaryUnit?.unitGroupId != null && primaryUnit!.unitGroupId == unit.unitGroupId) {
+    if (primaryUnit?.unitGroupId != null &&
+        primaryUnit!.unitGroupId == unit.unitGroupId) {
       final factorToB = primaryUnit.conversionFactor;
       return factorToB / unit.conversionFactor;
     }
@@ -1537,7 +1571,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               ),
             ),
           ],
-          if (_secondaryUnitConversions.isNotEmpty && _secondaryUnitConversions.any((d) => !_isDerived(d.unitId))) ...[
+          if (_secondaryUnitConversions.isNotEmpty &&
+              _secondaryUnitConversions.any((d) => !_isDerived(d.unitId))) ...[
             const SizedBox(height: 12),
             for (var i = 0; i < _secondaryUnitConversions.length; i++) ...[
               if (!_isDerived(_secondaryUnitConversions[i].unitId)) ...[
@@ -1545,11 +1580,12 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   builder: (context) {
                     final draft = _secondaryUnitConversions[i];
                     final unit = unitsProvider.findById(draft.unitId);
-                    
+
                     var displayUnit = unit;
                     if (unit?.unitGroupId != null) {
                       for (final u in unitsProvider.units) {
-                        if (u.unitGroupId == unit!.unitGroupId && u.isBaseUnit) {
+                        if (u.unitGroupId == unit!.unitGroupId &&
+                            u.isBaseUnit) {
                           displayUnit = u;
                           break;
                         }
@@ -1567,7 +1603,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                     );
                   },
                 ),
-                if (_secondaryUnitConversions.skip(i + 1).any((d) => !_isDerived(d.unitId)))
+                if (_secondaryUnitConversions
+                    .skip(i + 1)
+                    .any((d) => !_isDerived(d.unitId)))
                   const SizedBox(height: 8),
               ],
             ],
@@ -2236,7 +2274,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   .map(
                     (draft) => ItemUnitConversionInput(
                       unitId: draft.unitId,
-                      factorToPrimary: 1 / _getDerivedUnitsPerPrimary(draft.unitId),
+                      factorToPrimary:
+                          1 / _getDerivedUnitsPerPrimary(draft.unitId),
                     ),
                   )
                   .toList(growable: false),
@@ -2257,7 +2296,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   .map(
                     (draft) => ItemUnitConversionInput(
                       unitId: draft.unitId,
-                      factorToPrimary: 1 / _getDerivedUnitsPerPrimary(draft.unitId),
+                      factorToPrimary:
+                          1 / _getDerivedUnitsPerPrimary(draft.unitId),
                     ),
                   )
                   .toList(growable: false),
@@ -3126,11 +3166,15 @@ class _ItemPhotoPickerFieldState extends State<_ItemPhotoPickerField> {
   String _contentTypeFromExtension(String fileName) {
     final ext = fileName.split('.').last.toLowerCase();
     switch (ext) {
-      case 'png': return 'image/png';
+      case 'png':
+        return 'image/png';
       case 'jpg':
-      case 'jpeg': return 'image/jpeg';
-      case 'webp': return 'image/webp';
-      default: return 'application/octet-stream';
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'webp':
+        return 'image/webp';
+      default:
+        return 'application/octet-stream';
     }
   }
 
@@ -3150,7 +3194,10 @@ class _ItemPhotoPickerFieldState extends State<_ItemPhotoPickerField> {
 
     setState(() => _isUploading = true);
     final messenger = ScaffoldMessenger.of(context);
-    final baseUrl = const String.fromEnvironment('PAPER_API_BASE_URL', defaultValue: 'http://localhost:8080');
+    final baseUrl = const String.fromEnvironment(
+      'PAPER_API_BASE_URL',
+      defaultValue: 'http://localhost:8080',
+    );
     final service = GenericAssetService(baseUrl: baseUrl);
 
     try {
@@ -3160,7 +3207,7 @@ class _ItemPhotoPickerFieldState extends State<_ItemPhotoPickerField> {
           file.mimeType ??
           lookupMimeType(file.name, headerBytes: bytes.take(24).toList()) ??
           _contentTypeFromExtension(file.name);
-      
+
       final intent = await service.createUploadIntent(
         GenericAssetUploadIntentInput(
           fileName: file.name,
@@ -3260,11 +3307,15 @@ class _ItemPhotoPickerFieldState extends State<_ItemPhotoPickerField> {
                         fillColor: const Color(0xFFF9FAFB),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
-                          borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFD7DBE7),
+                          ),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
-                          borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFD7DBE7),
+                          ),
                         ),
                         suffixIcon: url.isNotEmpty && !widget.readOnly
                             ? IconButton(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/navigation/app_navigation.dart';
@@ -12,6 +13,7 @@ import '../../../units/presentation/providers/units_provider.dart';
 import '../../domain/group_definition.dart';
 import '../providers/groups_provider.dart';
 import '../widgets/structured_group_editor_dialog.dart';
+import '../../../../core/widgets/export_preview_dialog.dart';
 
 class GroupsScreen extends StatelessWidget {
   const GroupsScreen({super.key, this.mode = 'items'});
@@ -27,33 +29,70 @@ class GroupsScreen extends StatelessWidget {
           return const Center(child: CircularProgressIndicator());
         }
 
-        return SoftMasterDataPage(
-          title: mode == 'machines' ? 'Machine Groups' : 'Groups',
-          subtitle: mode == 'machines'
-              ? 'Create hierarchical groups for machine classification.'
-              : 'Create hierarchical groups and map each one to a reusable unit from Configurator Units.',
-          action: AppButton(
-            label: 'Add Group',
-            icon: Icons.add,
-            isLoading: groups.isSaving,
-            onPressed: () => openEditor(context),
+        return FocusableActionDetector(
+          autofocus: true,
+          shortcuts: const {
+            SingleActivator(LogicalKeyboardKey.keyP, control: true):
+                PrintIntent(),
+            SingleActivator(LogicalKeyboardKey.keyP, meta: true): PrintIntent(),
+          },
+          actions: {
+            PrintIntent: CallbackAction<PrintIntent>(
+              onInvoke: (intent) {
+                final data = groups.filteredGroups.map((g) {
+                  final parentName =
+                      groups.parentNameFor(g.parentGroupId) ?? 'Primary Group';
+                  final unitName =
+                      units.units
+                          .where((entry) => entry.id == g.unitId)
+                          .firstOrNull
+                          ?.displayLabel ??
+                      'Unknown unit';
+                  return {
+                    'id': g.id,
+                    'name': g.name,
+                    'parent_group': parentName,
+                    'unit': unitName,
+                    'status': g.isArchived ? 'Archived' : 'Active',
+                  };
+                }).toList();
+                ExportPreviewDialog.show(
+                  context,
+                  title: mode == 'machines' ? 'Machine Groups' : 'Groups',
+                  data: data,
+                );
+                return null;
+              },
+            ),
+          },
+          child: SoftMasterDataPage(
+            title: mode == 'machines' ? 'Machine Groups' : 'Groups',
+            subtitle: mode == 'machines'
+                ? 'Create hierarchical groups for machine classification.'
+                : 'Create hierarchical groups and map each one to a reusable unit from Configurator Units.',
+            action: AppButton(
+              label: 'Add Group',
+              icon: Icons.add,
+              isLoading: groups.isSaving,
+              onPressed: () => openEditor(context),
+            ),
+            toolbar: _GroupsToolbar(mode: mode),
+            messages: [
+              if (groups.errorMessage != null)
+                _GroupsMessageBanner(
+                  message: groups.errorMessage!,
+                  isError: true,
+                ),
+            ],
+            body: groups.filteredGroups.isEmpty
+                ? const AppEmptyState(
+                    title: 'No groups found',
+                    message:
+                        'Create a top-level group like Paper, then add child groups beneath it as needed.',
+                    icon: Icons.grid_view_outlined,
+                  )
+                : _GroupsTable(groups: groups.filteredGroups),
           ),
-          toolbar: _GroupsToolbar(mode: mode),
-          messages: [
-            if (groups.errorMessage != null)
-              _GroupsMessageBanner(
-                message: groups.errorMessage!,
-                isError: true,
-              ),
-          ],
-          body: groups.filteredGroups.isEmpty
-              ? const AppEmptyState(
-                  title: 'No groups found',
-                  message:
-                      'Create a top-level group like Paper, then add child groups beneath it as needed.',
-                  icon: Icons.grid_view_outlined,
-                )
-              : _GroupsTable(groups: groups.filteredGroups),
         );
       },
     );
@@ -102,14 +141,8 @@ class _GroupsToolbar extends StatelessWidget {
       },
       options: mode == 'items'
           ? const [
-              SoftSegmentOption<String>(
-                value: 'items',
-                label: 'Items Catalog',
-              ),
-              SoftSegmentOption<String>(
-                value: 'groups',
-                label: 'Item Groups',
-              ),
+              SoftSegmentOption<String>(value: 'items', label: 'Items Catalog'),
+              SoftSegmentOption<String>(value: 'groups', label: 'Item Groups'),
             ]
           : const [
               SoftSegmentOption<String>(

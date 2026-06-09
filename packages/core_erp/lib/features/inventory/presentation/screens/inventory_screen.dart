@@ -37,6 +37,7 @@ import 'package:core_erp/core/widgets/material_barcode_toolkit.dart';
 import 'package:core_erp/core/widgets/pm_segmented_control.dart';
 import '../../../units/domain/unit_definition.dart';
 import '../../../units/domain/unit_inputs.dart';
+import '../../../../core/widgets/export_preview_dialog.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../../units/presentation/screens/units_screen.dart';
 import '../../domain/create_parent_material_input.dart';
@@ -497,14 +498,17 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                   movementType: InventoryMovementType.receive,
                                   initialBarcode: record.barcode,
                                 ),
-                                onAddSubGroup: (record) => _openAddSubGroup(record),
+                                onAddSubGroup: (record) =>
+                                    _openAddSubGroup(record),
                                 onEdit: (record) => _openEditMaterial(record),
                                 onEditSet: _openSetEditor,
                                 onDelete: (record) => _confirmDelete(record),
                                 onDeleteSet: _deleteSet,
-                                onLinkGroup: (record) => _openGroupLinker(record),
+                                onLinkGroup: (record) =>
+                                    _openGroupLinker(record),
                                 onLinkItem: (record) => _openItemLinker(record),
-                                onUnlink: (record) => _unlinkInheritance(record),
+                                onUnlink: (record) =>
+                                    _unlinkInheritance(record),
                               ),
                       ),
                     ],
@@ -529,6 +533,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
             meta: isApplePlatform || isDesktopWeb,
             shift: true,
           ): const _ClearSelectionIntent(),
+          SingleActivator(
+            LogicalKeyboardKey.keyP,
+            control: !isApplePlatform && !isDesktopWeb,
+            meta: isApplePlatform || isDesktopWeb,
+          ): const PrintIntent(),
           const SingleActivator(LogicalKeyboardKey.escape):
               const _ClearSelectionIntent(),
           const SingleActivator(LogicalKeyboardKey.delete):
@@ -541,6 +550,28 @@ class _InventoryScreenState extends State<InventoryScreen> {
           shortcuts: shortcuts,
           child: Actions(
             actions: {
+              PrintIntent: CallbackAction<PrintIntent>(
+                onInvoke: (intent) {
+                  if (_isBulkRunning) return null;
+                  final data = filteredRecords
+                      .map(
+                        (r) => {
+                          'id': r.id,
+                          'name': r.name,
+                          'type': r.type,
+                          'stock': r.displayStock,
+                          'supplier': r.supplier,
+                        },
+                      )
+                      .toList();
+                  ExportPreviewDialog.show(
+                    context,
+                    title: 'Inventory',
+                    data: data,
+                  );
+                  return null;
+                },
+              ),
               _SelectAllFilteredIntent:
                   CallbackAction<_SelectAllFilteredIntent>(
                     onInvoke: (intent) {
@@ -1011,8 +1042,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 ? null
                 : groupNameById[linkedItem.groupId];
             String? resolvedVariationPathLabel = setLine?.variationPathLabel;
-            if ((resolvedVariationPathLabel == null || resolvedVariationPathLabel.isEmpty) && record.name.contains(' - ')) {
-              resolvedVariationPathLabel = record.name.substring(record.name.lastIndexOf(' - ') + 3);
+            if ((resolvedVariationPathLabel == null ||
+                    resolvedVariationPathLabel.isEmpty) &&
+                record.name.contains(' - ')) {
+              resolvedVariationPathLabel = record.name.substring(
+                record.name.lastIndexOf(' - ') + 3,
+              );
             }
             return _InventoryRowEntry(
               record: record,
@@ -1667,14 +1702,18 @@ class _InventoryScreenState extends State<InventoryScreen> {
     final linkedItemId = record.linkedItemId;
     ItemDefinition? linkedItem;
     if (linkedItemId != null) {
-      linkedItem = itemsProvider.items.where((i) => i.id == linkedItemId).firstOrNull;
+      linkedItem = itemsProvider.items
+          .where((i) => i.id == linkedItemId)
+          .firstOrNull;
     } else {
       final normalizedRecordName = record.name.trim().toLowerCase();
       if (normalizedRecordName.isNotEmpty) {
         final exactMatches = itemsProvider.items
-            .where((item) =>
-                item.name.trim().toLowerCase() == normalizedRecordName &&
-                (record.unitId == null || item.unitId == record.unitId))
+            .where(
+              (item) =>
+                  item.name.trim().toLowerCase() == normalizedRecordName &&
+                  (record.unitId == null || item.unitId == record.unitId),
+            )
             .toList(growable: false);
         if (exactMatches.isNotEmpty) {
           linkedItem = exactMatches.last;
@@ -1690,7 +1729,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
     await ItemsScreen.openEditor(
       context,
       initialName: record.name.trim(),
-      initialGroupId: record.linkedGroupId ?? _resolveParentGroupIdForInventoryRecord(record),
+      initialGroupId:
+          record.linkedGroupId ??
+          _resolveParentGroupIdForInventoryRecord(record),
     );
   }
 
@@ -12058,8 +12099,9 @@ class _JobWorkStockTable extends StatelessWidget {
     final searchQuery = inventoryProvider.searchQuery;
 
     // Filter challans: must be issued, and purpose must be jobWork
-    final jobWorkChallans = challans.where((c) =>
-        c.isIssued && c.purpose == ChallanPurpose.jobWork).toList();
+    final jobWorkChallans = challans
+        .where((c) => c.isIssued && c.purpose == ChallanPurpose.jobWork)
+        .toList();
 
     // Map clients by ID for quick lookup
     final clientMap = {for (final c in clients) c.id: c};
@@ -12073,7 +12115,9 @@ class _JobWorkStockTable extends StatelessWidget {
 
       // Resolve client label
       final client = clientMap[clientId];
-      final clientLabel = client?.displayLabel ?? (challan.isReception ? challan.vendorName : challan.customerName);
+      final clientLabel =
+          client?.displayLabel ??
+          (challan.isReception ? challan.vendorName : challan.customerName);
 
       for (final item in challan.items) {
         final itemId = item.itemId ?? 0;
@@ -12134,7 +12178,8 @@ class _JobWorkStockTable extends StatelessWidget {
     if (list.isEmpty) {
       return const AppEmptyState(
         title: 'No Job Work Stock found',
-        message: 'Try a different search query or record a new Job Work Reception Challan.',
+        message:
+            'Try a different search query or record a new Job Work Reception Challan.',
         icon: Icons.assignment_turned_in_outlined,
       );
     }
@@ -12231,7 +12276,8 @@ class _JobWorkStockTable extends StatelessWidget {
             Expanded(
               child: ListView.separated(
                 itemCount: list.length,
-                separatorBuilder: (context, index) => const Divider(height: 1, color: SoftErpTheme.border),
+                separatorBuilder: (context, index) =>
+                    const Divider(height: 1, color: SoftErpTheme.border),
                 itemBuilder: (context, index) {
                   final item = list[index];
                   final isEven = index % 2 == 0;
@@ -12246,8 +12292,13 @@ class _JobWorkStockTable extends StatelessWidget {
                         );
 
                   return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                    color: isEven ? SoftErpTheme.cardSurface : const Color(0xFFFBFBFE),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 16,
+                    ),
+                    color: isEven
+                        ? SoftErpTheme.cardSurface
+                        : const Color(0xFFFBFBFE),
                     child: Row(
                       children: [
                         Expanded(
@@ -12274,12 +12325,16 @@ class _JobWorkStockTable extends StatelessWidget {
                         Expanded(
                           flex: 2,
                           child: Text(
-                            item.variationPath.isNotEmpty ? item.variationPath : '—',
+                            item.variationPath.isNotEmpty
+                                ? item.variationPath
+                                : '—',
                             style: TextStyle(
                               fontSize: 13,
                               color: item.variationPath.isNotEmpty
                                   ? SoftErpTheme.textSecondary
-                                  : SoftErpTheme.textSecondary.withValues(alpha: 0.5),
+                                  : SoftErpTheme.textSecondary.withValues(
+                                      alpha: 0.5,
+                                    ),
                             ),
                           ),
                         ),
