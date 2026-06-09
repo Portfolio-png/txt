@@ -1296,8 +1296,6 @@ class _OrderDataRowState extends State<_OrderDataRow> {
     
     // Group level action: apply to all items in group
     for (final order in group.items) {
-      final assigningStartDateNow =
-          action.kind == _QuickRowActionKind.start && order.startDate == null;
       await context.read<OrdersProvider>().updateOrderLifecycle(
         UpdateOrderLifecycleInput(
           id: order.id,
@@ -3053,7 +3051,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
           initialSymbol: query.trim(),
         ),
       );
-      if (!mounted || targetUnit == null) {
+      if (!context.mounted || targetUnit == null) {
         return null;
       }
       addableUnits = _addableUnitsForItem(item, unitsProvider.activeUnits);
@@ -4567,7 +4565,6 @@ class _OrderDetailsModal extends StatefulWidget {
 
 class _OrderDetailsModalState extends State<_OrderDetailsModal> {
   int _selectedTab = 0;
-  bool _autoOpenProductionPopup = false;
   Set<int>? _assignedItemIds;
   int? _activeTimelineIndex;
 
@@ -5804,7 +5801,6 @@ class _OrderPoDocumentTile extends StatelessWidget {
 
 class _OrderDetailActionButton extends StatelessWidget {
   const _OrderDetailActionButton({
-    super.key,
     required this.label,
     required this.onPressed,
   });

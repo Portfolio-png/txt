@@ -133,7 +133,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(editor.template.nodes.length, initialCount + 1);
-    expect(find.text('Process ${initialCount + 1}'), findsWidgets);
+    expect(find.text('Stage ${initialCount + 1}'), findsWidgets);
   });
 
   testWidgets('builder details action updates pipeline metadata', (
@@ -417,7 +417,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Laser Cut'), findsWidgets);
-    expect(find.text('Machine Group'), findsOneWidget);
+    expect(find.text('Machine Assignment'), findsOneWidget);
     expect(find.text('LC-01'), findsWidgets);
     expect(find.text('Apply Node Changes'), findsNothing);
     expect(find.textContaining('Use the floating toolbar'), findsOneWidget);
@@ -573,7 +573,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final nodeFinder = find.byKey(
-      const ValueKey('pipeline-node-machine-group'),
+      const ValueKey('pipeline-node-unified-machine'),
     );
     await tester.ensureVisible(nodeFinder);
     await tester.pumpAndSettle();
@@ -581,8 +581,8 @@ void main() {
     await tester.tap(nodeFinder);
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.text('Kraft').last);
-    await tester.tap(find.text('Kraft').last);
+    await tester.ensureVisible(find.text('Kraft (Group)').last);
+    await tester.tap(find.text('Kraft (Group)').last);
     await tester.pumpAndSettle();
 
     final node = editor.template.nodes.singleWhere(
@@ -766,6 +766,26 @@ class _FakePipelineRunRepository implements PipelineRunRepository {
 
   @override
   Future<PipelineRun> attachBarcodeToRunNode({
+    required String runId,
+    required String nodeId,
+    required String barcode,
+    double? quantity,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<PipelineRun> updateAttachedBarcodeQuantity({
+    required String runId,
+    required String nodeId,
+    required String barcode,
+    required double quantity,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<PipelineRun> detachBarcodeFromRunNode({
     required String runId,
     required String nodeId,
     required String barcode,

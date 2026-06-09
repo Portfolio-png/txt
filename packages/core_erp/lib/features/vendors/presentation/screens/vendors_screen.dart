@@ -750,7 +750,7 @@ class _VendorImagePickerFieldState extends State<_VendorImagePickerField> {
                   ? Image.network(
                       url,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Icon(
+                      errorBuilder: (context, error, stackTrace) => Icon(
                         widget.placeholderIcon,
                         color: const Color(0xFF94A3B8),
                         size: 32,

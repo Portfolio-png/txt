@@ -8,6 +8,7 @@ import '../../production_pipelines/data/repositories/pipeline_run_repository.dar
 import '../../production_pipelines/domain/pipeline_run.dart';
 import '../../production_pipelines/domain/pipeline_template.dart';
 import '../providers/production_provider.dart';
+import '../providers/production_run_provider.dart';
 import 'live_production_monitor_screen.dart';
 import '../widgets/order_picker_dialog.dart';
 
@@ -97,7 +98,7 @@ class _ProductionRunsScreenState extends State<ProductionRunsScreen> {
 
     try {
       final repo = context.read<PipelineRunRepository>();
-      await repo.createRun(
+      final newRun = await repo.createRun(
         template.id, 
         orderNo: order.orderNo,
         orderItemId: order.id,
@@ -112,6 +113,7 @@ class _ProductionRunsScreenState extends State<ProductionRunsScreen> {
         orderNo: order.orderNo,
         clientName: order.clientName,
       );
+      context.read<ProductionRunProvider>().initializeIdleRun(newRun.id);
 
       Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => const LiveProductionMonitorScreen()),
@@ -136,6 +138,7 @@ class _ProductionRunsScreenState extends State<ProductionRunsScreen> {
       orderNo: run.orderNo,
       clientName: run.clientName,
     );
+    context.read<ProductionRunProvider>().initializeIdleRun(run.id);
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const LiveProductionMonitorScreen()),
     );

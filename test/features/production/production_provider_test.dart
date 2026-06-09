@@ -130,7 +130,7 @@ void main() {
   });
 
   group('ProductionProvider stage reordering', () {
-    test('reordering stages updates blueprint.stages order correctly', () {
+    test('reordering stages updates template.stages order correctly', () {
       final provider = ProductionProvider.seeded();
       final stages = provider.blueprint.stages;
       final originalFirst = stages[0];
@@ -138,8 +138,8 @@ void main() {
 
       provider.reorderStages(0, 2); // drag first item past second item
 
-      expect(provider.blueprint.stages[0].id, originalSecond.id);
-      expect(provider.blueprint.stages[1].id, originalFirst.id);
+      expect(provider.template.stages[0].id, originalSecond.id);
+      expect(provider.template.stages[1].id, originalFirst.id);
       provider.dispose();
     });
   });

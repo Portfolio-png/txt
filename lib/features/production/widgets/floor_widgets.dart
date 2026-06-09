@@ -74,9 +74,9 @@ class PipelineCard extends StatelessWidget {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: tokens.selection.withOpacity(0.1),
+                        color: tokens.selection.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: tokens.selection.withOpacity(0.2)),
+                        border: Border.all(color: tokens.selection.withValues(alpha: 0.2)),
                       ),
                       child: Text(
                         'Order #${pipeline.orderNo}${pipeline.clientName != null && pipeline.clientName!.isNotEmpty ? ' • ${pipeline.clientName}' : ''}',

@@ -204,6 +204,26 @@ void main() {
     expect(committed.first.setupScrap, 2);
     expect(mockDb.logs, isEmpty);
   });
+
+  test('triggerRefresh increments refreshCount and notifies listeners', () {
+    final provider = ProductionRunProvider();
+    addTearDown(provider.dispose);
+
+    expect(provider.refreshCount, 0);
+
+    int notifications = 0;
+    provider.addListener(() {
+      notifications++;
+    });
+
+    provider.triggerRefresh();
+    expect(provider.refreshCount, 1);
+    expect(notifications, 1);
+
+    provider.triggerRefresh();
+    expect(provider.refreshCount, 2);
+    expect(notifications, 2);
+  });
 }
 
 class MockDatabase implements Database {

@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../production_pipelines/domain/process_node.dart';
+import '../../production_pipelines/domain/pipeline_run.dart';
+import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
+import '../providers/production_run_provider.dart';
 import '../domain/models/floor_view_models.dart';
 
 class FloorNodeTerminal extends StatelessWidget {
@@ -123,6 +127,8 @@ class FloorNodeTerminal extends StatelessWidget {
                   value: inputName ?? '—',
                 ),
                 const SizedBox(width: 20),
+                _AssignedStockMetric(nodeId: node.id),
+                const SizedBox(width: 20),
                 _MetricBox(
                   label: 'OUTPUT',
                   value: outputName ?? '—',
@@ -193,6 +199,68 @@ class _MetricBox extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _AssignedStockMetric extends StatefulWidget {
+  const _AssignedStockMetric({required this.nodeId});
+
+  final String nodeId;
+
+  @override
+  State<_AssignedStockMetric> createState() => _AssignedStockMetricState();
+}
+
+class _AssignedStockMetricState extends State<_AssignedStockMetric> {
+  Future<PipelineRun?>? _runFuture;
+  String? _lastRunId;
+  int _lastRefreshCount = 0;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final runProvider = Provider.of<ProductionRunProvider>(context);
+    final runId = runProvider.runId;
+    final refreshCount = runProvider.refreshCount;
+
+    if (runId != _lastRunId || refreshCount != _lastRefreshCount) {
+      _lastRunId = runId;
+      _lastRefreshCount = refreshCount;
+      if (runId != null) {
+        _runFuture = context.read<PipelineRunRepository>().getRun(runId);
+      } else {
+        _runFuture = null;
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_runFuture == null) {
+      return const _MetricBox(label: 'ASSIGNED', value: '—');
+    }
+    return FutureBuilder<PipelineRun?>(
+      future: _runFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const _MetricBox(label: 'ASSIGNED', value: '...');
+        }
+        final run = snapshot.data;
+        if (run == null) return const _MetricBox(label: 'ASSIGNED', value: '—');
+        final inputs = run.attachedBarcodeInputs[widget.nodeId] ?? [];
+        if (inputs.isEmpty) return const _MetricBox(label: 'ASSIGNED', value: 'None');
+        return _MetricBox(
+          label: 'ASSIGNED',
+          value: inputs.map((b) {
+            if (b.quantity != null) {
+              final unitStr = b.unit != null && b.unit!.isNotEmpty ? ' ${b.unit}' : '';
+              return '${b.barcode} (${b.quantity}$unitStr)';
+            }
+            return b.barcode;
+          }).join(', '),
+        );
+      },
     );
   }
 }

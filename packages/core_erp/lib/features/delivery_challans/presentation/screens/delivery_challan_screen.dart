@@ -24,6 +24,7 @@ import '../../../../widgets/variation_path_selector_dialog.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
 import '../../../inventory/presentation/providers/inventory_provider.dart';
 import '../../../items/domain/item_definition.dart';
+import '../../../units/domain/unit_inputs.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../orders/domain/order_entry.dart';
@@ -4163,18 +4164,18 @@ class _ItemsEditor extends StatelessWidget {
     if (units.isEmpty) {
       return const SizedBox.shrink();
     }
-    return DropdownButtonFormField<int>(
-      initialValue: draft.selectedUnitId,
-      isExpanded: true,
-      icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
-      dropdownColor: Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      menuMaxHeight: 300,
-      style: const TextStyle(
-        fontSize: 13,
-        color: SoftErpTheme.textPrimary,
-        fontFamily: 'Segoe UI',
-      ),
+    
+    final options = unitsProvider.activeUnits.map((u) {
+      return SearchableSelectOption<int>(
+        value: u.id,
+        label: u.symbol,
+        searchText: '${u.symbol} ${u.name}',
+      );
+    }).toList(growable: false);
+
+    return SearchableSelectField<int>(
+      value: draft.selectedUnitId,
+      fieldEnabled: enabled,
       decoration: InputDecoration(
         labelText: 'Unit',
         isDense: true,
@@ -4194,19 +4195,28 @@ class _ItemsEditor extends StatelessWidget {
           borderSide: const BorderSide(color: SoftErpTheme.accent, width: 1.5),
         ),
       ),
-      items: units.map((u) {
-        return DropdownMenuItem<int>(
-          value: u.id,
-          child: Text(u.symbol, overflow: TextOverflow.ellipsis),
+      dialogTitle: 'Select Unit',
+      searchHintText: 'Search units',
+      options: options,
+      canCreateOption: (query, _) => query.trim().isNotEmpty,
+      onCreateOption: (query) async {
+        final symbol = query.trim();
+        final created = await unitsProvider.createUnit(CreateUnitInput(
+          name: symbol,
+          symbol: symbol,
+        ));
+        if (created == null) return null;
+        return SearchableSelectOption<int>(
+          value: created.id,
+          label: created.symbol,
+          searchText: '${created.symbol} ${created.name}',
         );
-      }).toList(),
-      onChanged: enabled
-          ? (unitId) {
-              draft.selectedUnitId = unitId;
-              draft.updateConversions(item, unitsProvider);
-              onChanged();
-            }
-          : null,
+      },
+      onChanged: (unitId) {
+        draft.selectedUnitId = unitId;
+        draft.updateConversions(item, unitsProvider);
+        onChanged();
+      },
     );
   }
 
@@ -4803,6 +4813,8 @@ class _ItemDraft {
     } else {
       final primaryUnit = unitsProvider.findById(item.unitId);
       if (primaryUnit != null && isQtyUnit(ItemUnitOption(id: primaryUnit.id, name: primaryUnit.name, symbol: primaryUnit.symbol, factorToPrimary: 1.0, isPrimary: true))) {
+        quantityPcs = formatDouble(primaryVal);
+      } else if (wtOpt == null) {
         quantityPcs = formatDouble(primaryVal);
       } else {
         quantityPcs = '';

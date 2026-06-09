@@ -6,6 +6,7 @@ import 'package:core_erp/features/items/domain/item_definition.dart';
 import 'package:core_erp/features/items/domain/item_inputs.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 import 'package:core_erp/features/units/domain/unit_definition.dart';
+import 'package:core_erp/features/units/domain/unit_inputs.dart';
 import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
 import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
 import 'package:provider/provider.dart';
@@ -533,8 +534,6 @@ class _PipelineItemSelectField extends StatelessWidget {
   final ValueChanged<ItemDefinition> onCreated;
   final FormFieldValidator<int> validator;
 
-  static int? _lastUsedUnitId;
-
   @override
   Widget build(BuildContext context) {
     final hasSelection = items.any((item) => item.id == selectedItemId);
@@ -567,93 +566,22 @@ class _PipelineItemSelectField extends StatelessWidget {
             );
       },
       onCreateOption: (query) async {
-        final ctrl = TextEditingController(text: query.trim());
-        final formKey = GlobalKey<FormState>();
-        final defaultUnitId =
-            _PipelineItemSelectField._lastUsedUnitId ??
-            _activeUnitsFromContext(context).firstOrNull?.id;
-
-        if (defaultUnitId == null) {
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('No active units available.')),
-            );
-          }
+        final created = await showDialog<ItemDefinition>(
+          context: context,
+          builder: (context) =>
+              _QuickItemCreateDialog(initialName: query, units: units),
+        );
+        if (!context.mounted || created == null) {
           return null;
         }
-
-        final dialogResult = await showDialog<String>(
-          context: context,
-          builder: (context) {
-            void submit() {
-              if (formKey.currentState?.validate() == true) {
-                Navigator.pop(context, ctrl.text.trim());
-              }
-            }
-
-            return CallbackShortcuts(
-              bindings: {
-                const SingleActivator(LogicalKeyboardKey.enter, meta: true):
-                    submit,
-                const SingleActivator(LogicalKeyboardKey.enter, control: true):
-                    submit,
-              },
-              child: AlertDialog(
-                title: const Text('Quick Create Item'),
-                content: Form(
-                  key: formKey,
-                  autovalidateMode: AutovalidateMode.onUserInteraction,
-                  child: TextFormField(
-                    controller: ctrl,
-                    autofocus: true,
-                    decoration: _softInputDecoration(label: 'Item Name'),
-                    validator: (val) => val == null || val.trim().isEmpty
-                        ? 'Name is required'
-                        : null,
-                    onFieldSubmitted: (_) => submit(),
-                  ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel'),
-                  ),
-                  FilledButton(onPressed: submit, child: const Text('Create')),
-                ],
-              ),
-            );
-          },
-        );
-
-        if (dialogResult == null || !context.mounted) return null;
-
-        final itemsProvider = context.read<ItemsProvider>();
-        final defaultGroupId =
-            context.read<GroupsProvider>().groups.firstOrNull?.id ?? 1;
-
-        ItemDefinition? created;
         try {
-          _PipelineItemSelectField._lastUsedUnitId = defaultUnitId;
-          created = await itemsProvider.createItem(
-            CreateItemInput(
-              name: dialogResult,
-              displayName: dialogResult,
-              groupId: defaultGroupId,
-              unitId: defaultUnitId,
-            ),
-          );
-        } catch (_) {}
-
-        if (created == null) return null;
-
-        try {
-          await itemsProvider.refresh();
+          await context.read<ItemsProvider>().refresh();
         } catch (_) {}
         if (!context.mounted) {
           return null;
         }
-        final refreshedUnits = _activeUnitsFromContext(context);
         onCreated(created);
+        final refreshedUnits = _activeUnitsFromContext(context);
         return SearchableSelectOption<int>(
           value: created.id,
           label: _materialOptionLabel(created, refreshedUnits),
@@ -787,64 +715,6 @@ PipelineItemEndpoint _endpointForItem(
   );
 }
 
-class _PipelineEditorShell extends StatelessWidget {
-  const _PipelineEditorShell({
-    required this.templateName,
-    required this.onBack,
-    required this.child,
-  });
-
-  final String templateName;
-  final VoidCallback onBack;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 18, 24, 0),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.84),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            child: Row(
-              children: [
-                TextButton.icon(
-                  onPressed: onBack,
-                  icon: const Icon(Icons.arrow_back_rounded),
-                  label: const Text('Back to pipelines'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF3B82F6),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    templateName.trim().isEmpty
-                        ? 'Pipeline Builder'
-                        : templateName,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF1E293B),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-                const _RouteBadge(label: 'Builder', value: 'Edit mode'),
-              ],
-            ),
-          ),
-        ),
-        Expanded(child: child),
-      ],
-    );
-  }
-}
 
 class _PipelineTemplateList extends StatelessWidget {
   const _PipelineTemplateList({
@@ -1206,48 +1076,6 @@ class _PipelineStatusBadge extends StatelessWidget {
   }
 }
 
-class _RouteBadge extends StatelessWidget {
-  const _RouteBadge({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF1F5F9).withValues(alpha: 0.78),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              value,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Color(0xFF1E293B),
-                fontSize: 13,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            Text(
-              label,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Color(0xFF64748B),
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 class _PipelineCardPainter extends CustomPainter {
   const _PipelineCardPainter({
@@ -1500,6 +1328,142 @@ class _PipelineLoading extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _QuickItemCreateDialog extends StatefulWidget {
+  const _QuickItemCreateDialog({
+    required this.initialName,
+    required this.units,
+  });
+
+  final String initialName;
+  final List<UnitDefinition> units;
+
+  @override
+  State<_QuickItemCreateDialog> createState() => _QuickItemCreateDialogState();
+}
+
+class _QuickItemCreateDialogState extends State<_QuickItemCreateDialog> {
+  late final TextEditingController _nameController;
+  int? _selectedUnitId;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.initialName);
+    _selectedUnitId =
+        widget.units.where((u) => u.symbol == 'Pcs').firstOrNull?.id ??
+        widget.units.firstOrNull?.id;
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _create() async {
+    final name = _nameController.text.trim();
+    if (name.isEmpty || _selectedUnitId == null) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final itemsProvider = context.read<ItemsProvider>();
+      int groupId = 0;
+      try {
+        final groups = context.read<GroupsProvider>().groups;
+        if (groups.isNotEmpty) {
+          groupId = groups.first.id;
+        }
+      } catch (_) {}
+
+      final input = CreateItemInput(
+        name: name,
+        displayName: name,
+        groupId: groupId,
+        unitId: _selectedUnitId!,
+      );
+
+      final created = await itemsProvider.createItem(input);
+      if (mounted) {
+        Navigator.pop(context, created);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to create item: $e')));
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Quick Create Item'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _nameController,
+            decoration: const InputDecoration(labelText: 'Item Name'),
+            autofocus: true,
+            onSubmitted: (_) => _create(),
+          ),
+          const SizedBox(height: 16),
+          SearchableSelectField<int>(
+            value: _selectedUnitId,
+            decoration: const InputDecoration(labelText: 'Primary Unit'),
+            dialogTitle: 'Select Primary Unit',
+            searchHintText: 'Search units',
+            options: context.watch<UnitsProvider>().activeUnits.map((u) {
+              return SearchableSelectOption<int>(
+                value: u.id,
+                label: '${u.displayLabel} (${u.symbol})',
+                searchText: '${u.displayLabel} ${u.symbol}',
+              );
+            }).toList(growable: false),
+            canCreateOption: (query, _) => query.trim().isNotEmpty,
+            onCreateOption: (query) async {
+              final symbol = query.trim();
+              final created = await context.read<UnitsProvider>().createUnit(CreateUnitInput(
+                name: symbol,
+                symbol: symbol,
+              ));
+              if (created == null) return null;
+              return SearchableSelectOption<int>(
+                value: created.id,
+                label: '${created.displayLabel} (${created.symbol})',
+                searchText: '${created.displayLabel} ${created.symbol}',
+              );
+            },
+            onChanged: (val) {
+              if (val != null) setState(() => _selectedUnitId = val);
+            },
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _isLoading ? null : _create,
+          child: _isLoading
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Create'),
+        ),
+      ],
     );
   }
 }

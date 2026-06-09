@@ -27,6 +27,18 @@ abstract class PipelineRunRepository {
     required String runId,
     required String nodeId,
     required String barcode,
+    double? quantity,
+  });
+  Future<PipelineRun> updateAttachedBarcodeQuantity({
+    required String runId,
+    required String nodeId,
+    required String barcode,
+    required double quantity,
+  });
+  Future<PipelineRun> detachBarcodeFromRunNode({
+    required String runId,
+    required String nodeId,
+    required String barcode,
   });
 }
 
@@ -178,18 +190,66 @@ class ApiPipelineRunRepository implements PipelineRunRepository {
     required String runId,
     required String nodeId,
     required String barcode,
+    double? quantity,
   }) async {
     final uri = Uri.parse('$baseUrl/runs/$runId/barcodes');
     final response = await _client.post(
       uri,
       headers: const {'Content-Type': 'application/json'},
-      body: jsonEncode({'nodeId': nodeId, 'barcode': barcode}),
+      body: jsonEncode({
+        'nodeId': nodeId,
+        'barcode': barcode,
+        'quantity':? quantity,
+      }),
     );
     final payload = _decodeJson(response.body) as Map<String, dynamic>;
     _ensureSuccess(
       response.statusCode,
       payload,
       'Failed to attach barcode to run node.',
+    );
+    return PipelineRun.fromJson(payload['run'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<PipelineRun> updateAttachedBarcodeQuantity({
+    required String runId,
+    required String nodeId,
+    required String barcode,
+    required double quantity,
+  }) async {
+    final uri = Uri.parse('$baseUrl/runs/$runId/barcodes');
+    final response = await _client.put(
+      uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'nodeId': nodeId,
+        'barcode': barcode,
+        'quantity': quantity,
+      }),
+    );
+    final payload = _decodeJson(response.body) as Map<String, dynamic>;
+    _ensureSuccess(
+      response.statusCode,
+      payload,
+      'Failed to update attached barcode quantity.',
+    );
+    return PipelineRun.fromJson(payload['run'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<PipelineRun> detachBarcodeFromRunNode({
+    required String runId,
+    required String nodeId,
+    required String barcode,
+  }) async {
+    final uri = Uri.parse('$baseUrl/runs/$runId/barcodes/$nodeId/$barcode');
+    final response = await _client.delete(uri);
+    final payload = _decodeJson(response.body) as Map<String, dynamic>;
+    _ensureSuccess(
+      response.statusCode,
+      payload,
+      'Failed to detach barcode from run node.',
     );
     return PipelineRun.fromJson(payload['run'] as Map<String, dynamic>);
   }

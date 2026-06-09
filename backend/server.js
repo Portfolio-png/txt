@@ -2481,6 +2481,27 @@ async function initDb() {
   );
 
   await run(`
+    CREATE TABLE IF NOT EXISTS item_bom_lines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+      material_barcode TEXT NOT NULL,
+      material_name TEXT DEFAULT '',
+      quantity_per_unit REAL NOT NULL DEFAULT 1,
+      wastage_percent REAL NOT NULL DEFAULT 0,
+      unit_id INTEGER REFERENCES units(id),
+      unit_symbol TEXT DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(item_id, material_barcode)
+    )
+  `);
+
+  await run(
+    'CREATE INDEX IF NOT EXISTS idx_item_bom_lines_item_id ON item_bom_lines(item_id, sort_order ASC, id ASC)',
+  );
+
+  await run(`
     CREATE TABLE IF NOT EXISTS inventory_sets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -3328,6 +3349,89 @@ async function initDb() {
   await run('CREATE INDEX IF NOT EXISTS idx_order_pipeline_assignments_order_id ON order_pipeline_assignments(order_item_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_order_pipeline_assignments_pipeline_run_id ON order_pipeline_assignments(pipeline_run_id)');
 
+  await run(`
+    CREATE TABLE IF NOT EXISTS procurement_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_number TEXT NOT NULL UNIQUE,
+      supplier_name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft',
+      expected_date TEXT,
+      notes TEXT DEFAULT '',
+      cancel_reason TEXT,
+      created_by_user_id INTEGER REFERENCES users(id),
+      created_by_name TEXT DEFAULT '',
+      created_by_role TEXT DEFAULT '',
+      raised_by_user_id INTEGER REFERENCES users(id),
+      raised_by_name TEXT DEFAULT '',
+      raised_by_role TEXT DEFAULT '',
+      cancelled_by_user_id INTEGER REFERENCES users(id),
+      cancelled_by_name TEXT DEFAULT '',
+      cancelled_by_role TEXT DEFAULT '',
+      closed_by_user_id INTEGER REFERENCES users(id),
+      closed_by_name TEXT DEFAULT '',
+      closed_by_role TEXT DEFAULT '',
+      raised_at TEXT,
+      cancelled_at TEXT,
+      closed_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS procurement_request_lines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      procurement_request_id INTEGER NOT NULL REFERENCES procurement_requests(id) ON DELETE CASCADE,
+      material_barcode TEXT NOT NULL,
+      material_name TEXT DEFAULT '',
+      requested_qty REAL NOT NULL DEFAULT 0,
+      received_qty REAL NOT NULL DEFAULT 0,
+      pending_qty REAL NOT NULL DEFAULT 0,
+      unit_id INTEGER REFERENCES units(id),
+      unit_symbol TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'draft',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(procurement_request_id, material_barcode)
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS procurement_request_line_sources (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      procurement_request_id INTEGER NOT NULL REFERENCES procurement_requests(id) ON DELETE CASCADE,
+      procurement_request_line_id INTEGER NOT NULL REFERENCES procurement_request_lines(id) ON DELETE CASCADE,
+      order_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+      requirement_id INTEGER NOT NULL REFERENCES order_material_requirements(id) ON DELETE CASCADE,
+      material_barcode TEXT NOT NULL,
+      linked_qty REAL NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      UNIQUE(procurement_request_line_id, requirement_id)
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS procurement_activity_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      procurement_request_id INTEGER NOT NULL REFERENCES procurement_requests(id) ON DELETE CASCADE,
+      procurement_request_line_id INTEGER REFERENCES procurement_request_lines(id) ON DELETE CASCADE,
+      event_type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      actor_user_id INTEGER REFERENCES users(id),
+      actor_name TEXT DEFAULT '',
+      actor_role TEXT DEFAULT '',
+      metadata_json TEXT DEFAULT '{}',
+      source TEXT DEFAULT 'api',
+      created_at TEXT NOT NULL
+    )
+  `);
+
+  await run('CREATE INDEX IF NOT EXISTS idx_procurement_requests_status ON procurement_requests(status, updated_at DESC)');
+  await run('CREATE INDEX IF NOT EXISTS idx_procurement_request_lines_request_id ON procurement_request_lines(procurement_request_id, id ASC)');
+  await run('CREATE INDEX IF NOT EXISTS idx_procurement_line_sources_requirement_id ON procurement_request_line_sources(requirement_id, id ASC)');
+  await run('CREATE INDEX IF NOT EXISTS idx_procurement_line_sources_request_id ON procurement_request_line_sources(procurement_request_id, id ASC)');
+  await run('CREATE INDEX IF NOT EXISTS idx_procurement_activity_request_id ON procurement_activity_log(procurement_request_id, created_at DESC)');
 
   if (SEED_DEMO_DATA_ON_BOOT) {
     await seedMaterialsIfEmpty();
@@ -10737,6 +10841,7 @@ const ORDER_LIFECYCLE_TRANSITIONS = {
 
 async function updateOrderLifecycle({
   id,
+  status = null,
   startDate = null,
   endDate = null,
   actor = null,
@@ -10752,18 +10857,47 @@ async function updateOrderLifecycle({
   const normalizedEndDate = normalizeOptionalDate(endDate, 'end date');
   const now = new Date().toISOString();
 
+  let targetStatus = existing.status;
+  let statusChanged = false;
+  if (status && status !== existing.status) {
+    const isAdmin = actor?.role === 'admin';
+    if (existing.status === 'completed' && !isAdmin) {
+      const error = new Error(`Only admins can reverse completed orders.`);
+      error.statusCode = 403;
+      throw error;
+    }
+    const allowed = ORDER_LIFECYCLE_TRANSITIONS[existing.status];
+    if (!allowed || !allowed.has(status)) {
+      if (!isAdmin) {
+        const error = new Error(`Invalid lifecycle transition from ${existing.status} to ${status}.`);
+        error.statusCode = 400;
+        throw error;
+      }
+    }
+    targetStatus = status;
+    statusChanged = true;
+  }
+
   await run('BEGIN TRANSACTION');
   try {
     await run(
-      'UPDATE order_items SET start_date = ?, end_date = ?, updated_at = ? WHERE id = ?',
-      [normalizedStartDate, normalizedEndDate, now, id],
+      'UPDATE order_items SET status = ?, start_date = ?, end_date = ?, updated_at = ? WHERE id = ?',
+      [targetStatus, normalizedStartDate, normalizedEndDate, now, id],
     );
+
+    if (statusChanged) {
+      await run(
+        'INSERT INTO order_status_history (order_id, previous_status, new_status, changed_by_user_id, changed_at) VALUES (?, ?, ?, ?, ?)',
+        [id, existing.status, targetStatus, actor?.id || null, now],
+      );
+    }
 
     await insertOrderActivityLog({
       orderId: id,
       activityType: 'lifecycle_updated',
       actor,
       details: {
+        status: targetStatus,
         startDate: normalizedStartDate,
         endDate: normalizedEndDate,
       },
@@ -18602,19 +18736,179 @@ app.post('/runs/:id/barcodes', async (req, res) => {
           materialName: material.name,
           materialType: material.type,
           scanCount: material.scanCount,
+          quantity: payload.quantity !== undefined && payload.quantity !== null ? Number(payload.quantity) : null,
+          unit: material.unit,
         }),
         new Date().toISOString(),
       ],
     );
+
+    if (payload.quantity !== undefined && payload.quantity !== null) {
+      const qty = Number(payload.quantity);
+      if (qty > 0) {
+        await applyInventoryMovement({
+          barcode: material.barcode,
+          movementType: 'consume',
+          qty: qty,
+          actor: 'Floor Engineer',
+          referenceType: 'pipeline_run',
+          referenceId: req.params.id,
+          reasonCode: 'PRODUCTION_ASSIGN',
+        });
+      }
+    }
 
     const updatedRunRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [
       req.params.id,
     ]);
     res.json({ success: true, run: await rowToRun(updatedRunRow) });
   } catch (error) {
-    res.status(500).json({ success: false, run: null, error: error.message });
+    res.status(error.statusCode || 500).json({ success: false, run: null, error: error.message });
   }
 });
+
+app.put(['/runs/:id/barcodes', '/runs/:id/barcodes/:nodeId/:barcode'], async (req, res) => {
+  try {
+    const runRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
+    if (!runRow) {
+      res.status(404).json({ success: false, run: null, error: 'Run not found.' });
+      return;
+    }
+
+    const nodeId = req.params.nodeId || req.query.nodeId || req.body?.nodeId;
+    const barcode = req.params.barcode || req.query.barcode || req.body?.barcode;
+    const quantity = req.body?.quantity !== undefined && req.body.quantity !== null 
+      ? Number(req.body.quantity) 
+      : (req.query.quantity !== undefined && req.query.quantity !== null ? Number(req.query.quantity) : null);
+
+    if (!nodeId || !barcode || quantity === null || isNaN(quantity)) {
+      res.status(400).json({
+        success: false,
+        run: null,
+        error: 'nodeId, barcode, and valid quantity are required.',
+      });
+      return;
+    }
+
+    const existingInput = await get(
+      'SELECT * FROM run_barcode_inputs WHERE run_id = ? AND node_id = ? AND barcode = ?',
+      [req.params.id, nodeId, barcode]
+    );
+
+    if (!existingInput) {
+      res.status(404).json({
+        success: false,
+        run: null,
+        error: 'Assigned stock not found for this node.',
+      });
+      return;
+    }
+
+    const materialPayload = JSON.parse(existingInput.material_payload_json || '{}');
+    const oldQty = materialPayload.quantity !== undefined && materialPayload.quantity !== null 
+      ? Number(materialPayload.quantity) 
+      : 0;
+
+    const qtyDiff = quantity - oldQty;
+
+    if (qtyDiff > 0) {
+      await applyInventoryMovement({
+        barcode: barcode,
+        movementType: 'consume',
+        qty: qtyDiff,
+        actor: 'Floor Engineer',
+        referenceType: 'pipeline_run',
+        referenceId: req.params.id,
+        reasonCode: 'PRODUCTION_ASSIGN_UPDATE',
+      });
+    } else if (qtyDiff < 0) {
+      await applyInventoryMovement({
+        barcode: barcode,
+        movementType: 'adjust',
+        qty: -qtyDiff,
+        actor: 'Floor Engineer',
+        referenceType: 'pipeline_run',
+        referenceId: req.params.id,
+        reasonCode: 'PRODUCTION_ASSIGN_UPDATE',
+      });
+    }
+
+    materialPayload.quantity = quantity;
+    await run(
+      'UPDATE run_barcode_inputs SET material_payload_json = ? WHERE id = ?',
+      [JSON.stringify(materialPayload), existingInput.id]
+    );
+
+    const updatedRunRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
+    res.json({ success: true, run: await rowToRun(updatedRunRow) });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, run: null, error: error.message });
+  }
+});
+
+app.delete(['/runs/:id/barcodes', '/runs/:id/barcodes/:nodeId/:barcode'], async (req, res) => {
+  try {
+    const runRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
+    if (!runRow) {
+      res.status(404).json({ success: false, run: null, error: 'Run not found.' });
+      return;
+    }
+
+    const nodeId = req.params.nodeId || req.query.nodeId || req.body?.nodeId;
+    const barcode = req.params.barcode || req.query.barcode || req.body?.barcode;
+
+    if (!nodeId || !barcode) {
+      res.status(400).json({
+        success: false,
+        run: null,
+        error: 'nodeId and barcode are required.',
+      });
+      return;
+    }
+
+    const existingInput = await get(
+      'SELECT * FROM run_barcode_inputs WHERE run_id = ? AND node_id = ? AND barcode = ?',
+      [req.params.id, nodeId, barcode]
+    );
+
+    if (!existingInput) {
+      res.status(404).json({
+        success: false,
+        run: null,
+        error: 'Assigned stock not found for this node.',
+      });
+      return;
+    }
+
+    const materialPayload = JSON.parse(existingInput.material_payload_json || '{}');
+    const oldQty = materialPayload.quantity !== undefined && materialPayload.quantity !== null 
+      ? Number(materialPayload.quantity) 
+      : 0;
+
+    if (oldQty > 0) {
+      await applyInventoryMovement({
+        barcode: barcode,
+        movementType: 'adjust',
+        qty: oldQty,
+        actor: 'Floor Engineer',
+        referenceType: 'pipeline_run',
+        referenceId: req.params.id,
+        reasonCode: 'PRODUCTION_ASSIGN_DELETE',
+      });
+    }
+
+    await run(
+      'DELETE FROM run_barcode_inputs WHERE id = ?',
+      [existingInput.id]
+    );
+
+    const updatedRunRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
+    res.json({ success: true, run: await rowToRun(updatedRunRow) });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, run: null, error: error.message });
+  }
+});
+
 
 app.use('/api', (error, req, res, _next) => {
   console.error(`[API ERROR] ${req.method} ${req.originalUrl}`, error);
@@ -18660,7 +18954,6 @@ async function clearAllData() {
     await run('DELETE FROM procurement_request_lines');
     await run('DELETE FROM procurement_requests');
     await run('DELETE FROM item_bom_lines');
-    await run('DELETE FROM orders');
     await run('DELETE FROM dies');
     await run('DELETE FROM machines');
     await run('DELETE FROM reconciliation_waste_audit');

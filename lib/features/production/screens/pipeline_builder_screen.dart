@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:core_erp/features/items/domain/item_definition.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 import 'package:core_erp/features/units/domain/unit_definition.dart';
+import 'package:core_erp/features/units/domain/unit_inputs.dart';
 import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
 import 'package:core_erp/core/widgets/searchable_select.dart';
@@ -3989,15 +3990,32 @@ class _QuickItemCreateDialogState extends State<_QuickItemCreateDialog> {
             onSubmitted: (_) => _create(),
           ),
           const SizedBox(height: 16),
-          DropdownButtonFormField<int>(
-            initialValue: _selectedUnitId,
+          SearchableSelectField<int>(
+            value: _selectedUnitId,
             decoration: const InputDecoration(labelText: 'Primary Unit'),
-            items: widget.units.map((u) {
-              return DropdownMenuItem<int>(
+            dialogTitle: 'Select Primary Unit',
+            searchHintText: 'Search units',
+            options: context.watch<UnitsProvider>().activeUnits.map((u) {
+              return SearchableSelectOption<int>(
                 value: u.id,
-                child: Text('${u.displayLabel} (${u.symbol})'),
+                label: '${u.displayLabel} (${u.symbol})',
+                searchText: '${u.displayLabel} ${u.symbol}',
               );
-            }).toList(),
+            }).toList(growable: false),
+            canCreateOption: (query, _) => query.trim().isNotEmpty,
+            onCreateOption: (query) async {
+              final symbol = query.trim();
+              final created = await context.read<UnitsProvider>().createUnit(CreateUnitInput(
+                name: symbol,
+                symbol: symbol,
+              ));
+              if (created == null) return null;
+              return SearchableSelectOption<int>(
+                value: created.id,
+                label: '${created.displayLabel} (${created.symbol})',
+                searchText: '${created.displayLabel} ${created.symbol}',
+              );
+            },
             onChanged: (val) {
               if (val != null) setState(() => _selectedUnitId = val);
             },

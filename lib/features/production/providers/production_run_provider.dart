@@ -70,6 +70,14 @@ class ProductionRunProvider extends ChangeNotifier {
   String? _scannedDieId;
   String? _barcodeErrorMessage;
   Timer? _offlineSyncTimer;
+  int _refreshCount = 0;
+
+  int get refreshCount => _refreshCount;
+
+  void triggerRefresh() {
+    _refreshCount++;
+    notifyListeners();
+  }
 
   ProductionState get state => _state;
   String? get runId => _runId;
@@ -106,6 +114,17 @@ class ProductionRunProvider extends ChangeNotifier {
   int get elapsedSeconds => elapsed.inSeconds;
 
   String get elapsedDisplay => _formatDuration(elapsed);
+
+  void initializeIdleRun(String runId) {
+    _runId = runId;
+    _state = ProductionState.idle;
+    _stageStartedAt = null;
+    _bankedElapsed = Duration.zero;
+    _currentYield = 0;
+    _currentScrap = 0;
+    _isInputLocked = false;
+    notifyListeners();
+  }
 
   void enterSetup(String runId) {
     _runId = runId;

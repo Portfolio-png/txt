@@ -8,7 +8,6 @@ import '../../production_pipelines/domain/pipeline_template.dart';
 import '../../production_pipelines/domain/process_node.dart';
 import '../domain/default_floor_context.dart';
 import '../domain/models/floor_view_models.dart';
-import '../providers/production_provider.dart';
 import '../widgets/floor_map_painter.dart';
 import '../widgets/floor_node_terminal.dart';
 import '../widgets/floor_widgets.dart';

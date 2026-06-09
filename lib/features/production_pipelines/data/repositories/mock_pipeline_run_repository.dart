@@ -1,5 +1,6 @@
 import 'package:core_erp/features/inventory/data/repositories/inventory_repository.dart';
 import 'package:core_erp/features/inventory/domain/material_record.dart';
+import 'package:core_erp/features/inventory/domain/inventory_control_tower.dart';
 import '../../domain/barcode_input.dart';
 import '../../domain/node_run_status.dart';
 import '../../domain/pipeline_run.dart';
@@ -162,6 +163,7 @@ class MockPipelineRunRepository implements PipelineRunRepository {
     required String runId,
     required String nodeId,
     required String barcode,
+    double? quantity,
   }) async {
     _ensureSeeded();
     final index = _runs.indexWhere((run) => run.id == runId);
@@ -176,6 +178,19 @@ class MockPipelineRunRepository implements PipelineRunRepository {
       );
     }
 
+    if (quantity != null && quantity > 0) {
+      await _inventoryRepository.createInventoryMovement(
+        CreateInventoryMovementInput(
+          materialBarcode: barcode,
+          movementType: InventoryMovementType.consume,
+          qty: quantity,
+          reasonCode: 'PRODUCTION_ASSIGN',
+          referenceType: 'pipeline_run',
+          referenceId: runId,
+        ),
+      );
+    }
+
     final current = _runs[index];
     final existing = current.attachedBarcodeInputs[nodeId] ?? const [];
     final updated = current.copyWith(
@@ -183,7 +198,7 @@ class MockPipelineRunRepository implements PipelineRunRepository {
         ...current.attachedBarcodeInputs,
         nodeId: <BarcodeInput>[
           ...existing,
-          BarcodeInput.fromMaterialRecord(material),
+          BarcodeInput.fromMaterialRecord(material, quantity: quantity),
         ],
       },
     );
@@ -219,6 +234,128 @@ class MockPipelineRunRepository implements PipelineRunRepository {
           (status) =>
               status == NodeRunStatus.done || status == NodeRunStatus.skipped,
         );
+  }
+
+  @override
+  Future<PipelineRun> updateAttachedBarcodeQuantity({
+    required String runId,
+    required String nodeId,
+    required String barcode,
+    required double quantity,
+  }) async {
+    _ensureSeeded();
+    final index = _runs.indexWhere((run) => run.id == runId);
+    if (index == -1) {
+      throw const PipelineApiException('Run not found.');
+    }
+
+    final current = _runs[index];
+    final existing = current.attachedBarcodeInputs[nodeId] ?? const [];
+    
+    double oldQty = 0;
+    BarcodeInput? targetItem;
+    final updatedList = <BarcodeInput>[];
+    
+    for (final item in existing) {
+      if (item.barcode == barcode) {
+        oldQty = item.quantity ?? 0;
+        targetItem = BarcodeInput(
+          barcode: item.barcode,
+          materialName: item.materialName,
+          materialType: item.materialType,
+          scanCount: item.scanCount,
+          quantity: quantity,
+          unit: item.unit,
+        );
+        updatedList.add(targetItem);
+      } else {
+        updatedList.add(item);
+      }
+    }
+
+    if (targetItem == null) {
+      throw const PipelineApiException('Assigned stock not found.');
+    }
+
+    final qtyDiff = quantity - oldQty;
+    if (qtyDiff != 0) {
+      await _inventoryRepository.createInventoryMovement(
+        CreateInventoryMovementInput(
+          materialBarcode: barcode,
+          movementType: qtyDiff > 0 
+              ? InventoryMovementType.consume 
+              : InventoryMovementType.adjust,
+          qty: qtyDiff.abs(),
+          reasonCode: 'PRODUCTION_ASSIGN_UPDATE',
+          referenceType: 'pipeline_run',
+          referenceId: runId,
+        ),
+      );
+    }
+
+    final updatedRun = current.copyWith(
+      attachedBarcodeInputs: {
+        ...current.attachedBarcodeInputs,
+        nodeId: updatedList,
+      },
+    );
+    _runs[index] = updatedRun;
+    return updatedRun;
+  }
+
+  @override
+  Future<PipelineRun> detachBarcodeFromRunNode({
+    required String runId,
+    required String nodeId,
+    required String barcode,
+  }) async {
+    _ensureSeeded();
+    final index = _runs.indexWhere((run) => run.id == runId);
+    if (index == -1) {
+      throw const PipelineApiException('Run not found.');
+    }
+
+    final current = _runs[index];
+    final existing = current.attachedBarcodeInputs[nodeId] ?? const [];
+    
+    double oldQty = 0;
+    final updatedList = <BarcodeInput>[];
+    bool found = false;
+    
+    for (final item in existing) {
+      if (item.barcode == barcode) {
+        oldQty = item.quantity ?? 0;
+        found = true;
+      } else {
+        updatedList.add(item);
+      }
+    }
+
+    if (!found) {
+      throw const PipelineApiException('Assigned stock not found.');
+    }
+
+    if (oldQty > 0) {
+      await _inventoryRepository.createInventoryMovement(
+        CreateInventoryMovementInput(
+          materialBarcode: barcode,
+          movementType: InventoryMovementType.adjust,
+          qty: oldQty,
+          reasonCode: 'PRODUCTION_ASSIGN_DELETE',
+          referenceType: 'pipeline_run',
+          referenceId: runId,
+        ),
+      );
+    }
+
+    final updatedRun = current.copyWith(
+      attachedBarcodeInputs: {
+        ...current.attachedBarcodeInputs,
+        nodeId: updatedList,
+      },
+    );
+    _runs[index] = updatedRun;
+    return updatedRun;
   }
 }
 

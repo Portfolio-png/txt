@@ -954,7 +954,6 @@ class _SidebarTile extends StatelessWidget {
             : viewportWidth < 1240
             ? 14.5
             : 16.0;
-        final hasFocus = focusNode.hasFocus;
         final foreground = isSelected
             ? Colors.white
             : SoftErpTheme.textPrimary;

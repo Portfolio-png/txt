@@ -7,7 +7,6 @@ import '../providers/production_run_provider.dart';
 import 'material_ledger_closure_dialog.dart';
 import 'order_fulfillment_prompt_dialog.dart';
 import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
-import '../../production_pipelines/domain/pipeline_run.dart';
 import '../../production_pipelines/domain/pipeline_template.dart';
 import 'package:core_erp/features/orders/domain/order_inputs.dart';
 import 'package:core_erp/features/orders/domain/order_entry.dart';
@@ -112,18 +111,24 @@ class RemoteActionConsole extends StatelessWidget {
       final repo = context.read<PipelineRunRepository>();
       final template = production.template;
 
-      PipelineRun newRun;
-      try {
-        newRun = await repo.createRun(template.id, name: '${template.name} Run');
-      } catch (e) {
-        // Fallback: create template first if it doesn't exist
-        await repo.createTemplate(template);
-        newRun = await repo.createRun(template.id, name: '${template.name} Run');
+      String runId;
+      if (run.runId != null) {
+        runId = run.runId!;
+      } else {
+        try {
+          final newRun = await repo.createRun(template.id, name: '${template.name} Run');
+          runId = newRun.id;
+        } catch (e) {
+          // Fallback: create template first if it doesn't exist
+          await repo.createTemplate(template);
+          final newRun = await repo.createRun(template.id, name: '${template.name} Run');
+          runId = newRun.id;
+        }
       }
 
       if (context.mounted) {
         production.startRun();
-        run.startRun(runId: newRun.id);
+        run.startRun(runId: runId);
 
         if (template.linkedOrderId != null) {
           try {
@@ -223,24 +228,6 @@ class RemoteActionConsole extends StatelessWidget {
     }
   }
 
-  void _handleBranch(BuildContext context) {
-    final provider = context.read<ProductionProvider>();
-    if (provider.selectedNodeId == null) return;
-    // For now, hardcode splitting into 2 branches
-    provider.branchOutput(provider.selectedNodeId!, 2);
-  }
-
-  void _handleReverse(BuildContext context) {
-    final provider = context.read<ProductionProvider>();
-    if (provider.selectedNodeId == null) return;
-    provider.reverseNode(provider.selectedNodeId!, reason: 'Operator requested rework');
-  }
-
-  void _handleSkip(BuildContext context) {
-    final provider = context.read<ProductionProvider>();
-    if (provider.selectedNodeId == null) return;
-    provider.skipNode(provider.selectedNodeId!);
-  }
 }
 
 class _ConsoleAction extends StatelessWidget {
@@ -284,38 +271,3 @@ class _ConsoleAction extends StatelessWidget {
   }
 }
 
-class _DynamicsAction extends StatelessWidget {
-  const _DynamicsAction({
-    required this.label,
-    required this.icon,
-    required this.onPressed,
-  });
-
-  final String label;
-  final IconData icon;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton.icon(
-      onPressed: onPressed,
-      icon: Icon(icon, size: 16, color: const Color(0xFF64748B)),
-      label: Text(
-        label,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.5,
-          color: Color(0xFF475569),
-        ),
-      ),
-      style: OutlinedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        side: const BorderSide(color: Color(0xFFE2E8F0)),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
-      ),
-    );
-  }
-}

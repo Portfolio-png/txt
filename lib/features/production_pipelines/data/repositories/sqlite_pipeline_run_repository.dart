@@ -254,6 +254,7 @@ class SqlitePipelineRunRepository implements PipelineRunRepository {
     required String runId,
     required String nodeId,
     required String barcode,
+    double? quantity,
   }) async {
     final run = await getRun(runId);
     if (run == null) throw const PipelineApiException('Run not found');
@@ -274,6 +275,7 @@ class SqlitePipelineRunRepository implements PipelineRunRepository {
             materialName: item.materialName,
             materialType: item.materialType,
             scanCount: item.scanCount + 1,
+            quantity: quantity ?? item.quantity,
           ),
         );
         found = true;
@@ -289,7 +291,127 @@ class SqlitePipelineRunRepository implements PipelineRunRepository {
           materialName: 'Material $trimmed',
           materialType: 'Scanned Input',
           scanCount: 1,
+          quantity: quantity,
         ),
+      );
+    }
+
+    if (quantity != null && quantity > 0) {
+      final db = await _dbHelper.database;
+      await db.rawUpdate(
+        'UPDATE materials SET on_hand_qty = MAX(0.0, on_hand_qty - ?) WHERE barcode = ?',
+        [quantity, trimmed],
+      );
+    }
+
+    final updatedRun = run.copyWith(
+      attachedBarcodeInputs: {
+        ...run.attachedBarcodeInputs,
+        nodeId: updatedList,
+      },
+    );
+
+    await saveRun(updatedRun);
+    return updatedRun;
+  }
+
+  @override
+  Future<PipelineRun> updateAttachedBarcodeQuantity({
+    required String runId,
+    required String nodeId,
+    required String barcode,
+    required double quantity,
+  }) async {
+    final run = await getRun(runId);
+    if (run == null) throw const PipelineApiException('Run not found');
+
+    final trimmed = barcode.trim();
+    final existingList =
+        run.attachedBarcodeInputs[nodeId] ?? const <BarcodeInput>[];
+
+    final updatedList = <BarcodeInput>[];
+    double oldQty = 0;
+    bool found = false;
+    for (final item in existingList) {
+      if (item.barcode == trimmed) {
+        oldQty = item.quantity ?? 0;
+        updatedList.add(
+          BarcodeInput(
+            barcode: item.barcode,
+            materialName: item.materialName,
+            materialType: item.materialType,
+            scanCount: item.scanCount,
+            quantity: quantity,
+            unit: item.unit,
+          ),
+        );
+        found = true;
+      } else {
+        updatedList.add(item);
+      }
+    }
+
+    if (!found) throw const PipelineApiException('Barcode assignment not found');
+
+    final qtyDiff = quantity - oldQty;
+    if (qtyDiff != 0) {
+      final db = await _dbHelper.database;
+      if (qtyDiff > 0) {
+        await db.rawUpdate(
+          'UPDATE materials SET on_hand_qty = MAX(0.0, on_hand_qty - ?) WHERE barcode = ?',
+          [qtyDiff, trimmed],
+        );
+      } else {
+        await db.rawUpdate(
+          'UPDATE materials SET on_hand_qty = on_hand_qty + ? WHERE barcode = ?',
+          [-qtyDiff, trimmed],
+        );
+      }
+    }
+
+    final updatedRun = run.copyWith(
+      attachedBarcodeInputs: {
+        ...run.attachedBarcodeInputs,
+        nodeId: updatedList,
+      },
+    );
+
+    await saveRun(updatedRun);
+    return updatedRun;
+  }
+
+  @override
+  Future<PipelineRun> detachBarcodeFromRunNode({
+    required String runId,
+    required String nodeId,
+    required String barcode,
+  }) async {
+    final run = await getRun(runId);
+    if (run == null) throw const PipelineApiException('Run not found');
+
+    final trimmed = barcode.trim();
+    final existingList =
+        run.attachedBarcodeInputs[nodeId] ?? const <BarcodeInput>[];
+
+    final updatedList = <BarcodeInput>[];
+    double oldQty = 0;
+    bool found = false;
+    for (final item in existingList) {
+      if (item.barcode == trimmed) {
+        oldQty = item.quantity ?? 0;
+        found = true;
+      } else {
+        updatedList.add(item);
+      }
+    }
+
+    if (!found) throw const PipelineApiException('Barcode assignment not found');
+
+    if (oldQty > 0) {
+      final db = await _dbHelper.database;
+      await db.rawUpdate(
+        'UPDATE materials SET on_hand_qty = on_hand_qty + ? WHERE barcode = ?',
+        [oldQty, trimmed],
       );
     }
 
