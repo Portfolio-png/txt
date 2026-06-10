@@ -7,6 +7,8 @@ import 'package:core_erp/features/orders/presentation/providers/orders_provider.
 import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
 import '../../production_pipelines/domain/pipeline_run.dart';
 import '../../production_pipelines/domain/pipeline_template.dart';
+import '../../production_pipelines/domain/process_node.dart';
+import '../../production_pipelines/domain/node_run_status.dart';
 import '../providers/production_provider.dart';
 import '../providers/production_run_provider.dart';
 import 'live_production_monitor_screen.dart';
@@ -280,6 +282,7 @@ class _ProductionRunsScreenState extends State<ProductionRunsScreen> {
                             return _RunCard(
                               run: run,
                               templateName: template?.name ?? 'Unknown Pipeline',
+                              template: template,
                               isActive: isActive,
                               stalledMessage: stalledMessage,
                               onMonitor: () => _monitorRun(run),
@@ -299,6 +302,7 @@ class _RunCard extends StatelessWidget {
   const _RunCard({
     required this.run,
     required this.templateName,
+    this.template,
     required this.isActive,
     this.stalledMessage,
     required this.onMonitor,
@@ -307,6 +311,7 @@ class _RunCard extends StatelessWidget {
 
   final PipelineRun run;
   final String templateName;
+  final PipelineTemplate? template;
   final bool isActive;
   final String? stalledMessage;
   final VoidCallback onMonitor;
@@ -371,6 +376,7 @@ class _RunCard extends StatelessWidget {
                     color: SoftErpTheme.textSecondary,
                   ),
                 ),
+                _buildTimeline(context),
                 if (isStalled) ...[
                   const SizedBox(height: 8),
                   Container(
@@ -425,6 +431,48 @@ class _RunCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildTimeline(BuildContext context) {
+    if (template == null || template!.nodes.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final sortedNodes = List<ProcessNode>.from(template!.nodes)
+      ..sort((a, b) => a.stageIndex.compareTo(b.stageIndex));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 12),
+        const Text(
+          'Pipeline Progress:',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF64748B),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            children: [
+              for (var i = 0; i < sortedNodes.length; i++) ...[
+                _RunTimelineStep(
+                  label: sortedNodes[i].name,
+                  status: run.nodeStatuses[sortedNodes[i].id] ?? NodeRunStatus.pending,
+                ),
+                if (i != sortedNodes.length - 1)
+                  _RunTimelineConnector(
+                    isComplete: (run.nodeStatuses[sortedNodes[i].id] ?? NodeRunStatus.pending) == NodeRunStatus.done,
+                  ),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -486,6 +534,94 @@ class _TemplateSelectionDialog extends StatelessWidget {
           child: const Text('Cancel'),
         ),
       ],
+    );
+  }
+}
+
+class _RunTimelineStep extends StatelessWidget {
+  const _RunTimelineStep({
+    required this.label,
+    required this.status,
+  });
+
+  final String label;
+  final NodeRunStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (status) {
+      NodeRunStatus.done => const Color(0xFF48C7A4),
+      NodeRunStatus.active => SoftErpTheme.accent,
+      NodeRunStatus.skipped => const Color(0xFF94A3B8),
+      NodeRunStatus.pending => const Color(0xFFCBD5E1),
+    };
+
+    final isComplete = status == NodeRunStatus.done;
+    final isActive = status == NodeRunStatus.active;
+    final isSkipped = status == NodeRunStatus.skipped;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 20,
+          height: 20,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: color, width: 2),
+            color: isComplete
+                ? color
+                : isSkipped
+                    ? const Color(0xFFF1F5F9)
+                    : isActive
+                        ? Colors.white
+                        : const Color(0xFFF8FAFC),
+          ),
+          child: isComplete
+              ? const Icon(Icons.check_rounded, size: 12, color: Colors.white)
+              : isSkipped
+                  ? const Icon(Icons.redo_rounded, size: 12, color: Color(0xFF94A3B8))
+                  : Center(
+                      child: Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: isActive ? color : Colors.transparent,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: TextStyle(
+            color: const Color(0xFF475569),
+            fontSize: 11,
+            fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RunTimelineConnector extends StatelessWidget {
+  const _RunTimelineConnector({required this.isComplete});
+
+  final bool isComplete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        height: 2,
+        margin: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          color: isComplete ? const Color(0xFF48C7A4) : const Color(0xFFE2DFEA),
+          borderRadius: BorderRadius.circular(99),
+        ),
+      ),
     );
   }
 }
