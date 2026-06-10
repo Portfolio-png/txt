@@ -27,8 +27,12 @@ import '../../features/dies/presentation/screens/die_list_screen.dart';
 import '../../features/production_pipelines/presentation/screens/production_pipelines_screen.dart';
 import '../../features/machines/presentation/screens/machine_telemetry_screen.dart';
 import '../../features/production/widgets/start_production_dialog.dart';
+import '../../features/production/screens/live_production_monitor_screen.dart';
+import '../../features/production/providers/production_provider.dart';
+import '../../features/production/providers/production_run_provider.dart';
 import '../../features/production_pipelines/data/repositories/pipeline_run_repository.dart';
 import 'package:core_erp/features/orders/domain/order_entry.dart'; // for OrderStatus
+import 'package:collection/collection.dart';
 import 'app_sidebar.dart';
 import 'app_topbar.dart';
 import 'navigation_provider.dart';
@@ -629,7 +633,31 @@ class _ShellContentSwitcher extends StatelessWidget {
 
                   return (assignedItemIds: assignedItemIds, activeTimelineIndex: activeTimelineIndex);
                 },
-                onShowPipeline: (screenContext, orderGroup, item) {
+                onShowPipeline: (screenContext, orderGroup, item) async {
+                  final stableContext = outerContext;
+                  final repo = stableContext.read<PipelineRunRepository>();
+                  final runs = await repo.getRunsForOrder(orderGroup.orderNo);
+                  final run = runs.firstWhereOrNull((r) => r.orderItemId == item.id);
+                  if (run != null) {
+                    final templates = await repo.getTemplates();
+                    final template = templates.firstWhereOrNull((t) => t.id == run.templateId);
+                    if (template != null) {
+                      if (!stableContext.mounted) return;
+                      stableContext.read<ProductionProvider>().loadTemplate(
+                        template,
+                        orderId: run.orderItemId,
+                        orderNo: run.orderNo,
+                        clientName: run.clientName,
+                      );
+                      stableContext.read<ProductionRunProvider>().initializeIdleRun(run.id);
+                      Navigator.of(stableContext).push(
+                        MaterialPageRoute(builder: (_) => const LiveProductionMonitorScreen()),
+                      );
+                      return;
+                    }
+                  }
+                  // Fallback: just go to the production tab
+                  if (!screenContext.mounted) return;
                   screenContext.read<AppNavigation>().select('production');
                 },
               ),

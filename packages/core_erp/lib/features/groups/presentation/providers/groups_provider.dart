@@ -33,6 +33,9 @@ class GroupsProvider extends ChangeNotifier {
   bool _initialized = false;
 
   List<GroupDefinition> get groups => _groups;
+  List<GroupDefinition> get itemGroups => _groups.where((g) => g.groupType == 'item').toList();
+  List<GroupDefinition> get machineGroups => _groups.where((g) => g.groupType == 'machine').toList();
+  List<GroupDefinition> get dieGroups => _groups.where((g) => g.groupType == 'die').toList();
   bool get isLoading => _isLoading;
   bool get isSaving => _isSaving;
   String? get errorMessage => _errorMessage;
@@ -60,6 +63,10 @@ class GroupsProvider extends ChangeNotifier {
               ).contains(query);
         })
         .toList(growable: false);
+  }
+
+  List<GroupDefinition> filteredGroupsByType(String groupType) {
+    return filteredGroups.where((g) => g.groupType == groupType).toList(growable: false);
   }
 
   List<GroupDefinition> get activeGroups =>

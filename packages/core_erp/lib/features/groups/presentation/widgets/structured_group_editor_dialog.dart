@@ -22,6 +22,7 @@ class StructuredGroupEditorDialog extends StatefulWidget {
   const StructuredGroupEditorDialog({
     super.key,
     this.group,
+    this.groupType = 'item',
     this.initialName = '',
     this.createMode = StructuredGroupEditorCreateMode.groupsOnly,
   });

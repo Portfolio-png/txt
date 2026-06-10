@@ -5,6 +5,7 @@ class GroupDto {
   const GroupDto({
     required this.id,
     required this.name,
+    this.groupType = 'item',
     required this.parentGroupId,
     required this.unitId,
     required this.isArchived,
@@ -15,6 +16,7 @@ class GroupDto {
 
   final int id;
   final String name;
+  final String groupType;
   final int? parentGroupId;
   final int unitId;
   final bool isArchived;
@@ -26,6 +28,7 @@ class GroupDto {
     return GroupDto(
       id: json['id'] as int,
       name: json['name'] as String? ?? '',
+      groupType: json['groupType'] as String? ?? 'item',
       parentGroupId: json['parentGroupId'] as int?,
       unitId: json['unitId'] as int? ?? 0,
       isArchived: json['isArchived'] as bool? ?? false,
@@ -43,6 +46,7 @@ class GroupDto {
     return GroupDefinition(
       id: id,
       name: name,
+      groupType: groupType,
       parentGroupId: parentGroupId,
       unitId: unitId,
       isArchived: isArchived,
@@ -90,47 +94,53 @@ class GroupsListResponse {
 class CreateGroupRequest {
   const CreateGroupRequest({
     required this.name,
+    this.groupType = 'item',
     required this.parentGroupId,
     required this.unitId,
   });
 
   final String name;
+  final String groupType;
   final int? parentGroupId;
   final int unitId;
 
   factory CreateGroupRequest.fromInput(CreateGroupInput input) {
     return CreateGroupRequest(
       name: input.name,
+      groupType: input.groupType,
       parentGroupId: input.parentGroupId,
       unitId: input.unitId,
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {'name': name, 'parentGroupId': parentGroupId, 'unitId': unitId};
+    return {'name': name, 'groupType': groupType, 'parentGroupId': parentGroupId, 'unitId': unitId};
   }
 }
 
 class UpdateGroupRequest {
   const UpdateGroupRequest({
     required this.name,
+    this.groupType = 'item',
     required this.parentGroupId,
     required this.unitId,
   });
 
   final String name;
+  final String groupType;
   final int? parentGroupId;
   final int unitId;
 
   factory UpdateGroupRequest.fromInput(UpdateGroupInput input) {
     return UpdateGroupRequest(
       name: input.name,
+      groupType: input.groupType,
       parentGroupId: input.parentGroupId,
       unitId: input.unitId,
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {'name': name, 'parentGroupId': parentGroupId, 'unitId': unitId};
+    return {'name': name, 'groupType': groupType, 'parentGroupId': parentGroupId, 'unitId': unitId};
   }
 }

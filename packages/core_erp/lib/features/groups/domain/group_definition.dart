@@ -2,6 +2,7 @@ class GroupDefinition {
   const GroupDefinition({
     required this.id,
     required this.name,
+    this.groupType = 'item',
     required this.parentGroupId,
     required this.unitId,
     required this.isArchived,
@@ -12,6 +13,7 @@ class GroupDefinition {
 
   final int id;
   final String name;
+  final String groupType;
   final int? parentGroupId;
   final int unitId;
   final bool isArchived;

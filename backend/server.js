@@ -597,6 +597,33 @@ function parseBooleanFlag(value) {
   return normalized === '1' || normalized === 'true' || normalized === 'yes';
 }
 
+const GROUP_TYPES = new Set(['item', 'machine', 'die']);
+
+function normalizeGroupType(value = 'item') {
+  const normalized = String(value || 'item').trim().toLowerCase();
+  return GROUP_TYPES.has(normalized) ? normalized : 'item';
+}
+
+function primaryGroupNameForType(groupType = 'item') {
+  switch (normalizeGroupType(groupType)) {
+    case 'machine':
+      return 'Primary Machine Group';
+    case 'die':
+      return 'Primary Die Group';
+    case 'item':
+    default:
+      return 'Primary Item Group';
+  }
+}
+
+function isPrimaryGroupNameForType(name = '', groupType = 'item') {
+  const trimmedName = String(name || '').trim();
+  return (
+    trimmedName === primaryGroupNameForType(groupType) ||
+    (normalizeGroupType(groupType) === 'item' && trimmedName === 'Primary Group')
+  );
+}
+
 function permissionDescriptors() {
   return PERMISSION_KEYS.map((key) => ({
     key,
@@ -1426,6 +1453,7 @@ function rowToGroupDto(row) {
   return {
     id: row.id,
     name: row.name || '',
+    groupType: row.group_type || 'item',
     parentGroupId: row.parent_group_id || null,
     unitId: row.unit_id || null,
     isArchived: Boolean(row.is_archived),
@@ -2369,6 +2397,7 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS groups (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
+      group_type TEXT NOT NULL DEFAULT 'item',
       parent_group_id INTEGER REFERENCES groups(id),
       unit_id INTEGER NOT NULL REFERENCES units(id),
       is_archived INTEGER NOT NULL DEFAULT 0,
@@ -2990,6 +3019,8 @@ async function initDb() {
   await ensureColumnExists('order_activity_log', 'source', 'TEXT');
   await ensureColumnExists('order_activity_log', 'details_json', 'TEXT');
   await migrateOrderActivityLogCompatibilityColumns();
+
+  await ensureColumnExists('groups', 'group_type', "TEXT NOT NULL DEFAULT 'item'");
 
   await ensureColumnExists('delivery_challans', 'order_id', 'INTEGER');
   await ensureColumnExists('delivery_challans', 'order_no', "TEXT DEFAULT ''");
@@ -10972,13 +11003,13 @@ async function groupWouldCreateCycle(groupId, parentGroupId) {
   return false;
 }
 
-async function saveGroup({ name, parentGroupId = null, unitId, id = null }) {
+async function saveGroup({ name, parentGroupId = null, unitId, id = null, groupType = 'item' }) {
   const trimmedName = String(name || '').trim();
   let normalizedParentId = parentGroupId == null ? null : Number(parentGroupId);
   const normalizedUnitId = Number(unitId);
 
   if (normalizedParentId == null && trimmedName !== 'Primary Group') {
-    const pg = await get('SELECT id FROM groups WHERE name = "Primary Group" AND parent_group_id IS NULL');
+    const pg = await get('SELECT id FROM groups WHERE name = "Primary Group" AND parent_group_id IS NULL AND group_type = ?', [groupType]);
     if (pg) {
       normalizedParentId = pg.id;
     }
@@ -11030,10 +11061,10 @@ async function saveGroup({ name, parentGroupId = null, unitId, id = null }) {
   if (id == null) {
     const result = await run(
       `
-      INSERT INTO groups (name, parent_group_id, unit_id, is_archived, created_at, updated_at)
-      VALUES (?, ?, ?, 0, ?, ?)
+      INSERT INTO groups (name, group_type, parent_group_id, unit_id, is_archived, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 0, ?, ?)
       `,
-      [trimmedName, normalizedParentId, normalizedUnitId, now, now],
+      [trimmedName, groupType, normalizedParentId, normalizedUnitId, now, now],
     );
     return getGroupRowById(result.lastID);
   }
@@ -11062,8 +11093,8 @@ async function saveGroup({ name, parentGroupId = null, unitId, id = null }) {
   }
 
   await run(
-    'UPDATE groups SET name = ?, parent_group_id = ?, unit_id = ?, updated_at = ? WHERE id = ?',
-    [trimmedName, normalizedParentId, normalizedUnitId, now, id],
+    'UPDATE groups SET name = ?, group_type = ?, parent_group_id = ?, unit_id = ?, updated_at = ? WHERE id = ?',
+    [trimmedName, groupType, normalizedParentId, normalizedUnitId, now, id],
   );
   return getGroupRowById(id);
 }
