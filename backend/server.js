@@ -2085,7 +2085,7 @@ async function initDb() {
           updated_at TEXT NOT NULL
         )
       `);
-      await run('INSERT INTO groups SELECT id, name, group_type, parent_group_id, unit_id, is_archived, created_at, updated_at FROM groups_old_migration');
+      await run('INSERT INTO groups (id, name, parent_group_id, unit_id, is_archived, created_at, updated_at) SELECT id, name, parent_group_id, unit_id, is_archived, created_at, updated_at FROM groups_old_migration');
       await run('DROP TABLE groups_old_migration');
       await run('COMMIT');
       await run('PRAGMA foreign_keys = ON');
