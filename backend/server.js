@@ -2877,6 +2877,32 @@ async function initDb() {
     )
   `);
 
+  // Migration for stale orders refactor
+  const checkAndDropStaleOrdersRef = async (tableName) => {
+    try {
+      const fks = await all(`PRAGMA foreign_key_list(${tableName})`);
+      const referencesOrders = fks.some(fk => fk.table === 'orders');
+      if (referencesOrders) {
+        await run(`DROP TABLE IF EXISTS ${tableName}`);
+        console.log(`Dropped stale table ${tableName} (referenced old 'orders' table)`);
+      }
+    } catch (e) {
+      // ignore
+    }
+  };
+
+  await checkAndDropStaleOrdersRef('delivery_challans');
+  await checkAndDropStaleOrdersRef('delivery_challan_order_items');
+  await checkAndDropStaleOrdersRef('order_po_documents');
+  await checkAndDropStaleOrdersRef('order_material_requirements');
+  await checkAndDropStaleOrdersRef('order_status_history');
+  await checkAndDropStaleOrdersRef('order_activity_log');
+  await checkAndDropStaleOrdersRef('dispatch_challan_order_items');
+  await checkAndDropStaleOrdersRef('order_pipeline_assignments');
+  await checkAndDropStaleOrdersRef('order_material_reservations');
+
+  await run('DROP TABLE IF EXISTS orders').catch(() => {});
+
   await run(`
     CREATE TABLE IF NOT EXISTS order_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
