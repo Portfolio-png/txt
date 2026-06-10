@@ -2,13 +2,14 @@ import '../../domain/order_entry.dart';
 import '../../domain/order_history.dart';
 import '../../domain/order_inputs.dart';
 import '../../domain/po_document.dart';
+import '../models/order_api_models.dart';
 
 abstract class OrderRepository {
   Future<void> init();
   Future<List<OrderEntry>> getOrders();
   Future<OrderEntry> createOrder(CreateOrderInput input);
   Future<OrderEntry> updateOrder(int orderId, CreateOrderInput input);
-  Future<void> deleteOrder(int orderId, {String? wipBarcode, double? wipQty});
+  Future<List<OrderDeletionSummary>> deleteOrder(int orderId, {String? wipBarcode, double? wipQty});
   Future<OrderEntry> updateOrderLifecycle(UpdateOrderLifecycleInput input);
   Future<PoUploadIntent> createPoUploadIntent(PoUploadIntentInput input);
   Future<PoDocumentEntry> completePoUpload(CompletePoUploadInput input);

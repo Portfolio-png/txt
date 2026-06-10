@@ -7,6 +7,48 @@ OrderStatus _statusFromJson(String value) {
   return orderStatusFromName(value);
 }
 
+class OrderDeletionSummary {
+  const OrderDeletionSummary({
+    required this.barcode,
+    required this.qty,
+    required this.reason,
+  });
+
+  final String barcode;
+  final double qty;
+  final String reason;
+
+  factory OrderDeletionSummary.fromJson(Map<String, dynamic> json) {
+    return OrderDeletionSummary(
+      barcode: json['barcode'] as String? ?? '',
+      qty: (json['qty'] as num? ?? 0).toDouble(),
+      reason: json['reason'] as String? ?? '',
+    );
+  }
+}
+
+class OrderDeletionResponse {
+  const OrderDeletionResponse({
+    required this.success,
+    required this.recoveredMovements,
+    this.error,
+  });
+
+  final bool success;
+  final List<OrderDeletionSummary> recoveredMovements;
+  final String? error;
+
+  factory OrderDeletionResponse.fromJson(Map<String, dynamic> json) {
+    return OrderDeletionResponse(
+      success: json['success'] as bool? ?? false,
+      recoveredMovements: (json['recoveredMovements'] as List<dynamic>? ?? const [])
+          .map((item) => OrderDeletionSummary.fromJson(item as Map<String, dynamic>))
+          .toList(growable: false),
+      error: json['error'] as String?,
+    );
+  }
+}
+
 class OrderDto {
   const OrderDto({
     required this.id,

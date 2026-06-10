@@ -33,6 +33,7 @@ import '../../domain/order_entry.dart';
 import '../../domain/order_history.dart';
 import '../../domain/order_inputs.dart';
 import '../../domain/po_document.dart';
+import '../../data/models/order_api_models.dart';
 import '../providers/orders_provider.dart';
 
 Map<ShortcutActivator, VoidCallback> _submitShortcutBindings(
@@ -1490,9 +1491,13 @@ Future<void> _handleDelete(BuildContext context, OrderGroup group) async {
     if (result == null) return;
     
     if (context.mounted) {
-      final success = await context.read<OrdersProvider>().deleteOrder(group.items.first.id, wipBarcode: result.barcode, wipQty: result.qty);
-      if (success && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order dissolved and WIP recovered.')));
+      final summary = await context.read<OrdersProvider>().deleteOrder(group.items.first.id, wipBarcode: result.barcode, wipQty: result.qty);
+      if (summary != null && context.mounted) {
+        if (summary.isNotEmpty) {
+           _showDeletionSummary(context, summary);
+        } else {
+           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order dissolved successfully.')));
+        }
       }
     }
   } else {
@@ -1512,12 +1517,68 @@ Future<void> _handleDelete(BuildContext context, OrderGroup group) async {
       ),
     );
     if (confirm == true && context.mounted) {
-      final success = await context.read<OrdersProvider>().deleteOrder(group.items.first.id);
-      if (success && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order deleted successfully.')));
+      final summary = await context.read<OrdersProvider>().deleteOrder(group.items.first.id);
+      if (summary != null && context.mounted) {
+        if (summary.isNotEmpty) {
+           _showDeletionSummary(context, summary);
+        } else {
+           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order deleted successfully.')));
+        }
       }
     }
   }
+}
+
+void _showDeletionSummary(BuildContext context, List<OrderDeletionSummary> summary) {
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Order Deleted & Inventory Recovered'),
+      content: SizedBox(
+        width: 450,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('The following materials were recovered to inventory:'),
+            const SizedBox(height: 16),
+            ...summary.map((item) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  const Icon(Icons.inventory_2_outlined, size: 16, color: SoftErpTheme.textSecondary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      item.barcode,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  Text('${item.qty} units', style: const TextStyle(fontWeight: FontWeight.w500)),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: Colors.grey.shade300)
+                    ),
+                    child: Text(item.reason, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                  )
+                ],
+              ),
+            )),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(),
+          child: const Text('OK'),
+        ),
+      ],
+    ),
+  );
 }
 
 class _DissolutionDialog extends StatefulWidget {
@@ -3835,8 +3896,8 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       final currentLineIds = _lines.map((l) => l.id).toSet();
       for (final item in widget.initialOrderGroup!.items) {
         if (!currentLineIds.contains(item.id)) {
-          final delSuccess = await ordersProvider.deleteOrder(item.id);
-          if (!delSuccess) {
+          final delSummary = await ordersProvider.deleteOrder(item.id);
+          if (delSummary == null) {
             result = null; // stop on error
             break;
           }

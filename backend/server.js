@@ -18036,6 +18036,7 @@ app.delete('/api/orders/:id', requirePermission('config.write'), async (req, res
 
     const wipBarcode = req.body?.wip_barcode;
     const wipQty = Number(req.body?.wip_qty || 0);
+    const recoveredMovements = [];
 
     const assignments = await all('SELECT * FROM order_pipeline_assignments WHERE order_item_id = ?', [orderId]);
     for (const assignment of assignments) {
@@ -18060,6 +18061,7 @@ app.delete('/api/orders/:id', requirePermission('config.write'), async (req, res
             reasonCode: 'ORDER_DELETED',
             toLocationId: move.from_location_id || 'MAIN'
           }, { useTransaction: false });
+          recoveredMovements.push({ barcode: move.material_barcode, qty, reason: 'Raw Material Recovery' });
         }
       }
 
@@ -18078,6 +18080,7 @@ app.delete('/api/orders/:id', requirePermission('config.write'), async (req, res
         reasonCode: 'WIP_RECOVERY',
         toLocationId: 'MAIN'
       }, { useTransaction: false });
+      recoveredMovements.push({ barcode: wipBarcode, qty: wipQty, reason: 'WIP Recovery' });
     }
 
     await run('DELETE FROM order_pipeline_assignments WHERE order_item_id = ?', [orderId]);
@@ -18102,7 +18105,7 @@ app.delete('/api/orders/:id', requirePermission('config.write'), async (req, res
     ).catch(() => {});
 
     await run('COMMIT');
-    res.json({ success: true, error: null });
+    res.json({ success: true, recoveredMovements, error: null });
   } catch (error) {
     await run('ROLLBACK').catch(() => {});
     res.status(error.statusCode || 500).json({ success: false, error: error.message });

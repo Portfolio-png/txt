@@ -6,6 +6,8 @@ import '../../domain/order_inputs.dart';
 import '../../domain/po_document.dart';
 import '../../data/repositories/order_repository.dart';
 
+import '../../data/models/order_api_models.dart';
+
 class OrdersProvider extends ChangeNotifier {
   OrdersProvider({required OrderRepository repository})
     : _repository = repository;
@@ -123,18 +125,18 @@ class OrdersProvider extends ChangeNotifier {
     return _save(() => _repository.updateOrder(orderId, input));
   }
 
-  Future<bool> deleteOrder(int orderId, {String? wipBarcode, double? wipQty}) async {
+  Future<List<OrderDeletionSummary>?> deleteOrder(int orderId, {String? wipBarcode, double? wipQty}) async {
     _isSaving = true;
     _errorMessage = null;
     notifyListeners();
     try {
-      await _repository.deleteOrder(orderId, wipBarcode: wipBarcode, wipQty: wipQty);
+      final summary = await _repository.deleteOrder(orderId, wipBarcode: wipBarcode, wipQty: wipQty);
       await refresh();
-      return true;
+      return summary;
     } catch (error) {
       _errorMessage = error.toString();
       notifyListeners();
-      return false;
+      return null;
     } finally {
       _isSaving = false;
       notifyListeners();
