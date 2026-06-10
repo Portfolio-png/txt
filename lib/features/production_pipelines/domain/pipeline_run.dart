@@ -18,6 +18,8 @@ class PipelineRun {
     this.orderNo,
     this.clientName,
     this.orderItemId,
+    this.scrapRouting = 'inventory',
+    this.nodeMetrics = const {},
   });
 
   final String id;
@@ -34,6 +36,8 @@ class PipelineRun {
   final String? orderNo;
   final String? clientName;
   final int? orderItemId;
+  final String scrapRouting;
+  final Map<String, Map<String, dynamic>> nodeMetrics;
 
   factory PipelineRun.fromJson(Map<String, dynamic> json) {
     return PipelineRun(
@@ -66,6 +70,15 @@ class PipelineRun {
               ),
             ),
       ),
+      scrapRouting: json['scrapRouting'] as String? ?? 'inventory',
+      nodeMetrics: Map<String, Map<String, dynamic>>.fromEntries(
+        (json['nodeMetrics'] as Map<String, dynamic>? ?? const {}).entries.map(
+              (entry) => MapEntry(
+                entry.key,
+                entry.value as Map<String, dynamic>? ?? const {},
+              ),
+            ),
+      ),
       createdAt:
           DateTime.tryParse(json['createdAt'] as String? ?? '') ??
           DateTime.now(),
@@ -91,6 +104,8 @@ class PipelineRun {
     DateTime? completedAt,
     String? orderNo,
     String? clientName,
+    String? scrapRouting,
+    Map<String, Map<String, dynamic>>? nodeMetrics,
   }) {
     return PipelineRun(
       id: id ?? this.id,
@@ -107,6 +122,8 @@ class PipelineRun {
       completedAt: completedAt ?? this.completedAt,
       orderNo: orderNo ?? this.orderNo,
       clientName: clientName ?? this.clientName,
+      scrapRouting: scrapRouting ?? this.scrapRouting,
+      nodeMetrics: nodeMetrics ?? this.nodeMetrics,
     );
   }
 
@@ -132,6 +149,8 @@ class PipelineRun {
       'completedAt': completedAt?.toIso8601String(),
       'orderNo': orderNo,
       'clientName': clientName,
+      'scrapRouting': scrapRouting,
+      'nodeMetrics': nodeMetrics,
     };
   }
 }

@@ -9,6 +9,7 @@ import 'package:core_erp/features/inventory/domain/material_record.dart';
 
 import '../domain/utils/material_ledger_distributor.dart';
 import '../providers/production_provider.dart';
+import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
 
 class MaterialLedgerClosureDialog extends StatefulWidget {
   const MaterialLedgerClosureDialog({super.key});
@@ -23,18 +24,26 @@ class _MaterialLedgerClosureDialogState
   late LedgerWeights _weights;
   bool _isCommitting = false;
   String? _selectedParentBarcode;
+  double _remainingKg = 0.0;
+  double _assignedKg = 0.0;
 
   @override
   void initState() {
     super.initState();
     final provider = context.read<ProductionProvider>();
+    _assignedKg = provider.parentReelConsumedKg;
     _weights = MaterialLedgerDistributor.initialDistribution(
-      parentKg: provider.parentReelConsumedKg,
+      parentKg: _assignedKg,
       initialYieldCount: provider.goodYieldCount == 0
           ? 0
           : provider.goodYieldCount,
       initialScrapWeightKg: provider.scrapWeightKg,
     );
+  }
+
+  void _recalcParentKg() {
+    final consumed = (_assignedKg - _remainingKg).clamp(0.0, double.infinity);
+    _weights = MaterialLedgerDistributor.updateParent(_weights, consumed);
   }
 
   void _update({
@@ -47,7 +56,10 @@ class _MaterialLedgerClosureDialogState
   }) {
     setState(() {
       if (parentKg != null) {
+        // Manually editing Consumed overrides Assigned -> Remaining logic,
+        // or we can just say _remainingKg = _assignedKg - parentKg
         _weights = MaterialLedgerDistributor.updateParent(_weights, parentKg);
+        _remainingKg = (_assignedKg - parentKg).clamp(0.0, double.infinity);
       } else if (yieldUnits != null) {
         _weights = MaterialLedgerDistributor.updateYield(_weights, yieldUnits);
       } else if (scrapKg != null) {
@@ -137,6 +149,8 @@ class _MaterialLedgerClosureDialogState
                     final editor = _LedgerEditor(
                       materials: inventory.materials,
                       selectedParentBarcode: _selectedParentBarcode,
+                      assignedKg: _assignedKg,
+                      remainingKg: _remainingKg,
                       parentKg: _weights.parentKg,
                       yieldUnits: _weights.yieldUnits,
                       scrapKg: _weights.scrapKg,
@@ -144,6 +158,13 @@ class _MaterialLedgerClosureDialogState
                       setupKg: _weights.setupKg,
                       processKg: _weights.processKg,
                       onParentBarcodeSelected: (val) => setState(() => _selectedParentBarcode = val),
+                      onRemainingChanged: (value) {
+                        setState(() {
+                          _remainingKg = value.clamp(0.0, _assignedKg);
+                          _recalcParentKg();
+                        });
+                        _syncProvider();
+                      },
                       onParentChanged: (value) => _update(parentKg: value),
                       onYieldChanged: (value) => _update(yieldUnits: value),
                       onScrapChanged: (value) => _update(scrapKg: value),
@@ -243,7 +264,10 @@ class _MaterialLedgerClosureDialogState
     try {
       final provider = context.read<ProductionProvider>();
       final repo = context.read<InventoryRepository>();
+      final pipelineRepo = context.read<PipelineRunRepository>();
       final activeOperator = provider.activeOperator;
+      final activeRun = provider.activeRun;
+      final selectedNodeId = provider.selectedNode?.id;
 
       // Sync local provider UI values just in case
       _syncProvider();
@@ -263,17 +287,40 @@ class _MaterialLedgerClosureDialogState
         ),
       );
 
-      // 2. Adjust Scrap out
+      // 2. Handle Scrap Destination
       if (_weights.scrapKg > 0) {
-        await repo.createInventoryMovement(
-          CreateInventoryMovementInput(
-            materialBarcode: _selectedParentBarcode!,
-            movementType: InventoryMovementType.adjust,
-            qty: -_weights.scrapKg,
-            reasonCode: 'SCRAP_WASTAGE',
-            actor: activeOperator,
-          ),
-        );
+        if (activeRun != null && selectedNodeId != null) {
+          final run = await pipelineRepo.getRun(activeRun.id);
+          if (run?.scrapRouting == 'scrap_table') {
+            await pipelineRepo.logProductionScrap(
+              runId: activeRun.id,
+              nodeId: selectedNodeId,
+              materialBarcode: _selectedParentBarcode!,
+              scrapQty: _weights.scrapKg,
+              orderNo: run?.orderNo,
+            );
+          } else {
+            await repo.createInventoryMovement(
+              CreateInventoryMovementInput(
+                materialBarcode: _selectedParentBarcode!,
+                movementType: InventoryMovementType.adjust,
+                qty: -_weights.scrapKg,
+                reasonCode: 'SCRAP_WASTAGE',
+                actor: activeOperator,
+              ),
+            );
+          }
+        } else {
+          await repo.createInventoryMovement(
+            CreateInventoryMovementInput(
+              materialBarcode: _selectedParentBarcode!,
+              movementType: InventoryMovementType.adjust,
+              qty: -_weights.scrapKg,
+              reasonCode: 'SCRAP_WASTAGE',
+              actor: activeOperator,
+            ),
+          );
+        }
       }
 
       // 3. Receive Yield
@@ -304,6 +351,22 @@ class _MaterialLedgerClosureDialogState
       }
 
       if (!mounted) return;
+      
+      if (activeRun != null && selectedNodeId != null) {
+        try {
+          await pipelineRepo.updateNodeMetrics(
+            runId: activeRun.id,
+            nodeId: selectedNodeId,
+            metrics: {
+              'remaining': _remainingKg,
+              'scrap': _weights.scrapKg,
+            },
+          );
+        } catch (e) {
+          debugPrint('Failed to save node metrics: $e');
+        }
+      }
+
       context.read<ProductionProvider>().commitClosure();
       Navigator.of(context).pop(true);
     } catch (e) {
@@ -328,6 +391,8 @@ class _LedgerEditor extends StatelessWidget {
   const _LedgerEditor({
     required this.materials,
     required this.selectedParentBarcode,
+    required this.assignedKg,
+    required this.remainingKg,
     required this.parentKg,
     required this.yieldUnits,
     required this.scrapKg,
@@ -335,6 +400,7 @@ class _LedgerEditor extends StatelessWidget {
     required this.setupKg,
     required this.processKg,
     required this.onParentBarcodeSelected,
+    required this.onRemainingChanged,
     required this.onParentChanged,
     required this.onYieldChanged,
     required this.onScrapChanged,
@@ -346,6 +412,8 @@ class _LedgerEditor extends StatelessWidget {
   final List<MaterialRecord> materials;
   final String? selectedParentBarcode;
 
+  final double assignedKg;
+  final double remainingKg;
   final double parentKg;
   final int yieldUnits;
   final double scrapKg;
@@ -354,6 +422,7 @@ class _LedgerEditor extends StatelessWidget {
   final double processKg;
 
   final ValueChanged<String?> onParentBarcodeSelected;
+  final ValueChanged<double> onRemainingChanged;
   final ValueChanged<double> onParentChanged;
   final ValueChanged<int> onYieldChanged;
   final ValueChanged<double> onScrapChanged;
@@ -376,9 +445,35 @@ class _LedgerEditor extends StatelessWidget {
           ),
           const SizedBox(height: 8),
 
+          // Assigned Row (Read-Only)
+          _EditableLedgerRow<double>(
+            code: selectedParentBarcode ?? 'ASSIGNED_STOCK',
+            label: 'Assigned',
+            value: assignedKg,
+            unit: 'Kg',
+            formatter: (value) => value.toStringAsFixed(2),
+            parser: (value) => double.tryParse(value) ?? assignedKg,
+            onChanged: (val) {}, // Read-only
+            onIncrement: () {},
+            onDecrement: () {},
+          ),
+
+          // Remaining Row
+          _EditableLedgerRow<double>(
+            code: 'REMAINING_STOCK',
+            label: 'Remaining',
+            value: remainingKg,
+            unit: 'Kg',
+            formatter: (value) => value.toStringAsFixed(2),
+            parser: (value) => double.tryParse(value) ?? remainingKg,
+            onChanged: onRemainingChanged,
+            onIncrement: () => onRemainingChanged((remainingKg + 1.0).clamp(0.0, assignedKg)),
+            onDecrement: () => onRemainingChanged((remainingKg - 1.0).clamp(0.0, assignedKg)),
+          ),
+
           // Consumed Row
           _EditableLedgerRow<double>(
-            code: selectedParentBarcode ?? 'SELECT_MATERIAL',
+            code: selectedParentBarcode ?? 'CONSUMED_MATERIAL',
             label: 'Consumed',
             value: parentKg,
             unit: 'Kg',

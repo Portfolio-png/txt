@@ -1493,11 +1493,7 @@ Future<void> _handleDelete(BuildContext context, OrderGroup group) async {
     if (context.mounted) {
       final summary = await context.read<OrdersProvider>().deleteOrder(group.items.first.id, wipBarcode: result.barcode, wipQty: result.qty);
       if (summary != null && context.mounted) {
-        if (summary.isNotEmpty) {
-           _showDeletionSummary(context, summary);
-        } else {
-           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order dissolved successfully.')));
-        }
+         _showDeletionSummary(context, summary, wasStarted: true);
       }
     }
   } else {
@@ -1519,17 +1515,13 @@ Future<void> _handleDelete(BuildContext context, OrderGroup group) async {
     if (confirm == true && context.mounted) {
       final summary = await context.read<OrdersProvider>().deleteOrder(group.items.first.id);
       if (summary != null && context.mounted) {
-        if (summary.isNotEmpty) {
-           _showDeletionSummary(context, summary);
-        } else {
-           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order deleted successfully.')));
-        }
+        _showDeletionSummary(context, summary, wasStarted: false);
       }
     }
   }
 }
 
-void _showDeletionSummary(BuildContext context, List<OrderDeletionSummary> summary) {
+void _showDeletionSummary(BuildContext context, List<OrderDeletionSummary> summary, {required bool wasStarted}) {
   showDialog(
     context: context,
     builder: (ctx) => AlertDialog(
@@ -1540,34 +1532,39 @@ void _showDeletionSummary(BuildContext context, List<OrderDeletionSummary> summa
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('The following materials were recovered to inventory:'),
-            const SizedBox(height: 16),
-            ...summary.map((item) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                children: [
-                  const Icon(Icons.inventory_2_outlined, size: 16, color: SoftErpTheme.textSecondary),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      item.barcode,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+            if (summary.isEmpty)
+              const Text('No materials were recovered to inventory because no raw materials were consumed and no WIP was specified.')
+            else ...[
+              const Text('The following materials were recovered to inventory:'),
+              const SizedBox(height: 16),
+              ...summary.map((item) => Padding(
+                // ...
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    const Icon(Icons.inventory_2_outlined, size: 16, color: SoftErpTheme.textSecondary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        item.barcode,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
                     ),
-                  ),
-                  Text('${item.qty} units', style: const TextStyle(fontWeight: FontWeight.w500)),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: Colors.grey.shade300)
-                    ),
-                    child: Text(item.reason, style: const TextStyle(fontSize: 10, color: Colors.grey)),
-                  )
-                ],
-              ),
-            )),
+                    Text('${item.qty} units', style: const TextStyle(fontWeight: FontWeight.w500)),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.grey.shade300)
+                      ),
+                      child: Text(item.reason, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                    )
+                  ],
+                ),
+              )),
+            ],
           ],
         ),
       ),

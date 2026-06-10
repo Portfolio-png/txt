@@ -116,7 +116,7 @@ class SqlitePipelineRunRepository implements PipelineRunRepository {
   }
 
   @override
-  Future<PipelineRun> createRun(String templateId, {String? name, String? orderNo, int? orderItemId}) async {
+  Future<PipelineRun> createRun(String templateId, {String? name, String? orderNo, int? orderItemId, String? scrapRouting}) async {
     final db = await _dbHelper.database;
     final template = await getTemplate(templateId);
     if (template == null) {
@@ -431,5 +431,25 @@ class SqlitePipelineRunRepository implements PipelineRunRepository {
     // Basic mock implementation for offline mode
     // Real implementation would join with order_pipeline_assignments
     return [];
+  }
+
+  @override
+  Future<PipelineRun> updateNodeMetrics({
+    required String runId,
+    required String nodeId,
+    required Map<String, dynamic> metrics,
+  }) async {
+    throw UnimplementedError('Sqlite mock not implemented for updateNodeMetrics');
+  }
+
+  @override
+  Future<void> logProductionScrap({
+    required String runId,
+    required String nodeId,
+    required String materialBarcode,
+    required double scrapQty,
+    String? orderNo,
+  }) async {
+    throw UnimplementedError('Sqlite mock not implemented for logProductionScrap');
   }
 }

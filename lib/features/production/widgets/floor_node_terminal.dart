@@ -5,6 +5,7 @@ import '../../production_pipelines/domain/pipeline_run.dart';
 import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
 import '../providers/production_run_provider.dart';
 import '../domain/models/floor_view_models.dart';
+import 'editable_metric_box.dart';
 
 class FloorNodeTerminal extends StatelessWidget {
   const FloorNodeTerminal({
@@ -128,6 +129,10 @@ class FloorNodeTerminal extends StatelessWidget {
                 ),
                 const SizedBox(width: 20),
                 _AssignedStockMetric(nodeId: node.id),
+                const SizedBox(width: 20),
+                EditableMetricBox(nodeId: node.id, metricKey: 'remaining', label: 'REMAINING'),
+                const SizedBox(width: 20),
+                EditableMetricBox(nodeId: node.id, metricKey: 'scrap', label: 'SCRAP'),
                 const SizedBox(width: 20),
                 _MetricBox(
                   label: 'OUTPUT',

@@ -1738,6 +1738,8 @@ async function rowToRun(row) {
     status: row.status || 'planned',
     overrides: parseJson(row.overrides_json, {}),
     nodeStatuses: parseJson(row.node_status_json, {}),
+    scrapRouting: row.scrap_routing || 'inventory',
+    nodeMetrics: parseJson(row.node_metrics_json, {}),
     attachedBarcodeInputs,
     startedAt: row.started_at,
     completedAt: row.completed_at,
@@ -3483,6 +3485,24 @@ async function initDb() {
       created_at TEXT DEFAULT (datetime('now'))
     )
   `);
+
+  await ensureColumnExists('pipeline_runs', 'scrap_routing', "TEXT DEFAULT 'inventory'");
+  await ensureColumnExists('pipeline_runs', 'node_metrics_json', "TEXT DEFAULT '{}'");
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS production_scrap (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pipeline_run_id TEXT NOT NULL REFERENCES pipeline_runs(id),
+      node_id TEXT NOT NULL,
+      order_no TEXT,
+      material_barcode TEXT NOT NULL,
+      scrap_qty REAL NOT NULL DEFAULT 0,
+      logged_by TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
 
   await run(`
     CREATE TABLE IF NOT EXISTS run_barcode_inputs (
@@ -14802,7 +14822,7 @@ async function ensureDemoMaterialsPresent() {
   }
 }
 
-async function createRunFromTemplate(templateId, name, orderNo, orderItemId) {
+async function createRunFromTemplate(templateId, name, orderNo, orderItemId, scrapRouting = 'inventory') {
   const templateRow = await get(
     'SELECT * FROM pipeline_templates WHERE id = ?',
     [templateId],
@@ -14821,8 +14841,8 @@ async function createRunFromTemplate(templateId, name, orderNo, orderItemId) {
     `
     INSERT INTO pipeline_runs (
       id, template_id, template_version, name, status, overrides_json,
-      node_status_json, started_at, completed_at, created_at
-    ) VALUES (?, ?, ?, ?, 'planned', ?, ?, NULL, NULL, ?)
+      node_status_json, scrap_routing, node_metrics_json, started_at, completed_at, created_at
+    ) VALUES (?, ?, ?, ?, 'planned', ?, ?, ?, '{}', NULL, NULL, ?)
     `,
     [
       runId,
@@ -14835,6 +14855,7 @@ async function createRunFromTemplate(templateId, name, orderNo, orderItemId) {
         machineOverrideByNode: {},
       }),
       JSON.stringify(nodeStatuses),
+      scrapRouting,
       now,
     ],
   );
@@ -18904,7 +18925,7 @@ app.get('/runs', requirePermission('config.read'), async (req, res) => {
 
 app.post('/runs', async (req, res) => {
   try {
-    const { templateId, name, orderNo, orderItemId } = req.body || {};
+    const { templateId, name, orderNo, orderItemId, scrapRouting } = req.body || {};
     if (!templateId) {
       res.status(400).json({
         success: false,
@@ -18913,7 +18934,7 @@ app.post('/runs', async (req, res) => {
       });
       return;
     }
-    const run = await createRunFromTemplate(templateId, name, orderNo, orderItemId);
+    const run = await createRunFromTemplate(templateId, name, orderNo, orderItemId, scrapRouting || 'inventory');
     if (!run) {
       res.status(404).json({
         success: false,
@@ -19460,6 +19481,70 @@ if (require.main === module) {
     process.exit(1);
   });
 }
+
+
+app.put('/runs/:id/node-metrics', async (req, res) => {
+  try {
+    const { nodeId, metrics } = req.body;
+    if (!nodeId || !metrics) {
+      return res.status(400).json({ success: false, run: null, error: 'nodeId and metrics are required.' });
+    }
+    const runRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
+    if (!runRow) {
+      return res.status(404).json({ success: false, run: null, error: 'Run not found.' });
+    }
+    
+    const nodeMetrics = parseJson(runRow.node_metrics_json, {});
+    nodeMetrics[nodeId] = { ...(nodeMetrics[nodeId] || {}), ...metrics };
+    
+    await run('UPDATE pipeline_runs SET node_metrics_json = ? WHERE id = ?', [
+      JSON.stringify(nodeMetrics),
+      req.params.id,
+    ]);
+    
+    const updatedRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
+    res.json({ success: true, run: await rowToRun(updatedRow) });
+  } catch (error) {
+    res.status(500).json({ success: false, run: null, error: error.message });
+  }
+});
+
+app.post('/api/production-scrap', requirePermission('config.write'), async (req, res) => {
+  try {
+    const { pipelineRunId, nodeId, orderNo, materialBarcode, scrapQty } = req.body;
+    if (!pipelineRunId || !nodeId || !materialBarcode) {
+      return res.status(400).json({ success: false, error: 'pipelineRunId, nodeId, and materialBarcode are required.' });
+    }
+    await run(`
+      INSERT INTO production_scrap (pipeline_run_id, node_id, order_no, material_barcode, scrap_qty, logged_by)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [pipelineRunId, nodeId, orderNo, materialBarcode, scrapQty, actorFromRequest(req)]);
+    res.status(201).json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/production-scrap', requirePermission('config.read'), async (req, res) => {
+  try {
+    const { pipelineRunId, nodeId } = req.query;
+    let query = 'SELECT * FROM production_scrap WHERE 1=1';
+    const params = [];
+    if (pipelineRunId) {
+      query += ' AND pipeline_run_id = ?';
+      params.push(pipelineRunId);
+    }
+    if (nodeId) {
+      query += ' AND node_id = ?';
+      params.push(nodeId);
+    }
+    query += ' ORDER BY created_at DESC';
+    const rows = await all(query, params);
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 module.exports = {
   app,

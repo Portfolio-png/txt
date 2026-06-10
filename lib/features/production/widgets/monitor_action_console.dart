@@ -84,26 +84,57 @@ class RemoteActionConsole extends StatelessWidget {
     final run = context.read<ProductionRunProvider>();
     
     // Simulate remote deployment confirmation
+    String selectedScrapRouting = 'inventory';
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.white,
-        title: const Text('Deploy Configuration', style: TextStyle(color: Color(0xFF0F172A))),
-        content: const Text(
-          'This will push the active routing specs to the physical machine and initialize the run.',
-          style: TextStyle(color: Color(0xFF475569)),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('CANCEL', style: TextStyle(color: Color(0xFF64748B))),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981)),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('DEPLOY', style: TextStyle(color: Colors.white)),
-          ),
-        ],
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            backgroundColor: Colors.white,
+            title: const Text('Deploy Configuration', style: TextStyle(color: Color(0xFF0F172A))),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'This will push the active routing specs to the physical machine and initialize the run.',
+                  style: TextStyle(color: Color(0xFF475569)),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'Scrap Destination',
+                  style: TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: selectedScrapRouting,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'inventory', child: Text('Return to Inventory')),
+                    DropdownMenuItem(value: 'scrap_table', child: Text('Send to Scrap Table')),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) setState(() => selectedScrapRouting = val);
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('CANCEL', style: TextStyle(color: Color(0xFF64748B))),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981)),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('DEPLOY', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          );
+        }
       ),
     );
 
@@ -116,12 +147,12 @@ class RemoteActionConsole extends StatelessWidget {
         runId = run.runId!;
       } else {
         try {
-          final newRun = await repo.createRun(template.id, name: '${template.name} Run');
+          final newRun = await repo.createRun(template.id, name: '${template.name} Run', scrapRouting: selectedScrapRouting);
           runId = newRun.id;
         } catch (e) {
           // Fallback: create template first if it doesn't exist
           await repo.createTemplate(template);
-          final newRun = await repo.createRun(template.id, name: '${template.name} Run');
+          final newRun = await repo.createRun(template.id, name: '${template.name} Run', scrapRouting: selectedScrapRouting);
           runId = newRun.id;
         }
       }

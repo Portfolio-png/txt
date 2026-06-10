@@ -13,7 +13,7 @@ abstract class PipelineRunRepository {
   Future<PipelineTemplate?> getTemplate(String id);
   Future<List<PipelineRun>> getRuns({String? templateId});
   Future<List<PipelineRun>> getRunsForOrder(String orderNo);
-  Future<PipelineRun> createRun(String templateId, {String? name, String? orderNo, int? orderItemId});
+  Future<PipelineRun> createRun(String templateId, {String? name, String? orderNo, int? orderItemId, String? scrapRouting});
   Future<PipelineRun?> getRun(String id);
   Future<PipelineRun> updateNodeStatus({
     required String runId,
@@ -39,6 +39,18 @@ abstract class PipelineRunRepository {
     required String runId,
     required String nodeId,
     required String barcode,
+  });
+  Future<PipelineRun> updateNodeMetrics({
+    required String runId,
+    required String nodeId,
+    required Map<String, dynamic> metrics,
+  });
+  Future<void> logProductionScrap({
+    required String runId,
+    required String nodeId,
+    required String materialBarcode,
+    required double scrapQty,
+    String? orderNo,
   });
 }
 
@@ -131,12 +143,12 @@ class ApiPipelineRunRepository implements PipelineRunRepository {
   }
 
   @override
-  Future<PipelineRun> createRun(String templateId, {String? name, String? orderNo, int? orderItemId}) async {
+  Future<PipelineRun> createRun(String templateId, {String? name, String? orderNo, int? orderItemId, String? scrapRouting}) async {
     final uri = Uri.parse('$baseUrl/runs');
     final response = await _client.post(
       uri,
       headers: const {'Content-Type': 'application/json'},
-      body: jsonEncode({'templateId': templateId, 'name': name, 'orderNo': orderNo, 'orderItemId': orderItemId}),
+      body: jsonEncode({'templateId': templateId, 'name': name, 'orderNo': orderNo, 'orderItemId': orderItemId, 'scrapRouting': scrapRouting}),
     );
     final payload = _decodeJson(response.body) as Map<String, dynamic>;
     _ensureSuccess(response.statusCode, payload, 'Failed to create run.');
@@ -252,6 +264,50 @@ class ApiPipelineRunRepository implements PipelineRunRepository {
       'Failed to detach barcode from run node.',
     );
     return PipelineRun.fromJson(payload['run'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<PipelineRun> updateNodeMetrics({
+    required String runId,
+    required String nodeId,
+    required Map<String, dynamic> metrics,
+  }) async {
+    final uri = Uri.parse('$baseUrl/runs/$runId/node-metrics');
+    final response = await _client.put(
+      uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'nodeId': nodeId,
+        'metrics': metrics,
+      }),
+    );
+    final payload = _decodeJson(response.body) as Map<String, dynamic>;
+    _ensureSuccess(response.statusCode, payload, 'Failed to update node metrics.');
+    return PipelineRun.fromJson(payload['run'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<void> logProductionScrap({
+    required String runId,
+    required String nodeId,
+    required String materialBarcode,
+    required double scrapQty,
+    String? orderNo,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/production-scrap');
+    final response = await _client.post(
+      uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'pipelineRunId': runId,
+        'nodeId': nodeId,
+        'materialBarcode': materialBarcode,
+        'scrapQty': scrapQty,
+        'orderNo': orderNo,
+      }),
+    );
+    final payload = _decodeJson(response.body) as Map<String, dynamic>;
+    _ensureSuccess(response.statusCode, payload, 'Failed to log production scrap.');
   }
 
   void _ensureSuccess(
