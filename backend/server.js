@@ -2058,6 +2058,23 @@ function buildSeedTemplates() {
 async function initDb() {
   await enableForeignKeys();
 
+  // Fix broken foreign key references caused by previous groups_old_migration rename
+  try {
+    const brokenTables = await all("SELECT name FROM sqlite_master WHERE sql LIKE '%groups_old_migration%' AND type='table'");
+    if (brokenTables.length > 0) {
+      console.log('Fixing broken foreign key references from groups_old_migration...');
+      await run('PRAGMA writable_schema = ON');
+      await run("UPDATE sqlite_master SET sql = replace(sql, 'groups_old_migration', 'groups') WHERE sql LIKE '%groups_old_migration%' AND type='table'");
+      await run('PRAGMA writable_schema = OFF');
+      
+      const { schema_version } = await get('PRAGMA schema_version');
+      await run(`PRAGMA schema_version = ${schema_version + 1}`);
+      console.log('Fixed broken foreign keys successfully.');
+    }
+  } catch (err) {
+    console.error('Failed to fix groups_old_migration references:', err);
+  }
+
   // Migration: drop tables that still reference the old 'orders' table
   // (from the orders -> order_items refactor).  Must run BEFORE any
   // CREATE TABLE IF NOT EXISTS so those statements will re-create them
