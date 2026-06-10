@@ -2058,6 +2058,37 @@ function buildSeedTemplates() {
 async function initDb() {
   await enableForeignKeys();
 
+  // Migration: drop tables that still reference the old 'orders' table
+  // (from the orders -> order_items refactor).  Must run BEFORE any
+  // CREATE TABLE IF NOT EXISTS so those statements will re-create them
+  // with the correct foreign keys pointing at order_items.
+  const checkAndDropStaleOrdersRef = async (tableName) => {
+    try {
+      const fks = await all(`PRAGMA foreign_key_list(${tableName})`);
+      const referencesOrders = fks.some(fk => fk.table === 'orders');
+      if (referencesOrders) {
+        await run(`DROP TABLE IF EXISTS ${tableName}`);
+        console.log(`Dropped stale table ${tableName} (referenced old 'orders' table)`);
+      }
+    } catch (e) {
+      // table may not exist yet – that's fine
+    }
+  };
+  await checkAndDropStaleOrdersRef('delivery_challans');
+  await checkAndDropStaleOrdersRef('delivery_challan_items');
+  await checkAndDropStaleOrdersRef('delivery_challan_order_items');
+  await checkAndDropStaleOrdersRef('delivery_challan_report_groups');
+  await checkAndDropStaleOrdersRef('delivery_challan_activity_log');
+  await checkAndDropStaleOrdersRef('order_po_documents');
+  await checkAndDropStaleOrdersRef('order_material_requirements');
+  await checkAndDropStaleOrdersRef('order_status_history');
+  await checkAndDropStaleOrdersRef('order_activity_log');
+  await checkAndDropStaleOrdersRef('dispatch_challan_order_items');
+  await checkAndDropStaleOrdersRef('order_pipeline_assignments');
+  await checkAndDropStaleOrdersRef('order_material_reservations');
+  await run('DROP TABLE IF EXISTS orders').catch(() => {});
+
+
   // Migration for clients and vendors
   try { await run("ALTER TABLE clients ADD COLUMN logo_url TEXT DEFAULT ''"); } catch(e){}
   try { await run("ALTER TABLE clients ADD COLUMN photo_url TEXT DEFAULT ''"); } catch(e){}
@@ -2877,31 +2908,7 @@ async function initDb() {
     )
   `);
 
-  // Migration for stale orders refactor
-  const checkAndDropStaleOrdersRef = async (tableName) => {
-    try {
-      const fks = await all(`PRAGMA foreign_key_list(${tableName})`);
-      const referencesOrders = fks.some(fk => fk.table === 'orders');
-      if (referencesOrders) {
-        await run(`DROP TABLE IF EXISTS ${tableName}`);
-        console.log(`Dropped stale table ${tableName} (referenced old 'orders' table)`);
-      }
-    } catch (e) {
-      // ignore
-    }
-  };
 
-  await checkAndDropStaleOrdersRef('delivery_challans');
-  await checkAndDropStaleOrdersRef('delivery_challan_order_items');
-  await checkAndDropStaleOrdersRef('order_po_documents');
-  await checkAndDropStaleOrdersRef('order_material_requirements');
-  await checkAndDropStaleOrdersRef('order_status_history');
-  await checkAndDropStaleOrdersRef('order_activity_log');
-  await checkAndDropStaleOrdersRef('dispatch_challan_order_items');
-  await checkAndDropStaleOrdersRef('order_pipeline_assignments');
-  await checkAndDropStaleOrdersRef('order_material_reservations');
-
-  await run('DROP TABLE IF EXISTS orders').catch(() => {});
 
   await run(`
     CREATE TABLE IF NOT EXISTS order_items (
