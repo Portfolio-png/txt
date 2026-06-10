@@ -52,4 +52,8 @@ app.*.map.json
 .env.*
 !.env.example
 *.db
+*.db-wal
+*.db-shm
+*.db-wal.bak
+*.db-shm.bak
 backend/package-lock.json

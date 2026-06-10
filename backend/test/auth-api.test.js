@@ -384,6 +384,27 @@ test('clear-data preserves auth state and reset-demo-data rebuilds seeded worksp
       ],
     );
 
+    await backend.run(
+      `
+      INSERT INTO pipeline_templates (
+        id, name, version, stage_labels_json, lane_labels_json, nodes_json, flows_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+      ['tpl-clear-test', 'Clear Data Template', 1, '[]', '[]', '[]', '[]'],
+    );
+    await backend.run(
+      'INSERT INTO pipeline_runs (id, template_id, template_version) VALUES (?, ?, ?)',
+      ['run-clear-test', 'tpl-clear-test', 1],
+    );
+    await backend.run(
+      `
+      INSERT INTO production_scrap (
+        pipeline_run_id, node_id, material_barcode, scrap_qty, logged_by
+      ) VALUES (?, ?, ?, ?, ?)
+      `,
+      ['run-clear-test', 'node-1', material.barcode, 2.5, 'test'],
+    );
+
     await backend.saveUnit({
       name: 'Clear Length Base',
       symbol: 'clb',
@@ -439,6 +460,11 @@ test('clear-data preserves auth state and reset-demo-data rebuilds seeded worksp
       {},
     );
     assert.equal(clearResponse.status, 200);
+
+    const scrapAfterClear = await backend.get(
+      'SELECT COUNT(*) AS count FROM production_scrap',
+    );
+    assert.equal(Number(scrapAfterClear.count || 0), 0);
 
     const meAfterClear = await getJson(baseUrl, '/api/auth/me', owner.token);
     assert.equal(meAfterClear.status, 200);
@@ -550,6 +576,72 @@ test('clear-data preserves auth state and reset-demo-data rebuilds seeded worksp
     );
   } finally {
     await closeServer(server);
+    await backend.closeDb();
+  }
+});
+
+test('initDb drops legacy tables referencing the old orders table so clear-data succeeds', async () => {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'paper-stale-orders-'));
+  process.env.DB_PATH = path.join(tempDir, 'paper.db');
+  process.env.PAPER_SUPER_ADMIN_EMAIL = 'owner@paper.local';
+  process.env.PAPER_SUPER_ADMIN_PASSWORD = 'Qz79Luma4821';
+
+  const backend = loadBackend();
+  try {
+    // Simulate a pre-refactor database: a table whose FK points at the old
+    // 'orders' table which no longer exists (the source of
+    // "no such table: main.orders" errors during clear-data).
+    await backend.run('PRAGMA foreign_keys = OFF');
+    await backend.run(
+      'CREATE TABLE orders (id INTEGER PRIMARY KEY, order_no TEXT)',
+    );
+    await backend.run(
+      `
+      CREATE TABLE legacy_order_notes (
+        id INTEGER PRIMARY KEY,
+        order_id INTEGER NOT NULL REFERENCES orders(id),
+        note TEXT
+      )
+      `,
+    );
+    await backend.run(
+      "INSERT INTO orders (id, order_no) VALUES (1, 'ORD-1')",
+    );
+    await backend.run(
+      "INSERT INTO legacy_order_notes (id, order_id, note) VALUES (1, 1, 'stale')",
+    );
+    await backend.run('DROP TABLE orders');
+    await backend.run('PRAGMA foreign_keys = ON');
+
+    await backend.resetAndSeedDemoData();
+
+    const staleTable = await backend.get(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name = 'legacy_order_notes'",
+    );
+    assert.equal(
+      staleTable == null,
+      true,
+      'expected legacy table referencing orders to be dropped by initDb',
+    );
+
+    const { server, port } = await listen(backend.app);
+    const baseUrl = `http://127.0.0.1:${port}`;
+    try {
+      const owner = await login(baseUrl, 'owner@paper.local', 'Qz79Luma4821');
+      const clearResponse = await postJson(
+        baseUrl,
+        '/api/admin/clear-data',
+        owner.token,
+        {},
+      );
+      assert.equal(clearResponse.status, 200);
+
+      const fkState = await backend.get('PRAGMA foreign_keys');
+      assert.equal(Number(fkState.foreign_keys), 1);
+    } finally {
+      await closeServer(server);
+    }
+  } finally {
     await backend.closeDb();
   }
 });

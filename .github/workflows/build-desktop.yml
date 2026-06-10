@@ -32,12 +32,22 @@ jobs:
       # If you want CI builds to always point at a backend, set this repository secret:
       #   PAPER_API_BASE_URL
       # Push builds always use the secret (no demo fallback).
+      #
+      # Optional testing convenience: set PAPER_AUTO_LOGIN_EMAIL and
+      # PAPER_AUTO_LOGIN_PASSWORD secrets to bake auto-login into API builds
+      # (skips the login screen; credentials end up inside the binary, so use
+      # only for internal testing). Without them, auto-login is disabled so
+      # builds never probe the backend with default dev credentials.
       INPUT_API_BASE_URL: ${{ inputs.api_base_url }}
       INPUT_DEMO_MODE: ${{ inputs.demo_mode }}
       SECRET_API_BASE_URL: ${{ secrets.PAPER_API_BASE_URL }}
+      SECRET_AUTO_LOGIN_EMAIL: ${{ secrets.PAPER_AUTO_LOGIN_EMAIL }}
+      SECRET_AUTO_LOGIN_PASSWORD: ${{ secrets.PAPER_AUTO_LOGIN_PASSWORD }}
 
     steps:
       - uses: actions/checkout@v4
+
+
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -55,13 +65,21 @@ jobs:
           set -euo pipefail
           EVENT_NAME="${GITHUB_EVENT_NAME:-}"
 
+          # Auto-login defines for API builds: use the secrets when both are
+          # set, otherwise disable auto-login entirely.
+          if [[ -n "${SECRET_AUTO_LOGIN_EMAIL:-}" && -n "${SECRET_AUTO_LOGIN_PASSWORD:-}" ]]; then
+            AUTO_LOGIN_DEFINES="--dart-define=PAPER_AUTO_LOGIN_EMAIL=${SECRET_AUTO_LOGIN_EMAIL} --dart-define=PAPER_AUTO_LOGIN_PASSWORD=${SECRET_AUTO_LOGIN_PASSWORD}"
+          else
+            AUTO_LOGIN_DEFINES="--dart-define=PAPER_AUTO_LOGIN=false"
+          fi
+
           if [[ "${EVENT_NAME}" == "push" ]]; then
             API_URL="${SECRET_API_BASE_URL:-}"
             if [[ -z "${API_URL}" ]]; then
               echo "Missing required repo secret PAPER_API_BASE_URL for push builds."
               exit 1
             fi
-            echo "dart_defines=--dart-define=PAPER_API_BASE_URL=${API_URL}" >> "$GITHUB_OUTPUT"
+            echo "dart_defines=--dart-define=PAPER_API_BASE_URL=${API_URL} ${AUTO_LOGIN_DEFINES}" >> "$GITHUB_OUTPUT"
             echo "label=api" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -81,7 +99,7 @@ jobs:
             exit 1
           fi
 
-          echo "dart_defines=--dart-define=PAPER_API_BASE_URL=${API_URL}" >> "$GITHUB_OUTPUT"
+          echo "dart_defines=--dart-define=PAPER_API_BASE_URL=${API_URL} ${AUTO_LOGIN_DEFINES}" >> "$GITHUB_OUTPUT"
           echo "label=api" >> "$GITHUB_OUTPUT"
 
       - name: Build (Windows)

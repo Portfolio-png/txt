@@ -2095,30 +2095,32 @@ async function initDb() {
   // (from the orders -> order_items refactor).  Must run BEFORE any
   // CREATE TABLE IF NOT EXISTS so those statements will re-create them
   // with the correct foreign keys pointing at order_items.
-  const checkAndDropStaleOrdersRef = async (tableName) => {
-    try {
-      const fks = await all(`PRAGMA foreign_key_list(${tableName})`);
-      const referencesOrders = fks.some(fk => fk.table === 'orders');
-      if (referencesOrders) {
-        await run(`DROP TABLE IF EXISTS ${tableName}`);
-        console.log(`Dropped stale table ${tableName} (referenced old 'orders' table)`);
+  try {
+    const allTables = await all(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+    );
+    const staleTables = [];
+    for (const { name } of allTables) {
+      const fks = await all(`PRAGMA foreign_key_list("${name}")`).catch(() => []);
+      if (fks.some((fk) => fk.table === 'orders')) {
+        staleTables.push(name);
       }
-    } catch (e) {
-      // table may not exist yet – that's fine
     }
-  };
-  await checkAndDropStaleOrdersRef('delivery_challans');
-  await checkAndDropStaleOrdersRef('delivery_challan_items');
-  await checkAndDropStaleOrdersRef('delivery_challan_order_items');
-  await checkAndDropStaleOrdersRef('delivery_challan_report_groups');
-  await checkAndDropStaleOrdersRef('delivery_challan_activity_log');
-  await checkAndDropStaleOrdersRef('order_po_documents');
-  await checkAndDropStaleOrdersRef('order_material_requirements');
-  await checkAndDropStaleOrdersRef('order_status_history');
-  await checkAndDropStaleOrdersRef('order_activity_log');
-  await checkAndDropStaleOrdersRef('dispatch_challan_order_items');
-  await checkAndDropStaleOrdersRef('order_pipeline_assignments');
-  await checkAndDropStaleOrdersRef('order_material_reservations');
+    if (staleTables.length > 0) {
+      // FK enforcement off so drop order doesn't matter (parents before children is fine)
+      await run('PRAGMA foreign_keys = OFF');
+      try {
+        for (const name of staleTables) {
+          await run(`DROP TABLE IF EXISTS "${name}"`);
+          console.log(`Dropped stale table ${name} (referenced old 'orders' table)`);
+        }
+      } finally {
+        await run('PRAGMA foreign_keys = ON');
+      }
+    }
+  } catch (err) {
+    console.error('Failed to drop tables referencing legacy orders table:', err);
+  }
   await run('DROP TABLE IF EXISTS orders').catch(() => {});
 
 
@@ -19375,6 +19377,11 @@ app.use((error, req, res, _next) => {
 });
 
 async function clearAllData() {
+  // FK enforcement off for the wipe: every data table is deleted anyway, and
+  // legacy databases can hold tables whose foreign keys point at since-renamed
+  // tables (orders, groups_old_migration), which would abort the transaction.
+  // Must be set outside the transaction — the pragma is a no-op inside one.
+  await run('PRAGMA foreign_keys = OFF');
   await run('BEGIN TRANSACTION');
   try {
     await run('DELETE FROM invoice_lines');
@@ -19406,6 +19413,7 @@ async function clearAllData() {
     await run('DELETE FROM po_documents');
     await run('DELETE FROM asset_upload_sessions');
     await run('DELETE FROM uploaded_assets');
+    await run('DELETE FROM production_scrap');
     await run('DELETE FROM run_barcode_inputs');
     await run('DELETE FROM pipeline_runs');
     await run('DELETE FROM pipeline_templates');
@@ -19444,6 +19452,8 @@ async function clearAllData() {
   } catch (error) {
     await run('ROLLBACK');
     throw error;
+  } finally {
+    await run('PRAGMA foreign_keys = ON').catch(() => {});
   }
 }
 

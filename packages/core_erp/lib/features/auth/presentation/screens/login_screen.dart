@@ -16,12 +16,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
   final _emailController = TextEditingController(text: 'super@paper.local');
   final _passwordController = TextEditingController();
+  final _passwordFocusNode = FocusNode();
   final _formKey = GlobalKey<FormState>();
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _passwordFocusNode.dispose();
     super.dispose();
   }
 
@@ -40,6 +42,14 @@ class _LoginScreenState extends State<LoginScreen> {
     _emailController.text = email;
     _passwordController.text = _quickLoginPassword;
     await _submit();
+  }
+
+  // The cloud account's password isn't known at build time, so just prefill
+  // the email and let the user type the password.
+  void _prefillEmail(String email) {
+    _emailController.text = email;
+    _passwordController.clear();
+    _passwordFocusNode.requestFocus();
   }
 
   @override
@@ -93,6 +103,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       const SizedBox(height: 14),
                       TextFormField(
                         controller: _passwordController,
+                        focusNode: _passwordFocusNode,
                         decoration: const InputDecoration(
                           labelText: 'Password',
                         ),
@@ -212,7 +223,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: InkWell(
-                            onTap: auth.isLoading ? null : () => _quickLoginWith('tangriine@gmail.com'),
+                            onTap: auth.isLoading ? null : () => _prefillEmail('tangriine@gmail.com'),
                             borderRadius: BorderRadius.circular(8),
                             child: Container(
                               padding: const EdgeInsets.all(12),
@@ -251,7 +262,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                   const SizedBox(height: 2),
                                   const Text(
-                                    'Staging/Cloud',
+                                    'AWS — enter password',
                                     style: TextStyle(fontSize: 10, color: Color(0xFF6B7280)),
                                   ),
                                 ],

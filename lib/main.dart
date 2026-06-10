@@ -58,6 +58,23 @@ const _isDemoMode = bool.fromEnvironment(
 const _localApiBaseUrl = 'http://localhost:18080';
 const _configuredApiBaseUrl = String.fromEnvironment('PAPER_API_BASE_URL');
 
+// Testing convenience: log in automatically on startup so the login screen is
+// skipped. Disable with --dart-define=PAPER_AUTO_LOGIN=false once user
+// management testing starts. If the attempt fails (e.g. wrong credentials for
+// the target backend), the login screen appears as usual.
+const _autoLoginEnabled = bool.fromEnvironment(
+  'PAPER_AUTO_LOGIN',
+  defaultValue: true,
+);
+const _autoLoginEmail = String.fromEnvironment(
+  'PAPER_AUTO_LOGIN_EMAIL',
+  defaultValue: 'super@paper.local',
+);
+const _autoLoginPassword = String.fromEnvironment(
+  'PAPER_AUTO_LOGIN_PASSWORD',
+  defaultValue: 'Paper@12345',
+);
+
 final _apiBaseUrl = _resolveApiBaseUrl();
 
 String _resolveApiBaseUrl() {
@@ -219,9 +236,19 @@ class MyApp extends StatelessWidget {
           ChangeNotifierProvider<AuthProvider>.value(value: authProvider!)
         else
           ChangeNotifierProvider<AuthProvider>(
-            create: (_) =>
-                AuthProvider(baseUrl: _apiBaseUrl, demoMode: _effectiveDemoMode)
-                  ..initialize(),
+            create: (_) {
+              final provider = AuthProvider(
+                baseUrl: _apiBaseUrl,
+                demoMode: _effectiveDemoMode,
+              )..initialize();
+              if (_autoLoginEnabled && !_effectiveDemoMode) {
+                provider.login(
+                  email: _autoLoginEmail,
+                  password: _autoLoginPassword,
+                );
+              }
+              return provider;
+            },
           ),
         Provider<InventoryRepository>(
           create: (context) =>
