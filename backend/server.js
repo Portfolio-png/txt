@@ -2075,6 +2075,14 @@ async function initDb() {
     console.error('Failed to fix groups_old_migration references:', err);
   }
 
+  // Cleanup legacy "Material Transform" labels
+  try {
+    await run("UPDATE pipeline_templates SET stage_labels_json = replace(stage_labels_json, '\"Material Transform\"', '\"Process Stage\"')");
+    await run("UPDATE pipeline_templates SET nodes_json = replace(nodes_json, '\"processType\":\"Material Transform\"', '\"processType\":\"Process Stage\"')");
+  } catch (err) {
+    console.error('Failed to cleanup legacy Material Transform labels:', err);
+  }
+
   // Migration: drop tables that still reference the old 'orders' table
   // (from the orders -> order_items refactor).  Must run BEFORE any
   // CREATE TABLE IF NOT EXISTS so those statements will re-create them
