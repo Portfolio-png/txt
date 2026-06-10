@@ -7,7 +7,6 @@ import 'process_node.dart';
 enum PipelineUnitIssueKind {
   missingMetadata,
   unitConversion,
-  materialTransform,
 }
 
 class PipelineUnitIssue {
@@ -28,8 +27,7 @@ class PipelineUnitIssue {
   final double? multiplier;
 
   bool get insertsBridge =>
-      kind == PipelineUnitIssueKind.unitConversion ||
-      kind == PipelineUnitIssueKind.materialTransform;
+      kind == PipelineUnitIssueKind.unitConversion;
 }
 
 class PipelineUnitValidationResult {
@@ -114,17 +112,6 @@ class PipelineUnitValidationEngine {
         );
         continue;
       }
-
-      issues.add(
-        PipelineUnitIssue(
-          kind: PipelineUnitIssueKind.materialTransform,
-          flow: flow,
-          source: source,
-          target: target,
-          message:
-              'Define a material transform from ${sourceItem.itemName} to ${targetItem.itemName}.',
-        ),
-      );
     }
 
     return PipelineUnitValidationResult(issues: issues);

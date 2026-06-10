@@ -77,20 +77,7 @@ void main() {
       expect(result.bridgeIssues.single.multiplier, 1000);
     });
 
-    test('different unit groups creates material transform issue', () {
-      final result = engine.validate(
-        _template(
-          sourceOutput: _endpoint(1, 'Steel Sheet', 1, 'kg'),
-          targetInput: _endpoint(3, 'Finished Part', 3, 'pcs'),
-        ),
-        _units(),
-      );
 
-      expect(
-        result.bridgeIssues.single.kind,
-        PipelineUnitIssueKind.materialTransform,
-      );
-    });
 
     test('missing metadata returns warning only', () {
       final result = engine.validate(

@@ -1146,21 +1146,18 @@ class PipelineEditorProvider extends ChangeNotifier {
     }
 
     final insertStage = math.max(source.stageIndex + 1, target.stageIndex);
-    final isConversion = issue.kind == PipelineUnitIssueKind.unitConversion;
     final bridge = ProcessNode(
       id: _newNodeId(prefix: 'node-bridge'),
-      name: isConversion
-          ? 'Convert ${inputItem.unitLabel} to ${outputItem.unitLabel}'
-          : 'Transform ${inputItem.itemName} to ${outputItem.itemName}',
-      processType: isConversion ? 'Unit Conversion' : 'Material Transform',
+      name: 'Convert ${inputItem.unitLabel} to ${outputItem.unitLabel}',
+      processType: 'Unit Conversion',
       stageIndex: insertStage,
       laneIndex: target.laneIndex,
       inputs: [inputItem.itemName],
       outputs: [outputItem.itemName],
-      machine: isConversion ? 'Auto Converter' : 'Needs Setup',
+      machine: 'Auto Converter',
       dieId: '',
-      durationHours: isConversion ? 0.1 : 1.0,
-      status: isConversion ? 'Ready' : 'Needs Setup',
+      durationHours: 0.1,
+      status: 'Ready',
       isIntermediate: true,
       inputItem: inputItem,
       outputItem: outputItem,
