@@ -10,6 +10,7 @@ abstract class PipelineRunRepository {
   Future<List<PipelineTemplate>> getTemplates();
   Future<PipelineTemplate> createTemplate(PipelineTemplate template);
   Future<PipelineTemplate> updateTemplate(PipelineTemplate template);
+  Future<void> deleteTemplate(String id);
   Future<PipelineTemplate?> getTemplate(String id);
   Future<List<PipelineRun>> getRuns({String? templateId});
   Future<List<PipelineRun>> getRunsForOrder(String orderNo);
@@ -100,6 +101,14 @@ class ApiPipelineRunRepository implements PipelineRunRepository {
     return PipelineTemplate.fromJson(
       payload['template'] as Map<String, dynamic>,
     );
+  }
+
+  @override
+  Future<void> deleteTemplate(String id) async {
+    final uri = Uri.parse('$baseUrl/templates/$id');
+    final response = await _client.delete(uri);
+    final payload = _decodeJson(response.body) as Map<String, dynamic>;
+    _ensureSuccess(response.statusCode, payload, 'Failed to delete template.');
   }
 
   @override

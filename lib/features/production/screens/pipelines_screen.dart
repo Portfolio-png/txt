@@ -410,6 +410,40 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
     setState(() => _editingTemplate = template);
   }
 
+  Future<void> _deleteTemplate(PipelineTemplate template) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Pipeline'),
+        content: Text('Are you sure you want to delete "${template.name}"? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final repo = context.read<PipelineRunRepository>();
+      await repo.deleteTemplate(template.id);
+      await _loadTemplates();
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
   Future<void> _run(PipelineTemplate template) async {
     final order = await showDialog<OrderEntry?>(
       context: context,
@@ -514,6 +548,7 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
                       onEdit: isManageMode ? _edit : null,
                       onRun: _run,
                       onDuplicate: isManageMode ? _duplicateTemplate : null,
+                      onDelete: isManageMode ? _deleteTemplate : null,
                     ),
             ),
           ),
@@ -745,6 +780,7 @@ class _PipelineTemplateList extends StatelessWidget {
     required this.onEdit,
     required this.onRun,
     required this.onDuplicate,
+    required this.onDelete,
   });
 
   final List<PipelineTemplate> templates;
@@ -752,6 +788,7 @@ class _PipelineTemplateList extends StatelessWidget {
   final ValueChanged<PipelineTemplate>? onEdit;
   final ValueChanged<PipelineTemplate> onRun;
   final ValueChanged<PipelineTemplate>? onDuplicate;
+  final ValueChanged<PipelineTemplate>? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -774,6 +811,9 @@ class _PipelineTemplateList extends StatelessWidget {
                 onDuplicate: onDuplicate == null
                     ? null
                     : () => onDuplicate!(template),
+                onDelete: onDelete == null
+                    ? null
+                    : () => onDelete!(template),
               );
             },
           ),
@@ -841,6 +881,7 @@ class _PipelineTemplateCard extends StatelessWidget {
     required this.onEdit,
     required this.onRun,
     required this.onDuplicate,
+    required this.onDelete,
   });
 
   final PipelineTemplate template;
@@ -848,6 +889,7 @@ class _PipelineTemplateCard extends StatelessWidget {
   final VoidCallback? onEdit;
   final VoidCallback onRun;
   final VoidCallback? onDuplicate;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -990,6 +1032,16 @@ class _PipelineTemplateCard extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     if (showManagementActions) ...[
+                      if (template.status == PipelineTemplateStatus.draft && onDelete != null)
+                        IconButton(
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            size: 20,
+                            color: Colors.redAccent,
+                          ),
+                          onPressed: onDelete,
+                          tooltip: 'Delete Draft',
+                        ),
                       IconButton(
                         icon: const Icon(
                           Icons.copy,

@@ -38,7 +38,6 @@ class FloorNodeTerminal extends StatelessWidget {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 24, left: 24, right: 24),
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -51,7 +50,16 @@ class FloorNodeTerminal extends StatelessWidget {
           ),
         ],
       ),
-      child: Row(
+      clipBehavior: Clip.hardEdge,
+      child: Stack(
+        children: [
+          if (node.status == 'active' || node.status == 'running')
+            Positioned.fill(
+              child: _ProcessingAnimationOverlay(color: node.statusColor),
+            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           // Section 1: Node identity
@@ -160,6 +168,9 @@ class FloorNodeTerminal extends StatelessWidget {
           ),
         ],
       ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -264,6 +275,55 @@ class _AssignedStockMetricState extends State<_AssignedStockMetric> {
             }
             return b.barcode;
           }).join(', '),
+        );
+      },
+    );
+  }
+}
+
+class _ProcessingAnimationOverlay extends StatefulWidget {
+  final Color color;
+  const _ProcessingAnimationOverlay({required this.color});
+
+  @override
+  State<_ProcessingAnimationOverlay> createState() => _ProcessingAnimationOverlayState();
+}
+
+class _ProcessingAnimationOverlayState extends State<_ProcessingAnimationOverlay> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 2000))..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return FractionallySizedBox(
+          widthFactor: 0.3,
+          alignment: Alignment(-1.5 + (_controller.value * 3.0), 0),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.white.withValues(alpha: 0.0),
+                  widget.color.withValues(alpha: 0.08),
+                  Colors.white.withValues(alpha: 0.0),
+                ],
+                stops: const [0.0, 0.5, 1.0],
+              ),
+            ),
+          ),
         );
       },
     );

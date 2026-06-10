@@ -102,7 +102,7 @@ class _EditableMetricBoxState extends State<EditableMetricBox> {
         
         final nodeMetrics = run.nodeMetrics[widget.nodeId] ?? {};
         final metricVal = (nodeMetrics[widget.metricKey] as num?)?.toDouble() ?? 0.0;
-        final valStr = '\${metricVal} Kg';
+        final valStr = '${metricVal} Kg';
 
         return Expanded(
           child: InkWell(
@@ -113,13 +113,16 @@ class _EditableMetricBoxState extends State<EditableMetricBox> {
               children: [
                 Row(
                   children: [
-                    Text(
-                      widget.label,
-                      style: const TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF94A3B8),
-                        letterSpacing: 0.8,
+                    Flexible(
+                      child: Text(
+                        widget.label,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF94A3B8),
+                          letterSpacing: 0.8,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 4),
@@ -153,6 +156,7 @@ class _EditableMetricBoxState extends State<EditableMetricBox> {
         children: [
           Text(
             widget.label,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w700,

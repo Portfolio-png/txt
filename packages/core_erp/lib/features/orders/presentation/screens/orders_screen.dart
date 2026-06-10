@@ -189,7 +189,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         },
                         onRowTap: (orderGroup) =>
                             _openLifecycleEditor(context, orderGroup),
-                        onCreateOrder: () => OrdersScreen.openEditor(context),
+                        onCreateOrder: _handlePrimaryCreate,
+                        onGoToProduction: widget.onGoToProduction,
                       ),
                     ),
                   ],
@@ -928,6 +929,7 @@ class _OrdersTableCard extends StatelessWidget {
     required this.onToggleSelection,
     required this.onRowTap,
     required this.onCreateOrder,
+    this.onGoToProduction,
   });
 
   final List<OrderGroup> orders;
@@ -937,6 +939,7 @@ class _OrdersTableCard extends StatelessWidget {
   final void Function(int orderId, bool selected) onToggleSelection;
   final ValueChanged<OrderGroup> onRowTap;
   final VoidCallback onCreateOrder;
+  final Future<void> Function(BuildContext context, OrderGroup orderGroup, [OrderEntry? preselectedItem])? onGoToProduction;
 
   @override
   Widget build(BuildContext context) {
@@ -1077,6 +1080,7 @@ class _OrdersTableCard extends StatelessWidget {
                         }
                       },
                       onTap: () => onRowTap(orderGroup),
+                      onGoToProduction: onGoToProduction,
                     );
                   },
                 ),
@@ -1152,6 +1156,7 @@ class _OrderDataRow extends StatefulWidget {
     required this.isSelected,
     required this.onSelectionChanged,
     required this.onTap,
+    this.onGoToProduction,
   });
 
   final OrderGroup order;
@@ -1159,6 +1164,7 @@ class _OrderDataRow extends StatefulWidget {
   final bool isSelected;
   final ValueChanged<bool> onSelectionChanged;
   final VoidCallback onTap;
+  final Future<void> Function(BuildContext context, OrderGroup orderGroup, [OrderEntry? preselectedItem])? onGoToProduction;
 
   @override
   State<_OrderDataRow> createState() => _OrderDataRowState();
@@ -1388,6 +1394,12 @@ class _OrderDataRowState extends State<_OrderDataRow> {
     if (_updatingLifecycle) {
       return;
     }
+
+    if (action.kind == _QuickRowActionKind.start && widget.onGoToProduction != null) {
+      await widget.onGoToProduction!(context, widget.order);
+      return;
+    }
+
     setState(() => _updatingLifecycle = true);
     final group = widget.order;
     final now = DateTime.now();

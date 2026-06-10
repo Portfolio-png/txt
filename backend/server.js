@@ -18904,6 +18904,20 @@ app.get('/templates/:id', requirePermission('config.read'), async (req, res) => 
   }
 });
 
+app.delete('/templates/:id', async (req, res) => {
+  try {
+    const existing = await get('SELECT * FROM pipeline_templates WHERE id = ?', [req.params.id]);
+    if (!existing) {
+      res.status(404).json({ success: false, error: 'Template not found.' });
+      return;
+    }
+    await run('DELETE FROM pipeline_templates WHERE id = ?', [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.get('/runs', requirePermission('config.read'), async (req, res) => {
   try {
     const { template_id: templateId } = req.query;
@@ -19038,12 +19052,12 @@ app.put('/runs/:id/node-status', async (req, res) => {
           if (matchedItem) {
             itemId = matchedItem.id;
             const variationRow = await get(
-              'SELECT * FROM item_variations WHERE item_id = ? AND is_leaf = 1 LIMIT 1',
+              "SELECT * FROM item_variation_nodes WHERE item_id = ? AND kind = 'leaf' LIMIT 1",
               [itemId]
             );
             if (variationRow) {
               variationLeafNodeId = variationRow.id;
-              variationPathLabel = variationRow.path_label || '';
+              variationPathLabel = variationRow.display_name || variationRow.name || '';
             }
           }
         }
@@ -19053,12 +19067,12 @@ app.put('/runs/:id/node-status', async (req, res) => {
           if (fallbackItem) {
             itemId = fallbackItem.id;
             const variationRow = await get(
-              'SELECT * FROM item_variations WHERE item_id = ? AND is_leaf = 1 LIMIT 1',
+              "SELECT * FROM item_variation_nodes WHERE item_id = ? AND kind = 'leaf' LIMIT 1",
               [itemId]
             );
             if (variationRow) {
               variationLeafNodeId = variationRow.id;
-              variationPathLabel = variationRow.path_label || '';
+              variationPathLabel = variationRow.display_name || variationRow.name || '';
             }
           }
         }
