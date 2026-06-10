@@ -421,6 +421,29 @@ class _ProductionTestPanelState extends State<ProductionTestPanel> {
               // Create authenticated HTTP client
               final client = AuthenticatedHttpClient(tokenResolver: () => auth.token);
 
+              // Fetch all items to resolve variation leaf if needed
+              final itemsResponse = await client.get(
+                Uri.parse('$baseUrl/api/items'),
+              );
+              if (itemsResponse.statusCode >= 300) {
+                throw Exception('Failed to fetch items database: ${itemsResponse.body}');
+              }
+              final itemsBody = jsonDecode(itemsResponse.body) as Map<String, dynamic>;
+              final itemsList = itemsBody['items'] as List<dynamic>? ?? [];
+              final itemData = itemsList.firstWhere(
+                (item) => item['id'] == inputItem.itemId,
+                orElse: () => null,
+              );
+
+              int variationLeafNodeId = 0;
+              if (itemData != null && itemData['variationTree'] != null) {
+                final tree = itemData['variationTree'] as List<dynamic>;
+                final leafId = _findFirstActiveLeafId(tree);
+                if (leafId != null) {
+                  variationLeafNodeId = leafId;
+                }
+              }
+
               // 1. Seed Parent Material
               final seedResponse = await client.post(
                 Uri.parse('$baseUrl/api/materials/parent'),
@@ -456,7 +479,7 @@ class _ProductionTestPanelState extends State<ProductionTestPanel> {
                 headers: const {'Content-Type': 'application/json'},
                 body: jsonEncode({
                   'itemId': inputItem.itemId,
-                  'variationLeafNodeId': 0,
+                  'variationLeafNodeId': variationLeafNodeId,
                 }),
               );
 
@@ -590,5 +613,26 @@ class _ProductionTestPanelState extends State<ProductionTestPanel> {
 
       runProvider.triggerRefresh();
     });
+  }
+
+  int? _findFirstActiveLeafId(List<dynamic> tree) {
+    for (final node in tree) {
+      if (node['isArchived'] == true) continue;
+      if (node['kind'] == 'value') {
+        final children = node['children'] as List<dynamic>? ?? const [];
+        final activeChildren = children.where((c) => c['isArchived'] != true).toList();
+        if (activeChildren.isEmpty) {
+          return node['id'] as int?;
+        } else {
+          final leafId = _findFirstActiveLeafId(activeChildren);
+          if (leafId != null) return leafId;
+        }
+      } else {
+        final children = node['children'] as List<dynamic>? ?? const [];
+        final leafId = _findFirstActiveLeafId(children);
+        if (leafId != null) return leafId;
+      }
+    }
+    return null;
   }
 }
