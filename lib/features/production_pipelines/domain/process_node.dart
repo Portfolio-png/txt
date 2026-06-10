@@ -147,11 +147,18 @@ class ProcessNode {
   Color get statusColor {
     switch (status.toLowerCase()) {
       case 'ready':
+      case 'done':
+      case 'completed':
         return const Color(0xFF16A34A);
       case 'blocked':
+      case 'failed':
+      case 'reversed':
         return const Color(0xFFDC2626);
       case 'active':
+      case 'running':
         return const Color(0xFF2563EB);
+      case 'skipped':
+        return const Color(0xFF94A3B8);
       default:
         return const Color(0xFFF59E0B);
     }

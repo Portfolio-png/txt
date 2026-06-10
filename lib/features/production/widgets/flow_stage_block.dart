@@ -25,7 +25,7 @@ class FlowStageBlock extends StatelessWidget {
     final dotColor = palette.isEndpoint
         ? palette.accent
         : switch (node.status.toLowerCase()) {
-            'running' || 'active' => const Color(0xFF10B981),
+            'running' || 'active' || 'done' || 'completed' => const Color(0xFF10B981),
             'setup' || 'idle' => const Color(0xFFF59E0B),
             'reversed' => const Color(0xFFEF4444),
             'skipped' => const Color(0xFF94A3B8),

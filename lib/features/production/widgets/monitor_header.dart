@@ -4,9 +4,16 @@ import '../providers/production_provider.dart';
 import '../providers/production_run_provider.dart';
 
 class MonitorHeader extends StatelessWidget {
-  const MonitorHeader({super.key, required this.provider});
+  const MonitorHeader({
+    super.key,
+    required this.provider,
+    this.showTestPanel = false,
+    this.onToggleTestPanel,
+  });
 
   final ProductionProvider provider;
+  final bool showTestPanel;
+  final VoidCallback? onToggleTestPanel;
 
   @override
   Widget build(BuildContext context) {
@@ -83,6 +90,17 @@ class MonitorHeader extends StatelessWidget {
           ),
           const Spacer(),
           const _ElapsedClockLight(),
+          if (onToggleTestPanel != null) ...[
+            const SizedBox(width: 16),
+            IconButton(
+              icon: Icon(
+                Icons.science_rounded,
+                color: showTestPanel ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+              ),
+              onPressed: onToggleTestPanel,
+              tooltip: 'Toggle Developer Simulator',
+            ),
+          ],
         ],
       ),
     );

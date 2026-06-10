@@ -8,6 +8,7 @@ import '../../production_pipelines/domain/pipeline_template.dart';
 import '../../production_pipelines/domain/pipeline_run.dart';
 import '../../production_pipelines/domain/barcode_input.dart';
 import '../../production_pipelines/domain/process_node.dart';
+import '../../production_pipelines/domain/node_run_status.dart';
 import 'graph_edges_painter.dart';
 import 'flow_stage_block.dart';
 
@@ -404,7 +405,9 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
                                     child: FlowStageBlock(
                                       width: nodeWidth,
                                       height: nodeHeight,
-                                      node: node,
+                                      node: activeRun != null && activeRun.nodeStatuses.containsKey(node.id)
+                                          ? node.copyWith(status: activeRun.nodeStatuses[node.id]!.value)
+                                          : node,
                                       isSelected: isSelected,
                                     ),
                                   ),

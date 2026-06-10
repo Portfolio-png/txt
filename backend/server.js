@@ -1544,6 +1544,12 @@ function rowToOrderDto(row) {
     createdAt: row.created_at,
     startDate: row.start_date,
     endDate: row.end_date,
+    hsnCode: row.hsn_code || '',
+    taxableValue: Number(row.taxable_value || 0),
+    cgstRate: Number(row.cgst_rate || 0),
+    sgstRate: Number(row.sgst_rate || 0),
+    cgstAmount: Number(row.cgst_amount || 0),
+    sgstAmount: Number(row.sgst_amount || 0),
   };
 }
 
@@ -2976,7 +2982,13 @@ async function initDb() {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL DEFAULT '',
       start_date TEXT,
-      end_date TEXT
+      end_date TEXT,
+      hsn_code TEXT DEFAULT '',
+      taxable_value REAL DEFAULT 0,
+      cgst_rate REAL DEFAULT 0,
+      sgst_rate REAL DEFAULT 0,
+      cgst_amount REAL DEFAULT 0,
+      sgst_amount REAL DEFAULT 0
     )
   `);
 
@@ -3246,6 +3258,12 @@ async function initDb() {
     'total_invoiced_qty',
     'REAL NOT NULL DEFAULT 0',
   );
+  await ensureColumnExists('order_items', 'hsn_code', "TEXT DEFAULT ''");
+  await ensureColumnExists('order_items', 'taxable_value', 'REAL DEFAULT 0');
+  await ensureColumnExists('order_items', 'cgst_rate', 'REAL DEFAULT 0');
+  await ensureColumnExists('order_items', 'sgst_rate', 'REAL DEFAULT 0');
+  await ensureColumnExists('order_items', 'cgst_amount', 'REAL DEFAULT 0');
+  await ensureColumnExists('order_items', 'sgst_amount', 'REAL DEFAULT 0');
   await run(`
     UPDATE order_items
     SET updated_at = CASE
@@ -3333,11 +3351,6 @@ async function initDb() {
   await ensureColumnExists('materials', 'linked_item_id', 'INTEGER');
   await ensureColumnExists('materials', 'linked_variation_leaf_node_id', 'INTEGER');
   await ensureColumnExists('groups', 'group_type', "TEXT NOT NULL DEFAULT 'item'");
-  await run(`
-    UPDATE groups 
-    SET group_type = 'machine' 
-    WHERE id IN (SELECT DISTINCT group_id FROM machines WHERE group_id IS NOT NULL)
-  `);
   await run('CREATE INDEX IF NOT EXISTS idx_materials_item_variation_lookup ON materials(linked_item_id, linked_variation_leaf_node_id)');
   await ensureColumnExists('inventory_movements', 'primary_qty', 'REAL');
   await ensureColumnExists('inventory_movements', 'uom', 'TEXT');
@@ -3613,6 +3626,12 @@ async function initDb() {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
+  `);
+
+  await run(`
+    UPDATE groups 
+    SET group_type = 'machine' 
+    WHERE id IN (SELECT DISTINCT group_id FROM machines WHERE group_id IS NOT NULL)
   `);
 
   await run(`

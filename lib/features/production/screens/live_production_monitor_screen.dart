@@ -12,6 +12,7 @@ import '../widgets/pipeline_canvas.dart';
 import '../widgets/monitor_action_console.dart';
 import '../widgets/floor_node_terminal.dart';
 import '../widgets/inventory_sidebar.dart';
+import '../widgets/production_test_panel.dart';
 
 class LiveProductionMonitorScreen extends StatelessWidget {
   const LiveProductionMonitorScreen({super.key});
@@ -30,6 +31,8 @@ class _LiveMonitorContent extends StatefulWidget {
 }
 
 class _LiveMonitorContentState extends State<_LiveMonitorContent> {
+  bool _showTestPanel = false;
+
   @override
   void initState() {
     super.initState();
@@ -121,7 +124,11 @@ class _LiveMonitorContentState extends State<_LiveMonitorContent> {
                 padding: const EdgeInsets.all(24),
                 child: Column(
                   children: [
-                    MonitorHeader(provider: provider),
+                    MonitorHeader(
+                      provider: provider,
+                      showTestPanel: _showTestPanel,
+                      onToggleTestPanel: () => setState(() => _showTestPanel = !_showTestPanel),
+                    ),
                     const SizedBox(height: 24),
                     Expanded(
                       child: Stack(
@@ -143,6 +150,15 @@ class _LiveMonitorContentState extends State<_LiveMonitorContent> {
                                 tokens: FloorOpsTokens.factoryMap,
                                 onClose: () => provider.clearNodeSelection(),
                                 startedAt: provider.nodeStartedAt,
+                              ),
+                            ),
+                          if (_showTestPanel)
+                            Positioned(
+                              top: 24,
+                              right: 24,
+                              bottom: provider.selectedNode != null ? 140 : 24,
+                              child: ProductionTestPanel(
+                                onClose: () => setState(() => _showTestPanel = false),
                               ),
                             ),
                         ],
