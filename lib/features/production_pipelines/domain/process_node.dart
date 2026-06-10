@@ -25,6 +25,8 @@ class ProcessNode {
     this.inputItem,
     this.outputItem,
     this.unitConversionMultiplier,
+    this.scrapItemId,
+    this.scrapItemName,
   });
 
   final String id;
@@ -45,6 +47,11 @@ class ProcessNode {
   final PipelineItemEndpoint? inputItem;
   final PipelineItemEndpoint? outputItem;
   final double? unitConversionMultiplier;
+
+  /// Item from the "Scrap" item group that this stage's scrap ships to
+  /// (e.g. brass, aluminium, iron).
+  final int? scrapItemId;
+  final String? scrapItemName;
 
   String get machineId => machine;
 
@@ -89,6 +96,8 @@ class ProcessNode {
       outputItem: _endpointFromJson(json['outputItem']),
       unitConversionMultiplier: (json['unitConversionMultiplier'] as num?)
           ?.toDouble(),
+      scrapItemId: (json['scrapItemId'] as num?)?.toInt(),
+      scrapItemName: json['scrapItemName'] as String?,
     );
   }
 
@@ -111,6 +120,8 @@ class ProcessNode {
     Object? inputItem = _unset,
     Object? outputItem = _unset,
     Object? unitConversionMultiplier = _unset,
+    Object? scrapItemId = _unset,
+    Object? scrapItemName = _unset,
   }) {
     return ProcessNode(
       id: id ?? this.id,
@@ -141,6 +152,12 @@ class ProcessNode {
       unitConversionMultiplier: identical(unitConversionMultiplier, _unset)
           ? this.unitConversionMultiplier
           : (unitConversionMultiplier as num?)?.toDouble(),
+      scrapItemId: identical(scrapItemId, _unset)
+          ? this.scrapItemId
+          : scrapItemId as int?,
+      scrapItemName: identical(scrapItemName, _unset)
+          ? this.scrapItemName
+          : scrapItemName as String?,
     );
   }
 
@@ -184,6 +201,8 @@ class ProcessNode {
       'inputItem': inputItem?.toJson(),
       'outputItem': outputItem?.toJson(),
       'unitConversionMultiplier': unitConversionMultiplier,
+      'scrapItemId': scrapItemId,
+      'scrapItemName': scrapItemName,
     };
   }
 

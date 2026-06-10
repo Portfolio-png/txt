@@ -117,235 +117,148 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFEFF3F1),
       body: Focus(
-      focusNode: _focusNode,
-      autofocus: true,
-      onKeyEvent: (node, event) {
-        if (event is KeyDownEvent) {
-          final bool isMac = defaultTargetPlatform == TargetPlatform.macOS;
-          final bool isModifier = isMac
-              ? HardwareKeyboard.instance.isMetaPressed
-              : HardwareKeyboard.instance.isControlPressed;
+        focusNode: _focusNode,
+        autofocus: true,
+        onKeyEvent: (node, event) {
+          if (event is KeyDownEvent) {
+            final bool isMac = defaultTargetPlatform == TargetPlatform.macOS;
+            final bool isModifier = isMac
+                ? HardwareKeyboard.instance.isMetaPressed
+                : HardwareKeyboard.instance.isControlPressed;
 
-          if (isModifier) {
-            if (event.logicalKey == LogicalKeyboardKey.keyS) {
-              _savePipeline(context);
-              return KeyEventResult.handled;
-            } else if (event.logicalKey == LogicalKeyboardKey.keyN) {
-              provider.addNextStepFromSelection(units: units);
-              return KeyEventResult.handled;
-            } else if (event.logicalKey == LogicalKeyboardKey.keyZ) {
-              if (HardwareKeyboard.instance.isShiftPressed) {
-                provider.redo();
-              } else {
-                provider.undo();
+            if (isModifier) {
+              if (event.logicalKey == LogicalKeyboardKey.keyS) {
+                _savePipeline(context);
+                return KeyEventResult.handled;
+              } else if (event.logicalKey == LogicalKeyboardKey.keyN) {
+                provider.addNextStepFromSelection(units: units);
+                return KeyEventResult.handled;
+              } else if (event.logicalKey == LogicalKeyboardKey.keyZ) {
+                if (HardwareKeyboard.instance.isShiftPressed) {
+                  provider.redo();
+                } else {
+                  provider.undo();
+                }
+                return KeyEventResult.handled;
               }
-              return KeyEventResult.handled;
-            }
-          } else if (event.logicalKey == LogicalKeyboardKey.delete ||
-              event.logicalKey == LogicalKeyboardKey.backspace) {
-            if (!_focusNode.hasPrimaryFocus) {
-              return KeyEventResult.ignored;
-            }
-            if (provider.selectedNodeId != null) {
-              final message = provider.deleteSelectedNode();
-              if (message != null && context.mounted) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text(message)));
+            } else if (event.logicalKey == LogicalKeyboardKey.delete ||
+                event.logicalKey == LogicalKeyboardKey.backspace) {
+              if (!_focusNode.hasPrimaryFocus) {
+                return KeyEventResult.ignored;
               }
-              return KeyEventResult.handled;
+              if (provider.selectedNodeId != null) {
+                final message = provider.deleteSelectedNode();
+                if (message != null && context.mounted) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(message)));
+                }
+                return KeyEventResult.handled;
+              }
             }
           }
-        }
-        return KeyEventResult.ignored;
-      },
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 980;
+          return KeyEventResult.ignored;
+        },
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 980;
 
-          // Left properties panel
-          Widget? leftPropertiesPanel;
-          if (selectedNode != null) {
-            final draft = provider.draftFor(selectedNode.id);
-            if (draft != null) {
-              leftPropertiesPanel = Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: _NodePropertiesPanel(
-                      node: selectedNode,
-                      draft: draft,
-                      provider: provider,
-                      items: items,
-                      units: units,
+            // Left properties panel
+            Widget? leftPropertiesPanel;
+            if (selectedNode != null) {
+              final draft = provider.draftFor(selectedNode.id);
+              if (draft != null) {
+                leftPropertiesPanel = Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: _NodePropertiesPanel(
+                        node: selectedNode,
+                        draft: draft,
+                        provider: provider,
+                        items: items,
+                        units: units,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  _buildVerticalNodeActions(provider, selectedNode.id, units),
-                ],
-              );
+                    const SizedBox(width: 8),
+                    _buildVerticalNodeActions(provider, selectedNode.id, units),
+                  ],
+                );
+              }
             }
-          }
 
-          leftPropertiesPanel ??= Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            padding: const EdgeInsets.all(24),
-            child: const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.info_outline_rounded,
-                    size: 36,
-                    color: Color(0xFF94A3B8),
-                  ),
-                  SizedBox(height: 12),
-                  Text(
-                    'No Step Selected',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1E293B),
-                    ),
-                  ),
-                  SizedBox(height: 6),
-                  Text(
-                    'Click on any step card in the flowchart on the right to edit its properties.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF64748B),
-                      height: 1.3,
-                    ),
-                  ),
-                ],
+            leftPropertiesPanel ??= Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
-            ),
-          );
-
-          // Middle flowchart panel
-          final middleFlowchartPanel = Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            child: Stack(
-              children: [
-                _FlowchartSequencePanel(
-                  provider: provider,
-                  onCanvasTap: () => _focusNode.requestFocus(),
-                ),
-                Positioned(
-                  bottom: 16,
-                  right: 16,
-                  child: Row(
-                    children: [
-                      IconButton.filledTonal(
-                        icon: const Icon(Icons.undo_rounded),
-                        onPressed: provider.canUndo
-                            ? () => provider.undo()
-                            : null,
-                        tooltip: 'Undo (Ctrl/Cmd + Z)',
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton.filledTonal(
-                        icon: const Icon(Icons.redo_rounded),
-                        onPressed: provider.canRedo
-                            ? () => provider.redo()
-                            : null,
-                        tooltip: 'Redo (Shift + Ctrl/Cmd + Z)',
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
-
-          // Right quick add panel
-          final rightQuickAddPanel = _QuickAddPanel(
-            provider: provider,
-            items: items,
-            units: units,
-            onClose: () {
-              setState(() {
-                _showQuickAddPanel = false;
-              });
-            },
-          );
-
-          // Header widget
-          final headerWidget = _BuilderHeader(
-            provider: provider,
-            factoryId: widget.factoryId,
-            shopFloorId: widget.shopFloorId,
-            onBack: widget.onBack,
-          );
-
-          Widget layoutChild;
-          if (compact) {
-            layoutChild = Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  headerWidget,
-                  const SizedBox(height: 16),
-                  Expanded(child: middleFlowchartPanel),
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 250),
-                    curve: Curves.easeOutCubic,
-                    height: _showQuickAddPanel ? 266 : 0,
-                    child: ClipRect(
-                      child: OverflowBox(
-                        minHeight: 0,
-                        maxHeight: 266,
-                        alignment: Alignment.topCenter,
-                        child: Padding(
-                          padding: const EdgeInsets.only(top: 16),
-                          child: SizedBox(height: 250, child: rightQuickAddPanel),
-                        ),
+              padding: const EdgeInsets.all(24),
+              child: const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.info_outline_rounded,
+                      size: 36,
+                      color: Color(0xFF94A3B8),
+                    ),
+                    SizedBox(height: 12),
+                    Text(
+                      'No Step Selected',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1E293B),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(height: 380, child: leftPropertiesPanel),
-                ],
+                    SizedBox(height: 6),
+                    Text(
+                      'Click on any step card in the flowchart on the right to edit its properties.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF64748B),
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             );
-          } else {
-            layoutChild = Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
+
+            // Middle flowchart panel
+            final middleFlowchartPanel = Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Stack(
                 children: [
-                  headerWidget,
-                  const SizedBox(height: 20),
-                  Expanded(
+                  _FlowchartSequencePanel(
+                    provider: provider,
+                    onCanvasTap: () => _focusNode.requestFocus(),
+                  ),
+                  Positioned(
+                    bottom: 16,
+                    right: 16,
                     child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        SizedBox(width: 340, child: leftPropertiesPanel),
-                        const SizedBox(width: 20),
-                        Expanded(child: middleFlowchartPanel),
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 250),
-                          curve: Curves.easeOutCubic,
-                          width: _showQuickAddPanel ? 300 : 0,
-                          child: ClipRect(
-                            child: OverflowBox(
-                              minWidth: 0,
-                              maxWidth: 300,
-                              alignment: Alignment.topLeft,
-                              child: Padding(
-                                padding: const EdgeInsets.only(left: 20),
-                                child: SizedBox(width: 280, child: rightQuickAddPanel),
-                              ),
-                            ),
-                          ),
+                        IconButton.filledTonal(
+                          icon: const Icon(Icons.undo_rounded),
+                          onPressed: provider.canUndo
+                              ? () => provider.undo()
+                              : null,
+                          tooltip: 'Undo (Ctrl/Cmd + Z)',
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton.filledTonal(
+                          icon: const Icon(Icons.redo_rounded),
+                          onPressed: provider.canRedo
+                              ? () => provider.redo()
+                              : null,
+                          tooltip: 'Redo (Shift + Ctrl/Cmd + Z)',
                         ),
                       ],
                     ),
@@ -353,47 +266,148 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
                 ],
               ),
             );
-          }
 
-          return Stack(
-            children: [
-              layoutChild,
-              if (!_showQuickAddPanel)
-                Positioned(
-                  top: compact ? null : 100,
-                  bottom: compact ? 396 : null,
-                  right: 0,
-                  child: Material(
-                    color: Colors.white,
-                    elevation: 3,
-                    shadowColor: const Color(0x33000000),
-                    borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
-                    child: InkWell(
-                      onTap: () {
-                        setState(() {
-                          _showQuickAddPanel = true;
-                        });
-                      },
-                      borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        child: Transform.flip(
-                          flipX: true,
-                          child: const Icon(
-                            Icons.menu_rounded,
-                            size: 20,
-                            color: Color(0xFF1E293B),
+            // Right quick add panel
+            final rightQuickAddPanel = _QuickAddPanel(
+              provider: provider,
+              items: items,
+              units: units,
+              onClose: () {
+                setState(() {
+                  _showQuickAddPanel = false;
+                });
+              },
+            );
+
+            // Header widget
+            final headerWidget = _BuilderHeader(
+              provider: provider,
+              factoryId: widget.factoryId,
+              shopFloorId: widget.shopFloorId,
+              onBack: widget.onBack,
+            );
+
+            Widget layoutChild;
+            if (compact) {
+              layoutChild = Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    headerWidget,
+                    const SizedBox(height: 16),
+                    Expanded(child: middleFlowchartPanel),
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 250),
+                      curve: Curves.easeOutCubic,
+                      height: _showQuickAddPanel ? 266 : 0,
+                      child: ClipRect(
+                        child: OverflowBox(
+                          minHeight: 0,
+                          maxHeight: 266,
+                          alignment: Alignment.topCenter,
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 16),
+                            child: SizedBox(
+                              height: 250,
+                              child: rightQuickAddPanel,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(height: 380, child: leftPropertiesPanel),
+                  ],
+                ),
+              );
+            } else {
+              layoutChild = Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  children: [
+                    headerWidget,
+                    const SizedBox(height: 20),
+                    Expanded(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SizedBox(width: 340, child: leftPropertiesPanel),
+                          const SizedBox(width: 20),
+                          Expanded(child: middleFlowchartPanel),
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 250),
+                            curve: Curves.easeOutCubic,
+                            width: _showQuickAddPanel ? 300 : 0,
+                            child: ClipRect(
+                              child: OverflowBox(
+                                minWidth: 0,
+                                maxWidth: 300,
+                                alignment: Alignment.topLeft,
+                                child: Padding(
+                                  padding: const EdgeInsets.only(left: 20),
+                                  child: SizedBox(
+                                    width: 280,
+                                    child: rightQuickAddPanel,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            return Stack(
+              children: [
+                layoutChild,
+                if (!_showQuickAddPanel)
+                  Positioned(
+                    top: compact ? null : 100,
+                    bottom: compact ? 396 : null,
+                    right: 0,
+                    child: Material(
+                      color: Colors.white,
+                      elevation: 3,
+                      shadowColor: const Color(0x33000000),
+                      borderRadius: const BorderRadius.horizontal(
+                        left: Radius.circular(12),
+                      ),
+                      child: InkWell(
+                        onTap: () {
+                          setState(() {
+                            _showQuickAddPanel = true;
+                          });
+                        },
+                        borderRadius: const BorderRadius.horizontal(
+                          left: Radius.circular(12),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                          child: Transform.flip(
+                            flipX: true,
+                            child: const Icon(
+                              Icons.menu_rounded,
+                              size: 20,
+                              color: Color(0xFF1E293B),
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
       ),
-    ));
+    );
   }
 
   Widget _buildVerticalNodeActions(
@@ -696,9 +710,11 @@ class _PipelineControlPanel extends StatelessWidget {
             const SizedBox(height: 14),
             Row(
               children: [
+                // Input and Output endpoints are not stages.
                 _PanelMetric(
                   label: 'Stages',
-                  value: '${template.stageLabels.length}',
+                  value:
+                      '${template.nodes.where((n) => n.processType != 'Input' && n.processType != 'Output').length}',
                 ),
                 const SizedBox(width: 8),
                 _PanelMetric(label: 'Nodes', value: '${template.nodes.length}'),
@@ -1833,6 +1849,88 @@ class _ItemEndpointDropdown extends StatelessWidget {
   }
 }
 
+/// Dropdown of items belonging to the "Scrap" item group (brass, aluminium,
+/// iron, ...). Configures where a stage's scrap ships during production.
+class _ScrapItemDropdown extends StatelessWidget {
+  const _ScrapItemDropdown({
+    required this.selectedItemId,
+    required this.selectedItemName,
+    required this.items,
+    required this.units,
+    required this.onChanged,
+  });
+
+  final int? selectedItemId;
+  final String? selectedItemName;
+  final List<ItemDefinition> items;
+  final List<UnitDefinition> units;
+  final ValueChanged<ItemDefinition?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final groups = context.watch<GroupsProvider>();
+    final scrapGroupIds = <int>{};
+    for (final group in groups.itemGroups) {
+      if (group.name.trim().toLowerCase() == 'scrap') {
+        scrapGroupIds.add(group.id);
+        scrapGroupIds.addAll(groups.descendantIdsOf(group.id));
+      }
+    }
+    final scrapItems = items
+        .where((item) => scrapGroupIds.contains(item.groupId))
+        .toList(growable: false);
+
+    final options = scrapItems
+        .map(
+          (item) => SearchableSelectOption<int>(
+            value: item.id,
+            label: _materialOptionLabel(item, units),
+            searchText: _materialOptionSearchText(item, units),
+          ),
+        )
+        .toList(growable: true);
+
+    if (selectedItemId != null &&
+        !scrapItems.any((item) => item.id == selectedItemId)) {
+      options.insert(
+        0,
+        SearchableSelectOption<int>(
+          value: selectedItemId!,
+          label: selectedItemName ?? 'Item #$selectedItemId',
+          searchText: selectedItemName ?? '',
+        ),
+      );
+    }
+
+    return SearchableSelectField<int>(
+      tapTargetKey: const ValueKey('pipeline-node-scrap-item'),
+      value: selectedItemId,
+      decoration: _softSearchDecoration(
+        label: 'Scrap',
+        helper: scrapGroupIds.isEmpty
+            ? 'Create a "Scrap" item group with scrap items (brass, aluminium, iron...).'
+            : 'Where this stage\'s scrap ships.',
+      ),
+      dialogTitle: 'Scrap destination',
+      searchHintText: 'Search scrap items',
+      emptyText: scrapGroupIds.isEmpty
+          ? 'No "Scrap" item group found in master data'
+          : 'No items in the Scrap group yet',
+      options: options,
+      onChanged: (value) {
+        ItemDefinition? selected;
+        for (final item in items) {
+          if (item.id == value) {
+            selected = item;
+            break;
+          }
+        }
+        onChanged(selected);
+      },
+    );
+  }
+}
+
 String _itemName(ItemDefinition item) {
   final displayName = item.displayName.trim();
   if (displayName.isNotEmpty) {
@@ -1871,8 +1969,6 @@ String _dieOptionSearchText(Die die) {
     die.operationalNotes,
   ].where((part) => part.trim().isNotEmpty).join(' ');
 }
-
-
 
 // ignore: unused_element
 class _GitGraphCanvas extends StatelessWidget {
@@ -1931,7 +2027,7 @@ class _GitGraphCanvas extends StatelessWidget {
       if (node.stageIndex > maxStageIndex) maxStageIndex = node.stageIndex;
       if (node.laneIndex > maxLaneIndex) maxLaneIndex = node.laneIndex;
     }
-    
+
     // Ensure we always show at least a few columns/rows, and at least +2 from the current max
     final sMax = math.max(3, maxStageIndex + 2);
     final lMax = math.max(3, maxLaneIndex + 2);
@@ -2531,7 +2627,8 @@ class _UnifiedMachineField extends StatefulWidget {
 
   final int? selectedGroupId;
   final String? selectedMachineId;
-  final void Function(int? groupId, String? groupName, Machine? machine) onChanged;
+  final void Function(int? groupId, String? groupName, Machine? machine)
+  onChanged;
 
   @override
   State<_UnifiedMachineField> createState() => _UnifiedMachineFieldState();
@@ -2562,7 +2659,8 @@ class _UnifiedMachineFieldState extends State<_UnifiedMachineField> {
     final machines = machinesProvider?.machines ?? const <Machine>[];
 
     String? currentValue;
-    if (widget.selectedMachineId != null && widget.selectedMachineId!.isNotEmpty) {
+    if (widget.selectedMachineId != null &&
+        widget.selectedMachineId!.isNotEmpty) {
       currentValue = 'machine_${widget.selectedMachineId}';
     } else if (widget.selectedGroupId != null) {
       currentValue = 'group_${widget.selectedGroupId}';
@@ -2574,30 +2672,34 @@ class _UnifiedMachineFieldState extends State<_UnifiedMachineField> {
         label: 'Unassigned',
         searchText: 'unassigned none empty',
       ),
-      ...groups.where((g) => !g.isArchived).map(
-        (g) => SearchableSelectOption<String?>(
-          value: 'group_${g.id}',
-          label: '${g.name} (Group)',
-          searchText: 'group ${g.name}',
-          highlightColor: const Color(0xFFE4C17C),
-        ),
-      ),
-      ...machines.where((m) => m.status == MachineStatus.active).map(
-        (m) => SearchableSelectOption<String?>(
-          value: 'machine_${m.id}',
-          label: '${m.name} (Machine)',
-          searchText: 'machine ${m.name}',
-          highlightColor: const Color(0xFFE4C17C),
-        ),
-      ),
+      ...groups
+          .where((g) => !g.isArchived)
+          .map(
+            (g) => SearchableSelectOption<String?>(
+              value: 'group_${g.id}',
+              label: '${g.name} (Group)',
+              searchText: 'group ${g.name}',
+              highlightColor: const Color(0xFFE4C17C),
+            ),
+          ),
+      ...machines
+          .where((m) => m.status == MachineStatus.active)
+          .map(
+            (m) => SearchableSelectOption<String?>(
+              value: 'machine_${m.id}',
+              label: '${m.name} (Machine)',
+              searchText: 'machine ${m.name}',
+              highlightColor: const Color(0xFFE4C17C),
+            ),
+          ),
       if (currentValue != null &&
           !groups.any((g) => 'group_${g.id}' == currentValue) &&
           !machines.any((m) => 'machine_${m.id}' == currentValue))
         SearchableSelectOption<String?>(
           value: currentValue,
-          label: widget.selectedMachineId?.isNotEmpty == true 
-                 ? 'Machine ${widget.selectedMachineId}' 
-                 : 'Group #${widget.selectedGroupId}',
+          label: widget.selectedMachineId?.isNotEmpty == true
+              ? 'Machine ${widget.selectedMachineId}'
+              : 'Group #${widget.selectedGroupId}',
           searchText: currentValue,
         ),
     ];
@@ -2616,36 +2718,39 @@ class _UnifiedMachineFieldState extends State<_UnifiedMachineField> {
         emptyText: 'No machines or groups found',
         options: options,
         canCreateOption: (query, allOptions) {
-                final normalized = query.trim().toLowerCase();
-                return normalized.isNotEmpty &&
-                    machines.every(
-                      (machine) => machine.name.trim().toLowerCase() != normalized,
-                    );
-              },
+          final normalized = query.trim().toLowerCase();
+          return normalized.isNotEmpty &&
+              machines.every(
+                (machine) => machine.name.trim().toLowerCase() != normalized,
+              );
+        },
         onCreateOption: (query) async {
-                final dummyMachine = Machine(
-                  id: '',
-                  name: query.trim(),
-                  assetId: '',
-                  primaryPhotoUrl: '',
-                  groupId: null,
-                  makeModel: '',
-                  serialNumber: '',
-                  status: MachineStatus.active,
-                  createdAt: DateTime.now(),
-                  updatedAt: DateTime.now(),
-                );
-                final created = await showMachineFormDialog(context, machine: dummyMachine);
-                if (!context.mounted || created == null) {
-                  return null;
-                }
-                await context.read<MachinesProvider>().refresh();
-                return SearchableSelectOption<String?>(
-                  value: 'machine_${created.id}',
-                  label: '${created.name} (Machine)',
-                  searchText: 'machine ${created.name}',
-                );
-              },
+          final dummyMachine = Machine(
+            id: '',
+            name: query.trim(),
+            assetId: '',
+            primaryPhotoUrl: '',
+            groupId: null,
+            makeModel: '',
+            serialNumber: '',
+            status: MachineStatus.active,
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+          );
+          final created = await showMachineFormDialog(
+            context,
+            machine: dummyMachine,
+          );
+          if (!context.mounted || created == null) {
+            return null;
+          }
+          await context.read<MachinesProvider>().refresh();
+          return SearchableSelectOption<String?>(
+            value: 'machine_${created.id}',
+            label: '${created.name} (Machine)',
+            searchText: 'machine ${created.name}',
+          );
+        },
         createOptionLabelBuilder: (query) => 'Create new machine "$query"',
         onChanged: (val) {
           if (val == null) {
@@ -2656,7 +2761,9 @@ class _UnifiedMachineFieldState extends State<_UnifiedMachineField> {
             widget.onChanged(groupId, group?.name, null);
           } else if (val.startsWith('machine_')) {
             final machineId = val.substring(8);
-            final machine = machines.where((m) => m.id == machineId).firstOrNull;
+            final machine = machines
+                .where((m) => m.id == machineId)
+                .firstOrNull;
             widget.onChanged(machine?.groupId, null, machine);
           }
         },
@@ -3031,7 +3138,7 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
             ),
             const SizedBox(height: 16),
             _DialogField('Name', widget.draft.name),
-            
+
             if (!_isOutputNode) ...[
               _ItemEndpointDropdown(
                 tapTargetKey: const ValueKey('pipeline-node-input-item'),
@@ -3050,7 +3157,7 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
                 },
               ),
             ],
-            
+
             if (!_isInputNode) ...[
               if (!_isOutputNode) const SizedBox(height: 12),
               _ItemEndpointDropdown(
@@ -3070,7 +3177,7 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
                 },
               ),
             ],
-            
+
             if (!_isInputNode && !_isOutputNode) ...[
               const SizedBox(height: 12),
               _UnifiedMachineField(
@@ -3097,6 +3204,21 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
                 controller: widget.draft.dieId,
                 requiredMachineGroupId: _selectedMachineGroupId,
               ),
+              const SizedBox(height: 12),
+              _ScrapItemDropdown(
+                selectedItemId: widget.node.scrapItemId,
+                selectedItemName: widget.node.scrapItemName,
+                items: widget.items,
+                units: widget.units,
+                onChanged: (item) {
+                  widget.provider.updateNodeScrapItem(
+                    nodeId: widget.node.id,
+                    scrapItemId: item?.id,
+                    scrapItemName: item == null ? null : _itemName(item),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
               _DialogField('Process Action', widget.draft.processType),
               Row(
                 children: [
@@ -3165,8 +3287,14 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
   void _saveItems() {
     widget.provider.updateNodeItems(
       nodeId: widget.node.id,
-      inputItem: _endpointFor(_inputItemId, fallback: widget.node.inputItem ?? _getInheritedInput()),
-      outputItem: _endpointFor(_outputItemId, fallback: widget.node.outputItem ?? _getInheritedOutput()),
+      inputItem: _endpointFor(
+        _inputItemId,
+        fallback: widget.node.inputItem ?? _getInheritedInput(),
+      ),
+      outputItem: _endpointFor(
+        _outputItemId,
+        fallback: widget.node.outputItem ?? _getInheritedOutput(),
+      ),
       units: widget.units,
       propagate: false,
     );
@@ -3229,7 +3357,8 @@ class _FlowchartSequencePanel extends StatefulWidget {
   final VoidCallback onCanvasTap;
 
   @override
-  State<_FlowchartSequencePanel> createState() => _FlowchartSequencePanelState();
+  State<_FlowchartSequencePanel> createState() =>
+      _FlowchartSequencePanelState();
 }
 
 class _FlowchartSequencePanelState extends State<_FlowchartSequencePanel> {
@@ -3260,7 +3389,9 @@ class _FlowchartSequencePanelState extends State<_FlowchartSequencePanel> {
   void _updateScrollState() {
     if (!_scrollController.hasClients) return;
     final canScrollUp = _scrollController.position.pixels > 0;
-    final canScrollDown = _scrollController.position.pixels < _scrollController.position.maxScrollExtent;
+    final canScrollDown =
+        _scrollController.position.pixels <
+        _scrollController.position.maxScrollExtent;
     if (canScrollUp != _canScrollUp || canScrollDown != _canScrollDown) {
       setState(() {
         _canScrollUp = canScrollUp;
@@ -3313,7 +3444,8 @@ class _FlowchartSequencePanelState extends State<_FlowchartSequencePanel> {
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              onPressed: () => widget.provider.addNextStepFromSelection(units: units),
+              onPressed: () =>
+                  widget.provider.addNextStepFromSelection(units: units),
             ),
           ],
         ),
@@ -3381,7 +3513,11 @@ class _FlowchartSequencePanelState extends State<_FlowchartSequencePanel> {
                 if (_canScrollUp)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 4),
-                    child: Icon(Icons.more_horiz_rounded, color: Color(0xFF94A3B8), size: 24),
+                    child: Icon(
+                      Icons.more_horiz_rounded,
+                      color: Color(0xFF94A3B8),
+                      size: 24,
+                    ),
                   ),
                 Flexible(
                   child: middleStageIndices.isEmpty
@@ -3410,7 +3546,11 @@ class _FlowchartSequencePanelState extends State<_FlowchartSequencePanel> {
                 if (_canScrollDown)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 4),
-                    child: Icon(Icons.more_horiz_rounded, color: Color(0xFF94A3B8), size: 24),
+                    child: Icon(
+                      Icons.more_horiz_rounded,
+                      color: Color(0xFF94A3B8),
+                      size: 24,
+                    ),
                   ),
                 if (outputStageIndex != null)
                   Padding(
@@ -3432,8 +3572,9 @@ class _FlowchartSequencePanelState extends State<_FlowchartSequencePanel> {
                     child: OutlinedButton.icon(
                       icon: const Icon(Icons.add_rounded, size: 16),
                       label: const Text('Add Next Stage'),
-                      onPressed: () =>
-                          widget.provider.addNextStepFromSelection(units: units),
+                      onPressed: () => widget.provider.addNextStepFromSelection(
+                        units: units,
+                      ),
                     ),
                   ),
               ],
@@ -3565,11 +3706,7 @@ class _FlowchartSequencePanelState extends State<_FlowchartSequencePanel> {
           IconButton(
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
-            icon: Icon(
-              Icons.edit_rounded,
-              size: 12,
-              color: iconColor,
-            ),
+            icon: Icon(Icons.edit_rounded, size: 12, color: iconColor),
             onPressed: () => _showStageRenameDialog(context, stageIndex, name),
           ),
         ],
@@ -4014,20 +4151,23 @@ class _QuickItemCreateDialogState extends State<_QuickItemCreateDialog> {
             decoration: const InputDecoration(labelText: 'Primary Unit'),
             dialogTitle: 'Select Primary Unit',
             searchHintText: 'Search units',
-            options: context.watch<UnitsProvider>().activeUnits.map((u) {
-              return SearchableSelectOption<int>(
-                value: u.id,
-                label: '${u.displayLabel} (${u.symbol})',
-                searchText: '${u.displayLabel} ${u.symbol}',
-              );
-            }).toList(growable: false),
+            options: context
+                .watch<UnitsProvider>()
+                .activeUnits
+                .map((u) {
+                  return SearchableSelectOption<int>(
+                    value: u.id,
+                    label: '${u.displayLabel} (${u.symbol})',
+                    searchText: '${u.displayLabel} ${u.symbol}',
+                  );
+                })
+                .toList(growable: false),
             canCreateOption: (query, _) => query.trim().isNotEmpty,
             onCreateOption: (query) async {
               final symbol = query.trim();
-              final created = await context.read<UnitsProvider>().createUnit(CreateUnitInput(
-                name: symbol,
-                symbol: symbol,
-              ));
+              final created = await context.read<UnitsProvider>().createUnit(
+                CreateUnitInput(name: symbol, symbol: symbol),
+              );
               if (created == null) return null;
               return SearchableSelectOption<int>(
                 value: created.id,

@@ -36,6 +36,7 @@ import 'package:core_erp/features/items/data/repositories/item_repository.dart';
 import 'package:core_erp/features/items/domain/item_asset.dart';
 import 'package:core_erp/features/items/domain/item_definition.dart';
 import 'package:core_erp/features/items/domain/item_inputs.dart';
+import 'package:core_erp/features/orders/data/models/order_api_models.dart';
 import 'package:core_erp/features/orders/data/repositories/order_repository.dart';
 import 'package:core_erp/features/orders/domain/order_entry.dart';
 import 'package:core_erp/features/orders/domain/order_history.dart';
@@ -2466,6 +2467,52 @@ class FakeOrderRepository extends OrderRepository {
     await linkPoDocuments(created.id, input.poDocumentIds);
     _recordActivity(created.id, 'order_created');
     return created;
+  }
+
+  @override
+  Future<OrderEntry> updateOrder(int orderId, CreateOrderInput input) async {
+    final index = _orders.indexWhere((order) => order.id == orderId);
+    if (index == -1) {
+      throw Exception('Order $orderId not found.');
+    }
+    final current = _orders[index];
+    final updated = OrderEntry(
+      id: current.id,
+      orderNo: input.orderNo.trim(),
+      clientId: input.clientId,
+      clientName: input.clientName.trim(),
+      poNumber: input.poNumber.trim(),
+      clientCode: input.clientCode.trim(),
+      itemId: input.itemId,
+      itemName: input.itemName.trim(),
+      variationLeafNodeId: input.variationLeafNodeId,
+      variationPathLabel: input.variationPathLabel.trim(),
+      variationPathNodeIds: List<int>.from(input.variationPathNodeIds),
+      quantity: input.quantity,
+      unitId: input.unitId,
+      unitName: input.unitName.trim(),
+      unitSymbol: input.unitSymbol.trim(),
+      unitPrice: input.unitPrice,
+      totalInvoicedQty: input.totalInvoicedQty,
+      status: input.status,
+      createdAt: current.createdAt,
+      startDate: input.startDate,
+      endDate: input.endDate,
+    );
+    _orders[index] = updated;
+    await linkPoDocuments(updated.id, input.poDocumentIds);
+    _recordActivity(updated.id, 'order_updated');
+    return updated;
+  }
+
+  @override
+  Future<List<OrderDeletionSummary>> deleteOrder(
+    int orderId, {
+    String? wipBarcode,
+    double? wipQty,
+  }) async {
+    _orders.removeWhere((order) => order.id == orderId);
+    return const <OrderDeletionSummary>[];
   }
 
   @override

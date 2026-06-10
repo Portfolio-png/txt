@@ -92,15 +92,18 @@ class PipelinesScreen extends StatefulWidget {
                 final now = DateTime.now().microsecondsSinceEpoch;
                 final id = 'tpl-$now';
 
+                // Input and Output are pipeline endpoints, not stages. The
+                // single predefined stage between them takes its input from
+                // the pipeline input and its output from the pipeline output.
                 final inputNode = ProcessNode(
                   id: 'node-input-$now',
-                  name: 'Input Stage',
+                  name: 'Input',
                   processType: 'Input',
                   stageIndex: 0,
                   laneIndex: 0,
                   inputs: [input],
                   outputs: [input],
-                  machine: 'Input Stage',
+                  machine: 'Input',
                   dieId: '',
                   durationHours: 0.25,
                   status: 'Ready',
@@ -116,31 +119,25 @@ class PipelinesScreen extends StatefulWidget {
                   stageIndex: 1,
                   laneIndex: 0,
                   inputs: [input],
-                  outputs: ['Process Output'],
+                  outputs: [output],
                   machine: '',
                   dieId: '',
                   durationHours: 1.0,
                   status: 'Queued',
                   isIntermediate: true,
                   inputItem: inputEndpoint,
-                  outputItem: PipelineItemEndpoint(
-                    itemId: now + 1,
-                    itemName: 'Process Output',
-                    unitId: outputEndpoint.unitId,
-                    unitName: outputEndpoint.unitName,
-                    unitSymbol: outputEndpoint.unitSymbol,
-                  ),
+                  outputItem: outputEndpoint,
                 );
 
                 final outputNode = ProcessNode(
                   id: 'node-output-${now + 2}',
-                  name: 'Output Stage',
+                  name: 'Output',
                   processType: 'Output',
                   stageIndex: 2,
                   laneIndex: 0,
                   inputs: [output],
                   outputs: [output],
-                  machine: 'Output Stage',
+                  machine: 'Output',
                   dieId: '',
                   durationHours: 0.25,
                   status: 'Queued',
@@ -160,7 +157,7 @@ class PipelinesScreen extends StatefulWidget {
                   id: 'flow-$now-2',
                   fromNodeId: intermediateNode.id,
                   toNodeId: outputNode.id,
-                  materialName: 'Process Output',
+                  materialName: output,
                 );
 
                 Navigator.pop(
@@ -312,7 +309,7 @@ class PipelinesScreen extends StatefulWidget {
       nameCtrl.dispose();
       descCtrl.dispose();
     });
-    
+
     return result;
   }
 
@@ -415,7 +412,9 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Pipeline'),
-        content: Text('Are you sure you want to delete "${template.name}"? This action cannot be undone.'),
+        content: Text(
+          'Are you sure you want to delete "${template.name}"? This action cannot be undone.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -772,7 +771,6 @@ PipelineItemEndpoint _endpointForItem(
   );
 }
 
-
 class _PipelineTemplateList extends StatelessWidget {
   const _PipelineTemplateList({
     required this.templates,
@@ -811,9 +809,7 @@ class _PipelineTemplateList extends StatelessWidget {
                 onDuplicate: onDuplicate == null
                     ? null
                     : () => onDuplicate!(template),
-                onDelete: onDelete == null
-                    ? null
-                    : () => onDelete!(template),
+                onDelete: onDelete == null ? null : () => onDelete!(template),
               );
             },
           ),
@@ -895,7 +891,11 @@ class _PipelineTemplateCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final nodeCount = template.nodes.length;
     final flowCount = template.flows.length;
-    final stageCount = template.stageLabels.length;
+    // Input and Output endpoints are not stages; only the process nodes
+    // between them count.
+    final stageCount = template.nodes
+        .where((n) => n.processType != 'Input' && n.processType != 'Output')
+        .length;
     final hasRunnableRoute = nodeCount > 0;
     final routeText = [
       template.inputMaterial.trim().isEmpty
@@ -1032,7 +1032,7 @@ class _PipelineTemplateCard extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     if (showManagementActions) ...[
-                      if (template.status == PipelineTemplateStatus.draft && onDelete != null)
+                      if (onDelete != null)
                         IconButton(
                           icon: const Icon(
                             Icons.delete_outline,
@@ -1040,7 +1040,7 @@ class _PipelineTemplateCard extends StatelessWidget {
                             color: Colors.redAccent,
                           ),
                           onPressed: onDelete,
-                          tooltip: 'Delete Draft',
+                          tooltip: 'Delete Pipeline',
                         ),
                       IconButton(
                         icon: const Icon(
@@ -1149,7 +1149,6 @@ class _PipelineStatusBadge extends StatelessWidget {
     );
   }
 }
-
 
 class _PipelineCardPainter extends CustomPainter {
   const _PipelineCardPainter({
@@ -1495,20 +1494,23 @@ class _QuickItemCreateDialogState extends State<_QuickItemCreateDialog> {
             decoration: const InputDecoration(labelText: 'Primary Unit'),
             dialogTitle: 'Select Primary Unit',
             searchHintText: 'Search units',
-            options: context.watch<UnitsProvider>().activeUnits.map((u) {
-              return SearchableSelectOption<int>(
-                value: u.id,
-                label: '${u.displayLabel} (${u.symbol})',
-                searchText: '${u.displayLabel} ${u.symbol}',
-              );
-            }).toList(growable: false),
+            options: context
+                .watch<UnitsProvider>()
+                .activeUnits
+                .map((u) {
+                  return SearchableSelectOption<int>(
+                    value: u.id,
+                    label: '${u.displayLabel} (${u.symbol})',
+                    searchText: '${u.displayLabel} ${u.symbol}',
+                  );
+                })
+                .toList(growable: false),
             canCreateOption: (query, _) => query.trim().isNotEmpty,
             onCreateOption: (query) async {
               final symbol = query.trim();
-              final created = await context.read<UnitsProvider>().createUnit(CreateUnitInput(
-                name: symbol,
-                symbol: symbol,
-              ));
+              final created = await context.read<UnitsProvider>().createUnit(
+                CreateUnitInput(name: symbol, symbol: symbol),
+              );
               if (created == null) return null;
               return SearchableSelectOption<int>(
                 value: created.id,

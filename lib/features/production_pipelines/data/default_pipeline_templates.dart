@@ -9,9 +9,9 @@ const sheetMetalPipelineTemplate = PipelineTemplate(
   shopFloorId: defaultProductionShopFloorId,
   name: 'Sheet Metal Process',
   description:
-      'Input Stage: Sheet metal goes in at this stage, then flows through blank cutting, piercing, bending, drilling, and packaging.',
+      'Sheet metal goes in at the input, then flows through blank cutting, piercing, bending, drilling, and packaging.',
   stageLabels: [
-    'Input Stage',
+    'Input',
     'Blank Cutting',
     'Piercing',
     'Bending',
@@ -28,7 +28,7 @@ const sheetMetalPipelineTemplate = PipelineTemplate(
       laneIndex: 0,
       inputs: ['Sheet metal'],
       outputs: ['Sheet metal'],
-      machine: 'Input Stage',
+      machine: 'Input',
       dieId: '',
       durationHours: 0.25,
       status: 'Ready',

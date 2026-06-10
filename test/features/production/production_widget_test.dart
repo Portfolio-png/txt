@@ -34,7 +34,7 @@ void main() {
     expect(sheetMetalPipelineTemplate.factoryId, '1');
     expect(sheetMetalPipelineTemplate.shopFloorId, '1');
     expect(sheetMetalPipelineTemplate.stageLabels, [
-      'Input Stage',
+      'Input',
       'Blank Cutting',
       'Piercing',
       'Bending',
@@ -42,7 +42,7 @@ void main() {
       'Packaging',
     ]);
     expect(sheetMetalPipelineTemplate.nodes.map((node) => node.machine), [
-      'Input Stage',
+      'Input',
       'Blank Cutting',
       'Handpress',
       'PP',
@@ -729,6 +729,11 @@ class _FakePipelineRunRepository implements PipelineRunRepository {
   }
 
   @override
+  Future<void> deleteTemplate(String id) async {
+    _templates.removeWhere((template) => template.id == id);
+  }
+
+  @override
   Future<PipelineTemplate?> getTemplate(String id) async {
     for (final template in _templates) {
       if (template.id == id) {
@@ -742,7 +747,13 @@ class _FakePipelineRunRepository implements PipelineRunRepository {
   Future<List<PipelineRun>> getRuns({String? templateId}) async => const [];
 
   @override
-  Future<PipelineRun> createRun(String templateId, {String? name, int? orderItemId, String? orderNo}) {
+  Future<PipelineRun> createRun(
+    String templateId, {
+    String? name,
+    String? orderNo,
+    int? orderItemId,
+    String? scrapRouting,
+  }) {
     throw UnimplementedError();
   }
 
@@ -792,6 +803,24 @@ class _FakePipelineRunRepository implements PipelineRunRepository {
   }) {
     throw UnimplementedError();
   }
+
+  @override
+  Future<PipelineRun> updateNodeMetrics({
+    required String runId,
+    required String nodeId,
+    required Map<String, dynamic> metrics,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> logProductionScrap({
+    required String runId,
+    required String nodeId,
+    required String materialBarcode,
+    required double scrapQty,
+    String? orderNo,
+  }) async {}
 }
 
 PipelineTemplate _testTemplate() {

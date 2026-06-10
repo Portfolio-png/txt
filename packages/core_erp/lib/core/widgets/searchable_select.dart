@@ -120,6 +120,7 @@ class SearchableSelectField<T> extends FormField<T> {
                  return KeyEventResult.ignored;
                }
                if (event.logicalKey == LogicalKeyboardKey.enter ||
+                   event.logicalKey == LogicalKeyboardKey.numpadEnter ||
                    event.logicalKey == LogicalKeyboardKey.space) {
                  field.openSelector();
                  return KeyEventResult.handled;
@@ -555,7 +556,9 @@ class _SearchableSelectOptionTileState<T>
     final baseColor = widget.option.highlightColor;
     final active = _isFocused || _isHovered;
     final backgroundColor = active
-        ? (baseColor != null ? baseColor.withValues(alpha: 0.25) : const Color(0xFFEDE9FF))
+        ? (baseColor != null
+              ? baseColor.withValues(alpha: 0.25)
+              : const Color(0xFFEDE9FF))
         : widget.isSelected
         ? const Color(0xFFF3F0FF)
         : Colors.white;

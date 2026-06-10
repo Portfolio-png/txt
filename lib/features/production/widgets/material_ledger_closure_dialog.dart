@@ -65,11 +65,20 @@ class _MaterialLedgerClosureDialogState
       } else if (scrapKg != null) {
         _weights = MaterialLedgerDistributor.updateScrap(_weights, scrapKg);
       } else if (goodKg != null) {
-        _weights = MaterialLedgerDistributor.adjustWeights(_weights, goodKg: goodKg);
+        _weights = MaterialLedgerDistributor.adjustWeights(
+          _weights,
+          goodKg: goodKg,
+        );
       } else if (setupKg != null) {
-        _weights = MaterialLedgerDistributor.adjustWeights(_weights, setupKg: setupKg);
+        _weights = MaterialLedgerDistributor.adjustWeights(
+          _weights,
+          setupKg: setupKg,
+        );
       } else if (processKg != null) {
-        _weights = MaterialLedgerDistributor.adjustWeights(_weights, processKg: processKg);
+        _weights = MaterialLedgerDistributor.adjustWeights(
+          _weights,
+          processKg: processKg,
+        );
       }
     });
     _syncProvider();
@@ -157,7 +166,8 @@ class _MaterialLedgerClosureDialogState
                       goodKg: _weights.goodKg,
                       setupKg: _weights.setupKg,
                       processKg: _weights.processKg,
-                      onParentBarcodeSelected: (val) => setState(() => _selectedParentBarcode = val),
+                      onParentBarcodeSelected: (val) =>
+                          setState(() => _selectedParentBarcode = val),
                       onRemainingChanged: (value) {
                         setState(() {
                           _remainingKg = value.clamp(0.0, _assignedKg);
@@ -273,7 +283,9 @@ class _MaterialLedgerClosureDialogState
       _syncProvider();
 
       if (_selectedParentBarcode == null) {
-        throw Exception('Please select the consumed material from the dropdown.');
+        throw Exception(
+          'Please select the consumed material from the dropdown.',
+        );
       }
 
       // 1. Consume Parent Stock
@@ -287,29 +299,18 @@ class _MaterialLedgerClosureDialogState
         ),
       );
 
-      // 2. Handle Scrap Destination
+      // 2. Handle Scrap. Scrap always goes to the scrap ledger (attributed
+      // to the stage's configured Scrap item), never back into inventory.
       if (_weights.scrapKg > 0) {
         if (activeRun != null && selectedNodeId != null) {
           final run = await pipelineRepo.getRun(activeRun.id);
-          if (run?.scrapRouting == 'scrap_table') {
-            await pipelineRepo.logProductionScrap(
-              runId: activeRun.id,
-              nodeId: selectedNodeId,
-              materialBarcode: _selectedParentBarcode!,
-              scrapQty: _weights.scrapKg,
-              orderNo: run?.orderNo,
-            );
-          } else {
-            await repo.createInventoryMovement(
-              CreateInventoryMovementInput(
-                materialBarcode: _selectedParentBarcode!,
-                movementType: InventoryMovementType.adjust,
-                qty: -_weights.scrapKg,
-                reasonCode: 'SCRAP_WASTAGE',
-                actor: activeOperator,
-              ),
-            );
-          }
+          await pipelineRepo.logProductionScrap(
+            runId: activeRun.id,
+            nodeId: selectedNodeId,
+            materialBarcode: _selectedParentBarcode!,
+            scrapQty: _weights.scrapKg,
+            orderNo: run?.orderNo,
+          );
         } else {
           await repo.createInventoryMovement(
             CreateInventoryMovementInput(
@@ -351,16 +352,13 @@ class _MaterialLedgerClosureDialogState
       }
 
       if (!mounted) return;
-      
+
       if (activeRun != null && selectedNodeId != null) {
         try {
           await pipelineRepo.updateNodeMetrics(
             runId: activeRun.id,
             nodeId: selectedNodeId,
-            metrics: {
-              'remaining': _remainingKg,
-              'scrap': _weights.scrapKg,
-            },
+            metrics: {'remaining': _remainingKg, 'scrap': _weights.scrapKg},
           );
         } catch (e) {
           debugPrint('Failed to save node metrics: $e');
@@ -467,8 +465,10 @@ class _LedgerEditor extends StatelessWidget {
             formatter: (value) => value.toStringAsFixed(2),
             parser: (value) => double.tryParse(value) ?? remainingKg,
             onChanged: onRemainingChanged,
-            onIncrement: () => onRemainingChanged((remainingKg + 1.0).clamp(0.0, assignedKg)),
-            onDecrement: () => onRemainingChanged((remainingKg - 1.0).clamp(0.0, assignedKg)),
+            onIncrement: () =>
+                onRemainingChanged((remainingKg + 1.0).clamp(0.0, assignedKg)),
+            onDecrement: () =>
+                onRemainingChanged((remainingKg - 1.0).clamp(0.0, assignedKg)),
           ),
 
           // Consumed Row
@@ -1135,7 +1135,10 @@ class _MaterialSelector extends StatelessWidget {
           decoration: InputDecoration(
             filled: true,
             fillColor: const Color(0xFF18181B),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 12,
+            ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide.none,

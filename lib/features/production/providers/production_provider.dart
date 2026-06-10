@@ -466,17 +466,21 @@ class ProductionProvider extends ChangeNotifier {
   }
 
   void skipNode(String nodeId) {
+    setNodeStatus(nodeId, 'Skipped');
+  }
+
+  void setNodeStatus(String nodeId, String status) {
     final nodes = [...template.nodes];
     final idx = nodes.indexWhere((n) => n.id == nodeId);
     if (idx != -1) {
-      nodes[idx] = nodes[idx].copyWith(status: 'Skipped');
+      nodes[idx] = nodes[idx].copyWith(status: status);
       _workingTemplate = template.copyWith(nodes: nodes);
       notifyListeners();
     }
   }
 
   void reverseNode(String nodeId, {required String reason}) {
-    // In a real flow, this would locate the upstream node, 
+    // In a real flow, this would locate the upstream node,
     // inject a backward flow, and mark the upstream node for 'rework'.
     // For now, mark the current node as 'Reversed'.
     final nodes = [...template.nodes];
@@ -493,34 +497,38 @@ class ProductionProvider extends ChangeNotifier {
     final nodes = [...template.nodes];
     final flows = [...template.flows];
     final sourceNode = nodes.firstWhere((n) => n.id == nodeId);
-    
+
     // Add parallel nodes in the next stage
     final nextStageIndex = sourceNode.stageIndex + 1;
     for (int i = 0; i < numBranches; i++) {
       final newId = 'node-branch-${DateTime.now().microsecondsSinceEpoch}-$i';
-      nodes.add(ProcessNode(
-        id: newId,
-        name: '${sourceNode.name} Branch ${i+1}',
-        processType: sourceNode.processType,
-        stageIndex: nextStageIndex,
-        laneIndex: i, // Parallel lanes
-        inputs: sourceNode.outputs,
-        outputs: sourceNode.outputs,
-        machine: '',
-        dieId: '',
-        durationHours: sourceNode.durationHours,
-        status: 'queued',
-        isIntermediate: true,
-      ));
-      flows.add(MaterialFlow(
-        id: 'flow-$nodeId-$newId',
-        fromNodeId: nodeId,
-        toNodeId: newId,
-        materialName: sourceNode.outputs.firstOrNull ?? '',
-        isSplit: true,
-      ));
+      nodes.add(
+        ProcessNode(
+          id: newId,
+          name: '${sourceNode.name} Branch ${i + 1}',
+          processType: sourceNode.processType,
+          stageIndex: nextStageIndex,
+          laneIndex: i, // Parallel lanes
+          inputs: sourceNode.outputs,
+          outputs: sourceNode.outputs,
+          machine: '',
+          dieId: '',
+          durationHours: sourceNode.durationHours,
+          status: 'queued',
+          isIntermediate: true,
+        ),
+      );
+      flows.add(
+        MaterialFlow(
+          id: 'flow-$nodeId-$newId',
+          fromNodeId: nodeId,
+          toNodeId: newId,
+          materialName: sourceNode.outputs.firstOrNull ?? '',
+          isSplit: true,
+        ),
+      );
     }
-    
+
     // Adjust lane labels if needed
     final lanes = [...template.laneLabels];
     while (lanes.length < numBranches) {
@@ -528,7 +536,7 @@ class ProductionProvider extends ChangeNotifier {
     }
 
     _workingTemplate = template.copyWith(
-      nodes: nodes, 
+      nodes: nodes,
       flows: flows,
       laneLabels: lanes,
     );

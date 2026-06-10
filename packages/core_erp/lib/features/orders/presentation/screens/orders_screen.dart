@@ -80,7 +80,10 @@ class OrdersScreen extends StatefulWidget {
   )?
   onShowPipeline;
 
-  static Future<void> openEditor(BuildContext context, [OrderGroup? initialOrderGroup]) {
+  static Future<void> openEditor(
+    BuildContext context, [
+    OrderGroup? initialOrderGroup,
+  ]) {
     return showErpFormDialog<void>(
       context,
       maxWidth: 1499,
@@ -124,14 +127,21 @@ class _OrdersScreenState extends State<OrdersScreen> {
       actions: {
         PrintIntent: CallbackAction<PrintIntent>(
           onInvoke: (intent) {
-            final data = visibleGroups.map((group) => {
-              'order_no': group.orderNo,
-              'client': group.clientName,
-              'po_number': group.poNumber,
-              'created_at': group.createdAt.toIso8601String().split('T').first,
-              'status': group.overallStatus.name,
-              'items_count': group.items.length,
-            }).toList();
+            final data = visibleGroups
+                .map(
+                  (group) => {
+                    'order_no': group.orderNo,
+                    'client': group.clientName,
+                    'po_number': group.poNumber,
+                    'created_at': group.createdAt
+                        .toIso8601String()
+                        .split('T')
+                        .first,
+                    'status': group.overallStatus.name,
+                    'items_count': group.items.length,
+                  },
+                )
+                .toList();
             ExportPreviewDialog.show(context, title: 'Order Book', data: data);
             return null;
           },
@@ -939,7 +949,12 @@ class _OrdersTableCard extends StatelessWidget {
   final void Function(int orderId, bool selected) onToggleSelection;
   final ValueChanged<OrderGroup> onRowTap;
   final VoidCallback onCreateOrder;
-  final Future<void> Function(BuildContext context, OrderGroup orderGroup, [OrderEntry? preselectedItem])? onGoToProduction;
+  final Future<void> Function(
+    BuildContext context,
+    OrderGroup orderGroup, [
+    OrderEntry? preselectedItem,
+  ])?
+  onGoToProduction;
 
   @override
   Widget build(BuildContext context) {
@@ -1164,7 +1179,12 @@ class _OrderDataRow extends StatefulWidget {
   final bool isSelected;
   final ValueChanged<bool> onSelectionChanged;
   final VoidCallback onTap;
-  final Future<void> Function(BuildContext context, OrderGroup orderGroup, [OrderEntry? preselectedItem])? onGoToProduction;
+  final Future<void> Function(
+    BuildContext context,
+    OrderGroup orderGroup, [
+    OrderEntry? preselectedItem,
+  ])?
+  onGoToProduction;
 
   @override
   State<_OrderDataRow> createState() => _OrderDataRowState();
@@ -1367,7 +1387,8 @@ class _OrderDataRowState extends State<_OrderDataRow> {
                                 onQuickAction: () =>
                                     _performQuickAction(quickAction),
                                 onView: widget.onTap,
-                                onEdit: () => OrdersScreen.openEditor(context, group),
+                                onEdit: () =>
+                                    OrdersScreen.openEditor(context, group),
                                 onDelete: () => _handleDelete(context, group),
                               ),
                             ),
@@ -1395,7 +1416,8 @@ class _OrderDataRowState extends State<_OrderDataRow> {
       return;
     }
 
-    if (action.kind == _QuickRowActionKind.start && widget.onGoToProduction != null) {
+    if (action.kind == _QuickRowActionKind.start &&
+        widget.onGoToProduction != null) {
       await widget.onGoToProduction!(context, widget.order);
       return;
     }
@@ -1493,19 +1515,25 @@ class _OrderDataRowState extends State<_OrderDataRow> {
 }
 
 Future<void> _handleDelete(BuildContext context, OrderGroup group) async {
-  final hasWip = group.overallStatus != OrderStatus.notStarted && group.overallStatus != OrderStatus.draft;
-  
+  final hasWip =
+      group.overallStatus != OrderStatus.notStarted &&
+      group.overallStatus != OrderStatus.draft;
+
   if (hasWip) {
     final result = await showDialog<({String barcode, double qty})>(
       context: context,
       builder: (ctx) => const Dialog(child: _DissolutionDialog()),
     );
     if (result == null) return;
-    
+
     if (context.mounted) {
-      final summary = await context.read<OrdersProvider>().deleteOrder(group.items.first.id, wipBarcode: result.barcode, wipQty: result.qty);
+      final summary = await context.read<OrdersProvider>().deleteOrder(
+        group.items.first.id,
+        wipBarcode: result.barcode,
+        wipQty: result.qty,
+      );
       if (summary != null && context.mounted) {
-         _showDeletionSummary(context, summary, wasStarted: true);
+        _showDeletionSummary(context, summary, wasStarted: true);
       }
     }
   } else {
@@ -1513,19 +1541,26 @@ Future<void> _handleDelete(BuildContext context, OrderGroup group) async {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Order'),
-        content: const Text('Are you sure you want to delete this order? All allocated inputs will be returned to inventory.'),
+        content: const Text(
+          'Are you sure you want to delete this order? All allocated inputs will be returned to inventory.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.of(ctx).pop(true), 
-            child: const Text('Delete')
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete'),
           ),
         ],
       ),
     );
     if (confirm == true && context.mounted) {
-      final summary = await context.read<OrdersProvider>().deleteOrder(group.items.first.id);
+      final summary = await context.read<OrdersProvider>().deleteOrder(
+        group.items.first.id,
+      );
       if (summary != null && context.mounted) {
         _showDeletionSummary(context, summary, wasStarted: false);
       }
@@ -1533,7 +1568,11 @@ Future<void> _handleDelete(BuildContext context, OrderGroup group) async {
   }
 }
 
-void _showDeletionSummary(BuildContext context, List<OrderDeletionSummary> summary, {required bool wasStarted}) {
+void _showDeletionSummary(
+  BuildContext context,
+  List<OrderDeletionSummary> summary, {
+  required bool wasStarted,
+}) {
   showDialog(
     context: context,
     builder: (ctx) => AlertDialog(
@@ -1545,37 +1584,59 @@ void _showDeletionSummary(BuildContext context, List<OrderDeletionSummary> summa
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (summary.isEmpty)
-              const Text('No materials were recovered to inventory because no raw materials were consumed and no WIP was specified.')
+              const Text(
+                'No materials were recovered to inventory because no raw materials were consumed and no WIP was specified.',
+              )
             else ...[
-              const Text('The following materials were recovered to inventory:'),
+              const Text(
+                'The following materials were recovered to inventory:',
+              ),
               const SizedBox(height: 16),
-              ...summary.map((item) => Padding(
-                // ...
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    const Icon(Icons.inventory_2_outlined, size: 16, color: SoftErpTheme.textSecondary),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        item.barcode,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+              ...summary.map(
+                (item) => Padding(
+                  // ...
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.inventory_2_outlined,
+                        size: 16,
+                        color: SoftErpTheme.textSecondary,
                       ),
-                    ),
-                    Text('${item.qty} units', style: const TextStyle(fontWeight: FontWeight.w500)),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: Colors.grey.shade300)
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          item.barcode,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
                       ),
-                      child: Text(item.reason, style: const TextStyle(fontSize: 10, color: Colors.grey)),
-                    )
-                  ],
+                      Text(
+                        '${item.qty} units',
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Text(
+                          item.reason,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              )),
+              ),
             ],
           ],
         ),
@@ -1606,14 +1667,22 @@ class _DissolutionDialogState extends State<_DissolutionDialog> {
     return Container(
       width: 450,
       padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Order Dissolution', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const Text(
+            'Order Dissolution',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 12),
-          const Text('This order has intermediate WIP. Please map the WIP to an inventory item to store it.'),
+          const Text(
+            'This order has intermediate WIP. Please map the WIP to an inventory item to store it.',
+          ),
           const SizedBox(height: 16),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1636,30 +1705,43 @@ class _DissolutionDialogState extends State<_DissolutionDialog> {
             value: _selectedItem,
             isExpanded: true,
             decoration: const InputDecoration(border: OutlineInputBorder()),
-            items: itemsProvider.items.map((e) => DropdownMenuItem(value: e, child: Text(e.name))).toList(),
+            items: itemsProvider.items
+                .map((e) => DropdownMenuItem(value: e, child: Text(e.name)))
+                .toList(),
             onChanged: (val) => setState(() => _selectedItem = val),
           ),
           const SizedBox(height: 16),
           const Text('WIP Quantity'),
           const SizedBox(height: 8),
-          TextField(controller: _qtyController, decoration: const InputDecoration(border: OutlineInputBorder())),
+          TextField(
+            controller: _qtyController,
+            decoration: const InputDecoration(border: OutlineInputBorder()),
+          ),
           const SizedBox(height: 24),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
               const SizedBox(width: 12),
               ElevatedButton(
-                onPressed: _selectedItem == null ? null : () {
-                  final qty = double.tryParse(_qtyController.text) ?? 0;
-                  Navigator.of(context).pop((barcode: _selectedItem!.id.toString(), qty: qty));
-                },
+                onPressed: _selectedItem == null
+                    ? null
+                    : () {
+                        final qty = double.tryParse(_qtyController.text) ?? 0;
+                        Navigator.of(context).pop((
+                          barcode: _selectedItem!.id.toString(),
+                          qty: qty,
+                        ));
+                      },
                 child: const Text('Dissolve'),
               ),
             ],
-          )
+          ),
         ],
-      )
+      ),
     );
   }
 }
@@ -1836,7 +1918,9 @@ class _InlineRowActions extends StatelessWidget {
                   ),
                 ),
               ],
-              child: const IgnorePointer(child: _RowActionButton(onTap: _dummyCallback)),
+              child: const IgnorePointer(
+                child: _RowActionButton(onTap: _dummyCallback),
+              ),
             ),
           ],
         );
@@ -2283,157 +2367,169 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
           _submit(context, clients, items);
         }
       }),
-      child: Form(
-        key: _formKey,
-        child: ErpFormScaffold(
-          title: 'Create New Order',
-          subtitle:
-              'Capture the customer, item lines, and purchase-order context in the same workspace your team already uses.',
-          bodyScrollable: false,
-          bodyPadding: const EdgeInsets.fromLTRB(36, 18, 36, 22),
-          errorBanner:
-              ordersProvider.errorMessage != null && !ordersProvider.isSaving
-              ? ErpFormMessageBanner(
-                  message: ordersProvider.errorMessage!,
-                  isError: true,
-                )
-              : null,
-          headerActions: Builder(
-            builder: (context) {
-              final compactActions = MediaQuery.of(context).size.width < 1280;
-              return Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _OrderHeaderActionButton(
-                    icon: Icons.print_outlined,
-                    label: 'Print',
-                    compact: compactActions,
-                    onTap: _handlePrintOrder,
-                  ),
-                  const SizedBox(width: 8),
-                  _OrderHeaderActionButton(
-                    icon: Icons.upload_file_outlined,
-                    label: 'Upload PO',
-                    compact: compactActions,
-                    isActive: _showUploadPanel,
-                    onTap: _toggleUploadPanel,
-                  ),
-                ],
-              );
-            },
-          ),
-          body: !canSubmit
-              ? _DependencyMessage(
-                  hasClients: clients.isNotEmpty,
-                  hasItems: items.isNotEmpty,
-                  hasUnits: units.isNotEmpty,
-                )
-              : LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isCompact = constraints.maxWidth < 720;
-                    final detailsPanel = _buildOrderDetailsPanel(
-                      context,
-                      clients,
-                    );
-                    final itemsPanel = _buildOrderItemsPanel(
-                      context,
-                      items,
-                      isCompact: isCompact,
-                    );
-                    final uploadPanel = _OrderUploadPanel(
-                      onClose: _toggleUploadPanel,
-                      onAddDocument: _handleAddDocument,
-                      documents: _poDocuments,
-                      recentFiles: _recentPoFiles,
-                      onRemoveDocument: _removePoDocument,
-                      onRetryDocument: _retryPoDocument,
-                      onUseRecentFile: _addCachedPoFile,
-                    );
-                    final canShowUploadColumn =
-                        _renderUploadPanel && constraints.maxWidth >= 980;
-                    final showStackedUploadPanel =
-                        _renderUploadPanel &&
-                        !isCompact &&
-                        !canShowUploadColumn;
-                    if (isCompact) {
-                      return SingleChildScrollView(
-                        child: Column(
-                          children: [
-                            detailsPanel,
-                            const SizedBox(height: 10),
-                            itemsPanel,
-                            if (_renderUploadPanel) ...[
-                              const SizedBox(height: 10),
-                              uploadPanel,
-                            ],
-                          ],
-                        ),
-                      );
-                    }
-                    if (showStackedUploadPanel) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Expanded(
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Expanded(flex: 4, child: detailsPanel),
-                                const SizedBox(width: 14),
-                                Expanded(flex: 9, child: itemsPanel),
-                              ],
-                            ),
-                          ),
-                          _AnimatedOrderStackedUploadSlot(
-                            visible: _showUploadPanel,
-                            child: Padding(
-                              padding: const EdgeInsets.only(top: 14),
-                              child: uploadPanel,
-                            ),
-                          ),
-                        ],
-                      );
-                    }
-                    return _AnimatedOrderEditorColumns(
-                      showUploadPanel: _showUploadPanel,
-                      renderUploadPanel: _renderUploadPanel,
-                      detailsPanel: detailsPanel,
-                      itemsPanel: itemsPanel,
-                      uploadPanel: uploadPanel,
-                    );
-                  },
-                ),
-          footer: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              _OrderEditorFooterButton(
-                label: 'Cancel',
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-              const SizedBox(width: 10),
-              _OrderEditorFooterButton(
-                key: const ValueKey<String>('orders-editor-save-draft'),
-                label: 'Save Draft',
-                onPressed: canUseFooterActions
-                    ? () => _submit(
+      child: FocusTraversalGroup(
+        policy: OrderedTraversalPolicy(),
+        child: Form(
+          key: _formKey,
+          child: ErpFormScaffold(
+            title: 'Create New Order',
+            subtitle:
+                'Capture the customer, item lines, and purchase-order context in the same workspace your team already uses.',
+            bodyScrollable: false,
+            bodyPadding: const EdgeInsets.fromLTRB(36, 18, 36, 22),
+            errorBanner:
+                ordersProvider.errorMessage != null && !ordersProvider.isSaving
+                ? ErpFormMessageBanner(
+                    message: ordersProvider.errorMessage!,
+                    isError: true,
+                  )
+                : null,
+            headerActions: Builder(
+              builder: (context) {
+                final compactActions = MediaQuery.of(context).size.width < 1280;
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _OrderHeaderActionButton(
+                      icon: Icons.print_outlined,
+                      label: 'Print',
+                      compact: compactActions,
+                      onTap: _handlePrintOrder,
+                    ),
+                    const SizedBox(width: 8),
+                    _OrderHeaderActionButton(
+                      icon: Icons.upload_file_outlined,
+                      label: 'Upload PO',
+                      compact: compactActions,
+                      isActive: _showUploadPanel,
+                      onTap: _toggleUploadPanel,
+                    ),
+                  ],
+                );
+              },
+            ),
+            body: !canSubmit
+                ? _DependencyMessage(
+                    hasClients: clients.isNotEmpty,
+                    hasItems: items.isNotEmpty,
+                    hasUnits: units.isNotEmpty,
+                  )
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isCompact = constraints.maxWidth < 720;
+                      final detailsPanel = _buildOrderDetailsPanel(
                         context,
                         clients,
+                      );
+                      final itemsPanel = _buildOrderItemsPanel(
+                        context,
                         items,
-                        statusOverride: OrderStatus.draft,
-                        successMessage: 'Draft saved successfully.',
-                      )
-                    : null,
-              ),
-              const SizedBox(width: 10),
-              _OrderEditorFooterButton(
-                key: const ValueKey<String>('orders-editor-create-order'),
-                label: 'Save',
-                isPrimary: true,
-                onPressed: canUseFooterActions
-                    ? () => _submit(context, clients, items)
-                    : null,
-              ),
-            ],
+                        isCompact: isCompact,
+                      );
+                      final uploadPanel = _OrderUploadPanel(
+                        onClose: _toggleUploadPanel,
+                        onAddDocument: _handleAddDocument,
+                        documents: _poDocuments,
+                        recentFiles: _recentPoFiles,
+                        onRemoveDocument: _removePoDocument,
+                        onRetryDocument: _retryPoDocument,
+                        onUseRecentFile: _addCachedPoFile,
+                      );
+                      final canShowUploadColumn =
+                          _renderUploadPanel && constraints.maxWidth >= 980;
+                      final showStackedUploadPanel =
+                          _renderUploadPanel &&
+                          !isCompact &&
+                          !canShowUploadColumn;
+                      if (isCompact) {
+                        return SingleChildScrollView(
+                          child: Column(
+                            children: [
+                              detailsPanel,
+                              const SizedBox(height: 10),
+                              itemsPanel,
+                              if (_renderUploadPanel) ...[
+                                const SizedBox(height: 10),
+                                uploadPanel,
+                              ],
+                            ],
+                          ),
+                        );
+                      }
+                      if (showStackedUploadPanel) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Expanded(flex: 4, child: detailsPanel),
+                                  const SizedBox(width: 14),
+                                  Expanded(flex: 9, child: itemsPanel),
+                                ],
+                              ),
+                            ),
+                            _AnimatedOrderStackedUploadSlot(
+                              visible: _showUploadPanel,
+                              child: Padding(
+                                padding: const EdgeInsets.only(top: 14),
+                                child: uploadPanel,
+                              ),
+                            ),
+                          ],
+                        );
+                      }
+                      return _AnimatedOrderEditorColumns(
+                        showUploadPanel: _showUploadPanel,
+                        renderUploadPanel: _renderUploadPanel,
+                        detailsPanel: detailsPanel,
+                        itemsPanel: itemsPanel,
+                        uploadPanel: uploadPanel,
+                      );
+                    },
+                  ),
+            footer: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                FocusTraversalOrder(
+                  order: const NumericFocusOrder(9000),
+                  child: _OrderEditorFooterButton(
+                    label: 'Cancel',
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                FocusTraversalOrder(
+                  order: const NumericFocusOrder(9001),
+                  child: _OrderEditorFooterButton(
+                    key: const ValueKey<String>('orders-editor-save-draft'),
+                    label: 'Save Draft',
+                    onPressed: canUseFooterActions
+                        ? () => _submit(
+                            context,
+                            clients,
+                            items,
+                            statusOverride: OrderStatus.draft,
+                            successMessage: 'Draft saved successfully.',
+                          )
+                        : null,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                FocusTraversalOrder(
+                  order: const NumericFocusOrder(9002),
+                  child: _OrderEditorFooterButton(
+                    key: const ValueKey<String>('orders-editor-create-order'),
+                    label: 'Save',
+                    isPrimary: true,
+                    onPressed: canUseFooterActions
+                        ? () => _submit(context, clients, items)
+                        : null,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -2627,133 +2723,151 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _OrderEditorField(
-            label: 'Order Code',
-            child: TextFormField(
-              key: const ValueKey<String>('orders-editor-order-no-field'),
-              controller: _orderNoController,
-              decoration: _inputDecoration(
-                hintText: 'Leave empty to auto-generate',
-                suffixIcon: Icons.edit_outlined,
+          FocusTraversalOrder(
+            order: const NumericFocusOrder(1),
+            child: _OrderEditorField(
+              label: 'Order Code',
+              child: TextFormField(
+                key: const ValueKey<String>('orders-editor-order-no-field'),
+                controller: _orderNoController,
+                decoration: _inputDecoration(
+                  hintText: 'Leave empty to auto-generate',
+                  suffixIcon: Icons.edit_outlined,
+                ),
+                textInputAction: TextInputAction.next,
               ),
-              textInputAction: TextInputAction.next,
             ),
           ),
           const SizedBox(height: 28),
-          _OrderEditorField(
-            label: 'Client Name',
-            child: SearchableSelectField<int>(
-              key: const ValueKey<String>('orders-editor-client-field'),
-              tapTargetKey: const ValueKey<String>(
-                'orders-editor-client-field',
-              ),
-              value: _selectedClientId,
-              decoration: _inputDecoration(hintText: 'Select'),
-              dialogTitle: 'Client',
-              searchHintText: 'Search client',
-              options: clients
-                  .map(
-                    (client) => SearchableSelectOption<int>(
-                      value: client.id,
-                      label: client.displayLabel,
-                    ),
-                  )
-                  .toList(growable: false),
-              onCreateOption: (query) =>
-                  _quickCreateClient(context, name: query),
-              onChanged: (value) {
-                setState(() {
-                  _selectedClientId = value;
-                  for (final line in _lines) {
-                    _tryAutoFillClientCode(line);
-                  }
-                });
-              },
-              validator: (value) {
-                if (value == null) {
-                  return 'Select a client.';
-                }
-                return null;
-              },
-            ),
-          ),
-          const SizedBox(height: 28),
-          _OrderEditorField(
-            label: 'Purchase Order No.',
-            child: TextFormField(
-              key: const ValueKey<String>('orders-editor-po-number-field'),
-              controller: _poNumberController,
-              decoration: _inputDecoration(hintText: 'PO-123'),
-              textInputAction: TextInputAction.next,
-            ),
-          ),
-          const SizedBox(height: 28),
-          _DateField(
-            key: const ValueKey<String>('orders-editor-start-date-field'),
-            label: 'Start Date',
-            controller: _startDateController,
-            onTap: () => _pickDate(
-              context,
-              initial: _startDate ?? DateTime.now(),
-              onSelected: (value) {
-                setState(() {
-                  _startDate = value;
-                  _startDateController.text = _formatDate(value);
-                  _clearCompletionErrors();
-                });
-              },
-            ),
-          ),
-          const SizedBox(height: 28),
-          _OrderEditorField(
-            label: 'Order Completion Date',
-            child: TextFormField(
-              key: const ValueKey<String>('orders-editor-end-date-field'),
-              controller: _endDateController,
-              onFieldSubmitted: (_) => _normalizeOrderCompletionDate(),
-              onTapOutside: (_) => _normalizeOrderCompletionDate(),
-              readOnly: _itemWiseCompletionDate,
-              enabled: !_itemWiseCompletionDate,
-              decoration: _inputDecoration(
-                hintText: '25 - 05 - 2026',
-                errorText: _orderCompletionError,
-                suffixIcon: Icons.calendar_today_outlined,
-                onSuffixTap: _itemWiseCompletionDate
-                    ? null
-                    : () => _pickDate(
-                        context,
-                        initial: _endDate ?? _startDate ?? DateTime.now(),
-                        onSelected: (value) {
-                          setState(() {
-                            _endDate = value;
-                            _endDateController.text = _formatDate(value);
-                            _orderCompletionError = null;
-                            _syncLineCompletionDates(value);
-                          });
-                        },
+          FocusTraversalOrder(
+            order: const NumericFocusOrder(2),
+            child: _OrderEditorField(
+              label: 'Client Name',
+              child: SearchableSelectField<int>(
+                key: const ValueKey<String>('orders-editor-client-field'),
+                tapTargetKey: const ValueKey<String>(
+                  'orders-editor-client-field',
+                ),
+                value: _selectedClientId,
+                decoration: _inputDecoration(hintText: 'Select'),
+                dialogTitle: 'Client',
+                searchHintText: 'Search client',
+                options: clients
+                    .map(
+                      (client) => SearchableSelectOption<int>(
+                        value: client.id,
+                        label: client.displayLabel,
                       ),
+                    )
+                    .toList(growable: false),
+                onCreateOption: (query) =>
+                    _quickCreateClient(context, name: query),
+                onChanged: (value) {
+                  setState(() {
+                    _selectedClientId = value;
+                    for (final line in _lines) {
+                      _tryAutoFillClientCode(line);
+                    }
+                  });
+                },
+                validator: (value) {
+                  if (value == null) {
+                    return 'Select a client.';
+                  }
+                  return null;
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 28),
+          FocusTraversalOrder(
+            order: const NumericFocusOrder(3),
+            child: _OrderEditorField(
+              label: 'Purchase Order No.',
+              child: TextFormField(
+                key: const ValueKey<String>('orders-editor-po-number-field'),
+                controller: _poNumberController,
+                decoration: _inputDecoration(hintText: 'PO-123'),
+                textInputAction: TextInputAction.next,
+              ),
+            ),
+          ),
+          const SizedBox(height: 28),
+          FocusTraversalOrder(
+            order: const NumericFocusOrder(4),
+            child: _DateField(
+              key: const ValueKey<String>('orders-editor-start-date-field'),
+              label: 'Start Date',
+              controller: _startDateController,
+              onTap: () => _pickDate(
+                context,
+                initial: _startDate ?? DateTime.now(),
+                onSelected: (value) {
+                  setState(() {
+                    _startDate = value;
+                    _startDateController.text = _formatDate(value);
+                    _clearCompletionErrors();
+                  });
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 28),
+          FocusTraversalOrder(
+            order: const NumericFocusOrder(6),
+            child: _OrderEditorField(
+              label: 'Order Completion Date',
+              child: TextFormField(
+                key: const ValueKey<String>('orders-editor-end-date-field'),
+                controller: _endDateController,
+                onFieldSubmitted: (_) => _normalizeOrderCompletionDate(),
+                onTapOutside: (_) => _normalizeOrderCompletionDate(),
+                readOnly: _itemWiseCompletionDate,
+                enabled: !_itemWiseCompletionDate,
+                decoration: _inputDecoration(
+                  hintText: '25 - 05 - 2026',
+                  errorText: _orderCompletionError,
+                  suffixIcon: Icons.calendar_today_outlined,
+                  onSuffixTap: _itemWiseCompletionDate
+                      ? null
+                      : () => _pickDate(
+                          context,
+                          initial: _endDate ?? _startDate ?? DateTime.now(),
+                          onSelected: (value) {
+                            setState(() {
+                              _endDate = value;
+                              _endDateController.text = _formatDate(value);
+                              _orderCompletionError = null;
+                              _syncLineCompletionDates(value);
+                            });
+                          },
+                        ),
+                ),
               ),
             ),
           ),
           const SizedBox(height: 22),
-          _ItemWiseCompletionToggle(
-            value: _itemWiseCompletionDate,
-            onChanged: (value) {
-              setState(() {
-                _itemWiseCompletionDate = value ?? false;
-                if (_itemWiseCompletionDate) {
-                  _orderCompletionError = null;
-                  _recalculateOrderCompletionFromLines();
-                } else {
-                  // BUG-07: Always clear per-line errors when switching to
-                  // order-level date mode, even if no end date is set.
-                  _clearCompletionErrors();
-                  if (_endDate != null) {
-                    _syncLineCompletionDates(_endDate);
+          FocusTraversalOrder(
+            order: const NumericFocusOrder(5),
+            child: _ItemWiseCompletionToggle(
+              value: _itemWiseCompletionDate,
+              onChanged: (value) {
+                setState(() {
+                  _itemWiseCompletionDate = value ?? false;
+                  if (_itemWiseCompletionDate) {
+                    _orderCompletionError = null;
+                    _recalculateOrderCompletionFromLines();
+                  } else {
+                    // BUG-07: Always clear per-line errors when switching to
+                    // order-level date mode, even if no end date is set.
+                    _clearCompletionErrors();
+                    if (_endDate != null) {
+                      _syncLineCompletionDates(_endDate);
+                    }
                   }
-                }
-              });
-            },
+                });
+              },
+            ),
           ),
         ],
       ),
@@ -2818,7 +2932,10 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                   ],
                 ),
               const SizedBox(height: 10),
-              _AddOrderItemButton(onPressed: _addLine),
+              FocusTraversalOrder(
+                order: const NumericFocusOrder(8000),
+                child: _AddOrderItemButton(onPressed: _addLine),
+              ),
             ],
           );
         },
@@ -2919,58 +3036,66 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     );
   }
 
+  /// Tab-traversal order for a line field. Lines start after the details
+  /// panel (orders 1-6) and each line owns a block of 10 slots.
+  FocusOrder _lineFocusOrder(int index, int slot) =>
+      NumericFocusOrder(10.0 + index * 10 + slot);
+
   Widget _buildItemSelectForLine(List<ItemDefinition> items, int index) {
     final line = _lines[index];
     final groupsProvider = context.watch<GroupsProvider>();
     final fieldKey = index == 0
         ? const ValueKey<String>('orders-editor-item-field')
         : ValueKey<String>('orders-editor-item-field-${line.id}');
-    return SearchableSelectField<int>(
-      key: fieldKey,
-      tapTargetKey: fieldKey,
-      value: line.selectedItemId,
-      decoration: _inputDecoration(hintText: 'Select Item'),
-      dialogTitle: 'Item',
-      searchHintText: 'Search item',
-      options: items
-          .map((item) {
-            final primaryGroup =
-                groupsProvider.findById(item.groupId)?.name ??
-                'No primary group';
-            return SearchableSelectOption<int>(
-              value: item.id,
-              label: item.displayName,
-              searchText: '${item.displayName} $primaryGroup',
-            );
-          })
-          .toList(growable: false),
-      onCreateOption: (query) =>
-          _quickCreateItemForLine(context, lineIndex: index, name: query),
-      createOptionLabelBuilder: (query) => 'Create item "$query"',
-      onChanged: (value) async {
-        setState(() {
-          line.selectedItemId = value;
+    return FocusTraversalOrder(
+      order: _lineFocusOrder(index, 0),
+      child: SearchableSelectField<int>(
+        key: fieldKey,
+        tapTargetKey: fieldKey,
+        value: line.selectedItemId,
+        decoration: _inputDecoration(hintText: 'Select Item'),
+        dialogTitle: 'Item',
+        searchHintText: 'Search item',
+        options: items
+            .map((item) {
+              final primaryGroup =
+                  groupsProvider.findById(item.groupId)?.name ??
+                  'No primary group';
+              return SearchableSelectOption<int>(
+                value: item.id,
+                label: item.displayName,
+                searchText: '${item.displayName} $primaryGroup',
+              );
+            })
+            .toList(growable: false),
+        onCreateOption: (query) =>
+            _quickCreateItemForLine(context, lineIndex: index, name: query),
+        createOptionLabelBuilder: (query) => 'Create item "$query"',
+        onChanged: (value) async {
+          setState(() {
+            line.selectedItemId = value;
+            final latestItems = context.read<ItemsProvider>().items;
+            final item = _selectedItemForLine(latestItems, value);
+            _syncVariationSelectionForLine(line, item);
+          });
+
           final latestItems = context.read<ItemsProvider>().items;
           final item = _selectedItemForLine(latestItems, value);
-          _syncVariationSelectionForLine(line, item);
-        });
-
-        final latestItems = context.read<ItemsProvider>().items;
-        final item = _selectedItemForLine(latestItems, value);
-        if (item != null && item.topLevelProperties.isNotEmpty && mounted) {
-          await _openVariationPathSelectorForLine(
-            context,
-            items: latestItems,
-            lineIndex: index,
-          );
-        }
-      },
-      validator: (value) {
-        if (value == null) {
-          return 'Select an item.';
-        }
-        return null;
-      },
+          if (item != null && item.topLevelProperties.isNotEmpty && mounted) {
+            await _openVariationPathSelectorForLine(
+              context,
+              items: latestItems,
+              lineIndex: index,
+            );
+          }
+        },
+        validator: (value) {
+          if (value == null) {
+            return 'Select an item.';
+          }
+          return null;
+        },
+      ),
     );
   }
 
@@ -2982,20 +3107,23 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     final selectedItem = _selectedItemForLine(items, line.selectedItemId);
     if (selectedItem == null) return null;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildVariationPathFieldForLine(items, index),
-        if (line.variationPathError != null) ...[
-          const SizedBox(height: 6),
-          Text(
-            line.variationPathError!,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.error,
+    return FocusTraversalOrder(
+      order: _lineFocusOrder(index, 5),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildVariationPathFieldForLine(items, index),
+          if (line.variationPathError != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              line.variationPathError!,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.error,
+              ),
             ),
-          ),
+          ],
         ],
-      ],
+      ),
     );
   }
 
@@ -3168,58 +3296,61 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SearchableSelectField<int>(
-          key: fieldKey,
-          tapTargetKey: fieldKey,
-          value: value,
-          decoration: _inputDecoration(
-            hintText: selectedItem == null
-                ? 'Select item first'
-                : 'Select unit',
+        FocusTraversalOrder(
+          order: _lineFocusOrder(index, 3),
+          child: SearchableSelectField<int>(
+            key: fieldKey,
+            tapTargetKey: fieldKey,
+            value: value,
+            decoration: _inputDecoration(
+              hintText: selectedItem == null
+                  ? 'Select item first'
+                  : 'Select unit',
+            ),
+            dialogTitle: 'Unit',
+            searchHintText: 'Search unit',
+            emptyText: 'No units found in Master Data matching search',
+            fieldEnabled: selectedItem != null && options.isNotEmpty,
+            options: options
+                .map(
+                  (unit) => SearchableSelectOption<int>(
+                    value: unit.id,
+                    label: unit.displayLabel,
+                    searchText:
+                        '${unit.name} ${unit.symbol} ${unit.unitGroupName ?? ''}',
+                  ),
+                )
+                .toList(growable: false),
+            canCreateOption: (query, allOptions) {
+              if (selectedItem == null || query.trim().isEmpty) return false;
+              return true;
+            },
+            createOptionLabelBuilder: (query) {
+              final match = _bestUnitMatch(query, addableUnits);
+              if (match == null) return 'Create new unit "$query"';
+              return 'Add conversion for "${match.displayLabel}"';
+            },
+            onCreateOption: (query) => _quickAddUnitConversionForLine(
+              context,
+              items: items,
+              lineIndex: index,
+              query: query,
+            ),
+            onChanged: (value) {
+              setState(() {
+                line.selectedUnitId = value;
+              });
+            },
+            validator: (_) {
+              if (selectedItem == null) {
+                return 'Choose an item first, then select its unit.';
+              }
+              if (value == null) {
+                return 'Choose the unit for this order line.';
+              }
+              return null;
+            },
           ),
-          dialogTitle: 'Unit',
-          searchHintText: 'Search unit',
-          emptyText: 'No units found in Master Data matching search',
-          fieldEnabled: selectedItem != null && options.isNotEmpty,
-          options: options
-              .map(
-                (unit) => SearchableSelectOption<int>(
-                  value: unit.id,
-                  label: unit.displayLabel,
-                  searchText:
-                      '${unit.name} ${unit.symbol} ${unit.unitGroupName ?? ''}',
-                ),
-              )
-              .toList(growable: false),
-          canCreateOption: (query, allOptions) {
-            if (selectedItem == null || query.trim().isEmpty) return false;
-            return true;
-          },
-          createOptionLabelBuilder: (query) {
-            final match = _bestUnitMatch(query, addableUnits);
-            if (match == null) return 'Create new unit "$query"';
-            return 'Add conversion for "${match.displayLabel}"';
-          },
-          onCreateOption: (query) => _quickAddUnitConversionForLine(
-            context,
-            items: items,
-            lineIndex: index,
-            query: query,
-          ),
-          onChanged: (value) {
-            setState(() {
-              line.selectedUnitId = value;
-            });
-          },
-          validator: (_) {
-            if (selectedItem == null) {
-              return 'Choose an item first, then select its unit.';
-            }
-            if (value == null) {
-              return 'Choose the unit for this order line.';
-            }
-            return null;
-          },
         ),
         if (selectedItem != null && addableUnits.isNotEmpty) ...[
           const SizedBox(height: 4),
@@ -3254,34 +3385,40 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
 
   Widget _buildQuantityFieldForLine(int index) {
     final line = _lines[index];
-    return TextFormField(
-      key: index == 0
-          ? const ValueKey<String>('orders-editor-quantity-field')
-          : ValueKey<String>('orders-editor-quantity-field-${line.id}'),
-      controller: line.quantityController,
-      keyboardType: TextInputType.number,
-      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-      textInputAction: TextInputAction.next,
-      decoration: _inputDecoration(hintText: '1'),
-      validator: (value) {
-        final quantity = int.tryParse((value ?? '').trim());
-        if (quantity == null || quantity <= 0) {
-          return 'Enter whole qty';
-        }
-        return null;
-      },
+    return FocusTraversalOrder(
+      order: _lineFocusOrder(index, 2),
+      child: TextFormField(
+        key: index == 0
+            ? const ValueKey<String>('orders-editor-quantity-field')
+            : ValueKey<String>('orders-editor-quantity-field-${line.id}'),
+        controller: line.quantityController,
+        keyboardType: TextInputType.number,
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        textInputAction: TextInputAction.next,
+        decoration: _inputDecoration(hintText: '1'),
+        validator: (value) {
+          final quantity = int.tryParse((value ?? '').trim());
+          if (quantity == null || quantity <= 0) {
+            return 'Enter whole qty';
+          }
+          return null;
+        },
+      ),
     );
   }
 
   Widget _buildClientCodeFieldForLine(int index) {
     final line = _lines[index];
-    return TextFormField(
-      key: index == 0
-          ? const ValueKey<String>('orders-editor-client-code-field')
-          : ValueKey<String>('orders-editor-client-code-field-${line.id}'),
-      controller: line.clientCodeController,
-      decoration: _inputDecoration(hintText: 'Client Code'),
-      textInputAction: TextInputAction.next,
+    return FocusTraversalOrder(
+      order: _lineFocusOrder(index, 1),
+      child: TextFormField(
+        key: index == 0
+            ? const ValueKey<String>('orders-editor-client-code-field')
+            : ValueKey<String>('orders-editor-client-code-field-${line.id}'),
+        controller: line.clientCodeController,
+        decoration: _inputDecoration(hintText: 'Client Code'),
+        textInputAction: TextInputAction.next,
+      ),
     );
   }
 
@@ -3290,36 +3427,39 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     final fieldKey = index == 0
         ? const ValueKey<String>('orders-editor-completion-date-field')
         : ValueKey<String>('orders-editor-completion-date-field-${line.id}');
-    return TextFormField(
-      key: fieldKey,
-      controller: line.completionDateController,
-      enabled: _itemWiseCompletionDate,
-      onFieldSubmitted: (_) => _normalizeCompletionDateLine(index),
-      onTapOutside: (_) => _normalizeCompletionDateLine(index),
-      decoration: _inputDecoration(
-        hintText: '25 - 05 - 2026',
-        errorText: line.completionDateError,
-        suffixIcon: Icons.calendar_today_outlined,
-        onSuffixTap: !_itemWiseCompletionDate
-            ? null
-            : () => _pickDate(
-                context,
-                initial:
-                    line.completionDate ??
-                    _endDate ??
-                    _startDate ??
-                    DateTime.now(),
-                onSelected: (value) {
-                  setState(() {
-                    line.completionDate = value;
-                    line.completionDateController.text = _formatDate(value);
-                    line.completionDateError = null;
-                    if (_itemWiseCompletionDate) {
-                      _recalculateOrderCompletionFromLines();
-                    }
-                  });
-                },
-              ),
+    return FocusTraversalOrder(
+      order: _lineFocusOrder(index, 4),
+      child: TextFormField(
+        key: fieldKey,
+        controller: line.completionDateController,
+        enabled: _itemWiseCompletionDate,
+        onFieldSubmitted: (_) => _normalizeCompletionDateLine(index),
+        onTapOutside: (_) => _normalizeCompletionDateLine(index),
+        decoration: _inputDecoration(
+          hintText: '25 - 05 - 2026',
+          errorText: line.completionDateError,
+          suffixIcon: Icons.calendar_today_outlined,
+          onSuffixTap: !_itemWiseCompletionDate
+              ? null
+              : () => _pickDate(
+                  context,
+                  initial:
+                      line.completionDate ??
+                      _endDate ??
+                      _startDate ??
+                      DateTime.now(),
+                  onSelected: (value) {
+                    setState(() {
+                      line.completionDate = value;
+                      line.completionDateController.text = _formatDate(value);
+                      line.completionDateError = null;
+                      if (_itemWiseCompletionDate) {
+                        _recalculateOrderCompletionFromLines();
+                      }
+                    });
+                  },
+                ),
+        ),
       ),
     );
   }
@@ -3395,28 +3535,25 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     }
 
     final initialUnit = _bestUnitMatch(query, addableUnits);
-    UnitDefinition? targetUnit = initialUnit;
+    final primaryUnit = unitsProvider.findById(item.unitId);
 
-    if (targetUnit == null) {
-      targetUnit = await showDialog<UnitDefinition>(
-        context: context,
-        builder: (dialogContext) =>
-            _OrderCreateUnitDialog(initialSymbol: query.trim()),
-      );
-      if (!context.mounted || targetUnit == null) {
-        return null;
-      }
-      addableUnits = _addableUnitsForItem(item, unitsProvider.activeUnits);
-    }
-
+    // One dialog either way: unknown units are created and linked to the
+    // item in a single step instead of a create-then-convert dialog chain.
+    final Widget dialog = initialUnit == null
+        ? _OrderCreateUnitDialog(
+            initialSymbol: query.trim(),
+            item: item,
+            primaryUnit: primaryUnit,
+          )
+        : _OrderUnitConversionDialog(
+            item: item,
+            primaryUnit: primaryUnit,
+            candidateUnits: addableUnits,
+            initialUnitId: initialUnit.id,
+          );
     final result = await showDialog<_OrderUnitConversionResult>(
       context: context,
-      builder: (dialogContext) => _OrderUnitConversionDialog(
-        item: item,
-        primaryUnit: unitsProvider.findById(item.unitId),
-        candidateUnits: addableUnits,
-        initialUnitId: targetUnit!.id,
-      ),
+      builder: (dialogContext) => dialog,
     );
     if (!mounted || result == null) {
       return null;
@@ -3874,11 +4011,12 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     var updatedLineCount = 0;
     String? singleLineOutcomeMessage;
     final ordersProvider = context.read<OrdersProvider>();
-    
+
     for (var i = 0; i < orderLinesWithDocuments.length; i++) {
       final input = orderLinesWithDocuments[i];
       final line = _lines[i];
-      final isExisting = widget.initialOrderGroup?.items.any((e) => e.id == line.id) ?? false;
+      final isExisting =
+          widget.initialOrderGroup?.items.any((e) => e.id == line.id) ?? false;
 
       if (isExisting) {
         result = await ordersProvider.updateOrder(line.id, input);
@@ -4646,13 +4784,15 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       isDense: true,
       suffixIcon: suffixIcon == null
           ? null
-          : IconButton(
-              onPressed: onSuffixTap,
-              splashRadius: 18,
-              icon: Icon(
-                suffixIcon,
-                size: 18,
-                color: SoftErpTheme.textSecondary,
+          : ExcludeFocus(
+              child: IconButton(
+                onPressed: onSuffixTap,
+                splashRadius: 18,
+                icon: Icon(
+                  suffixIcon,
+                  size: 18,
+                  color: SoftErpTheme.textSecondary,
+                ),
               ),
             ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
@@ -6441,7 +6581,7 @@ class _OrderUnitConversionDialogState
                     'orders-unit-conversion-unit-field',
                   ),
                   value: _selectedUnitId,
-                  decoration: _conversionInputDecoration(
+                  decoration: _unitDialogDecoration(
                     context,
                     hintText: 'Choose unit',
                   ),
@@ -6471,13 +6611,15 @@ class _OrderUnitConversionDialogState
                     'orders-unit-conversion-factor-field',
                   ),
                   controller: _factorController,
+                  autofocus: true,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
                   inputFormatters: [
                     FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
                   ],
-                  decoration: _conversionInputDecoration(
+                  onFieldSubmitted: (_) => _save(),
+                  decoration: _unitDialogDecoration(
                     context,
                     hintText: 'Example: 0.25',
                     labelText:
@@ -6535,35 +6677,6 @@ class _OrderUnitConversionDialogState
     );
   }
 
-  InputDecoration _conversionInputDecoration(
-    BuildContext context, {
-    required String hintText,
-    String? labelText,
-  }) {
-    return InputDecoration(
-      labelText: labelText,
-      hintText: hintText,
-      filled: true,
-      fillColor: const Color(0xFFF8F7FC),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: SoftErpTheme.border),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: SoftErpTheme.border),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: SoftErpTheme.accent),
-      ),
-      labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-        color: SoftErpTheme.textSecondary,
-        fontWeight: FontWeight.w600,
-      ),
-    );
-  }
-
   void _save() {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -6577,6 +6690,35 @@ class _OrderUnitConversionDialogState
       _OrderUnitConversionResult(unit: unit, unitsPerPrimary: unitsPerPrimary),
     );
   }
+}
+
+InputDecoration _unitDialogDecoration(
+  BuildContext context, {
+  required String hintText,
+  String? labelText,
+}) {
+  return InputDecoration(
+    labelText: labelText,
+    hintText: hintText,
+    filled: true,
+    fillColor: const Color(0xFFF8F7FC),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: const BorderSide(color: SoftErpTheme.border),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: const BorderSide(color: SoftErpTheme.border),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: const BorderSide(color: SoftErpTheme.accent),
+    ),
+    labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
+      color: SoftErpTheme.textSecondary,
+      fontWeight: FontWeight.w600,
+    ),
+  );
 }
 
 class _PendingPoDocument {
@@ -7311,7 +7453,7 @@ class _OrderItemsRow extends StatelessWidget {
   }
 }
 
-class _ItemWiseCompletionToggle extends StatelessWidget {
+class _ItemWiseCompletionToggle extends StatefulWidget {
   const _ItemWiseCompletionToggle({
     required this.value,
     required this.onChanged,
@@ -7321,37 +7463,79 @@ class _ItemWiseCompletionToggle extends StatelessWidget {
   final ValueChanged<bool?> onChanged;
 
   @override
+  State<_ItemWiseCompletionToggle> createState() =>
+      _ItemWiseCompletionToggleState();
+}
+
+class _ItemWiseCompletionToggleState extends State<_ItemWiseCompletionToggle> {
+  bool _focused = false;
+
+  void _toggle() => widget.onChanged(!widget.value);
+
+  @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () => onChanged(!value),
-      borderRadius: BorderRadius.circular(8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 18,
-            height: 18,
-            child: Checkbox(
-              value: value,
-              onChanged: onChanged,
-              activeColor: SoftErpTheme.accent,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              side: const BorderSide(color: Color(0xFFD4CEFA)),
+    return FocusableActionDetector(
+      shortcuts: const <ShortcutActivator, Intent>{
+        SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+        SingleActivator(LogicalKeyboardKey.numpadEnter): ActivateIntent(),
+        SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+      },
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (intent) {
+            _toggle();
+            return null;
+          },
+        ),
+      },
+      onShowFocusHighlight: (focused) {
+        setState(() {
+          _focused = focused;
+        });
+      },
+      child: InkWell(
+        onTap: _toggle,
+        canRequestFocus: false,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: _focused ? SoftErpTheme.accent : Colors.transparent,
             ),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'Enable Item Wise Completion Date',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: SoftErpTheme.textPrimary,
-                fontSize: 11,
-                height: 1.25,
-                fontWeight: FontWeight.w500,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 18,
+                height: 18,
+                child: ExcludeFocus(
+                  child: Checkbox(
+                    value: widget.value,
+                    onChanged: widget.onChanged,
+                    activeColor: SoftErpTheme.accent,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    side: const BorderSide(color: Color(0xFFD4CEFA)),
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Enable Item Wise Completion Date',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: SoftErpTheme.textPrimary,
+                    fontSize: 11,
+                    height: 1.25,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -7480,40 +7664,47 @@ class _DateField extends StatelessWidget {
   Widget build(BuildContext context) {
     return _OrderEditorField(
       label: label,
-      child: TextFormField(
-        key: key,
-        controller: controller,
-        readOnly: true,
-        onTap: onTap,
-        decoration: InputDecoration(
-          hintText: 'Enter',
-          hintStyle: const TextStyle(
-            color: SoftErpTheme.textSecondary,
-            fontSize: 14,
-          ),
-          filled: true,
-          fillColor: SoftErpTheme.cardSurfaceAlt,
-          isDense: true,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: 13,
-          ),
-          suffixIcon: const Icon(
-            Icons.calendar_today_outlined,
-            size: 18,
-            color: SoftErpTheme.textSecondary,
-          ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: SoftErpTheme.border),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: SoftErpTheme.border),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: SoftErpTheme.accent),
+      child: CallbackShortcuts(
+        bindings: <ShortcutActivator, VoidCallback>{
+          const SingleActivator(LogicalKeyboardKey.enter): onTap,
+          const SingleActivator(LogicalKeyboardKey.numpadEnter): onTap,
+          const SingleActivator(LogicalKeyboardKey.space): onTap,
+        },
+        child: TextFormField(
+          key: key,
+          controller: controller,
+          readOnly: true,
+          onTap: onTap,
+          decoration: InputDecoration(
+            hintText: 'Enter',
+            hintStyle: const TextStyle(
+              color: SoftErpTheme.textSecondary,
+              fontSize: 14,
+            ),
+            filled: true,
+            fillColor: SoftErpTheme.cardSurfaceAlt,
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 13,
+            ),
+            suffixIcon: const Icon(
+              Icons.calendar_today_outlined,
+              size: 18,
+              color: SoftErpTheme.textSecondary,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: SoftErpTheme.border),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: SoftErpTheme.border),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: SoftErpTheme.accent),
+            ),
           ),
         ),
       ),
@@ -7744,9 +7935,15 @@ extension<T> on Iterable<T> {
 }
 
 class _OrderCreateUnitDialog extends StatefulWidget {
-  const _OrderCreateUnitDialog({required this.initialSymbol});
+  const _OrderCreateUnitDialog({
+    required this.initialSymbol,
+    required this.item,
+    required this.primaryUnit,
+  });
 
   final String initialSymbol;
+  final ItemDefinition item;
+  final UnitDefinition? primaryUnit;
 
   @override
   State<_OrderCreateUnitDialog> createState() => _OrderCreateUnitDialogState();
@@ -7756,6 +7953,7 @@ class _OrderCreateUnitDialogState extends State<_OrderCreateUnitDialog> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameController;
   late final TextEditingController _symbolController;
+  late final TextEditingController _factorController;
   bool _isCreating = false;
 
   @override
@@ -7763,12 +7961,14 @@ class _OrderCreateUnitDialogState extends State<_OrderCreateUnitDialog> {
     super.initState();
     _nameController = TextEditingController(text: widget.initialSymbol);
     _symbolController = TextEditingController(text: widget.initialSymbol);
+    _factorController = TextEditingController(text: '1');
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _symbolController.dispose();
+    _factorController.dispose();
     super.dispose();
   }
 
@@ -7780,6 +7980,7 @@ class _OrderCreateUnitDialogState extends State<_OrderCreateUnitDialog> {
 
     final provider = context.read<UnitsProvider>();
     final messenger = ScaffoldMessenger.of(context);
+    final unitsPerPrimary = double.parse(_factorController.text.trim());
 
     try {
       final newUnit = await provider.createUnit(
@@ -7788,15 +7989,23 @@ class _OrderCreateUnitDialogState extends State<_OrderCreateUnitDialog> {
           symbol: _symbolController.text.trim(),
         ),
       );
-      if (newUnit != null && mounted) {
-        Navigator.of(context).pop(newUnit);
-      } else if (mounted) {
+      if (!mounted) {
+        return;
+      }
+      if (newUnit == null) {
         messenger.showSnackBar(
           SnackBar(
             content: Text(provider.errorMessage ?? 'Could not create unit.'),
           ),
         );
+        return;
       }
+      Navigator.of(context).pop(
+        _OrderUnitConversionResult(
+          unit: newUnit,
+          unitsPerPrimary: unitsPerPrimary,
+        ),
+      );
     } finally {
       if (mounted) {
         setState(() => _isCreating = false);
@@ -7806,11 +8015,16 @@ class _OrderCreateUnitDialogState extends State<_OrderCreateUnitDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final primaryLabel = widget.primaryUnit?.displayLabel ?? 'primary unit';
+    final symbolLabel = _symbolController.text.trim().isEmpty
+        ? 'new unit'
+        : _symbolController.text.trim();
+
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 32),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 400),
+        constraints: const BoxConstraints(maxWidth: 460),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 22, 24, 20),
           child: Form(
@@ -7839,45 +8053,81 @@ class _OrderCreateUnitDialogState extends State<_OrderCreateUnitDialog> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'This unit doesn\'t exist. You can create it now.',
+                  'Created once in master data and made available for '
+                  '${widget.item.displayName} right away.',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: SoftErpTheme.textSecondary,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
                 const SizedBox(height: 18),
-                TextFormField(
-                  controller: _nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Unit Name',
-                    hintText: 'e.g. Kilograms',
-                    filled: true,
-                    fillColor: Color(0xFFF8F7FC),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.all(Radius.circular(14)),
-                      borderSide: BorderSide(color: SoftErpTheme.border),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        key: const ValueKey<String>(
+                          'orders-create-unit-name-field',
+                        ),
+                        controller: _nameController,
+                        textInputAction: TextInputAction.next,
+                        decoration: _unitDialogDecoration(
+                          context,
+                          labelText: 'Unit Name',
+                          hintText: 'e.g. Kilograms',
+                        ),
+                        validator: (value) => (value?.trim().isEmpty ?? true)
+                            ? 'Name is required'
+                            : null,
+                      ),
                     ),
-                  ),
-                  validator: (value) => (value?.trim().isEmpty ?? true)
-                      ? 'Name is required'
-                      : null,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextFormField(
+                        key: const ValueKey<String>(
+                          'orders-create-unit-symbol-field',
+                        ),
+                        controller: _symbolController,
+                        textInputAction: TextInputAction.next,
+                        onChanged: (_) => setState(() {}),
+                        decoration: _unitDialogDecoration(
+                          context,
+                          labelText: 'Symbol',
+                          hintText: 'e.g. kgs',
+                        ),
+                        validator: (value) => (value?.trim().isEmpty ?? true)
+                            ? 'Symbol is required'
+                            : null,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 14),
                 TextFormField(
-                  controller: _symbolController,
-                  decoration: const InputDecoration(
-                    labelText: 'Unit Symbol',
-                    hintText: 'e.g. kgs',
-                    filled: true,
-                    fillColor: Color(0xFFF8F7FC),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.all(Radius.circular(14)),
-                      borderSide: BorderSide(color: SoftErpTheme.border),
-                    ),
+                  key: const ValueKey<String>(
+                    'orders-create-unit-factor-field',
                   ),
-                  validator: (value) => (value?.trim().isEmpty ?? true)
-                      ? 'Symbol is required'
-                      : null,
+                  controller: _factorController,
+                  autofocus: true,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                  ],
+                  onFieldSubmitted: (_) => _create(),
+                  decoration: _unitDialogDecoration(
+                    context,
+                    hintText: 'Example: 0.25',
+                    labelText: '1 $primaryLabel equals how many $symbolLabel?',
+                  ),
+                  validator: (value) {
+                    final parsed = double.tryParse((value ?? '').trim());
+                    if (parsed == null || parsed <= 0) {
+                      return 'Enter a number greater than zero.';
+                    }
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 20),
                 Row(
@@ -7890,7 +8140,8 @@ class _OrderCreateUnitDialogState extends State<_OrderCreateUnitDialog> {
                     ),
                     const SizedBox(width: 10),
                     AppButton(
-                      label: 'Create Unit',
+                      key: const ValueKey<String>('orders-create-unit-save'),
+                      label: 'Create & Use',
                       isLoading: _isCreating,
                       onPressed: _create,
                     ),
