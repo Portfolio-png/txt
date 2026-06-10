@@ -17990,6 +17990,9 @@ app.delete('/api/orders/:id', requirePermission('config.write'), async (req, res
     
     await run('BEGIN TRANSACTION');
 
+    const wipBarcode = req.body?.wip_barcode;
+    const wipQty = Number(req.body?.wip_qty || 0);
+
     const assignments = await all('SELECT * FROM order_pipeline_assignments WHERE order_item_id = ?', [orderId]);
     for (const assignment of assignments) {
       const runId = assignment.pipeline_run_id;
@@ -18018,6 +18021,19 @@ app.delete('/api/orders/:id', requirePermission('config.write'), async (req, res
 
       await run('DELETE FROM run_barcode_inputs WHERE run_id = ?', [runId]);
       await run('DELETE FROM pipeline_runs WHERE id = ?', [runId]);
+    }
+
+    if (wipBarcode && wipQty > 0) {
+      await applyInventoryMovementCore({
+        barcode: wipBarcode,
+        movementType: 'adjust_in',
+        qty: wipQty,
+        actor: actorName,
+        referenceType: 'pipeline_dissolution',
+        referenceId: String(orderId),
+        reasonCode: 'WIP_RECOVERY',
+        toLocationId: 'MAIN'
+      }, { useTransaction: false });
     }
 
     await run('DELETE FROM order_pipeline_assignments WHERE order_item_id = ?', [orderId]);

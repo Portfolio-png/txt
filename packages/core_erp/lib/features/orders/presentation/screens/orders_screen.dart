@@ -79,12 +79,12 @@ class OrdersScreen extends StatefulWidget {
   )?
   onShowPipeline;
 
-  static Future<void> openEditor(BuildContext context) {
+  static Future<void> openEditor(BuildContext context, [OrderGroup? initialOrderGroup]) {
     return showErpFormDialog<void>(
       context,
       maxWidth: 1499,
       maxHeight: 873,
-      child: const _OrderEditorSheet(),
+      child: _OrderEditorSheet(initialOrderGroup: initialOrderGroup),
       desktopInsetPadding: const EdgeInsets.symmetric(
         horizontal: 16,
         vertical: 20,
@@ -1360,7 +1360,8 @@ class _OrderDataRowState extends State<_OrderDataRow> {
                                 onQuickAction: () =>
                                     _performQuickAction(quickAction),
                                 onView: widget.onTap,
-                                onMenu: widget.onTap,
+                                onEdit: () => OrdersScreen.openEditor(context, group),
+                                onDelete: () => _handleDelete(context, group),
                               ),
                             ),
                           ),
@@ -1478,6 +1479,121 @@ class _OrderDataRowState extends State<_OrderDataRow> {
   }
 }
 
+Future<void> _handleDelete(BuildContext context, OrderGroup group) async {
+  final hasWip = group.overallStatus != OrderStatus.notStarted && group.overallStatus != OrderStatus.draft;
+  
+  if (hasWip) {
+    final result = await showDialog<({String barcode, double qty})>(
+      context: context,
+      builder: (ctx) => const Dialog(child: _DissolutionDialog()),
+    );
+    if (result == null) return;
+    
+    if (context.mounted) {
+      final success = await context.read<OrdersProvider>().deleteOrder(group.items.first.id, wipBarcode: result.barcode, wipQty: result.qty);
+      if (success && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order dissolved and WIP recovered.')));
+      }
+    }
+  } else {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Order'),
+        content: const Text('Are you sure you want to delete this order? All allocated inputs will be returned to inventory.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(ctx).pop(true), 
+            child: const Text('Delete')
+          ),
+        ],
+      ),
+    );
+    if (confirm == true && context.mounted) {
+      final success = await context.read<OrdersProvider>().deleteOrder(group.items.first.id);
+      if (success && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order deleted successfully.')));
+      }
+    }
+  }
+}
+
+class _DissolutionDialog extends StatefulWidget {
+  const _DissolutionDialog();
+  @override
+  State<_DissolutionDialog> createState() => _DissolutionDialogState();
+}
+
+class _DissolutionDialogState extends State<_DissolutionDialog> {
+  final _qtyController = TextEditingController(text: '1');
+  ItemDefinition? _selectedItem;
+
+  @override
+  Widget build(BuildContext context) {
+    final itemsProvider = context.watch<ItemsProvider>();
+    return Container(
+      width: 450,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Order Dissolution', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          const Text('This order has intermediate WIP. Please map the WIP to an inventory item to store it.'),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('WIP Item'),
+              TextButton.icon(
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Create New Item'),
+                onPressed: () async {
+                  final created = await ItemsScreen.openEditor(context);
+                  if (created != null) {
+                    setState(() => _selectedItem = created);
+                  }
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          DropdownButtonFormField<ItemDefinition>(
+            value: _selectedItem,
+            isExpanded: true,
+            decoration: const InputDecoration(border: OutlineInputBorder()),
+            items: itemsProvider.items.map((e) => DropdownMenuItem(value: e, child: Text(e.name))).toList(),
+            onChanged: (val) => setState(() => _selectedItem = val),
+          ),
+          const SizedBox(height: 16),
+          const Text('WIP Quantity'),
+          const SizedBox(height: 8),
+          TextField(controller: _qtyController, decoration: const InputDecoration(border: OutlineInputBorder())),
+          const SizedBox(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+              const SizedBox(width: 12),
+              ElevatedButton(
+                onPressed: _selectedItem == null ? null : () {
+                  final qty = double.tryParse(_qtyController.text) ?? 0;
+                  Navigator.of(context).pop((barcode: _selectedItem!.id.toString(), qty: qty));
+                },
+                child: const Text('Dissolve'),
+              ),
+            ],
+          )
+        ],
+      )
+    );
+  }
+}
+
 enum _QuickRowActionKind { start, complete, view, edit }
 
 class _QuickRowAction {
@@ -1550,13 +1666,16 @@ class _QuickHintButton extends StatelessWidget {
 }
 
 class _InlineRowActions extends StatelessWidget {
+  static void _dummyCallback() {}
+
   const _InlineRowActions({
     required this.hovered,
     required this.busy,
     required this.quickAction,
     required this.onQuickAction,
     required this.onView,
-    required this.onMenu,
+    required this.onEdit,
+    required this.onDelete,
   });
 
   final bool hovered;
@@ -1564,7 +1683,8 @@ class _InlineRowActions extends StatelessWidget {
   final _QuickRowAction quickAction;
   final VoidCallback onQuickAction;
   final VoidCallback onView;
-  final VoidCallback onMenu;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -1602,7 +1722,52 @@ class _InlineRowActions extends StatelessWidget {
                   ),
                 ),
               ),
-            _RowActionButton(onTap: onMenu),
+            PopupMenuButton<String>(
+              tooltip: 'More actions',
+              offset: const Offset(0, 40),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              onSelected: (value) {
+                if (value == 'view') onView();
+                if (value == 'edit') onEdit();
+                if (value == 'delete') onDelete();
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'view',
+                  child: Row(
+                    children: [
+                      Icon(Icons.visibility_outlined, size: 20),
+                      SizedBox(width: 12),
+                      Text('View Details'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'edit',
+                  child: Row(
+                    children: [
+                      Icon(Icons.edit_outlined, size: 20),
+                      SizedBox(width: 12),
+                      Text('Edit Order'),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(),
+                const PopupMenuItem(
+                  value: 'delete',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                      SizedBox(width: 12),
+                      Text('Delete Order', style: TextStyle(color: Colors.red)),
+                    ],
+                  ),
+                ),
+              ],
+              child: const IgnorePointer(child: _RowActionButton(onTap: _dummyCallback)),
+            ),
           ],
         );
       },
@@ -1949,7 +2114,9 @@ class _OrdersTableLayout {
 }
 
 class _OrderEditorSheet extends StatefulWidget {
-  const _OrderEditorSheet();
+  const _OrderEditorSheet({this.initialOrderGroup});
+
+  final OrderGroup? initialOrderGroup;
 
   @override
   State<_OrderEditorSheet> createState() => _OrderEditorSheetState();
@@ -1978,16 +2145,35 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
   @override
   void initState() {
     super.initState();
-    _orderNoController = TextEditingController();
-    _poNumberController = TextEditingController();
-    _startDate = DateTime.now();
+    final group = widget.initialOrderGroup;
+    _orderNoController = TextEditingController(text: group?.orderNo ?? '');
+    _poNumberController = TextEditingController(text: group?.poNumber ?? '');
+    _selectedClientId = group?.clientId;
+    _startDate = group?.items.first.startDate ?? DateTime.now();
     _startDateController = TextEditingController(
       text: _formatDate(_startDate!),
     );
-    _endDateController = TextEditingController();
-    _lines = <_OrderLineDraft>[
-      _OrderLineDraft(id: DateTime.now().microsecondsSinceEpoch),
-    ];
+    _endDate = group?.items.first.endDate;
+    _endDateController = TextEditingController(
+      text: _endDate != null ? _formatDate(_endDate!) : '',
+    );
+
+    if (group != null && group.items.isNotEmpty) {
+      _lines = group.items.map((item) {
+        final draft = _OrderLineDraft(id: item.id);
+        draft.selectedItemId = item.itemId;
+        draft.selectedVariationValueNodeIds = item.variationPathNodeIds;
+        draft.selectedVariationLeafId = item.variationLeafNodeId;
+        draft.selectedUnitId = item.unitId;
+        draft.quantityController.text = item.quantity.toString();
+        draft.clientCodeController.text = item.clientCode;
+        return draft;
+      }).toList();
+    } else {
+      _lines = <_OrderLineDraft>[
+        _OrderLineDraft(id: DateTime.now().microsecondsSinceEpoch),
+      ];
+    }
     _loadRecentPoFiles();
   }
 
@@ -3615,22 +3801,47 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     OrderEntry? result;
     var mergedLineCount = 0;
     var createdLineCount = 0;
+    var updatedLineCount = 0;
     String? singleLineOutcomeMessage;
     final ordersProvider = context.read<OrdersProvider>();
-    for (final input in orderLinesWithDocuments) {
-      result = await ordersProvider.createOrder(input);
+    
+    for (var i = 0; i < orderLinesWithDocuments.length; i++) {
+      final input = orderLinesWithDocuments[i];
+      final line = _lines[i];
+      final isExisting = widget.initialOrderGroup?.items.any((e) => e.id == line.id) ?? false;
+
+      if (isExisting) {
+        result = await ordersProvider.updateOrder(line.id, input);
+        updatedLineCount += 1;
+      } else {
+        result = await ordersProvider.createOrder(input);
+        if (ordersProvider.lastCreateWasMerged) {
+          mergedLineCount += 1;
+        } else {
+          createdLineCount += 1;
+        }
+      }
+
       if (!context.mounted) {
         return;
       }
       if (result == null) {
         break;
       }
-      if (ordersProvider.lastCreateWasMerged) {
-        mergedLineCount += 1;
-      } else {
-        createdLineCount += 1;
-      }
       singleLineOutcomeMessage = ordersProvider.lastCreateOutcomeMessage;
+    }
+
+    if (widget.initialOrderGroup != null && result != null) {
+      final currentLineIds = _lines.map((l) => l.id).toSet();
+      for (final item in widget.initialOrderGroup!.items) {
+        if (!currentLineIds.contains(item.id)) {
+          final delSuccess = await ordersProvider.deleteOrder(item.id);
+          if (!delSuccess) {
+            result = null; // stop on error
+            break;
+          }
+        }
+      }
     }
 
     if (!context.mounted) {
@@ -3639,13 +3850,18 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
 
     if (result != null) {
       final totalLines = orderLinesWithDocuments.length;
-      final finalMessage = totalLines == 1
-          ? (singleLineOutcomeMessage ?? successMessage)
-          : mergedLineCount == 0
-          ? successMessage
-          : createdLineCount == 0
-          ? '$mergedLineCount order line(s) merged into existing orders.'
-          : '$createdLineCount order line(s) created, $mergedLineCount merged into existing orders.';
+      String finalMessage = successMessage;
+      if (widget.initialOrderGroup != null) {
+        finalMessage = 'Order updated successfully.';
+      } else {
+        finalMessage = totalLines == 1
+            ? (singleLineOutcomeMessage ?? successMessage)
+            : mergedLineCount == 0
+            ? successMessage
+            : createdLineCount == 0
+            ? '$mergedLineCount order line(s) merged into existing orders.'
+            : '$createdLineCount order line(s) created, $mergedLineCount merged into existing orders.';
+      }
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(finalMessage)));

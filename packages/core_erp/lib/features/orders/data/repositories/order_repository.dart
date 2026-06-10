@@ -8,7 +8,7 @@ abstract class OrderRepository {
   Future<List<OrderEntry>> getOrders();
   Future<OrderEntry> createOrder(CreateOrderInput input);
   Future<OrderEntry> updateOrder(int orderId, CreateOrderInput input);
-  Future<void> deleteOrder(int orderId);
+  Future<void> deleteOrder(int orderId, {String? wipBarcode, double? wipQty});
   Future<OrderEntry> updateOrderLifecycle(UpdateOrderLifecycleInput input);
   Future<PoUploadIntent> createPoUploadIntent(PoUploadIntentInput input);
   Future<PoDocumentEntry> completePoUpload(CompletePoUploadInput input);

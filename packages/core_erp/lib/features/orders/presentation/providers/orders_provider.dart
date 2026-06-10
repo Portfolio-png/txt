@@ -123,12 +123,12 @@ class OrdersProvider extends ChangeNotifier {
     return _save(() => _repository.updateOrder(orderId, input));
   }
 
-  Future<bool> deleteOrder(int orderId) async {
+  Future<bool> deleteOrder(int orderId, {String? wipBarcode, double? wipQty}) async {
     _isSaving = true;
     _errorMessage = null;
     notifyListeners();
     try {
-      await _repository.deleteOrder(orderId);
+      await _repository.deleteOrder(orderId, wipBarcode: wipBarcode, wipQty: wipQty);
       await refresh();
       return true;
     } catch (error) {

@@ -245,14 +245,21 @@ class ApiOrderRepository implements OrderRepository {
   }
 
   @override
-  Future<void> deleteOrder(int orderId) async {
+  Future<void> deleteOrder(int orderId, {String? wipBarcode, double? wipQty}) async {
     if (useMockResponses) {
       _mockOrders.removeWhere((o) => o.id == orderId);
       return;
     }
 
     final uri = Uri.parse('$baseUrl/api/orders/$orderId');
-    final response = await _client.delete(uri);
+    final response = await _client.delete(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        if (wipBarcode != null) 'wip_barcode': wipBarcode,
+        if (wipQty != null) 'wip_qty': wipQty,
+      }),
+    );
     final payload = _decodeJsonObject(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] != true) {
       throw OrderApiException(payload['error'] ?? 'Failed to delete order.');
