@@ -8,11 +8,13 @@ class SearchableSelectOption<T> {
     required this.value,
     required this.label,
     this.searchText,
+    this.highlightColor,
   });
 
   final T value;
   final String label;
   final String? searchText;
+  final Color? highlightColor;
 
   String get normalizedSearchText => (searchText ?? label).trim().toLowerCase();
 }
@@ -33,13 +35,13 @@ Future<SearchableSelectOption<T>?> showSearchableSelectDialog<T>({
   SearchableSelectCanCreateOption<T>? canCreateOption,
   SearchableSelectCreateOption<T>? onCreateOption,
   SearchableSelectCreateLabelBuilder? createOptionLabelBuilder,
+  Rect? anchorRect,
 }) {
   final overlayState = Overlay.maybeOf(context, rootOverlay: true);
   final overlayContext = overlayState?.context ?? context;
   final overlayBox = overlayContext.findRenderObject() as RenderBox?;
   final anchorBox = context.findRenderObject() as RenderBox?;
-  Rect? anchorRect;
-  if (overlayBox != null && anchorBox != null) {
+  if (anchorRect == null && overlayBox != null && anchorBox != null) {
     final topLeft = anchorBox.localToGlobal(Offset.zero, ancestor: overlayBox);
     anchorRect = topLeft & anchorBox.size;
   }
@@ -546,11 +548,14 @@ class _SearchableSelectOptionTile<T> extends StatefulWidget {
 class _SearchableSelectOptionTileState<T>
     extends State<_SearchableSelectOptionTile<T>> {
   bool _isFocused = false;
+  bool _isHovered = false;
 
   @override
   Widget build(BuildContext context) {
-    final backgroundColor = _isFocused
-        ? const Color(0xFFEDE9FF)
+    final baseColor = widget.option.highlightColor;
+    final active = _isFocused || _isHovered;
+    final backgroundColor = active
+        ? (baseColor != null ? baseColor.withValues(alpha: 0.25) : const Color(0xFFEDE9FF))
         : widget.isSelected
         ? const Color(0xFFF3F0FF)
         : Colors.white;
@@ -575,6 +580,11 @@ class _SearchableSelectOptionTileState<T>
       onShowFocusHighlight: (focused) {
         setState(() {
           _isFocused = focused;
+        });
+      },
+      onShowHoverHighlight: (hovered) {
+        setState(() {
+          _isHovered = hovered;
         });
       },
       child: Material(

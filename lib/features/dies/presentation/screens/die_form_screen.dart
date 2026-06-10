@@ -277,7 +277,7 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
   Widget build(BuildContext context) {
     final title = widget.die == null ? 'Create Die' : 'Edit Die';
     final isLoading = context.watch<DiesProvider>().isLoading;
-    final groups = context.watch<GroupsProvider>().activeGroups;
+    final groups = context.watch<GroupsProvider>().machineGroups;
 
     return Form(
       key: _formKey,
@@ -354,6 +354,7 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                               .map((g) => SearchableSelectOption<int>(
                                     value: g.id,
                                     label: g.name,
+                                    highlightColor: const Color(0xFFE4C17C),
                                   ))
                               .toList(),
                           onChanged: (val) {

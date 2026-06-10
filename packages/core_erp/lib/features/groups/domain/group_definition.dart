@@ -4,7 +4,7 @@ class GroupDefinition {
     required this.name,
     this.groupType = 'item',
     required this.parentGroupId,
-    required this.unitId,
+    this.unitId,
     required this.isArchived,
     required this.usageCount,
     required this.createdAt,
@@ -15,7 +15,7 @@ class GroupDefinition {
   final String name;
   final String groupType;
   final int? parentGroupId;
-  final int unitId;
+  final int? unitId;
   final bool isArchived;
   final int usageCount;
   final DateTime createdAt;

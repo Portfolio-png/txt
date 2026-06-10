@@ -39,7 +39,8 @@ class GroupsScreen extends StatelessWidget {
           actions: {
             PrintIntent: CallbackAction<PrintIntent>(
               onInvoke: (intent) {
-                final data = groups.filteredGroups.map((g) {
+                final currentGroupType = mode == 'machines' ? 'machine' : 'item';
+                final data = groups.filteredGroupsByType(currentGroupType).map((g) {
                   final parentName =
                       groups.parentNameFor(g.parentGroupId) ?? 'Primary Group';
                   final unitName =
@@ -74,7 +75,7 @@ class GroupsScreen extends StatelessWidget {
               label: 'Add Group',
               icon: Icons.add,
               isLoading: groups.isSaving,
-              onPressed: () => openEditor(context),
+              onPressed: () => openEditor(context, groupType: mode == 'machines' ? 'machine' : 'item'),
             ),
             toolbar: _GroupsToolbar(mode: mode),
             messages: [
@@ -84,14 +85,14 @@ class GroupsScreen extends StatelessWidget {
                   isError: true,
                 ),
             ],
-            body: groups.filteredGroups.isEmpty
+            body: groups.filteredGroupsByType(mode == 'machines' ? 'machine' : 'item').isEmpty
                 ? const AppEmptyState(
                     title: 'No groups found',
                     message:
                         'Create a top-level group like Paper, then add child groups beneath it as needed.',
                     icon: Icons.grid_view_outlined,
                   )
-                : _GroupsTable(groups: groups.filteredGroups),
+                : _GroupsTable(groups: groups.filteredGroupsByType(mode == 'machines' ? 'machine' : 'item')),
           ),
         );
       },
@@ -101,11 +102,13 @@ class GroupsScreen extends StatelessWidget {
   static Future<GroupDefinition?> openEditor(
     BuildContext context, {
     GroupDefinition? group,
+    String groupType = 'item',
     String initialName = '',
   }) {
     return StructuredGroupEditorDialog.open(
       context,
       group: group,
+      groupType: groupType,
       initialName: initialName,
       createMode: StructuredGroupEditorCreateMode.groupsOnly,
     );
@@ -274,7 +277,7 @@ class _GroupRow extends StatelessWidget {
             children: [
               SoftActionLink(
                 label: 'Edit',
-                onTap: () => GroupsScreen.openEditor(context, group: group),
+                onTap: () => GroupsScreen.openEditor(context, group: group, groupType: group.groupType),
               ),
               SoftActionLink(
                 label: group.isArchived ? 'Restore' : 'Archive',
@@ -295,7 +298,8 @@ class _GroupRow extends StatelessWidget {
     );
   }
 
-  String? _unitLabel(List<UnitDefinition> units, int unitId) {
+  String? _unitLabel(List<UnitDefinition> units, int? unitId) {
+    if (unitId == null) return null;
     final unit = units.where((entry) => entry.id == unitId).firstOrNull;
     return unit?.displayLabel;
   }

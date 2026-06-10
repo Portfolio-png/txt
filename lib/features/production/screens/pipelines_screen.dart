@@ -40,37 +40,11 @@ class PipelinesScreen extends StatefulWidget {
   final String shopFloorId;
   final PipelinesScreenMode mode;
 
-  @override
-  State<PipelinesScreen> createState() => _PipelinesScreenState();
-}
-
-class _PipelinesScreenState extends State<PipelinesScreen> {
-  bool _isLoading = true;
-  List<PipelineTemplate> _templates = [];
-  PipelineTemplate? _editingTemplate;
-  PipelineTemplateStatus _filterStatus = PipelineTemplateStatus.active;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _initializeItemMasterData();
-      }
-    });
-    _loadTemplates();
-  }
-
-  @override
-  void didUpdateWidget(covariant PipelinesScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.shopFloorId != widget.shopFloorId) {
-      _editingTemplate = null;
-      _loadTemplates();
-    }
-  }
-
-  Future<void> _initializeItemMasterData() async {
+  static Future<PipelineTemplate?> openCreateDialog(
+    BuildContext context, {
+    String factoryId = defaultProductionFactoryId,
+    String shopFloorId = defaultProductionShopFloorId,
+  }) async {
     final futures = <Future<void>>[];
     try {
       futures.add(context.read<ItemsProvider>().initialize());
@@ -79,27 +53,9 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
       futures.add(context.read<UnitsProvider>().initialize());
     } catch (_) {}
     await Future.wait(futures);
-  }
 
-  Future<void> _loadTemplates() async {
-    setState(() => _isLoading = true);
-    try {
-      final repo = context.read<PipelineRunRepository>();
-      final allTemplates = await repo.getTemplates();
-      final floorTemplates = allTemplates
-          .where(_belongsToActiveFloor)
-          .toList(growable: false);
-      if (!mounted) return;
-      setState(() => _templates = floorTemplates);
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _createNew() async {
-    await _initializeItemMasterData();
-    if (!mounted) {
-      return;
+    if (!context.mounted) {
+      return null;
     }
     final nameCtrl = TextEditingController(text: 'New Pipeline');
     final descCtrl = TextEditingController();
@@ -211,8 +167,8 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
                   context,
                   PipelineTemplate(
                     id: id,
-                    factoryId: widget.factoryId,
-                    shopFloorId: widget.shopFloorId,
+                    factoryId: factoryId,
+                    shopFloorId: shopFloorId,
                     name: name,
                     description: desc,
                     stageLabels: const ['Input', 'Stage 1', 'Output'],
@@ -351,16 +307,82 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
       },
     );
 
-    if (result != null && mounted) {
-      setState(() {
-        _editingTemplate = result;
-      });
-    }
     // Delay controller disposal to allow the dialog pop animation to finish completely
     Future.delayed(const Duration(milliseconds: 500), () {
       nameCtrl.dispose();
       descCtrl.dispose();
     });
+    
+    return result;
+  }
+
+  @override
+  State<PipelinesScreen> createState() => _PipelinesScreenState();
+}
+
+class _PipelinesScreenState extends State<PipelinesScreen> {
+  bool _isLoading = true;
+  List<PipelineTemplate> _templates = [];
+  PipelineTemplate? _editingTemplate;
+  PipelineTemplateStatus _filterStatus = PipelineTemplateStatus.active;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _initializeItemMasterData();
+      }
+    });
+    _loadTemplates();
+  }
+
+  @override
+  void didUpdateWidget(covariant PipelinesScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.shopFloorId != widget.shopFloorId) {
+      _editingTemplate = null;
+      _loadTemplates();
+    }
+  }
+
+  Future<void> _initializeItemMasterData() async {
+    final futures = <Future<void>>[];
+    try {
+      futures.add(context.read<ItemsProvider>().initialize());
+    } catch (_) {}
+    try {
+      futures.add(context.read<UnitsProvider>().initialize());
+    } catch (_) {}
+    await Future.wait(futures);
+  }
+
+  Future<void> _loadTemplates() async {
+    setState(() => _isLoading = true);
+    try {
+      final repo = context.read<PipelineRunRepository>();
+      final allTemplates = await repo.getTemplates();
+      final floorTemplates = allTemplates
+          .where(_belongsToActiveFloor)
+          .toList(growable: false);
+      if (!mounted) return;
+      setState(() => _templates = floorTemplates);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _createNew() async {
+    final result = await PipelinesScreen.openCreateDialog(
+      context,
+      factoryId: widget.factoryId,
+      shopFloorId: widget.shopFloorId,
+    );
+    if (result != null && mounted) {
+      setState(() {
+        _editingTemplate = result;
+      });
+    }
   }
 
   Future<void> _duplicateTemplate(PipelineTemplate template) async {

@@ -28,18 +28,21 @@ class StructuredGroupEditorDialog extends StatefulWidget {
   });
 
   final GroupDefinition? group;
+  final String groupType;
   final String initialName;
   final StructuredGroupEditorCreateMode createMode;
 
   static Future<GroupDefinition?> open(
     BuildContext context, {
     GroupDefinition? group,
+    String groupType = 'item',
     String initialName = '',
     StructuredGroupEditorCreateMode createMode =
         StructuredGroupEditorCreateMode.groupsOnly,
   }) {
     final body = StructuredGroupEditorDialog(
       group: group,
+      groupType: groupType,
       initialName: initialName,
       createMode: createMode,
     );
@@ -397,8 +400,9 @@ class _StructuredGroupEditorDialogState
                                   : selectedUnit?.id,
                               decoration: _selectDecoration(
                                 label: 'Group Unit',
-                                helper:
-                                    'Required. If the unit is missing, create it here and continue.',
+                                helper: widget.groupType == 'machine'
+                                    ? 'Optional for machines.'
+                                    : 'Required. If the unit is missing, create it here and continue.',
                               ),
                               dialogTitle: 'Group Unit',
                               searchHintText: 'Search unit',
@@ -431,7 +435,9 @@ class _StructuredGroupEditorDialogState
                                 });
                               },
                               validator: (value) =>
-                                  value == null ? 'Required' : null,
+                                  value == null && widget.groupType != 'machine'
+                                      ? 'Required'
+                                      : null,
                             ),
                           ),
                           const SizedBox(height: 18),
@@ -920,7 +926,7 @@ class _StructuredGroupEditorDialogState
     if (!_formKey.currentState!.validate()) {
       return;
     }
-    if (_selectedUnitId == null) {
+    if (_selectedUnitId == null && widget.groupType != 'machine') {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Select a group unit before saving.')),
       );
@@ -955,8 +961,9 @@ class _StructuredGroupEditorDialogState
         savedGroup = await groupsProvider.createGroup(
           CreateGroupInput(
             name: _nameController.text.trim(),
+            groupType: widget.groupType,
             parentGroupId: _selectedParentGroupId,
-            unitId: _selectedUnitId!,
+            unitId: _selectedUnitId,
           ),
         );
         if (savedGroup == null || groupsProvider.errorMessage != null) {
@@ -1031,8 +1038,9 @@ class _StructuredGroupEditorDialogState
         UpdateGroupInput(
           id: group.id,
           name: _nameController.text.trim(),
+          groupType: group.groupType,
           parentGroupId: _selectedParentGroupId,
-          unitId: _selectedUnitId!,
+          unitId: _selectedUnitId,
         ),
       );
       if (savedGroup == null || groupsProvider.errorMessage != null) {

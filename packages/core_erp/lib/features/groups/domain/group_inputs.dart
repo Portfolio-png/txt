@@ -2,14 +2,14 @@ class CreateGroupInput {
   const CreateGroupInput({
     required this.name,
     this.groupType = 'item',
-    required this.unitId,
+    this.unitId,
     this.parentGroupId,
   });
 
   final String name;
   final String groupType;
   final int? parentGroupId;
-  final int unitId;
+  final int? unitId;
 }
 
 class UpdateGroupInput {
@@ -17,7 +17,7 @@ class UpdateGroupInput {
     required this.id,
     required this.name,
     this.groupType = 'item',
-    required this.unitId,
+    this.unitId,
     this.parentGroupId,
   });
 
@@ -25,5 +25,5 @@ class UpdateGroupInput {
   final String name;
   final String groupType;
   final int? parentGroupId;
-  final int unitId;
+  final int? unitId;
 }

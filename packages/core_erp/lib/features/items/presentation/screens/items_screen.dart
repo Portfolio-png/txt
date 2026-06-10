@@ -1297,7 +1297,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       variationTree: _variationTreeInputs,
       excludeId: widget.item?.id,
     );
-    final availableGroups = groupsProvider.activeGroups;
+    final availableGroups = groupsProvider.itemGroups.where((g) => !g.isArchived).toList(growable: false);
     final selectedGroup = groupsProvider.findById(_selectedGroupId);
     final availableUnits = unitsProvider.units
         .where((u) => !u.isArchived)

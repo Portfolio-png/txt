@@ -7,7 +7,7 @@ class GroupDto {
     required this.name,
     this.groupType = 'item',
     required this.parentGroupId,
-    required this.unitId,
+    this.unitId,
     required this.isArchived,
     required this.usageCount,
     required this.createdAt,
@@ -18,7 +18,7 @@ class GroupDto {
   final String name;
   final String groupType;
   final int? parentGroupId;
-  final int unitId;
+  final int? unitId;
   final bool isArchived;
   final int usageCount;
   final DateTime createdAt;
@@ -30,7 +30,7 @@ class GroupDto {
       name: json['name'] as String? ?? '',
       groupType: json['groupType'] as String? ?? 'item',
       parentGroupId: json['parentGroupId'] as int?,
-      unitId: json['unitId'] as int? ?? 0,
+      unitId: json['unitId'] as int?,
       isArchived: json['isArchived'] as bool? ?? false,
       usageCount: json['usageCount'] as int? ?? 0,
       createdAt:
@@ -96,13 +96,13 @@ class CreateGroupRequest {
     required this.name,
     this.groupType = 'item',
     required this.parentGroupId,
-    required this.unitId,
+    this.unitId,
   });
 
   final String name;
   final String groupType;
   final int? parentGroupId;
-  final int unitId;
+  final int? unitId;
 
   factory CreateGroupRequest.fromInput(CreateGroupInput input) {
     return CreateGroupRequest(
@@ -123,13 +123,13 @@ class UpdateGroupRequest {
     required this.name,
     this.groupType = 'item',
     required this.parentGroupId,
-    required this.unitId,
+    this.unitId,
   });
 
   final String name;
   final String groupType;
   final int? parentGroupId;
-  final int unitId;
+  final int? unitId;
 
   factory UpdateGroupRequest.fromInput(UpdateGroupInput input) {
     return UpdateGroupRequest(

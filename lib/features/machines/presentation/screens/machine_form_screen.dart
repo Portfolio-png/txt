@@ -354,7 +354,7 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
   Widget build(BuildContext context) {
     final title = widget.machine == null ? 'Create Machine' : 'Edit Machine';
     final isLoading = context.watch<MachinesProvider>().isLoading;
-    final groups = context.watch<GroupsProvider>().activeGroups;
+    final groups = context.watch<GroupsProvider>().machineGroups.where((g) => !g.isArchived).toList(growable: false);
 
     return Form(
       key: _formKey,
@@ -419,12 +419,14 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                                 options: groups.map((g) => SearchableSelectOption<int>(
                                   value: g.id,
                                   label: g.name,
+                                  highlightColor: const Color(0xFFE4C17C),
                                 )).toList(),
                                 onChanged: (val) => setState(() => _groupId = val),
                                 validator: (val) => val == null ? 'Required' : null,
                                 onCreateOption: (query) async {
                                   final created = await GroupsScreen.openEditor(
                                     context,
+                                    groupType: 'machine',
                                     initialName: query,
                                   );
                                   if (!context.mounted || created == null) {
@@ -1046,7 +1048,7 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
     }
     
     if (mounted) {
-      Navigator.of(context).pop();
+      Navigator.of(context).pop(newMachine);
     }
   }
 

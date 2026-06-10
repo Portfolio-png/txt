@@ -33,6 +33,12 @@ import '../../features/production/providers/production_run_provider.dart';
 import '../../features/production_pipelines/data/repositories/pipeline_run_repository.dart';
 import 'package:core_erp/features/orders/domain/order_entry.dart'; // for OrderStatus
 import 'package:collection/collection.dart';
+import '../../features/production/screens/pipelines_screen.dart';
+import '../../features/production/screens/pipeline_builder_screen.dart';
+import '../../features/production/providers/pipeline_editor_provider.dart';
+import '../../features/production/domain/default_floor_context.dart';
+import 'package:core_erp/core/widgets/searchable_select.dart';
+
 import 'app_sidebar.dart';
 import 'app_topbar.dart';
 import 'navigation_provider.dart';
@@ -69,7 +75,9 @@ class AppShell extends StatelessWidget {
             actualSidebarWidth + actualLeftInset + actualRightGap;
 
         return PaperShortcutManager(
-          child: Scaffold(
+          child: MouseRegion(
+            onHover: (e) => GlobalMouseTracker.position.value = e.position,
+            child: Scaffold(
             backgroundColor: Colors.transparent,
             drawer: isMobile
                 ? Drawer(width: 236, child: _ShellDrawerContent())
@@ -190,7 +198,7 @@ class AppShell extends StatelessWidget {
               ),
             ),
           ),
-        );
+        ));
       },
     );
   }
@@ -286,6 +294,9 @@ class _PaperShortcutManagerState extends State<PaperShortcutManager> {
           if (currentTab == 2) {
             _handleCreateReceptionChallan(context);
           }
+        },
+        const SingleActivator(LogicalKeyboardKey.keyQ, control: true): () {
+          _showQuickCreateMenu(context);
         },
       },
       child: Focus(
@@ -427,6 +438,78 @@ class _PaperShortcutManagerState extends State<PaperShortcutManager> {
     }
     _focusNode.requestFocus();
   }
+
+  void _showQuickCreateMenu(BuildContext context) {
+    final offset = GlobalMouseTracker.position.value;
+    final relativeRect = Rect.fromLTWH(offset.dx, offset.dy, 0, 0);
+
+    showSearchableSelectDialog<String>(
+      context: context,
+      anchorRect: relativeRect,
+      title: 'Create new', 
+      searchHintText: 'Search...',
+      options: const [
+        SearchableSelectOption(value: 'order', label: 'new order'),
+        SearchableSelectOption(value: 'item', label: 'new item'),
+        SearchableSelectOption(value: 'client', label: 'new client'),
+        SearchableSelectOption(value: 'vendor', label: 'new vendor'),
+        SearchableSelectOption(value: 'machine', label: 'new machine', highlightColor: Color(0xFFE4C17C)),
+        SearchableSelectOption(value: 'receipt_challan', label: 'new receipt challan', highlightColor: Color(0xFFE84A5F)),
+        SearchableSelectOption(value: 'die', label: 'new die', highlightColor: Color(0xFFB0B3B8)),
+        SearchableSelectOption(value: 'pipeline', label: 'new pipeline', highlightColor: Color(0xFF43B047)),
+      ],
+    ).then((option) {
+      if (option == null) return;
+      switch (option.value) {
+        case 'order': 
+          _handleCreateOrder(context); 
+          break;
+        case 'item': 
+          _runModalShortcut(() => ItemsScreen.openEditor(context)); 
+          break;
+        case 'client': 
+          _runModalShortcut(() => ClientsScreen.openEditor(context)); 
+          break;
+        case 'vendor': 
+          _runModalShortcut(() => VendorsScreen.openEditor(context)); 
+          break;
+        case 'machine': 
+          _runModalShortcut(() async => MachinesScreen.openMachineEditor(context)); 
+          break;
+        case 'receipt_challan': 
+          _handleCreateReceptionChallan(context); 
+          break;
+        case 'die': 
+          _runModalShortcut(() async => DiesScreen.openDieEditor(context)); 
+          break;
+        case 'pipeline': 
+          _handleCreatePipeline(context); 
+          break;
+      }
+    });
+  }
+
+  Future<void> _handleCreatePipeline(BuildContext context) async {
+    final template = await PipelinesScreen.openCreateDialog(context);
+    if (template != null && context.mounted) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (builderContext) => ChangeNotifierProvider(
+            create: (_) => PipelineEditorProvider(template: template),
+            child: PipelineBuilderScreen(
+              factoryId: defaultProductionFactoryId,
+              shopFloorId: defaultProductionShopFloorId,
+              onBack: () => Navigator.of(builderContext).pop(),
+            ),
+          ),
+        ),
+      );
+    }
+  }
+}
+
+class GlobalMouseTracker {
+  static final ValueNotifier<Offset> position = ValueNotifier(Offset.zero);
 }
 
 class _ShellLayoutMetrics {

@@ -70,6 +70,7 @@ class ApiGroupRepository implements GroupRepository {
       final group = GroupDefinition(
         id: _mockNextId++,
         name: input.name.trim(),
+        groupType: input.groupType,
         parentGroupId: input.parentGroupId,
         unitId: input.unitId,
         isArchived: false,
@@ -116,6 +117,7 @@ class ApiGroupRepository implements GroupRepository {
       final updated = GroupDefinition(
         id: current.id,
         name: input.name.trim(),
+        groupType: input.groupType,
         parentGroupId: input.parentGroupId,
         unitId: input.unitId,
         isArchived: current.isArchived,
@@ -177,6 +179,7 @@ class ApiGroupRepository implements GroupRepository {
       final updated = GroupDefinition(
         id: current.id,
         name: current.name,
+        groupType: current.groupType,
         parentGroupId: current.parentGroupId,
         unitId: current.unitId,
         isArchived: archive,

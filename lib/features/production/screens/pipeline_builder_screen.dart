@@ -14,7 +14,6 @@ import 'package:core_erp/core/widgets/searchable_select.dart';
 import 'package:core_erp/features/items/domain/item_inputs.dart';
 import 'package:core_erp/features/groups/domain/group_definition.dart';
 import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
-import 'package:core_erp/features/groups/presentation/screens/groups_screen.dart';
 
 import '../providers/pipeline_editor_provider.dart';
 import '../providers/production_provider.dart';
@@ -26,6 +25,7 @@ import '../../production_pipelines/domain/pipeline_template.dart';
 import '../../production_pipelines/domain/process_node.dart';
 import '../../machines/domain/machine.dart';
 import '../../machines/presentation/providers/machine_provider.dart';
+import '../../machines/presentation/screens/machine_form_screen.dart';
 import '../../dies/data/die_repository.dart';
 import '../../dies/domain/die.dart';
 import '../../dies/presentation/providers/die_provider.dart';
@@ -114,7 +114,9 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
     final units = _watchActiveUnitsFromContext(context);
     final selectedNode = provider.selectedNode;
 
-    return Focus(
+    return Scaffold(
+      backgroundColor: const Color(0xFFEFF3F1),
+      body: Focus(
       focusNode: _focusNode,
       autofocus: true,
       onKeyEvent: (node, event) {
@@ -391,7 +393,7 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
           );
         },
       ),
-    );
+    ));
   }
 
   Widget _buildVerticalNodeActions(
@@ -2556,7 +2558,7 @@ class _UnifiedMachineFieldState extends State<_UnifiedMachineField> {
       machinesProvider = context.watch<MachinesProvider>();
     } catch (_) {}
 
-    final groups = groupsProvider?.activeGroups ?? const <GroupDefinition>[];
+    final groups = groupsProvider?.machineGroups ?? const <GroupDefinition>[];
     final machines = machinesProvider?.machines ?? const <Machine>[];
 
     String? currentValue;
@@ -2572,18 +2574,20 @@ class _UnifiedMachineFieldState extends State<_UnifiedMachineField> {
         label: 'Unassigned',
         searchText: 'unassigned none empty',
       ),
-      ...groups.map(
+      ...groups.where((g) => !g.isArchived).map(
         (g) => SearchableSelectOption<String?>(
           value: 'group_${g.id}',
           label: '${g.name} (Group)',
           searchText: 'group ${g.name}',
+          highlightColor: const Color(0xFFE4C17C),
         ),
       ),
-      ...machines.map(
+      ...machines.where((m) => m.status == MachineStatus.active).map(
         (m) => SearchableSelectOption<String?>(
           value: 'machine_${m.id}',
           label: '${m.name} (Machine)',
           searchText: 'machine ${m.name}',
+          highlightColor: const Color(0xFFE4C17C),
         ),
       ),
       if (currentValue != null &&
@@ -2611,33 +2615,38 @@ class _UnifiedMachineFieldState extends State<_UnifiedMachineField> {
         searchHintText: 'Search machines and groups',
         emptyText: 'No machines or groups found',
         options: options,
-        canCreateOption: groupsProvider == null
-            ? null
-            : (query, allOptions) {
+        canCreateOption: (query, allOptions) {
                 final normalized = query.trim().toLowerCase();
                 return normalized.isNotEmpty &&
-                    groups.every(
-                      (group) => group.name.trim().toLowerCase() != normalized,
+                    machines.every(
+                      (machine) => machine.name.trim().toLowerCase() != normalized,
                     );
               },
-        onCreateOption: groupsProvider == null
-            ? null
-            : (query) async {
-                final created = await GroupsScreen.openEditor(
-                  context,
-                  initialName: query.trim(),
+        onCreateOption: (query) async {
+                final dummyMachine = Machine(
+                  id: '',
+                  name: query.trim(),
+                  assetId: '',
+                  primaryPhotoUrl: '',
+                  groupId: null,
+                  makeModel: '',
+                  serialNumber: '',
+                  status: MachineStatus.active,
+                  createdAt: DateTime.now(),
+                  updatedAt: DateTime.now(),
                 );
+                final created = await showMachineFormDialog(context, machine: dummyMachine);
                 if (!context.mounted || created == null) {
                   return null;
                 }
-                await context.read<GroupsProvider>().refresh();
+                await context.read<MachinesProvider>().refresh();
                 return SearchableSelectOption<String?>(
-                  value: 'group_${created.id}',
-                  label: '${created.name} (Group)',
-                  searchText: 'group ${created.name}',
+                  value: 'machine_${created.id}',
+                  label: '${created.name} (Machine)',
+                  searchText: 'machine ${created.name}',
                 );
               },
-        createOptionLabelBuilder: (query) => 'Create machine group "$query"',
+        createOptionLabelBuilder: (query) => 'Create new machine "$query"',
         onChanged: (val) {
           if (val == null) {
             widget.onChanged(null, null, null);

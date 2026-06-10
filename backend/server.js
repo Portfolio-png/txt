@@ -2064,6 +2064,39 @@ async function initDb() {
   try { await run("ALTER TABLE vendors ADD COLUMN logo_url TEXT DEFAULT ''"); } catch(e){}
   try { await run("ALTER TABLE vendors ADD COLUMN photo_url TEXT DEFAULT ''"); } catch(e){}
 
+  // Migration for groups table to remove unit_id NOT NULL constraint
+  try {
+    const tableInfo = await all("PRAGMA table_info(groups)");
+    const unitIdCol = tableInfo.find(c => c.name === 'unit_id');
+    if (unitIdCol && unitIdCol.notnull === 1) {
+      console.log('Migrating groups table to remove NOT NULL constraint on unit_id...');
+      await run('PRAGMA foreign_keys = OFF');
+      await run('BEGIN TRANSACTION');
+      await run('ALTER TABLE groups RENAME TO groups_old_migration');
+      await run(`
+        CREATE TABLE groups (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          group_type TEXT NOT NULL DEFAULT 'item',
+          parent_group_id INTEGER REFERENCES groups(id),
+          unit_id INTEGER REFERENCES units(id),
+          is_archived INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )
+      `);
+      await run('INSERT INTO groups SELECT id, name, group_type, parent_group_id, unit_id, is_archived, created_at, updated_at FROM groups_old_migration');
+      await run('DROP TABLE groups_old_migration');
+      await run('COMMIT');
+      await run('PRAGMA foreign_keys = ON');
+      console.log('Successfully migrated groups table.');
+    }
+  } catch (err) {
+    await run('ROLLBACK').catch(() => {});
+    await run('PRAGMA foreign_keys = ON');
+    console.error('Migration failed:', err);
+  }
+
   await run(`
     CREATE TABLE IF NOT EXISTS materials (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2399,7 +2432,7 @@ async function initDb() {
       name TEXT NOT NULL,
       group_type TEXT NOT NULL DEFAULT 'item',
       parent_group_id INTEGER REFERENCES groups(id),
-      unit_id INTEGER NOT NULL REFERENCES units(id),
+      unit_id INTEGER REFERENCES units(id),
       is_archived INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -3223,6 +3256,12 @@ async function initDb() {
   await ensureColumnExists('materials', 'linked_group_id', 'INTEGER');
   await ensureColumnExists('materials', 'linked_item_id', 'INTEGER');
   await ensureColumnExists('materials', 'linked_variation_leaf_node_id', 'INTEGER');
+  await ensureColumnExists('groups', 'group_type', "TEXT NOT NULL DEFAULT 'item'");
+  await run(`
+    UPDATE groups 
+    SET group_type = 'machine' 
+    WHERE id IN (SELECT DISTINCT group_id FROM machines WHERE group_id IS NOT NULL)
+  `);
   await run('CREATE INDEX IF NOT EXISTS idx_materials_item_variation_lookup ON materials(linked_item_id, linked_variation_leaf_node_id)');
   await ensureColumnExists('inventory_movements', 'primary_qty', 'REAL');
   await ensureColumnExists('inventory_movements', 'uom', 'TEXT');
@@ -11006,7 +11045,7 @@ async function groupWouldCreateCycle(groupId, parentGroupId) {
 async function saveGroup({ name, parentGroupId = null, unitId, id = null, groupType = 'item' }) {
   const trimmedName = String(name || '').trim();
   let normalizedParentId = parentGroupId == null ? null : Number(parentGroupId);
-  const normalizedUnitId = Number(unitId);
+  let normalizedUnitId = unitId ? Number(unitId) : null;
 
   if (normalizedParentId == null && trimmedName !== 'Primary Group') {
     const pg = await get('SELECT id FROM groups WHERE name = "Primary Group" AND parent_group_id IS NULL AND group_type = ?', [groupType]);
@@ -11015,15 +11054,17 @@ async function saveGroup({ name, parentGroupId = null, unitId, id = null, groupT
     }
   }
 
-  if (!trimmedName || !normalizedUnitId) {
-    throw new Error('name and unitId are required.');
+  if (!trimmedName || (groupType !== 'machine' && !normalizedUnitId)) {
+    throw new Error('name is required, and unitId is required for non-machine groups.');
   }
 
-  const unitRow = await get('SELECT * FROM units WHERE id = ?', [normalizedUnitId]);
-  if (!unitRow || unitRow.is_archived) {
-    const error = new Error('Selected unit does not exist or is archived.');
-    error.statusCode = 400;
-    throw error;
+  if (normalizedUnitId) {
+    const unitRow = await get('SELECT * FROM units WHERE id = ?', [normalizedUnitId]);
+    if (!unitRow || unitRow.is_archived) {
+      const error = new Error('Selected unit does not exist or is archived.');
+      error.statusCode = 400;
+      throw error;
+    }
   }
 
   if (id != null && normalizedParentId === id) {
@@ -18982,6 +19023,7 @@ async function clearAllData() {
     await run('DELETE FROM delivery_challan_report_groups');
     await run('DELETE FROM report_groups');
     await run('DELETE FROM procurement_activity_log');
+    await run('DELETE FROM procurement_request_line_sources');
     await run('DELETE FROM procurement_request_lines');
     await run('DELETE FROM procurement_requests');
     await run('DELETE FROM item_bom_lines');
