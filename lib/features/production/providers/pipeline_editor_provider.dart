@@ -544,17 +544,39 @@ class PipelineEditorProvider extends ChangeNotifier {
       final isLast = i == processTypes.length - 1 && !insertBeforeOutput;
 
       final nextNumber = newNodes.length + 1;
-      final outputName = isLast
-          ? 'Final Product'
-          : '${processType}_Output_$nextNumber';
+      
+      String outputName;
+      PipelineItemEndpoint? outputEndpoint;
 
-      final outputEndpoint = PipelineItemEndpoint(
-        itemId: DateTime.now().microsecondsSinceEpoch + i,
-        itemName: outputName,
-        unitId: currentInputEndpoint?.unitId ?? 0,
-        unitName: currentInputEndpoint?.unitName ?? 'Pieces',
-        unitSymbol: currentInputEndpoint?.unitSymbol ?? 'Pcs',
-      );
+      if (isLast) {
+        outputName = 'Final Product';
+        outputEndpoint = PipelineItemEndpoint(
+          itemId: DateTime.now().microsecondsSinceEpoch + i,
+          itemName: outputName,
+          unitId: currentInputEndpoint?.unitId ?? 0,
+          unitName: currentInputEndpoint?.unitName ?? 'Pieces',
+          unitSymbol: currentInputEndpoint?.unitSymbol ?? 'Pcs',
+        );
+      } else if (insertBeforeOutput && i == processTypes.length - 1 && outputNode != null) {
+        // Inherit from the output node we are inserting before
+        outputName = outputNode.outputItem?.itemName ?? outputNode.inputs.firstOrNull ?? 'Final Product';
+        outputEndpoint = outputNode.outputItem ?? PipelineItemEndpoint(
+          itemId: DateTime.now().microsecondsSinceEpoch + i,
+          itemName: outputName,
+          unitId: currentInputEndpoint?.unitId ?? 0,
+          unitName: currentInputEndpoint?.unitName ?? 'Pieces',
+          unitSymbol: currentInputEndpoint?.unitSymbol ?? 'Pcs',
+        );
+      } else {
+        outputName = '${processType}_Output_$nextNumber';
+        outputEndpoint = PipelineItemEndpoint(
+          itemId: DateTime.now().microsecondsSinceEpoch + i,
+          itemName: outputName,
+          unitId: currentInputEndpoint?.unitId ?? 0,
+          unitName: currentInputEndpoint?.unitName ?? 'Pieces',
+          unitSymbol: currentInputEndpoint?.unitSymbol ?? 'Pcs',
+        );
+      }
 
       final node =
           _buildNode(

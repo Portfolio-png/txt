@@ -195,6 +195,71 @@ class ApiOrderRepository implements OrderRepository {
   }
 
   @override
+  Future<OrderEntry> updateOrder(int orderId, CreateOrderInput input) async {
+    final resolvedOrderNo = input.orderNo.trim().isNotEmpty
+        ? input.orderNo.trim()
+        : 'ORD-${DateTime.now().millisecondsSinceEpoch}';
+
+    if (useMockResponses) {
+      throw UnimplementedError('Mock update order is not implemented');
+    }
+
+    final uri = Uri.parse('$baseUrl/api/orders/$orderId');
+    final requestInput = CreateOrderInput(
+      orderNo: resolvedOrderNo,
+      clientId: input.clientId,
+      clientName: input.clientName,
+      poNumber: input.poNumber,
+      clientCode: input.clientCode,
+      itemId: input.itemId,
+      itemName: input.itemName,
+      variationLeafNodeId: input.variationLeafNodeId,
+      variationPathLabel: input.variationPathLabel,
+      variationPathNodeIds: input.variationPathNodeIds,
+      quantity: input.quantity,
+      unitId: input.unitId,
+      unitName: input.unitName,
+      unitSymbol: input.unitSymbol,
+      status: input.status,
+      unitPrice: input.unitPrice,
+      totalInvoicedQty: input.totalInvoicedQty,
+      startDate: input.startDate,
+      endDate: input.endDate,
+      poDocumentIds: input.poDocumentIds,
+    );
+    final request = CreateOrderRequest.fromInput(requestInput);
+    final response = await _client.put(
+      uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode(request.toJson()),
+    );
+    final payload = _decodeJsonObject(response.body);
+    final parsed = OrderResponse.fromJson(payload);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !parsed.success ||
+        parsed.order == null) {
+      throw OrderApiException(parsed.error ?? 'Failed to update order.');
+    }
+    return parsed.order!.toDomain();
+  }
+
+  @override
+  Future<void> deleteOrder(int orderId) async {
+    if (useMockResponses) {
+      _mockOrders.removeWhere((o) => o.id == orderId);
+      return;
+    }
+
+    final uri = Uri.parse('$baseUrl/api/orders/$orderId');
+    final response = await _client.delete(uri);
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] != true) {
+      throw OrderApiException(payload['error'] ?? 'Failed to delete order.');
+    }
+  }
+
+  @override
   Future<PoUploadIntent> createPoUploadIntent(PoUploadIntentInput input) async {
     if (useMockResponses) {
       final existing = _mockPoDocuments

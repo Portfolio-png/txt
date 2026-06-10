@@ -2895,7 +2895,6 @@ class _NodePropertiesPanel extends StatefulWidget {
 class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
   int? _inputItemId;
   int? _outputItemId;
-  bool _propagateDownstream = true;
   int? _selectedMachineGroupId;
   Timer? _debounce;
 
@@ -3130,15 +3129,6 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
                   ),
                 ],
               ),
-              CheckboxListTile(
-                title: const Text('Propagate changes downstream'),
-                value: _propagateDownstream,
-                onChanged: (val) {
-                  if (val != null) setState(() => _propagateDownstream = val);
-                },
-                controlAffinity: ListTileControlAffinity.leading,
-                contentPadding: EdgeInsets.zero,
-              ),
             ],
           ],
         ),
@@ -3178,7 +3168,7 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
       inputItem: _endpointFor(_inputItemId, fallback: widget.node.inputItem ?? _getInheritedInput()),
       outputItem: _endpointFor(_outputItemId, fallback: widget.node.outputItem ?? _getInheritedOutput()),
       units: widget.units,
-      propagate: _propagateDownstream,
+      propagate: false,
     );
   }
 

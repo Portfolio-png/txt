@@ -2097,6 +2097,24 @@ async function initDb() {
 
   // Migration for groups table to remove unit_id NOT NULL constraint
   try {
+    // 1. Recover from a half-migrated state if a previous run crashed
+    const tables = await all("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('groups', 'groups_old_migration')");
+    const hasGroups = tables.some(t => t.name === 'groups');
+    const hasOldGroups = tables.some(t => t.name === 'groups_old_migration');
+
+    if (hasOldGroups) {
+      if (hasGroups) {
+        // The migration finished creating 'groups' but crashed before dropping 'groups_old_migration'
+        await run('DROP TABLE groups_old_migration');
+        console.log('Cleaned up lingering groups_old_migration table from previous run.');
+      } else {
+        // The migration renamed 'groups' to 'groups_old_migration' but crashed before creating the new 'groups'
+        await run('ALTER TABLE groups_old_migration RENAME TO groups');
+        console.log('Recovered groups table from an interrupted migration run.');
+      }
+    }
+
+    // 2. Perform the actual migration
     const tableInfo = await all("PRAGMA table_info(groups)");
     const unitIdCol = tableInfo.find(c => c.name === 'unit_id');
     if (unitIdCol && unitIdCol.notnull === 1) {
@@ -16143,7 +16161,18 @@ app.post('/api/machines', requirePermission('config.write'), async (req, res) =>
 
 app.delete('/api/machines/:id', requirePermission('config.write'), async (req, res) => {
   try {
-    await run('DELETE FROM machines WHERE id = ?', [req.params.id]);
+    const id = req.params.id;
+    const activeRuns = await all("SELECT overrides_json FROM pipeline_runs WHERE status IN ('planned', 'in_progress', 'paused')");
+    for (const run of activeRuns) {
+      if (run.overrides_json && run.overrides_json.includes(`"${id}"`)) {
+        // Double check by parsing
+        const overrides = JSON.parse(run.overrides_json);
+        if (overrides.machineOverrideByNode && Object.values(overrides.machineOverrideByNode).includes(id)) {
+           return res.status(400).json({ success: false, error: 'Cannot delete machine: assigned to an active pipeline run.' });
+        }
+      }
+    }
+    await run('DELETE FROM machines WHERE id = ?', [id]);
     res.json({ success: true, error: null });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -16284,7 +16313,17 @@ app.post('/api/dies', requirePermission('config.write'), async (req, res) => {
 
 app.delete('/api/dies/:id', requirePermission('config.write'), async (req, res) => {
   try {
-    await run('DELETE FROM dies WHERE id = ?', [req.params.id]);
+    const id = req.params.id;
+    const activeRuns = await all("SELECT overrides_json FROM pipeline_runs WHERE status IN ('planned', 'in_progress', 'paused')");
+    for (const run of activeRuns) {
+      if (run.overrides_json && run.overrides_json.includes(`"${id}"`)) {
+        const overrides = JSON.parse(run.overrides_json);
+        if (overrides.dieOverrideByNode && Object.values(overrides.dieOverrideByNode).includes(id)) {
+           return res.status(400).json({ success: false, error: 'Cannot delete die: assigned to an active pipeline run.' });
+        }
+      }
+    }
+    await run('DELETE FROM dies WHERE id = ?', [id]);
     res.json({ success: true, error: null });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -17072,6 +17111,19 @@ app.put('/api/production/pipeline-templates/:id', requirePermission('config.writ
   }
 });
 
+app.delete('/api/production/pipeline-templates/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    const id = req.params.id;
+    const runsCount = await get('SELECT COUNT(*) as count FROM pipeline_runs WHERE template_id = ?', [id]);
+    if (runsCount && runsCount.count > 0) {
+      return res.status(400).json({ success: false, error: 'Cannot delete pipeline template: there are ongoing or historical runs using it.' });
+    }
+    await run('DELETE FROM pipeline_templates WHERE id = ?', [id]);
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 app.get('/api/production-runs/completed', requirePermission('config.read'), async (req, res) => {
   try {
@@ -17853,6 +17905,149 @@ app.patch('/api/orders/:id/lifecycle', requirePermission('config.write'), async 
   }
 });
 
+app.put('/api/orders/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    const orderId = Number(req.params.id);
+    const updates = req.body || {};
+    
+    // Begin transaction
+    await run('BEGIN TRANSACTION');
+    
+    // Get existing order item
+    const existingItem = await get('SELECT * FROM order_items WHERE id = ?', [orderId]);
+    if (!existingItem) {
+      await run('ROLLBACK').catch(() => {});
+      return res.status(404).json({ success: false, error: 'Order not found.' });
+    }
+
+    const orderNo = updates.orderNo || existingItem.order_no;
+    const clientId = updates.clientId || existingItem.client_id;
+    let clientCode = updates.clientCode || existingItem.client_code;
+    let clientName = updates.clientName || existingItem.client_name;
+    
+    // Auto-update client code and name if client changed
+    if (updates.clientId && updates.clientId !== existingItem.client_id) {
+      const client = await get('SELECT name, alias FROM clients WHERE id = ?', [updates.clientId]);
+      if (client) {
+        clientName = client.name;
+        clientCode = client.alias || client.name.substring(0, 3).toUpperCase();
+      }
+    }
+
+    // Update order_headers if order_no or client changed
+    if (orderNo !== existingItem.order_no || clientId !== existingItem.client_id) {
+      // Create new header if it doesn't exist
+      await run(
+        'INSERT OR IGNORE INTO order_headers (order_no, client_id, po_number, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+        [orderNo, clientId, '', new Date().toISOString(), new Date().toISOString()]
+      );
+      
+      // Update header client_id if order_no stayed the same
+      if (orderNo === existingItem.order_no) {
+         await run('UPDATE order_headers SET client_id = ?, updated_at = ? WHERE order_no = ?', [clientId, new Date().toISOString(), orderNo]);
+      }
+    }
+
+    await run(`
+      UPDATE order_items 
+      SET order_no = ?, client_id = ?, client_name = ?, client_code = ?, item_id = ?, 
+          variation_leaf_node_id = ?, variation_path_label = ?, item_name = ?, 
+          hsn_code = ?, quantity = ?, unit_price = ?, taxable_value = ?, 
+          cgst_rate = ?, sgst_rate = ?, cgst_amount = ?, sgst_amount = ?, updated_at = ?
+      WHERE id = ?
+    `, [
+      orderNo, clientId, clientName, clientCode,
+      updates.itemId || existingItem.item_id,
+      updates.variationLeafNodeId || existingItem.variation_leaf_node_id,
+      updates.variationPathLabel || existingItem.variation_path_label,
+      updates.itemName || existingItem.item_name,
+      updates.hsnCode || existingItem.hsn_code,
+      updates.quantity !== undefined ? updates.quantity : existingItem.quantity,
+      updates.unitPrice !== undefined ? updates.unitPrice : existingItem.unit_price,
+      updates.taxableValue !== undefined ? updates.taxableValue : existingItem.taxable_value,
+      updates.cgstRate !== undefined ? updates.cgstRate : existingItem.cgst_rate,
+      updates.sgstRate !== undefined ? updates.sgstRate : existingItem.sgst_rate,
+      updates.cgstAmount !== undefined ? updates.cgstAmount : existingItem.cgst_amount,
+      updates.sgstAmount !== undefined ? updates.sgstAmount : existingItem.sgst_amount,
+      new Date().toISOString(),
+      orderId
+    ]);
+
+    await run('COMMIT');
+    const orders = await getOrders();
+    const updated = orders.find(o => o.id === orderId);
+    res.json({ success: true, order: updated, error: null });
+  } catch (error) {
+    await run('ROLLBACK').catch(() => {});
+    res.status(error.statusCode || 500).json({ success: false, error: error.message });
+  }
+});
+
+app.delete('/api/orders/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    const orderId = Number(req.params.id);
+    const actorName = req.user?.name || 'System';
+    
+    await run('BEGIN TRANSACTION');
+
+    const assignments = await all('SELECT * FROM order_pipeline_assignments WHERE order_item_id = ?', [orderId]);
+    for (const assignment of assignments) {
+      const runId = assignment.pipeline_run_id;
+
+      // Dissolve unused raw inputs (that were consumed) back to inventory
+      const consumedMovements = await all(
+        "SELECT * FROM inventory_movements WHERE movement_type = 'consume' AND reference_type = 'pipeline_run' AND reference_id = ?",
+        [runId]
+      );
+
+      for (const move of consumedMovements) {
+        const qty = move.qty;
+        if (qty > 0) {
+          await applyInventoryMovementCore({
+            barcode: move.material_barcode,
+            movementType: 'adjust_in',
+            qty: qty,
+            actor: actorName,
+            referenceType: 'pipeline_dissolution',
+            referenceId: String(orderId),
+            reasonCode: 'ORDER_DELETED',
+            toLocationId: move.from_location_id || 'MAIN'
+          }, { useTransaction: false });
+        }
+      }
+
+      await run('DELETE FROM run_barcode_inputs WHERE run_id = ?', [runId]);
+      await run('DELETE FROM pipeline_runs WHERE id = ?', [runId]);
+    }
+
+    await run('DELETE FROM order_pipeline_assignments WHERE order_item_id = ?', [orderId]);
+    await run('DELETE FROM order_status_history WHERE order_id = ?', [orderId]);
+    await run('DELETE FROM order_activity_log WHERE order_id = ?', [orderId]);
+    await run('DELETE FROM order_material_requirements WHERE order_id = ?', [orderId]);
+    await run('DELETE FROM order_po_documents WHERE order_id = ?', [orderId]);
+
+    const item = await get('SELECT order_no FROM order_items WHERE id = ?', [orderId]);
+    if (item) {
+      await run('DELETE FROM order_items WHERE id = ?', [orderId]);
+      const otherItems = await get('SELECT id FROM order_items WHERE order_no = ?', [item.order_no]);
+      if (!otherItems) {
+        await run('DELETE FROM order_headers WHERE order_no = ?', [item.order_no]);
+      }
+    }
+
+    // Audit log
+    await run(
+      "INSERT INTO activity_logs (entity_type, entity_id, action, actor_id, actor_name, details_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ['order', String(orderId), 'deleted', req.user?.id || 1, actorName, JSON.stringify({ reason: 'User requested Undo' }), new Date().toISOString()]
+    ).catch(() => {});
+
+    await run('COMMIT');
+    res.json({ success: true, error: null });
+  } catch (error) {
+    await run('ROLLBACK').catch(() => {});
+    res.status(error.statusCode || 500).json({ success: false, error: error.message });
+  }
+});
 app.post('/api/clients', requirePermission('config.write'), async (req, res) => {
   try {
     const client = await saveClient(req.body || {});
@@ -17863,6 +18058,27 @@ app.post('/api/clients', requirePermission('config.write'), async (req, res) => 
       client: null,
       error: error.message,
     });
+  }
+});
+app.delete('/api/clients/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const orderCount = await get('SELECT COUNT(*) as count FROM order_items WHERE client_id = ?', [id]);
+    if (orderCount && orderCount.count > 0) {
+      return res.status(400).json({ success: false, error: 'Cannot delete client: referenced by existing orders.' });
+    }
+    const challanCount = await get('SELECT COUNT(*) as count FROM delivery_challans WHERE client_id = ?', [id]);
+    if (challanCount && challanCount.count > 0) {
+      return res.status(400).json({ success: false, error: 'Cannot delete client: referenced by delivery challans.' });
+    }
+    const receptionCount = await get('SELECT COUNT(*) as count FROM reception_challans WHERE material_owner_client_id = ?', [id]);
+    if (receptionCount && receptionCount.count > 0) {
+      return res.status(400).json({ success: false, error: 'Cannot delete client: referenced by reception challans.' });
+    }
+    await run('DELETE FROM clients WHERE id = ?', [id]);
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -17943,6 +18159,19 @@ app.post('/api/vendors', requirePermission('config.write'), async (req, res) => 
     res.status(201).json({ success: true, vendor: rowToVendorDto(vendor), error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({ success: false, vendor: null, error: error.message });
+  }
+});
+app.delete('/api/vendors/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const challanCount = await get('SELECT COUNT(*) as count FROM reception_challans WHERE vendor_id = ?', [id]);
+    if (challanCount && challanCount.count > 0) {
+      return res.status(400).json({ success: false, error: 'Cannot delete vendor: referenced by reception challans.' });
+    }
+    await run('DELETE FROM vendors WHERE id = ?', [id]);
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

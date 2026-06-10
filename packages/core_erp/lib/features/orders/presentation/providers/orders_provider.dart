@@ -119,6 +119,27 @@ class OrdersProvider extends ChangeNotifier {
     );
   }
 
+  Future<OrderEntry?> updateOrder(int orderId, CreateOrderInput input) async {
+    return _save(() => _repository.updateOrder(orderId, input));
+  }
+
+  Future<bool> deleteOrder(int orderId) async {
+    _isSaving = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      await _repository.deleteOrder(orderId);
+      await refresh();
+      return true;
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return false;
+    } finally {
+      _isSaving = false;
+      notifyListeners();
+    }
+  }
   Future<OrderEntry?> updateOrderLifecycle(
     UpdateOrderLifecycleInput input,
   ) async {
