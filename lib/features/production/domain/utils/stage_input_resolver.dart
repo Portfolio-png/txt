@@ -16,9 +16,14 @@ List<BarcodeInput> effectiveStageInputs({
     return const [];
   }
   final own = run.attachedBarcodeInputs[node.id] ?? const [];
-  if (own.isNotEmpty || node.processType == 'Input') {
+  if (own.isNotEmpty) {
     return own;
   }
+  if (node.processType == 'Input') {
+    return own;
+  }
+
+  final resolvedInputs = <BarcodeInput>[];
   for (final flow in template.flows) {
     if (flow.toNodeId != node.id) {
       continue;
@@ -30,12 +35,44 @@ List<BarcodeInput> effectiveStageInputs({
         break;
       }
     }
-    if (upstream != null && upstream.processType == 'Input') {
-      final inherited = run.attachedBarcodeInputs[upstream.id] ?? const [];
-      if (inherited.isNotEmpty) {
-        return inherited;
+    if (upstream != null) {
+      final upstreamInputs = effectiveStageInputs(
+        run: run,
+        node: upstream,
+        template: template,
+      );
+
+      if (upstreamInputs.isEmpty) continue;
+
+      final metrics = run.nodeMetrics[upstream.id] ?? const {};
+      final outputQty = (metrics['output'] as num?)?.toDouble();
+
+      if (outputQty != null) {
+        double totalUpstreamQty = 0;
+        for (final input in upstreamInputs) {
+          totalUpstreamQty += input.quantity ?? 0;
+        }
+
+        for (final input in upstreamInputs) {
+          double newQty;
+          if (totalUpstreamQty > 0) {
+            newQty = (input.quantity ?? 0) * (outputQty / totalUpstreamQty);
+          } else {
+            newQty = outputQty / upstreamInputs.length;
+          }
+          resolvedInputs.add(BarcodeInput(
+            barcode: input.barcode,
+            materialName: input.materialName,
+            materialType: input.materialType,
+            scanCount: input.scanCount,
+            quantity: newQty,
+            unit: input.unit,
+          ));
+        }
+      } else {
+        resolvedInputs.addAll(upstreamInputs);
       }
     }
   }
-  return const [];
+  return resolvedInputs;
 }

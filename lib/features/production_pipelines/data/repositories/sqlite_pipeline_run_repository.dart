@@ -79,6 +79,28 @@ class SqlitePipelineRunRepository implements PipelineRunRepository {
     );
   }
 
+  @override
+  Future<void> deleteRun(String id) async {
+    final db = await _dbHelper.database;
+    await db.delete(
+      'run_barcode_inputs',
+      where: 'run_id = ?',
+      whereArgs: [id],
+    );
+    try {
+      await db.delete(
+        'production_scrap',
+        where: 'pipeline_run_id = ?',
+        whereArgs: [id],
+      );
+    } catch (_) {}
+    await db.delete(
+      'pipeline_runs',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
   Future<void> _ensureTemplateColumns(dynamic db) async {
     final columns = await db.rawQuery('PRAGMA table_info(pipeline_templates)');
     final names = columns

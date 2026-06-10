@@ -734,6 +734,9 @@ class _FakePipelineRunRepository implements PipelineRunRepository {
   }
 
   @override
+  Future<void> deleteRun(String id) async {}
+
+  @override
   Future<PipelineTemplate?> getTemplate(String id) async {
     for (final template in _templates) {
       if (template.id == id) {

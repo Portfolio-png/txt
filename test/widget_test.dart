@@ -1001,6 +1001,7 @@ class FakeGroupRepository extends GroupRepository {
             GroupDefinition(
               id: 2,
               name: 'Kraft',
+              groupType: 'machine',
               parentGroupId: 1,
               unitId: 2,
               isArchived: false,

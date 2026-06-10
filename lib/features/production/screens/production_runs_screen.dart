@@ -149,6 +149,48 @@ class _ProductionRunsScreenState extends State<ProductionRunsScreen> {
     );
   }
 
+  Future<void> _deleteRun(PipelineRun run) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Delete Production Run', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: Text(
+          'Are you sure you want to delete the production run for "${run.orderNo != null ? 'Order: ' + run.orderNo! : 'Ad-hoc Run'}"?\nThis will permanently delete this run history.',
+          style: const TextStyle(fontSize: 13, color: Color(0xFF475569)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final repo = context.read<PipelineRunRepository>();
+      await repo.deleteRun(run.id);
+      await _loadData();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete run: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final inventoryProvider = context.watch<InventoryProvider>();
@@ -241,6 +283,7 @@ class _ProductionRunsScreenState extends State<ProductionRunsScreen> {
                               isActive: isActive,
                               stalledMessage: stalledMessage,
                               onMonitor: () => _monitorRun(run),
+                              onDelete: () => _deleteRun(run),
                             );
                           },
                         ),
@@ -259,6 +302,7 @@ class _RunCard extends StatelessWidget {
     required this.isActive,
     this.stalledMessage,
     required this.onMonitor,
+    required this.onDelete,
   });
 
   final PipelineRun run;
@@ -266,6 +310,7 @@ class _RunCard extends StatelessWidget {
   final bool isActive;
   final String? stalledMessage;
   final VoidCallback onMonitor;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -372,6 +417,12 @@ class _RunCard extends StatelessWidget {
               icon: const Icon(Icons.history, size: 18),
               label: const Text('View Log'),
             ),
+          const SizedBox(width: 8),
+          IconButton(
+            icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
+            tooltip: 'Delete production run',
+            onPressed: onDelete,
+          ),
         ],
       ),
     );

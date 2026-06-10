@@ -71,7 +71,13 @@ class MockPipelineRunRepository implements PipelineRunRepository {
   }
 
   @override
-  Future<PipelineRun> createRun(String templateId, {String? name, String? orderNo, int? orderItemId}) async {
+  Future<PipelineRun> createRun(
+    String templateId, {
+    String? name,
+    String? orderNo,
+    int? orderItemId,
+    String? scrapRouting,
+  }) async {
     _ensureSeeded();
     final template = _templates!
         .where((item) => item.id == templateId)
@@ -357,5 +363,38 @@ class MockPipelineRunRepository implements PipelineRunRepository {
     _runs[index] = updatedRun;
     return updatedRun;
   }
+
+  @override
+  Future<void> deleteTemplate(String id) async {
+    _ensureSeeded();
+    _templates?.removeWhere((t) => t.id == id);
+  }
+
+  @override
+  Future<void> deleteRun(String id) async {
+    _ensureSeeded();
+    _runs.removeWhere((r) => r.id == id);
+  }
+
+  @override
+  Future<PipelineRun> updateNodeMetrics({
+    required String runId,
+    required String nodeId,
+    required Map<String, dynamic> metrics,
+  }) async {
+    _ensureSeeded();
+    final index = _runs.indexWhere((run) => run.id == runId);
+    if (index == -1) throw const PipelineApiException('Run not found.');
+    return _runs[index];
+  }
+
+  @override
+  Future<void> logProductionScrap({
+    required String runId,
+    required String nodeId,
+    required String materialBarcode,
+    required double scrapQty,
+    String? orderNo,
+  }) async {}
 }
 

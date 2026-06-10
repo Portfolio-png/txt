@@ -343,6 +343,11 @@ class PipelineEditorProvider extends ChangeNotifier {
     int targetStageIndex, {
     List<UnitDefinition> units = const [],
   }) {
+    final incomingNodes =
+        _template.nodes.where((n) => n.stageIndex == targetStageIndex - 1);
+    final outgoingNodes =
+        _template.nodes.where((n) => n.stageIndex == targetStageIndex);
+
     final shiftedNodes = _template.nodes.map((node) {
       if (node.stageIndex >= targetStageIndex) {
         return node.copyWith(stageIndex: node.stageIndex + 1);
@@ -351,16 +356,35 @@ class PipelineEditorProvider extends ChangeNotifier {
     }).toList();
 
     final node = _buildNode(targetStageIndex, 0);
-    final newNodesList = [...shiftedNodes, node];
 
-    int maxStage = 0;
-    for (final n in newNodesList) {
-      if (n.stageIndex > maxStage) maxStage = n.stageIndex;
+    final newFlows = _template.flows.where((f) {
+      final fromNode = _template.nodes.firstWhere((n) => n.id == f.fromNodeId);
+      final toNode = _template.nodes.firstWhere((n) => n.id == f.toNodeId);
+      return !(fromNode.stageIndex == targetStageIndex - 1 &&
+          toNode.stageIndex == targetStageIndex);
+    }).toList();
+
+    for (final from in incomingNodes) {
+      newFlows.add(MaterialFlow(
+        id: _newFlowId(),
+        fromNodeId: from.id,
+        toNodeId: node.id,
+        materialName: from.outputs.firstOrNull ?? 'Material',
+      ));
+    }
+    for (final to in outgoingNodes) {
+      newFlows.add(MaterialFlow(
+        id: _newFlowId(offset: 1),
+        fromNodeId: node.id,
+        toNodeId: to.id,
+        materialName: node.outputs.firstOrNull ?? 'Material',
+      ));
     }
 
     _pushHistory();
     _template = _template.copyWith(
-      nodes: newNodesList,
+      nodes: [...shiftedNodes, node],
+      flows: newFlows,
       stageLabels: _stageLabelsWithInsertedStage(
         targetStageIndex,
         _stageLabelForNode(node),
@@ -436,10 +460,6 @@ class PipelineEditorProvider extends ChangeNotifier {
       unitSymbol: source.outputItem?.unitSymbol ?? 'Pcs',
     );
 
-    // If the source currently feeds the pipeline Output endpoint, the new
-    // step is inserted between them: the source -> new step material becomes
-    // an editable intermediate, and the new step adopts the pipeline output
-    // as its own output.
     MaterialFlow? flowToOutput;
     ProcessNode? outputNode;
     if (processType != 'Output') {
@@ -448,7 +468,7 @@ class PipelineEditorProvider extends ChangeNotifier {
         final target = _template.nodes
             .where((n) => n.id == flow.toNodeId)
             .firstOrNull;
-        if (target != null && target.processType == 'Output') {
+        if (target != null) {
           flowToOutput = flow;
           outputNode = target;
           break;
@@ -1022,6 +1042,7 @@ class PipelineEditorProvider extends ChangeNotifier {
     _applyUnitContinuityAutoFixes(units);
     if (propagate) {
       propagateItemChanges(nodeId);
+      propagateBackwardItemChanges(nodeId);
     }
     notifyListeners();
   }
@@ -1129,6 +1150,42 @@ class PipelineEditorProvider extends ChangeNotifier {
         );
 
         queue.add(flow.toNodeId);
+      }
+    }
+
+    _template = _template.copyWith(nodes: updatedNodes);
+    notifyListeners();
+  }
+
+  void propagateBackwardItemChanges(String startNodeId) {
+    final startNode = _template.nodes.firstWhere((n) => n.id == startNodeId);
+    if (startNode.inputItem == null) return;
+
+    _pushHistory();
+    List<ProcessNode> updatedNodes = [..._template.nodes];
+
+    final queue = [startNodeId];
+
+    while (queue.isNotEmpty) {
+      final currentId = queue.removeAt(0);
+      final currentNode = updatedNodes.firstWhere((n) => n.id == currentId);
+
+      final incomingFlows = _template.flows.where(
+        (f) => f.toNodeId == currentId,
+      );
+      for (final flow in incomingFlows) {
+        final fromIndex = updatedNodes.indexWhere((n) => n.id == flow.fromNodeId);
+        if (fromIndex == -1) continue;
+
+        final fromNode = updatedNodes[fromIndex];
+        final newOutputItem = currentNode.inputItem;
+
+        updatedNodes[fromIndex] = fromNode.copyWith(
+          outputItem: newOutputItem,
+          outputs: [newOutputItem?.itemName ?? 'Output'],
+        );
+
+        queue.add(flow.fromNodeId);
       }
     }
 

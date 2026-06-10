@@ -18920,6 +18920,22 @@ app.delete('/templates/:id', async (req, res) => {
   }
 });
 
+app.delete('/runs/:id', async (req, res) => {
+  try {
+    const existing = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
+    if (!existing) {
+      res.status(404).json({ success: false, error: 'Run not found.' });
+      return;
+    }
+    await run('DELETE FROM run_barcode_inputs WHERE run_id = ?', [req.params.id]);
+    await run('DELETE FROM production_scrap WHERE pipeline_run_id = ?', [req.params.id]);
+    await run('DELETE FROM pipeline_runs WHERE id = ?', [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.get('/runs', requirePermission('config.read'), async (req, res) => {
   try {
     const { template_id: templateId } = req.query;

@@ -10,11 +10,13 @@ class EditableMetricBox extends StatefulWidget {
     required this.nodeId,
     required this.metricKey,
     required this.label,
+    this.flex = 1,
   });
 
   final String nodeId;
   final String metricKey; // 'remaining' or 'scrap'
   final String label;
+  final int flex;
 
   @override
   State<EditableMetricBox> createState() => _EditableMetricBoxState();
@@ -105,6 +107,7 @@ class _EditableMetricBoxState extends State<EditableMetricBox> {
         final valStr = '${metricVal} Kg';
 
         return Expanded(
+          flex: widget.flex,
           child: InkWell(
             onTap: () => _editValue(context, metricVal),
             child: Column(
@@ -150,6 +153,7 @@ class _EditableMetricBoxState extends State<EditableMetricBox> {
 
   Widget _buildStatic(String val) {
     return Expanded(
+      flex: widget.flex,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
