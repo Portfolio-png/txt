@@ -321,115 +321,107 @@ class _RunCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isStalled = stalledMessage != null;
     
-    return Container(
-      decoration: BoxDecoration(
-        color: isStalled ? Colors.amber.shade50 : SoftErpTheme.cardSurface,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onMonitor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: isStalled ? Colors.amber.shade400 : SoftErpTheme.border),
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          // Info section
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        child: Ink(
+          decoration: BoxDecoration(
+            color: isStalled ? Colors.amber.shade50 : SoftErpTheme.cardSurface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: isStalled ? Colors.amber.shade400 : SoftErpTheme.border),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    Text(
-                      run.orderNo != null ? 'Order: ${run.orderNo}' : 'Ad-hoc Run',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: SoftErpTheme.textPrimary,
+                // Info section
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            run.orderNo != null ? 'Order: ${run.orderNo}' : 'Ad-hoc Run',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: SoftErpTheme.textPrimary,
+                            ),
+                          ),
+                          if (run.clientName != null) ...[
+                            const SizedBox(width: 8),
+                            Text(
+                              '• ${run.clientName}',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: SoftErpTheme.textSecondary,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(width: 12),
+                          _StatusBadge(status: run.status, isActive: isActive),
+                        ],
                       ),
-                    ),
-                    if (run.clientName != null) ...[
-                      const SizedBox(width: 8),
+                      const SizedBox(height: 6),
                       Text(
-                        '• ${run.clientName}',
-                        style: TextStyle(
+                        'Pipeline: $templateName',
+                        style: const TextStyle(
                           fontSize: 14,
+                          color: SoftErpTheme.textPrimary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Started: ${run.createdAt.toIso8601String().split('T').first}',
+                        style: const TextStyle(
+                          fontSize: 13,
                           color: SoftErpTheme.textSecondary,
                         ),
                       ),
-                    ],
-                    const SizedBox(width: 12),
-                    _StatusBadge(status: run.status, isActive: isActive),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Pipeline: $templateName',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: SoftErpTheme.textPrimary,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Started: ${run.createdAt.toIso8601String().split('T').first}',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: SoftErpTheme.textSecondary,
-                  ),
-                ),
-                _buildTimeline(context),
-                if (isStalled) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.shade100,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.warning_amber_rounded, size: 14, color: Colors.orange),
-                        const SizedBox(width: 6),
-                        Text(
-                          stalledMessage!,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.orange,
+                      _buildTimeline(context),
+                      if (isStalled) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.shade100,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.warning_amber_rounded, size: 14, color: Colors.orange),
+                              const SizedBox(width: 6),
+                              Text(
+                                stalledMessage!,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.orange,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
-                    ),
+                    ],
                   ),
-                ],
+                ),
+                
+                // Actions
+                IconButton(
+                  icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
+                  tooltip: 'Delete production run',
+                  onPressed: onDelete,
+                ),
               ],
             ),
           ),
-          
-          // Actions
-          if (isActive)
-            FilledButton.icon(
-              onPressed: onMonitor,
-              icon: const Icon(Icons.remove_red_eye, size: 18),
-              label: const Text('Monitor'),
-              style: FilledButton.styleFrom(
-                backgroundColor: SoftErpTheme.accent,
-                foregroundColor: Colors.white,
-              ),
-            )
-          else
-            OutlinedButton.icon(
-              onPressed: onMonitor,
-              icon: const Icon(Icons.history, size: 18),
-              label: const Text('View Log'),
-            ),
-          const SizedBox(width: 8),
-          IconButton(
-            icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
-            tooltip: 'Delete production run',
-            onPressed: onDelete,
-          ),
-        ],
+        ),
       ),
     );
   }
