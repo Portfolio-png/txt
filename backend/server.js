@@ -3134,6 +3134,54 @@ async function initDb() {
   await run('CREATE INDEX IF NOT EXISTS idx_order_status_history_order_id_changed_at ON order_status_history(order_id, changed_at)');
   await run('CREATE INDEX IF NOT EXISTS idx_order_activity_log_order_id_created_at ON order_activity_log(order_id, created_at)');
 
+  await run(`
+    CREATE TABLE IF NOT EXISTS delivery_challans (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER REFERENCES orders(id),
+      order_no TEXT DEFAULT '',
+      challan_no TEXT NOT NULL UNIQUE,
+      date TEXT NOT NULL,
+      customer_name TEXT NOT NULL DEFAULT '',
+      customer_gstin TEXT DEFAULT '',
+      company_profile_snapshot TEXT,
+      notes TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'draft',
+      created_by INTEGER REFERENCES users(id),
+      updated_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS delivery_challan_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
+      order_item_id INTEGER,
+      item_id INTEGER,
+      line_no INTEGER NOT NULL DEFAULT 1,
+      particulars TEXT NOT NULL DEFAULT '',
+      hsn_code TEXT DEFAULT '',
+      quantity_pcs TEXT DEFAULT '',
+      weight TEXT DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS delivery_challan_activity_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
+      activity_type TEXT NOT NULL,
+      actor_user_id INTEGER,
+      actor_name TEXT,
+      actor_role TEXT,
+      details_json TEXT,
+      created_at TEXT NOT NULL
+    )
+  `);
+
   // --- Column migrations for order_activity_log on pre-existing databases ---
   // The CREATE TABLE above is skipped if the table already exists. These
   // ensureColumnExists calls add any missing columns added in later versions.
