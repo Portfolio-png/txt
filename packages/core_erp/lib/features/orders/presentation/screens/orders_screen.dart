@@ -1299,18 +1299,14 @@ class _OrderDataRowState extends State<_OrderDataRow> {
                             primary: group.clientName,
                             secondary: group.items.length > 1
                                 ? '${group.items.length} items'
-                                : (group
-                                              .items
-                                              .first
-                                              .variationPathLabel
-                                              .isEmpty ||
-                                          group
-                                                  .items
-                                                  .first
-                                                  .variationPathLabel ==
-                                              group.items.first.itemName
-                                      ? group.items.first.itemName
-                                      : '${group.items.first.itemName} · ${group.items.first.variationPathLabel}'),
+                                : (group.items.first.variationPathLabel.isEmpty ||
+                                        group.items.first.variationPathLabel ==
+                                            group.items.first.itemName
+                                    ? group.items.first.itemName
+                                    : (group.items.first.variationPathLabel
+                                            .startsWith(group.items.first.itemName)
+                                        ? group.items.first.variationPathLabel
+                                        : '${group.items.first.itemName} · ${group.items.first.variationPathLabel}')),
                             primaryStyle: const TextStyle(
                               fontWeight: FontWeight.w700,
                             ),
@@ -4542,37 +4538,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
   }
 
   String _variationSelectionLabel(ItemDefinition item, List<int> valueNodeIds) {
-    final selectedValueIds = valueNodeIds.toSet();
-    final segments = <String>[];
-    for (final root in item.topLevelProperties) {
-      ItemVariationNodeDefinition currentProperty = root;
-      while (true) {
-        final selectedValue = currentProperty.activeChildren
-            .where((node) => node.kind == ItemVariationNodeKind.value)
-            .where((node) => selectedValueIds.contains(node.id))
-            .firstOrNull;
-        if (selectedValue == null) {
-          break;
-        }
-        final propertyName = currentProperty.name.trim();
-        final valueName = selectedValue.name.trim().isEmpty
-            ? selectedValue.displayName.trim()
-            : selectedValue.name.trim();
-        if (propertyName.isNotEmpty || valueName.isNotEmpty) {
-          segments.add(
-            valueName.isEmpty ? propertyName : '$propertyName: $valueName',
-          );
-        }
-        final nextProperty = selectedValue.activeChildren
-            .where((node) => node.kind == ItemVariationNodeKind.property)
-            .firstOrNull;
-        if (nextProperty == null) {
-          break;
-        }
-        currentProperty = nextProperty;
-      }
-    }
-    return segments.isEmpty ? item.displayName : segments.join(' / ');
+    return _buildNamingFormatLabel(item, valueNodeIds);
   }
 
   /// Builds a display label using the item's naming format order.

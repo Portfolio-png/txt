@@ -4705,6 +4705,30 @@ function variationPathLabelForNodeIds(tree = [], pathNodeIds = []) {
   return buildVariationPathLabel(segments);
 }
 
+async function resolveLeafSelectionFromDb(leafNodeId) {
+  const nodeIds = [];
+  const segments = [];
+  let currentId = leafNodeId;
+  while (currentId) {
+    const node = await get('SELECT id, parent_node_id, name, kind FROM item_variation_nodes WHERE id = ?', [currentId]);
+    if (!node) {
+      break;
+    }
+    if (node.kind === 'value') {
+      nodeIds.unshift(node.id);
+      segments.unshift(node.name);
+    }
+    currentId = node.parent_node_id;
+  }
+  if (nodeIds.length === 0 || nodeIds[nodeIds.length - 1] !== leafNodeId) {
+    return null;
+  }
+  return {
+    nodeIds,
+    segments,
+  };
+}
+
 async function resolveOrderVariationSelection({
   itemId,
   variationLeafNodeId = 0,
@@ -4757,11 +4781,32 @@ async function resolveOrderVariationSelection({
     throw error;
   }
 
-  const leafNode = findVariationNodeById(tree, normalizedLeafId);
-  const leafSelection = activeValueSelectionForLeaf(tree, normalizedLeafId);
+  let leafNode = findVariationNodeById(tree, normalizedLeafId);
+  let leafSelection = activeValueSelectionForLeaf(tree, normalizedLeafId);
+
+  if (!leafNode || leafNode.isArchived || !leafSelection) {
+    const dbNode = await get('SELECT * FROM item_variation_nodes WHERE id = ? AND item_id = ?', [normalizedLeafId, item.id]);
+    if (dbNode && dbNode.kind === 'value') {
+      const selectionFromDb = await resolveLeafSelectionFromDb(normalizedLeafId);
+      if (selectionFromDb) {
+        leafNode = {
+          id: dbNode.id,
+          itemId: dbNode.item_id,
+          parentNodeId: dbNode.parent_node_id,
+          kind: dbNode.kind,
+          name: dbNode.name,
+          code: dbNode.code,
+          displayName: dbNode.display_name,
+          position: dbNode.position,
+          isArchived: Boolean(dbNode.is_archived),
+        };
+        leafSelection = selectionFromDb;
+      }
+    }
+  }
+
   if (
     !leafNode ||
-    leafNode.isArchived ||
     String(leafNode.kind) !== 'value' ||
     !leafSelection
   ) {
@@ -11587,6 +11632,7 @@ async function saveItem({
   await run('BEGIN TRANSACTION');
   try {
     let itemId = id;
+    let structuralChangeDetected = false;
     if (id == null) {
       const result = await run(
         `
@@ -11616,18 +11662,11 @@ async function saveItem({
       }
       if ((existing.usage_count || 0) > 0) {
         const existingTree = await getItemVariationTree(id);
-        const structuralChangeDetected =
+        structuralChangeDetected =
           Number(existing.group_id || 0) !== normalizedGroupId ||
           Number(existing.unit_id || 0) !== normalizedUnitId ||
           JSON.stringify(comparableTree(existingTree)) !==
             JSON.stringify(comparableTree(sanitizedTree));
-        if (structuralChangeDetected) {
-          const error = new Error(
-            'Used items can only update names, aliases, display names, naming formats, and unit conversions.',
-          );
-          error.statusCode = 409;
-          throw error;
-        }
       }
       await run(
         `
@@ -11649,7 +11688,16 @@ async function saveItem({
       );
     }
 
-    const existingNodesRows = await all('SELECT id FROM item_variation_nodes WHERE item_id = ? AND is_archived = 0', [itemId]);
+    if (structuralChangeDetected) {
+      await run(
+        'UPDATE item_variation_nodes SET is_archived = 1, updated_at = ? WHERE item_id = ? AND is_archived = 0',
+        [now, itemId]
+      );
+    }
+
+    const existingNodesRows = structuralChangeDetected
+      ? []
+      : await all('SELECT id FROM item_variation_nodes WHERE item_id = ? AND is_archived = 0', [itemId]);
     const existingNodeIds = new Set(existingNodesRows.map(row => row.id));
     const processedNodeIds = new Set();
 
@@ -19710,4 +19758,5 @@ module.exports = {
   rowToOrderDto,
   rowToPoDocumentDto,
   rowToItemDto,
+  resolveOrderVariationSelection,
 };

@@ -19,10 +19,77 @@ class ExactItemVariationReference {
   final String? stockLabel;
 
   String get key => '$itemId::$variationLeafNodeId';
-  String get optionLabel => variationPathLabel.isEmpty
-      ? itemLabel
-      : '$itemLabel • $variationPathLabel';
+  String get optionLabel {
+    if (variationPathLabel.isEmpty) {
+      return itemLabel;
+    }
+    if (variationPathLabel.startsWith(itemLabel)) {
+      return variationPathLabel;
+    }
+    return '$itemLabel • $variationPathLabel';
+  }
   String get searchText => '$itemLabel $variationPathLabel ${stockLabel ?? ''}';
+}
+
+String _buildNamingFormatLabel(ItemDefinition item, List<int> valueNodeIds) {
+  final itemName = item.displayName.trim().isEmpty
+      ? item.name
+      : item.displayName;
+  if (valueNodeIds.isEmpty) {
+    return itemName;
+  }
+
+  // Build a map: propertyId -> selected value name, walking the tree
+  final selectedValueIds = valueNodeIds.toSet();
+  // Map property node id -> selected value name
+  final propIdToValue = <int, String>{};
+  for (final root in item.topLevelProperties) {
+    ItemVariationNodeDefinition currentProperty = root;
+    while (true) {
+      final selectedValue = currentProperty.activeChildren
+          .where((n) => n.kind == ItemVariationNodeKind.value)
+          .where((n) => selectedValueIds.contains(n.id))
+          .firstOrNull;
+      if (selectedValue == null) break;
+      final valName = selectedValue.name.trim().isEmpty
+          ? selectedValue.displayName.trim()
+          : selectedValue.name.trim();
+      propIdToValue[currentProperty.id] = valName;
+      final nextProp = selectedValue.activeChildren
+          .where((n) => n.kind == ItemVariationNodeKind.property)
+          .firstOrNull;
+      if (nextProp == null) break;
+      currentProperty = nextProp;
+    }
+  }
+
+  final topProps = item.topLevelProperties;
+  final parts = <String>[];
+
+  // If naming format is specified, follow it
+  if (item.namingFormat.isNotEmpty) {
+    for (final token in item.namingFormat) {
+      if (token == 'name') {
+        parts.add(itemName);
+      } else if (token.startsWith('prop_')) {
+        final idx = int.tryParse(token.substring(5));
+        if (idx != null && idx >= 0 && idx < topProps.length) {
+          final value = propIdToValue[topProps[idx].id];
+          if (value != null && value.isNotEmpty) {
+            parts.add(value);
+          }
+        }
+      }
+    }
+  }
+
+  // Fallback: item name + all selected values in tree order
+  if (parts.isEmpty) {
+    parts.add(itemName);
+    parts.addAll(propIdToValue.values.where((v) => v.isNotEmpty));
+  }
+
+  return parts.join(' ');
 }
 
 List<ExactItemVariationReference> buildExactItemVariationReferences(
@@ -49,10 +116,11 @@ List<ExactItemVariationReference> buildExactItemVariationReferences(
 
 List<ExactItemVariationReference> _leafSelections(ItemDefinition item) {
   final references = <ExactItemVariationReference>[];
-  void walk(List<ItemVariationNodeDefinition> nodes, List<String> segments) {
+  
+  void walk(List<ItemVariationNodeDefinition> nodes, List<ItemVariationNodeDefinition> pathNodes) {
     for (final node in nodes.where((node) => !node.isArchived)) {
       if (node.kind == ItemVariationNodeKind.value) {
-        final nextSegments = [...segments, node.displayName];
+        final nextPathNodes = [...pathNodes, node];
         final nextChildren = node.children
             .where((child) => !child.isArchived)
             .toList(growable: false);
@@ -60,25 +128,26 @@ List<ExactItemVariationReference> _leafSelections(ItemDefinition item) {
             .where((child) => child.kind == ItemVariationNodeKind.property)
             .toList(growable: false);
         if (childProperties.isEmpty) {
+          final valueNodeIds = nextPathNodes.map((n) => n.id).toList();
           references.add(
             ExactItemVariationReference(
               itemId: item.id,
               variationLeafNodeId: node.id,
               itemLabel: item.displayName,
-              variationPathLabel: nextSegments.join(' | '),
+              variationPathLabel: _buildNamingFormatLabel(item, valueNodeIds),
             ),
           );
         }
         for (final property in childProperties) {
-          walk(property.children, nextSegments);
+          walk(property.children, [...nextPathNodes, property]);
         }
       } else {
-        walk(node.children, segments);
+        walk(node.children, pathNodes);
       }
     }
   }
 
-  walk(item.variationTree, const <String>[]);
+  walk(item.variationTree, const <ItemVariationNodeDefinition>[]);
   return references;
 }
 

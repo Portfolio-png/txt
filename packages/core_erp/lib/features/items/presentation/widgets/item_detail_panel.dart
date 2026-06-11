@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:barcode_widget/barcode_widget.dart';
 import 'package:crypto/crypto.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -304,9 +303,16 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final useTwoColumn = constraints.maxWidth >= 760;
+                final sameNamingFormatItems = itemsProvider.items.where((other) {
+                  if (other.namingFormat.length != item.namingFormat.length) return false;
+                  for (int i = 0; i < item.namingFormat.length; i++) {
+                    if (other.namingFormat[i] != item.namingFormat[i]) return false;
+                  }
+                  return true;
+                }).toList();
+
                 final imagePreview = _ItemImagePreview(
                   item: item,
-                  barcode: widget.barcode,
                   primaryAsset: primaryAsset,
                   isUploading: _isUploading || itemsProvider.isAssetUploading,
                   onUpload: _pickAndUploadImage,
@@ -319,11 +325,11 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                 );
                 final factsheet = _ItemFactsheet(
                   item: item,
-                  barcode: widget.barcode,
                   groupName: groupName,
                   unitLabel: unitLabel,
                   generatedCodes: generatedCodes,
                   imageCount: assets.length,
+                  sameNamingFormatItems: sameNamingFormatItems,
                 );
                 final editButton = widget.onEdit == null
                     ? null
@@ -341,7 +347,7 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           SizedBox(
-                            width: 320,
+                            width: 240,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -354,15 +360,13 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                             ),
                           ),
                           const SizedBox(width: 16),
+                          SizedBox(
+                            width: 320,
+                            child: factsheet,
+                          ),
+                          const SizedBox(width: 16),
                           Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                factsheet,
-                                const SizedBox(height: 18),
-                                _ItemVariationSection(item: item),
-                              ],
-                            ),
+                            child: _ItemVariationSection(item: item),
                           ),
                         ],
                       )
@@ -397,7 +401,6 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
 class _ItemImagePreview extends StatelessWidget {
   const _ItemImagePreview({
     required this.item,
-    required this.barcode,
     required this.primaryAsset,
     required this.isUploading,
     required this.onUpload,
@@ -406,7 +409,6 @@ class _ItemImagePreview extends StatelessWidget {
   });
 
   final ItemDefinition item;
-  final String barcode;
   final ItemAsset? primaryAsset;
   final bool isUploading;
   final VoidCallback onUpload;
@@ -480,33 +482,6 @@ class _ItemImagePreview extends StatelessWidget {
                   ],
                 ),
               ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            barcode,
-            style: const TextStyle(
-              color: SoftErpTheme.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE5E7F0)),
-            ),
-            child: BarcodeWidget(
-              barcode: Barcode.code128(),
-              data: barcode,
-              drawText: false,
-              height: 52,
-              color: const Color(0xFF111827),
-              backgroundColor: Colors.white,
             ),
           ),
         ],
@@ -614,50 +589,47 @@ class _ImageActionButton extends StatelessWidget {
 class _ItemFactsheet extends StatelessWidget {
   const _ItemFactsheet({
     required this.item,
-    required this.barcode,
     required this.groupName,
     required this.unitLabel,
     required this.generatedCodes,
     required this.imageCount,
+    required this.sameNamingFormatItems,
   });
 
   final ItemDefinition item;
-  final String barcode;
   final String groupName;
   final String unitLabel;
   final List<String> generatedCodes;
   final int imageCount;
+  final List<ItemDefinition> sameNamingFormatItems;
 
   @override
   Widget build(BuildContext context) {
-    final factRows = <_FactGridRow>[
-      _FactGridRow(label: 'Barcode', value: barcode),
-      _FactGridRow(label: 'Item name', value: item.name),
-      if (item.alias.trim().isNotEmpty)
-        _FactGridRow(label: 'Alias', value: item.alias),
-      _FactGridRow(label: 'Display name', value: item.displayName),
-      _FactGridRow(label: 'Group', value: groupName),
-      _FactGridRow(label: 'Unit', value: unitLabel),
-      _FactGridRow(
-        label: 'Status',
-        value: item.isArchived ? 'Archived' : 'Active',
-      ),
-      _FactGridRow(
-        label: 'Usage',
-        value: '${item.usageCount} linked record(s)',
-      ),
-      _FactGridRow(label: 'Images', value: imageCount.toString()),
-    ];
     return _DetailCard(
       title: 'Factsheet',
       children: [
-        _FactGrid(rows: factRows),
+        _FactRow(label: 'Item name', value: item.name),
+        if (item.alias.trim().isNotEmpty)
+          _FactRow(label: 'Alias', value: item.alias),
+        _FactRow(label: 'Display name', value: item.displayName),
+        _FactRow(label: 'Group', value: groupName),
+        _FactRow(label: 'Unit', value: unitLabel),
+        _FactRow(
+          label: 'Status',
+          value: item.isArchived ? 'Archived' : 'Active',
+        ),
+        _FactRow(
+          label: 'Usage',
+          value: '${item.usageCount} linked record(s)',
+        ),
+        _FactRow(label: 'Images', value: imageCount.toString()),
+        const SizedBox(height: 8),
         _FactWrapRow(
-          label: 'Naming format',
-          values: resolvedItemNamingTokens(item)
-              .map((token) => itemNamingTokenLabel(item, token))
+          label: 'Items with same naming format',
+          values: sameNamingFormatItems
+              .map((it) => it.displayName.trim().isEmpty ? it.name : it.displayName)
               .toList(growable: false),
-          emptyText: 'No naming format configured.',
+          emptyText: 'No other items use this naming format.',
         ),
         _FactWrapRow(
           label: 'Generated codes',
@@ -687,31 +659,159 @@ class _ItemVariationSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final leaves = item.leafVariationNodes;
+    final rootNodes = item.variationTree.where((node) => !node.isArchived).toList();
     return _DetailCard(
       title: 'Variation Tree',
       children: [
-        _FactWrapRow(
-          label: 'Properties',
-          values: item.topLevelProperties
-              .map((node) => node.name)
-              .toList(growable: false),
-          emptyText: 'No properties configured.',
+        if (rootNodes.isEmpty)
+          const Text(
+            'No variation tree configured.',
+            style: TextStyle(
+              color: SoftErpTheme.textSecondary,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          )
+        else
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: List.generate(rootNodes.length, (index) {
+                final node = rootNodes[index];
+                final isLast = index == rootNodes.length - 1;
+                return _VariationTreeNodeWidget(
+                  node: node,
+                  depth: 0,
+                  isLastChild: isLast,
+                  parentHasNextSibling: const [],
+                );
+              }),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _VariationTreeNodeWidget extends StatelessWidget {
+  const _VariationTreeNodeWidget({
+    required this.node,
+    required this.depth,
+    required this.isLastChild,
+    required this.parentHasNextSibling,
+  });
+
+  final ItemVariationNodeDefinition node;
+  final int depth;
+  final bool isLastChild;
+  final List<bool> parentHasNextSibling;
+
+  @override
+  Widget build(BuildContext context) {
+    final isProperty = node.kind == ItemVariationNodeKind.property;
+    final Color badgeBg = isProperty ? const Color(0xFFEEF2FE) : const Color(0xFFF0FDF4);
+    final Color badgeText = isProperty ? const Color(0xFF3B82F6) : const Color(0xFF16A34A);
+    final Color badgeBorder = isProperty ? const Color(0xFFBFDBFE) : const Color(0xFFBBF7D0);
+    final IconData icon = isProperty ? Icons.account_tree_outlined : Icons.label_outlined;
+    
+    final activeChildren = node.activeChildren;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (int i = 0; i < depth; i++)
+              Container(
+                width: 24,
+                height: 32,
+                alignment: Alignment.center,
+                child: i < parentHasNextSibling.length && parentHasNextSibling[i]
+                    ? Container(
+                        width: 1.5,
+                        color: const Color(0xFFCBD5E1),
+                      )
+                    : null,
+              ),
+            if (depth > 0)
+              SizedBox(
+                width: 24,
+                height: 32,
+                child: Stack(
+                  children: [
+                    Align(
+                      alignment: Alignment.topLeft,
+                      child: Container(
+                        width: 1.5,
+                        height: isLastChild ? 16 : 32,
+                        color: const Color(0xFFCBD5E1),
+                        margin: const EdgeInsets.only(left: 11),
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        width: 12,
+                        height: 1.5,
+                        color: const Color(0xFFCBD5E1),
+                        margin: const EdgeInsets.only(left: 11),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: badgeBg,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: badgeBorder),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 14, color: badgeText),
+                  const SizedBox(width: 6),
+                  Text(
+                    node.name.isEmpty ? node.displayName : node.name,
+                    style: TextStyle(
+                      color: badgeText,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if (node.code.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    Text(
+                      '(${node.code})',
+                      style: TextStyle(
+                        color: badgeText.withValues(alpha: 0.6),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
         ),
-        _FactWrapRow(
-          label: 'Orderable leaves',
-          values: leaves
-              .take(10)
-              .map(
-                (leaf) => leaf.displayName.trim().isEmpty
-                    ? leaf.name
-                    : leaf.displayName,
-              )
-              .toList(growable: false),
-          emptyText: 'No orderable leaf variations.',
-        ),
-        if (leaves.length > 10)
-          _FactRow(label: 'More leaves', value: '+${leaves.length - 10}'),
+        if (activeChildren.isNotEmpty)
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: List.generate(activeChildren.length, (index) {
+              final child = activeChildren[index];
+              final isLast = index == activeChildren.length - 1;
+              return _VariationTreeNodeWidget(
+                node: child,
+                depth: depth + 1,
+                isLastChild: isLast,
+                parentHasNextSibling: [...parentHasNextSibling, !isLastChild],
+              );
+            }),
+          ),
       ],
     );
   }
@@ -788,89 +888,7 @@ class _FactRow extends StatelessWidget {
   }
 }
 
-class _FactGridRow {
-  const _FactGridRow({required this.label, required this.value});
 
-  final String label;
-  final String value;
-}
-
-class _FactGrid extends StatelessWidget {
-  const _FactGrid({required this.rows});
-
-  final List<_FactGridRow> rows;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final useTwoColumns = constraints.maxWidth >= 360;
-        final tileWidth = useTwoColumns
-            ? (constraints.maxWidth - 12) / 2
-            : constraints.maxWidth;
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 4),
-          child: Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: rows
-                .map(
-                  (row) => SizedBox(
-                    width: tileWidth,
-                    child: _CompactFactTile(row: row),
-                  ),
-                )
-                .toList(growable: false),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _CompactFactTile extends StatelessWidget {
-  const _CompactFactTile({required this.row});
-
-  final _FactGridRow row;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFF),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE5E7F0)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            row.label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: SoftErpTheme.textSecondary,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            row.value.trim().isEmpty ? '-' : row.value,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: SoftErpTheme.textPrimary,
-              fontSize: 13.5,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class _FactWrapRow extends StatelessWidget {
   const _FactWrapRow({
