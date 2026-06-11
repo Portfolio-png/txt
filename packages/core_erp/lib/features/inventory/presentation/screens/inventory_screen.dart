@@ -11827,18 +11827,29 @@ class _QuickCreateUnitSheetState extends State<_QuickCreateUnitSheet> {
               subtitle: 'Add the missing unit without leaving the stock flow.',
             ),
             const SizedBox(height: 16),
-            TextFormField(
-              controller: _nameController,
-              decoration: const InputDecoration(labelText: 'Name'),
-              validator: (value) =>
-                  (value?.trim().isEmpty ?? true) ? 'Required' : null,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _symbolController,
-              decoration: const InputDecoration(labelText: 'Symbol'),
-              validator: (value) =>
-                  (value?.trim().isEmpty ?? true) ? 'Required' : null,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: TextFormField(
+                    controller: _nameController,
+                    decoration: const InputDecoration(labelText: 'Name'),
+                    validator: (value) =>
+                        (value?.trim().isEmpty ?? true) ? 'Required' : null,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: TextFormField(
+                    controller: _symbolController,
+                    decoration: const InputDecoration(labelText: 'Symbol'),
+                    validator: (value) =>
+                        (value?.trim().isEmpty ?? true) ? 'Required' : null,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 20),
             Row(
