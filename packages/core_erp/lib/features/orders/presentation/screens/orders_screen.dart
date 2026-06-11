@@ -5746,10 +5746,29 @@ class _OrderItemsDetailCard extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     minimumSize: const Size(0, 28),
                   ),
-                  child: Text(
-                    isAssigned ? 'Show pipeline' : 'Issue pipeline',
-                    style: const TextStyle(fontSize: 12),
-                  ),
+                  child: isAssigned
+                      ? Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF48C7A4),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            const Text(
+                              'Pipeline assigned',
+                              style: TextStyle(fontSize: 12, color: Color(0xFF48C7A4)),
+                            ),
+                          ],
+                        )
+                      : const Text(
+                          'Assign pipeline',
+                          style: TextStyle(fontSize: 12),
+                        ),
                 );
 
                 return _OrderItemsGridRow(
