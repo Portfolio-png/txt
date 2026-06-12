@@ -5006,6 +5006,63 @@ async function getItemUsageDetails(itemId) {
   return usage;
 }
 
+function sanitizeNodes(nodes, expectedKind, pathSegments = [], parentPropertyName = '', depth = 0) {
+  if (depth > 10) {
+    const error = new Error('Variation tree is too deep.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const siblingNames = new Set();
+  return (nodes || []).map((node, index) => {
+    const trimmedName = String(node.name || '').trim();
+    if (!trimmedName) {
+      const error = new Error('Variation tree node names are required.');
+      error.statusCode = 400;
+      throw error;
+    }
+    const kind = String(node.kind || '');
+    if (kind !== expectedKind) {
+      const error = new Error('Variation tree must alternate between property groups and values.');
+      error.statusCode = 409;
+      throw error;
+    }
+    const normalizedName = normalizeUnitValue(trimmedName);
+    if (siblingNames.has(normalizedName)) {
+      const error = new Error('Sibling variation nodes must have unique names.');
+      error.statusCode = 409;
+      throw error;
+    }
+    siblingNames.add(normalizedName);
+
+    const nodeId = node.id || null;
+
+    if (kind === 'property') {
+      return {
+        id: nodeId,
+        kind,
+        name: trimmedName,
+        code: String(node.code || '').trim(),
+        displayName: '',
+        position: index,
+        children: sanitizeNodes(node.children || [], 'value', pathSegments, trimmedName, depth + 1),
+      };
+    }
+
+    const nextSegments = [...pathSegments, trimmedName];
+    const children = sanitizeNodes(node.children || [], 'property', nextSegments, '', depth + 1);
+    return {
+      id: nodeId,
+      kind,
+      name: trimmedName,
+      code: String(node.code || '').trim(),
+      displayName:
+        String(node.displayName || '').trim() || buildVariationPathLabel(nextSegments),
+      position: index,
+      children,
+    };
+  });
+}
+
 async function findItemDuplicate({ name, groupId, unitId, excludeId = null, variationTree = [] }) {
   const rows = await all('SELECT id, name, group_id, unit_id FROM items');
   const normalizedName = normalizeUnitValue(name);
@@ -11646,62 +11703,7 @@ async function saveItem({
     throw error;
   }
 
-  const sanitizeNodes = (nodes, expectedKind, pathSegments = [], parentPropertyName = '', depth = 0) => {
-    if (depth > 10) {
-      const error = new Error('Variation tree is too deep.');
-      error.statusCode = 400;
-      throw error;
-    }
-    const siblingNames = new Set();
-    return (nodes || []).map((node, index) => {
-      const trimmedName = String(node.name || '').trim();
-      if (!trimmedName) {
-        const error = new Error('Variation tree node names are required.');
-        error.statusCode = 400;
-        throw error;
-      }
-      const kind = String(node.kind || '');
-      if (kind !== expectedKind) {
-        const error = new Error('Variation tree must alternate between property groups and values.');
-        error.statusCode = 409;
-        throw error;
-      }
-      const normalizedName = normalizeUnitValue(trimmedName);
-      if (siblingNames.has(normalizedName)) {
-        const error = new Error('Sibling variation nodes must have unique names.');
-        error.statusCode = 409;
-        throw error;
-      }
-      siblingNames.add(normalizedName);
 
-      const nodeId = node.id || null;
-
-      if (kind === 'property') {
-        return {
-          id: nodeId,
-          kind,
-          name: trimmedName,
-          code: String(node.code || '').trim(),
-          displayName: '',
-          position: index,
-          children: sanitizeNodes(node.children || [], 'value', pathSegments, trimmedName, depth + 1),
-        };
-      }
-
-      const nextSegments = [...pathSegments, trimmedName];
-      const children = sanitizeNodes(node.children || [], 'property', nextSegments, '', depth + 1);
-      return {
-        id: nodeId,
-        kind,
-        name: trimmedName,
-        code: String(node.code || '').trim(),
-        displayName:
-          String(node.displayName || '').trim() || buildVariationPathLabel(nextSegments),
-        position: index,
-        children,
-      };
-    });
-  };
 
   const sanitizedTree = sanitizeNodes(variationTree, 'property');
   const comparableTree = (nodes = []) =>
