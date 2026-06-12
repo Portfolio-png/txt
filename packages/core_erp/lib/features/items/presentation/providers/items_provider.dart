@@ -4,6 +4,7 @@ import '../../data/repositories/item_repository.dart';
 import '../../domain/item_asset.dart';
 import '../../domain/item_definition.dart';
 import '../../domain/item_inputs.dart';
+import '../../domain/item_usage_record.dart';
 
 enum ItemStatusFilter { active, archived, all }
 
@@ -578,6 +579,16 @@ class ItemsProvider extends ChangeNotifier {
     }
     _errorMessage = null;
     notifyListeners();
+  }
+
+  Future<List<ItemUsageRecord>> fetchItemUsage(int itemId) async {
+    try {
+      return await _repository.getItemUsage(itemId);
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return const [];
+    }
   }
 
   static String normalizeValue(String value) => _normalize(value);

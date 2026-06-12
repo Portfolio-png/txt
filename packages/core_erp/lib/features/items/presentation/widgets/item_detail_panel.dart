@@ -13,6 +13,7 @@ import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../domain/item_asset.dart';
 import '../../domain/item_definition.dart';
+import '../../domain/item_usage_record.dart';
 import '../providers/items_provider.dart';
 
 Future<void> showItemDetailPanel(
@@ -253,7 +254,7 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
             ?.displayLabel ??
         'Unknown unit';
     final title = itemTitle(item);
-    final generatedCodes = generatedItemCodes(item);
+    final generatedNames = generatedItemNames(item);
 
     return Material(
       color: SoftErpTheme.shellSurface,
@@ -327,7 +328,7 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                   item: item,
                   groupName: groupName,
                   unitLabel: unitLabel,
-                  generatedCodes: generatedCodes,
+                  generatedCodes: generatedNames,
                   imageCount: assets.length,
                   sameNamingFormatItems: sameNamingFormatItems,
                 );
@@ -605,37 +606,36 @@ class _ItemFactsheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final allUnits = [
+      unitLabel,
+      ...item.unitConversions.map((e) => e.unitSymbol)
+    ].join(', ');
+
     return _DetailCard(
       title: 'Factsheet',
       children: [
-        _FactRow(label: 'Item name', value: item.name),
-        if (item.alias.trim().isNotEmpty)
-          _FactRow(label: 'Alias', value: item.alias),
-        _FactRow(label: 'Display name', value: item.displayName),
-        _FactRow(label: 'Group', value: groupName),
-        _FactRow(label: 'Unit', value: unitLabel),
-        _FactRow(
-          label: 'Status',
-          value: item.isArchived ? 'Archived' : 'Active',
+        Wrap(
+          children: [
+            _FactRow(label: 'Item name', value: item.name, width: 90),
+            _FactRow(label: 'Unit', value: allUnits, width: 90),
+            _UsageFactRow(item: item, width: 140),
+            _FactRow(label: 'Display name', value: item.displayName, width: 90),
+            _FactRow(label: 'Status', value: item.isArchived ? 'Archived' : 'Active', width: 90),
+            _FactRow(label: 'Group', value: groupName, width: 120),
+            if (item.alias.trim().isNotEmpty)
+              _FactRow(label: 'Alias', value: item.alias, width: 90),
+            if (imageCount > 0)
+              _FactRow(label: 'Images', value: imageCount.toString(), width: 90),
+          ],
         ),
-        _FactRow(
-          label: 'Usage',
-          value: '${item.usageCount} linked record(s)',
-        ),
-        _FactRow(label: 'Images', value: imageCount.toString()),
         const SizedBox(height: 8),
         _FactWrapRow(
-          label: 'Items with same naming format',
-          values: sameNamingFormatItems
-              .map((it) => it.displayName.trim().isEmpty ? it.name : it.displayName)
-              .toList(growable: false),
-          emptyText: 'No other items use this naming format.',
-        ),
-        _FactWrapRow(
-          label: 'Generated codes',
+          label: 'Items variation',
           values: generatedCodes,
-          emptyText: 'No generated code available.',
+          emptyText: 'No variations found.',
+          useChips: false,
         ),
+
         if (item.unitConversions.isNotEmpty)
           _FactWrapRow(
             label: 'Conversions',
@@ -646,6 +646,7 @@ class _ItemFactsheet extends StatelessWidget {
                 )
                 .toList(growable: false),
             emptyText: '',
+            useChips: true,
           ),
       ],
     );
@@ -853,15 +854,16 @@ class _DetailCard extends StatelessWidget {
 }
 
 class _FactRow extends StatelessWidget {
-  const _FactRow({required this.label, required this.value});
+  const _FactRow({required this.label, required this.value, this.width});
 
   final String label;
   final String value;
+  final double? width;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
+    Widget content = Padding(
+      padding: const EdgeInsets.only(bottom: 14, right: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -885,6 +887,10 @@ class _FactRow extends StatelessWidget {
         ],
       ),
     );
+    if (width != null) {
+      return SizedBox(width: width, child: content);
+    }
+    return content;
   }
 }
 
@@ -895,11 +901,13 @@ class _FactWrapRow extends StatelessWidget {
     required this.label,
     required this.values,
     required this.emptyText,
+    this.useChips = true,
   });
 
   final String label;
   final List<String> values;
   final String emptyText;
+  final bool useChips;
 
   @override
   Widget build(BuildContext context) {
@@ -930,12 +938,31 @@ class _FactWrapRow extends StatelessWidget {
                 fontWeight: FontWeight.w600,
               ),
             )
-          else
+          else if (useChips)
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: filtered
                   .map((value) => _DetailChip(label: value))
+                  .toList(growable: false),
+            )
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: filtered
+                  .map(
+                    (value) => Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text(
+                        value,
+                        style: const TextStyle(
+                          color: SoftErpTheme.textSecondary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  )
                   .toList(growable: false),
             ),
         ],
@@ -987,15 +1014,12 @@ List<String> resolvedItemNamingTokens(ItemDefinition item) {
   for (var index = 0; index < item.topLevelProperties.length; index++) {
     available.add('prop_$index');
   }
-  final tokens = item.namingFormat
+  if (item.namingFormat.isEmpty) {
+    return available;
+  }
+  return item.namingFormat
       .where((token) => available.contains(token))
       .toList(growable: true);
-  for (final token in available) {
-    if (!tokens.contains(token)) {
-      tokens.add(token);
-    }
-  }
-  return tokens;
 }
 
 String itemNamingTokenLabel(ItemDefinition item, String token) {
@@ -1050,6 +1074,125 @@ String generatedItemVariationCode(
     }
   }
   return parts.join(' ');
+}
+
+List<List<ItemVariationNodeDefinition>> _getPropertyValuePaths(
+  ItemVariationNodeDefinition property,
+) {
+  final result = <List<ItemVariationNodeDefinition>>[];
+  void walk(
+    ItemVariationNodeDefinition node,
+    List<ItemVariationNodeDefinition> path,
+  ) {
+    if (node.kind == ItemVariationNodeKind.value) {
+      final newPath = [...path, node];
+      final childProps = node.activeChildren
+          .where((c) => c.kind == ItemVariationNodeKind.property)
+          .toList(growable: false);
+      if (childProps.isEmpty) {
+        result.add(newPath);
+      } else {
+        for (final p in childProps) {
+          walk(p, newPath);
+        }
+      }
+    } else {
+      for (final c in node.activeChildren) {
+        walk(c, path);
+      }
+    }
+  }
+
+  walk(property, const []);
+  return result;
+}
+
+List<String> generatedItemNames(ItemDefinition item) {
+  final topProps = item.topLevelProperties;
+  if (topProps.isEmpty) {
+    return <String>[itemTitle(item)];
+  }
+
+  final topPropPaths = topProps.map(_getPropertyValuePaths).toList();
+  final combinations = <List<ItemVariationNodeDefinition>>[];
+
+  void combine(int propIndex, List<ItemVariationNodeDefinition> currentPath) {
+    if (propIndex == topPropPaths.length) {
+      if (currentPath.isNotEmpty) {
+        combinations.add(currentPath);
+      }
+      return;
+    }
+    final pathsForProp = topPropPaths[propIndex];
+    if (pathsForProp.isEmpty) {
+      combine(propIndex + 1, currentPath);
+    } else {
+      for (final path in pathsForProp) {
+        combine(propIndex + 1, [...currentPath, ...path]);
+      }
+    }
+  }
+
+  combine(0, <ItemVariationNodeDefinition>[]);
+
+  if (combinations.isEmpty) {
+    return <String>[itemTitle(item)];
+  }
+
+  final names =
+      combinations.map((combo) {
+        final selectedIds = combo.map((n) => n.id).toSet();
+        final parts = <String>[];
+        final propIdToValue = <int, String>{};
+
+        for (final prop in topProps) {
+          var current = prop;
+          while (true) {
+            final val = current.activeChildren
+                .where((n) => n.kind == ItemVariationNodeKind.value)
+                .where((n) => selectedIds.contains(n.id))
+                .firstOrNull;
+            if (val == null) break;
+            propIdToValue[prop.id] = nodeNameOrGenerated(val);
+            final nextProp = val.activeChildren
+                .where((n) => n.kind == ItemVariationNodeKind.property)
+                .firstOrNull;
+            if (nextProp == null) break;
+            current = nextProp;
+          }
+        }
+
+        final tokens = resolvedItemNamingTokens(item);
+        if (tokens.isNotEmpty) {
+          for (final token in tokens) {
+            if (token == 'name') {
+              parts.add(itemTitle(item));
+            } else if (token.startsWith('prop_')) {
+              final index = int.tryParse(token.substring(5));
+              if (index != null && index >= 0 && index < topProps.length) {
+                final value = propIdToValue[topProps[index].id];
+                if (value != null && value.isNotEmpty) {
+                  parts.add(value);
+                }
+              }
+            }
+          }
+        }
+
+        if (parts.isEmpty) {
+          parts.add(itemTitle(item));
+          parts.addAll(propIdToValue.values.where((v) => v.isNotEmpty));
+        }
+
+        return parts.join(' ');
+      }).where((name) => name.isNotEmpty).take(20).toList(growable: false);
+
+  return names.isEmpty ? <String>[itemTitle(item)] : names;
+}
+
+String nodeNameOrGenerated(ItemVariationNodeDefinition node) {
+  final name = node.displayName.trim().isEmpty ? node.name.trim() : node.displayName.trim();
+  return name.isNotEmpty ? name : 'Unnamed';
 }
 
 ItemVariationNodeDefinition? topPropertyForNode(
@@ -1117,4 +1260,155 @@ String generatedCodeForText(String value) {
       .map((word) => RegExp(r'^\d+$').hasMatch(word) ? word : word[0])
       .join()
       .toUpperCase();
+}
+
+class _UsageFactRow extends StatefulWidget {
+  const _UsageFactRow({required this.item, this.width});
+
+  final ItemDefinition item;
+  final double? width;
+
+  @override
+  State<_UsageFactRow> createState() => _UsageFactRowState();
+}
+
+class _UsageFactRowState extends State<_UsageFactRow> {
+  bool _expanded = false;
+  bool _loading = false;
+  List<ItemUsageRecord>? _records;
+
+  Future<void> _toggle() async {
+    setState(() {
+      _expanded = !_expanded;
+    });
+    if (_expanded && _records == null && !_loading) {
+      setState(() => _loading = true);
+      final records = await context.read<ItemsProvider>().fetchItemUsage(widget.item.id);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _records = records;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget content = Padding(
+      padding: const EdgeInsets.only(bottom: 14, right: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Usage',
+            style: TextStyle(
+              color: SoftErpTheme.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          InkWell(
+            onTap: widget.item.usageCount > 0 ? _toggle : null,
+            borderRadius: BorderRadius.circular(4),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2.0),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${widget.item.usageCount} linked record(s)',
+                    style: TextStyle(
+                      color: widget.item.usageCount > 0 ? SoftErpTheme.accent : SoftErpTheme.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      decoration: widget.item.usageCount > 0 ? TextDecoration.underline : TextDecoration.none,
+                    ),
+                  ),
+                  if (widget.item.usageCount > 0) ...[
+                    const SizedBox(width: 4),
+                    Icon(
+                      _expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                      size: 16,
+                      color: SoftErpTheme.accent,
+                    ),
+                  ]
+                ],
+              ),
+            ),
+          ),
+          if (_expanded) ...[
+            const SizedBox(height: 8),
+            if (_loading)
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else if (_records == null || _records!.isEmpty)
+              const Text(
+                'No usage details found.',
+                style: TextStyle(
+                  color: SoftErpTheme.textSecondary,
+                  fontSize: 13,
+                ),
+              )
+            else
+              Container(
+                margin: const EdgeInsets.only(top: 4),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border.all(color: SoftErpTheme.border),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: _records!.map((record) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            record.title,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: SoftErpTheme.textPrimary,
+                            ),
+                          ),
+                          if (record.subtitle.isNotEmpty)
+                            Text(
+                              record.subtitle,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: SoftErpTheme.textSecondary,
+                              ),
+                            ),
+                          if (record.status != null)
+                            Text(
+                              'Status: ${record.status}',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: SoftErpTheme.textSecondary,
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+
+    if (widget.width != null && !_expanded) {
+      return SizedBox(width: widget.width, child: content);
+    }
+    return SizedBox(width: _expanded ? double.infinity : widget.width, child: content);
+  }
 }

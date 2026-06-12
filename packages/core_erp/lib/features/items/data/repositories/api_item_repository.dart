@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../domain/item_asset.dart';
+import '../../domain/item_usage_record.dart';
 import '../../domain/item_definition.dart';
 import '../../domain/item_inputs.dart';
 import '../models/item_api_models.dart';
@@ -1939,6 +1940,36 @@ class ApiItemRepository implements ItemRepository {
       readUrl: asset.readUrl,
       readUrlExpiresAt: asset.readUrlExpiresAt,
     );
+  }
+
+  @override
+  Future<List<ItemUsageRecord>> getItemUsage(int itemId) async {
+    if (useMockResponses) {
+      return [
+        ItemUsageRecord(
+          type: 'order',
+          id: '1',
+          title: 'Order ORD-1001',
+          subtitle: 'Acme Corp',
+          status: 'inProgress',
+          date: DateTime.now().toIso8601String(),
+        ),
+      ];
+    }
+
+    final uri = Uri.parse('$baseUrl/api/items/$itemId/usage');
+    final response = await _client.get(uri);
+    final payload = _decodeJsonObject(response.body);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final error = payload['error']?.toString() ?? 'Failed to fetch usage';
+      throw ItemApiException(error);
+    }
+
+    final dataList = payload['usage'] as List<dynamic>? ?? [];
+    return dataList
+        .map((e) => ItemUsageRecord.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 }
 

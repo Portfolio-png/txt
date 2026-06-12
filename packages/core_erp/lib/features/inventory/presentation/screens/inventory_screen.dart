@@ -4519,8 +4519,8 @@ class _InventoryInlineRowActions extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final showQuick = hovered && constraints.maxWidth >= 124;
-        final showBothQuick = showQuick && constraints.maxWidth >= 176;
+        final showQuick = hovered && constraints.maxWidth >= 130;
+        final showBothQuick = showQuick && constraints.maxWidth >= 186;
 
         return Row(
           mainAxisSize: MainAxisSize.min,

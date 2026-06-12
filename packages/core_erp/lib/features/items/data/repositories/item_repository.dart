@@ -1,7 +1,7 @@
 import '../../domain/item_definition.dart';
 import '../../domain/item_inputs.dart';
 import '../../domain/item_asset.dart';
-
+import '../../domain/item_usage_record.dart';
 abstract class ItemRepository {
   Future<void> init();
   Future<List<ItemDefinition>> getItems();
@@ -16,4 +16,5 @@ abstract class ItemRepository {
   Future<ItemAsset> completeAssetUpload(CompleteItemAssetUploadInput input);
   Future<ItemAsset> setPrimaryAsset(int assetId);
   Future<void> deleteAsset(int assetId);
+  Future<List<ItemUsageRecord>> getItemUsage(int itemId);
 }

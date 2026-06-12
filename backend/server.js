@@ -620,7 +620,9 @@ function isPrimaryGroupNameForType(name = '', groupType = 'item') {
   const trimmedName = String(name || '').trim();
   return (
     trimmedName === primaryGroupNameForType(groupType) ||
-    (normalizeGroupType(groupType) === 'item' && trimmedName === 'Primary Group')
+    (normalizeGroupType(groupType) === 'item' && trimmedName === 'Primary Group') ||
+    (normalizeGroupType(groupType) === 'item' && trimmedName === 'Raw material') ||
+    (normalizeGroupType(groupType) === 'item' && trimmedName === 'Scrap')
   );
 }
 
@@ -3742,6 +3744,14 @@ async function ensurePrimaryGroupAndUnit() {
   if (!group) {
     await run("INSERT INTO groups (name, parent_group_id, unit_id, created_at, updated_at) VALUES ('Primary Group', NULL, ?, datetime('now'), datetime('now'))", [unit.id]);
   }
+  let rawGroup = await get('SELECT id FROM groups WHERE name = "Raw material" AND parent_group_id IS NULL');
+  if (!rawGroup) {
+    await run("INSERT INTO groups (name, parent_group_id, unit_id, created_at, updated_at) VALUES ('Raw material', NULL, ?, datetime('now'), datetime('now'))", [unit.id]);
+  }
+  let scrapGroup = await get('SELECT id FROM groups WHERE name = "Scrap" AND parent_group_id IS NULL');
+  if (!scrapGroup) {
+    await run("INSERT INTO groups (name, parent_group_id, unit_id, created_at, updated_at) VALUES ('Scrap', NULL, ?, datetime('now'), datetime('now'))", [unit.id]);
+  }
 }
 
 async function ensureDemoDataset() {
@@ -4939,6 +4949,55 @@ async function getItemsWithUsage() {
     FROM items
     ORDER BY items.is_archived ASC, LOWER(items.name) ASC
   `);
+}
+
+async function getItemUsageDetails(itemId) {
+  const [
+    orders,
+    challans,
+    bomRequirements,
+    materials,
+    groupLinks
+  ] = await Promise.all([
+    all(`SELECT id, order_no, client_name, status, created_at FROM order_items WHERE item_id = ? ORDER BY created_at DESC LIMIT 50`, [itemId]),
+    all(`SELECT dci.id, dci.challan_id, dc.challan_no, dc.customer_name, dc.date, dc.status 
+         FROM delivery_challan_items dci 
+         JOIN delivery_challans dc ON dci.challan_id = dc.id 
+         WHERE dci.item_id = ? ORDER BY dc.date DESC LIMIT 50`, [itemId]),
+    all(`SELECT omr.id, omr.order_id, oi.order_no, oi.client_name 
+         FROM order_material_requirements omr
+         JOIN order_items oi ON omr.order_id = oi.id
+         WHERE omr.item_id = ? ORDER BY omr.created_at DESC LIMIT 50`, [itemId]),
+    all(`SELECT id, barcode, name, inventory_state FROM materials WHERE linked_item_id = ? ORDER BY created_at DESC LIMIT 50`, [itemId]),
+    all(`SELECT mgil.id, m.barcode, m.name 
+         FROM material_group_item_links mgil
+         JOIN materials m ON mgil.material_id = m.id
+         WHERE mgil.item_id = ? LIMIT 50`, [itemId])
+  ]);
+
+  const usage = [];
+  
+  orders.forEach(o => {
+    usage.push({ type: 'order', id: String(o.id), title: `Order ${o.order_no}`, subtitle: o.client_name || '-', status: o.status, date: o.created_at });
+  });
+
+  challans.forEach(c => {
+    usage.push({ type: 'delivery_challan', id: String(c.challan_id), title: `Challan ${c.challan_no}`, subtitle: c.customer_name || '-', status: c.status, date: c.date });
+  });
+
+  bomRequirements.forEach(b => {
+    usage.push({ type: 'bom_requirement', id: String(b.id), title: `BOM for Order ${b.order_no}`, subtitle: b.client_name || '-', status: null, date: null });
+  });
+
+  materials.forEach(m => {
+    usage.push({ type: 'material', id: String(m.id), title: `Material ${m.barcode}`, subtitle: m.name, status: m.inventory_state, date: null });
+  });
+
+  groupLinks.forEach(g => {
+    usage.push({ type: 'group_link', id: String(g.id), title: `Group Link for ${g.barcode}`, subtitle: g.name, status: null, date: null });
+  });
+
+  return usage;
 }
 
 async function findItemDuplicate({ name, groupId, excludeId = null, variationTree = [] }) {
@@ -11257,7 +11316,7 @@ async function saveGroup({ name, parentGroupId = null, unitId, id = null, groupT
   let normalizedParentId = parentGroupId == null ? null : Number(parentGroupId);
   let normalizedUnitId = unitId ? Number(unitId) : null;
 
-  if (normalizedParentId == null && trimmedName !== 'Primary Group') {
+  if (normalizedParentId == null && trimmedName !== 'Primary Group' && trimmedName !== 'Raw material' && trimmedName !== 'Scrap') {
     const pg = await get('SELECT id FROM groups WHERE name = "Primary Group" AND parent_group_id IS NULL AND group_type = ?', [groupType]);
     if (pg) {
       normalizedParentId = pg.id;
@@ -18406,6 +18465,15 @@ app.patch('/api/vendors/:id/restore', requirePermission('config.write'), async (
     res.json({ success: true, vendor: rowToVendorDto(await getVendorRowById(id)), error: null });
   } catch (error) {
     res.status(500).json({ success: false, vendor: null, error: error.message });
+  }
+});
+
+app.get('/api/items/:id/usage', requirePermission('config.read'), async (req, res) => {
+  try {
+    const usage = await getItemUsageDetails(Number(req.params.id));
+    res.json({ success: true, usage, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, usage: [], error: error.message });
   }
 });
 
