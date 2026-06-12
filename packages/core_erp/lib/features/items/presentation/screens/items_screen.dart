@@ -1303,6 +1303,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     final duplicate = itemsProvider.checkDuplicate(
       name: _nameController.text,
       groupId: _selectedGroupId,
+      unitId: _selectedUnitId,
       variationTree: _variationTreeInputs,
       excludeId: widget.item?.id,
     );
@@ -2455,6 +2456,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     final duplicate = itemsProvider.checkDuplicate(
       name: _nameController.text,
       groupId: _selectedGroupId,
+      unitId: _selectedUnitId,
       variationTree: _variationTreeInputs,
       excludeId: widget.item?.id,
     );

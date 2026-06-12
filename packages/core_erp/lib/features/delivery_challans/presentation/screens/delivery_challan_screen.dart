@@ -4011,11 +4011,14 @@ class _ItemsEditor extends StatelessWidget {
     }
     final itemOptions = availableItems
         .map(
-          (item) => SearchableSelectOption<int>(
-            value: item.id,
-            label: item.displayName,
-            searchText: '${item.displayName} ${item.alias} ${item.name}',
-          ),
+          (item) {
+            final primaryGroup = groupsProvider.findById(item.groupId)?.name ?? 'No primary group';
+            return SearchableSelectOption<int>(
+              value: item.id,
+              label: '${item.displayName} ($primaryGroup)',
+              searchText: '${item.displayName} ${item.alias} ${item.name} $primaryGroup',
+            );
+          },
         )
         .toList(growable: false);
     return Container(

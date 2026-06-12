@@ -3059,7 +3059,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                   'No primary group';
               return SearchableSelectOption<int>(
                 value: item.id,
-                label: item.displayName,
+                label: '${item.displayName} ($primaryGroup)',
                 searchText: '${item.displayName} $primaryGroup',
               );
             })

@@ -701,8 +701,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
               (record.unitId == null || group.unitId == record.unitId),
         )
         .toList(growable: false);
-    if (exactMatches.isNotEmpty) {
-      return exactMatches.last;
+    if (exactMatches.length == 1) {
+      return exactMatches.first;
     }
     return null;
   }
@@ -1715,8 +1715,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   (record.unitId == null || item.unitId == record.unitId),
             )
             .toList(growable: false);
-        if (exactMatches.isNotEmpty) {
-          linkedItem = exactMatches.last;
+        if (exactMatches.length == 1) {
+          linkedItem = exactMatches.first;
         }
       }
     }

@@ -153,16 +153,19 @@ class ItemsProvider extends ChangeNotifier {
   ItemDuplicateCheck checkDuplicate({
     required String name,
     required int? groupId,
+    required int? unitId,
     required List<ItemVariationNodeInput> variationTree,
     int? excludeId,
   }) {
     final normalizedName = _normalize(name);
-    if (groupId != null &&
+    if (groupId != null && unitId != null &&
         _items.any(
           (item) =>
               item.id != excludeId &&
               item.groupId == groupId &&
-              _normalize(item.name) == normalizedName,
+              item.unitId == unitId &&
+              _normalize(item.name) == normalizedName &&
+              _areVariationTreesIdentical(item.topLevelProperties, variationTree),
         )) {
       return const ItemDuplicateCheck(
         blockingDuplicate: true,
@@ -185,6 +188,30 @@ class ItemsProvider extends ChangeNotifier {
       blockingDuplicate: false,
       warning: ItemDuplicateWarning.none,
     );
+  }
+
+  bool _areVariationTreesIdentical(
+    List<ItemVariationNodeDefinition> existing,
+    List<ItemVariationNodeInput> input,
+  ) {
+    if (existing.length != input.length) return false;
+
+    final existingSorted = existing.toList()..sort((a, b) => a.name.compareTo(b.name));
+    final inputSorted = input.toList()..sort((a, b) => a.name.compareTo(b.name));
+
+    for (var i = 0; i < existingSorted.length; i++) {
+      final eNode = existingSorted[i];
+      final iNode = inputSorted[i];
+
+      if (_normalize(eNode.name) != _normalize(iNode.name)) return false;
+      if (eNode.kind != iNode.kind) return false;
+
+      if (!_areVariationTreesIdentical(eNode.children, iNode.children)) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   ItemDuplicateWarning _validateNode(

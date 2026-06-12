@@ -602,16 +602,20 @@ class _SearchableSelectOptionTileState<T>
             child: Row(
               children: [
                 Expanded(
-                  child: Text(
-                    widget.option.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: const Color(0xFF2F3744),
-                      fontSize: 13,
-                      fontWeight: widget.isSelected
-                          ? FontWeight.w700
-                          : FontWeight.w500,
+                  child: Tooltip(
+                    message: widget.option.label,
+                    waitDuration: const Duration(milliseconds: 400),
+                    child: Text(
+                      widget.option.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: const Color(0xFF2F3744),
+                        fontSize: 13,
+                        fontWeight: widget.isSelected
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                      ),
                     ),
                   ),
                 ),
