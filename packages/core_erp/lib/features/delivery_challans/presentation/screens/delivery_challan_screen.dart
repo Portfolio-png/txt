@@ -4013,17 +4013,15 @@ class _ItemsEditor extends StatelessWidget {
       draft.initializeConversionFields(selectedItem, unitsProvider);
     }
     final itemOptions = availableItems
-        .map(
-          (item) {
+        .map((item) {
             final primaryGroup = groupsProvider.findById(item.groupId)?.name ?? 'No primary group';
             final fullVariationName = generatedItemNames(item).join(' / ');
             return SearchableSelectOption<int>(
               value: item.id,
-              label: '$fullVariationName ($primaryGroup)',
+              label: fullVariationName,
               searchText: '$fullVariationName ${item.alias} ${item.name} $primaryGroup',
             );
-          },
-        )
+          })
         .toList(growable: false);
     return Container(
       padding: const EdgeInsets.all(12),

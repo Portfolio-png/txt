@@ -3062,7 +3062,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
               final fullVariationName = generatedItemNames(item).join(' / ');
               return SearchableSelectOption<int>(
                 value: item.id,
-                label: '$fullVariationName ($primaryGroup)',
+                label: fullVariationName,
                 searchText: '$fullVariationName $primaryGroup',
               );
             })
