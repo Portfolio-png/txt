@@ -1971,6 +1971,30 @@ class ApiItemRepository implements ItemRepository {
         .map((e) => ItemUsageRecord.fromJson(e as Map<String, dynamic>))
         .toList();
   }
+
+  @override
+  Future<List<Map<String, String>>> getPipelineTemplates() async {
+    if (useMockResponses) {
+      return [
+        {'id': '1', 'name': 'Default Production Pipeline'},
+      ];
+    }
+    final uri = Uri.parse('$baseUrl/api/production/pipeline-templates');
+    final response = await _client.get(uri);
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final error = payload['error']?.toString() ?? 'Failed to fetch pipeline templates';
+      throw ItemApiException(error);
+    }
+    final dataList = payload['templates'] as List<dynamic>? ?? [];
+    return dataList.map((e) {
+      final map = e as Map<String, dynamic>;
+      return {
+        'id': map['id'].toString(),
+        'name': map['name'].toString(),
+      };
+    }).toList();
+  }
 }
 
 class ItemApiException implements Exception {

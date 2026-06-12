@@ -17,4 +17,5 @@ abstract class ItemRepository {
   Future<ItemAsset> setPrimaryAsset(int assetId);
   Future<void> deleteAsset(int assetId);
   Future<List<ItemUsageRecord>> getItemUsage(int itemId);
+  Future<List<Map<String, String>>> getPipelineTemplates();
 }

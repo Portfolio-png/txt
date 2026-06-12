@@ -12,6 +12,7 @@ import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/widgets/page_container.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../../core/widgets/soft_primitives.dart';
+import 'package:collection/collection.dart';
 import 'package:core_erp/core/navigation/app_navigation.dart';
 import '../../../clients/domain/client_definition.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
@@ -7916,10 +7917,6 @@ int _statusPriorityWeight(OrderStatus status) {
 }
 
 enum _OrderUrgency { none, nearDue, overdue }
-
-extension<T> on Iterable<T> {
-  T? get firstOrNull => isEmpty ? null : first;
-}
 
 class _OrderCreateUnitDialog extends StatefulWidget {
   const _OrderCreateUnitDialog({

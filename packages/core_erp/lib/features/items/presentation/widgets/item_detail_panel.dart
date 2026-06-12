@@ -622,6 +622,8 @@ class _ItemFactsheet extends StatelessWidget {
             _FactRow(label: 'Display name', value: item.displayName, width: 90),
             _FactRow(label: 'Status', value: item.isArchived ? 'Archived' : 'Active', width: 90),
             _FactRow(label: 'Group', value: groupName, width: 120),
+            if (item.defaultPipelineName != null && item.defaultPipelineName!.isNotEmpty)
+              _FactRow(label: 'Default pipeline', value: item.defaultPipelineName!, width: 140),
             if (item.alias.trim().isNotEmpty)
               _FactRow(label: 'Alias', value: item.alias, width: 90),
             if (imageCount > 0)

@@ -2131,6 +2131,7 @@ async function initDb() {
   try { await run("ALTER TABLE clients ADD COLUMN photo_url TEXT DEFAULT ''"); } catch(e){}
   try { await run("ALTER TABLE vendors ADD COLUMN logo_url TEXT DEFAULT ''"); } catch(e){}
   try { await run("ALTER TABLE vendors ADD COLUMN photo_url TEXT DEFAULT ''"); } catch(e){}
+  try { await run("ALTER TABLE items ADD COLUMN default_pipeline_id TEXT DEFAULT NULL"); } catch(e){}
 
   // Migration for groups table to remove unit_id NOT NULL constraint
   try {
@@ -2581,6 +2582,7 @@ async function initDb() {
       group_id INTEGER NOT NULL REFERENCES groups(id),
       unit_id INTEGER NOT NULL REFERENCES units(id),
       is_archived INTEGER NOT NULL DEFAULT 0,
+      default_pipeline_id TEXT DEFAULT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
@@ -4921,6 +4923,7 @@ async function getItemRowById(id) {
     `
     SELECT
       items.*,
+      pipeline_templates.name AS default_pipeline_name,
       (
         (SELECT COUNT(*) FROM order_items WHERE order_items.item_id = items.id) +
         (SELECT COUNT(*) FROM delivery_challan_items WHERE delivery_challan_items.item_id = items.id) +
@@ -4929,6 +4932,7 @@ async function getItemRowById(id) {
         (SELECT COUNT(*) FROM material_group_item_links WHERE material_group_item_links.item_id = items.id)
       ) AS usage_count
     FROM items
+    LEFT JOIN pipeline_templates ON items.default_pipeline_id = pipeline_templates.id
     WHERE items.id = ?
     `,
     [id],
@@ -4939,6 +4943,7 @@ async function getItemsWithUsage() {
   return all(`
     SELECT
       items.*,
+      pipeline_templates.name AS default_pipeline_name,
       (
         (SELECT COUNT(*) FROM order_items WHERE order_items.item_id = items.id) +
         (SELECT COUNT(*) FROM delivery_challan_items WHERE delivery_challan_items.item_id = items.id) +
@@ -4947,6 +4952,7 @@ async function getItemsWithUsage() {
         (SELECT COUNT(*) FROM material_group_item_links WHERE material_group_item_links.item_id = items.id)
       ) AS usage_count
     FROM items
+    LEFT JOIN pipeline_templates ON items.default_pipeline_id = pipeline_templates.id
     ORDER BY items.is_archived ASC, LOWER(items.name) ASC
   `);
 }
@@ -11557,6 +11563,7 @@ async function saveItem({
   unitConversions = [],
   namingFormat = [],
   variationTree = [],
+  defaultPipelineId = null,
   id = null,
 }) {
   const trimmedName = String(name || '').trim();
@@ -11720,8 +11727,8 @@ async function saveItem({
       const result = await run(
         `
         INSERT INTO items (
-          name, alias, display_name, quantity, group_id, unit_id, naming_format, is_archived, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+          name, alias, display_name, quantity, group_id, unit_id, naming_format, is_archived, default_pipeline_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
         `,
         [
           trimmedName,
@@ -11731,6 +11738,7 @@ async function saveItem({
           normalizedGroupId,
           normalizedUnitId,
           serializedNamingFormat,
+          defaultPipelineId || null,
           now,
           now,
         ],
@@ -11754,7 +11762,7 @@ async function saveItem({
       await run(
         `
         UPDATE items
-        SET name = ?, alias = ?, display_name = ?, quantity = ?, group_id = ?, unit_id = ?, naming_format = ?, updated_at = ?
+        SET name = ?, alias = ?, display_name = ?, quantity = ?, group_id = ?, unit_id = ?, naming_format = ?, default_pipeline_id = ?, updated_at = ?
         WHERE id = ?
         `,
         [
@@ -11765,6 +11773,7 @@ async function saveItem({
           normalizedGroupId,
           normalizedUnitId,
           serializedNamingFormat,
+          defaultPipelineId || null,
           now,
           id,
         ],

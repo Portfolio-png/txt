@@ -27,25 +27,33 @@ import 'package:file_selector/file_selector.dart';
 import 'package:crypto/crypto.dart';
 import 'package:mime/mime.dart';
 import 'package:http/http.dart' as http;
+import 'package:collection/collection.dart';
 import '../../../../core/services/generic_asset_service.dart';
 import '../../../../core/widgets/export_preview_dialog.dart';
 
 class ItemsScreen extends StatefulWidget {
-  const ItemsScreen({super.key, this.initialTab = 0});
+  const ItemsScreen({
+    super.key,
+    this.initialTab = 0,
+    this.onCreatePipeline,
+  });
 
   final int initialTab;
+  final VoidCallback? onCreatePipeline;
 
   static Future<ItemDefinition?> openEditor(
     BuildContext context, {
     ItemDefinition? item,
     String initialName = '',
     int? initialGroupId,
+    VoidCallback? onCreatePipeline,
   }) {
     final isNarrow = MediaQuery.of(context).size.width < 980;
     final body = _ItemEditorSheet(
       item: item,
       initialName: initialName,
       initialGroupId: initialGroupId,
+      onCreatePipeline: onCreatePipeline,
     );
     if (isNarrow) {
       return showModalBottomSheet<ItemDefinition?>(
@@ -137,7 +145,10 @@ class _ItemsScreenState extends State<ItemsScreen> {
               label: 'Add Item',
               icon: Icons.add,
               isLoading: items.isSaving,
-              onPressed: () => ItemsScreen.openEditor(context),
+              onPressed: () => ItemsScreen.openEditor(
+                context,
+                onCreatePipeline: widget.onCreatePipeline,
+              ),
             ),
             toolbar: _ItemsToolbar(
               isGridView: _isGridView,
@@ -178,8 +189,12 @@ class _ItemsScreenState extends State<ItemsScreen> {
                     items: items.filteredItems,
                     cardWidth: _cardWidth,
                     cardHeight: _cardHeight,
+                    onCreatePipeline: widget.onCreatePipeline,
                   )
-                : _ItemsTable(items: items.filteredItems),
+                : _ItemsTable(
+                    items: items.filteredItems,
+                    onCreatePipeline: widget.onCreatePipeline,
+                  ),
           ),
         );
       },
@@ -420,9 +435,10 @@ class _ItemsViewToggleButton extends StatelessWidget {
 }
 
 class _ItemsTable extends StatelessWidget {
-  const _ItemsTable({required this.items});
+  const _ItemsTable({required this.items, this.onCreatePipeline});
 
   final List<ItemDefinition> items;
+  final VoidCallback? onCreatePipeline;
 
   @override
   Widget build(BuildContext context) {
@@ -437,7 +453,10 @@ class _ItemsTable extends StatelessWidget {
         SoftTableColumn('Actions', flex: 2),
       ],
       itemCount: items.length,
-      rowBuilder: (context, index) => _ItemRow(item: items[index]),
+      rowBuilder: (context, index) => _ItemRow(
+        item: items[index],
+        onCreatePipeline: onCreatePipeline,
+      ),
     );
   }
 }
@@ -447,11 +466,13 @@ class _ItemsGrid extends StatelessWidget {
     required this.items,
     required this.cardWidth,
     required this.cardHeight,
+    this.onCreatePipeline,
   });
 
   final List<ItemDefinition> items;
   final double cardWidth;
   final double cardHeight;
+  final VoidCallback? onCreatePipeline;
 
   @override
   Widget build(BuildContext context) {
@@ -470,7 +491,10 @@ class _ItemsGrid extends StatelessWidget {
             childAspectRatio: cardWidth / cardHeight,
           ),
           itemCount: items.length,
-          itemBuilder: (context, index) => _GridItemCard(item: items[index]),
+          itemBuilder: (context, index) => _GridItemCard(
+            item: items[index],
+            onCreatePipeline: onCreatePipeline,
+          ),
         );
       },
     );
@@ -478,9 +502,10 @@ class _ItemsGrid extends StatelessWidget {
 }
 
 class _GridItemCard extends StatelessWidget {
-  const _GridItemCard({required this.item});
+  const _GridItemCard({required this.item, this.onCreatePipeline});
 
   final ItemDefinition item;
+  final VoidCallback? onCreatePipeline;
 
   @override
   Widget build(BuildContext context) {
@@ -489,16 +514,21 @@ class _GridItemCard extends StatelessWidget {
       onTap: () => showItemDetailPanel(
         context,
         item: item,
-        onEdit: () => ItemsScreen.openEditor(context, item: item),
+        onEdit: () => ItemsScreen.openEditor(
+          context,
+          item: item,
+          onCreatePipeline: onCreatePipeline,
+        ),
       ),
     );
   }
 }
 
 class _ItemRow extends StatelessWidget {
-  const _ItemRow({required this.item});
+  const _ItemRow({required this.item, this.onCreatePipeline});
 
   final ItemDefinition item;
+  final VoidCallback? onCreatePipeline;
 
   @override
   Widget build(BuildContext context) {
@@ -523,7 +553,11 @@ class _ItemRow extends StatelessWidget {
       onTap: () => showItemDetailPanel(
         context,
         item: item,
-        onEdit: () => ItemsScreen.openEditor(context, item: item),
+        onEdit: () => ItemsScreen.openEditor(
+          context,
+          item: item,
+          onCreatePipeline: onCreatePipeline,
+        ),
       ),
       children: [
         Expanded(
@@ -575,7 +609,11 @@ class _ItemRow extends StatelessWidget {
             children: [
               SoftActionLink(
                 label: 'Edit',
-                onTap: () => ItemsScreen.openEditor(context, item: item),
+                onTap: () => ItemsScreen.openEditor(
+                  context,
+                  item: item,
+                  onCreatePipeline: onCreatePipeline,
+                ),
               ),
               SoftActionLink(
                 label: item.isArchived ? 'Restore' : 'Archive',
@@ -675,11 +713,13 @@ class _ItemEditorSheet extends StatefulWidget {
     this.item,
     this.initialName = '',
     this.initialGroupId,
+    this.onCreatePipeline,
   });
 
   final ItemDefinition? item;
   final String initialName;
   final int? initialGroupId;
+  final VoidCallback? onCreatePipeline;
 
   @override
   State<_ItemEditorSheet> createState() => _ItemEditorSheetState();
@@ -703,6 +743,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   final List<_UnitConversionDraft> _secondaryUnitConversions = [];
   final Set<String> _promotedPropertyKeys = <String>{};
   bool _isLoadingGroupSchema = false;
+  String? _defaultPipelineId;
+  List<Map<String, String>> _availablePipelines = [];
 
   bool get _isReadOnly => false;
 
@@ -722,6 +764,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     _selectedGroupId = widget.item?.groupId ?? widget.initialGroupId;
     _selectedUnitId = widget.item?.unitId;
     _namingFormat = widget.item?.namingFormat.toList() ?? [];
+    _defaultPipelineId = widget.item?.defaultPipelineId;
     _displayNameTouched = (widget.item?.displayName ?? '').trim().isNotEmpty;
 
     _nameController.addListener(_handlePrimaryChange);
@@ -748,6 +791,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
         available.where((t) => !savedTokens.contains(t)),
       );
     }
+    _fetchPipelines();
     for (final conversion in widget.item?.unitConversions ?? const []) {
       final unit = context.read<UnitsProvider>().findById(conversion.unitId);
       final factorToV = conversion.factorToPrimary <= 0
@@ -1802,6 +1846,36 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                         ),
                       );
 
+                      final defaultPipelineSection = _SectionCard(
+                        title: 'Default Pipeline',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            SearchableSelectField<String>(
+                              options: _availablePipelines.map((p) => SearchableSelectOption<String>(value: p['id']!, label: p['name']!, searchText: p['name']!)).toList(),
+                              value: _defaultPipelineId,
+                              fieldEnabled: !_isReadOnly,
+                              onChanged: (val) {
+                                setState(() {
+                                  _defaultPipelineId = val;
+                                  _handleChange();
+                                });
+                              },
+                              decoration: const InputDecoration(hintText: 'Select a pipeline'),
+                              searchHintText: 'Search pipelines',
+                            ),
+                            if (!_isReadOnly && widget.onCreatePipeline != null) ...[
+                              const SizedBox(height: 12),
+                              OutlinedButton.icon(
+                                onPressed: widget.onCreatePipeline,
+                                icon: const Icon(Icons.add, size: 16),
+                                label: const Text('Create New Pipeline'),
+                              ),
+                            ],
+                          ],
+                        ),
+                      );
+
                       if (wideComposer) {
                         return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1824,6 +1898,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                   variationTreeSection,
                                   const SizedBox(height: 16),
                                   namingFormatSection,
+                                  const SizedBox(height: 16),
+                                  defaultPipelineSection,
                                 ],
                               ),
                             ),
@@ -1840,6 +1916,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                           variationTreeSection,
                           const SizedBox(height: 16),
                           namingFormatSection,
+                          const SizedBox(height: 16),
+                          defaultPipelineSection,
                         ],
                       );
                     },
@@ -2490,6 +2568,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   .toList(growable: false),
               namingFormat: _activeNamingFormat,
               variationTree: _variationTreeInputs,
+              defaultPipelineId: _defaultPipelineId,
               photoUrl: _photoUrlController.text.trim(),
             ),
           )
@@ -2512,6 +2591,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   .toList(growable: false),
               namingFormat: _activeNamingFormat,
               variationTree: _variationTreeInputs,
+              defaultPipelineId: _defaultPipelineId,
               photoUrl: _photoUrlController.text.trim(),
             ),
           );
@@ -2641,6 +2721,16 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     return current;
   }
 
+  Future<void> _fetchPipelines() async {
+    final provider = context.read<ItemsProvider>();
+    final pipelines = await provider.fetchPipelineTemplates();
+    if (mounted) {
+      setState(() {
+        _availablePipelines = pipelines;
+      });
+    }
+  }
+
   String _generateLeafDisplayName(_NodeDraft leaf) {
     final pathValues = <String, String>{};
     final pathValueNames = <String>[];
@@ -2684,7 +2774,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     return switch (warning) {
       ItemDuplicateWarning.none => '',
       ItemDuplicateWarning.sameGroup =>
-        'An item with this name already exists in the selected group.',
+        'An item with this name and variation structure already exists in the selected group with the same unit.',
       ItemDuplicateWarning.emptyNodeName =>
         'Every property and value node needs a name.',
       ItemDuplicateWarning.invalidTreeStructure =>
@@ -3227,10 +3317,6 @@ class _ItemsMessageBanner extends StatelessWidget {
       ),
     );
   }
-}
-
-extension<T> on Iterable<T> {
-  T? get firstOrNull => isEmpty ? null : first;
 }
 
 class _UnitConversionRow extends StatelessWidget {

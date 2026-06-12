@@ -28,6 +28,7 @@ import '../../../items/presentation/widgets/item_detail_panel.dart' show generat
 import '../../../units/domain/unit_inputs.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../../items/presentation/providers/items_provider.dart';
+import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../orders/domain/order_entry.dart';
 import '../../../orders/presentation/providers/orders_provider.dart';
 import '../../../vendors/presentation/providers/vendors_provider.dart';
@@ -4004,6 +4005,7 @@ class _ItemsEditor extends StatelessWidget {
     List<ItemDefinition> availableItems,
   ) {
     final unitsProvider = context.watch<UnitsProvider>();
+    final groupsProvider = context.watch<GroupsProvider>();
     final selectedItem = availableItems
         .where((item) => item.id == draft.itemId)
         .firstOrNull;

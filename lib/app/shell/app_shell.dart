@@ -464,8 +464,8 @@ class _PaperShortcutManagerState extends State<PaperShortcutManager> {
         case 'order': 
           _handleCreateOrder(context); 
           break;
-        case 'item': 
-          _runModalShortcut(() => ItemsScreen.openEditor(context)); 
+        case 'item':
+          _runModalShortcut(() => ItemsScreen.openEditor(context, onCreatePipeline: () => _handleCreatePipeline(context)));
           break;
         case 'client': 
           _runModalShortcut(() => ClientsScreen.openEditor(context)); 
@@ -488,23 +488,23 @@ class _PaperShortcutManagerState extends State<PaperShortcutManager> {
       }
     });
   }
+}
 
-  Future<void> _handleCreatePipeline(BuildContext context) async {
-    final template = await PipelinesScreen.openCreateDialog(context);
-    if (template != null && context.mounted) {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (builderContext) => ChangeNotifierProvider(
-            create: (_) => PipelineEditorProvider(template: template),
-            child: PipelineBuilderScreen(
-              factoryId: defaultProductionFactoryId,
-              shopFloorId: defaultProductionShopFloorId,
-              onBack: () => Navigator.of(builderContext).pop(),
-            ),
+Future<void> _handleCreatePipeline(BuildContext context) async {
+  final template = await PipelinesScreen.openCreateDialog(context);
+  if (template != null && context.mounted) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (builderContext) => ChangeNotifierProvider(
+          create: (_) => PipelineEditorProvider(template: template),
+          child: PipelineBuilderScreen(
+            factoryId: defaultProductionFactoryId,
+            shopFloorId: defaultProductionShopFloorId,
+            onBack: () => Navigator.of(builderContext).pop(),
           ),
         ),
-      );
-    }
+      ),
+    );
   }
 }
 
@@ -755,8 +755,8 @@ class _ShellContentSwitcher extends StatelessWidget {
               ),
               'configurator_clients' => const ClientsScreen(),
               'configurator_vendors' => const VendorsScreen(),
-              'configurator_items' => const ItemsScreen(initialTab: 0),
-              'configurator_groups' => const ItemsScreen(initialTab: 1),
+              'configurator_items' => ItemsScreen(initialTab: 0, onCreatePipeline: () => _handleCreatePipeline(outerContext)),
+              'configurator_groups' => ItemsScreen(initialTab: 1, onCreatePipeline: () => _handleCreatePipeline(outerContext)),
               'configurator_units' => const UnitsScreen(),
               'configurator_machines' => const MachinesScreen(initialTab: 0),
               'configurator_machine_groups' => const MachinesScreen(

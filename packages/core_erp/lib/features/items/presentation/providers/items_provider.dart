@@ -140,6 +140,14 @@ class ItemsProvider extends ChangeNotifier {
     }
   }
 
+  Future<List<Map<String, String>>> fetchPipelineTemplates() async {
+    try {
+      return await _repository.getPipelineTemplates();
+    } catch (e) {
+      return [];
+    }
+  }
+
   void setSearchQuery(String value) {
     _searchQuery = value;
     notifyListeners();
