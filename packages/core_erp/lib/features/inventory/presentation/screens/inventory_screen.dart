@@ -694,7 +694,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
       return null;
     }
 
-    final exactMatches = groupsProvider.groups
+    final exactMatches = groupsProvider.itemGroups
         .where(
           (group) =>
               group.name.trim().toLowerCase() == normalizedRecordName &&
@@ -7026,7 +7026,7 @@ class _LinkGroupSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final groups = context.watch<GroupsProvider>().activeGroups;
+    final groups = context.watch<GroupsProvider>().itemGroups.where((g) => !g.isArchived).toList(growable: false);
     final provider = context.watch<InventoryProvider>();
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -7251,7 +7251,7 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<InventoryProvider>();
-    final groups = context.watch<GroupsProvider>().activeGroups;
+    final groups = context.watch<GroupsProvider>().itemGroups.where((g) => !g.isArchived).toList(growable: false);
     final units = context.watch<UnitsProvider>().activeUnits;
     final items = context
         .watch<ItemsProvider>()
@@ -7874,7 +7874,7 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
 
     final selectedParentGroup = context
         .read<GroupsProvider>()
-        .activeGroups
+        .itemGroups
         .where((group) => group.id == _selectedParentGroupId)
         .firstOrNull;
     final items = context
@@ -8359,7 +8359,7 @@ class _InventoryCreateGroupEditorState
   @override
   Widget build(BuildContext context) {
     final inventory = context.watch<InventoryProvider>();
-    final groups = context.watch<GroupsProvider>().activeGroups;
+    final groups = context.watch<GroupsProvider>().itemGroups.where((g) => !g.isArchived).toList(growable: false);
     final items = context.watch<ItemsProvider>().items.toList(growable: false);
     final unitGroups =
         context
