@@ -1917,6 +1917,15 @@ class _ScrapItemDropdown extends StatelessWidget {
           ? 'No "Scrap" item group found in master data'
           : 'No items in the Scrap group yet',
       options: options,
+      canCreateOption: (query, allOptions) {
+        final normalized = query.trim().toLowerCase();
+        return normalized.isNotEmpty &&
+            scrapItems.every(
+              (item) => _itemName(item).trim().toLowerCase() != normalized,
+            );
+      },
+      onCreateOption: (query) => _createScrapItemOption(context, query, scrapGroupIds),
+      createOptionLabelBuilder: (query) => 'Create scrap "$query"',
       onChanged: (value) {
         ItemDefinition? selected;
         for (final item in items) {
@@ -1927,6 +1936,32 @@ class _ScrapItemDropdown extends StatelessWidget {
         }
         onChanged(selected);
       },
+    );
+  }
+
+  Future<SearchableSelectOption<int>?> _createScrapItemOption(
+    BuildContext context,
+    String query,
+    Set<int> scrapGroupIds,
+  ) async {
+    final created = await showDialog<ItemDefinition>(
+      context: context,
+      builder: (context) => _QuickItemCreateDialog(
+        initialName: query,
+        units: units,
+        defaultGroupId: scrapGroupIds.isNotEmpty ? scrapGroupIds.first : null,
+      ),
+    );
+    if (!context.mounted || created == null) {
+      return null;
+    }
+    try {
+      await context.read<ItemsProvider>().refresh();
+    } catch (_) {}
+    return SearchableSelectOption<int>(
+      value: created.id,
+      label: _materialOptionLabel(created, units),
+      searchText: _materialOptionSearchText(created, units),
     );
   }
 }
@@ -3004,6 +3039,8 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
   int? _outputItemId;
   int? _selectedMachineGroupId;
   Timer? _debounce;
+  late final TextEditingController _namingConventionController;
+  late final TextEditingController _customProcessCodeController;
 
   bool get _isInputNode {
     final processType = widget.node.processType.trim().toLowerCase();
@@ -3034,6 +3071,15 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
     });
   }
 
+  void _onNamingConventionChanged(String value) {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        widget.provider.updateTemplateDetails(intermediateNamingConvention: value);
+      }
+    });
+  }
+
   void _attachListeners(ProcessNodeDraftController draft) {
     draft.name.addListener(_onDraftChanged);
     draft.machine.addListener(_onDraftChanged);
@@ -3060,12 +3106,20 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
     _inputItemId = widget.node.inputItem?.itemId;
     _outputItemId = widget.node.outputItem?.itemId;
     _selectedMachineGroupId = widget.node.machineGroupId;
+    _namingConventionController = TextEditingController(
+      text: widget.provider.template.intermediateNamingConvention,
+    );
+    _customProcessCodeController = TextEditingController(
+      text: widget.node.outputItem?.itemName ?? '',
+    );
     _attachListeners(widget.draft);
   }
 
   @override
   void dispose() {
     _debounce?.cancel();
+    _namingConventionController.dispose();
+    _customProcessCodeController.dispose();
     _detachListeners(widget.draft);
     super.dispose();
   }
@@ -3081,6 +3135,12 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
       _inputItemId = widget.node.inputItem?.itemId;
       _outputItemId = widget.node.outputItem?.itemId;
       _selectedMachineGroupId = widget.node.machineGroupId;
+      _customProcessCodeController.text = widget.node.outputItem?.itemName ?? '';
+    }
+    if (oldWidget.provider.template.intermediateNamingConvention != widget.provider.template.intermediateNamingConvention) {
+      if (_namingConventionController.text != widget.provider.template.intermediateNamingConvention) {
+        _namingConventionController.text = widget.provider.template.intermediateNamingConvention;
+      }
     }
   }
 
@@ -3180,6 +3240,38 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
 
             if (!_isInputNode && !_isOutputNode) ...[
               const SizedBox(height: 12),
+              TextField(
+                controller: _customProcessCodeController,
+                decoration: const InputDecoration(
+                  labelText: 'Custom Process Code (Override)',
+                  hintText: 'e.g. MyCustomCode-1',
+                  helperText: 'Type here to override the generated process code for this specific stage.',
+                  helperMaxLines: 2,
+                ),
+                onChanged: (value) {
+                  if (_debounce?.isActive ?? false) _debounce!.cancel();
+                  _debounce = Timer(const Duration(milliseconds: 300), () {
+                    if (mounted) {
+                      final currentItem = widget.node.outputItem ?? _getInheritedOutput();
+                      if (currentItem != null) {
+                        widget.provider.updateNodeItems(
+                          nodeId: widget.node.id,
+                          outputItem: PipelineItemEndpoint(
+                            itemId: currentItem.itemId,
+                            itemName: value.trim().isEmpty ? 'P${widget.node.stageIndex + 1}' : value.trim(),
+                            unitId: currentItem.unitId,
+                            unitName: currentItem.unitName,
+                            unitSymbol: currentItem.unitSymbol,
+                          ),
+                          units: widget.units,
+                          propagate: true,
+                        );
+                      }
+                    }
+                  });
+                },
+              ),
+              const SizedBox(height: 12),
               _UnifiedMachineField(
                 selectedGroupId: _selectedMachineGroupId,
                 selectedMachineId: widget.node.machine.isEmpty
@@ -3250,6 +3342,21 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
                     ],
                   ),
                 ],
+              ),
+            ],
+            if (!_isInputNode && !_isOutputNode) ...[
+              const SizedBox(height: 12),
+              const Divider(),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _namingConventionController,
+                decoration: const InputDecoration(
+                  labelText: 'Component Process code formula',
+                  hintText: 'e.g., P{stage} for stage 1 -> P1',
+                  helperText: 'Available: {stage}, {stageName}, {processType}, {originalItemName}',
+                  helperMaxLines: 2,
+                ),
+                onChanged: _onNamingConventionChanged,
               ),
             ],
           ],
@@ -3867,13 +3974,14 @@ class _QuickAddPanel extends StatefulWidget {
 class _QuickAddPanelState extends State<_QuickAddPanel> {
   final List<String> _batchProcesses = [];
   final List<String> _availableProcesses = [
-    'Cut',
-    'Bend',
-    'Weld',
-    'Drill',
-    'Paint',
-    'Assemble',
-    'Pack',
+    'Slating',
+    'Prograsive',
+    'Cutting',
+    'Embossing',
+    'Tapping',
+    'Riveting',
+    'Plating',
+    'Packing',
   ];
 
   @override
@@ -4066,10 +4174,12 @@ class _QuickItemCreateDialog extends StatefulWidget {
   const _QuickItemCreateDialog({
     required this.initialName,
     required this.units,
+    this.defaultGroupId,
   });
 
   final String initialName;
   final List<UnitDefinition> units;
+  final int? defaultGroupId;
 
   @override
   State<_QuickItemCreateDialog> createState() => _QuickItemCreateDialogState();
@@ -4104,12 +4214,16 @@ class _QuickItemCreateDialogState extends State<_QuickItemCreateDialog> {
     try {
       final itemsProvider = context.read<ItemsProvider>();
       int groupId = 0;
-      try {
-        final groups = context.read<GroupsProvider>().groups;
-        if (groups.isNotEmpty) {
-          groupId = groups.first.id;
-        }
-      } catch (_) {}
+      if (widget.defaultGroupId != null) {
+        groupId = widget.defaultGroupId!;
+      } else {
+        try {
+          final groups = context.read<GroupsProvider>().groups;
+          if (groups.isNotEmpty) {
+            groupId = groups.first.id;
+          }
+        } catch (_) {}
+      }
 
       final input = CreateItemInput(
         name: name,

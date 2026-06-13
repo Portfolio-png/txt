@@ -6572,6 +6572,27 @@ class _OrderUnitConversionDialogState
                     fontWeight: FontWeight.w500,
                   ),
                 ),
+                if (widget.primaryUnit?.symbol == '-') ...[
+                  const SizedBox(height: 14),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF2F2),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFFECACA)),
+                    ),
+                    child: Text(
+                      'Warning: You are mapping a conversion to the system default Primary Unit (-). '
+                      'The Primary Unit serves as an unquantified baseline placeholder. '
+                      'Establishing fixed conversion ratios against it can severely impact inventory valuation, yield reporting, and downstream production accounting.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: const Color(0xFFB91C1C),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 18),
                 SearchableSelectField<int>(
                   key: const ValueKey<String>(

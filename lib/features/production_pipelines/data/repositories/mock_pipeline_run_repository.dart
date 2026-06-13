@@ -71,7 +71,17 @@ class MockPipelineRunRepository implements PipelineRunRepository {
   }
 
   @override
-  Future<PipelineRun> createRun(String templateId, {String? name, String? orderNo, int? orderItemId}) async {
+  Future<void> deleteTemplate(String id) async {
+    _ensureSeeded();
+    final index = _templates!.indexWhere((item) => item.id == id);
+    if (index == -1) {
+      throw const PipelineApiException('Template not found.');
+    }
+    _templates!.removeAt(index);
+  }
+
+  @override
+  Future<PipelineRun> createRun(String templateId, {String? name, String? orderNo, int? orderItemId, String? scrapRouting}) async {
     _ensureSeeded();
     final template = _templates!
         .where((item) => item.id == templateId)
@@ -356,6 +366,37 @@ class MockPipelineRunRepository implements PipelineRunRepository {
     );
     _runs[index] = updatedRun;
     return updatedRun;
+  }
+
+  @override
+  Future<PipelineRun> updateNodeMetrics({
+    required String runId,
+    required String nodeId,
+    required Map<String, dynamic> metrics,
+  }) async {
+    _ensureSeeded();
+    final index = _runs.indexWhere((run) => run.id == runId);
+    if (index == -1) {
+      throw const PipelineApiException('Run not found.');
+    }
+    // Mock implementation doesn't strictly update metrics here since PipelineRun may not have a metrics field readily mutable in the mock without more domain logic, but we return the run to satisfy the signature.
+    return _runs[index];
+  }
+
+  @override
+  Future<void> logProductionScrap({
+    required String runId,
+    required String nodeId,
+    required String materialBarcode,
+    required double scrapQty,
+    String? orderNo,
+  }) async {
+    _ensureSeeded();
+    final index = _runs.indexWhere((run) => run.id == runId);
+    if (index == -1) {
+      throw const PipelineApiException('Run not found.');
+    }
+    // Mock implementation: just simulate a successful log.
   }
 }
 

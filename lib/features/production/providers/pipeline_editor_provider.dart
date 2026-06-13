@@ -9,6 +9,12 @@ import '../../production_pipelines/domain/pipeline_template.dart';
 import '../../production_pipelines/domain/pipeline_unit_validation_engine.dart';
 import '../../production_pipelines/domain/process_node.dart';
 
+int _globalIdCounter = 0;
+int _nextUniqueId() {
+  _globalIdCounter++;
+  return DateTime.now().microsecondsSinceEpoch + _globalIdCounter;
+}
+
 class ProcessNodeDraftController {
   ProcessNodeDraftController(ProcessNode node)
     : name = TextEditingController(text: node.name),
@@ -77,7 +83,7 @@ class PipelineEditorProvider extends ChangeNotifier {
       }
     } else {
       _template = PipelineTemplate(
-        id: 'tpl-${DateTime.now().microsecondsSinceEpoch}',
+        id: 'tpl-${_nextUniqueId()}',
         factoryId: defaultProductionFactoryId,
         shopFloorId: defaultProductionShopFloorId,
         name: 'New Pipeline',
@@ -166,7 +172,7 @@ class PipelineEditorProvider extends ChangeNotifier {
   }) {
     loadTemplate(
       PipelineTemplate(
-        id: 'tpl-${DateTime.now().microsecondsSinceEpoch}',
+        id: 'tpl-${_nextUniqueId()}',
         factoryId: factoryId,
         shopFloorId: shopFloorId,
         name: 'New Pipeline',
@@ -184,6 +190,7 @@ class PipelineEditorProvider extends ChangeNotifier {
     String? description,
     String? inputMaterial,
     String? outputMaterial,
+    String? intermediateNamingConvention,
   }) {
     _pushHistory();
     _template = _template.copyWith(
@@ -197,6 +204,9 @@ class PipelineEditorProvider extends ChangeNotifier {
       outputMaterial: outputMaterial == null
           ? _template.outputMaterial
           : outputMaterial.trim(),
+      intermediateNamingConvention: intermediateNamingConvention == null
+          ? _template.intermediateNamingConvention
+          : intermediateNamingConvention.trim(),
     );
     notifyListeners();
   }
@@ -262,11 +272,15 @@ class PipelineEditorProvider extends ChangeNotifier {
           ? _template.stageLabels[updatedToNode.stageIndex]
           : 'Stage ${updatedToNode.stageIndex + 1}';
 
-      final defaultOutputName =
-          '${stageName}_${updatedToNode.processType}_$originalItemName';
+      final defaultOutputName = _generateIntermediateName(
+        stageName: stageName,
+        stageIndex: updatedToNode.stageIndex,
+        processType: updatedToNode.processType,
+        originalItemName: originalItemName,
+      );
 
       final outputItem = PipelineItemEndpoint(
-        itemId: DateTime.now().microsecondsSinceEpoch,
+        itemId: _nextUniqueId(),
         itemName: defaultOutputName,
         unitId: fromNode.outputItem?.unitId ?? 0,
         unitName: fromNode.outputItem?.unitName ?? 'Pieces',
@@ -427,9 +441,14 @@ class PipelineEditorProvider extends ChangeNotifier {
     final originalItemName = _getOriginalItemName(source.id);
     final stageName = _stageLabelForNode(node);
 
-    final intermediateName = '${stageName}_${processType}_$originalItemName';
+    final intermediateName = _generateIntermediateName(
+      stageName: stageName,
+      stageIndex: node.stageIndex,
+      processType: processType,
+      originalItemName: originalItemName,
+    );
     final intermediateItem = PipelineItemEndpoint(
-      itemId: DateTime.now().microsecondsSinceEpoch,
+      itemId: _nextUniqueId(),
       itemName: intermediateName,
       unitId: source.outputItem?.unitId ?? 0,
       unitName: source.outputItem?.unitName ?? 'Pieces',
@@ -594,15 +613,13 @@ class PipelineEditorProvider extends ChangeNotifier {
       final stageIndex = insertStageIndex + i;
       final isLast = i == processTypes.length - 1 && !insertBeforeOutput;
 
-      final nextNumber = newNodes.length + 1;
-
       String outputName;
       PipelineItemEndpoint? outputEndpoint;
 
       if (isLast) {
         outputName = 'Final Product';
         outputEndpoint = PipelineItemEndpoint(
-          itemId: DateTime.now().microsecondsSinceEpoch + i,
+          itemId: _nextUniqueId() + i,
           itemName: outputName,
           unitId: currentInputEndpoint?.unitId ?? 0,
           unitName: currentInputEndpoint?.unitName ?? 'Pieces',
@@ -619,16 +636,23 @@ class PipelineEditorProvider extends ChangeNotifier {
         outputEndpoint =
             outputNode.outputItem ??
             PipelineItemEndpoint(
-              itemId: DateTime.now().microsecondsSinceEpoch + i,
+              itemId: _nextUniqueId() + i,
               itemName: outputName,
               unitId: currentInputEndpoint?.unitId ?? 0,
               unitName: currentInputEndpoint?.unitName ?? 'Pieces',
               unitSymbol: currentInputEndpoint?.unitSymbol ?? 'Pcs',
             );
       } else {
-        outputName = '${processType}_Output_$nextNumber';
+        final stgName = _stageLabelsFor(stageIndex)[stageIndex];
+        
+        outputName = _generateIntermediateName(
+          stageName: stgName,
+          stageIndex: stageIndex,
+          processType: processType,
+          originalItemName: currentInputEndpoint?.itemName ?? 'Material',
+        );
         outputEndpoint = PipelineItemEndpoint(
-          itemId: DateTime.now().microsecondsSinceEpoch + i,
+          itemId: _nextUniqueId() + i,
           itemName: outputName,
           unitId: currentInputEndpoint?.unitId ?? 0,
           unitName: currentInputEndpoint?.unitName ?? 'Pieces',
@@ -730,7 +754,7 @@ class PipelineEditorProvider extends ChangeNotifier {
     _pushHistory();
 
     final endpoint = PipelineItemEndpoint(
-      itemId: DateTime.now().microsecondsSinceEpoch,
+      itemId: _nextUniqueId(),
       itemName: materialName,
       unitId: 0,
       unitName: 'Pieces',
@@ -780,7 +804,7 @@ class PipelineEditorProvider extends ChangeNotifier {
   }) {
     final nextNumber = _template.nodes.length + 1;
     return ProcessNode(
-      id: 'node-${DateTime.now().microsecondsSinceEpoch}',
+      id: 'node-${_nextUniqueId()}',
       name: name ?? 'Stage $nextNumber',
       processType: processType,
       stageIndex: stageIndex,
@@ -844,7 +868,7 @@ class PipelineEditorProvider extends ChangeNotifier {
     if (source == null) return;
 
     final node = source.copyWith(
-      id: 'node-${DateTime.now().microsecondsSinceEpoch}',
+      id: 'node-${_nextUniqueId()}',
       name: '${source.name} Copy',
       stageIndex: source.stageIndex + 1,
     );
@@ -909,7 +933,7 @@ class PipelineEditorProvider extends ChangeNotifier {
       final inFlow = incoming.first;
       final outFlow = outgoing.first;
       final healedFlow = MaterialFlow(
-        id: 'flow-${DateTime.now().microsecondsSinceEpoch}',
+        id: 'flow-${_nextUniqueId()}',
         fromNodeId: inFlow.fromNodeId,
         toNodeId: outFlow.toNodeId,
         materialName: inFlow.materialName.isNotEmpty
@@ -1106,26 +1130,9 @@ class PipelineEditorProvider extends ChangeNotifier {
 
         final newInputItem = currentNode.outputItem;
 
-        final stageName = _template.stageLabels.length > toNode.stageIndex
-            ? _template.stageLabels[toNode.stageIndex]
-            : 'Stage ${toNode.stageIndex + 1}';
-
-        final defaultOutputName =
-            '${stageName}_${toNode.processType}_$originalItemName';
-
-        final newOutputItem = PipelineItemEndpoint(
-          itemId: DateTime.now().microsecondsSinceEpoch + toIndex,
-          itemName: defaultOutputName,
-          unitId: newInputItem?.unitId ?? 0,
-          unitName: newInputItem?.unitName ?? 'Pieces',
-          unitSymbol: newInputItem?.unitSymbol ?? 'Pcs',
-        );
-
         updatedNodes[toIndex] = toNode.copyWith(
           inputItem: newInputItem,
-          outputItem: newOutputItem,
           inputs: [newInputItem?.itemName ?? 'Material'],
-          outputs: [defaultOutputName],
         );
 
         queue.add(flow.toNodeId);
@@ -1315,11 +1322,11 @@ class PipelineEditorProvider extends ChangeNotifier {
   }
 
   String _newNodeId({String prefix = 'node'}) {
-    return '$prefix-${DateTime.now().microsecondsSinceEpoch}';
+    return '$prefix-${_nextUniqueId()}';
   }
 
   String _newFlowId({int offset = 0}) {
-    return 'flow-${DateTime.now().microsecondsSinceEpoch + offset}';
+    return 'flow-${_nextUniqueId() + offset}';
   }
 
   @override
@@ -1328,6 +1335,22 @@ class PipelineEditorProvider extends ChangeNotifier {
       draft.dispose();
     }
     super.dispose();
+  }
+
+  String _generateIntermediateName({
+    required String stageName,
+    required int stageIndex,
+    required String processType,
+    required String originalItemName,
+  }) {
+    final convention = _template.intermediateNamingConvention.trim();
+    final activeConvention = convention.isEmpty ? 'P{stage}' : convention;
+    
+    return activeConvention
+        .replaceAll('{stage}', (stageIndex + 1).toString())
+        .replaceAll('{stageName}', stageName)
+        .replaceAll('{processType}', processType)
+        .replaceAll('{originalItemName}', originalItemName);
   }
 }
 

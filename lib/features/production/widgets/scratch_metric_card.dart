@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 class _MetricCard extends StatefulWidget {
   final String label;
   final double value;

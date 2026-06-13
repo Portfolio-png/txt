@@ -1610,6 +1610,18 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               ],
             ],
           ],
+          if (_secondaryUnitConversions.isNotEmpty && primaryUnitSymbol == '-') ...[
+            const SizedBox(height: 12),
+            Text(
+              'Warning: You are mapping a conversion to the system default Primary Unit (-). '
+              'The Primary Unit serves as an unquantified baseline placeholder. '
+              'Establishing fixed conversion ratios against it can severely impact inventory valuation, yield reporting, and downstream production accounting.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: const Color(0xFFB45309),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           _WarningText(warning: duplicate.warning),
         ],

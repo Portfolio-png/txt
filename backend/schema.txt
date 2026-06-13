@@ -28,7 +28,7 @@ CREATE TABLE pipeline_templates (
       flows_json TEXT NOT NULL,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
-    , factory_id TEXT DEFAULT '', shop_floor_id TEXT DEFAULT '');
+    , factory_id TEXT DEFAULT '', shop_floor_id TEXT DEFAULT '', intermediate_naming_convention TEXT DEFAULT '');
 CREATE TABLE pipeline_runs (
       id TEXT PRIMARY KEY,
       template_id TEXT NOT NULL REFERENCES pipeline_templates(id),

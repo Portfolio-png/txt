@@ -1695,6 +1695,7 @@ function rowToTemplate(row) {
     laneLabels: parseJson(row.lane_labels_json, []),
     nodes: parseJson(row.nodes_json, []),
     flows: parseJson(row.flows_json, []),
+    intermediateNamingConvention: row.intermediate_naming_convention || '',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -3472,6 +3473,7 @@ async function initDb() {
 
   await ensureColumnExists('pipeline_templates', 'factory_id', "TEXT DEFAULT ''");
   await ensureColumnExists('pipeline_templates', 'shop_floor_id', "TEXT DEFAULT ''");
+  await ensureColumnExists('pipeline_templates', 'intermediate_naming_convention', "TEXT DEFAULT ''");
 
   await run(`
     CREATE TABLE IF NOT EXISTS pipeline_runs (
@@ -3693,6 +3695,14 @@ async function ensurePrimaryGroupAndUnit() {
   let group = await get('SELECT id FROM groups WHERE name = "Primary Group" AND parent_group_id IS NULL');
   if (!group) {
     await run("INSERT INTO groups (name, parent_group_id, unit_id, created_at, updated_at) VALUES ('Primary Group', NULL, ?, datetime('now'), datetime('now'))", [unit.id]);
+  }
+  let rawMaterials = await get('SELECT id FROM groups WHERE name = "Raw Materials" AND parent_group_id IS NULL');
+  if (!rawMaterials) {
+    await run("INSERT INTO groups (name, parent_group_id, unit_id, created_at, updated_at) VALUES ('Raw Materials', NULL, ?, datetime('now'), datetime('now'))", [unit.id]);
+  }
+  let scrapGroup = await get('SELECT id FROM groups WHERE name = "Scrap" AND parent_group_id IS NULL');
+  if (!scrapGroup) {
+    await run("INSERT INTO groups (name, parent_group_id, unit_id, created_at, updated_at) VALUES ('Scrap', NULL, ?, datetime('now'), datetime('now'))", [unit.id]);
   }
 }
 
@@ -4258,8 +4268,8 @@ async function seedTemplatesIfEmpty() {
       INSERT INTO pipeline_templates (
         id, factory_id, shop_floor_id, name, description, version, status,
         stage_labels_json, lane_labels_json, nodes_json, flows_json,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        intermediate_naming_convention, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         template.id,
@@ -4273,6 +4283,7 @@ async function seedTemplatesIfEmpty() {
         JSON.stringify(template.laneLabels),
         JSON.stringify(template.nodes),
         JSON.stringify(template.flows),
+        template.intermediateNamingConvention || '',
         now,
         now,
       ],
@@ -11356,6 +11367,11 @@ async function ensureDemoGroupsPresent() {
   });
 
   await ensureGroupRecord({
+    name: 'Scrap',
+    unitId: kilogramUnit.id,
+  });
+
+  await ensureGroupRecord({
     name: 'Legacy Group',
     unitId: kilogramUnit.id,
     isArchived: true,
@@ -17110,8 +17126,8 @@ app.post('/api/production/pipeline-templates', requirePermission('config.write')
       `
       INSERT INTO pipeline_templates (
         id, factory_id, shop_floor_id, name, description, version, status,
-        stage_labels_json, lane_labels_json, nodes_json, flows_json, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        stage_labels_json, lane_labels_json, nodes_json, flows_json, intermediate_naming_convention, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         data.id,
@@ -17125,6 +17141,7 @@ app.post('/api/production/pipeline-templates', requirePermission('config.write')
         JSON.stringify(data.laneLabels || []),
         JSON.stringify(data.nodes || []),
         JSON.stringify(data.flows || []),
+        data.intermediateNamingConvention || '',
         now,
         now
       ]
@@ -17152,7 +17169,7 @@ app.put('/api/production/pipeline-templates/:id', requirePermission('config.writ
       `
       UPDATE pipeline_templates
       SET factory_id = ?, shop_floor_id = ?, name = ?, description = ?, version = ?, status = ?,
-          stage_labels_json = ?, lane_labels_json = ?, nodes_json = ?, flows_json = ?, updated_at = ?
+          stage_labels_json = ?, lane_labels_json = ?, nodes_json = ?, flows_json = ?, intermediate_naming_convention = ?, updated_at = ?
       WHERE id = ?
       `,
       [
@@ -17166,6 +17183,7 @@ app.put('/api/production/pipeline-templates/:id', requirePermission('config.writ
         data.laneLabels ? JSON.stringify(data.laneLabels) : existing.lane_labels_json,
         data.nodes ? JSON.stringify(data.nodes) : existing.nodes_json,
         data.flows ? JSON.stringify(data.flows) : existing.flows_json,
+        data.intermediateNamingConvention ?? existing.intermediate_naming_convention,
         now,
         id
       ]
@@ -18814,8 +18832,8 @@ app.post('/templates', async (req, res) => {
       `
       INSERT INTO pipeline_templates (
         id, factory_id, shop_floor_id, name, description, version, status, stage_labels_json, lane_labels_json,
-        nodes_json, flows_json, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        nodes_json, flows_json, intermediate_naming_convention, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         payload.id,
@@ -18829,6 +18847,7 @@ app.post('/templates', async (req, res) => {
         JSON.stringify(payload.laneLabels || []),
         JSON.stringify(payload.nodes || []),
         JSON.stringify(payload.flows || []),
+        payload.intermediateNamingConvention || payload.intermediate_naming_convention || '',
         now,
         now,
       ],
@@ -18859,8 +18878,8 @@ app.put('/templates/:id', async (req, res) => {
     await run(
       `
       UPDATE pipeline_templates
-      SET factory_id = ?, shop_floor_id = ?, name = ?, description = ?, version = ?, status = ?, stage_labels_json = ?,
-          lane_labels_json = ?, nodes_json = ?, flows_json = ?, updated_at = ?
+      SET factory_id = ?, shop_floor_id = ?, name = ?, description = ?, version = ?, status = ?,
+          stage_labels_json = ?, lane_labels_json = ?, nodes_json = ?, flows_json = ?, intermediate_naming_convention = ?, updated_at = ?
       WHERE id = ?
       `,
       [
@@ -18874,6 +18893,7 @@ app.put('/templates/:id', async (req, res) => {
         JSON.stringify(payload.laneLabels || parseJson(existing.lane_labels_json, [])),
         JSON.stringify(payload.nodes || parseJson(existing.nodes_json, [])),
         JSON.stringify(payload.flows || parseJson(existing.flows_json, [])),
+        payload.intermediateNamingConvention ?? payload.intermediate_naming_convention ?? existing.intermediate_naming_convention ?? '',
         now,
         req.params.id,
       ],

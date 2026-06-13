@@ -6,6 +6,12 @@ import '../../production_pipelines/domain/pipeline_template.dart';
 import '../../production_pipelines/domain/process_node.dart';
 import '../../production_pipelines/domain/material_flow.dart';
 
+int _globalProdIdCounter = 0;
+int _nextUniqueProdId() {
+  _globalProdIdCounter++;
+  return DateTime.now().microsecondsSinceEpoch + _globalProdIdCounter;
+}
+
 enum ProductionRunPhase {
   idle,
   verifyingSetup,
@@ -327,7 +333,7 @@ class ProductionProvider extends ChangeNotifier {
 
     _template = stampedTemplate;
     _workingTemplate = stampedTemplate.copyWith(
-      id: 'run-${DateTime.now().microsecondsSinceEpoch}',
+      id: 'run-${_nextUniqueProdId()}',
       name: '${stampedTemplate.name} (Active Run)',
       status: PipelineTemplateStatus.draft,
     );
@@ -501,7 +507,7 @@ class ProductionProvider extends ChangeNotifier {
     // Add parallel nodes in the next stage
     final nextStageIndex = sourceNode.stageIndex + 1;
     for (int i = 0; i < numBranches; i++) {
-      final newId = 'node-branch-${DateTime.now().microsecondsSinceEpoch}-$i';
+      final newId = 'node-branch-${_nextUniqueProdId()}-$i';
       nodes.add(
         ProcessNode(
           id: newId,
@@ -569,7 +575,7 @@ class ProductionProvider extends ChangeNotifier {
     }
     if (_activeRun == null) {
       _activeRun = ActiveProductionRun(
-        id: 'run-${DateTime.now().microsecondsSinceEpoch}',
+        id: 'run-${_nextUniqueProdId()}',
         templateId: template.id,
         phase: ProductionRunPhase.running,
         logs: [],

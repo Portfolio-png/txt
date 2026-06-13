@@ -16,6 +16,7 @@ class PipelineTemplate {
     required this.flows,
     this.inputMaterial = '',
     this.outputMaterial = '',
+    this.intermediateNamingConvention = '',
     this.status = PipelineTemplateStatus.draft,
     this.linkedOrderId,
     this.linkedOrderNo,
@@ -33,6 +34,7 @@ class PipelineTemplate {
   final List<MaterialFlow> flows;
   final String inputMaterial;
   final String outputMaterial;
+  final String intermediateNamingConvention;
   final PipelineTemplateStatus status;
   final int? linkedOrderId;
   final String? linkedOrderNo;
@@ -62,6 +64,7 @@ class PipelineTemplate {
           .toList(growable: false),
       inputMaterial: json['inputMaterial'] as String? ?? '',
       outputMaterial: json['outputMaterial'] as String? ?? '',
+      intermediateNamingConvention: json['intermediateNamingConvention'] as String? ?? json['intermediate_naming_convention'] as String? ?? '',
       status: PipelineTemplateStatus.values.firstWhere(
         (e) => e.name == json['status'],
         orElse: () => PipelineTemplateStatus.draft,
@@ -84,6 +87,7 @@ class PipelineTemplate {
     List<MaterialFlow>? flows,
     String? inputMaterial,
     String? outputMaterial,
+    String? intermediateNamingConvention,
     PipelineTemplateStatus? status,
     int? linkedOrderId,
     String? linkedOrderNo,
@@ -101,6 +105,7 @@ class PipelineTemplate {
       flows: flows ?? this.flows,
       inputMaterial: inputMaterial ?? this.inputMaterial,
       outputMaterial: outputMaterial ?? this.outputMaterial,
+      intermediateNamingConvention: intermediateNamingConvention ?? this.intermediateNamingConvention,
       status: status ?? this.status,
       linkedOrderId: linkedOrderId ?? this.linkedOrderId,
       linkedOrderNo: linkedOrderNo ?? this.linkedOrderNo,
@@ -121,6 +126,7 @@ class PipelineTemplate {
       'flows': flows.map((flow) => flow.toJson()).toList(),
       'inputMaterial': inputMaterial,
       'outputMaterial': outputMaterial,
+      'intermediateNamingConvention': intermediateNamingConvention,
       'status': status.name,
       'linkedOrderId': linkedOrderId,
       'linkedOrderNo': linkedOrderNo,

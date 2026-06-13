@@ -4,6 +4,12 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../data/datasources/offline_database_helper.dart';
 
+int _globalRunIdCounter = 0;
+int _nextUniqueRunId() {
+  _globalRunIdCounter++;
+  return DateTime.now().microsecondsSinceEpoch + _globalRunIdCounter;
+}
+
 enum ProductionState { idle, setup, running, paused, completed }
 
 typedef ProductionNow = DateTime Function();
