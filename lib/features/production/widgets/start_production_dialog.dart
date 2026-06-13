@@ -16,7 +16,7 @@ Future<bool> showStartProductionDialog(BuildContext context, OrderGroup orderGro
   
   final templates = await repo.getTemplates();
   final existingRuns = await repo.getRunsForOrder(orderGroup.orderNo);
-  if (!context.mounted) return;
+  if (!context.mounted) return false;
   Navigator.of(context).pop(); // remove loading
   
   final assignedItemIds = existingRuns.map((r) => r.orderItemId).whereType<int>().toSet();
