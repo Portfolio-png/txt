@@ -48,6 +48,7 @@ import 'features/dies/presentation/providers/die_provider.dart';
 import 'features/machines/presentation/providers/telemetry_provider.dart';
 import 'features/production/providers/production_provider.dart';
 import 'features/production/providers/production_run_provider.dart';
+import 'features/production/providers/batch_flow_provider.dart';
 import 'features/production_pipelines/domain/node_run_status.dart';
 
 
@@ -394,6 +395,7 @@ class MyApp extends StatelessWidget {
         ),
         ChangeNotifierProvider(create: (_) => TelemetryProvider()),
         ChangeNotifierProvider(create: (_) => ProductionProvider.seeded()),
+        ChangeNotifierProvider(create: (_) => BatchFlowProvider()),
         ChangeNotifierProxyProvider<PipelineRunRepository, ProductionRunProvider>(
           create: (context) => ProductionRunProvider(),
           update: (context, repo, previous) {

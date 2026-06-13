@@ -3,14 +3,18 @@ import 'package:provider/provider.dart';
 import 'package:core_erp/features/inventory/domain/material_record.dart';
 import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
 import '../providers/production_run_provider.dart';
+import '../providers/batch_flow_provider.dart';
 import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
 import '../../production_pipelines/domain/pipeline_template.dart';
 import '../../production_pipelines/domain/pipeline_run.dart';
 import '../../production_pipelines/domain/barcode_input.dart';
+import '../../production_pipelines/domain/material_batch.dart';
 import '../../production_pipelines/domain/process_node.dart';
 import '../../production_pipelines/domain/node_run_status.dart';
 import 'graph_edges_painter.dart';
 import 'flow_stage_block.dart';
+import 'batch_chip.dart';
+import 'node_batch_tray.dart';
 import '../domain/utils/stage_input_resolver.dart';
 
 class PipelineCanvas extends StatefulWidget {
@@ -258,9 +262,58 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
     );
   }
 
+  /// Seeds the run's batch chips once from its assigned stock so the gamified
+  /// token view has something to move. No-op if already seeded.
+  void _seedBatchesIfNeeded(PipelineRun run, BatchFlowProvider batchProvider) {
+    if (batchProvider.isSeeded(run.id)) return;
+    final initial = <MaterialBatch>[];
+    run.attachedBarcodeInputs.forEach((nodeId, inputs) {
+      for (final input in inputs) {
+        final qty = input.quantity ?? 0;
+        if (qty <= 0) continue;
+        initial.add(
+          MaterialBatch(
+            id: 'seed-${run.id}-$nodeId-${input.barcode}-${initial.length}',
+            barcode: input.barcode,
+            materialName: input.materialName,
+            quantity: qty,
+            unit: input.unit,
+            currentNodeId: nodeId,
+            createdAt: DateTime.now(),
+          ),
+        );
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) batchProvider.seedRun(run.id, initial);
+    });
+  }
+
+  Future<void> _handleBatchDrop(
+    ProcessNode node,
+    MaterialBatch batch,
+    BatchFlowProvider batchProvider,
+    String runId,
+  ) async {
+    if (batch.currentNodeId == node.id) return;
+    final qty = await BatchSplitDialog.show(
+      context,
+      batch: batch,
+      targetNodeName: node.name.isEmpty ? 'station' : node.name,
+    );
+    if (qty == null || !mounted) return;
+    batchProvider.moveBatch(
+      runId: runId,
+      batchId: batch.id,
+      toNodeId: node.id,
+      quantity: qty,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final runProvider = context.watch<ProductionRunProvider>();
+    final batchProvider = context.watch<BatchFlowProvider>();
     if (runProvider.refreshCount != _lastRefreshCount || runProvider.runId != _lastRunId) {
       _lastRefreshCount = runProvider.refreshCount;
       _lastRunId = runProvider.runId;
@@ -281,6 +334,9 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
       future: _runFuture,
       builder: (context, snapshot) {
         final activeRun = snapshot.data;
+        if (activeRun != null) {
+          _seedBatchesIfNeeded(activeRun, batchProvider);
+        }
         final activeStockNodeId = _findActiveStockNodeId(activeRun, widget.template);
 
         return DecoratedBox(
@@ -341,7 +397,12 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
                     final isSelected = widget.selectedNodeId == node.id;
                     final left = 100 + (node.stageIndex * columnWidth);
                     final top = 100 + (node.laneIndex * rowHeight);
-                    final showBarcodeCard = activeStockNodeId == node.id;
+                    final runId = runProvider.runId;
+                    final nodeBatches = runId != null
+                        ? batchProvider.batchesAtNode(runId, node.id)
+                        : const <MaterialBatch>[];
+                    final showBarcodeCard =
+                        activeStockNodeId == node.id && nodeBatches.isEmpty;
                     final assignedBarcodes = showBarcodeCard
                         ? effectiveStageInputs(
                             run: activeRun,
@@ -356,13 +417,33 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          DragTarget(
+                          DragTarget<Object>(
+                            onWillAcceptWithDetails: (details) =>
+                                details.data is MaterialRecord ||
+                                (details.data is MaterialBatch &&
+                                    (details.data as MaterialBatch)
+                                            .currentNodeId !=
+                                        node.id),
                             onAcceptWithDetails: (details) async {
+                              final runProvider =
+                                  context.read<ProductionRunProvider>();
+                              final runId = runProvider.runId;
+                              if (runId == null) return;
+
+                              // A batch chip dropped here advances stock.
+                              if (details.data is MaterialBatch) {
+                                await _handleBatchDrop(
+                                  node,
+                                  details.data as MaterialBatch,
+                                  batchProvider,
+                                  runId,
+                                );
+                                return;
+                              }
+
                               final material = details.data as MaterialRecord;
-                              final runProvider = context.read<ProductionRunProvider>();
                               final repo = context.read<PipelineRunRepository>();
-                              if (runProvider.runId != null) {
-                                final quantity = await showDialog<double>(
+                              final quantity = await showDialog<double>(
                                   context: context,
                                   builder: (context) => _StockAssignQtyDialog(
                                     material: material,
@@ -373,10 +454,18 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
 
                                 try {
                                   await repo.attachBarcodeToRunNode(
-                                    runId: runProvider.runId!,
+                                    runId: runId,
                                     nodeId: node.id,
                                     barcode: material.barcode,
                                     quantity: quantity,
+                                  );
+                                  batchProvider.addStockAtNode(
+                                    runId: runId,
+                                    nodeId: node.id,
+                                    barcode: material.barcode,
+                                    materialName: material.name,
+                                    quantity: quantity,
+                                    unit: material.unit,
                                   );
                                   runProvider.triggerRefresh();
                                   if (context.mounted) {
@@ -392,7 +481,6 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
                                     );
                                   }
                                 }
-                              }
                             },
                             builder: (context, candidateData, rejectedData) {
                               final isHovered = candidateData.isNotEmpty;
@@ -424,7 +512,13 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
                               );
                             },
                           ),
-                          if (assignedBarcodes != null && assignedBarcodes.isNotEmpty)
+                          if (nodeBatches.isNotEmpty)
+                            NodeBatchTray(
+                              batches: nodeBatches,
+                              width: nodeWidth,
+                            )
+                          else if (assignedBarcodes != null &&
+                              assignedBarcodes.isNotEmpty)
                             for (final input in assignedBarcodes) ...[
                               const SizedBox(height: 6),
                               _buildAssignedStockCard(node, input),
