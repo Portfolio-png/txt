@@ -93,20 +93,26 @@ class ApiMachineRepository implements MachineRepository {
   }
 
   @override
-  Future<void> saveMachine(Machine machine) async {
+  Future<Machine> saveMachine(Machine machine) async {
     if (useMockResponses) {
       await Future.delayed(const Duration(milliseconds: 300));
-      final index = _mockMachines.indexWhere((m) => m.id == machine.id);
-      if (index >= 0) {
-        _mockMachines[index] = machine.copyWith(updatedAt: DateTime.now());
+      final isNew = machine.id.isEmpty || machine.id.startsWith('temp_');
+      final newMachine = isNew
+          ? machine.copyWith(
+              id: DateTime.now().millisecondsSinceEpoch.toString(),
+              createdAt: DateTime.now(),
+              updatedAt: DateTime.now(),
+            )
+          : machine.copyWith(updatedAt: DateTime.now());
+      if (isNew) {
+        _mockMachines.insert(0, newMachine);
       } else {
-        _mockMachines.add(machine.copyWith(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          createdAt: DateTime.now(),
-          updatedAt: DateTime.now(),
-        ));
+        final index = _mockMachines.indexWhere((m) => m.id == machine.id);
+        if (index >= 0) {
+          _mockMachines[index] = newMachine;
+        }
       }
-      return;
+      return newMachine;
     }
 
     final uri = Uri.parse('$baseUrl/api/machines');
@@ -120,6 +126,8 @@ class ApiMachineRepository implements MachineRepository {
     if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] != true) {
       throw Exception(payload['error'] as String? ?? 'Failed to save machine');
     }
+    
+    return _machineFromJson(payload['machine'] as Map<String, dynamic>);
   }
 
   @override

@@ -757,7 +757,7 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
       }
     }
 
-    final id = widget.die?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
+    final id = widget.die?.id ?? '';
 
     final newDie = Die(
       id: id,
@@ -776,14 +776,24 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
       updatedAt: DateTime.now(),
     );
     
+    Die? savedDie;
     if (widget.die == null) {
-      await context.read<DiesProvider>().createDie(newDie);
+      savedDie = await context.read<DiesProvider>().createDie(newDie);
     } else {
-      await context.read<DiesProvider>().updateDie(newDie);
+      savedDie = await context.read<DiesProvider>().updateDie(newDie);
+    }
+    
+    if (savedDie == null && mounted) {
+      final error = context.read<DiesProvider>().errorMessage ?? 'Failed to save die';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(error),
+        backgroundColor: Colors.red,
+      ));
+      return;
     }
     
     if (mounted) {
-      Navigator.of(context).pop();
+      Navigator.of(context).pop(savedDie);
     }
   }
 }

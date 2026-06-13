@@ -16387,18 +16387,22 @@ app.post('/api/machines', requirePermission('config.write'), async (req, res) =>
   try {
     const { id, name, assetId, primaryPhotoUrl, groupId, makeModel, serialNumber, location, installationDate, status, customProperties } = req.body || {};
     const now = new Date().toISOString();
+    let finalAssetId = assetId;
+    if (!finalAssetId || finalAssetId.trim() === '') {
+      finalAssetId = `MACH-${Date.now()}`;
+    }
     let resultId = id;
     if (id && id.trim() !== '' && !id.startsWith('temp_') && isNaN(Number(id)) === false) {
       // Update
       await run(
         `UPDATE machines SET name = ?, asset_id = ?, primary_photo_url = ?, group_id = ?, make_model = ?, serial_number = ?, location = ?, installation_date = ?, status = ?, custom_properties = ?, updated_at = ? WHERE id = ?`,
-        [name, assetId, primaryPhotoUrl, groupId, makeModel, serialNumber, location, installationDate, status, JSON.stringify(customProperties || []), now, Number(id)]
+        [name, finalAssetId, primaryPhotoUrl, groupId, makeModel, serialNumber, location, installationDate, status, JSON.stringify(customProperties || []), now, Number(id)]
       );
     } else {
       // Create
       const info = await run(
         `INSERT INTO machines (name, asset_id, primary_photo_url, group_id, make_model, serial_number, location, installation_date, status, custom_properties, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [name, assetId, primaryPhotoUrl, groupId, makeModel, serialNumber, location, installationDate, status, JSON.stringify(customProperties || []), now, now]
+        [name, finalAssetId, primaryPhotoUrl, groupId, makeModel, serialNumber, location, installationDate, status, JSON.stringify(customProperties || []), now, now]
       );
       resultId = String(info.lastID);
     }
@@ -16537,18 +16541,22 @@ app.post('/api/dies', requirePermission('config.write'), async (req, res) => {
   try {
     const { id, toolCode, producedPartNumbers, photoUrls, operationalNotes, compatibleMachineGroupIds, storageLocation, numberOfCavities, strokeCount, maxStrokes, physicalSpecs, status, ownership } = req.body || {};
     const now = new Date().toISOString();
+    let finalToolCode = toolCode;
+    if (!finalToolCode || finalToolCode.trim() === '') {
+      finalToolCode = `DIE-${Date.now()}`;
+    }
     let resultId = id;
     if (id && id.trim() !== '' && !id.startsWith('temp_') && isNaN(Number(id)) === false) {
       // Update
       await run(
         `UPDATE dies SET tool_code = ?, produced_part_numbers = ?, photo_urls = ?, operational_notes = ?, compatible_machine_group_ids = ?, storage_location = ?, number_of_cavities = ?, stroke_count = ?, max_strokes = ?, physical_specs = ?, status = ?, ownership = ?, updated_at = ? WHERE id = ?`,
-        [toolCode, JSON.stringify(producedPartNumbers || []), JSON.stringify(photoUrls || []), operationalNotes, JSON.stringify(compatibleMachineGroupIds || []), storageLocation, numberOfCavities, strokeCount || 0, maxStrokes || 0, JSON.stringify(physicalSpecs || {}), status, ownership, now, Number(id)]
+        [finalToolCode, JSON.stringify(producedPartNumbers || []), JSON.stringify(photoUrls || []), operationalNotes, JSON.stringify(compatibleMachineGroupIds || []), storageLocation, numberOfCavities, strokeCount || 0, maxStrokes || 0, JSON.stringify(physicalSpecs || {}), status, ownership, now, Number(id)]
       );
     } else {
       // Create
       const info = await run(
         `INSERT INTO dies (tool_code, produced_part_numbers, photo_urls, operational_notes, compatible_machine_group_ids, storage_location, number_of_cavities, stroke_count, max_strokes, physical_specs, status, ownership, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [toolCode, JSON.stringify(producedPartNumbers || []), JSON.stringify(photoUrls || []), operationalNotes, JSON.stringify(compatibleMachineGroupIds || []), storageLocation, numberOfCavities, strokeCount || 0, maxStrokes || 0, JSON.stringify(physicalSpecs || {}), status, ownership, now, now]
+        [finalToolCode, JSON.stringify(producedPartNumbers || []), JSON.stringify(photoUrls || []), operationalNotes, JSON.stringify(compatibleMachineGroupIds || []), storageLocation, numberOfCavities, strokeCount || 0, maxStrokes || 0, JSON.stringify(physicalSpecs || {}), status, ownership, now, now]
       );
       resultId = String(info.lastID);
     }

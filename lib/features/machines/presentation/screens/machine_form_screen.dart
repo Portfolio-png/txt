@@ -1022,7 +1022,7 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
     // If we're creating a new machine, use the ID we might have generated during image upload
     // If _photoUrlController has text and we generated an ID, let's just use a timestamp if we didn't store it.
     // Wait, the id generation should be consistent.
-    final id = widget.machine?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
+    final id = widget.machine?.id ?? '';
     
     final newMachine = Machine(
       id: id,
@@ -1041,14 +1041,24 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
       updatedAt: DateTime.now(),
     );
     
+    Machine? savedMachine;
     if (widget.machine == null) {
-      await context.read<MachinesProvider>().createMachine(newMachine);
+      savedMachine = await context.read<MachinesProvider>().createMachine(newMachine);
     } else {
-      await context.read<MachinesProvider>().updateMachine(newMachine);
+      savedMachine = await context.read<MachinesProvider>().updateMachine(newMachine);
+    }
+    
+    if (savedMachine == null && mounted) {
+      final error = context.read<MachinesProvider>().errorMessage ?? 'Failed to save machine';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(error),
+        backgroundColor: Colors.red,
+      ));
+      return;
     }
     
     if (mounted) {
-      Navigator.of(context).pop(newMachine);
+      Navigator.of(context).pop(savedMachine);
     }
   }
 

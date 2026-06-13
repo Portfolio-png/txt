@@ -56,14 +56,26 @@ class MockMachineRepository implements MachineRepository {
   }
 
   @override
-  Future<void> saveMachine(Machine machine) async {
+  Future<Machine> saveMachine(Machine machine) async {
     await Future.delayed(const Duration(milliseconds: 500));
-    final index = _machines.indexWhere((m) => m.id == machine.id);
-    if (index >= 0) {
-      _machines[index] = machine.copyWith(updatedAt: DateTime.now());
+    final isNew = machine.id.isEmpty || machine.id.startsWith('temp_');
+    final newMachine = isNew
+        ? machine.copyWith(
+            id: DateTime.now().millisecondsSinceEpoch.toString(),
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+          )
+        : machine.copyWith(updatedAt: DateTime.now());
+    
+    if (isNew) {
+      _machines.add(newMachine);
     } else {
-      _machines.add(machine.copyWith(id: DateTime.now().millisecondsSinceEpoch.toString(), createdAt: DateTime.now(), updatedAt: DateTime.now()));
+      final index = _machines.indexWhere((m) => m.id == machine.id);
+      if (index >= 0) {
+        _machines[index] = newMachine;
+      }
     }
+    return newMachine;
   }
 
   @override

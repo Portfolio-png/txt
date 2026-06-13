@@ -84,9 +84,9 @@ class MachinesProvider extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
     try {
-      await _repository.saveMachine(machine);
+      final savedMachine = await _repository.saveMachine(machine);
       await refresh();
-      return machine;
+      return savedMachine;
     } catch (e) {
       _errorMessage = e.toString();
       notifyListeners();
@@ -102,9 +102,9 @@ class MachinesProvider extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
     try {
-      await _repository.saveMachine(machine);
+      final savedMachine = await _repository.saveMachine(machine);
       await refresh();
-      return machine;
+      return savedMachine;
     } catch (e) {
       _errorMessage = e.toString();
       notifyListeners();
