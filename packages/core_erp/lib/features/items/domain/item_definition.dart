@@ -99,6 +99,8 @@ class ItemDefinition {
     required this.createdAt,
     required this.updatedAt,
     required this.variationTree,
+    this.defaultPipelineId,
+    this.defaultPipelineName,
     this.photoUrl = '',
   });
 
@@ -117,6 +119,8 @@ class ItemDefinition {
   final DateTime createdAt;
   final DateTime updatedAt;
   final List<ItemVariationNodeDefinition> variationTree;
+  final String? defaultPipelineId;
+  final String? defaultPipelineName;
   final String photoUrl;
 
   bool get isUsed => usageCount > 0;

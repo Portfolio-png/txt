@@ -217,7 +217,9 @@ class _StructuredGroupEditorDialogState
     final provider = context.watch<InventoryProvider>();
     final groupsProvider = context.watch<GroupsProvider>();
     final itemsProvider = context.watch<ItemsProvider>();
-    final groups = groupsProvider.activeGroups;
+    final groups = groupsProvider.filteredGroupsByType(widget.groupType)
+        .where((g) => !g.isArchived)
+        .toList(growable: false);
     final units = context.watch<UnitsProvider>().activeUnits;
     final items = _activeItems();
     final saveError =
@@ -1022,7 +1024,8 @@ class _StructuredGroupEditorDialogState
       if (itemsProvider.errorMessage != null) {
         return;
       }
-      final matchingGroups = groupsProvider.activeGroups
+      final matchingGroups = groupsProvider.filteredGroupsByType(widget.groupType)
+          .where((g) => !g.isArchived)
           .where(
             (group) =>
                 group.name.trim().toLowerCase() ==

@@ -27,25 +27,33 @@ import 'package:file_selector/file_selector.dart';
 import 'package:crypto/crypto.dart';
 import 'package:mime/mime.dart';
 import 'package:http/http.dart' as http;
+import 'package:collection/collection.dart';
 import '../../../../core/services/generic_asset_service.dart';
 import '../../../../core/widgets/export_preview_dialog.dart';
 
 class ItemsScreen extends StatefulWidget {
-  const ItemsScreen({super.key, this.initialTab = 0});
+  const ItemsScreen({
+    super.key,
+    this.initialTab = 0,
+    this.onCreatePipeline,
+  });
 
   final int initialTab;
+  final VoidCallback? onCreatePipeline;
 
   static Future<ItemDefinition?> openEditor(
     BuildContext context, {
     ItemDefinition? item,
     String initialName = '',
     int? initialGroupId,
+    VoidCallback? onCreatePipeline,
   }) {
     final isNarrow = MediaQuery.of(context).size.width < 980;
     final body = _ItemEditorSheet(
       item: item,
       initialName: initialName,
       initialGroupId: initialGroupId,
+      onCreatePipeline: onCreatePipeline,
     );
     if (isNarrow) {
       return showModalBottomSheet<ItemDefinition?>(
@@ -137,7 +145,10 @@ class _ItemsScreenState extends State<ItemsScreen> {
               label: 'Add Item',
               icon: Icons.add,
               isLoading: items.isSaving,
-              onPressed: () => ItemsScreen.openEditor(context),
+              onPressed: () => ItemsScreen.openEditor(
+                context,
+                onCreatePipeline: widget.onCreatePipeline,
+              ),
             ),
             toolbar: _ItemsToolbar(
               isGridView: _isGridView,
@@ -178,8 +189,12 @@ class _ItemsScreenState extends State<ItemsScreen> {
                     items: items.filteredItems,
                     cardWidth: _cardWidth,
                     cardHeight: _cardHeight,
+                    onCreatePipeline: widget.onCreatePipeline,
                   )
-                : _ItemsTable(items: items.filteredItems),
+                : _ItemsTable(
+                    items: items.filteredItems,
+                    onCreatePipeline: widget.onCreatePipeline,
+                  ),
           ),
         );
       },
@@ -420,9 +435,10 @@ class _ItemsViewToggleButton extends StatelessWidget {
 }
 
 class _ItemsTable extends StatelessWidget {
-  const _ItemsTable({required this.items});
+  const _ItemsTable({required this.items, this.onCreatePipeline});
 
   final List<ItemDefinition> items;
+  final VoidCallback? onCreatePipeline;
 
   @override
   Widget build(BuildContext context) {
@@ -437,7 +453,10 @@ class _ItemsTable extends StatelessWidget {
         SoftTableColumn('Actions', flex: 2),
       ],
       itemCount: items.length,
-      rowBuilder: (context, index) => _ItemRow(item: items[index]),
+      rowBuilder: (context, index) => _ItemRow(
+        item: items[index],
+        onCreatePipeline: onCreatePipeline,
+      ),
     );
   }
 }
@@ -447,11 +466,13 @@ class _ItemsGrid extends StatelessWidget {
     required this.items,
     required this.cardWidth,
     required this.cardHeight,
+    this.onCreatePipeline,
   });
 
   final List<ItemDefinition> items;
   final double cardWidth;
   final double cardHeight;
+  final VoidCallback? onCreatePipeline;
 
   @override
   Widget build(BuildContext context) {
@@ -470,7 +491,10 @@ class _ItemsGrid extends StatelessWidget {
             childAspectRatio: cardWidth / cardHeight,
           ),
           itemCount: items.length,
-          itemBuilder: (context, index) => _GridItemCard(item: items[index]),
+          itemBuilder: (context, index) => _GridItemCard(
+            item: items[index],
+            onCreatePipeline: onCreatePipeline,
+          ),
         );
       },
     );
@@ -478,9 +502,10 @@ class _ItemsGrid extends StatelessWidget {
 }
 
 class _GridItemCard extends StatelessWidget {
-  const _GridItemCard({required this.item});
+  const _GridItemCard({required this.item, this.onCreatePipeline});
 
   final ItemDefinition item;
+  final VoidCallback? onCreatePipeline;
 
   @override
   Widget build(BuildContext context) {
@@ -489,16 +514,21 @@ class _GridItemCard extends StatelessWidget {
       onTap: () => showItemDetailPanel(
         context,
         item: item,
-        onEdit: () => ItemsScreen.openEditor(context, item: item),
+        onEdit: () => ItemsScreen.openEditor(
+          context,
+          item: item,
+          onCreatePipeline: onCreatePipeline,
+        ),
       ),
     );
   }
 }
 
 class _ItemRow extends StatelessWidget {
-  const _ItemRow({required this.item});
+  const _ItemRow({required this.item, this.onCreatePipeline});
 
   final ItemDefinition item;
+  final VoidCallback? onCreatePipeline;
 
   @override
   Widget build(BuildContext context) {
@@ -523,7 +553,11 @@ class _ItemRow extends StatelessWidget {
       onTap: () => showItemDetailPanel(
         context,
         item: item,
-        onEdit: () => ItemsScreen.openEditor(context, item: item),
+        onEdit: () => ItemsScreen.openEditor(
+          context,
+          item: item,
+          onCreatePipeline: onCreatePipeline,
+        ),
       ),
       children: [
         Expanded(
@@ -575,7 +609,11 @@ class _ItemRow extends StatelessWidget {
             children: [
               SoftActionLink(
                 label: 'Edit',
-                onTap: () => ItemsScreen.openEditor(context, item: item),
+                onTap: () => ItemsScreen.openEditor(
+                  context,
+                  item: item,
+                  onCreatePipeline: onCreatePipeline,
+                ),
               ),
               SoftActionLink(
                 label: item.isArchived ? 'Restore' : 'Archive',
@@ -675,11 +713,13 @@ class _ItemEditorSheet extends StatefulWidget {
     this.item,
     this.initialName = '',
     this.initialGroupId,
+    this.onCreatePipeline,
   });
 
   final ItemDefinition? item;
   final String initialName;
   final int? initialGroupId;
+  final VoidCallback? onCreatePipeline;
 
   @override
   State<_ItemEditorSheet> createState() => _ItemEditorSheetState();
@@ -698,10 +738,13 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   bool _displayNameTouched = false;
   bool _syncingDisplayName = false;
   List<String> _namingFormat = [];
+  final Set<String> _excludedNamingTokens = <String>{};
   String? _localError;
   final List<_UnitConversionDraft> _secondaryUnitConversions = [];
   final Set<String> _promotedPropertyKeys = <String>{};
   bool _isLoadingGroupSchema = false;
+  String? _defaultPipelineId;
+  List<Map<String, String>> _availablePipelines = [];
 
   bool get _isReadOnly => false;
 
@@ -721,6 +764,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     _selectedGroupId = widget.item?.groupId ?? widget.initialGroupId;
     _selectedUnitId = widget.item?.unitId;
     _namingFormat = widget.item?.namingFormat.toList() ?? [];
+    _defaultPipelineId = widget.item?.defaultPipelineId;
     _displayNameTouched = (widget.item?.displayName ?? '').trim().isNotEmpty;
 
     _nameController.addListener(_handlePrimaryChange);
@@ -739,6 +783,15 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       _rootNodes.add(_draftFromNode(node, null));
     }
     _hydrateExistingGroupBackedNodes();
+
+    final savedTokens = widget.item?.namingFormat ?? [];
+    if (widget.item != null) {
+      final available = _availableNamingTokens;
+      _excludedNamingTokens.addAll(
+        available.where((t) => !savedTokens.contains(t)),
+      );
+    }
+    _fetchPipelines();
     for (final conversion in widget.item?.unitConversions ?? const []) {
       final unit = context.read<UnitsProvider>().findById(conversion.unitId);
       final factorToV = conversion.factorToPrimary <= 0
@@ -1294,6 +1347,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     final duplicate = itemsProvider.checkDuplicate(
       name: _nameController.text,
       groupId: _selectedGroupId,
+      unitId: _selectedUnitId,
       variationTree: _variationTreeInputs,
       excludeId: widget.item?.id,
     );
@@ -1792,117 +1846,45 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Drag and drop properties to set the variation display name sequence.',
+                                'Drag and drop properties to set the variation display name sequence. Drag blocks to the trash zone or click "x" to exclude them.',
                                 style: Theme.of(context).textTheme.bodySmall
                                     ?.copyWith(color: Colors.grey[600]),
                               ),
                               const SizedBox(height: 12),
-                              if (_activeNamingFormat.isEmpty)
-                                const Text(
-                                  'Add properties to configure naming format.',
-                                )
-                              else
-                                SizedBox(
-                                  height: 42,
-                                  child: ReorderableListView(
-                                    scrollDirection: Axis.horizontal,
-                                    proxyDecorator: (child, index, animation) {
-                                      return Material(
-                                        color: Colors.transparent,
-                                        child: child,
-                                      );
-                                    },
-                                    onReorder: (oldIndex, newIndex) {
-                                      setState(() {
-                                        if (newIndex > oldIndex) {
-                                          newIndex -= 1;
-                                        }
-                                        final format = _activeNamingFormat;
-                                        final item = format.removeAt(oldIndex);
-                                        format.insert(newIndex, item);
-                                        _namingFormat = format;
-                                        // Reset displayNameTouched on ALL leaf
-                                        // value nodes (not just root nodes) so
-                                        // _syncLeafDisplayNames regenerates them.
-                                        void resetLeaves(_NodeDraft node) {
-                                          if (node.isLeafValue) {
-                                            node.displayNameTouched = false;
-                                          }
-                                          for (final child in node.children) {
-                                            resetLeaves(child);
-                                          }
-                                        }
-
-                                        for (final node in _rootNodes) {
-                                          resetLeaves(node);
-                                        }
-                                        _syncLeafDisplayNames();
-                                      });
-                                    },
-                                    buildDefaultDragHandles: false,
-                                    children: [
-                                      ..._activeNamingFormat.asMap().entries.map(
-                                        (entry) {
-                                          final index = entry.key;
-                                          final token = entry.value;
-                                          return ReorderableDragStartListener(
-                                            key: ValueKey(token),
-                                            index: index,
-                                            child: Container(
-                                              margin: const EdgeInsets.only(
-                                                right: 8,
-                                              ),
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 16,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: const Color(0xFFF1F5F9),
-                                                borderRadius:
-                                                    BorderRadius.circular(20),
-                                                border: Border.all(
-                                                  color: const Color(
-                                                    0xFFE2E8F0,
-                                                  ),
-                                                ),
-                                              ),
-                                              alignment: Alignment.center,
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Text(
-                                                    _getDisplayNameForToken(
-                                                      token,
-                                                    ),
-                                                    style: Theme.of(context)
-                                                        .textTheme
-                                                        .bodyMedium
-                                                        ?.copyWith(
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                          color: const Color(
-                                                            0xFF334155,
-                                                          ),
-                                                        ),
-                                                  ),
-                                                  const SizedBox(width: 6),
-                                                  const Icon(
-                                                    Icons
-                                                        .drag_indicator_rounded,
-                                                    size: 16,
-                                                    color: Color(0xFF94A3B8),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                              _buildActiveNamingFormatArea(context),
+                              _buildInactiveNamingFormatArea(context),
                             ],
                           ),
+                        ),
+                      );
+
+                      final defaultPipelineSection = _SectionCard(
+                        title: 'Default Pipeline',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            SearchableSelectField<String>(
+                              options: _availablePipelines.map((p) => SearchableSelectOption<String>(value: p['id']!, label: p['name']!, searchText: p['name']!)).toList(),
+                              value: _defaultPipelineId,
+                              fieldEnabled: !_isReadOnly,
+                              onChanged: (val) {
+                                setState(() {
+                                  _defaultPipelineId = val;
+                                  _handleChange();
+                                });
+                              },
+                              decoration: const InputDecoration(hintText: 'Select a pipeline'),
+                              searchHintText: 'Search pipelines',
+                            ),
+                            if (!_isReadOnly && widget.onCreatePipeline != null) ...[
+                              const SizedBox(height: 12),
+                              OutlinedButton.icon(
+                                onPressed: widget.onCreatePipeline,
+                                icon: const Icon(Icons.add, size: 16),
+                                label: const Text('Create New Pipeline'),
+                              ),
+                            ],
+                          ],
                         ),
                       );
 
@@ -1928,6 +1910,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                   variationTreeSection,
                                   const SizedBox(height: 16),
                                   namingFormatSection,
+                                  const SizedBox(height: 16),
+                                  defaultPipelineSection,
                                 ],
                               ),
                             ),
@@ -1944,6 +1928,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                           variationTreeSection,
                           const SizedBox(height: 16),
                           namingFormatSection,
+                          const SizedBox(height: 16),
+                          defaultPipelineSection,
                         ],
                       );
                     },
@@ -2052,13 +2038,313 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
 
   List<String> get _activeNamingFormat {
     final available = _availableNamingTokens;
-    final format = _namingFormat.where((t) => available.contains(t)).toList();
+    _excludedNamingTokens.retainAll(available);
+    final format = _namingFormat.where((t) => available.contains(t) && !_excludedNamingTokens.contains(t)).toList();
     for (final token in available) {
-      if (!format.contains(token)) {
+      if (!format.contains(token) && !_excludedNamingTokens.contains(token)) {
         format.add(token);
       }
     }
     return format;
+  }
+
+  void _resetLeafDisplayNamesTouched() {
+    void resetLeaves(_NodeDraft node) {
+      if (node.isLeafValue) {
+        node.displayNameTouched = false;
+      }
+      for (final child in node.children) {
+        resetLeaves(child);
+      }
+    }
+    for (final node in _rootNodes) {
+      resetLeaves(node);
+    }
+  }
+
+  Widget _buildNamingTokenChip(String token, {required bool isActive, int? index}) {
+    final displayName = _getDisplayNameForToken(token);
+    return MouseRegion(
+      cursor: isActive ? SystemMouseCursors.grab : SystemMouseCursors.click,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isActive ? const Color(0xFFF1F5F9) : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isActive ? const Color(0xFFE2E8F0) : const Color(0xFFE2E8F0).withValues(alpha: 0.5),
+            style: BorderStyle.solid,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isActive) ...[
+              const Icon(
+                Icons.drag_indicator_rounded,
+                size: 16,
+                color: Color(0xFF94A3B8),
+              ),
+              const SizedBox(width: 4),
+            ],
+            Text(
+              displayName,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+                color: isActive ? const Color(0xFF334155) : const Color(0xFF94A3B8),
+              ),
+            ),
+            const SizedBox(width: 6),
+            if (isActive)
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _excludedNamingTokens.add(token);
+                    _resetLeafDisplayNamesTouched();
+                    _syncLeafDisplayNames();
+                  });
+                },
+                child: const MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: Icon(
+                    Icons.close,
+                    size: 14,
+                    color: Color(0xFF94A3B8),
+                  ),
+                ),
+              )
+            else
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _excludedNamingTokens.remove(token);
+                    if (!_namingFormat.contains(token)) {
+                      _namingFormat.add(token);
+                    }
+                    _resetLeafDisplayNamesTouched();
+                    _syncLeafDisplayNames();
+                  });
+                },
+                child: const MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: Icon(
+                    Icons.add,
+                    size: 14,
+                    color: Color(0xFF94A3B8),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActiveNamingFormatArea(BuildContext context) {
+    final active = _activeNamingFormat;
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (details) => true,
+      onAcceptWithDetails: (details) {
+        final draggedToken = details.data;
+        setState(() {
+          if (_excludedNamingTokens.contains(draggedToken)) {
+            _excludedNamingTokens.remove(draggedToken);
+          }
+          final list = _namingFormat.toList();
+          if (!list.contains(draggedToken)) {
+            list.add(draggedToken);
+          } else {
+            // Move to the end if dropped on empty area of active container
+            list.remove(draggedToken);
+            list.add(draggedToken);
+          }
+          _namingFormat = list;
+          _resetLeafDisplayNamesTouched();
+          _syncLeafDisplayNames();
+        });
+      },
+      builder: (context, candidateData, rejectedData) {
+        final isContainerHovered = candidateData.isNotEmpty;
+        return Container(
+          width: double.infinity,
+          constraints: const BoxConstraints(minHeight: 52),
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: isContainerHovered
+                ? const Color(0xFFF1F5F9)
+                : const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isContainerHovered
+                  ? Theme.of(context).primaryColor
+                  : const Color(0xFFE2E8F0),
+              width: isContainerHovered ? 1.5 : 1.0,
+            ),
+          ),
+          child: active.isEmpty
+              ? Center(
+                  child: Text(
+                    'No active naming blocks. Drag properties here to include them.',
+                    style: TextStyle(
+                      color: Colors.grey[500],
+                      fontSize: 13,
+                    ),
+                  ),
+                )
+              : Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: List.generate(active.length, (i) {
+                    final token = active[i];
+                    return DragTarget<String>(
+                      onWillAcceptWithDetails: (details) => details.data != token,
+                      onAcceptWithDetails: (details) {
+                        final draggedToken = details.data;
+                        setState(() {
+                          if (_excludedNamingTokens.contains(draggedToken)) {
+                            _excludedNamingTokens.remove(draggedToken);
+                          }
+                          final list = _namingFormat.toList();
+                          list.remove(draggedToken);
+                          
+                          int insertIdx = list.indexOf(token);
+                          if (insertIdx == -1) {
+                            insertIdx = 0;
+                          }
+                          list.insert(insertIdx, draggedToken);
+                          _namingFormat = list;
+                          _resetLeafDisplayNamesTouched();
+                          _syncLeafDisplayNames();
+                        });
+                      },
+                      builder: (context, candidateData, rejectedData) {
+                        final isChipHovered = candidateData.isNotEmpty;
+                        final chipWidget = _buildNamingTokenChip(token, isActive: true, index: i);
+                        
+                        return Draggable<String>(
+                          data: token,
+                          feedback: Material(
+                            color: Colors.transparent,
+                            child: Opacity(
+                              opacity: 0.85,
+                              child: chipWidget,
+                            ),
+                          ),
+                          childWhenDragging: Opacity(
+                            opacity: 0.3,
+                            child: chipWidget,
+                          ),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: isChipHovered
+                                    ? Theme.of(context).primaryColor
+                                    : Colors.transparent,
+                                width: 2,
+                              ),
+                              borderRadius: BorderRadius.circular(22),
+                            ),
+                            child: chipWidget,
+                          ),
+                        );
+                      },
+                    );
+                  }),
+                ),
+        );
+      },
+    );
+  }
+
+  Widget _buildInactiveNamingFormatArea(BuildContext context) {
+    final available = _availableNamingTokens;
+    _excludedNamingTokens.retainAll(available);
+    final inactive = available
+        .where((t) => _excludedNamingTokens.contains(t))
+        .toList();
+
+    final showAvailable = inactive.isNotEmpty || _activeNamingFormat.isNotEmpty;
+    if (!showAvailable) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 12),
+        Text(
+          'Available Blocks (Drag blocks here to remove, or click + to include):',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Colors.grey[600],
+                fontWeight: FontWeight.w600,
+              ),
+        ),
+        const SizedBox(height: 8),
+        DragTarget<String>(
+          onWillAcceptWithDetails: (details) =>
+              !_excludedNamingTokens.contains(details.data),
+          onAcceptWithDetails: (details) {
+            final draggedToken = details.data;
+            setState(() {
+              _excludedNamingTokens.add(draggedToken);
+              _resetLeafDisplayNamesTouched();
+              _syncLeafDisplayNames();
+            });
+          },
+          builder: (context, candidateData, rejectedData) {
+            final isHovered = candidateData.isNotEmpty;
+            return Container(
+              width: double.infinity,
+              constraints: const BoxConstraints(minHeight: 48),
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: isHovered ? const Color(0xFFF1F5F9) : const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: isHovered ? Theme.of(context).primaryColor : const Color(0xFFE2E8F0).withValues(alpha: 0.5),
+                  width: 1.0,
+                ),
+              ),
+              child: inactive.isEmpty
+                  ? Center(
+                      child: Text(
+                        'Drag active blocks here to remove them from display name sequence.',
+                        style: TextStyle(
+                          color: Colors.grey[500],
+                          fontSize: 12,
+                        ),
+                      ),
+                    )
+                  : Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: inactive.map((token) {
+                        final chipWidget = _buildNamingTokenChip(token, isActive: false);
+                        return Draggable<String>(
+                          data: token,
+                          feedback: Material(
+                            color: Colors.transparent,
+                            child: Opacity(
+                              opacity: 0.85,
+                              child: chipWidget,
+                            ),
+                          ),
+                          childWhenDragging: Opacity(
+                            opacity: 0.3,
+                            child: chipWidget,
+                          ),
+                          child: chipWidget,
+                        );
+                      }).toList(),
+                    ),
+            );
+          },
+        ),
+      ],
+    );
   }
 
   String _getDisplayNameForToken(String token) {
@@ -2260,6 +2546,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     final duplicate = itemsProvider.checkDuplicate(
       name: _nameController.text,
       groupId: _selectedGroupId,
+      unitId: _selectedUnitId,
       variationTree: _variationTreeInputs,
       excludeId: widget.item?.id,
     );
@@ -2293,6 +2580,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   .toList(growable: false),
               namingFormat: _activeNamingFormat,
               variationTree: _variationTreeInputs,
+              defaultPipelineId: _defaultPipelineId,
               photoUrl: _photoUrlController.text.trim(),
             ),
           )
@@ -2315,6 +2603,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   .toList(growable: false),
               namingFormat: _activeNamingFormat,
               variationTree: _variationTreeInputs,
+              defaultPipelineId: _defaultPipelineId,
               photoUrl: _photoUrlController.text.trim(),
             ),
           );
@@ -2444,6 +2733,16 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     return current;
   }
 
+  Future<void> _fetchPipelines() async {
+    final provider = context.read<ItemsProvider>();
+    final pipelines = await provider.fetchPipelineTemplates();
+    if (mounted) {
+      setState(() {
+        _availablePipelines = pipelines;
+      });
+    }
+  }
+
   String _generateLeafDisplayName(_NodeDraft leaf) {
     final pathValues = <String, String>{};
     final pathValueNames = <String>[];
@@ -2487,7 +2786,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     return switch (warning) {
       ItemDuplicateWarning.none => '',
       ItemDuplicateWarning.sameGroup =>
-        'An item with this name already exists in the selected group.',
+        'An item with this name and variation structure already exists in the selected group with the same unit.',
       ItemDuplicateWarning.emptyNodeName =>
         'Every property and value node needs a name.',
       ItemDuplicateWarning.invalidTreeStructure =>
@@ -3030,10 +3329,6 @@ class _ItemsMessageBanner extends StatelessWidget {
       ),
     );
   }
-}
-
-extension<T> on Iterable<T> {
-  T? get firstOrNull => isEmpty ? null : first;
 }
 
 class _UnitConversionRow extends StatelessWidget {

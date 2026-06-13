@@ -694,15 +694,15 @@ class _InventoryScreenState extends State<InventoryScreen> {
       return null;
     }
 
-    final exactMatches = groupsProvider.groups
+    final exactMatches = groupsProvider.itemGroups
         .where(
           (group) =>
               group.name.trim().toLowerCase() == normalizedRecordName &&
               (record.unitId == null || group.unitId == record.unitId),
         )
         .toList(growable: false);
-    if (exactMatches.isNotEmpty) {
-      return exactMatches.last;
+    if (exactMatches.length == 1) {
+      return exactMatches.first;
     }
     return null;
   }
@@ -1715,8 +1715,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   (record.unitId == null || item.unitId == record.unitId),
             )
             .toList(growable: false);
-        if (exactMatches.isNotEmpty) {
-          linkedItem = exactMatches.last;
+        if (exactMatches.length == 1) {
+          linkedItem = exactMatches.first;
         }
       }
     }
@@ -4519,8 +4519,8 @@ class _InventoryInlineRowActions extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final showQuick = hovered && constraints.maxWidth >= 124;
-        final showBothQuick = showQuick && constraints.maxWidth >= 176;
+        final showQuick = hovered && constraints.maxWidth >= 130;
+        final showBothQuick = showQuick && constraints.maxWidth >= 186;
 
         return Row(
           mainAxisSize: MainAxisSize.min,
@@ -7026,7 +7026,7 @@ class _LinkGroupSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final groups = context.watch<GroupsProvider>().activeGroups;
+    final groups = context.watch<GroupsProvider>().itemGroups.where((g) => !g.isArchived).toList(growable: false);
     final provider = context.watch<InventoryProvider>();
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -7251,7 +7251,7 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<InventoryProvider>();
-    final groups = context.watch<GroupsProvider>().activeGroups;
+    final groups = context.watch<GroupsProvider>().itemGroups.where((g) => !g.isArchived).toList(growable: false);
     final units = context.watch<UnitsProvider>().activeUnits;
     final items = context
         .watch<ItemsProvider>()
@@ -7874,7 +7874,7 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
 
     final selectedParentGroup = context
         .read<GroupsProvider>()
-        .activeGroups
+        .itemGroups
         .where((group) => group.id == _selectedParentGroupId)
         .firstOrNull;
     final items = context
@@ -8359,7 +8359,7 @@ class _InventoryCreateGroupEditorState
   @override
   Widget build(BuildContext context) {
     final inventory = context.watch<InventoryProvider>();
-    final groups = context.watch<GroupsProvider>().activeGroups;
+    final groups = context.watch<GroupsProvider>().itemGroups.where((g) => !g.isArchived).toList(growable: false);
     final items = context.watch<ItemsProvider>().items.toList(growable: false);
     final unitGroups =
         context
@@ -11827,18 +11827,29 @@ class _QuickCreateUnitSheetState extends State<_QuickCreateUnitSheet> {
               subtitle: 'Add the missing unit without leaving the stock flow.',
             ),
             const SizedBox(height: 16),
-            TextFormField(
-              controller: _nameController,
-              decoration: const InputDecoration(labelText: 'Name'),
-              validator: (value) =>
-                  (value?.trim().isEmpty ?? true) ? 'Required' : null,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _symbolController,
-              decoration: const InputDecoration(labelText: 'Symbol'),
-              validator: (value) =>
-                  (value?.trim().isEmpty ?? true) ? 'Required' : null,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: TextFormField(
+                    controller: _nameController,
+                    decoration: const InputDecoration(labelText: 'Name'),
+                    validator: (value) =>
+                        (value?.trim().isEmpty ?? true) ? 'Required' : null,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: TextFormField(
+                    controller: _symbolController,
+                    decoration: const InputDecoration(labelText: 'Symbol'),
+                    validator: (value) =>
+                        (value?.trim().isEmpty ?? true) ? 'Required' : null,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 20),
             Row(

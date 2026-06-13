@@ -308,7 +308,7 @@ class PipelineEditorProvider extends ChangeNotifier {
       _drafts[updatedToNode.id] = ProcessNodeDraftController(updatedToNode);
     }
 
-    notifyListeners();
+    _autoHealItemChain();
   }
 
   void addNode(
@@ -357,6 +357,11 @@ class PipelineEditorProvider extends ChangeNotifier {
     int targetStageIndex, {
     List<UnitDefinition> units = const [],
   }) {
+    final incomingNodes =
+        _template.nodes.where((n) => n.stageIndex == targetStageIndex - 1);
+    final outgoingNodes =
+        _template.nodes.where((n) => n.stageIndex == targetStageIndex);
+
     final shiftedNodes = _template.nodes.map((node) {
       if (node.stageIndex >= targetStageIndex) {
         return node.copyWith(stageIndex: node.stageIndex + 1);
@@ -365,16 +370,35 @@ class PipelineEditorProvider extends ChangeNotifier {
     }).toList();
 
     final node = _buildNode(targetStageIndex, 0);
-    final newNodesList = [...shiftedNodes, node];
 
-    int maxStage = 0;
-    for (final n in newNodesList) {
-      if (n.stageIndex > maxStage) maxStage = n.stageIndex;
+    final newFlows = _template.flows.where((f) {
+      final fromNode = _template.nodes.firstWhere((n) => n.id == f.fromNodeId);
+      final toNode = _template.nodes.firstWhere((n) => n.id == f.toNodeId);
+      return !(fromNode.stageIndex == targetStageIndex - 1 &&
+          toNode.stageIndex == targetStageIndex);
+    }).toList();
+
+    for (final from in incomingNodes) {
+      newFlows.add(MaterialFlow(
+        id: _newFlowId(),
+        fromNodeId: from.id,
+        toNodeId: node.id,
+        materialName: from.outputs.firstOrNull ?? 'Material',
+      ));
+    }
+    for (final to in outgoingNodes) {
+      newFlows.add(MaterialFlow(
+        id: _newFlowId(offset: 1),
+        fromNodeId: node.id,
+        toNodeId: to.id,
+        materialName: node.outputs.firstOrNull ?? 'Material',
+      ));
     }
 
     _pushHistory();
     _template = _template.copyWith(
-      nodes: newNodesList,
+      nodes: [...shiftedNodes, node],
+      flows: newFlows,
       stageLabels: _stageLabelsWithInsertedStage(
         targetStageIndex,
         _stageLabelForNode(node),
@@ -383,7 +407,7 @@ class PipelineEditorProvider extends ChangeNotifier {
     _drafts[node.id] = ProcessNodeDraftController(node);
     _selectedNodeId = node.id;
     _connectingFromNodeId = null;
-    notifyListeners();
+    _autoHealItemChain();
   }
 
   void addNextStepFromSelection({List<UnitDefinition> units = const []}) {
@@ -455,10 +479,6 @@ class PipelineEditorProvider extends ChangeNotifier {
       unitSymbol: source.outputItem?.unitSymbol ?? 'Pcs',
     );
 
-    // If the source currently feeds the pipeline Output endpoint, the new
-    // step is inserted between them: the source -> new step material becomes
-    // an editable intermediate, and the new step adopts the pipeline output
-    // as its own output.
     MaterialFlow? flowToOutput;
     ProcessNode? outputNode;
     if (processType != 'Output') {
@@ -467,7 +487,7 @@ class PipelineEditorProvider extends ChangeNotifier {
         final target = _template.nodes
             .where((n) => n.id == flow.toNodeId)
             .firstOrNull;
-        if (target != null && target.processType == 'Output') {
+        if (target != null) {
           flowToOutput = flow;
           outputNode = target;
           break;
@@ -550,7 +570,7 @@ class PipelineEditorProvider extends ChangeNotifier {
     _selectedNodeId = updatedNode.id;
     _connectingFromNodeId = null;
     _applyUnitContinuityAutoFixes(units);
-    notifyListeners();
+    _autoHealItemChain();
   }
 
   void generateBatchFlow(
@@ -737,7 +757,7 @@ class PipelineEditorProvider extends ChangeNotifier {
     _selectedNodeId = lastNode?.id;
     _connectingFromNodeId = null;
     _applyUnitContinuityAutoFixes(units);
-    notifyListeners();
+    _autoHealItemChain();
   }
 
   void setCommonMaterial(
@@ -897,7 +917,7 @@ class PipelineEditorProvider extends ChangeNotifier {
     _pushHistory();
     _template = _template.copyWith(flows: updatedFlows);
     _connectingFromNodeId = null;
-    notifyListeners();
+    _autoHealItemChain();
   }
 
   String? deleteSelectedNode() {
@@ -960,7 +980,7 @@ class PipelineEditorProvider extends ChangeNotifier {
     _drafts.remove(targetId)?.dispose();
     _template = _template.copyWith(nodes: updatedNodes, flows: updatedFlows);
     _selectedNodeId = null;
-    notifyListeners();
+    _autoHealItemChain();
     return message;
   }
 
@@ -991,7 +1011,7 @@ class PipelineEditorProvider extends ChangeNotifier {
       nodes: updatedNodes,
       stageLabels: _stageLabelsFor(newStageIndex),
     );
-    notifyListeners();
+    _autoHealItemChain();
   }
 
   void moveNodeToStage(String nodeId, int newStageIndex) {
@@ -1046,6 +1066,7 @@ class PipelineEditorProvider extends ChangeNotifier {
     _applyUnitContinuityAutoFixes(units);
     if (propagate) {
       propagateItemChanges(nodeId);
+      propagateBackwardItemChanges(nodeId);
     }
     notifyListeners();
   }
@@ -1106,36 +1127,116 @@ class PipelineEditorProvider extends ChangeNotifier {
   }
 
   void propagateItemChanges(String startNodeId) {
-    final startNode = _template.nodes.firstWhere((n) => n.id == startNodeId);
-    if (startNode.outputItem == null) return;
+    _autoHealItemChain();
+  }
 
-    _pushHistory();
+  void propagateBackwardItemChanges(String startNodeId) {
+    _autoHealItemChain();
+  }
+
+  void _autoHealItemChain() {
     List<ProcessNode> updatedNodes = [..._template.nodes];
-    final originalItemName = _getOriginalItemName(startNodeId);
+    final flows = _template.flows;
 
-    final queue = [startNodeId];
+    final queue = updatedNodes.where((n) {
+      return n.processType == 'Input' || !flows.any((f) => f.toNodeId == n.id);
+    }).map((n) => n.id).toList();
+
+    final visited = <String>{};
 
     while (queue.isNotEmpty) {
       final currentId = queue.removeAt(0);
-      final currentNode = updatedNodes.firstWhere((n) => n.id == currentId);
+      if (visited.contains(currentId)) continue;
+      visited.add(currentId);
 
-      final outgoingFlows = _template.flows.where(
-        (f) => f.fromNodeId == currentId,
-      );
+      final nodeIndex = updatedNodes.indexWhere((n) => n.id == currentId);
+      if (nodeIndex == -1) continue;
+      final currentNode = updatedNodes[nodeIndex];
+
+      final outgoingFlows = flows.where((f) => f.fromNodeId == currentId).toList();
+
+      if (currentNode.processType != 'Input' && currentNode.processType != 'Output') {
+        if (outgoingFlows.isEmpty) {
+          final defaultOutputName = '${currentNode.processType}_Output';
+          final newOutputItem = PipelineItemEndpoint(
+            itemId: DateTime.now().microsecondsSinceEpoch,
+            itemName: defaultOutputName,
+            unitId: currentNode.inputItem?.unitId ?? 0,
+            unitName: currentNode.inputItem?.unitName ?? 'Pieces',
+            unitSymbol: currentNode.inputItem?.unitSymbol ?? 'Pcs',
+          );
+          updatedNodes[nodeIndex] = currentNode.copyWith(
+            outputItem: newOutputItem,
+            outputs: [defaultOutputName],
+          );
+          _drafts[currentNode.id]?.outputs.text = defaultOutputName;
+        } else {
+          bool allSuccessorsAreOutput = true;
+          for (final flow in outgoingFlows) {
+            final succ = updatedNodes.firstWhere((n) => n.id == flow.toNodeId, orElse: () => currentNode);
+            if (succ.id != currentNode.id && succ.processType != 'Output') {
+              allSuccessorsAreOutput = false;
+              break;
+            }
+          }
+
+          if (allSuccessorsAreOutput) {
+            final flow = outgoingFlows.first;
+            final succ = updatedNodes.firstWhere((n) => n.id == flow.toNodeId);
+            final adoptedItem = succ.outputItem ?? succ.inputItem;
+            
+            updatedNodes[nodeIndex] = currentNode.copyWith(
+              outputItem: adoptedItem,
+              outputs: adoptedItem != null ? [adoptedItem.itemName] : ['Final Product'],
+            );
+            _drafts[currentNode.id]?.outputs.text = adoptedItem?.itemName ?? 'Final Product';
+          } else {
+            String getUpdatedOriginal(String startId) {
+              String curId = startId;
+              while (true) {
+                final fl = flows.where((f) => f.toNodeId == curId).firstOrNull;
+                if (fl == null) break;
+                curId = fl.fromNodeId;
+              }
+              final firstNode = updatedNodes.where((n) => n.id == curId).firstOrNull;
+              return firstNode?.inputItem?.itemName ?? firstNode?.inputs.firstOrNull ?? 'Material';
+            }
+            final originalItemName = getUpdatedOriginal(currentId);
+
+            final stageName = _template.stageLabels.length > currentNode.stageIndex
+                ? _template.stageLabels[currentNode.stageIndex]
+                : 'Stage ${currentNode.stageIndex + 1}';
+                
+            final defaultOutputName = '${stageName}_${currentNode.processType}_$originalItemName';
+            
+            final newOutputItem = PipelineItemEndpoint(
+              itemId: DateTime.now().microsecondsSinceEpoch + nodeIndex,
+              itemName: defaultOutputName,
+              unitId: currentNode.inputItem?.unitId ?? 0,
+              unitName: currentNode.inputItem?.unitName ?? 'Pieces',
+              unitSymbol: currentNode.inputItem?.unitSymbol ?? 'Pcs',
+            );
+
+            updatedNodes[nodeIndex] = currentNode.copyWith(
+              outputItem: newOutputItem,
+              outputs: [defaultOutputName],
+            );
+            _drafts[currentNode.id]?.outputs.text = defaultOutputName;
+          }
+        }
+      }
+
+      final resolvedNode = updatedNodes[nodeIndex];
       for (final flow in outgoingFlows) {
-        final toIndex = updatedNodes.indexWhere((n) => n.id == flow.toNodeId);
-        if (toIndex == -1) continue;
-
-        final toNode = updatedNodes[toIndex];
-
-        final newInputItem = currentNode.outputItem;
-
-        updatedNodes[toIndex] = toNode.copyWith(
-          inputItem: newInputItem,
-          inputs: [newInputItem?.itemName ?? 'Material'],
-        );
-
-        queue.add(flow.toNodeId);
+        final succIdx = updatedNodes.indexWhere((n) => n.id == flow.toNodeId);
+        if (succIdx != -1) {
+          updatedNodes[succIdx] = updatedNodes[succIdx].copyWith(
+            inputItem: resolvedNode.outputItem,
+            inputs: resolvedNode.outputItem != null ? [resolvedNode.outputItem!.itemName] : ['Input'],
+          );
+          _drafts[updatedNodes[succIdx].id]?.inputs.text = resolvedNode.outputItem?.itemName ?? 'Input';
+          queue.add(updatedNodes[succIdx].id);
+        }
       }
     }
 

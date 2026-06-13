@@ -87,7 +87,7 @@ class FloorNodeTerminal extends StatelessWidget {
               children: [
                 // Section 1: Node identity
                 Expanded(
-                  flex: 2,
+                  flex: 3,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
@@ -119,9 +119,14 @@ class FloorNodeTerminal extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        node.processType.isEmpty
-                            ? 'Generic Process'
-                            : node.processType,
+                        [
+                          node.processType.isEmpty ? 'Generic Process' : node.processType,
+                          if (node.hasMachineAssignment) node.machineAssignmentLabel,
+                          if (node.durationHours > 0) '${node.durationHours}h',
+                          if (startedAt != null) _formatDate(startedAt!),
+                        ].join('  •  '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 12,
                           color: Color(0xFF64748B),
@@ -140,7 +145,7 @@ class FloorNodeTerminal extends StatelessWidget {
                 ),
                 // Section 2: Metrics row
                 Expanded(
-                  flex: 5,
+                  flex: 7,
                   child: Row(
                     children: [
                       _MetricBox(
@@ -148,48 +153,25 @@ class FloorNodeTerminal extends StatelessWidget {
                         value: node.status.toUpperCase(),
                         valueColor: node.statusColor,
                       ),
-                      const SizedBox(width: 20),
-                      _MetricBox(
-                        label: 'MACHINE',
-                        value: node.hasMachineAssignment
-                            ? node.machineAssignmentLabel
-                            : 'Unassigned',
-                      ),
-                      const SizedBox(width: 20),
-                      _MetricBox(label: 'INPUT', value: inputName ?? '—'),
-                      const SizedBox(width: 20),
-                      _AssignedStockMetric(node: node),
-                      const SizedBox(width: 20),
+                      const SizedBox(width: 24),
+                      _AssignedStockMetric(node: node, flex: 2),
+                      const SizedBox(width: 24),
                       EditableMetricBox(
                         nodeId: node.id,
                         metricKey: 'output',
                         label: 'OUTPUT QTY',
                       ),
-                      const SizedBox(width: 20),
+                      const SizedBox(width: 24),
                       EditableMetricBox(
                         nodeId: node.id,
                         metricKey: 'remaining',
                         label: 'LEFTOVER',
                       ),
-                      const SizedBox(width: 20),
+                      const SizedBox(width: 24),
                       EditableMetricBox(
                         nodeId: node.id,
                         metricKey: 'scrap',
                         label: 'SCRAP',
-                      ),
-                      const SizedBox(width: 20),
-                      _MetricBox(label: 'OUTPUT', value: outputName ?? '—'),
-                      const SizedBox(width: 20),
-                      _MetricBox(
-                        label: 'DURATION',
-                        value: '${node.durationHours}h',
-                      ),
-                      const SizedBox(width: 20),
-                      _MetricBox(
-                        label: 'STARTED',
-                        value: startedAt != null
-                            ? _formatDate(startedAt!)
-                            : '—',
                       ),
                     ],
                   ),
@@ -217,15 +199,17 @@ class FloorNodeTerminal extends StatelessWidget {
 }
 
 class _MetricBox extends StatelessWidget {
-  const _MetricBox({required this.label, required this.value, this.valueColor});
+  const _MetricBox({required this.label, required this.value, this.valueColor, this.flex = 1});
 
   final String label;
   final String value;
   final Color? valueColor;
+  final int flex;
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
+      flex: flex,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -257,9 +241,10 @@ class _MetricBox extends StatelessWidget {
 }
 
 class _AssignedStockMetric extends StatefulWidget {
-  const _AssignedStockMetric({required this.node});
+  const _AssignedStockMetric({required this.node, this.flex = 1});
 
   final ProcessNode node;
+  final int flex;
 
   @override
   State<_AssignedStockMetric> createState() => _AssignedStockMetricState();
@@ -291,25 +276,26 @@ class _AssignedStockMetricState extends State<_AssignedStockMetric> {
   @override
   Widget build(BuildContext context) {
     if (_runFuture == null) {
-      return const _MetricBox(label: 'ASSIGNED', value: '—');
+      return _MetricBox(label: 'ASSIGNED', value: '—', flex: widget.flex);
     }
     return FutureBuilder<PipelineRun?>(
       future: _runFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const _MetricBox(label: 'ASSIGNED', value: '...');
+          return _MetricBox(label: 'ASSIGNED', value: '...', flex: widget.flex);
         }
         final run = snapshot.data;
-        if (run == null) return const _MetricBox(label: 'ASSIGNED', value: '—');
+        if (run == null) return _MetricBox(label: 'ASSIGNED', value: '—', flex: widget.flex);
         final inputs = effectiveStageInputs(
           run: run,
           node: widget.node,
           template: context.read<ProductionProvider>().template,
         );
         if (inputs.isEmpty)
-          return const _MetricBox(label: 'ASSIGNED', value: 'None');
+          return _MetricBox(label: 'ASSIGNED', value: 'None', flex: widget.flex);
         return _MetricBox(
           label: 'ASSIGNED',
+          flex: widget.flex,
           value: inputs
               .map((b) {
                 if (b.quantity != null) {

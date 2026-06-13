@@ -101,6 +101,8 @@ class ItemDto {
     required this.usageCount,
     required this.createdAt,
     required this.updatedAt,
+    this.defaultPipelineId,
+    this.defaultPipelineName,
     required this.variationTree,
     required this.propertySchema,
     this.photoUrl = '',
@@ -119,6 +121,8 @@ class ItemDto {
   final int usageCount;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final String? defaultPipelineId;
+  final String? defaultPipelineName;
   final List<ItemVariationNodeDto> variationTree;
   final List<ItemPropertySchemaEntryDto> propertySchema;
   final String photoUrl;
@@ -149,6 +153,8 @@ class ItemDto {
       updatedAt:
           DateTime.tryParse(json['updatedAt'] as String? ?? '') ??
           DateTime.now(),
+      defaultPipelineId: json['defaultPipelineId'] as String?,
+      defaultPipelineName: json['defaultPipelineName'] as String?,
       variationTree: (json['variationTree'] as List<dynamic>? ?? const [])
           .map(
             (item) =>
@@ -183,6 +189,8 @@ class ItemDto {
       usageCount: usageCount,
       createdAt: createdAt,
       updatedAt: updatedAt,
+      defaultPipelineId: defaultPipelineId,
+      defaultPipelineName: defaultPipelineName,
       variationTree: variationTree
           .map((entry) => entry.toDomain())
           .toList(growable: false),
@@ -384,6 +392,7 @@ class CreateItemRequest {
     required this.unitConversions,
     required this.namingFormat,
     required this.variationTree,
+    this.defaultPipelineId,
     this.photoUrl = '',
   });
 
@@ -395,6 +404,7 @@ class CreateItemRequest {
   final List<ItemUnitConversionRequest> unitConversions;
   final List<String> namingFormat;
   final List<ItemVariationNodeRequest> variationTree;
+  final String? defaultPipelineId;
   final String photoUrl;
 
   factory CreateItemRequest.fromInput(CreateItemInput input) {
@@ -411,6 +421,7 @@ class CreateItemRequest {
       variationTree: input.variationTree
           .map(ItemVariationNodeRequest.fromInput)
           .toList(growable: false),
+      defaultPipelineId: input.defaultPipelineId,
       photoUrl: input.photoUrl,
     );
   }
@@ -429,6 +440,7 @@ class CreateItemRequest {
       'variationTree': variationTree
           .map((entry) => entry.toJson())
           .toList(growable: false),
+      if (defaultPipelineId != null) 'defaultPipelineId': defaultPipelineId,
       'photoUrl': photoUrl,
     };
   }
@@ -444,6 +456,7 @@ class UpdateItemRequest {
     required this.unitConversions,
     required this.namingFormat,
     required this.variationTree,
+    this.defaultPipelineId,
     this.photoUrl = '',
   });
 
@@ -455,6 +468,7 @@ class UpdateItemRequest {
   final List<ItemUnitConversionRequest> unitConversions;
   final List<String> namingFormat;
   final List<ItemVariationNodeRequest> variationTree;
+  final String? defaultPipelineId;
   final String photoUrl;
 
   factory UpdateItemRequest.fromInput(UpdateItemInput input) {
@@ -471,6 +485,7 @@ class UpdateItemRequest {
       variationTree: input.variationTree
           .map(ItemVariationNodeRequest.fromInput)
           .toList(growable: false),
+      defaultPipelineId: input.defaultPipelineId,
       photoUrl: input.photoUrl,
     );
   }
@@ -489,6 +504,7 @@ class UpdateItemRequest {
       'variationTree': variationTree
           .map((entry) => entry.toJson())
           .toList(growable: false),
+      if (defaultPipelineId != null) 'defaultPipelineId': defaultPipelineId,
       'photoUrl': photoUrl,
     };
   }

@@ -620,7 +620,9 @@ function isPrimaryGroupNameForType(name = '', groupType = 'item') {
   const trimmedName = String(name || '').trim();
   return (
     trimmedName === primaryGroupNameForType(groupType) ||
-    (normalizeGroupType(groupType) === 'item' && trimmedName === 'Primary Group')
+    (normalizeGroupType(groupType) === 'item' && trimmedName === 'Primary Group') ||
+    (normalizeGroupType(groupType) === 'item' && trimmedName === 'Raw material') ||
+    (normalizeGroupType(groupType) === 'item' && trimmedName === 'Scrap')
   );
 }
 
@@ -2130,6 +2132,7 @@ async function initDb() {
   try { await run("ALTER TABLE clients ADD COLUMN photo_url TEXT DEFAULT ''"); } catch(e){}
   try { await run("ALTER TABLE vendors ADD COLUMN logo_url TEXT DEFAULT ''"); } catch(e){}
   try { await run("ALTER TABLE vendors ADD COLUMN photo_url TEXT DEFAULT ''"); } catch(e){}
+  try { await run("ALTER TABLE items ADD COLUMN default_pipeline_id TEXT DEFAULT NULL"); } catch(e){}
 
   // Migration for groups table to remove unit_id NOT NULL constraint
   try {
@@ -2580,6 +2583,7 @@ async function initDb() {
       group_id INTEGER NOT NULL REFERENCES groups(id),
       unit_id INTEGER NOT NULL REFERENCES units(id),
       is_archived INTEGER NOT NULL DEFAULT 0,
+      default_pipeline_id TEXT DEFAULT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
@@ -3134,6 +3138,54 @@ async function initDb() {
   await run('CREATE INDEX IF NOT EXISTS idx_order_material_requirements_material_barcode ON order_material_requirements(material_barcode)');
   await run('CREATE INDEX IF NOT EXISTS idx_order_status_history_order_id_changed_at ON order_status_history(order_id, changed_at)');
   await run('CREATE INDEX IF NOT EXISTS idx_order_activity_log_order_id_created_at ON order_activity_log(order_id, created_at)');
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS delivery_challans (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER REFERENCES orders(id),
+      order_no TEXT DEFAULT '',
+      challan_no TEXT NOT NULL UNIQUE,
+      date TEXT NOT NULL,
+      customer_name TEXT NOT NULL DEFAULT '',
+      customer_gstin TEXT DEFAULT '',
+      company_profile_snapshot TEXT,
+      notes TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'draft',
+      created_by INTEGER REFERENCES users(id),
+      updated_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS delivery_challan_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
+      order_item_id INTEGER,
+      item_id INTEGER,
+      line_no INTEGER NOT NULL DEFAULT 1,
+      particulars TEXT NOT NULL DEFAULT '',
+      hsn_code TEXT DEFAULT '',
+      quantity_pcs TEXT DEFAULT '',
+      weight TEXT DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS delivery_challan_activity_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
+      activity_type TEXT NOT NULL,
+      actor_user_id INTEGER,
+      actor_name TEXT,
+      actor_role TEXT,
+      details_json TEXT,
+      created_at TEXT NOT NULL
+    )
+  `);
 
   // --- Column migrations for order_activity_log on pre-existing databases ---
   // The CREATE TABLE above is skipped if the table already exists. These
@@ -4668,6 +4720,30 @@ function variationPathLabelForNodeIds(tree = [], pathNodeIds = []) {
   return buildVariationPathLabel(segments);
 }
 
+async function resolveLeafSelectionFromDb(leafNodeId) {
+  const nodeIds = [];
+  const segments = [];
+  let currentId = leafNodeId;
+  while (currentId) {
+    const node = await get('SELECT id, parent_node_id, name, kind FROM item_variation_nodes WHERE id = ?', [currentId]);
+    if (!node) {
+      break;
+    }
+    if (node.kind === 'value') {
+      nodeIds.unshift(node.id);
+      segments.unshift(node.name);
+    }
+    currentId = node.parent_node_id;
+  }
+  if (nodeIds.length === 0 || nodeIds[nodeIds.length - 1] !== leafNodeId) {
+    return null;
+  }
+  return {
+    nodeIds,
+    segments,
+  };
+}
+
 async function resolveOrderVariationSelection({
   itemId,
   variationLeafNodeId = 0,
@@ -4720,11 +4796,32 @@ async function resolveOrderVariationSelection({
     throw error;
   }
 
-  const leafNode = findVariationNodeById(tree, normalizedLeafId);
-  const leafSelection = activeValueSelectionForLeaf(tree, normalizedLeafId);
+  let leafNode = findVariationNodeById(tree, normalizedLeafId);
+  let leafSelection = activeValueSelectionForLeaf(tree, normalizedLeafId);
+
+  if (!leafNode || leafNode.isArchived || !leafSelection) {
+    const dbNode = await get('SELECT * FROM item_variation_nodes WHERE id = ? AND item_id = ?', [normalizedLeafId, item.id]);
+    if (dbNode && dbNode.kind === 'value') {
+      const selectionFromDb = await resolveLeafSelectionFromDb(normalizedLeafId);
+      if (selectionFromDb) {
+        leafNode = {
+          id: dbNode.id,
+          itemId: dbNode.item_id,
+          parentNodeId: dbNode.parent_node_id,
+          kind: dbNode.kind,
+          name: dbNode.name,
+          code: dbNode.code,
+          displayName: dbNode.display_name,
+          position: dbNode.position,
+          isArchived: Boolean(dbNode.is_archived),
+        };
+        leafSelection = selectionFromDb;
+      }
+    }
+  }
+
   if (
     !leafNode ||
-    leafNode.isArchived ||
     String(leafNode.kind) !== 'value' ||
     !leafSelection
   ) {
@@ -4829,6 +4926,7 @@ async function getItemRowById(id) {
     `
     SELECT
       items.*,
+      pipeline_templates.name AS default_pipeline_name,
       (
         (SELECT COUNT(*) FROM order_items WHERE order_items.item_id = items.id) +
         (SELECT COUNT(*) FROM delivery_challan_items WHERE delivery_challan_items.item_id = items.id) +
@@ -4837,6 +4935,7 @@ async function getItemRowById(id) {
         (SELECT COUNT(*) FROM material_group_item_links WHERE material_group_item_links.item_id = items.id)
       ) AS usage_count
     FROM items
+    LEFT JOIN pipeline_templates ON items.default_pipeline_id = pipeline_templates.id
     WHERE items.id = ?
     `,
     [id],
@@ -4847,6 +4946,7 @@ async function getItemsWithUsage() {
   return all(`
     SELECT
       items.*,
+      pipeline_templates.name AS default_pipeline_name,
       (
         (SELECT COUNT(*) FROM order_items WHERE order_items.item_id = items.id) +
         (SELECT COUNT(*) FROM delivery_challan_items WHERE delivery_challan_items.item_id = items.id) +
@@ -4855,20 +4955,148 @@ async function getItemsWithUsage() {
         (SELECT COUNT(*) FROM material_group_item_links WHERE material_group_item_links.item_id = items.id)
       ) AS usage_count
     FROM items
+    LEFT JOIN pipeline_templates ON items.default_pipeline_id = pipeline_templates.id
     ORDER BY items.is_archived ASC, LOWER(items.name) ASC
   `);
 }
 
-async function findItemDuplicate({ name, groupId, excludeId = null, variationTree = [] }) {
-  const rows = await all('SELECT id, name, group_id FROM items');
+async function getItemUsageDetails(itemId) {
+  const [
+    orders,
+    challans,
+    bomRequirements,
+    materials,
+    groupLinks
+  ] = await Promise.all([
+    all(`SELECT id, order_no, client_name, status, created_at FROM order_items WHERE item_id = ? ORDER BY created_at DESC LIMIT 50`, [itemId]),
+    all(`SELECT dci.id, dci.challan_id, dc.challan_no, dc.customer_name, dc.date, dc.status 
+         FROM delivery_challan_items dci 
+         JOIN delivery_challans dc ON dci.challan_id = dc.id 
+         WHERE dci.item_id = ? ORDER BY dc.date DESC LIMIT 50`, [itemId]),
+    all(`SELECT omr.id, omr.order_id, oi.order_no, oi.client_name 
+         FROM order_material_requirements omr
+         JOIN order_items oi ON omr.order_id = oi.id
+         WHERE omr.item_id = ? ORDER BY omr.created_at DESC LIMIT 50`, [itemId]),
+    all(`SELECT id, barcode, name, inventory_state FROM materials WHERE linked_item_id = ? ORDER BY created_at DESC LIMIT 50`, [itemId]),
+    all(`SELECT mgil.id, m.barcode, m.name 
+         FROM material_group_item_links mgil
+         JOIN materials m ON mgil.material_id = m.id
+         WHERE mgil.item_id = ? LIMIT 50`, [itemId])
+  ]);
+
+  const usage = [];
+  
+  orders.forEach(o => {
+    usage.push({ type: 'order', id: String(o.id), title: `Order ${o.order_no}`, subtitle: o.client_name || '-', status: o.status, date: o.created_at });
+  });
+
+  challans.forEach(c => {
+    usage.push({ type: 'delivery_challan', id: String(c.challan_id), title: `Challan ${c.challan_no}`, subtitle: c.customer_name || '-', status: c.status, date: c.date });
+  });
+
+  bomRequirements.forEach(b => {
+    usage.push({ type: 'bom_requirement', id: String(b.id), title: `BOM for Order ${b.order_no}`, subtitle: b.client_name || '-', status: null, date: null });
+  });
+
+  materials.forEach(m => {
+    usage.push({ type: 'material', id: String(m.id), title: `Material ${m.barcode}`, subtitle: m.name, status: m.inventory_state, date: null });
+  });
+
+  groupLinks.forEach(g => {
+    usage.push({ type: 'group_link', id: String(g.id), title: `Group Link for ${g.barcode}`, subtitle: g.name, status: null, date: null });
+  });
+
+  return usage;
+}
+
+function sanitizeNodes(nodes, expectedKind, pathSegments = [], parentPropertyName = '', depth = 0) {
+  if (depth > 10) {
+    const error = new Error('Variation tree is too deep.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const siblingNames = new Set();
+  return (nodes || []).map((node, index) => {
+    const trimmedName = String(node.name || '').trim();
+    if (!trimmedName) {
+      const error = new Error('Variation tree node names are required.');
+      error.statusCode = 400;
+      throw error;
+    }
+    const kind = String(node.kind || '');
+    if (kind !== expectedKind) {
+      const error = new Error('Variation tree must alternate between property groups and values.');
+      error.statusCode = 409;
+      throw error;
+    }
+    const normalizedName = normalizeUnitValue(trimmedName);
+    if (siblingNames.has(normalizedName)) {
+      const error = new Error('Sibling variation nodes must have unique names.');
+      error.statusCode = 409;
+      throw error;
+    }
+    siblingNames.add(normalizedName);
+
+    const nodeId = node.id || null;
+
+    if (kind === 'property') {
+      return {
+        id: nodeId,
+        kind,
+        name: trimmedName,
+        code: String(node.code || '').trim(),
+        displayName: '',
+        position: index,
+        children: sanitizeNodes(node.children || [], 'value', pathSegments, trimmedName, depth + 1),
+      };
+    }
+
+    const nextSegments = [...pathSegments, trimmedName];
+    const children = sanitizeNodes(node.children || [], 'property', nextSegments, '', depth + 1);
+    return {
+      id: nodeId,
+      kind,
+      name: trimmedName,
+      code: String(node.code || '').trim(),
+      displayName:
+        String(node.displayName || '').trim() || buildVariationPathLabel(nextSegments),
+      position: index,
+      children,
+    };
+  });
+}
+
+async function findItemDuplicate({ name, groupId, unitId, excludeId = null, variationTree = [] }) {
+  const rows = await all('SELECT id, name, group_id, unit_id FROM items');
   const normalizedName = normalizeUnitValue(name);
+  const normalizedGroupId = Number(groupId || 0);
+  const normalizedUnitId = Number(unitId || 0);
+
+  const comparableTree = (nodes = []) =>
+    (nodes || [])
+      .map((node) => ({
+        id: null,
+        kind: node.kind,
+        name: String(node.name || '').trim(),
+        displayName: String(node.displayName || '').trim(),
+        code: String(node.code || '').trim(),
+        children: comparableTree(node.children || []),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+  const sanitizedTree = sanitizeNodes(variationTree, 'property');
+  const serializedInputTree = JSON.stringify(comparableTree(sanitizedTree));
 
   for (const row of rows) {
     if (excludeId != null && row.id === excludeId) {
       continue;
     }
-    if (normalizeUnitValue(row.name) === normalizedName) {
-      return row;
+    if (normalizeUnitValue(row.name) === normalizedName && Number(row.group_id || 0) === normalizedGroupId && Number(row.unit_id || 0) === normalizedUnitId) {
+      const existingTree = await getItemVariationTree(row.id);
+      const serializedExistingTree = JSON.stringify(comparableTree(existingTree));
+      if (serializedInputTree === serializedExistingTree) {
+        return row;
+      }
     }
   }
   return null;
@@ -11175,7 +11403,7 @@ async function saveGroup({ name, parentGroupId = null, unitId, id = null, groupT
   let normalizedParentId = parentGroupId == null ? null : Number(parentGroupId);
   let normalizedUnitId = unitId ? Number(unitId) : null;
 
-  if (normalizedParentId == null && trimmedName !== 'Primary Group') {
+  if (normalizedParentId == null && trimmedName !== 'Primary Group' && trimmedName !== 'Raw material' && trimmedName !== 'Scrap') {
     const pg = await get('SELECT id FROM groups WHERE name = "Primary Group" AND parent_group_id IS NULL AND group_type = ?', [groupType]);
     if (pg) {
       normalizedParentId = pg.id;
@@ -11400,6 +11628,7 @@ async function saveItem({
   unitConversions = [],
   namingFormat = [],
   variationTree = [],
+  defaultPipelineId = null,
   id = null,
 }) {
   const trimmedName = String(name || '').trim();
@@ -11472,6 +11701,7 @@ async function saveItem({
   const duplicate = await findItemDuplicate({
     name: trimmedName,
     groupId: normalizedGroupId,
+    unitId: normalizedUnitId,
     excludeId: id,
     variationTree: variationTree,
   });
@@ -11481,86 +11711,34 @@ async function saveItem({
     throw error;
   }
 
-  const sanitizeNodes = (nodes, expectedKind, pathSegments = [], parentPropertyName = '', depth = 0) => {
-    if (depth > 10) {
-      const error = new Error('Variation tree is too deep.');
-      error.statusCode = 400;
-      throw error;
-    }
-    const siblingNames = new Set();
-    return (nodes || []).map((node, index) => {
-      const trimmedName = String(node.name || '').trim();
-      if (!trimmedName) {
-        const error = new Error('Variation tree node names are required.');
-        error.statusCode = 400;
-        throw error;
-      }
-      const kind = String(node.kind || '');
-      if (kind !== expectedKind) {
-        const error = new Error('Variation tree must alternate between property groups and values.');
-        error.statusCode = 409;
-        throw error;
-      }
-      const normalizedName = normalizeUnitValue(trimmedName);
-      if (siblingNames.has(normalizedName)) {
-        const error = new Error('Sibling variation nodes must have unique names.');
-        error.statusCode = 409;
-        throw error;
-      }
-      siblingNames.add(normalizedName);
 
-      const nodeId = node.id || null;
-
-      if (kind === 'property') {
-        return {
-          id: nodeId,
-          kind,
-          name: trimmedName,
-          code: String(node.code || '').trim(),
-          displayName: '',
-          position: index,
-          children: sanitizeNodes(node.children || [], 'value', pathSegments, trimmedName, depth + 1),
-        };
-      }
-
-      const nextSegments = [...pathSegments, trimmedName];
-      const children = sanitizeNodes(node.children || [], 'property', nextSegments, '', depth + 1);
-      return {
-        id: nodeId,
-        kind,
-        name: trimmedName,
-        code: String(node.code || '').trim(),
-        displayName:
-          String(node.displayName || '').trim() || buildVariationPathLabel(nextSegments),
-        position: index,
-        children,
-      };
-    });
-  };
 
   const sanitizedTree = sanitizeNodes(variationTree, 'property');
   const comparableTree = (nodes = []) =>
-    (nodes || []).map((node) => ({
-      id: node.id || null,
-      kind: node.kind,
-      name: String(node.name || '').trim(),
-      displayName: String(node.displayName || '').trim(),
-      // H-1 fix: include 'code' so that renaming a variation node's barcode/
-      // naming code on a used item is correctly treated as a structural change.
-      code: String(node.code || '').trim(),
-      children: comparableTree(node.children || []),
-    }));
+    (nodes || [])
+      .map((node) => ({
+        id: node.id || null,
+        kind: node.kind,
+        name: String(node.name || '').trim(),
+        displayName: String(node.displayName || '').trim(),
+        // H-1 fix: include 'code' so that renaming a variation node's barcode/
+        // naming code on a used item is correctly treated as a structural change.
+        code: String(node.code || '').trim(),
+        children: comparableTree(node.children || []),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
 
   const now = new Date().toISOString();
   await run('BEGIN TRANSACTION');
   try {
     let itemId = id;
+    let structuralChangeDetected = false;
     if (id == null) {
       const result = await run(
         `
         INSERT INTO items (
-          name, alias, display_name, quantity, group_id, unit_id, naming_format, is_archived, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+          name, alias, display_name, quantity, group_id, unit_id, naming_format, is_archived, default_pipeline_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
         `,
         [
           trimmedName,
@@ -11570,6 +11748,7 @@ async function saveItem({
           normalizedGroupId,
           normalizedUnitId,
           serializedNamingFormat,
+          defaultPipelineId || null,
           now,
           now,
         ],
@@ -11584,23 +11763,16 @@ async function saveItem({
       }
       if ((existing.usage_count || 0) > 0) {
         const existingTree = await getItemVariationTree(id);
-        const structuralChangeDetected =
+        structuralChangeDetected =
           Number(existing.group_id || 0) !== normalizedGroupId ||
           Number(existing.unit_id || 0) !== normalizedUnitId ||
           JSON.stringify(comparableTree(existingTree)) !==
             JSON.stringify(comparableTree(sanitizedTree));
-        if (structuralChangeDetected) {
-          const error = new Error(
-            'Used items can only update names, aliases, display names, naming formats, and unit conversions.',
-          );
-          error.statusCode = 409;
-          throw error;
-        }
       }
       await run(
         `
         UPDATE items
-        SET name = ?, alias = ?, display_name = ?, quantity = ?, group_id = ?, unit_id = ?, naming_format = ?, updated_at = ?
+        SET name = ?, alias = ?, display_name = ?, quantity = ?, group_id = ?, unit_id = ?, naming_format = ?, default_pipeline_id = ?, updated_at = ?
         WHERE id = ?
         `,
         [
@@ -11611,13 +11783,23 @@ async function saveItem({
           normalizedGroupId,
           normalizedUnitId,
           serializedNamingFormat,
+          defaultPipelineId || null,
           now,
           id,
         ],
       );
     }
 
-    const existingNodesRows = await all('SELECT id FROM item_variation_nodes WHERE item_id = ? AND is_archived = 0', [itemId]);
+    if (structuralChangeDetected) {
+      await run(
+        'UPDATE item_variation_nodes SET is_archived = 1, updated_at = ? WHERE item_id = ? AND is_archived = 0',
+        [now, itemId]
+      );
+    }
+
+    const existingNodesRows = structuralChangeDetected
+      ? []
+      : await all('SELECT id FROM item_variation_nodes WHERE item_id = ? AND is_archived = 0', [itemId]);
     const existingNodeIds = new Set(existingNodesRows.map(row => row.id));
     const processedNodeIds = new Set();
 
@@ -18331,6 +18513,15 @@ app.patch('/api/vendors/:id/restore', requirePermission('config.write'), async (
   }
 });
 
+app.get('/api/items/:id/usage', requirePermission('config.read'), async (req, res) => {
+  try {
+    const usage = await getItemUsageDetails(Number(req.params.id));
+    res.json({ success: true, usage, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, usage: [], error: error.message });
+  }
+});
+
 app.get('/api/items', requirePermission('config.read'), async (req, res) => {
   try {
     const rows = await getItemsWithUsage();
@@ -18940,6 +19131,22 @@ app.delete('/templates/:id', async (req, res) => {
   }
 });
 
+app.delete('/runs/:id', async (req, res) => {
+  try {
+    const existing = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
+    if (!existing) {
+      res.status(404).json({ success: false, error: 'Run not found.' });
+      return;
+    }
+    await run('DELETE FROM run_barcode_inputs WHERE run_id = ?', [req.params.id]);
+    await run('DELETE FROM production_scrap WHERE pipeline_run_id = ?', [req.params.id]);
+    await run('DELETE FROM pipeline_runs WHERE id = ?', [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.get('/runs', requirePermission('config.read'), async (req, res) => {
   try {
     const { template_id: templateId } = req.query;
@@ -19362,6 +19569,68 @@ app.delete(['/runs/:id/barcodes', '/runs/:id/barcodes/:nodeId/:barcode'], async 
     res.status(error.statusCode || 500).json({ success: false, run: null, error: error.message });
   }
 });
+app.put('/runs/:id/node-metrics', async (req, res) => {
+  try {
+    const { nodeId, metrics } = req.body;
+    if (!nodeId || !metrics) {
+      return res.status(400).json({ success: false, run: null, error: 'nodeId and metrics are required.' });
+    }
+    const runRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
+    if (!runRow) {
+      return res.status(404).json({ success: false, run: null, error: 'Run not found.' });
+    }
+    
+    const nodeMetrics = parseJson(runRow.node_metrics_json, {});
+    nodeMetrics[nodeId] = { ...(nodeMetrics[nodeId] || {}), ...metrics };
+    
+    await run('UPDATE pipeline_runs SET node_metrics_json = ? WHERE id = ?', [
+      JSON.stringify(nodeMetrics),
+      req.params.id,
+    ]);
+    
+    const updatedRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
+    res.json({ success: true, run: await rowToRun(updatedRow) });
+  } catch (error) {
+    res.status(500).json({ success: false, run: null, error: error.message });
+  }
+});
+
+app.post('/api/production-scrap', requirePermission('config.write'), async (req, res) => {
+  try {
+    const { pipelineRunId, nodeId, orderNo, materialBarcode, scrapQty } = req.body;
+    if (!pipelineRunId || !nodeId || !materialBarcode) {
+      return res.status(400).json({ success: false, error: 'pipelineRunId, nodeId, and materialBarcode are required.' });
+    }
+    await run(`
+      INSERT INTO production_scrap (pipeline_run_id, node_id, order_no, material_barcode, scrap_qty, logged_by)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [pipelineRunId, nodeId, orderNo, materialBarcode, scrapQty, actorFromRequest(req)]);
+    res.status(201).json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/production-scrap', requirePermission('config.read'), async (req, res) => {
+  try {
+    const { pipelineRunId, nodeId } = req.query;
+    let query = 'SELECT * FROM production_scrap WHERE 1=1';
+    const params = [];
+    if (pipelineRunId) {
+      query += ' AND pipeline_run_id = ?';
+      params.push(pipelineRunId);
+    }
+    if (nodeId) {
+      query += ' AND node_id = ?';
+      params.push(nodeId);
+    }
+    query += ' ORDER BY created_at DESC';
+    const rows = await all(query, params);
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 
 app.use('/api', (error, req, res, _next) => {
@@ -19527,69 +19796,6 @@ if (require.main === module) {
 }
 
 
-app.put('/runs/:id/node-metrics', async (req, res) => {
-  try {
-    const { nodeId, metrics } = req.body;
-    if (!nodeId || !metrics) {
-      return res.status(400).json({ success: false, run: null, error: 'nodeId and metrics are required.' });
-    }
-    const runRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
-    if (!runRow) {
-      return res.status(404).json({ success: false, run: null, error: 'Run not found.' });
-    }
-    
-    const nodeMetrics = parseJson(runRow.node_metrics_json, {});
-    nodeMetrics[nodeId] = { ...(nodeMetrics[nodeId] || {}), ...metrics };
-    
-    await run('UPDATE pipeline_runs SET node_metrics_json = ? WHERE id = ?', [
-      JSON.stringify(nodeMetrics),
-      req.params.id,
-    ]);
-    
-    const updatedRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
-    res.json({ success: true, run: await rowToRun(updatedRow) });
-  } catch (error) {
-    res.status(500).json({ success: false, run: null, error: error.message });
-  }
-});
-
-app.post('/api/production-scrap', requirePermission('config.write'), async (req, res) => {
-  try {
-    const { pipelineRunId, nodeId, orderNo, materialBarcode, scrapQty } = req.body;
-    if (!pipelineRunId || !nodeId || !materialBarcode) {
-      return res.status(400).json({ success: false, error: 'pipelineRunId, nodeId, and materialBarcode are required.' });
-    }
-    await run(`
-      INSERT INTO production_scrap (pipeline_run_id, node_id, order_no, material_barcode, scrap_qty, logged_by)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [pipelineRunId, nodeId, orderNo, materialBarcode, scrapQty, actorFromRequest(req)]);
-    res.status(201).json({ success: true });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.get('/api/production-scrap', requirePermission('config.read'), async (req, res) => {
-  try {
-    const { pipelineRunId, nodeId } = req.query;
-    let query = 'SELECT * FROM production_scrap WHERE 1=1';
-    const params = [];
-    if (pipelineRunId) {
-      query += ' AND pipeline_run_id = ?';
-      params.push(pipelineRunId);
-    }
-    if (nodeId) {
-      query += ' AND node_id = ?';
-      params.push(nodeId);
-    }
-    query += ' ORDER BY created_at DESC';
-    const rows = await all(query, params);
-    res.json({ success: true, data: rows });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 module.exports = {
   app,
   initDb,
@@ -19667,4 +19873,5 @@ module.exports = {
   rowToOrderDto,
   rowToPoDocumentDto,
   rowToItemDto,
+  resolveOrderVariationSelection,
 };

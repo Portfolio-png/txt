@@ -245,9 +245,6 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final scrapDestination =
-        widget.node.scrapItemName ?? 'Not set in pipeline editor';
-    final difference = _difference;
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -283,17 +280,6 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Account for every ${_unit.isEmpty ? 'unit' : _unit} of allotted '
-                      'material. The difference can only be leftover material or scrap.',
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        color: Color(0xFF64748B),
-                        fontWeight: FontWeight.w600,
-                        height: 1.35,
-                      ),
-                    ),
                     const SizedBox(height: 18),
                     Row(
                       children: [
@@ -319,105 +305,40 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
                       ],
                     ),
                     const SizedBox(height: 14),
-                    if (difference > 0) ...[
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFF7ED),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: const Color(0xFFF4C98B)),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _QtyField(
+                            label: 'Leftover ($_unit)',
+                            controller: _leftoverCtrl,
+                            onChanged: (_) => setState(
+                              () => _recalculate(keepScrap: false),
+                            ),
+                          ),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'What happened to the missing ${_fmt(difference)} $_unit?',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w800,
-                                color: Color(0xFF9A3412),
-                              ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _QtyField(
+                            label: 'Scrap ($_unit)',
+                            controller: _scrapCtrl,
+                            onChanged: (_) => setState(
+                              () => _recalculate(keepScrap: true),
                             ),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _QtyField(
-                                    label: 'Leftover ($_unit)',
-                                    controller: _leftoverCtrl,
-                                    onChanged: (_) => setState(
-                                      () => _recalculate(keepScrap: false),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: _QtyField(
-                                    label: 'Scrap ($_unit)',
-                                    controller: _scrapCtrl,
-                                    onChanged: (_) => setState(
-                                      () => _recalculate(keepScrap: true),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Scrap ships to: $scrapDestination',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: widget.node.scrapItemId == null
-                                    ? const Color(0xFFDC2626)
-                                    : const Color(0xFF475569),
-                              ),
-                            ),
-                            if (_leftover > 0) ...[
-                              const SizedBox(height: 12),
-                              const Text(
-                                'What should happen to the leftover?',
-                                style: TextStyle(
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFF334155),
-                                ),
-                              ),
-                              RadioListTile<LeftoverAction>(
-                                value: LeftoverAction.returnToInventory,
-                                groupValue: _leftoverAction,
-                                dense: true,
-                                contentPadding: EdgeInsets.zero,
-                                title: const Text(
-                                  'Return original material to inventory',
-                                  style: TextStyle(fontSize: 13),
-                                ),
-                                onChanged: (value) => setState(
-                                  () => _leftoverAction =
-                                      value ?? LeftoverAction.returnToInventory,
-                                ),
-                              ),
-                              RadioListTile<LeftoverAction>(
-                                value: LeftoverAction.scrap,
-                                groupValue: _leftoverAction,
-                                dense: true,
-                                contentPadding: EdgeInsets.zero,
-                                title: Text(
-                                  'Scrap it ($scrapDestination)',
-                                  style: const TextStyle(fontSize: 13),
-                                ),
-                                onChanged: (value) => setState(
-                                  () => _leftoverAction =
-                                      value ?? LeftoverAction.scrap,
-                                ),
-                              ),
-                            ],
-                          ],
+                          ),
                         ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Leftover material will be sent to original inventory stock.',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: Color(0xFF64748B),
+                        fontWeight: FontWeight.w600,
+                        height: 1.35,
                       ),
-                      const SizedBox(height: 14),
-                    ],
+                    ),
+                    const SizedBox(height: 14),
                     if (_errorText != null) ...[
                       Text(
                         _errorText!,

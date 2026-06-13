@@ -12,6 +12,7 @@ import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/widgets/page_container.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../../core/widgets/soft_primitives.dart';
+import 'package:collection/collection.dart';
 import 'package:core_erp/core/navigation/app_navigation.dart';
 import '../../../clients/domain/client_definition.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
@@ -23,6 +24,7 @@ import '../../../delivery_challans/presentation/screens/delivery_challan_screen.
 import 'package:core_erp/widgets/variation_path_selector_dialog.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../items/domain/item_definition.dart';
+import '../../../items/presentation/widgets/item_detail_panel.dart' show generatedItemNames;
 import '../../../items/presentation/screens/items_screen.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../units/domain/unit_definition.dart';
@@ -1299,18 +1301,14 @@ class _OrderDataRowState extends State<_OrderDataRow> {
                             primary: group.clientName,
                             secondary: group.items.length > 1
                                 ? '${group.items.length} items'
-                                : (group
-                                              .items
-                                              .first
-                                              .variationPathLabel
-                                              .isEmpty ||
-                                          group
-                                                  .items
-                                                  .first
-                                                  .variationPathLabel ==
-                                              group.items.first.itemName
-                                      ? group.items.first.itemName
-                                      : '${group.items.first.itemName} · ${group.items.first.variationPathLabel}'),
+                                : (group.items.first.variationPathLabel.isEmpty ||
+                                        group.items.first.variationPathLabel ==
+                                            group.items.first.itemName
+                                    ? group.items.first.itemName
+                                    : (group.items.first.variationPathLabel
+                                            .startsWith(group.items.first.itemName)
+                                        ? group.items.first.variationPathLabel
+                                        : '${group.items.first.itemName} · ${group.items.first.variationPathLabel}')),
                             primaryStyle: const TextStyle(
                               fontWeight: FontWeight.w700,
                             ),
@@ -3061,10 +3059,11 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
               final primaryGroup =
                   groupsProvider.findById(item.groupId)?.name ??
                   'No primary group';
+              final fullVariationName = generatedItemNames(item).join(' / ');
               return SearchableSelectOption<int>(
                 value: item.id,
-                label: item.displayName,
-                searchText: '${item.displayName} $primaryGroup',
+                label: fullVariationName,
+                searchText: '$fullVariationName $primaryGroup',
               );
             })
             .toList(growable: false),
@@ -4542,37 +4541,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
   }
 
   String _variationSelectionLabel(ItemDefinition item, List<int> valueNodeIds) {
-    final selectedValueIds = valueNodeIds.toSet();
-    final segments = <String>[];
-    for (final root in item.topLevelProperties) {
-      ItemVariationNodeDefinition currentProperty = root;
-      while (true) {
-        final selectedValue = currentProperty.activeChildren
-            .where((node) => node.kind == ItemVariationNodeKind.value)
-            .where((node) => selectedValueIds.contains(node.id))
-            .firstOrNull;
-        if (selectedValue == null) {
-          break;
-        }
-        final propertyName = currentProperty.name.trim();
-        final valueName = selectedValue.name.trim().isEmpty
-            ? selectedValue.displayName.trim()
-            : selectedValue.name.trim();
-        if (propertyName.isNotEmpty || valueName.isNotEmpty) {
-          segments.add(
-            valueName.isEmpty ? propertyName : '$propertyName: $valueName',
-          );
-        }
-        final nextProperty = selectedValue.activeChildren
-            .where((node) => node.kind == ItemVariationNodeKind.property)
-            .firstOrNull;
-        if (nextProperty == null) {
-          break;
-        }
-        currentProperty = nextProperty;
-      }
-    }
-    return segments.isEmpty ? item.displayName : segments.join(' / ');
+    return _buildNamingFormatLabel(item, valueNodeIds);
   }
 
   /// Builds a display label using the item's naming format order.
@@ -5746,10 +5715,29 @@ class _OrderItemsDetailCard extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     minimumSize: const Size(0, 28),
                   ),
-                  child: Text(
-                    isAssigned ? 'Show pipeline' : 'Issue pipeline',
-                    style: const TextStyle(fontSize: 12),
-                  ),
+                  child: isAssigned
+                      ? Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF48C7A4),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            const Text(
+                              'Pipeline assigned',
+                              style: TextStyle(fontSize: 12, color: Color(0xFF48C7A4)),
+                            ),
+                          ],
+                        )
+                      : const Text(
+                          'Assign pipeline',
+                          style: TextStyle(fontSize: 12),
+                        ),
                 );
 
                 return _OrderItemsGridRow(
@@ -7950,10 +7938,6 @@ int _statusPriorityWeight(OrderStatus status) {
 }
 
 enum _OrderUrgency { none, nearDue, overdue }
-
-extension<T> on Iterable<T> {
-  T? get firstOrNull => isEmpty ? null : first;
-}
 
 class _OrderCreateUnitDialog extends StatefulWidget {
   const _OrderCreateUnitDialog({

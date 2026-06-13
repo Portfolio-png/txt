@@ -71,17 +71,13 @@ class MockPipelineRunRepository implements PipelineRunRepository {
   }
 
   @override
-  Future<void> deleteTemplate(String id) async {
-    _ensureSeeded();
-    final index = _templates!.indexWhere((item) => item.id == id);
-    if (index == -1) {
-      throw const PipelineApiException('Template not found.');
-    }
-    _templates!.removeAt(index);
-  }
-
-  @override
-  Future<PipelineRun> createRun(String templateId, {String? name, String? orderNo, int? orderItemId, String? scrapRouting}) async {
+  Future<PipelineRun> createRun(
+    String templateId, {
+    String? name,
+    String? orderNo,
+    int? orderItemId,
+    String? scrapRouting,
+  }) async {
     _ensureSeeded();
     final template = _templates!
         .where((item) => item.id == templateId)
@@ -366,6 +362,18 @@ class MockPipelineRunRepository implements PipelineRunRepository {
     );
     _runs[index] = updatedRun;
     return updatedRun;
+  }
+
+  @override
+  Future<void> deleteTemplate(String id) async {
+    _ensureSeeded();
+    _templates?.removeWhere((t) => t.id == id);
+  }
+
+  @override
+  Future<void> deleteRun(String id) async {
+    _ensureSeeded();
+    _runs.removeWhere((r) => r.id == id);
   }
 
   @override

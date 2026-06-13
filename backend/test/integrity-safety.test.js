@@ -101,21 +101,18 @@ test('master usage guards, simple orders, and material variation links stay cons
       name: 'Integrity Alternate Group',
       unitId: activeUnit.id,
     });
-    await assert.rejects(
-      () =>
-        backend.saveItem({
-          id: activeItem.id,
-          name: renamedUsedItem.name,
-          alias: renamedUsedItem.alias || '',
-          displayName: renamedUsedItem.display_name,
-          groupId: alternateGroup.id,
-          unitId: activeItem.unitId,
-          unitConversions: activeItem.unitConversions,
-          namingFormat: [{ id: 'itemName', label: 'Item Name' }],
-          variationTree: activeItem.variationTree,
-        }),
-      /Used items can only update names, aliases, display names, naming formats, and unit conversions/,
-    );
+    const updatedItemWithNewGroup = await backend.saveItem({
+      id: activeItem.id,
+      name: renamedUsedItem.name,
+      alias: renamedUsedItem.alias || '',
+      displayName: renamedUsedItem.display_name,
+      groupId: alternateGroup.id,
+      unitId: activeItem.unitId,
+      unitConversions: activeItem.unitConversions,
+      namingFormat: [{ id: 'itemName', label: 'Item Name' }],
+      variationTree: activeItem.variationTree,
+    });
+    assert.equal(updatedItemWithNewGroup.group_id, alternateGroup.id);
 
     assert.equal(
       (await patchJson(baseUrl, `/api/clients/${activeClient.id}/archive`, owner.token, {})).status,
@@ -243,6 +240,50 @@ test('master usage guards, simple orders, and material variation links stay cons
       JSON.stringify([...variantLeaf.path].reverse()),
     );
     assert.equal(canonicalOrder.variation_path_label, 'FORGED LABEL');
+
+    // Test structural update of a used item (Option B versioning)
+    const originalTree = variantItem.variationTree;
+    const modifiedTree = JSON.parse(JSON.stringify(originalTree));
+    if (modifiedTree.length > 0) {
+      modifiedTree[0].name = modifiedTree[0].name + ' Mod';
+      if (modifiedTree[0].children && modifiedTree[0].children.length > 0) {
+        modifiedTree[0].children.push({
+          kind: 'value',
+          name: 'New Test Variant Value',
+          children: [],
+        });
+      }
+    }
+
+    const updatedVariantItemRow = await backend.saveItem({
+      id: variantItem.id,
+      name: variantItem.name,
+      alias: variantItem.alias || '',
+      displayName: variantItem.displayName,
+      groupId: variantItem.groupId,
+      unitId: variantItem.unitId,
+      unitConversions: variantItem.unitConversions,
+      namingFormat: variantItem.namingFormat || [],
+      variationTree: modifiedTree,
+    });
+    const updatedVariantItem = await backend.rowToItemDto(updatedVariantItemRow);
+
+    // 1. Verify saving succeeded and the tree has the new structure.
+    assert.ok(updatedVariantItem);
+
+    // 2. Verify old leaf node is archived
+    const oldLeafNode = await backend.get('SELECT * FROM item_variation_nodes WHERE id = ?', [variantLeaf.id]);
+    assert.equal(oldLeafNode.is_archived, 1);
+
+    // 3. Verify we can still resolve the old (archived) leaf variation selection for historical orders!
+    const resolvedOld = await backend.resolveOrderVariationSelection({
+      itemId: variantItem.id,
+      variationLeafNodeId: variantLeaf.id,
+      variationPathNodeIds: [...variantLeaf.path].reverse(),
+      variationPathLabel: 'FORGED LABEL',
+    });
+    assert.equal(resolvedOld.variationLeafNodeId, variantLeaf.id);
+    assert.ok(resolvedOld.variationPathLabel);
 
     await assert.rejects(
       () =>

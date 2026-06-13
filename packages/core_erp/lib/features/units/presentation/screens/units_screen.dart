@@ -60,7 +60,7 @@ class UnitsScreen extends StatelessWidget {
   }) {
     return showErpFormDialog<UnitDefinition?>(
       context,
-      maxWidth: unit == null ? 460 : 520,
+      maxWidth: 980,
       maxHeight: 860,
       child: _UnitEditorSheet(
         unit: unit,
@@ -348,6 +348,324 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
         ? 'Update Unit Group'
         : 'Edit Unit';
 
+    final basicsCard = isCreateMode
+        ? Column(
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: _UnitTextField(
+                      controller: _nameController,
+                      label: 'Unit name',
+                      readOnly: false,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    flex: 2,
+                    child: _UnitTextField(
+                      controller: _symbolController,
+                      label: 'Symbol',
+                      readOnly: false,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              _WarningText(
+                warning: provider
+                    .checkDuplicate(
+                      name: _nameController.text,
+                      symbol: _symbolController.text,
+                      excludeId: widget.unit?.id,
+                    )
+                    .warning,
+              ),
+            ],
+          )
+        : _EditorSectionCard(
+            icon: Icons.edit_note_rounded,
+            title: 'Unit basics',
+            subtitle:
+                'Give the unit a clear label and symbol your team will recognize at a glance.',
+            child: Column(
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: _UnitTextField(
+                        controller: _nameController,
+                        label: 'Unit name',
+                        helper: 'Shown in pickers and configurator lists',
+                        readOnly: _isDetailsLocked,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      flex: 2,
+                      child: _UnitTextField(
+                        controller: _symbolController,
+                        label: 'Symbol',
+                        helper: 'Shown beside quantities',
+                        readOnly: _isDetailsLocked,
+                      ),
+                    ),
+                  ],
+                ),
+                if (!_isDetailsLocked) ...[
+                  const SizedBox(height: 14),
+                  _UnitTextField(
+                    controller: _notesController,
+                    label: 'Notes',
+                    helper: 'Optional context for operators',
+                    readOnly: _isDetailsLocked,
+                    maxLines: 3,
+                    required: false,
+                  ),
+                  const SizedBox(height: 14),
+                  _WarningText(
+                    warning: provider
+                        .checkDuplicate(
+                          name: _nameController.text,
+                          symbol: _symbolController.text,
+                          excludeId: widget.unit?.id,
+                        )
+                        .warning,
+                  ),
+                ],
+              ],
+            ),
+          );
+
+    final usageContent = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _UnitGroupingSection(
+            convertsToAnotherUnit: _convertsToAnotherUnit,
+            onConvertsChanged: (val) {
+              setState(() {
+                _convertsToAnotherUnit = val;
+                if (!val) {
+                  _conversionController.text = '1';
+                }
+              });
+            },
+            controller: _groupController,
+            suggestions: provider.availableGroupNames,
+            existingFamilyBaseUnits: existingFamilyBaseUnits,
+            selectedExistingFamilyUnitId:
+                _selectedExistingFamilyUnitId ?? baseUnit?.id,
+            onExistingFamilySelected: (unit) {
+              setState(() {
+                _selectedExistingFamilyUnitId = unit?.id;
+                if (unit != null) {
+                  _groupController.text =
+                      (unit.unitGroupName ?? '').trim().isEmpty
+                      ? unit.name
+                      : unit.unitGroupName!.trim();
+                }
+              });
+            },
+            currentUnitName: _nameController.text.trim(),
+            onCreateNewBaseUnit: () {
+              setState(() {
+                _createNewBaseUnit = true;
+              });
+            },
+            createNewBaseUnit: _createNewBaseUnit,
+          ),
+          if (_convertsToAnotherUnit && _createNewBaseUnit) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Define the base unit for this family:',
+              style: Theme.of(context)
+                  .textTheme
+                  .labelMedium
+                  ?.copyWith(
+                    color: const Color(0xFF64748B),
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: _UnitTextField(
+                    controller: _baseUnitNameController,
+                    label: 'Base name (e.g. gram)',
+                    readOnly: false,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _UnitTextField(
+                    controller: _baseUnitSymbolController,
+                    label: 'Symbol (e.g. g)',
+                    readOnly: false,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _UnitGroupField(
+              controller: _groupController,
+              readOnly: false,
+              suggestions: provider.availableGroupNames,
+              label: 'Family name (Optional)',
+              helper: isCreateMode ? '' : 'A simple family name like "Length" or "Weight".',
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _createNewBaseUnit = false;
+                  });
+                },
+                icon: const Icon(Icons.close_rounded, size: 18),
+                label: const Text('Cancel creating base unit'),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF64748B),
+                ),
+              ),
+            ),
+          ],
+          if (_convertsToAnotherUnit) ...[
+            const SizedBox(height: 16),
+            _ConversionField(
+              controller: _conversionController,
+              readOnly: !requiresConversion,
+              helper: '1 ${_symbolController.text.trim().isEmpty ? 'unit' : _symbolController.text.trim()} = this many ${_createNewBaseUnit ? (_baseUnitSymbolController.text.trim().isEmpty ? 'base' : _baseUnitSymbolController.text.trim()) : (baseUnit?.symbol ?? '')}.',
+            ),
+            if (!isCreateMode) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Units in the same family can be used interchangeably anywhere that family is allowed.',
+                style: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(
+                      color: const Color(0xFF475569),
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ],
+          ],
+        ],
+      );
+
+    final usageCard = isCreateMode
+        ? usageContent
+        : _EditorSectionCard(
+            icon: Icons.account_tree_outlined,
+            title: 'Usage and family',
+            subtitle:
+                'Decide whether this unit stays independent or belongs to a group with shared compatibility.',
+            child: usageContent,
+          );
+
+    final familyUnitsCard = _EditorSectionCard(
+      icon: Icons.account_tree_outlined,
+      title: 'Family units',
+      subtitle:
+          'Units connected to this family. You can add more units here.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ...[
+            ...provider.activeUnits
+                .where((u) {
+                  final uGroup =
+                      (u.unitGroupName ?? '').trim();
+                  final matchesGroup =
+                      uGroup.isNotEmpty &&
+                      uGroup == groupName;
+                  final isBaseMatch =
+                      u.isBaseUnit && u.name == groupName;
+                  final isActualBase =
+                      baseUnit != null &&
+                      u.id == baseUnit.id;
+                  return matchesGroup ||
+                      isBaseMatch ||
+                      isActualBase;
+                })
+                .toList()
+              ..sort((a, b) {
+                if (a.isBaseUnit) return -1;
+                if (b.isBaseUnit) return 1;
+                return a.conversionFactor.compareTo(
+                  b.conversionFactor,
+                );
+              })
+          ].map(
+            (u) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  Text(
+                    u.displayLabel,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                      color: Color(0xFF1E293B),
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    u.isBaseUnit
+                        ? 'Base unit'
+                        : '${u.conversionFactor}x of base',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF64748B),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          AppButton(
+            label: 'Add unit to this family',
+            variant: AppButtonVariant.secondary,
+            onPressed: () async {
+              final newUnit = await UnitsScreen.openEditor(
+                context,
+                initialGroupName: groupName,
+                initialConversionBaseUnitId:
+                    baseUnit?.id ?? widget.unit?.id,
+              );
+              if (newUnit != null && mounted) {
+                setState(() {});
+              }
+            },
+          ),
+        ],
+      ),
+    );
+
+    final previewCard = _EditorSectionCard(
+      icon: Icons.visibility_outlined,
+      title: 'Live preview',
+      subtitle:
+          'A quick glance at how this unit will read inside forms and records.',
+      child: _PreviewCard(
+        name: _nameController.text.trim(),
+        symbol: _symbolController.text.trim(),
+        groupName: groupName,
+        conversionText:
+            (!_convertsToAnotherUnit && groupName.isEmpty)
+            ? null
+            : ((!_convertsToAnotherUnit && groupName.isNotEmpty) || baseUnit == null
+                  ? 'Base unit (1x)'
+                  : '${_conversionController.text.trim().isEmpty ? '1' : _conversionController.text.trim()}x of ${baseUnit.symbol}'),
+      ),
+    );
+
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(isNarrow ? 28 : 32),
@@ -421,21 +739,22 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                                   ?.copyWith(
                                     fontWeight: FontWeight.w800,
                                     color: const Color(0xFF1E293B),
+                                    fontSize: isCreateMode ? 18 : null,
                                   ),
                             ),
-                            const SizedBox(height: 8),
-                            Text(
-                              isCreateMode
-                                  ? 'Create the unit you need now. You can refine the rest later in Masters.'
-                                  : _isDetailsLocked
-                                  ? 'This unit is already used in materials. Core details stay locked, but you can still reorganize its family and compatibility.'
-                                  : 'Shape how this unit appears in forms, where it belongs, and how it converts inside a broader unit family.',
-                              style: Theme.of(context).textTheme.titleMedium
-                                  ?.copyWith(
-                                    color: const Color(0xFF667085),
-                                    height: 1.45,
-                                  ),
-                            ),
+                            if (!isCreateMode) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                _isDetailsLocked
+                                    ? 'This unit is already used in materials. Core details stay locked, but you can still reorganize its family and compatibility.'
+                                    : 'Shape how this unit appears in forms, where it belongs, and how it converts inside a broader unit family.',
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(
+                                      color: const Color(0xFF667085),
+                                      height: 1.45,
+                                    ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -472,280 +791,54 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                         ),
                         const SizedBox(height: 16),
                       ],
-                      _EditorSectionCard(
-                        icon: Icons.edit_note_rounded,
-                        title: 'Unit basics',
-                        subtitle: isCreateMode
-                            ? 'Only the essentials needed to use this unit immediately.'
-                            : 'Give the unit a clear label and symbol your team will recognize at a glance.',
-                        child: Column(
-                          children: [
-                            _UnitTextField(
-                              controller: _nameController,
-                              label: 'Unit name',
-                              helper: 'Shown in pickers and configurator lists',
-                              readOnly: _isDetailsLocked,
-                            ),
-                            const SizedBox(height: 14),
-                            _UnitTextField(
-                              controller: _symbolController,
-                              label: 'Symbol',
-                              helper:
-                                  'Shown beside quantities and on material records',
-                              readOnly: _isDetailsLocked,
-                            ),
-                            if (!_isDetailsLocked) ...[
-                              if (!isCreateMode) ...[
-                                const SizedBox(height: 14),
-                                _UnitTextField(
-                                  controller: _notesController,
-                                  label: 'Notes',
-                                  helper: 'Optional context for operators',
-                                  readOnly: _isDetailsLocked,
-                                  maxLines: 3,
-                                  required: false,
-                                ),
-                              ],
-                              const SizedBox(height: 14),
-                              _WarningText(
-                                warning: provider
-                                    .checkDuplicate(
-                                      name: _nameController.text,
-                                      symbol: _symbolController.text,
-                                      excludeId: widget.unit?.id,
-                                    )
-                                    .warning,
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      _EditorSectionCard(
-                        icon: Icons.account_tree_outlined,
-                        title: 'Usage and family',
-                        subtitle: isCreateMode
-                            ? 'Choose whether the unit stays standalone or belongs to a family.'
-                            : 'Decide whether this unit stays independent or belongs to a group with shared compatibility.',
-                        child: Column(
+                      if (isNarrow)
+                        Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _UnitGroupingSection(
-                              convertsToAnotherUnit: _convertsToAnotherUnit,
-                              onConvertsChanged: (val) {
-                                setState(() {
-                                  _convertsToAnotherUnit = val;
-                                  if (!val) {
-                                    _conversionController.text = '1';
-                                  }
-                                });
-                              },
-                              controller: _groupController,
-                              suggestions: provider.availableGroupNames,
-                              existingFamilyBaseUnits: existingFamilyBaseUnits,
-                              selectedExistingFamilyUnitId:
-                                  _selectedExistingFamilyUnitId ?? baseUnit?.id,
-                              onExistingFamilySelected: (unit) {
-                                setState(() {
-                                  _selectedExistingFamilyUnitId = unit?.id;
-                                  if (unit != null) {
-                                    _groupController.text =
-                                        (unit.unitGroupName ?? '').trim().isEmpty
-                                        ? unit.name
-                                        : unit.unitGroupName!.trim();
-                                  }
-                                });
-                              },
-                              currentUnitName: _nameController.text.trim(),
-                              onCreateNewBaseUnit: () {
-                                setState(() {
-                                  _createNewBaseUnit = true;
-                                });
-                              },
-                              createNewBaseUnit: _createNewBaseUnit,
-                            ),
-                            if (_convertsToAnotherUnit && _createNewBaseUnit) ...[
-                              const SizedBox(height: 12),
-                              Text(
-                                'Define the base unit for this family:',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelMedium
-                                    ?.copyWith(
-                                      color: const Color(0xFF64748B),
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    flex: 2,
-                                    child: _UnitTextField(
-                                      controller: _baseUnitNameController,
-                                      label: 'Base name (e.g. gram)',
-                                      helper: '',
-                                      readOnly: false,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: _UnitTextField(
-                                      controller: _baseUnitSymbolController,
-                                      label: 'Symbol (e.g. g)',
-                                      helper: '',
-                                      readOnly: false,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              _UnitGroupField(
-                                controller: _groupController,
-                                readOnly: false,
-                                suggestions: provider.availableGroupNames,
-                                label: 'Family name (Optional)',
-                                helper: 'A simple family name like "Length" or "Weight".',
-                              ),
-                              const SizedBox(height: 12),
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: TextButton.icon(
-                                  onPressed: () {
-                                    setState(() {
-                                      _createNewBaseUnit = false;
-                                    });
-                                  },
-                                  icon: const Icon(Icons.close_rounded, size: 18),
-                                  label: const Text('Cancel creating base unit'),
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: const Color(0xFF64748B),
-                                  ),
-                                ),
-                              ),
+                            basicsCard,
+                            const SizedBox(height: 18),
+                            usageCard,
+                            if (!isCreateMode && groupName.isNotEmpty) ...[
+                              const SizedBox(height: 18),
+                              familyUnitsCard,
                             ],
-                            if (_convertsToAnotherUnit) ...[
-                              const SizedBox(height: 16),
-                              _ConversionField(
-                                controller: _conversionController,
-                                readOnly: !requiresConversion,
-                                helper: '1 ${_symbolController.text.trim().isEmpty ? 'unit' : _symbolController.text.trim()} = this many ${_createNewBaseUnit ? (_baseUnitSymbolController.text.trim().isEmpty ? 'base' : _baseUnitSymbolController.text.trim()) : (baseUnit?.symbol ?? '')}.',
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                'Units in the same family can be used interchangeably anywhere that family is allowed.',
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(
-                                      color: const Color(0xFF475569),
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                              ),
+                            if (!isCreateMode) ...[
+                              const SizedBox(height: 18),
+                              previewCard,
                             ],
                           ],
-                        ),
-                      ),
-                      if (!isCreateMode && groupName.isNotEmpty) ...[
-                        const SizedBox(height: 18),
-                        _EditorSectionCard(
-                          icon: Icons.account_tree_outlined,
-                          title: 'Family units',
-                          subtitle:
-                              'Units connected to this family. You can add more units here.',
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              ...[
-                                ...provider.activeUnits
-                                    .where((u) {
-                                      final uGroup =
-                                          (u.unitGroupName ?? '').trim();
-                                      final matchesGroup =
-                                          uGroup.isNotEmpty &&
-                                          uGroup == groupName;
-                                      final isBaseMatch =
-                                          u.isBaseUnit && u.name == groupName;
-                                      final isActualBase =
-                                          baseUnit != null &&
-                                          u.id == baseUnit.id;
-                                      return matchesGroup ||
-                                          isBaseMatch ||
-                                          isActualBase;
-                                    })
-                                    .toList()
-                                  ..sort((a, b) {
-                                    if (a.isBaseUnit) return -1;
-                                    if (b.isBaseUnit) return 1;
-                                    return a.conversionFactor.compareTo(
-                                      b.conversionFactor,
-                                    );
-                                  })
-                              ].map(
-                                (u) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 8),
-                                  child: Row(
-                                    children: [
-                                      Text(
-                                        u.displayLabel,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 13,
-                                          color: Color(0xFF1E293B),
-                                        ),
-                                      ),
-                                      const Spacer(),
-                                      Text(
-                                        u.isBaseUnit
-                                            ? 'Base unit'
-                                            : '${u.conversionFactor}x of base',
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          color: Color(0xFF64748B),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                        )
+                      else
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  basicsCard,
+                                  if (!isCreateMode) ...[
+                                    const SizedBox(height: 18),
+                                    previewCard,
+                                  ],
+                                ],
                               ),
-                              const SizedBox(height: 12),
-                              AppButton(
-                                label: 'Add unit to this family',
-                                variant: AppButtonVariant.secondary,
-                                onPressed: () async {
-                                  final newUnit = await UnitsScreen.openEditor(
-                                    context,
-                                    initialGroupName: groupName,
-                                    initialConversionBaseUnitId:
-                                        baseUnit?.id ?? widget.unit?.id,
-                                  );
-                                  if (newUnit != null && mounted) {
-                                    setState(() {});
-                                  }
-                                },
+                            ),
+                            const SizedBox(width: 24),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  usageCard,
+                                  if (!isCreateMode && groupName.isNotEmpty) ...[
+                                    const SizedBox(height: 18),
+                                    familyUnitsCard,
+                                  ],
+                                ],
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                      ],
-                      if (!isCreateMode) ...[
-                        const SizedBox(height: 18),
-                        _EditorSectionCard(
-                          icon: Icons.visibility_outlined,
-                          title: 'Live preview',
-                          subtitle:
-                              'A quick glance at how this unit will read inside forms and records.',
-                          child: _PreviewCard(
-                            name: _nameController.text.trim(),
-                            symbol: _symbolController.text.trim(),
-                            groupName: groupName,
-                            conversionText:
-                                (!_convertsToAnotherUnit && groupName.isEmpty)
-                                ? null
-                                : ((!_convertsToAnotherUnit && groupName.isNotEmpty) || baseUnit == null
-                                      ? 'Base unit (1x)'
-                                      : '${_conversionController.text.trim().isEmpty ? '1' : _conversionController.text.trim()}x of ${baseUnit.symbol}'),
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ),
@@ -757,23 +850,22 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                     border: Border(top: BorderSide(color: Color(0xFFE7EAF3))),
                   ),
                   child: Wrap(
-                    alignment: WrapAlignment.spaceBetween,
+                    alignment: isCreateMode ? WrapAlignment.end : WrapAlignment.spaceBetween,
                     runAlignment: WrapAlignment.center,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     spacing: 12,
                     runSpacing: 12,
                     children: [
-                      Text(
-                        widget.unit == null
-                            ? 'This unit will be available immediately after save.'
-                            : _isDetailsLocked
-                            ? 'Core details are locked because this unit is already in use.'
-                            : 'Changes apply anywhere this unit is available.',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: const Color(0xFF64748B),
-                          fontWeight: FontWeight.w600,
+                      if (!isCreateMode)
+                        Text(
+                          _isDetailsLocked
+                              ? 'Core details are locked because this unit is already in use.'
+                              : 'Changes apply anywhere this unit is available.',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: const Color(0xFF64748B),
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
                       Wrap(
                         spacing: 12,
                         runSpacing: 12,
@@ -994,7 +1086,7 @@ class _UnitTextField extends StatelessWidget {
   const _UnitTextField({
     required this.controller,
     required this.label,
-    required this.helper,
+    this.helper = '',
     required this.readOnly,
     this.maxLines = 1,
     this.required = true,
@@ -1015,7 +1107,7 @@ class _UnitTextField extends StatelessWidget {
       maxLines: maxLines,
       decoration: InputDecoration(
         labelText: label,
-        helperText: helper,
+        helperText: helper.isNotEmpty ? helper : null,
         filled: true,
         fillColor: readOnly ? const Color(0xFFF3F4F6) : const Color(0xFFF9FAFB),
         contentPadding: const EdgeInsets.symmetric(
@@ -1236,7 +1328,7 @@ class _UnitGroupField extends StatelessWidget {
           readOnly: readOnly,
           decoration: InputDecoration(
             labelText: label,
-            helperText: helper,
+            helperText: helper.isNotEmpty ? helper : null,
             filled: true,
             fillColor: const Color(0xFFF9FAFB),
             contentPadding: const EdgeInsets.symmetric(
@@ -1330,10 +1422,10 @@ class _UnitGroupingSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Is this unit a base reference, or does it convert into another unit?',
+          'Unit type',
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w800,
-            color: const Color(0xFF1F2937),
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF374151),
           ),
         ),
         const SizedBox(height: 12),
@@ -1342,7 +1434,6 @@ class _UnitGroupingSection extends StatelessWidget {
             Expanded(
               child: _ModeChip(
                 label: 'Base unit',
-                subtitle: 'It acts as the reference point.',
                 icon: Icons.looks_one_outlined,
                 selected: !convertsToAnotherUnit,
                 onTap: () => onConvertsChanged(false),
@@ -1352,7 +1443,6 @@ class _UnitGroupingSection extends StatelessWidget {
             Expanded(
               child: _ModeChip(
                 label: 'Converts',
-                subtitle: 'It\'s a multiple of a base unit.',
                 icon: Icons.merge_type_rounded,
                 selected: convertsToAnotherUnit,
                 onTap: () => onConvertsChanged(true),
@@ -1367,8 +1457,7 @@ class _UnitGroupingSection extends StatelessWidget {
             readOnly: false,
             suggestions: suggestions,
             label: 'Family name (Optional)',
-            helper:
-                'Name the family (e.g., "Length") if this unit acts as a base for other units. Leave blank to stay standalone.',
+            helper: '',
           ),
         ] else ...[
           if (!createNewBaseUnit) ...[
@@ -1381,7 +1470,7 @@ class _UnitGroupingSection extends StatelessWidget {
                   : null,
               decoration: _unitFamilySelectDecoration(
                 label: 'Target Base Unit',
-                helper: 'Search an existing base unit/family. This unit will convert into that base.',
+                helper: '',
               ),
               dialogTitle: 'Target Base Unit',
               searchHintText: 'Search unit family',
@@ -1424,7 +1513,7 @@ class _UnitGroupingSection extends StatelessWidget {
   }) {
     return InputDecoration(
       labelText: label,
-      helperText: helper,
+      helperText: helper.isNotEmpty ? helper : null,
       filled: true,
       fillColor: const Color(0xFFF9FAFB),
       contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
@@ -1455,14 +1544,12 @@ class _UnitGroupingSection extends StatelessWidget {
 class _ModeChip extends StatelessWidget {
   const _ModeChip({
     required this.label,
-    required this.subtitle,
     required this.icon,
     required this.selected,
     required this.onTap,
   });
 
   final String label;
-  final String subtitle;
   final IconData icon;
   final bool selected;
   final VoidCallback onTap;
@@ -1471,68 +1558,34 @@ class _ModeChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(14),
       child: Container(
-        constraints: const BoxConstraints(minWidth: 180, maxWidth: 220),
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           color: selected ? const Color(0xFFEEF2FF) : const Color(0xFFF8FAFC),
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: selected ? const Color(0xFF6C63FF) : const Color(0xFFD7DBE7),
           ),
-          boxShadow: selected
-              ? const [
-                  BoxShadow(
-                    color: Color(0x1A6C63FF),
-                    blurRadius: 16,
-                    offset: Offset(0, 8),
-                  ),
-                ]
-              : null,
         ),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: selected ? Colors.white : const Color(0xFFF1F5F9),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                icon,
-                size: 18,
-                color: selected
-                    ? const Color(0xFF5145E5)
-                    : const Color(0xFF64748B),
-              ),
+            Icon(
+              icon,
+              size: 18,
+              color: selected
+                  ? const Color(0xFF5145E5)
+                  : const Color(0xFF64748B),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: selected
-                          ? const Color(0xFF4338CA)
-                          : const Color(0xFF0F172A),
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: selected
-                          ? const Color(0xFF5B5BD6)
-                          : const Color(0xFF64748B),
-                      height: 1.35,
-                    ),
-                  ),
-                ],
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: selected
+                    ? const Color(0xFF4338CA)
+                    : const Color(0xFF0F172A),
+                fontWeight: FontWeight.w700,
               ),
             ),
           ],

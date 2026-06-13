@@ -4,6 +4,7 @@ import '../../data/repositories/item_repository.dart';
 import '../../domain/item_asset.dart';
 import '../../domain/item_definition.dart';
 import '../../domain/item_inputs.dart';
+import '../../domain/item_usage_record.dart';
 
 enum ItemStatusFilter { active, archived, all }
 
@@ -139,6 +140,14 @@ class ItemsProvider extends ChangeNotifier {
     }
   }
 
+  Future<List<Map<String, String>>> fetchPipelineTemplates() async {
+    try {
+      return await _repository.getPipelineTemplates();
+    } catch (e) {
+      return [];
+    }
+  }
+
   void setSearchQuery(String value) {
     _searchQuery = value;
     notifyListeners();
@@ -152,16 +161,19 @@ class ItemsProvider extends ChangeNotifier {
   ItemDuplicateCheck checkDuplicate({
     required String name,
     required int? groupId,
+    required int? unitId,
     required List<ItemVariationNodeInput> variationTree,
     int? excludeId,
   }) {
     final normalizedName = _normalize(name);
-    if (groupId != null &&
+    if (groupId != null && unitId != null &&
         _items.any(
           (item) =>
               item.id != excludeId &&
               item.groupId == groupId &&
-              _normalize(item.name) == normalizedName,
+              item.unitId == unitId &&
+              _normalize(item.name) == normalizedName &&
+              _areVariationTreesIdentical(item.topLevelProperties, variationTree),
         )) {
       return const ItemDuplicateCheck(
         blockingDuplicate: true,
@@ -184,6 +196,30 @@ class ItemsProvider extends ChangeNotifier {
       blockingDuplicate: false,
       warning: ItemDuplicateWarning.none,
     );
+  }
+
+  bool _areVariationTreesIdentical(
+    List<ItemVariationNodeDefinition> existing,
+    List<ItemVariationNodeInput> input,
+  ) {
+    if (existing.length != input.length) return false;
+
+    final existingSorted = existing.toList()..sort((a, b) => a.name.compareTo(b.name));
+    final inputSorted = input.toList()..sort((a, b) => a.name.compareTo(b.name));
+
+    for (var i = 0; i < existingSorted.length; i++) {
+      final eNode = existingSorted[i];
+      final iNode = inputSorted[i];
+
+      if (_normalize(eNode.name) != _normalize(iNode.name)) return false;
+      if (eNode.kind != iNode.kind) return false;
+
+      if (!_areVariationTreesIdentical(eNode.children, iNode.children)) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   ItemDuplicateWarning _validateNode(
@@ -578,6 +614,16 @@ class ItemsProvider extends ChangeNotifier {
     }
     _errorMessage = null;
     notifyListeners();
+  }
+
+  Future<List<ItemUsageRecord>> fetchItemUsage(int itemId) async {
+    try {
+      return await _repository.getItemUsage(itemId);
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return const [];
+    }
   }
 
   static String normalizeValue(String value) => _normalize(value);

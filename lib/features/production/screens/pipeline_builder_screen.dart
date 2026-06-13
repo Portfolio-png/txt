@@ -1210,50 +1210,47 @@ class _BuilderHeader extends StatelessWidget {
     );
   }
 
-  Future<void> _startFlow(BuildContext context) async {
-    if (provider.template.nodes.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Add at least one stage before starting.'),
+  Future<void> _deletePipeline(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Delete Pipeline', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: const Text(
+          'Are you sure you want to delete this pipeline template? This action cannot be undone and will permanently delete it from this floor.',
+          style: TextStyle(fontSize: 13, color: Color(0xFF475569)),
         ),
-      );
-      return;
-    }
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
 
-    final saved = await _saveTemplate(context, showError: false);
-    final runnable =
-        saved ??
-        provider.template.copyWith(
-          factoryId: factoryId,
-          shopFloorId: shopFloorId,
-        );
-    if (!context.mounted) {
-      return;
-    }
+    if (confirmed != true || !context.mounted) return;
 
     try {
-      final production = context.read<ProductionProvider>();
-      production.loadTemplate(runnable);
-      final node = production.selectedNode;
-      if (node == null) {
-        throw const ProductionSetupException('Select a production step first.');
-      }
-      production.beginSetup();
-      production.verifyAssetSetup(node.machine, node.dieId);
-      production.startRun();
+      final repo = context.read<PipelineRunRepository>();
+      await repo.deleteTemplate(provider.template.id);
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Started ${runnable.name}.')));
+        onBack?.call();
       }
-    } on ProductionSetupException catch (error) {
+    } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error.message)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete pipeline: $e')),
+        );
       }
     }
   }
+
 
   void _applyTemplateAction(BuildContext context, _TemplateAction action) {
     switch (action) {
@@ -1282,13 +1279,10 @@ class _BuilderHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final production = context.watch<ProductionProvider>();
     final allValid = provider.template.nodes.every(
       (n) =>
           n.hasMachineAssignment && n.inputItem != null && n.outputItem != null,
     );
-    final canStart =
-        provider.template.nodes.isNotEmpty && !production.isRunning && allValid;
 
     return Material(
       color: Colors.white,
@@ -1362,30 +1356,6 @@ class _BuilderHeader extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                FilledButton.icon(
-                  icon: Icon(
-                    production.isRunning
-                        ? Icons.play_circle_filled_rounded
-                        : Icons.play_arrow_rounded,
-                    size: 16,
-                  ),
-                  label: Text(production.isRunning ? 'Running' : 'Start'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF1E293B),
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: const Color(0xFF8E9995),
-                    disabledForegroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 12,
-                    ),
-                  ),
-                  onPressed: canStart ? () => _startFlow(context) : null,
-                ),
-                const SizedBox(width: 8),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.save_rounded, size: 16),
                   label: const Text('Save'),
@@ -1417,6 +1387,8 @@ class _BuilderHeader extends StatelessWidget {
                       _applyTemplateAction(context, _TemplateAction.sheetMetal);
                     } else if (action == 'template_blank') {
                       _applyTemplateAction(context, _TemplateAction.blank);
+                    } else if (action == 'delete') {
+                      _deletePipeline(context);
                     }
                   },
                   itemBuilder: (context) => const [
@@ -1451,6 +1423,17 @@ class _BuilderHeader extends StatelessWidget {
                           Icon(Icons.note_add_outlined, size: 18),
                           SizedBox(width: 10),
                           Expanded(child: Text('Load Blank Canvas')),
+                        ],
+                      ),
+                    ),
+                    PopupMenuDivider(),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete_forever_rounded, size: 18, color: Colors.redAccent),
+                          SizedBox(width: 10),
+                          Expanded(child: Text('Delete Pipeline', style: TextStyle(color: Colors.redAccent))),
                         ],
                       ),
                     ),
@@ -1918,6 +1901,7 @@ class _ScrapItemDropdown extends StatelessWidget {
           : 'No items in the Scrap group yet',
       options: options,
       canCreateOption: (query, allOptions) {
+        if (scrapGroupIds.isEmpty) return false;
         final normalized = query.trim().toLowerCase();
         return normalized.isNotEmpty &&
             scrapItems.every(
@@ -3403,7 +3387,7 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
         fallback: widget.node.outputItem ?? _getInheritedOutput(),
       ),
       units: widget.units,
-      propagate: false,
+      propagate: true,
     );
   }
 

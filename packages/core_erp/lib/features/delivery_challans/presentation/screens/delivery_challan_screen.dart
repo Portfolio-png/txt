@@ -24,9 +24,11 @@ import '../../../../widgets/variation_path_selector_dialog.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
 import '../../../inventory/presentation/providers/inventory_provider.dart';
 import '../../../items/domain/item_definition.dart';
+import '../../../items/presentation/widgets/item_detail_panel.dart' show generatedItemNames;
 import '../../../units/domain/unit_inputs.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../../items/presentation/providers/items_provider.dart';
+import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../orders/domain/order_entry.dart';
 import '../../../orders/presentation/providers/orders_provider.dart';
 import '../../../vendors/presentation/providers/vendors_provider.dart';
@@ -4003,6 +4005,7 @@ class _ItemsEditor extends StatelessWidget {
     List<ItemDefinition> availableItems,
   ) {
     final unitsProvider = context.watch<UnitsProvider>();
+    final groupsProvider = context.watch<GroupsProvider>();
     final selectedItem = availableItems
         .where((item) => item.id == draft.itemId)
         .firstOrNull;
@@ -4010,13 +4013,15 @@ class _ItemsEditor extends StatelessWidget {
       draft.initializeConversionFields(selectedItem, unitsProvider);
     }
     final itemOptions = availableItems
-        .map(
-          (item) => SearchableSelectOption<int>(
-            value: item.id,
-            label: item.displayName,
-            searchText: '${item.displayName} ${item.alias} ${item.name}',
-          ),
-        )
+        .map((item) {
+            final primaryGroup = groupsProvider.findById(item.groupId)?.name ?? 'No primary group';
+            final fullVariationName = generatedItemNames(item).join(' / ');
+            return SearchableSelectOption<int>(
+              value: item.id,
+              label: fullVariationName,
+              searchText: '$fullVariationName ${item.alias} ${item.name} $primaryGroup',
+            );
+          })
         .toList(growable: false);
     return Container(
       padding: const EdgeInsets.all(12),
@@ -4482,41 +4487,69 @@ class _ItemsEditor extends StatelessWidget {
         .toList(growable: false);
   }
 
-  String _variationSelectionLabel(ItemDefinition item, List<int> valueNodeIds) {
+  String _buildNamingFormatLabel(ItemDefinition item, List<int> valueNodeIds) {
+    final itemName = item.displayName.trim().isEmpty
+        ? item.name
+        : item.displayName;
     if (valueNodeIds.isEmpty) {
-      return '';
+      return itemName;
     }
+
+    // Build a map: propertyId -> selected value name, walking the tree
     final selectedValueIds = valueNodeIds.toSet();
-    final segments = <String>[];
+    // Map property node id -> selected value name
+    final propIdToValue = <int, String>{};
     for (final root in item.topLevelProperties) {
       ItemVariationNodeDefinition currentProperty = root;
       while (true) {
         final selectedValue = currentProperty.activeChildren
-            .where((node) => node.kind == ItemVariationNodeKind.value)
-            .where((node) => selectedValueIds.contains(node.id))
+            .where((n) => n.kind == ItemVariationNodeKind.value)
+            .where((n) => selectedValueIds.contains(n.id))
             .firstOrNull;
-        if (selectedValue == null) {
-          break;
-        }
-        final propertyName = currentProperty.name.trim();
-        final valueName = selectedValue.name.trim().isEmpty
+        if (selectedValue == null) break;
+        final valName = selectedValue.name.trim().isEmpty
             ? selectedValue.displayName.trim()
             : selectedValue.name.trim();
-        if (propertyName.isNotEmpty || valueName.isNotEmpty) {
-          segments.add(
-            valueName.isEmpty ? propertyName : '$propertyName: $valueName',
-          );
-        }
-        final nextProperty = selectedValue.activeChildren
-            .where((node) => node.kind == ItemVariationNodeKind.property)
+        propIdToValue[currentProperty.id] = valName;
+        final nextProp = selectedValue.activeChildren
+            .where((n) => n.kind == ItemVariationNodeKind.property)
             .firstOrNull;
-        if (nextProperty == null) {
-          break;
-        }
-        currentProperty = nextProperty;
+        if (nextProp == null) break;
+        currentProperty = nextProp;
       }
     }
-    return segments.join(' / ');
+
+    final topProps = item.topLevelProperties;
+    final parts = <String>[];
+
+    // If naming format is specified, follow it
+    if (item.namingFormat.isNotEmpty) {
+      for (final token in item.namingFormat) {
+        if (token == 'name') {
+          parts.add(itemName);
+        } else if (token.startsWith('prop_')) {
+          final idx = int.tryParse(token.substring(5));
+          if (idx != null && idx >= 0 && idx < topProps.length) {
+            final value = propIdToValue[topProps[idx].id];
+            if (value != null && value.isNotEmpty) {
+              parts.add(value);
+            }
+          }
+        }
+      }
+    }
+
+    // Fallback: item name + all selected values in tree order
+    if (parts.isEmpty) {
+      parts.add(itemName);
+      parts.addAll(propIdToValue.values.where((v) => v.isNotEmpty));
+    }
+
+    return parts.join(' ');
+  }
+
+  String _variationSelectionLabel(ItemDefinition item, List<int> valueNodeIds) {
+    return _buildNamingFormatLabel(item, valueNodeIds);
   }
 
   Widget _itemField(
@@ -4882,7 +4915,9 @@ class _ItemDraft {
     productionRunLabel = '';
     particulars = label.trim().isEmpty
         ? item.displayName
-        : '${item.displayName} - $label';
+        : (label.startsWith(item.displayName)
+            ? label
+            : '${item.displayName} - $label');
     hsnCode = '';
     selectedUnitId = null;
     enteredValue = '';
@@ -4897,7 +4932,9 @@ class _ItemDraft {
     productionRunLabel = run.displayLabel;
     particulars = run.variationPathLabel.trim().isEmpty
         ? run.itemName
-        : '${run.itemName} - ${run.variationPathLabel}';
+        : (run.variationPathLabel.startsWith(run.itemName)
+            ? run.variationPathLabel
+            : '${run.itemName} - ${run.variationPathLabel}');
     hsnCode = '';
     if (run.outputQuantity > 0) {
       quantityPcs = run.outputQuantity.truncateToDouble() == run.outputQuantity

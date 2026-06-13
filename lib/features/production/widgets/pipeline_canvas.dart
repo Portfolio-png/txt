@@ -11,6 +11,7 @@ import '../../production_pipelines/domain/process_node.dart';
 import '../../production_pipelines/domain/node_run_status.dart';
 import 'graph_edges_painter.dart';
 import 'flow_stage_block.dart';
+import '../domain/utils/stage_input_resolver.dart';
 
 class PipelineCanvas extends StatefulWidget {
   const PipelineCanvas({
@@ -280,6 +281,7 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
       future: _runFuture,
       builder: (context, snapshot) {
         final activeRun = snapshot.data;
+        final activeStockNodeId = _findActiveStockNodeId(activeRun, widget.template);
 
         return DecoratedBox(
           decoration: BoxDecoration(
@@ -339,7 +341,14 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
                     final isSelected = widget.selectedNodeId == node.id;
                     final left = 100 + (node.stageIndex * columnWidth);
                     final top = 100 + (node.laneIndex * rowHeight);
-                    final assignedBarcodes = activeRun?.attachedBarcodeInputs[node.id];
+                    final showBarcodeCard = activeStockNodeId == node.id;
+                    final assignedBarcodes = showBarcodeCard
+                        ? effectiveStageInputs(
+                            run: activeRun,
+                            node: node,
+                            template: widget.template,
+                          )
+                        : null;
 
                     return Positioned(
                       left: left,
@@ -431,6 +440,66 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
         );
       },
     );
+  }
+
+  String? _findActiveStockNodeId(PipelineRun? run, PipelineTemplate template) {
+    if (run == null) return null;
+
+    // 1. If there's an active/running node, that's where the stock is.
+    for (final node in template.nodes) {
+      final status = run.nodeStatuses[node.id]?.value ?? 'pending';
+      if (status == 'active' || status == 'running') {
+        return node.id;
+      }
+    }
+
+    // 2. If no active node, find the first pending node whose predecessor is done.
+    for (final node in template.nodes) {
+      final status = run.nodeStatuses[node.id]?.value ?? 'pending';
+      if (status == 'pending') {
+        bool hasDonePredecessor = false;
+        for (final flow in template.flows) {
+          if (flow.toNodeId == node.id) {
+            final upstreamStatus = run.nodeStatuses[flow.fromNodeId]?.value ?? 'pending';
+            if (upstreamStatus == 'done') {
+              hasDonePredecessor = true;
+              break;
+            }
+          }
+        }
+        if (hasDonePredecessor) {
+          return node.id;
+        }
+      }
+    }
+
+    // 3. If all nodes are done or skipped, it's the Output node (node with no outgoing flows).
+    bool allDone = true;
+    for (final node in template.nodes) {
+      final status = run.nodeStatuses[node.id]?.value ?? 'pending';
+      if (status != 'done' && status != 'skipped') {
+        allDone = false;
+        break;
+      }
+    }
+    if (allDone) {
+      for (final node in template.nodes) {
+        final hasOutgoing = template.flows.any((f) => f.fromNodeId == node.id);
+        if (!hasOutgoing) {
+          return node.id;
+        }
+      }
+    }
+
+    // 4. Default: Return the Input node (no incoming flows or type is Input).
+    for (final node in template.nodes) {
+      final hasIncoming = template.flows.any((f) => f.toNodeId == node.id);
+      if (!hasIncoming || node.processType == 'Input') {
+        return node.id;
+      }
+    }
+
+    return template.nodes.firstOrNull?.id;
   }
 }
 
