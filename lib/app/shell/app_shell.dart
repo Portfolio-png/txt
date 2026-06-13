@@ -686,11 +686,10 @@ class _ShellContentSwitcher extends StatelessWidget {
               'orders' => OrdersScreen(
                 onGoToProduction: (screenContext, orderGroup, [preselectedItem]) async {
                   final stableContext = outerContext;
-                  screenContext.read<AppNavigation>().select('production');
-                  // Give navigation a frame to complete before showing dialog
-                  await Future.delayed(const Duration(milliseconds: 50));
-                  if (!stableContext.mounted) return;
-                  await showStartProductionDialog(stableContext, orderGroup, preselectedItem: preselectedItem);
+                  final created = await showStartProductionDialog(stableContext, orderGroup, preselectedItem: preselectedItem);
+                  if (created == true && screenContext.mounted) {
+                    screenContext.read<AppNavigation>().select('production');
+                  }
                 },
                 getProductionStatus: (orderGroup) async {
                   final repo = outerContext.read<PipelineRunRepository>();

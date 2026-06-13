@@ -5,7 +5,7 @@ import 'package:core_erp/features/orders/domain/order_entry.dart';
 import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
 import '../../production_pipelines/domain/pipeline_template.dart';
 
-Future<void> showStartProductionDialog(BuildContext context, OrderGroup orderGroup, {OrderEntry? preselectedItem}) async {
+Future<bool> showStartProductionDialog(BuildContext context, OrderGroup orderGroup, {OrderEntry? preselectedItem}) async {
   final repo = context.read<PipelineRunRepository>();
   
   showDialog(
@@ -26,10 +26,10 @@ Future<void> showStartProductionDialog(BuildContext context, OrderGroup orderGro
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('All items for this order are already in production.')),
     );
-    return;
+    return false;
   }
   
-  await showDialog<void>(
+  final result = await showDialog<bool>(
     context: context,
     builder: (context) => _StartProductionDialog(
       templates: templates,
@@ -38,6 +38,8 @@ Future<void> showStartProductionDialog(BuildContext context, OrderGroup orderGro
       preselectedItem: preselectedItem,
     ),
   );
+
+  return result ?? false;
 }
 
 class _StartProductionDialog extends StatefulWidget {
@@ -63,6 +65,7 @@ class _StartProductionDialogState extends State<_StartProductionDialog> {
   OrderEntry? _selectedItem;
   bool _showConfirmation = false;
   bool _isLoading = false;
+  bool _didCreateRun = false;
 
   @override
   void initState() {
@@ -91,7 +94,7 @@ class _StartProductionDialogState extends State<_StartProductionDialog> {
             : (_showConfirmation ? _buildConfirmationContent() : _buildSelectionContent()),
       ),
       actions: _currentItems.isEmpty
-          ? [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Close'))]
+          ? [TextButton(onPressed: () => Navigator.of(context).pop(_didCreateRun), child: const Text('Close'))]
           : (_showConfirmation ? _buildConfirmationActions() : _buildSelectionActions()),
     );
   }
@@ -173,7 +176,7 @@ class _StartProductionDialogState extends State<_StartProductionDialog> {
   List<Widget> _buildSelectionActions() {
     return [
       TextButton(
-        onPressed: () => Navigator.of(context).pop(),
+        onPressed: () => Navigator.of(context).pop(_didCreateRun),
         child: const Text('Cancel'),
       ),
       AppButton(
@@ -207,6 +210,7 @@ class _StartProductionDialogState extends State<_StartProductionDialog> {
             setState(() {
               _isLoading = false;
               _showConfirmation = false;
+              _didCreateRun = true;
               _currentItems.remove(_selectedItem);
               _selectedItem = _currentItems.isNotEmpty ? _currentItems.first : null;
             });

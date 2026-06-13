@@ -3023,7 +3023,6 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
   int? _outputItemId;
   int? _selectedMachineGroupId;
   Timer? _debounce;
-  late final TextEditingController _namingConventionController;
   late final TextEditingController _customProcessCodeController;
 
   bool get _isInputNode {
@@ -3055,15 +3054,6 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
     });
   }
 
-  void _onNamingConventionChanged(String value) {
-    if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(milliseconds: 300), () {
-      if (mounted) {
-        widget.provider.updateTemplateDetails(intermediateNamingConvention: value);
-      }
-    });
-  }
-
   void _attachListeners(ProcessNodeDraftController draft) {
     draft.name.addListener(_onDraftChanged);
     draft.machine.addListener(_onDraftChanged);
@@ -3090,9 +3080,6 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
     _inputItemId = widget.node.inputItem?.itemId;
     _outputItemId = widget.node.outputItem?.itemId;
     _selectedMachineGroupId = widget.node.machineGroupId;
-    _namingConventionController = TextEditingController(
-      text: widget.provider.template.intermediateNamingConvention,
-    );
     _customProcessCodeController = TextEditingController(
       text: widget.node.outputItem?.itemName ?? '',
     );
@@ -3102,7 +3089,6 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
   @override
   void dispose() {
     _debounce?.cancel();
-    _namingConventionController.dispose();
     _customProcessCodeController.dispose();
     _detachListeners(widget.draft);
     super.dispose();
@@ -3121,11 +3107,7 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
       _selectedMachineGroupId = widget.node.machineGroupId;
       _customProcessCodeController.text = widget.node.outputItem?.itemName ?? '';
     }
-    if (oldWidget.provider.template.intermediateNamingConvention != widget.provider.template.intermediateNamingConvention) {
-      if (_namingConventionController.text != widget.provider.template.intermediateNamingConvention) {
-        _namingConventionController.text = widget.provider.template.intermediateNamingConvention;
-      }
-    }
+
   }
 
   @override
@@ -3328,21 +3310,7 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
                 ],
               ),
             ],
-            if (!_isInputNode && !_isOutputNode) ...[
-              const SizedBox(height: 12),
-              const Divider(),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _namingConventionController,
-                decoration: const InputDecoration(
-                  labelText: 'Component Process code formula',
-                  hintText: 'e.g., P{stage} for stage 1 -> P1',
-                  helperText: 'Available: {stage}, {stageName}, {processType}, {originalItemName}',
-                  helperMaxLines: 2,
-                ),
-                onChanged: _onNamingConventionChanged,
-              ),
-            ],
+
           ],
         ),
       ),
