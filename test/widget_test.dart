@@ -36,6 +36,7 @@ import 'package:core_erp/features/items/data/repositories/item_repository.dart';
 import 'package:core_erp/features/items/domain/item_asset.dart';
 import 'package:core_erp/features/items/domain/item_definition.dart';
 import 'package:core_erp/features/items/domain/item_inputs.dart';
+import 'package:core_erp/features/items/domain/item_usage_record.dart';
 import 'package:core_erp/features/orders/data/models/order_api_models.dart';
 import 'package:core_erp/features/orders/data/repositories/order_repository.dart';
 import 'package:core_erp/features/orders/domain/order_entry.dart';
@@ -2298,6 +2299,16 @@ class FakeItemRepository extends ItemRepository {
 
   @override
   Future<void> deleteAsset(int assetId) async {}
+
+  @override
+  Future<List<ItemUsageRecord>> getItemUsage(int itemId) async {
+    return const <ItemUsageRecord>[];
+  }
+
+  @override
+  Future<List<Map<String, String>>> getPipelineTemplates() async {
+    return const <Map<String, String>>[];
+  }
 
   List<ItemVariationNodeDefinition> _buildTree(
     List<ItemVariationNodeInput> inputs,
@@ -5177,6 +5188,21 @@ void main() {
     expect(searchField.focusNode?.hasFocus, isTrue);
   });
 
+  testWidgets('typing with shell focus starts the shared title bar search', (
+    tester,
+  ) async {
+    await pumpApp(tester, viewSize: const Size(1440, 900));
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyP);
+    await tester.pump();
+
+    final searchField = tester.widget<TextField>(
+      find.byKey(const ValueKey<String>('shell_top_strip_search_field')),
+    );
+    expect(searchField.focusNode?.hasFocus, isTrue);
+    expect(searchField.controller?.text, 'p');
+  });
+
   testWidgets(
     'home stays within editable text instead of jumping to dashboard',
     (tester) async {
@@ -5205,6 +5231,37 @@ void main() {
       expect(searchField.focusNode?.hasFocus, isTrue);
     },
   );
+
+  testWidgets('typing in form fields is not rerouted to shell search', (
+    tester,
+  ) async {
+    await pumpApp(tester, viewSize: const Size(1440, 900));
+    await openOrdersScreen(tester);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+
+    final orderNoField = find.byKey(
+      const ValueKey<String>('orders-editor-order-no-field'),
+    );
+    await tester.tap(orderNoField);
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+    await tester.pump();
+
+    final context = tester.element(find.byType(Scaffold).first);
+    final searchField = tester.widget<TextField>(
+      find.byKey(const ValueKey<String>('shell_top_strip_search_field')),
+    );
+    expect(
+      context.read<NavigationProvider>().topStripSearchFocusNode.hasFocus,
+      isFalse,
+    );
+    expect(searchField.controller?.text, isEmpty);
+  });
 
   testWidgets('tab reaches order dropdowns and dropdown options', (
     tester,

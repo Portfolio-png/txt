@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:core_erp/features/items/data/repositories/item_repository.dart';
 import 'package:core_erp/features/items/domain/item_asset.dart';
+import 'package:core_erp/features/items/domain/item_usage_record.dart';
 import 'package:paper/app/shell/navigation_provider.dart';
 import 'package:core_erp/features/items/domain/item_definition.dart';
 import 'package:core_erp/features/items/domain/item_inputs.dart';
@@ -17,6 +18,7 @@ import 'package:paper/features/production/providers/pipeline_editor_provider.dar
 import 'package:paper/features/production/screens/floor_view_screen.dart';
 import 'package:paper/features/production/screens/pipeline_builder_screen.dart';
 import 'package:paper/features/production/screens/pipelines_screen.dart';
+import 'package:paper/features/production/widgets/inventory_sidebar.dart';
 import 'package:paper/features/production_pipelines/data/default_pipeline_templates.dart';
 import 'package:paper/features/production_pipelines/data/repositories/pipeline_run_repository.dart';
 import 'package:paper/features/production_pipelines/domain/material_flow.dart';
@@ -269,6 +271,94 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Create item "Custom Resin"'), findsOneWidget);
+  });
+
+  testWidgets('assign stock sidebar search filters available materials', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(500, 700));
+    final inventoryProvider = InventoryProvider(
+      repository: FakeInventoryRepository(
+        seedMaterials: [
+          MaterialRecord(
+            id: 101,
+            barcode: 'SM-001',
+            name: 'Sheet Metal Coil',
+            type: 'Raw Material',
+            grade: 'A1',
+            thickness: '1.2 mm',
+            supplier: 'Prime Supplier',
+            unitId: 1,
+            unit: 'kg',
+            createdAt: DateTime(2026),
+            kind: 'parent',
+            parentBarcode: null,
+            numberOfChildren: 0,
+            linkedChildBarcodes: const [],
+            scanCount: 0,
+            linkedItemId: 1,
+            onHand: 20,
+          ),
+          MaterialRecord(
+            id: 102,
+            barcode: 'BP-002',
+            name: 'Blank Profile',
+            type: 'Raw Material',
+            grade: 'B2',
+            thickness: '0.8 mm',
+            supplier: 'Focused Supplier',
+            unitId: 2,
+            unit: 'g',
+            createdAt: DateTime(2026),
+            kind: 'parent',
+            parentBarcode: null,
+            numberOfChildren: 0,
+            linkedChildBarcodes: const [],
+            scanCount: 0,
+            linkedItemId: 2,
+            onHand: 12,
+          ),
+        ],
+      ),
+    );
+    addTearDown(inventoryProvider.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ChangeNotifierProvider<InventoryProvider>.value(
+            value: inventoryProvider,
+            child: const InventorySidebar(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final searchField = find.byKey(
+      const ValueKey('assign-stock-search-field'),
+    );
+
+    expect(searchField, findsOneWidget);
+    expect(find.text('Sheet Metal Coil'), findsOneWidget);
+    expect(find.text('Blank Profile'), findsOneWidget);
+
+    await tester.enterText(searchField, 'focused');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Blank Profile'), findsOneWidget);
+    expect(find.text('Sheet Metal Coil'), findsNothing);
+
+    await tester.enterText(searchField, 'missing');
+    await tester.pumpAndSettle();
+
+    expect(find.text('No stock matches this search.'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Clear stock search'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sheet Metal Coil'), findsOneWidget);
+    expect(find.text('Blank Profile'), findsOneWidget);
   });
 
   testWidgets('production pipelines screen is run only for saved routes', (
@@ -1096,6 +1186,12 @@ class _FakeItemRepository implements ItemRepository {
   Future<void> deleteAsset(int assetId) {
     throw UnimplementedError();
   }
+
+  @override
+  Future<List<ItemUsageRecord>> getItemUsage(int itemId) async => const [];
+
+  @override
+  Future<List<Map<String, String>>> getPipelineTemplates() async => const [];
 }
 
 List<UnitDefinition> _unitDefinitions() {

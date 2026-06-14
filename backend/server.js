@@ -25,6 +25,7 @@ try {
 const app = express();
 const PORT = Number(process.env.PORT || 18080);
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'paper.db');
+const FULL_DEMO_SEED_PATH = path.join(__dirname, 'demo_seed_full.json');
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const SEED_DEMO_DATA_ON_BOOT = parseBooleanEnv(
   process.env.PAPER_SEED_DEMO_DATA_ON_BOOT,
@@ -2088,8 +2089,13 @@ async function initDb() {
 
   // Cleanup legacy "Material Transform" labels
   try {
-    await run("UPDATE pipeline_templates SET stage_labels_json = replace(stage_labels_json, '\"Material Transform\"', '\"Process Stage\"')");
-    await run("UPDATE pipeline_templates SET nodes_json = replace(nodes_json, '\"processType\":\"Material Transform\"', '\"processType\":\"Process Stage\"')");
+    const pipelineTemplatesTable = await get(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='pipeline_templates'",
+    );
+    if (pipelineTemplatesTable) {
+      await run("UPDATE pipeline_templates SET stage_labels_json = replace(stage_labels_json, '\"Material Transform\"', '\"Process Stage\"')");
+      await run("UPDATE pipeline_templates SET nodes_json = replace(nodes_json, '\"processType\":\"Material Transform\"', '\"processType\":\"Process Stage\"')");
+    }
   } catch (err) {
     console.error('Failed to cleanup legacy Material Transform labels:', err);
   }
@@ -3415,6 +3421,13 @@ async function initDb() {
   await ensureColumnExists('inventory_movements', 'source_challan_type', 'TEXT');
   await ensureColumnExists('inventory_movements', 'source_challan_line_id', 'INTEGER');
   await ensureColumnExists('inventory_movements', 'reverses_movement_id', 'TEXT');
+  await ensureColumnExists('inventory_movements', 'actor', "TEXT DEFAULT ''");
+  await ensureColumnExists('inventory_movements', 'lot_code', "TEXT DEFAULT ''");
+  await ensureColumnExists('inventory_stock_positions', 'location_id', "TEXT NOT NULL DEFAULT 'MAIN'");
+  await ensureColumnExists('inventory_stock_positions', 'lot_code', "TEXT NOT NULL DEFAULT ''");
+  await ensureColumnExists('inventory_stock_positions', 'unit_id', 'INTEGER');
+  await ensureColumnExists('inventory_stock_positions', 'reserved_qty', 'REAL NOT NULL DEFAULT 0');
+  await ensureColumnExists('inventory_stock_positions', 'damaged_qty', 'REAL NOT NULL DEFAULT 0');
   await backfillInventoryMovementQuantitySemantics();
   await run('CREATE INDEX IF NOT EXISTS idx_inventory_movements_source_challan ON inventory_movements(source_challan_id, source_challan_type)');
   await ensureColumnExists('materials', 'location', "TEXT DEFAULT ''");
@@ -3773,6 +3786,1048 @@ async function ensureDemoDataset() {
   await backfillMaterialUnitIds();
   await ensureDemoPipelineRunsPresent();
   await cleanupStaleUnlinkedPoDocuments();
+  await ensureFullDemoSeedDataset();
+}
+
+function loadFullDemoSeedData() {
+  if (!fs.existsSync(FULL_DEMO_SEED_PATH)) {
+    return null;
+  }
+  return JSON.parse(fs.readFileSync(FULL_DEMO_SEED_PATH, 'utf8'));
+}
+
+function seedDateTime(value, fallback = nowIso()) {
+  if (!value) return fallback;
+  const text = String(value);
+  return text.includes('T') ? text : `${text}T09:00:00.000Z`;
+}
+
+function seedOrderStatus(value) {
+  switch (String(value || '').trim()) {
+    case 'draft':
+      return 'draft';
+    case 'completed':
+      return 'completed';
+    case 'in_production':
+    case 'inProgress':
+      return 'inProgress';
+    case 'confirmed':
+    default:
+      return 'notStarted';
+  }
+}
+
+function seedPipelineRunStatus(value) {
+  switch (String(value || '').trim()) {
+    case 'active':
+    case 'in_production':
+    case 'inProgress':
+      return 'inProgress';
+    case 'completed':
+      return 'completed';
+    default:
+      return 'planned';
+  }
+}
+
+async function ensureFullSeedUnit(unit, map) {
+  const now = nowIso();
+  const existing = await get(
+    `
+    SELECT * FROM units
+    WHERE lower(name) = lower(?) OR lower(symbol) = lower(?)
+    ORDER BY id
+    LIMIT 1
+    `,
+    [unit.name, unit.symbol],
+  );
+  if (existing) {
+    await run(
+      `
+      UPDATE units
+      SET name = ?, symbol = ?, notes = ?, is_archived = 0, updated_at = ?
+      WHERE id = ?
+      `,
+      [unit.name, unit.symbol, `Full demo seed: ${unit.category || 'unit'}`, now, existing.id],
+    );
+    map.set(unit.id, existing.id);
+    return existing.id;
+  }
+  const result = await run(
+    `
+    INSERT INTO units (name, symbol, notes, is_archived, created_at, updated_at)
+    VALUES (?, ?, ?, 0, ?, ?)
+    `,
+    [unit.name, unit.symbol, `Full demo seed: ${unit.category || 'unit'}`, now, now],
+  );
+  map.set(unit.id, result.lastID);
+  return result.lastID;
+}
+
+async function ensureFullSeedGroup(name, groupType, unitId, cache) {
+  const key = `${groupType}:${normalizeUnitValue(name)}`;
+  if (cache.has(key)) {
+    return cache.get(key);
+  }
+  const now = nowIso();
+  const existing = await get(
+    `
+    SELECT id FROM groups
+    WHERE lower(name) = lower(?) AND group_type = ?
+    ORDER BY id
+    LIMIT 1
+    `,
+    [name, groupType],
+  );
+  if (existing) {
+    await run(
+      'UPDATE groups SET unit_id = COALESCE(?, unit_id), is_archived = 0, updated_at = ? WHERE id = ?',
+      [unitId || null, now, existing.id],
+    );
+    cache.set(key, existing.id);
+    return existing.id;
+  }
+  const result = await run(
+    `
+    INSERT INTO groups (name, group_type, parent_group_id, unit_id, is_archived, created_at, updated_at)
+    VALUES (?, ?, NULL, ?, 0, ?, ?)
+    `,
+    [name, groupType, unitId || null, now, now],
+  );
+  cache.set(key, result.lastID);
+  return result.lastID;
+}
+
+async function ensureFullSeedClient(client, map) {
+  const now = nowIso();
+  const existing = await get('SELECT id FROM clients WHERE lower(name) = lower(?) LIMIT 1', [client.name]);
+  const params = [
+    client.name,
+    client.id,
+    client.gstin || '',
+    client.billingAddress || client.shippingAddress || '',
+    now,
+  ];
+  if (existing) {
+    await run(
+      `
+      UPDATE clients
+      SET name = ?, alias = ?, gst_number = ?, address = ?, is_archived = 0, updated_at = ?
+      WHERE id = ?
+      `,
+      [...params, existing.id],
+    );
+    map.set(client.id, existing.id);
+    return existing.id;
+  }
+  const result = await run(
+    `
+    INSERT INTO clients (name, alias, gst_number, address, is_archived, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 0, ?, ?)
+    `,
+    [client.name, client.id, client.gstin || '', client.billingAddress || client.shippingAddress || '', now, now],
+  );
+  map.set(client.id, result.lastID);
+  return result.lastID;
+}
+
+async function ensureFullSeedVendor(vendor, map) {
+  const now = nowIso();
+  const existing = await get('SELECT id FROM vendors WHERE lower(name) = lower(?) LIMIT 1', [vendor.name]);
+  if (existing) {
+    await run(
+      `
+      UPDATE vendors
+      SET name = ?, alias = ?, gst_number = ?, address = ?, contact_name = ?,
+          phone = ?, email = ?, is_archived = 0, updated_at = ?
+      WHERE id = ?
+      `,
+      [
+        vendor.name,
+        vendor.id,
+        vendor.gstin || '',
+        vendor.address || '',
+        vendor.contactPerson || '',
+        vendor.phone || '',
+        vendor.email || '',
+        now,
+        existing.id,
+      ],
+    );
+    map.set(vendor.id, existing.id);
+    return existing.id;
+  }
+  const result = await run(
+    `
+    INSERT INTO vendors (
+      name, alias, gst_number, address, contact_name, phone, email,
+      is_archived, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+    `,
+    [
+      vendor.name,
+      vendor.id,
+      vendor.gstin || '',
+      vendor.address || '',
+      vendor.contactPerson || '',
+      vendor.phone || '',
+      vendor.email || '',
+      now,
+      now,
+    ],
+  );
+  map.set(vendor.id, result.lastID);
+  return result.lastID;
+}
+
+async function ensureFullSeedItem(item, unitMap, groupCache, itemMap) {
+  const now = nowIso();
+  const unitId = unitMap.get(item.unitId);
+  const groupName = item.itemType === 'raw' ? 'Raw Materials' : 'Finished Goods';
+  const groupId = await ensureFullSeedGroup(groupName, 'item', unitId, groupCache);
+  const existing = await get(
+    `
+    SELECT id FROM items
+    WHERE lower(name) = lower(?) OR lower(alias) = lower(?)
+    ORDER BY id
+    LIMIT 1
+    `,
+    [item.name, item.sku],
+  );
+  if (existing) {
+    await run(
+      `
+      UPDATE items
+      SET name = ?, alias = ?, display_name = ?, quantity = ?, group_id = ?,
+          unit_id = ?, default_pipeline_id = ?, is_archived = 0, updated_at = ?
+      WHERE id = ?
+      `,
+      [
+        item.name,
+        item.sku,
+        item.name,
+        Number(item.standardCost || 0),
+        groupId,
+        unitId,
+        item.defaultPipelineId || null,
+        now,
+        existing.id,
+      ],
+    );
+    itemMap.set(item.id, existing.id);
+    return existing.id;
+  }
+  const result = await run(
+    `
+    INSERT INTO items (
+      name, alias, display_name, quantity, group_id, unit_id,
+      default_pipeline_id, is_archived, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+    `,
+    [
+      item.name,
+      item.sku,
+      item.name,
+      Number(item.standardCost || 0),
+      groupId,
+      unitId,
+      item.defaultPipelineId || null,
+      now,
+      now,
+    ],
+  );
+  itemMap.set(item.id, result.lastID);
+  return result.lastID;
+}
+
+async function ensureFullSeedUser(user, userMap) {
+  const now = nowIso();
+  const email = normalizeEmail(user.email);
+  const role = user.role === 'admin' ? 'admin' : 'user';
+  const existing = await get('SELECT id FROM users WHERE email = ?', [email]);
+  let userId;
+  if (existing) {
+    await run(
+      'UPDATE users SET name = ?, role = ?, is_active = ?, updated_at = ? WHERE id = ?',
+      [user.name, role, user.status === 'active' ? 1 : 0, now, existing.id],
+    );
+    userId = existing.id;
+  } else {
+    const result = await run(
+      `
+      INSERT INTO users (
+        name, email, password_hash, role, is_active, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        user.name,
+        email,
+        hashPassword('Paper@12345'),
+        role,
+        user.status === 'active' ? 1 : 0,
+        now,
+        now,
+      ],
+    );
+    userId = result.lastID;
+  }
+
+  if (role === 'user') {
+    const requested = new Set((user.permissions || []).filter((key) => PERMISSION_KEYS.includes(key)));
+    if (user.role === 'production_operator') {
+      requested.add('inventory.read');
+      requested.add('config.read');
+    }
+    if (user.role === 'warehouse_staff') {
+      requested.add('inventory.read');
+      requested.add('inventory.create');
+      requested.add('inventory.update');
+      requested.add('config.read');
+    }
+    for (const key of requested) {
+      await run(
+        `
+        INSERT INTO user_permission_overrides (
+          user_id, permission_key, is_allowed, created_at, updated_at
+        ) VALUES (?, ?, 1, ?, ?)
+        ON CONFLICT(user_id, permission_key)
+        DO UPDATE SET is_allowed = 1, updated_at = excluded.updated_at
+        `,
+        [userId, key, now, now],
+      );
+    }
+  }
+  userMap.set(user.id, userId);
+  return userId;
+}
+
+async function ensureFullSeedMachine(machine, groupCache, machineMap) {
+  const now = nowIso();
+  const pieceUnit = await get('SELECT id FROM units WHERE lower(symbol) IN (\'pcs\', \'pieces\') ORDER BY id LIMIT 1');
+  const groupId = await ensureFullSeedGroup(machine.machineGroup, 'machine', pieceUnit?.id || null, groupCache);
+  const existing = await get('SELECT id FROM machines WHERE asset_id = ? LIMIT 1', [machine.barcode]);
+  if (existing) {
+    await run(
+      `
+      UPDATE machines
+      SET name = ?, primary_photo_url = NULL, group_id = ?, make_model = ?,
+          serial_number = ?, location = ?, status = ?, custom_properties = ?, updated_at = ?
+      WHERE id = ?
+      `,
+      [
+        machine.name,
+        groupId,
+        machine.machineGroup,
+        machine.id,
+        'Main Floor',
+        machine.status || 'available',
+        JSON.stringify([{ label: 'Hourly Rate', value: String(machine.hourlyRate || 0) }]),
+        now,
+        existing.id,
+      ],
+    );
+    machineMap.set(machine.id, existing.id);
+    return existing.id;
+  }
+  const result = await run(
+    `
+    INSERT INTO machines (
+      name, asset_id, primary_photo_url, group_id, make_model, serial_number,
+      location, installation_date, status, custom_properties, created_at, updated_at
+    ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    [
+      machine.name,
+      machine.barcode,
+      groupId,
+      machine.machineGroup,
+      machine.id,
+      'Main Floor',
+      '2025-04-01',
+      machine.status || 'available',
+      JSON.stringify([{ label: 'Hourly Rate', value: String(machine.hourlyRate || 0) }]),
+      now,
+      now,
+    ],
+  );
+  machineMap.set(machine.id, result.lastID);
+  return result.lastID;
+}
+
+async function ensureFullSeedDie(die, seed, machineMap, groupCache, dieMap) {
+  const now = nowIso();
+  const compatibleGroupIds = [];
+  for (const machineId of die.compatibleMachineIds || []) {
+    const machineSeed = (seed.machines || []).find((item) => item.id === machineId);
+    if (machineSeed) {
+      const machineRowId = machineMap.get(machineId);
+      const machineRow = machineRowId ? await get('SELECT group_id FROM machines WHERE id = ?', [machineRowId]) : null;
+      if (machineRow?.group_id && !compatibleGroupIds.includes(machineRow.group_id)) {
+        compatibleGroupIds.push(machineRow.group_id);
+      }
+    }
+  }
+  const existing = await get('SELECT id FROM dies WHERE tool_code = ? LIMIT 1', [die.barcode]);
+  const values = [
+    die.barcode,
+    JSON.stringify([die.name]),
+    JSON.stringify([die.photoUrl || '']),
+    die.notes || '',
+    JSON.stringify(compatibleGroupIds),
+    'Tool Room',
+    1,
+    Number(die.strokeCount || 0),
+    Number(die.maintenanceDueAt || 0),
+    JSON.stringify({ name: die.name }),
+    'available',
+    'company',
+    now,
+  ];
+  if (existing) {
+    await run(
+      `
+      UPDATE dies
+      SET produced_part_numbers = ?, photo_urls = ?, operational_notes = ?,
+          compatible_machine_group_ids = ?, storage_location = ?,
+          number_of_cavities = ?, stroke_count = ?, max_strokes = ?,
+          physical_specs = ?, status = ?, ownership = ?, updated_at = ?
+      WHERE id = ?
+      `,
+      [...values.slice(1), existing.id],
+    );
+    dieMap.set(die.id, existing.id);
+    return existing.id;
+  }
+  const result = await run(
+    `
+    INSERT INTO dies (
+      tool_code, produced_part_numbers, photo_urls, operational_notes,
+      compatible_machine_group_ids, storage_location, number_of_cavities,
+      stroke_count, max_strokes, physical_specs, status, ownership,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    [...values, now],
+  );
+  dieMap.set(die.id, result.lastID);
+  return result.lastID;
+}
+
+function fullSeedEndpointFor(itemSeed, itemMap, unitMap, seed) {
+  if (!itemSeed) return null;
+  const unitSeed = (seed.units || []).find((unit) => unit.id === itemSeed.unitId);
+  return {
+    itemId: itemMap.get(itemSeed.id) || 0,
+    itemName: itemSeed.name,
+    unitId: unitMap.get(itemSeed.unitId) || 0,
+    unitName: unitSeed?.name || '',
+    unitSymbol: unitSeed?.symbol || '',
+  };
+}
+
+async function ensureFullSeedPipeline(pipeline, seed, itemMap, unitMap, templateMap) {
+  const now = nowIso();
+  const stageLabels = (pipeline.stages || []).map((stage) => stage.name);
+  const nodes = (pipeline.stages || []).map((stage, index) => {
+    const firstInput = stage.inputs?.[0];
+    const firstOutput = stage.outputs?.[0];
+    const inputSeed = firstInput ? seed.items.find((item) => item.id === firstInput.itemId) : null;
+    const outputSeed = firstOutput ? seed.items.find((item) => item.id === firstOutput.itemId) : null;
+    const machineSeed = seed.machines.find((item) => item.id === stage.machineId);
+    const dieSeed = seed.dies.find((item) => item.id === stage.dieId);
+    return {
+      id: stage.id,
+      name: stage.name,
+      processType: index === 0 ? 'Input' : index === pipeline.stages.length - 1 ? 'Output' : 'Process',
+      stageIndex: index,
+      laneIndex: 0,
+      inputs: (stage.inputs || []).map((input) => seed.items.find((item) => item.id === input.itemId)?.name || input.itemId),
+      outputs: (stage.outputs || []).map((output) => seed.items.find((item) => item.id === output.itemId)?.name || output.itemId),
+      machine: machineSeed?.name || '',
+      dieId: dieSeed?.barcode || '',
+      durationHours: Number(stage.expectedHours || 0),
+      status: 'Ready',
+      isIntermediate: index > 0 && index < pipeline.stages.length - 1,
+      scannedInputs: [],
+      inputItem: fullSeedEndpointFor(inputSeed, itemMap, unitMap, seed),
+      outputItem: fullSeedEndpointFor(outputSeed, itemMap, unitMap, seed),
+    };
+  });
+  const flows = nodes.slice(0, -1).map((node, index) => ({
+    id: `${pipeline.id}-flow-${index + 1}`,
+    fromNodeId: node.id,
+    toNodeId: nodes[index + 1].id,
+    materialName: node.outputs[0] || nodes[index + 1].inputs[0] || '',
+    barcode: null,
+    isSplit: false,
+    isMerge: false,
+  }));
+  await run(
+    `
+    INSERT INTO pipeline_templates (
+      id, factory_id, shop_floor_id, name, description, version, status,
+      stage_labels_json, lane_labels_json, nodes_json, flows_json,
+      intermediate_naming_convention, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id)
+    DO UPDATE SET
+      name = excluded.name,
+      description = excluded.description,
+      version = excluded.version,
+      status = excluded.status,
+      stage_labels_json = excluded.stage_labels_json,
+      lane_labels_json = excluded.lane_labels_json,
+      nodes_json = excluded.nodes_json,
+      flows_json = excluded.flows_json,
+      intermediate_naming_convention = excluded.intermediate_naming_convention,
+      updated_at = excluded.updated_at
+    `,
+    [
+      pipeline.id,
+      'default',
+      'floor-1',
+      pipeline.name,
+      `${pipeline.name} seeded from backend/demo_seed_full.json`,
+      pipeline.version || 1,
+      pipeline.status === 'active' ? 'published' : pipeline.status || 'draft',
+      JSON.stringify(stageLabels),
+      JSON.stringify(['Main']),
+      JSON.stringify(nodes),
+      JSON.stringify(flows),
+      'stage-output',
+      now,
+      now,
+    ],
+  );
+  templateMap.set(pipeline.id, pipeline.id);
+}
+
+async function ensureFullSeedOrder(order, seed, clientMap, itemMap, unitMap, orderMap, orderLineMap) {
+  const now = nowIso();
+  const clientId = clientMap.get(order.clientId);
+  const clientSeed = seed.clients.find((client) => client.id === order.clientId);
+  await run(
+    `
+    INSERT INTO order_headers (order_no, client_id, po_number, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(order_no)
+    DO UPDATE SET client_id = excluded.client_id, po_number = excluded.po_number, updated_at = excluded.updated_at
+    `,
+    [order.orderNo, clientId, `PO-${order.orderNo}`, seedDateTime(order.orderDate, now), now],
+  );
+  orderMap.set(order.id, order.orderNo);
+  for (const line of order.lineItems || []) {
+    const itemId = itemMap.get(line.itemId);
+    const unitId = unitMap.get(line.unitId);
+    const itemSeed = seed.items.find((item) => item.id === line.itemId);
+    const unitSeed = seed.units.find((unit) => unit.id === line.unitId);
+    const existing = await get(
+      'SELECT id FROM order_items WHERE order_no = ? AND item_id = ? AND variation_leaf_node_id = 0 LIMIT 1',
+      [order.orderNo, itemId],
+    );
+    const values = [
+      order.orderNo,
+      clientId,
+      clientSeed?.name || '',
+      `PO-${order.orderNo}`,
+      clientSeed?.id || '',
+      itemId,
+      itemSeed?.name || '',
+      Number(line.quantity || 0),
+      unitId,
+      unitSeed?.name || '',
+      unitSeed?.symbol || '',
+      Number(line.price || 0),
+      seedOrderStatus(order.status),
+      seedDateTime(order.orderDate, now),
+      now,
+      order.orderDate || null,
+      order.deliveryDate || null,
+      Number(line.price || 0) * Number(line.quantity || 0),
+    ];
+    let rowId;
+    if (existing) {
+      await run(
+        `
+        UPDATE order_items
+        SET client_id = ?, client_name = ?, po_number = ?, client_code = ?,
+            item_id = ?, item_name = ?, quantity = ?, unit_id = ?, unit_name = ?,
+            unit_symbol = ?, unit_price = ?, status = ?, updated_at = ?,
+            start_date = ?, end_date = ?, taxable_value = ?
+        WHERE id = ?
+        `,
+        [...values.slice(1, 13), now, order.orderDate || null, order.deliveryDate || null, values[17], existing.id],
+      );
+      rowId = existing.id;
+    } else {
+      const result = await run(
+        `
+        INSERT INTO order_items (
+          order_no, client_id, client_name, po_number, client_code, item_id,
+          item_name, quantity, unit_id, unit_name, unit_symbol, unit_price,
+          status, created_at, updated_at, start_date, end_date, taxable_value
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        values,
+      );
+      rowId = result.lastID;
+    }
+    orderLineMap.set(line.id, rowId);
+  }
+}
+
+async function ensureFullSeedMaterial(stock, seed, itemMap, unitMap, vendorMap, materialMap) {
+  const now = nowIso();
+  const itemSeed = seed.items.find((item) => item.id === stock.itemId);
+  const unitSeed = seed.units.find((unit) => unit.id === stock.unitId);
+  const vendorSeed = seed.vendors.find((vendor) => vendor.id === stock.supplierId);
+  const itemId = itemMap.get(stock.itemId);
+  const unitId = unitMap.get(stock.unitId);
+  await run(
+    `
+    INSERT INTO materials (
+      barcode, name, type, grade, thickness, supplier, location, unit_id, unit,
+      notes, group_mode, inheritance_enabled, created_at, kind, parent_barcode,
+      number_of_children, linked_child_barcodes, scan_count, linked_item_id,
+      display_stock, created_by, workflow_status, material_class,
+      inventory_state, procurement_state, traceability_mode, on_hand_qty,
+      reserved_qty, available_to_promise_qty, incoming_qty, linked_order_count,
+      linked_pipeline_count, pending_alert_count, updated_at, last_scanned_at
+    ) VALUES (?, ?, ?, '', '', ?, ?, ?, ?, ?, NULL, 0, ?, 'parent', NULL, 0, '[]', 0, ?, ?, 'seed', 'completed', ?, 'available', 'received', 'lot', ?, ?, ?, 0, 0, 0, 0, ?, ?)
+    ON CONFLICT(barcode)
+    DO UPDATE SET
+      name = excluded.name,
+      type = excluded.type,
+      supplier = excluded.supplier,
+      location = excluded.location,
+      unit_id = excluded.unit_id,
+      unit = excluded.unit,
+      notes = excluded.notes,
+      linked_item_id = excluded.linked_item_id,
+      display_stock = excluded.display_stock,
+      material_class = excluded.material_class,
+      on_hand_qty = excluded.on_hand_qty,
+      reserved_qty = excluded.reserved_qty,
+      available_to_promise_qty = excluded.available_to_promise_qty,
+      updated_at = excluded.updated_at,
+      last_scanned_at = excluded.last_scanned_at
+    `,
+    [
+      stock.barcode,
+      itemSeed?.name || stock.id,
+      itemSeed?.itemType === 'finished' ? 'Finished Goods' : 'Raw Material',
+      vendorSeed?.name || '',
+      stock.location || '',
+      unitId || null,
+      unitSeed?.symbol || '',
+      `Full demo seed lot ${stock.lotNo || stock.id}`,
+      seedDateTime(stock.lastMovementAt, now),
+      itemId || null,
+      `${Number(stock.onHand || 0)} ${unitSeed?.symbol || ''}`.trim(),
+      itemSeed?.itemType === 'finished' ? 'finished_goods' : 'raw_material',
+      Number(stock.onHand || 0),
+      Number(stock.reserved || 0),
+      Number(stock.availableToPromise ?? stock.onHand ?? 0),
+      now,
+      seedDateTime(stock.lastMovementAt, now),
+    ],
+  );
+  const material = await getMaterialRowByBarcode(stock.barcode);
+  if (material) {
+    materialMap.set(stock.id, material);
+  }
+}
+
+async function ensureFullSeedProductionRun(runSeed, seed, itemMap, unitMap, orderLineMap, pipelineRunMap, productionRunMap) {
+  const now = nowIso();
+  const orderLineId = orderLineMap.get(runSeed.orderLineItemId);
+  const lineSeed = (seed.orders || [])
+    .flatMap((order) => order.lineItems || [])
+    .find((line) => line.id === runSeed.orderLineItemId);
+  const itemId = itemMap.get(lineSeed?.itemId);
+  const unitSeed = seed.units.find((unit) => unit.id === lineSeed?.unitId);
+  const existingSnapshot = await get('SELECT id FROM production_runs WHERE run_code = ? LIMIT 1', [runSeed.id]);
+  let productionRunId;
+  const snapshotValues = [
+    runSeed.id,
+    runSeed.status === 'completed' ? 'completed' : seedPipelineRunStatus(runSeed.status),
+    seedDateTime(runSeed.endedAt, null),
+    itemId,
+    0,
+    '',
+    Number(runSeed.goodYield || 0),
+    unitSeed?.symbol || 'pcs',
+    'FG',
+    JSON.stringify({
+      seedId: runSeed.id,
+      pipelineId: runSeed.pipelineId,
+      orderId: runSeed.orderId,
+      stageActuals: runSeed.stageActuals || [],
+    }),
+    seedDateTime(runSeed.startedAt, now),
+    now,
+  ];
+  if (existingSnapshot) {
+    await run(
+      `
+      UPDATE production_runs
+      SET status = ?, completed_at = ?, item_id = ?, variation_leaf_node_id = ?,
+          variation_path_label = ?, output_quantity = ?, uom = ?, location = ?,
+          source_metadata_json = ?, updated_at = ?
+      WHERE id = ?
+      `,
+      [...snapshotValues.slice(1, 10), now, existingSnapshot.id],
+    );
+    productionRunId = existingSnapshot.id;
+  } else if (itemId) {
+    const result = await run(
+      `
+      INSERT INTO production_runs (
+        run_code, status, completed_at, item_id, variation_leaf_node_id,
+        variation_path_label, output_quantity, uom, location,
+        source_metadata_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      snapshotValues,
+    );
+    productionRunId = result.lastID;
+  }
+  if (productionRunId) {
+    productionRunMap.set(runSeed.id, productionRunId);
+  }
+
+  const pipelineSeed = seed.pipelines.find((pipeline) => pipeline.id === runSeed.pipelineId);
+  const stageIds = (pipelineSeed?.stages || []).map((stage) => stage.id);
+  const nodeStatuses = Object.fromEntries(stageIds.map((stageId) => [stageId, 'pending']));
+  const actualDurationHoursByNode = {};
+  const batchQuantityByNode = {};
+  const machineOverrideByNode = {};
+  const nodeMetrics = {};
+  for (const actual of runSeed.stageActuals || []) {
+    nodeStatuses[actual.stageId] = seedPipelineRunStatus(actual.status);
+    actualDurationHoursByNode[actual.stageId] = Number(actual.actualHours || 0);
+    batchQuantityByNode[actual.stageId] = Number(actual.goodQty || 0);
+    const machineSeed = seed.machines.find((machine) => machine.id === actual.machineId);
+    if (machineSeed) {
+      machineOverrideByNode[actual.stageId] = machineSeed.name;
+    }
+    nodeMetrics[actual.stageId] = {
+      goodYield: Number(actual.goodQty || 0),
+      scrap: Number(actual.scrapQty || 0),
+      actualHours: Number(actual.actualHours || 0),
+    };
+  }
+  await run(
+    `
+    INSERT INTO pipeline_runs (
+      id, template_id, template_version, name, status, overrides_json,
+      node_status_json, scrap_routing, node_metrics_json, started_at,
+      completed_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'inventory', ?, ?, ?, ?)
+    ON CONFLICT(id)
+    DO UPDATE SET
+      template_id = excluded.template_id,
+      template_version = excluded.template_version,
+      name = excluded.name,
+      status = excluded.status,
+      overrides_json = excluded.overrides_json,
+      node_status_json = excluded.node_status_json,
+      scrap_routing = excluded.scrap_routing,
+      node_metrics_json = excluded.node_metrics_json,
+      started_at = excluded.started_at,
+      completed_at = excluded.completed_at,
+      created_at = excluded.created_at
+    `,
+    [
+      runSeed.id,
+      runSeed.pipelineId,
+      pipelineSeed?.version || 1,
+      `${pipelineSeed?.name || 'Production'} - ${runSeed.id}`,
+      seedPipelineRunStatus(runSeed.status),
+      JSON.stringify({ actualDurationHoursByNode, batchQuantityByNode, machineOverrideByNode }),
+      JSON.stringify(nodeStatuses),
+      JSON.stringify(nodeMetrics),
+      seedDateTime(runSeed.startedAt, null),
+      seedDateTime(runSeed.endedAt, null),
+      seedDateTime(runSeed.startedAt, now),
+    ],
+  );
+  await run('DELETE FROM order_pipeline_assignments WHERE pipeline_run_id = ?', [runSeed.id]);
+  if (orderLineId) {
+    await run(
+      `
+      INSERT INTO order_pipeline_assignments (order_item_id, pipeline_run_id, allocated_quantity, created_at)
+      VALUES (?, ?, ?, ?)
+      `,
+      [orderLineId, runSeed.id, Number(runSeed.plannedQuantity || 0), now],
+    );
+  }
+  await run('DELETE FROM run_barcode_inputs WHERE run_id = ?', [runSeed.id]);
+  for (const assignment of runSeed.assignedStock || []) {
+    const material = await getMaterialRowByBarcode(assignment.barcode);
+    if (!material) continue;
+    await run(
+      `
+      INSERT INTO run_barcode_inputs (
+        id, run_id, node_id, barcode, material_id, material_payload_json, scanned_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        `${runSeed.id}-${assignment.stageId}-${assignment.barcode}`,
+        runSeed.id,
+        assignment.stageId,
+        assignment.barcode,
+        String(material.id),
+        JSON.stringify({
+          barcode: material.barcode,
+          materialName: material.name,
+          materialType: material.type,
+          scanCount: material.scan_count || 0,
+        }),
+        seedDateTime(runSeed.startedAt, now),
+      ],
+    );
+  }
+  pipelineRunMap.set(runSeed.id, runSeed.id);
+}
+
+async function ensureFullSeedChallan(challan, seed, clientMap, vendorMap, itemMap, unitMap, orderLineMap, productionRunMap, challanMap) {
+  const now = nowIso();
+  const orderSeed = seed.orders.find((order) => order.id === challan.orderId);
+  const firstOrderLine = orderSeed?.lineItems?.[0];
+  const orderLineId = firstOrderLine ? orderLineMap.get(firstOrderLine.id) : null;
+  const clientSeed = seed.clients.find((client) => client.id === challan.clientId);
+  const vendorSeed = seed.vendors.find((vendor) => vendor.id === challan.vendorId);
+  const existing = await get('SELECT id FROM delivery_challans WHERE challan_no = ? LIMIT 1', [challan.challanNo]);
+  const values = [
+    challan.type,
+    orderLineId || null,
+    orderSeed?.orderNo || '',
+    challan.challanNo,
+    challan.date,
+    challan.type === 'delivery' ? clientSeed?.name || '' : vendorSeed?.name || '',
+    challan.type === 'delivery' ? clientSeed?.gstin || '' : vendorSeed?.gstin || '',
+    vendorMap.get(challan.vendorId) || null,
+    vendorSeed?.name || '',
+    vendorSeed?.gstin || '',
+    clientMap.get(challan.clientId) || null,
+    clientSeed?.name || '',
+    clientSeed?.gstin || '',
+    challan.purchaseOrderId || orderSeed?.orderNo || '',
+    `Full seed ${challan.type} challan`,
+    challan.type === 'delivery' ? 'outward' : 'job_work',
+    challan.status || 'draft',
+    challan.isPrinted ? 1 : 0,
+    now,
+  ];
+  let challanId;
+  if (existing) {
+    await run(
+      `
+      UPDATE delivery_challans
+      SET type = ?, order_id = ?, order_no = ?, date = ?, customer_name = ?,
+          customer_gstin = ?, vendor_id = ?, vendor_name = ?, vendor_gstin = ?,
+          material_owner_client_id = ?, material_owner_client_name = ?,
+          material_owner_gstin = ?, source_reference = ?, notes = ?,
+          purpose = ?, status = ?, used_in_report = ?, updated_at = ?
+      WHERE id = ?
+      `,
+      [
+        values[0], values[1], values[2], values[4], values[5], values[6],
+        values[7], values[8], values[9], values[10], values[11], values[12],
+        values[13], values[14], values[15], values[16], values[17], now,
+        existing.id,
+      ],
+    );
+    challanId = existing.id;
+  } else {
+    const result = await run(
+      `
+      INSERT INTO delivery_challans (
+        type, order_id, order_no, challan_no, date, customer_name,
+        customer_gstin, vendor_id, vendor_name, vendor_gstin,
+        material_owner_client_id, material_owner_client_name,
+        material_owner_gstin, source_reference, notes, purpose, status,
+        used_in_report, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [...values, now],
+    );
+    challanId = result.lastID;
+  }
+  challanMap.set(challan.id, challanId);
+  await run('DELETE FROM delivery_challan_items WHERE challan_id = ?', [challanId]);
+  let lineNo = 1;
+  for (const line of challan.lineItems || []) {
+    const unitSeed = seed.units.find((unit) => unit.id === line.unitId);
+    const itemSeed = seed.items.find((item) => item.id === line.itemId);
+    const isWeight = normalizeUnitValue(unitSeed?.symbol || '') === 'kg';
+    await run(
+      `
+      INSERT INTO delivery_challan_items (
+        challan_id, order_item_id, production_run_id, item_id,
+        variation_leaf_node_id, line_no, particulars, hsn_code, note,
+        quantity_pcs, weight, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 0, ?, ?, '', ?, ?, ?, ?, ?)
+      `,
+      [
+        challanId,
+        orderLineId || null,
+        productionRunMap.get(challan.productionRunId) || null,
+        itemMap.get(line.itemId) || null,
+        lineNo,
+        itemSeed?.name || line.itemId,
+        challan.type === 'delivery' ? 'Dispatch from full demo seed' : 'Reception from full demo seed',
+        isWeight ? 0 : Number(line.quantity || 0),
+        isWeight ? Number(line.quantity || 0) : 0,
+        now,
+        now,
+      ],
+    );
+    lineNo += 1;
+  }
+}
+
+async function ensureFullSeedInventoryPositions(seed, unitMap, challanMap) {
+  const now = nowIso();
+  for (const stock of seed.inventory || []) {
+    const material = await getMaterialRowByBarcode(stock.barcode);
+    if (!material) continue;
+    const unitSeed = seed.units.find((unit) => unit.id === stock.unitId);
+    await run(
+      `
+      DELETE FROM inventory_stock_positions
+      WHERE material_barcode = ? AND location_id = ? AND lot_code = ?
+      `,
+      [material.barcode, stock.location || 'MAIN', stock.lotNo || stock.id],
+    );
+    await run(
+      `
+      INSERT INTO inventory_stock_positions (
+        material_barcode, location_id, lot_code, unit_id, on_hand_qty,
+        reserved_qty, damaged_qty, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+      `,
+      [
+        material.barcode,
+        stock.location || 'MAIN',
+        stock.lotNo || stock.id,
+        unitMap.get(stock.unitId) || null,
+        Number(stock.onHand || 0),
+        Number(stock.reserved || 0),
+        seedDateTime(stock.lastMovementAt, now),
+      ],
+    );
+    await run(
+      `
+      INSERT OR REPLACE INTO inventory_movements (
+        id, material_barcode, movement_type, qty, primary_qty, uom,
+        from_location_id, to_location_id, reason_code, reference_type,
+        reference_id, source_challan_id, source_challan_type,
+        source_challan_line_id, reverses_movement_id, actor, lot_code,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, 'FULL_DEMO_SEED', ?, ?, ?, ?, NULL, NULL, ?, ?, ?)
+      `,
+      [
+        `seed-${stock.id}`,
+        material.barcode,
+        stock.receivedChallanId ? 'receive' : 'adjust',
+        Number(stock.onHand || 0),
+        Number(stock.onHand || 0),
+        unitSeed?.symbol || '',
+        stock.location || 'MAIN',
+        stock.receivedChallanId ? 'challan' : 'opening_balance',
+        stock.receivedChallanId || stock.id,
+        challanMap.get(stock.receivedChallanId) || null,
+        stock.receivedChallanId ? 'reception' : null,
+        'Full demo seed',
+        stock.lotNo || stock.id,
+        seedDateTime(stock.lastMovementAt, now),
+      ],
+    );
+    await recomputeMaterialInventorySummary(material.barcode);
+  }
+}
+
+async function ensureFullDemoSeedDataset() {
+  const seed = loadFullDemoSeedData();
+  if (!seed) {
+    return;
+  }
+  const unitMap = new Map();
+  const clientMap = new Map();
+  const vendorMap = new Map();
+  const itemMap = new Map();
+  const machineMap = new Map();
+  const dieMap = new Map();
+  const userMap = new Map();
+  const templateMap = new Map();
+  const orderMap = new Map();
+  const orderLineMap = new Map();
+  const materialMap = new Map();
+  const pipelineRunMap = new Map();
+  const productionRunMap = new Map();
+  const challanMap = new Map();
+  const groupCache = new Map();
+
+  for (const unit of seed.units || []) {
+    await ensureFullSeedUnit(unit, unitMap);
+  }
+  for (const client of seed.clients || []) {
+    await ensureFullSeedClient(client, clientMap);
+  }
+  for (const vendor of seed.vendors || []) {
+    await ensureFullSeedVendor(vendor, vendorMap);
+  }
+  for (const item of seed.items || []) {
+    await ensureFullSeedItem(item, unitMap, groupCache, itemMap);
+  }
+  for (const machine of seed.machines || []) {
+    await ensureFullSeedMachine(machine, groupCache, machineMap);
+  }
+  for (const die of seed.dies || []) {
+    await ensureFullSeedDie(die, seed, machineMap, groupCache, dieMap);
+  }
+  for (const pipeline of seed.pipelines || []) {
+    await ensureFullSeedPipeline(pipeline, seed, itemMap, unitMap, templateMap);
+  }
+  for (const user of seed.users || []) {
+    await ensureFullSeedUser(user, userMap);
+  }
+  for (const order of seed.orders || []) {
+    await ensureFullSeedOrder(order, seed, clientMap, itemMap, unitMap, orderMap, orderLineMap);
+  }
+  for (const stock of seed.inventory || []) {
+    await ensureFullSeedMaterial(stock, seed, itemMap, unitMap, vendorMap, materialMap);
+  }
+  for (const runSeed of seed.productionRuns || []) {
+    await ensureFullSeedProductionRun(
+      runSeed,
+      seed,
+      itemMap,
+      unitMap,
+      orderLineMap,
+      pipelineRunMap,
+      productionRunMap,
+    );
+  }
+  for (const challan of seed.challans || []) {
+    await ensureFullSeedChallan(
+      challan,
+      seed,
+      clientMap,
+      vendorMap,
+      itemMap,
+      unitMap,
+      orderLineMap,
+      productionRunMap,
+      challanMap,
+    );
+  }
+  await ensureFullSeedInventoryPositions(seed, unitMap, challanMap);
+  console.log(
+    `Loaded full Paper demo seed: ${(seed.units || []).length} units, ${(seed.clients || []).length} clients, ${(seed.items || []).length} items, ${(seed.orders || []).length} orders, ${(seed.productionRuns || []).length} production runs, ${(seed.challans || []).length} challans.`,
+  );
 }
 
 async function backfillInventoryLedgerForMaterials({

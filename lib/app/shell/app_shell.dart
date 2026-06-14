@@ -371,25 +371,55 @@ class _PaperShortcutManagerState extends State<PaperShortcutManager> {
 
   bool _isEditableFocusActive() {
     final primaryFocus = FocusManager.instance.primaryFocus;
+    if (primaryFocus == null) {
+      return false;
+    }
     if (primaryFocus ==
         context.read<NavigationProvider>().topStripSearchFocusNode) {
       return true;
     }
 
-    final focusedContext = primaryFocus?.context;
+    final focusedContext = primaryFocus.context;
     if (focusedContext == null) {
       return false;
     }
-    if (focusedContext.widget is EditableText) {
+    if (_contextContainsEditableText(focusedContext, primaryFocus)) {
       return true;
     }
-    var editableFound = false;
-    focusedContext.visitAncestorElements((element) {
-      if (element.widget is EditableText) {
-        editableFound = true;
-        return false;
-      }
+    return focusedContext.findAncestorWidgetOfExactType<EditableText>() != null;
+  }
+
+  bool _contextContainsEditableText(
+    BuildContext context,
+    FocusNode primaryFocus,
+  ) {
+    final widget = context.widget;
+    if (widget is EditableText && widget.focusNode == primaryFocus) {
       return true;
+    }
+
+    var editableFound = false;
+    context.visitChildElements((element) {
+      if (editableFound) {
+        return;
+      }
+      editableFound = _elementContainsEditableText(element, primaryFocus);
+    });
+    return editableFound;
+  }
+
+  bool _elementContainsEditableText(Element element, FocusNode primaryFocus) {
+    final widget = element.widget;
+    if (widget is EditableText && widget.focusNode == primaryFocus) {
+      return true;
+    }
+
+    var editableFound = false;
+    element.visitChildElements((child) {
+      if (editableFound) {
+        return;
+      }
+      editableFound = _elementContainsEditableText(child, primaryFocus);
     });
     return editableFound;
   }
@@ -433,7 +463,10 @@ class _PaperShortcutManagerState extends State<PaperShortcutManager> {
   }
 
   void _requestShellFocus() {
-    if (!mounted || _isModalActive(context) || _focusNode.hasFocus) {
+    if (!mounted ||
+        _isModalActive(context) ||
+        _focusNode.hasFocus ||
+        _isEditableFocusActive()) {
       return;
     }
     _focusNode.requestFocus();
@@ -459,7 +492,7 @@ class _PaperShortcutManagerState extends State<PaperShortcutManager> {
         SearchableSelectOption(value: 'pipeline', label: 'new pipeline', highlightColor: Color(0xFF43B047)),
       ],
     ).then((option) {
-      if (option == null) return;
+      if (!context.mounted || option == null) return;
       switch (option.value) {
         case 'order': 
           _handleCreateOrder(context); 
