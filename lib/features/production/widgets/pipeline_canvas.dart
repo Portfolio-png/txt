@@ -15,6 +15,7 @@ import 'graph_edges_painter.dart';
 import 'flow_stage_block.dart';
 import 'batch_chip.dart';
 import 'node_batch_tray.dart';
+import 'stage_reconciliation_dialog.dart';
 import '../domain/utils/stage_input_resolver.dart';
 
 class PipelineCanvas extends StatefulWidget {
@@ -302,12 +303,44 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
       targetNodeName: node.name.isEmpty ? 'station' : node.name,
     );
     if (qty == null || !mounted) return;
+
+    // The stage the batch is leaving. Moving stock OUT of a processing stage
+    // must be accounted for; issuing raw stock from an Input endpoint moves
+    // quietly.
+    final sourceNode = widget.template.nodes
+        .where((n) => n.id == batch.currentNodeId)
+        .firstOrNull;
+
     batchProvider.moveBatch(
       runId: runId,
       batchId: batch.id,
       toNodeId: node.id,
       quantity: qty,
     );
+
+    if (!mounted) return;
+    if (sourceNode != null &&
+        sourceNode.processType != 'Input' &&
+        sourceNode.processType != 'Output') {
+      await StageReconciliationDialog.show(
+        context,
+        node: sourceNode,
+        runId: runId,
+        batchOutput: qty,
+        batchAllottedMax: batch.quantity,
+        batchUnit: batch.unit,
+        batchBarcode: batch.barcode,
+        onCommitLoss: (loss) {
+          // Scrap/leftover declared beyond what advanced leaves the source
+          // chip too, keeping the chips consistent with the ledger.
+          batchProvider.reduceBatch(
+            runId: runId,
+            batchId: batch.id,
+            amount: loss,
+          );
+        },
+      );
+    }
   }
 
   @override

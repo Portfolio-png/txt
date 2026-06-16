@@ -24,19 +24,49 @@ class StageReconciliationDialog extends StatefulWidget {
     super.key,
     required this.node,
     required this.runId,
+    this.batchOutput,
+    this.batchAllottedMax,
+    this.batchUnit,
+    this.batchBarcode,
+    this.onCommitLoss,
   });
 
   final ProcessNode node;
   final String runId;
 
+  /// When set, the dialog runs in batch mode: [batchOutput] is the quantity
+  /// that just advanced out of this stage (locked as the output), allotted is
+  /// editable up to [batchAllottedMax] (the source chip's original size), and
+  /// the unit/barcode come from the moved batch. [onCommitLoss] is invoked with
+  /// the reconciled loss (allotted − output) so the caller can deduct it from
+  /// the source chip.
+  final double? batchOutput;
+  final double? batchAllottedMax;
+  final String? batchUnit;
+  final String? batchBarcode;
+  final ValueChanged<double>? onCommitLoss;
+
   static Future<bool?> show(
     BuildContext context, {
     required ProcessNode node,
     required String runId,
+    double? batchOutput,
+    double? batchAllottedMax,
+    String? batchUnit,
+    String? batchBarcode,
+    ValueChanged<double>? onCommitLoss,
   }) {
     return showDialog<bool>(
       context: context,
-      builder: (_) => StageReconciliationDialog(node: node, runId: runId),
+      builder: (_) => StageReconciliationDialog(
+        node: node,
+        runId: runId,
+        batchOutput: batchOutput,
+        batchAllottedMax: batchAllottedMax,
+        batchUnit: batchUnit,
+        batchBarcode: batchBarcode,
+        onCommitLoss: onCommitLoss,
+      ),
     );
   }
 
@@ -94,21 +124,38 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
       setState(() {
         _run = run;
         _isLoading = false;
-        _allottedFromBarcodes = allotted > 0;
-        _firstBarcode = inputs.isNotEmpty ? inputs.first.barcode : null;
-        _unit = inputs.isNotEmpty
-            ? (inputs.first.unit ?? '')
-            : (widget.node.inputItem?.unitSymbol ?? '');
-        _allottedCtrl.text = allotted > 0
-            ? _fmt(allotted)
-            : _fmt((metrics['allotted'] as num?)?.toDouble() ?? 0);
-        _outputCtrl.text = _fmt((metrics['output'] as num?)?.toDouble() ?? 0);
+        if (_batchMode) {
+          // The moved quantity is the (locked) output; allotted is editable
+          // from there up to the source chip's original size.
+          final moved = widget.batchOutput!;
+          _allottedFromBarcodes = false;
+          _firstBarcode = widget.batchBarcode;
+          _unit = widget.batchUnit?.isNotEmpty == true
+              ? widget.batchUnit!
+              : (inputs.isNotEmpty
+                    ? (inputs.first.unit ?? '')
+                    : (widget.node.inputItem?.unitSymbol ?? ''));
+          _outputCtrl.text = _fmt(moved);
+          _allottedCtrl.text = _fmt(moved);
+        } else {
+          _allottedFromBarcodes = allotted > 0;
+          _firstBarcode = inputs.isNotEmpty ? inputs.first.barcode : null;
+          _unit = inputs.isNotEmpty
+              ? (inputs.first.unit ?? '')
+              : (widget.node.inputItem?.unitSymbol ?? '');
+          _allottedCtrl.text = allotted > 0
+              ? _fmt(allotted)
+              : _fmt((metrics['allotted'] as num?)?.toDouble() ?? 0);
+          _outputCtrl.text = _fmt((metrics['output'] as num?)?.toDouble() ?? 0);
+        }
         _recalculate(keepScrap: true);
       });
     } catch (_) {
       if (mounted) setState(() => _isLoading = false);
     }
   }
+
+  bool get _batchMode => widget.batchOutput != null;
 
   double get _allotted => double.tryParse(_allottedCtrl.text.trim()) ?? 0;
   double get _output => double.tryParse(_outputCtrl.text.trim()) ?? 0;
@@ -148,6 +195,16 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
       setState(
         () => _errorText =
             'Output cannot exceed the allotted material (${_fmt(_allotted)} $_unit).',
+      );
+      return;
+    }
+    if (_batchMode &&
+        widget.batchAllottedMax != null &&
+        _allotted > widget.batchAllottedMax! + 0.001) {
+      setState(
+        () => _errorText =
+            'Consumed cannot exceed the ${_fmt(widget.batchAllottedMax!)} $_unit '
+            'available at this stage.',
       );
       return;
     }
@@ -232,6 +289,7 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
         );
       }
 
+      widget.onCommitLoss?.call(_allotted - _output);
       runProvider.triggerRefresh();
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
@@ -285,9 +343,12 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
                       children: [
                         Expanded(
                           child: _QtyField(
-                            label: 'Allotted ($_unit)',
+                            label: _batchMode
+                                ? 'Consumed ($_unit)'
+                                : 'Allotted ($_unit)',
                             controller: _allottedCtrl,
                             enabled: !_allottedFromBarcodes,
+                            autofocus: _batchMode,
                             onChanged: (_) =>
                                 setState(() => _recalculate(keepScrap: true)),
                           ),
@@ -295,9 +356,12 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: _QtyField(
-                            label: 'Stage Output ($_unit)',
+                            label: _batchMode
+                                ? 'Advanced ($_unit)'
+                                : 'Stage Output ($_unit)',
                             controller: _outputCtrl,
-                            autofocus: true,
+                            enabled: !_batchMode,
+                            autofocus: !_batchMode,
                             onChanged: (_) =>
                                 setState(() => _recalculate(keepScrap: true)),
                           ),

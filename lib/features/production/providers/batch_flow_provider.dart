@@ -92,6 +92,28 @@ class BatchFlowProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Reduces a batch's quantity by [amount] — e.g. the scrap/leftover that a
+  /// stage reconciliation declared as having left the production pool beyond
+  /// what advanced. Removes the batch if it drops to (near) zero.
+  void reduceBatch({
+    required String runId,
+    required String batchId,
+    required double amount,
+  }) {
+    if (amount <= 0) return;
+    final list = _byRun[runId];
+    if (list == null) return;
+    final idx = list.indexWhere((b) => b.id == batchId);
+    if (idx == -1) return;
+    final next = list[idx].quantity - amount;
+    if (next <= 0.0001) {
+      list.removeAt(idx);
+    } else {
+      list[idx] = list[idx].copyWith(quantity: next);
+    }
+    notifyListeners();
+  }
+
   /// Clears a run's batches so it can be re-seeded (e.g. after a reset).
   void resetRun(String runId) {
     _byRun.remove(runId);
