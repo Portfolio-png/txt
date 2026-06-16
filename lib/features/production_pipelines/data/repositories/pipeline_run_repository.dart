@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../../domain/material_batch.dart';
 import '../../domain/node_run_status.dart';
 import '../../domain/pipeline_run.dart';
 import '../../domain/pipeline_template.dart';
@@ -53,6 +54,12 @@ abstract class PipelineRunRepository {
     required String materialBarcode,
     required double scrapQty,
     String? orderNo,
+  });
+
+  /// Persists the full set of in-flight batches for a run (write-through).
+  Future<PipelineRun> saveBatches({
+    required String runId,
+    required List<MaterialBatch> batches,
   });
 }
 
@@ -326,6 +333,24 @@ class ApiPipelineRunRepository implements PipelineRunRepository {
     );
     final payload = _decodeJson(response.body) as Map<String, dynamic>;
     _ensureSuccess(response.statusCode, payload, 'Failed to log production scrap.');
+  }
+
+  @override
+  Future<PipelineRun> saveBatches({
+    required String runId,
+    required List<MaterialBatch> batches,
+  }) async {
+    final uri = Uri.parse('$baseUrl/runs/$runId/batches');
+    final response = await _client.put(
+      uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'batches': batches.map((b) => b.toJson()).toList(),
+      }),
+    );
+    final payload = _decodeJson(response.body) as Map<String, dynamic>;
+    _ensureSuccess(response.statusCode, payload, 'Failed to save batches.');
+    return PipelineRun.fromJson(payload['run'] as Map<String, dynamic>);
   }
 
   void _ensureSuccess(

@@ -24,6 +24,7 @@ import 'package:paper/features/production_pipelines/data/repositories/pipeline_r
 import 'package:paper/features/production_pipelines/domain/material_flow.dart';
 import 'package:paper/features/production_pipelines/domain/node_run_status.dart';
 import 'package:paper/features/production_pipelines/domain/pipeline_run.dart';
+import 'package:paper/features/production_pipelines/domain/material_batch.dart';
 import 'package:paper/features/production_pipelines/domain/pipeline_template.dart';
 import 'package:paper/features/production_pipelines/domain/process_node.dart';
 import 'package:provider/provider.dart';
@@ -914,6 +915,14 @@ class _FakePipelineRunRepository implements PipelineRunRepository {
     required double scrapQty,
     String? orderNo,
   }) async {}
+
+  @override
+  Future<PipelineRun> saveBatches({
+    required String runId,
+    required List<MaterialBatch> batches,
+  }) {
+    throw UnimplementedError();
+  }
 }
 
 PipelineTemplate _testTemplate() {

@@ -1,4 +1,5 @@
 import 'barcode_input.dart';
+import 'material_batch.dart';
 import 'node_run_status.dart';
 import 'run_overrides.dart';
 
@@ -20,6 +21,7 @@ class PipelineRun {
     this.orderItemId,
     this.scrapRouting = 'inventory',
     this.nodeMetrics = const {},
+    this.batches = const [],
   });
 
   final String id;
@@ -38,6 +40,7 @@ class PipelineRun {
   final int? orderItemId;
   final String scrapRouting;
   final Map<String, Map<String, dynamic>> nodeMetrics;
+  final List<MaterialBatch> batches;
 
   factory PipelineRun.fromJson(Map<String, dynamic> json) {
     return PipelineRun(
@@ -79,6 +82,9 @@ class PipelineRun {
               ),
             ),
       ),
+      batches: (json['batches'] as List<dynamic>? ?? const [])
+          .map((item) => MaterialBatch.fromJson(item as Map<String, dynamic>))
+          .toList(growable: false),
       createdAt:
           DateTime.tryParse(json['createdAt'] as String? ?? '') ??
           DateTime.now(),
@@ -106,6 +112,7 @@ class PipelineRun {
     String? clientName,
     String? scrapRouting,
     Map<String, Map<String, dynamic>>? nodeMetrics,
+    List<MaterialBatch>? batches,
   }) {
     return PipelineRun(
       id: id ?? this.id,
@@ -124,6 +131,7 @@ class PipelineRun {
       clientName: clientName ?? this.clientName,
       scrapRouting: scrapRouting ?? this.scrapRouting,
       nodeMetrics: nodeMetrics ?? this.nodeMetrics,
+      batches: batches ?? this.batches,
     );
   }
 
@@ -151,6 +159,7 @@ class PipelineRun {
       'clientName': clientName,
       'scrapRouting': scrapRouting,
       'nodeMetrics': nodeMetrics,
+      'batches': batches.map((b) => b.toJson()).toList(),
     };
   }
 }

@@ -14,21 +14,10 @@ int _nextUniqueProdId() {
 
 enum ProductionRunPhase {
   idle,
-  verifyingSetup,
-  setupVerified,
   running,
   paused,
   loggingClosure,
   closed,
-}
-
-class ProductionSetupException implements Exception {
-  const ProductionSetupException(this.message);
-
-  final String message;
-
-  @override
-  String toString() => message;
 }
 
 class ActiveProductionRun {
@@ -230,14 +219,11 @@ class ProductionProvider extends ChangeNotifier {
   ActiveProductionRun? _activeRun;
   ProductionRunPhase _phase = ProductionRunPhase.idle;
   String? _selectedNodeId;
-  String? _currentMachineId;
-  String? _currentDieId;
   DateTime? _nodeStartedAt;
   Duration _bankedElapsed = Duration.zero;
   int _goodYieldCount = 0;
   double _scrapWeightKg = 0;
   double _parentReelConsumedKg = 510;
-  String? _validationErrorMessage;
 
   String get activeOperator => _activeOperator;
 
@@ -254,8 +240,6 @@ class ProductionProvider extends ChangeNotifier {
   ActiveProductionRun? get activeRun => _activeRun;
   ProductionRunPhase get phase => _phase;
   String? get selectedNodeId => _selectedNodeId;
-  String? get currentMachineId => _currentMachineId;
-  String? get currentDieId => _currentDieId;
   DateTime? get nodeStartedAt => _nodeStartedAt;
   int? get linkedOrderId => template.linkedOrderId;
   String? get linkedOrderNo => template.linkedOrderNo;
@@ -264,10 +248,8 @@ class ProductionProvider extends ChangeNotifier {
   int get goodYieldCount => _goodYieldCount;
   double get scrapWeightKg => _scrapWeightKg;
   double get parentReelConsumedKg => _parentReelConsumedKg;
-  String? get validationErrorMessage => _validationErrorMessage;
 
   bool get isIdle => _phase == ProductionRunPhase.idle;
-  bool get isVerifyingSetup => _phase == ProductionRunPhase.verifyingSetup;
   bool get isRunning => _phase == ProductionRunPhase.running;
   bool get isPaused => _phase == ProductionRunPhase.paused;
   bool get isLoggingClosure => _phase == ProductionRunPhase.loggingClosure;
@@ -343,9 +325,6 @@ class ProductionProvider extends ChangeNotifier {
       _selectedNodeId = null;
     }
     _phase = ProductionRunPhase.idle;
-    _currentMachineId = null;
-    _currentDieId = null;
-    _validationErrorMessage = null;
     notifyListeners();
   }
 
@@ -358,91 +337,11 @@ class ProductionProvider extends ChangeNotifier {
     if (_selectedNodeId == nodeId) {
       return;
     }
-    final nextNode = template.nodes
-        .where((node) => node.id == nodeId)
-        .firstOrNull;
-    if (nextNode == null) {
+    if (!template.nodes.any((node) => node.id == nodeId)) {
       return;
     }
     _selectedNodeId = nodeId;
-    _validationErrorMessage = null;
-    if (!isRunning && !isPaused && !isLoggingClosure) {
-      final setupMatchesNode =
-          _currentMachineId == nextNode.machineAssignmentLabel &&
-          _currentDieId == nextNode.dieId;
-      if (!setupMatchesNode) {
-        _phase = ProductionRunPhase.idle;
-        _currentMachineId = null;
-        _currentDieId = null;
-      }
-    }
     notifyListeners();
-  }
-
-  void beginSetup() {
-    final node = selectedNode;
-    if (node == null) {
-      throw const ProductionSetupException('No active process node selected.');
-    }
-    _phase = ProductionRunPhase.verifyingSetup;
-    _validationErrorMessage = null;
-    notifyListeners();
-  }
-
-  void verifyAssetSetup(String scannedMachineCode, String scannedDieCode) {
-    final node = selectedNode;
-    if (node == null) {
-      throw const ProductionSetupException('Select a production step first.');
-    }
-
-    _phase = ProductionRunPhase.verifyingSetup;
-    _validationErrorMessage = null;
-    notifyListeners();
-
-    final scannedMachineId = _normalizeAssetCode(scannedMachineCode);
-    final scannedDieId = _normalizeAssetCode(scannedDieCode);
-    final expectedMachineId = _normalizeAssetCode(node.machine);
-    final expectedDieId = _normalizeAssetCode(node.dieId);
-
-    if (node.machine.trim().isNotEmpty &&
-        scannedMachineId != expectedMachineId) {
-      _validationErrorMessage =
-          'Machine lock-key mismatch. Expected ${node.machine}, scanned $scannedMachineCode.';
-      _phase = ProductionRunPhase.idle;
-      notifyListeners();
-      throw ProductionSetupException(_validationErrorMessage!);
-    }
-
-    if (node.dieId.isNotEmpty && scannedDieId != expectedDieId) {
-      _validationErrorMessage =
-          'Die lock-key mismatch. Expected ${node.dieId}, scanned $scannedDieCode.';
-      _phase = ProductionRunPhase.idle;
-      notifyListeners();
-      throw ProductionSetupException(_validationErrorMessage!);
-    }
-
-    _currentMachineId = node.machineAssignmentLabel;
-    _currentDieId = node.dieId;
-    _phase = ProductionRunPhase.setupVerified;
-    _validationErrorMessage = null;
-    notifyListeners();
-  }
-
-  void verifySetup(String scannedMachineId, String scannedDieId) {
-    try {
-      verifyAssetSetup(scannedMachineId, scannedDieId);
-    } catch (_) {}
-  }
-
-  String _normalizeAssetCode(String value) {
-    final upper = value.trim().toUpperCase();
-    if (upper.contains(':')) {
-      return upper.split(':').last.trim();
-    }
-    if (upper.contains('|')) {
-      return upper.split('|').last.trim();
-    }
-    return upper;
   }
 
   void selectStage(String stageId) => selectNode(stageId);
@@ -549,28 +448,8 @@ class ProductionProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void cancelSetup() {
-    _phase = ProductionRunPhase.idle;
-    _currentMachineId = null;
-    _currentDieId = null;
-    _validationErrorMessage = null;
-    notifyListeners();
-  }
-
   void startRun() {
-    final node = selectedNode;
-    if (node == null) {
-      return;
-    }
-    final isAllowedPhase =
-        _phase == ProductionRunPhase.setupVerified ||
-        _phase == ProductionRunPhase.paused;
-    if (!isAllowedPhase ||
-        _currentMachineId != node.machine ||
-        _currentDieId != node.dieId) {
-      _validationErrorMessage =
-          'Verify the machine and die lock-key setup before starting.';
-      notifyListeners();
+    if (selectedNode == null) {
       return;
     }
     if (_activeRun == null) {
@@ -586,7 +465,6 @@ class ProductionProvider extends ChangeNotifier {
     }
     _phase = ProductionRunPhase.running;
     _nodeStartedAt = DateTime.now();
-    _validationErrorMessage = null;
     notifyListeners();
   }
 
@@ -634,8 +512,8 @@ class ProductionProvider extends ChangeNotifier {
     if (node != null && _activeRun != null) {
       final log = NodeExecutionLog(
         nodeId: node.id,
-        machineId: _currentMachineId ?? 'UNKNOWN',
-        dieId: _currentDieId ?? 'UNKNOWN',
+        machineId: node.machine,
+        dieId: node.dieId,
         startedAt: _nodeStartedAt ?? DateTime.now(),
         completedAt: DateTime.now(),
         goodYieldCount: _goodYieldCount,
@@ -649,8 +527,6 @@ class ProductionProvider extends ChangeNotifier {
     }
 
     _phase = ProductionRunPhase.closed;
-    _currentMachineId = null;
-    _currentDieId = null;
     _currentLotNumber++;
     notifyListeners();
 
@@ -661,7 +537,6 @@ class ProductionProvider extends ChangeNotifier {
       _scrapWeightKg = 0;
       _bankedElapsed = Duration.zero;
       _nodeStartedAt = null;
-      _validationErrorMessage = null;
       notifyListeners();
     });
   }

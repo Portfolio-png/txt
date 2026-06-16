@@ -1,669 +1,0 @@
-Resolving dependencies...
-Downloading packages...
-  archive 3.6.1 (4.0.9 available)
-  async 2.13.0 (2.13.1 available)
-  code_assets 1.0.0 (1.2.1 available)
-  cupertino_icons 1.0.8 (1.0.9 available)
-  file_selector_android 0.5.2+6 (0.5.2+8 available)
-  file_selector_web 0.9.4+2 (0.9.5 available)
-  hooks 1.0.2 (2.0.2 available)
-  image 4.3.0 (4.9.1 available)
-  matcher 0.12.18 (0.12.20 available)
-  meta 1.17.0 (1.18.3 available)
-  native_toolchain_c 0.17.6 (0.19.1 available)
-  objective_c 9.3.0 (9.4.1 available)
-  path_provider_android 2.2.23 (2.3.1 available)
-  qr 3.0.2 (4.0.0 available)
-  shared_preferences_android 2.4.23 (2.4.26 available)
-  sqflite 2.4.2 (2.4.3 available)
-  sqflite_android 2.4.2+3 (2.4.3 available)
-  sqflite_common 2.5.6 (2.5.11 available)
-  sqflite_darwin 2.4.2 (2.4.3 available)
-  sqflite_platform_interface 2.4.0 (2.4.1 available)
-  synchronized 3.4.0 (3.4.1 available)
-  test_api 0.7.8 (0.7.12 available)
-  url_launcher_android 6.3.29 (6.3.32 available)
-  url_launcher_web 2.4.2 (2.4.3 available)
-  vector_math 2.2.0 (2.4.0 available)
-  vm_service 15.0.2 (15.2.0 available)
-  xml 6.6.1 (7.0.1 available)
-Got dependencies!
-27 packages have newer versions incompatible with dependency constraints.
-Try `flutter pub outdated` for more information.
-00:00 +0: loading /Users/rutuparnpuranik/Paper/test/widget_test.dart                                                                                                                                   00:01 +0: loading /Users/rutuparnpuranik/Paper/test/widget_test.dart                                                                                                                                   00:01 +0: app opens into inventory shell                                                                                                                                                               00:02 +0: app opens into inventory shell                                                                                                                                                               00:02 +1: app opens into inventory shell                                                                                                                                                               00:02 +1: desktop shell navbar collapse toggle updates sidebar state                                                                                                                                   00:02 +1: desktop shell navbar collapse toggle updates sidebar state                                                                                                                                   
-══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
-The following assertion was thrown running a test:
-The finder "Found 0 widgets with key [<'shell_sidebar_toggle_button'>]: []" (used in a call to
-"tap()") could not find any matching widgets.
-
-When the exception was thrown, this was the stack:
-#0      WidgetController._getElementPoint (package:flutter_test/src/controller.dart:2076:7)
-#1      WidgetController.getCenter (package:flutter_test/src/controller.dart:1928:12)
-#2      WidgetController.tap (package:flutter_test/src/controller.dart:1061:7)
-#3      main.<anonymous closure> (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:3856:18)
-<asynchronous suspension>
-#4      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
-<asynchronous suspension>
-#5      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
-<asynchronous suspension>
-<asynchronous suspension>
-(elided one frame from package:stack_trace)
-
-The test description was:
-  desktop shell navbar collapse toggle updates sidebar state
-════════════════════════════════════════════════════════════════════════════════════════════════════
-00:02 +1 -1: desktop shell navbar collapse toggle updates sidebar state [E]                                                                                                                            
-  Test failed. See exception logs above.
-  The test description was: desktop shell navbar collapse toggle updates sidebar state
-  
-
-To run this test again: /Users/rutuparnpuranik/Documents/flutter/bin/cache/dart-sdk/bin/dart test /Users/rutuparnpuranik/Paper/test/widget_test.dart -p vm --plain-name 'desktop shell navbar collapse toggle updates sidebar state'
-00:02 +1 -1: desktop shell top strip switches config by navigation key                                                                                                                                 00:02 +2 -1: desktop shell top strip switches config by navigation key                                                                                                                                 00:02 +2 -1: masters submenu animates closed and reopens from down arrow                                                                                                                               00:02 +3 -1: masters submenu animates closed and reopens from down arrow                                                                                                                               00:02 +3 -1: ctrl+tab cycles sidebar navigation forward                                                                                                                                                00:03 +3 -1: ctrl+tab cycles sidebar navigation forward                                                                                                                                                00:03 +4 -1: ctrl+tab cycles sidebar navigation forward                                                                                                                                                00:03 +4 -1: challans hub exposes contextual delivery and reception create flows                                                                                                                       00:03 +5 -1: challans hub exposes contextual delivery and reception create flows                                                                                                                       00:03 +5 -1: challans workspace shows reception and delivery columns                                                                                                                                   00:03 +6 -1: challans workspace shows reception and delivery columns                                                                                                                                   00:03 +6 -1: challans workspace filters by group, opens detail pane, and generates client statement report directly                                                                                    00:03 +6 -1: challans workspace filters by group, opens detail pane, and generates client statement report directly                                                                                    
-Error getting printing info: type 'bool' is not a subtype of type 'Map<dynamic, dynamic>?' in type cast
-Error getting printing info: type 'bool' is not a subtype of type 'Map<dynamic, dynamic>?' in type cast
-Helvetica-Bold has no Unicode support see https://github.com/DavBfr/dart_pdf/wiki/Fonts-Management
-Helvetica has no Unicode support see https://github.com/DavBfr/dart_pdf/wiki/Fonts-Management
-Error getting printing info: type 'bool' is not a subtype of type 'Map<dynamic, dynamic>?' in type cast
-Error getting printing info: type 'bool' is not a subtype of type 'Map<dynamic, dynamic>?' in type cast
-00:04 +7 -1: challans workspace filters by group, opens detail pane, and generates client statement report directly                                                                                    00:04 +7 -1: existing delivery draft can issue using saved order ids when orders are not hydrated                                                                                                      00:04 +8 -1: existing delivery draft can issue using saved order ids when orders are not hydrated                                                                                                      00:04 +8 -1: failed issue request displays error in the banner and keeps editor open                                                                                                                   00:04 +9 -1: failed issue request displays error in the banner and keeps editor open                                                                                                                   00:04 +9 -1: existing delivery draft does not fallback to source orders after user removes order selection                                                                                             00:04 +10 -1: existing delivery draft does not fallback to source orders after user removes order selection                                                                                            00:04 +10 -1: challan report keeps auditor while dashboard hosts client and misc rows                                                                                                                  00:05 +10 -1: challan report keeps auditor while dashboard hosts client and misc rows                                                                                                                  00:05 +11 -1: challan report keeps auditor while dashboard hosts client and misc rows                                                                                                                  00:05 +11 -1: client report dialog separates selection from preview and exports selected challans                                                                                                      00:05 +12 -1: client report dialog separates selection from preview and exports selected challans                                                                                                      00:05 +12 -1: challan templates use fixed layout blocks and a single items area block                                                                                                                  00:05 +13 -1: challan templates use fixed layout blocks and a single items area block                                                                                                                  00:05 +13 -1: reception challan item selection uses variation path popup                                                                                                                               00:06 +13 -1: reception challan item selection uses variation path popup                                                                                                                               00:06 +13 -1: reception challan item selection uses variation path popup                                                                                                                               
-══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
-The following StateError was thrown running a test:
-Bad state: No element
-
-When the exception was thrown, this was the stack:
-#0      Iterable.last (dart:core/iterable.dart:679:7)
-#1      _LastFinderMixin.filter (package:flutter_test/src/finders.dart:1367:28)
-#3      _AncestorFinderMixin.allCandidates (package:flutter_test/src/finders.dart:1814:49)
-#4      FinderBase.evaluate (package:flutter_test/src/finders.dart:987:76)
-#5      WidgetController.widgetList (package:flutter_test/src/controller.dart:843:19)
-#6      WidgetController._maybeViewOf (package:flutter_test/src/controller.dart:790:34)
-#7      WidgetController.tap (package:flutter_test/src/controller.dart:1059:31)
-#8      main.<anonymous closure> (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:4893:18)
-<asynchronous suspension>
-#9      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
-<asynchronous suspension>
-#10     TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
-<asynchronous suspension>
-<asynchronous suspension>
-(elided 2 frames from dart:async-patch and package:stack_trace)
-
-The test description was:
-  reception challan item selection uses variation path popup
-════════════════════════════════════════════════════════════════════════════════════════════════════
-00:06 +13 -2: reception challan item selection uses variation path popup [E]                                                                                                                           
-  Test failed. See exception logs above.
-  The test description was: reception challan item selection uses variation path popup
-  
-
-To run this test again: /Users/rutuparnpuranik/Documents/flutter/bin/cache/dart-sdk/bin/dart test /Users/rutuparnpuranik/Paper/test/widget_test.dart -p vm --plain-name 'reception challan item selection uses variation path popup'
-00:06 +13 -2: delivery challan variation opens same popup in read only mode                                                                                                                            00:06 +14 -2: delivery challan variation opens same popup in read only mode                                                                                                                            00:06 +14 -2: simplified delivery challan creation layout based on maintainStocks                                                                                                                      00:06 +15 -2: simplified delivery challan creation layout based on maintainStocks                                                                                                                      00:06 +15 -2: navigation provider maps the primary tabs to the requested indices                                                                                                                       00:06 +16 -2: navigation provider maps the primary tabs to the requested indices                                                                                                                       00:06 +16 -2: ctrl digits and home switch the primary shell tabs                                                                                                                                       00:06 +16 -2: ctrl digits and home switch the primary shell tabs                                                                                                                                       
-══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
-The following TestFailure was thrown running a test:
-Expected: exactly one matching candidate
-  Actual: _KeyWidgetFinder:<Found 0 widgets with key [<'shell_top_strip_search_field'>]: []>
-   Which: means none were found but one was expected
-
-When the exception was thrown, this was the stack:
-#4      main.<anonymous closure> (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:5068:5)
-<asynchronous suspension>
-#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
-<asynchronous suspension>
-#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
-<asynchronous suspension>
-<asynchronous suspension>
-(elided one frame from package:stack_trace)
-
-This was caught by the test expectation on the following line:
-  file:///Users/rutuparnpuranik/Paper/test/widget_test.dart line 5068
-The test description was:
-  ctrl digits and home switch the primary shell tabs
-════════════════════════════════════════════════════════════════════════════════════════════════════
-00:06 +16 -3: ctrl digits and home switch the primary shell tabs [E]                                                                                                                                   
-  Test failed. See exception logs above.
-  The test description was: ctrl digits and home switch the primary shell tabs
-  
-
-To run this test again: /Users/rutuparnpuranik/Documents/flutter/bin/cache/dart-sdk/bin/dart test /Users/rutuparnpuranik/Paper/test/widget_test.dart -p vm --plain-name 'ctrl digits and home switch the primary shell tabs'
-00:06 +16 -3: ctrl n opens the order editor only on the orders tab                                                                                                                                     00:07 +16 -3: ctrl n opens the order editor only on the orders tab                                                                                                                                     00:07 +17 -3: ctrl n opens the order editor only on the orders tab                                                                                                                                     00:07 +17 -3: challans shortcuts open delivery and reception editors                                                                                                                                   00:07 +18 -3: challans shortcuts open delivery and reception editors                                                                                                                                   00:07 +18 -3: held ctrl n does not spawn duplicate order dialogs                                                                                                                                       00:07 +19 -3: held ctrl n does not spawn duplicate order dialogs                                                                                                                                       00:07 +19 -3: ctrl f focuses the shared title bar search                                                                                                                                               00:07 +20 -3: ctrl f focuses the shared title bar search                                                                                                                                               00:07 +20 -3: home stays within editable text instead of jumping to dashboard                                                                                                                          00:07 +21 -3: home stays within editable text instead of jumping to dashboard                                                                                                                          00:07 +21 -3: tab reaches order dropdowns and dropdown options                                                                                                                                         00:07 +22 -3: tab reaches order dropdowns and dropdown options                                                                                                                                         00:07 +22 -3: tab focus stays looped inside sidebar items                                                                                                                                              00:07 +23 -3: tab focus stays looped inside sidebar items                                                                                                                                              00:07 +23 -3: inventory top strip actions invoke navigation callbacks                                                                                                                                  00:07 +24 -3: inventory top strip actions invoke navigation callbacks                                                                                                                                  00:07 +24 -3: inventory stock actions open reception challan editor                                                                                                                                    00:07 +25 -3: inventory stock actions open reception challan editor                                                                                                                                    00:07 +25 -3: shared shell strip updates provider-backed search for configurator screens                                                                                                               00:08 +25 -3: shared shell strip updates provider-backed search for configurator screens                                                                                                               00:08 +25 -3: shared shell strip updates provider-backed search for configurator screens                                                                                                               
-══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
-The following TestFailure was thrown running a test:
-Expected: at least one matching candidate
-  Actual: _TextWidgetFinder:<Found 0 widgets with text "Kraft": []>
-   Which: means none were found but some were expected
-
-When the exception was thrown, this was the stack:
-#4      main.<anonymous closure>.expectSharedSearch (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:5344:9)
-<asynchronous suspension>
-#5      main.<anonymous closure> (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:5361:7)
-<asynchronous suspension>
-#6      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
-<asynchronous suspension>
-#7      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
-<asynchronous suspension>
-<asynchronous suspension>
-(elided one frame from package:stack_trace)
-
-This was caught by the test expectation on the following line:
-  file:///Users/rutuparnpuranik/Paper/test/widget_test.dart line 5344
-The test description was:
-  shared shell strip updates provider-backed search for configurator screens
-════════════════════════════════════════════════════════════════════════════════════════════════════
-00:08 +25 -4: shared shell strip updates provider-backed search for configurator screens [E]                                                                                                           
-  Test failed. See exception logs above.
-  The test description was: shared shell strip updates provider-backed search for configurator screens
-  
-
-To run this test again: /Users/rutuparnpuranik/Documents/flutter/bin/cache/dart-sdk/bin/dart test /Users/rutuparnpuranik/Paper/test/widget_test.dart -p vm --plain-name 'shared shell strip updates provider-backed search for configurator screens'
-00:08 +25 -4: orders keep client code as a manual item text field                                                                                                                                      00:08 +25 -4: orders keep client code as a manual item text field                                                                                                                                      
-══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
-The following StateError was thrown running a test:
-Bad state: No element
-
-When the exception was thrown, this was the stack:
-#0      Iterable.last (dart:core/iterable.dart:679:7)
-#1      _LastFinderMixin.filter (package:flutter_test/src/finders.dart:1367:28)
-#3      _AncestorFinderMixin.allCandidates (package:flutter_test/src/finders.dart:1814:49)
-#4      FinderBase.evaluate (package:flutter_test/src/finders.dart:987:76)
-#5      WidgetController.widgetList (package:flutter_test/src/controller.dart:843:19)
-#6      WidgetController._maybeViewOf (package:flutter_test/src/controller.dart:790:34)
-#7      WidgetController.tap (package:flutter_test/src/controller.dart:1059:31)
-#8      main.selectPrimaryVariationPath (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:3656:18)
-<asynchronous suspension>
-#9      main.<anonymous closure> (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:5416:5)
-<asynchronous suspension>
-#10     testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
-<asynchronous suspension>
-#11     TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
-<asynchronous suspension>
-<asynchronous suspension>
-(elided 2 frames from dart:async-patch and package:stack_trace)
-
-The test description was:
-  orders keep client code as a manual item text field
-════════════════════════════════════════════════════════════════════════════════════════════════════
-00:08 +25 -5: orders keep client code as a manual item text field [E]                                                                                                                                  
-  Test failed. See exception logs above.
-  The test description was: orders keep client code as a manual item text field
-  
-
-To run this test again: /Users/rutuparnpuranik/Documents/flutter/bin/cache/dart-sdk/bin/dart test /Users/rutuparnpuranik/Paper/test/widget_test.dart -p vm --plain-name 'orders keep client code as a manual item text field'
-00:08 +25 -5: orders keep selected variation path visible after add more                                                                                                                               00:09 +25 -5: orders keep selected variation path visible after add more                                                                                                                               00:09 +25 -5: orders keep selected variation path visible after add more                                                                                                                               
-══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
-The following StateError was thrown running a test:
-Bad state: No element
-
-When the exception was thrown, this was the stack:
-#0      Iterable.last (dart:core/iterable.dart:679:7)
-#1      _LastFinderMixin.filter (package:flutter_test/src/finders.dart:1367:28)
-#3      _AncestorFinderMixin.allCandidates (package:flutter_test/src/finders.dart:1814:49)
-#4      FinderBase.evaluate (package:flutter_test/src/finders.dart:987:76)
-#5      WidgetController.widgetList (package:flutter_test/src/controller.dart:843:19)
-#6      WidgetController._maybeViewOf (package:flutter_test/src/controller.dart:790:34)
-#7      WidgetController.tap (package:flutter_test/src/controller.dart:1059:31)
-#8      main.selectPrimaryVariationPath (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:3656:18)
-<asynchronous suspension>
-#9      main.<anonymous closure> (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:5439:5)
-<asynchronous suspension>
-#10     testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
-<asynchronous suspension>
-#11     TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
-<asynchronous suspension>
-<asynchronous suspension>
-(elided 2 frames from dart:async-patch and package:stack_trace)
-
-The test description was:
-  orders keep selected variation path visible after add more
-════════════════════════════════════════════════════════════════════════════════════════════════════
-00:09 +25 -6: orders keep selected variation path visible after add more [E]                                                                                                                           
-  Test failed. See exception logs above.
-  The test description was: orders keep selected variation path visible after add more
-  
-
-To run this test again: /Users/rutuparnpuranik/Documents/flutter/bin/cache/dart-sdk/bin/dart test /Users/rutuparnpuranik/Paper/test/widget_test.dart -p vm --plain-name 'orders keep selected variation path visible after add more'
-00:09 +25 -6: order creation allows changing the order line unit                                                                                                                                       00:09 +25 -6: order creation allows changing the order line unit                                                                                                                                       
-══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
-The following StateError was thrown running a test:
-Bad state: No element
-
-When the exception was thrown, this was the stack:
-#0      Iterable.last (dart:core/iterable.dart:679:7)
-#1      _LastFinderMixin.filter (package:flutter_test/src/finders.dart:1367:28)
-#3      _AncestorFinderMixin.allCandidates (package:flutter_test/src/finders.dart:1814:49)
-#4      FinderBase.evaluate (package:flutter_test/src/finders.dart:987:76)
-#5      WidgetController.widgetList (package:flutter_test/src/controller.dart:843:19)
-#6      WidgetController._maybeViewOf (package:flutter_test/src/controller.dart:790:34)
-#7      WidgetController.tap (package:flutter_test/src/controller.dart:1059:31)
-#8      main.selectPrimaryVariationPath (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:3656:18)
-<asynchronous suspension>
-#9      main.<anonymous closure> (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:5477:5)
-<asynchronous suspension>
-#10     testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
-<asynchronous suspension>
-#11     TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
-<asynchronous suspension>
-<asynchronous suspension>
-(elided 2 frames from dart:async-patch and package:stack_trace)
-
-The test description was:
-  order creation allows changing the order line unit
-════════════════════════════════════════════════════════════════════════════════════════════════════
-00:09 +25 -7: order creation allows changing the order line unit [E]                                                                                                                                   
-  Test failed. See exception logs above.
-  The test description was: order creation allows changing the order line unit
-  
-
-To run this test again: /Users/rutuparnpuranik/Documents/flutter/bin/cache/dart-sdk/bin/dart test /Users/rutuparnpuranik/Paper/test/widget_test.dart -p vm --plain-name 'order creation allows changing the order line unit'
-00:09 +25 -7: order creation can add an item unit conversion on the spot                                                                                                                               00:10 +25 -7: order creation can add an item unit conversion on the spot                                                                                                                               00:10 +25 -7: order creation can add an item unit conversion on the spot                                                                                                                               
-══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
-The following TestFailure was thrown running a test:
-Expected: exactly one matching candidate
-  Actual: _TextWidgetFinder:<Found 0 widgets with text "Add unit conversion": []>
-   Which: means none were found but one was expected
-
-When the exception was thrown, this was the stack:
-#4      main.<anonymous closure> (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:5547:5)
-<asynchronous suspension>
-#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
-<asynchronous suspension>
-#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
-<asynchronous suspension>
-<asynchronous suspension>
-(elided one frame from package:stack_trace)
-
-This was caught by the test expectation on the following line:
-  file:///Users/rutuparnpuranik/Paper/test/widget_test.dart line 5547
-The test description was:
-  order creation can add an item unit conversion on the spot
-════════════════════════════════════════════════════════════════════════════════════════════════════
-00:10 +25 -8: order creation can add an item unit conversion on the spot [E]                                                                                                                           
-  Test failed. See exception logs above.
-  The test description was: order creation can add an item unit conversion on the spot
-  
-
-To run this test again: /Users/rutuparnpuranik/Documents/flutter/bin/cache/dart-sdk/bin/dart test /Users/rutuparnpuranik/Paper/test/widget_test.dart -p vm --plain-name 'order creation can add an item unit conversion on the spot'
-00:10 +25 -8: orders hide variation path until a variant item is selected                                                                                                                              00:10 +25 -8: orders hide variation path until a variant item is selected                                                                                                                              
-══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
-The following StateError was thrown running a test:
-Bad state: No element
-
-When the exception was thrown, this was the stack:
-#0      Iterable.last (dart:core/iterable.dart:679:7)
-#1      _LastFinderMixin.filter (package:flutter_test/src/finders.dart:1367:28)
-#3      _AncestorFinderMixin.allCandidates (package:flutter_test/src/finders.dart:1814:49)
-#4      FinderBase.evaluate (package:flutter_test/src/finders.dart:987:76)
-#5      WidgetController.widgetList (package:flutter_test/src/controller.dart:843:19)
-#6      WidgetController._maybeViewOf (package:flutter_test/src/controller.dart:790:34)
-#7      WidgetController.tap (package:flutter_test/src/controller.dart:1059:31)
-#8      main.<anonymous closure> (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:5590:18)
-<asynchronous suspension>
-#9      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
-<asynchronous suspension>
-#10     TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
-<asynchronous suspension>
-<asynchronous suspension>
-(elided 2 frames from dart:async-patch and package:stack_trace)
-
-The test description was:
-  orders hide variation path until a variant item is selected
-════════════════════════════════════════════════════════════════════════════════════════════════════
-00:10 +25 -9: orders hide variation path until a variant item is selected [E]                                                                                                                          
-  Test failed. See exception logs above.
-  The test description was: orders hide variation path until a variant item is selected
-  
-
-To run this test again: /Users/rutuparnpuranik/Documents/flutter/bin/cache/dart-sdk/bin/dart test /Users/rutuparnpuranik/Paper/test/widget_test.dart -p vm --plain-name 'orders hide variation path until a variant item is selected'
-00:10 +25 -9: orders hide item completion date column when item wise toggle is off                                                                                                                     00:10 +26 -9: orders hide item completion date column when item wise toggle is off                                                                                                                     00:10 +26 -9: orders can select a leaf variation value and save draft                                                                                                                                  00:11 +26 -9: orders can select a leaf variation value and save draft                                                                                                                                  00:11 +26 -9: orders can select a leaf variation value and save draft                                                                                                                                  
-══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
-The following StateError was thrown running a test:
-Bad state: No element
-
-When the exception was thrown, this was the stack:
-#0      Iterable.last (dart:core/iterable.dart:679:7)
-#1      _LastFinderMixin.filter (package:flutter_test/src/finders.dart:1367:28)
-#3      _AncestorFinderMixin.allCandidates (package:flutter_test/src/finders.dart:1814:49)
-#4      FinderBase.evaluate (package:flutter_test/src/finders.dart:987:76)
-#5      WidgetController.widgetList (package:flutter_test/src/controller.dart:843:19)
-#6      WidgetController._maybeViewOf (package:flutter_test/src/controller.dart:790:34)
-#7      WidgetController.tap (package:flutter_test/src/controller.dart:1059:31)
-#8      main.selectPrimaryVariationPath (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:3656:18)
-<asynchronous suspension>
-#9      main.<anonymous closure> (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:5657:5)
-<asynchronous suspension>
-#10     testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
-<asynchronous suspension>
-#11     TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
-<asynchronous suspension>
-<asynchronous suspension>
-(elided 2 frames from dart:async-patch and package:stack_trace)
-
-The test description was:
-  orders can select a leaf variation value and save draft
-════════════════════════════════════════════════════════════════════════════════════════════════════
-00:11 +26 -10: orders can select a leaf variation value and save draft [E]                                                                                                                             
-  Test failed. See exception logs above.
-  The test description was: orders can select a leaf variation value and save draft
-  
-
-To run this test again: /Users/rutuparnpuranik/Documents/flutter/bin/cache/dart-sdk/bin/dart test /Users/rutuparnpuranik/Paper/test/widget_test.dart -p vm --plain-name 'orders can select a leaf variation value and save draft'
-00:11 +26 -10: orders variation path selector exposes bottle path values                                                                                                                               00:11 +26 -10: orders variation path selector exposes bottle path values                                                                                                                               
-══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
-The following StateError was thrown running a test:
-Bad state: No element
-
-When the exception was thrown, this was the stack:
-#0      Iterable.last (dart:core/iterable.dart:679:7)
-#1      _LastFinderMixin.filter (package:flutter_test/src/finders.dart:1367:28)
-#3      _AncestorFinderMixin.allCandidates (package:flutter_test/src/finders.dart:1814:49)
-#4      FinderBase.evaluate (package:flutter_test/src/finders.dart:987:76)
-#5      WidgetController.widgetList (package:flutter_test/src/controller.dart:843:19)
-#6      WidgetController._maybeViewOf (package:flutter_test/src/controller.dart:790:34)
-#7      WidgetController.tap (package:flutter_test/src/controller.dart:1059:31)
-#8      main.<anonymous closure> (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:5688:18)
-<asynchronous suspension>
-#9      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
-<asynchronous suspension>
-#10     TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
-<asynchronous suspension>
-<asynchronous suspension>
-(elided 2 frames from dart:async-patch and package:stack_trace)
-
-The test description was:
-  orders variation path selector exposes bottle path values
-════════════════════════════════════════════════════════════════════════════════════════════════════
-00:11 +26 -11: orders variation path selector exposes bottle path values [E]                                                                                                                           
-  Test failed. See exception logs above.
-  The test description was: orders variation path selector exposes bottle path values
-  
-
-To run this test again: /Users/rutuparnpuranik/Documents/flutter/bin/cache/dart-sdk/bin/dart test /Users/rutuparnpuranik/Paper/test/widget_test.dart -p vm --plain-name 'orders variation path selector exposes bottle path values'
-00:11 +26 -11: orders variation path selector offers inline create actions                                                                                                                             00:11 +26 -11: orders variation path selector offers inline create actions                                                                                                                             
-══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
-The following StateError was thrown running a test:
-Bad state: No element
-
-When the exception was thrown, this was the stack:
-#0      Iterable.last (dart:core/iterable.dart:679:7)
-#1      _LastFinderMixin.filter (package:flutter_test/src/finders.dart:1367:28)
-#3      _AncestorFinderMixin.allCandidates (package:flutter_test/src/finders.dart:1814:49)
-#4      FinderBase.evaluate (package:flutter_test/src/finders.dart:987:76)
-#5      WidgetController.widgetList (package:flutter_test/src/controller.dart:843:19)
-#6      WidgetController._maybeViewOf (package:flutter_test/src/controller.dart:790:34)
-#7      WidgetController.tap (package:flutter_test/src/controller.dart:1059:31)
-#8      main.<anonymous closure> (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:5740:18)
-<asynchronous suspension>
-#9      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
-<asynchronous suspension>
-#10     TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
-<asynchronous suspension>
-<asynchronous suspension>
-(elided 2 frames from dart:async-patch and package:stack_trace)
-
-The test description was:
-  orders variation path selector offers inline create actions
-════════════════════════════════════════════════════════════════════════════════════════════════════
-00:11 +26 -12: orders variation path selector offers inline create actions [E]                                                                                                                         
-  Test failed. See exception logs above.
-  The test description was: orders variation path selector offers inline create actions
-  
-
-To run this test again: /Users/rutuparnpuranik/Documents/flutter/bin/cache/dart-sdk/bin/dart test /Users/rutuparnpuranik/Paper/test/widget_test.dart -p vm --plain-name 'orders variation path selector offers inline create actions'
-00:11 +26 -12: orders can change selected variation path from dropdown                                                                                                                                 00:12 +26 -12: orders can change selected variation path from dropdown                                                                                                                                 00:12 +26 -12: orders can change selected variation path from dropdown                                                                                                                                 
-══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
-The following StateError was thrown running a test:
-Bad state: No element
-
-When the exception was thrown, this was the stack:
-#0      Iterable.last (dart:core/iterable.dart:679:7)
-#1      _LastFinderMixin.filter (package:flutter_test/src/finders.dart:1367:28)
-#3      _AncestorFinderMixin.allCandidates (package:flutter_test/src/finders.dart:1814:49)
-#4      FinderBase.evaluate (package:flutter_test/src/finders.dart:987:76)
-#5      WidgetController.widgetList (package:flutter_test/src/controller.dart:843:19)
-#6      WidgetController._maybeViewOf (package:flutter_test/src/controller.dart:790:34)
-#7      WidgetController.tap (package:flutter_test/src/controller.dart:1059:31)
-#8      main.selectPrimaryVariationPath (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:3656:18)
-<asynchronous suspension>
-#9      main.<anonymous closure> (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:5771:5)
-<asynchronous suspension>
-#10     testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
-<asynchronous suspension>
-#11     TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
-<asynchronous suspension>
-<asynchronous suspension>
-(elided 2 frames from dart:async-patch and package:stack_trace)
-
-The test description was:
-  orders can change selected variation path from dropdown
-════════════════════════════════════════════════════════════════════════════════════════════════════
-00:12 +26 -13: orders can change selected variation path from dropdown [E]                                                                                                                             
-  Test failed. See exception logs above.
-  The test description was: orders can change selected variation path from dropdown
-  
-
-To run this test again: /Users/rutuparnpuranik/Documents/flutter/bin/cache/dart-sdk/bin/dart test /Users/rutuparnpuranik/Paper/test/widget_test.dart -p vm --plain-name 'orders can change selected variation path from dropdown'
-00:12 +26 -13: orders search filters through the shared shell strip                                                                                                                                    00:12 +26 -13: orders search filters through the shared shell strip                                                                                                                                    
-══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
-The following StateError was thrown running a test:
-Bad state: No element
-
-When the exception was thrown, this was the stack:
-#0      Iterable.last (dart:core/iterable.dart:679:7)
-#1      _LastFinderMixin.filter (package:flutter_test/src/finders.dart:1367:28)
-#3      _AncestorFinderMixin.allCandidates (package:flutter_test/src/finders.dart:1814:49)
-#4      FinderBase.evaluate (package:flutter_test/src/finders.dart:987:76)
-#5      WidgetController.widgetList (package:flutter_test/src/controller.dart:843:19)
-#6      WidgetController._maybeViewOf (package:flutter_test/src/controller.dart:790:34)
-#7      WidgetController.tap (package:flutter_test/src/controller.dart:1059:31)
-#8      main.selectPrimaryVariationPath (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:3656:18)
-<asynchronous suspension>
-#9      main.<anonymous closure> (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:5813:5)
-<asynchronous suspension>
-#10     testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
-<asynchronous suspension>
-#11     TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
-<asynchronous suspension>
-<asynchronous suspension>
-(elided 2 frames from dart:async-patch and package:stack_trace)
-
-The test description was:
-  orders search filters through the shared shell strip
-════════════════════════════════════════════════════════════════════════════════════════════════════
-00:12 +26 -14: orders search filters through the shared shell strip [E]                                                                                                                                
-  Test failed. See exception logs above.
-  The test description was: orders search filters through the shared shell strip
-  
-
-To run this test again: /Users/rutuparnpuranik/Documents/flutter/bin/cache/dart-sdk/bin/dart test /Users/rutuparnpuranik/Paper/test/widget_test.dart -p vm --plain-name 'orders search filters through the shared shell strip'
-00:12 +26 -14: orders filtered empty state shows create order action                                                                                                                                   00:12 +27 -14: orders filtered empty state shows create order action                                                                                                                                   00:12 +27 -14: orders rows show urgency cues for near due and overdue                                                                                                                                  00:12 +28 -14: orders rows show urgency cues for near due and overdue                                                                                                                                  00:12 +28 -14: orders summary cards show contextual sublabels and filter                                                                                                                               00:12 +29 -14: orders summary cards show contextual sublabels and filter                                                                                                                               00:12 +29 -14: orders merge duplicate lines by order client po and item                                                                                                                                00:13 +29 -14: orders merge duplicate lines by order client po and item                                                                                                                                00:13 +29 -14: orders merge duplicate lines by order client po and item                                                                                                                                
-══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
-The following StateError was thrown running a test:
-Bad state: No element
-
-When the exception was thrown, this was the stack:
-#0      Iterable.last (dart:core/iterable.dart:679:7)
-#1      _LastFinderMixin.filter (package:flutter_test/src/finders.dart:1367:28)
-#3      _AncestorFinderMixin.allCandidates (package:flutter_test/src/finders.dart:1814:49)
-#4      FinderBase.evaluate (package:flutter_test/src/finders.dart:987:76)
-#5      WidgetController.widgetList (package:flutter_test/src/controller.dart:843:19)
-#6      WidgetController._maybeViewOf (package:flutter_test/src/controller.dart:790:34)
-#7      WidgetController.tap (package:flutter_test/src/controller.dart:1059:31)
-#8      main.selectPrimaryVariationPath (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:3656:18)
-<asynchronous suspension>
-#9      main.<anonymous closure>.addOrder (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:6044:7)
-<asynchronous suspension>
-#10     main.<anonymous closure> (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:6054:5)
-<asynchronous suspension>
-#11     testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
-<asynchronous suspension>
-#12     TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
-<asynchronous suspension>
-<asynchronous suspension>
-(elided 2 frames from dart:async-patch and package:stack_trace)
-
-The test description was:
-  orders merge duplicate lines by order client po and item
-════════════════════════════════════════════════════════════════════════════════════════════════════
-00:13 +29 -15: orders merge duplicate lines by order client po and item [E]                                                                                                                            
-  Test failed. See exception logs above.
-  The test description was: orders merge duplicate lines by order client po and item
-  
-
-To run this test again: /Users/rutuparnpuranik/Documents/flutter/bin/cache/dart-sdk/bin/dart test /Users/rutuparnpuranik/Paper/test/widget_test.dart -p vm --plain-name 'orders merge duplicate lines by order client po and item'
-00:13 +29 -15: orders lifecycle can be updated from table row                                                                                                                                          00:13 +29 -15: orders lifecycle can be updated from table row                                                                                                                                          
-══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
-The following StateError was thrown running a test:
-Bad state: No element
-
-When the exception was thrown, this was the stack:
-#0      Iterable.last (dart:core/iterable.dart:679:7)
-#1      _LastFinderMixin.filter (package:flutter_test/src/finders.dart:1367:28)
-#3      _AncestorFinderMixin.allCandidates (package:flutter_test/src/finders.dart:1814:49)
-#4      FinderBase.evaluate (package:flutter_test/src/finders.dart:987:76)
-#5      WidgetController.widgetList (package:flutter_test/src/controller.dart:843:19)
-#6      WidgetController._maybeViewOf (package:flutter_test/src/controller.dart:790:34)
-#7      WidgetController.tap (package:flutter_test/src/controller.dart:1059:31)
-#8      main.selectPrimaryVariationPath (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:3656:18)
-<asynchronous suspension>
-#9      main.<anonymous closure> (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:6083:5)
-<asynchronous suspension>
-#10     testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
-<asynchronous suspension>
-#11     TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
-<asynchronous suspension>
-<asynchronous suspension>
-(elided 2 frames from dart:async-patch and package:stack_trace)
-
-The test description was:
-  orders lifecycle can be updated from table row
-════════════════════════════════════════════════════════════════════════════════════════════════════
-00:13 +29 -16: orders lifecycle can be updated from table row [E]                                                                                                                                      
-  Test failed. See exception logs above.
-  The test description was: orders lifecycle can be updated from table row
-  
-
-To run this test again: /Users/rutuparnpuranik/Documents/flutter/bin/cache/dart-sdk/bin/dart test /Users/rutuparnpuranik/Paper/test/widget_test.dart -p vm --plain-name 'orders lifecycle can be updated from table row'
-00:13 +29 -16: order details timeline shows issued delivery challan quantities                                                                                                                         00:13 +30 -16: order details timeline shows issued delivery challan quantities                                                                                                                         00:13 +30 -16: orders can be saved as draft from create dialog                                                                                                                                         00:14 +30 -16: orders can be saved as draft from create dialog                                                                                                                                         00:14 +30 -16: orders can be saved as draft from create dialog                                                                                                                                         
-══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
-The following StateError was thrown running a test:
-Bad state: No element
-
-When the exception was thrown, this was the stack:
-#0      Iterable.last (dart:core/iterable.dart:679:7)
-#1      _LastFinderMixin.filter (package:flutter_test/src/finders.dart:1367:28)
-#3      _AncestorFinderMixin.allCandidates (package:flutter_test/src/finders.dart:1814:49)
-#4      FinderBase.evaluate (package:flutter_test/src/finders.dart:987:76)
-#5      WidgetController.widgetList (package:flutter_test/src/controller.dart:843:19)
-#6      WidgetController._maybeViewOf (package:flutter_test/src/controller.dart:790:34)
-#7      WidgetController.tap (package:flutter_test/src/controller.dart:1059:31)
-#8      main.selectPrimaryVariationPath (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:3656:18)
-<asynchronous suspension>
-#9      main.<anonymous closure> (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:6182:5)
-<asynchronous suspension>
-#10     testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
-<asynchronous suspension>
-#11     TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
-<asynchronous suspension>
-<asynchronous suspension>
-(elided 2 frames from dart:async-patch and package:stack_trace)
-
-The test description was:
-  orders can be saved as draft from create dialog
-════════════════════════════════════════════════════════════════════════════════════════════════════
-00:14 +30 -17: orders can be saved as draft from create dialog [E]                                                                                                                                     
-  Test failed. See exception logs above.
-  The test description was: orders can be saved as draft from create dialog
-  
-
-To run this test again: /Users/rutuparnpuranik/Documents/flutter/bin/cache/dart-sdk/bin/dart test /Users/rutuparnpuranik/Paper/test/widget_test.dart -p vm --plain-name 'orders can be saved as draft from create dialog'
-00:14 +30 -17: orders allow creation when client master has no alias                                                                                                                                   00:14 +30 -17: orders allow creation when client master has no alias                                                                                                                                   
-══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
-The following StateError was thrown running a test:
-Bad state: No element
-
-When the exception was thrown, this was the stack:
-#0      Iterable.last (dart:core/iterable.dart:679:7)
-#1      _LastFinderMixin.filter (package:flutter_test/src/finders.dart:1367:28)
-#3      _AncestorFinderMixin.allCandidates (package:flutter_test/src/finders.dart:1814:49)
-#4      FinderBase.evaluate (package:flutter_test/src/finders.dart:987:76)
-#5      WidgetController.widgetList (package:flutter_test/src/controller.dart:843:19)
-#6      WidgetController._maybeViewOf (package:flutter_test/src/controller.dart:790:34)
-#7      WidgetController.tap (package:flutter_test/src/controller.dart:1059:31)
-#8      main.selectPrimaryVariationPath (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:3656:18)
-<asynchronous suspension>
-#9      main.<anonymous closure> (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:6235:5)
-<asynchronous suspension>
-#10     testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
-<asynchronous suspension>
-#11     TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
-<asynchronous suspension>
-<asynchronous suspension>
-(elided 2 frames from dart:async-patch and package:stack_trace)
-
-The test description was:
-  orders allow creation when client master has no alias
-════════════════════════════════════════════════════════════════════════════════════════════════════
-00:14 +30 -18: orders allow creation when client master has no alias [E]                                                                                                                               
-  Test failed. See exception logs above.
-  The test description was: orders allow creation when client master has no alias
-  
-
-To run this test again: /Users/rutuparnpuranik/Documents/flutter/bin/cache/dart-sdk/bin/dart test /Users/rutuparnpuranik/Paper/test/widget_test.dart -p vm --plain-name 'orders allow creation when client master has no alias'
-00:14 +30 -18: inventory add flow creates parent and four children with hierarchy                                                                                                                      00:14 +31 -18: inventory add flow creates parent and four children with hierarchy                                                                                                                      00:14 +31 -18: units screen shows seeded and archived units                                                                                                                                            00:14 +32 -18: units screen shows seeded and archived units                                                                                                                                            00:14 +32 -18: groups screen shows seeded and archived groups                                                                                                                                          00:15 +32 -18: groups screen shows seeded and archived groups                                                                                                                                          00:15 +32 -18: groups screen shows seeded and archived groups                                                                                                                                          
-══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
-The following TestFailure was thrown running a test:
-Expected: exactly one matching candidate
-  Actual: _TextWidgetFinder:<Found 0 widgets with text "Kraft": []>
-   Which: means none were found but one was expected
-
-When the exception was thrown, this was the stack:
-#4      main.<anonymous closure> (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:6324:5)
-<asynchronous suspension>
-#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
-<asynchronous suspension>
-#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
-<asynchronous suspension>
-<asynchronous suspension>
-(elided one frame from package:stack_trace)
-
-This was caught by the test expectation on the following line:
-  file:///Users/rutuparnpuranik/Paper/test/widget_test.dart line 6324
-The test description was:
-  groups screen shows seeded and archived groups
-════════════════════════════════════════════════════════════════════════════════════════════════════
-00:15 +32 -19: groups screen shows seeded and archived groups [E]                                                                                                                                      
-  Test failed. See exception logs above.
-  The test description was: groups screen shows seeded and archived groups
-  
-
-To run this test again: /Users/rutuparnpuranik/Documents/flutter/bin/cache/dart-sdk/bin/dart test /Users/rutuparnpuranik/Paper/test/widget_test.dart -p vm --plain-name 'groups screen shows seeded and archived groups'
-00:15 +32 -19: groups add flow creates a child group                                                                                                                                                   00:15 +33 -19: groups add flow creates a child group                                                                                                                                                   00:15 +33 -19: groups parent dropdown shows one primary group option                                                                                                                                   00:15 +34 -19: groups parent dropdown shows one primary group option                                                                                                                                   00:15 +34 -19: groups edit flow preloads parent and unit                                                                                                                                               00:15 +34 -19: groups edit flow preloads parent and unit                                                                                                                                               
-══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
-The following StateError was thrown running a test:
-Bad state: No element
-
-When the exception was thrown, this was the stack:
-#0      Iterable.first (dart:core/iterable.dart:663:7)
-#1      _FirstFinderMixin.filter (package:flutter_test/src/finders.dart:1340:28)
-#3      _AncestorFinderMixin.allCandidates (package:flutter_test/src/finders.dart:1814:49)
-#4      FinderBase.evaluate (package:flutter_test/src/finders.dart:987:76)
-#5      WidgetController.widgetList (package:flutter_test/src/controller.dart:843:19)
-#6      WidgetController._maybeViewOf (package:flutter_test/src/controller.dart:790:34)
-#7      WidgetController.tap (package:flutter_test/src/controller.dart:1059:31)
-#8      main.<anonymous closure> (file:///Users/rutuparnpuranik/Paper/test/widget_test.dart:6428:18)
-<asynchronous suspension>
-#9      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
-<asynchronous suspension>
-#10     TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
-<asynchronous suspension>
-<asynchronous suspension>
-(elided 2 frames from dart:async-patch and package:stack_trace)
-
-The test description was:
-  groups edit flow preloads parent and unit
-════════════════════════════════════════════════════════════════════════════════════════════════════
-00:15 +34 -20: groups edit flow preloads parent and unit [E]                                                                                                                                           
-  Test failed. See exception logs above.
-  The test description was: groups edit flow preloads parent and unit
-  
-
-To run this test again: /Users/rutuparnpuranik/Documents/flutter/bin/cache/dart-sdk/bin/dart test /Users/rutuparnpuranik/Paper/test/widget_test.dart -p vm --plain-name 'groups edit flow preloads parent and unit'
-00:15 +34 -20: groups screen shows empty state when no groups exist                                                                                                                                    00:15 +35 -20: groups screen shows empty state when no groups exist                                                                                                                                    00:15 +35 -20: clients screen shows seeded and archived clients                                                                                                                                        00:15 +36 -20: clients screen shows seeded and archived clients                                                                                                                                        00:15 +36 -20: clients add flow creates a client record                                                                                                                                                00:15 +37 -20: clients add flow creates a client record                                                                                                                                                00:15 +37 -20: clients editor uses normalized popup shell on narrow screens                                                                                                                            00:15 +38 -20: clients editor uses normalized popup shell on narrow screens                                                                                                                            00:15 +38 -20: vendors editor uses normalized popup shell                                                                                                                                              00:15 +39 -20: vendors editor uses normalized popup shell                                                                                                                                              00:15 +39 -20: items screen shows seeded and archived items                                                                                                                                            00:15 +40 -20: items screen shows seeded and archived items                                                                                                                                            00:15 +40 -20: items screen toggles between table and card grid views                                                                                                                                  00:16 +40 -20: items screen toggles between table and card grid views                                                                                                                                  00:16 +41 -20: items screen toggles between table and card grid views                                                                                                                                  00:16 +41 -20: item card grid uses sand banner neutral footer and opens detail                                                                                                                         00:16 +42 -20: item card grid uses sand banner neutral footer and opens detail                                                                                                                         00:16 +42 -20: item grid sliders update delegate width and height                                                                                                                                      00:16 +43 -20: item grid sliders update delegate width and height                                                                                                                                      00:16 +43 -20: items add flow creates recursive variation tree                                                                                                                                         00:16 +44 -20: items add flow creates recursive variation tree                                                                                                                                         00:16 +44 -20: items duplicate sibling names are blocked                                                                                                                                               00:17 +44 -20: items duplicate sibling names are blocked                                                                                                                                               00:17 +45 -20: items duplicate sibling names are blocked                                                                                                                                               00:17 +45 -20: groups archive banner appears for parent groups with children                                                                                                                           00:17 +46 -20: groups archive banner appears for parent groups with children                                                                                                                           00:17 +46 -20: inventory can quick-create a unit and save it                                                                                                                                           00:17 +47 -20: inventory can quick-create a unit and save it                                                                                                                                           00:17 +47 -20: inventory create-group modal loads inherited properties from selected parent                                                                                                            00:17 +48 -20: inventory create-group modal loads inherited properties from selected parent                                                                                                            00:17 +48 -20: inventory create-group modal deep-seeds structured property drafts from seed item                                                                                                       00:17 +49 -20: inventory create-group modal deep-seeds structured property drafts from seed item                                                                                                       00:17 +49 -20: inventory create-group modal stores discarded inherited properties separately                                                                                                           00:17 +50 -20: inventory create-group modal stores discarded inherited properties separately                                                                                                           00:17 +50 -20: inventory sets drill down filters items to set membership                                                                                                                               00:17 +51 -20: inventory sets drill down filters items to set membership                                                                                                                               00:17 +51 -20: set row actions open set menu without navigating into items                                                                                                                             00:17 +52 -20: set row actions open set menu without navigating into items                                                                                                                             00:17 +52 -20: scan lookups increment trace count                                                                                                                                                      00:17 +53 -20: scan lookups increment trace count                                                                                                                                                      00:17 +53 -20: settings dialog shows truthful actions and refreshes providers after clear and reset                                                                                                    00:17 +54 -20: settings dialog shows truthful actions and refreshes providers after clear and reset                                                                                                    00:17 +54 -20: auth transition triggers one authenticated refresh across core providers                                                                                                                00:18 +54 -20: auth transition triggers one authenticated refresh across core providers                                                                                                                00:18 +55 -20: auth transition triggers one authenticated refresh across core providers                                                                                                                00:18 +55 -20: quick-create client from order editor selects the created client                                                                                                                        00:18 +56 -20: quick-create client from order editor selects the created client                                                                                                                        00:18 +56 -20: Some tests failed.                                                                                                                                                                      

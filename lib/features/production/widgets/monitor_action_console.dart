@@ -24,9 +24,6 @@ class RemoteActionConsole extends StatelessWidget {
     );
     final isRunning = runState == ProductionState.running;
     final isPaused = runState == ProductionState.paused;
-    final isInputLocked = context.select<ProductionRunProvider, bool>(
-      (p) => p.isInputLocked,
-    );
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -42,14 +39,10 @@ class RemoteActionConsole extends StatelessWidget {
             children: [
               Expanded(
                 child: _ConsoleAction(
-                  label: isRunning
-                      ? 'DEPLOYED TO MACHINE'
-                      : 'DEPLOY & START RUN',
+                  label: isRunning ? 'RUN ACTIVE' : 'START RUN',
                   icon: Icons.rocket_launch,
                   color: const Color(0xFF10B981),
-                  onPressed: isRunning || isInputLocked
-                      ? null
-                      : () => _deployAndStart(context),
+                  onPressed: isRunning ? null : () => _deployAndStart(context),
                 ),
               ),
               const SizedBox(width: 16),
@@ -60,7 +53,7 @@ class RemoteActionConsole extends StatelessWidget {
                       ? Icons.play_arrow
                       : Icons.stop_circle_outlined,
                   color: const Color(0xFFF59E0B),
-                  onPressed: isRunning || (isPaused && !isInputLocked)
+                  onPressed: isRunning || isPaused
                       ? () => _togglePause(context, isPaused)
                       : null,
                 ),

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:uuid/uuid.dart';
 
 import '../../domain/barcode_input.dart';
+import '../../domain/material_batch.dart';
 import '../../domain/node_run_status.dart';
 import '../../domain/pipeline_run.dart';
 import '../../domain/pipeline_template.dart';
@@ -483,5 +484,13 @@ class SqlitePipelineRunRepository implements PipelineRunRepository {
     String? orderNo,
   }) async {
     throw UnimplementedError('Sqlite mock not implemented for logProductionScrap');
+  }
+
+  @override
+  Future<PipelineRun> saveBatches({
+    required String runId,
+    required List<MaterialBatch> batches,
+  }) async {
+    throw UnimplementedError('Sqlite mock not implemented for saveBatches');
   }
 }

@@ -2,6 +2,7 @@ import 'package:core_erp/features/inventory/data/repositories/inventory_reposito
 import 'package:core_erp/features/inventory/domain/material_record.dart';
 import 'package:core_erp/features/inventory/domain/inventory_control_tower.dart';
 import '../../domain/barcode_input.dart';
+import '../../domain/material_batch.dart';
 import '../../domain/node_run_status.dart';
 import '../../domain/pipeline_run.dart';
 import '../../domain/pipeline_template.dart';
@@ -405,6 +406,20 @@ class MockPipelineRunRepository implements PipelineRunRepository {
       throw const PipelineApiException('Run not found.');
     }
     // Mock implementation: just simulate a successful log.
+  }
+
+  @override
+  Future<PipelineRun> saveBatches({
+    required String runId,
+    required List<MaterialBatch> batches,
+  }) async {
+    _ensureSeeded();
+    final index = _runs.indexWhere((run) => run.id == runId);
+    if (index == -1) {
+      throw const PipelineApiException('Run not found.');
+    }
+    _runs[index] = _runs[index].copyWith(batches: batches);
+    return _runs[index];
   }
 }
 

@@ -56,4 +56,13 @@ app.*.map.json
 *.db-shm
 *.db-wal.bak
 *.db-shm.bak
+*.sqlite
+*.pem
 backend/package-lock.json
+
+# Dumped diffs / logs / scratch
+full_diff.txt
+analyze.txt
+dump.txt
+test_results.txt
+**/diff.txt

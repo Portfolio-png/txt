@@ -4,17 +4,9 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../data/datasources/offline_database_helper.dart';
 
-int _globalRunIdCounter = 0;
-int _nextUniqueRunId() {
-  _globalRunIdCounter++;
-  return DateTime.now().microsecondsSinceEpoch + _globalRunIdCounter;
-}
-
 enum ProductionState { idle, setup, running, paused, completed }
 
 typedef ProductionNow = DateTime Function();
-typedef ProductionStatusFetcher =
-    Future<ProductionState?> Function(String runId);
 typedef ProductionBufferCommitter =
     Future<void> Function(ProductionRunCommit commit);
 
@@ -36,26 +28,20 @@ class ProductionRunCommit {
 
 class ProductionRunProvider extends ChangeNotifier {
   ProductionRunProvider({
-    ProductionStatusFetcher? statusFetcher,
     ProductionBufferCommitter? bufferCommitter,
     ProductionNow? now,
     Duration tickInterval = const Duration(seconds: 1),
-    Duration syncInterval = const Duration(seconds: 5),
     Duration offlinePollInterval = const Duration(seconds: 30),
-  }) : _statusFetcher = statusFetcher,
-       _bufferCommitter = bufferCommitter,
+  }) : _bufferCommitter = bufferCommitter,
        _now = now ?? DateTime.now,
        _tickInterval = tickInterval,
-       _syncInterval = syncInterval,
        _offlinePollInterval = offlinePollInterval {
     _startOfflineSyncTimer();
   }
 
-  final ProductionStatusFetcher? _statusFetcher;
   final ProductionBufferCommitter? _bufferCommitter;
   final ProductionNow _now;
   final Duration _tickInterval;
-  final Duration _syncInterval;
   final Duration _offlinePollInterval;
 
   ProductionState _state = ProductionState.idle;
@@ -64,17 +50,10 @@ class ProductionRunProvider extends ChangeNotifier {
   Duration _bankedElapsed = Duration.zero;
   int _currentYield = 0;
   int _currentScrap = 0;
-  bool _isInputLocked = false;
   bool _isCommitting = false;
   Timer? _ticker;
-  Timer? _serverSync;
 
   String? _stageId;
-  String? _expectedMachineId;
-  String? _expectedDieId;
-  String? _scannedMachineId;
-  String? _scannedDieId;
-  String? _barcodeErrorMessage;
   Timer? _offlineSyncTimer;
   int _refreshCount = 0;
 
@@ -90,20 +69,13 @@ class ProductionRunProvider extends ChangeNotifier {
   DateTime? get stageStartedAt => _stageStartedAt;
   int get goodYield => _currentYield;
   int get setupScrap => _currentScrap;
-  bool get isInputLocked => _isInputLocked;
   bool get isCommitting => _isCommitting;
   bool get isIdle => _state == ProductionState.idle;
-  bool get isSetup => _state == ProductionState.setup;
   bool get isRunning => _state == ProductionState.running;
   bool get isPaused => _state == ProductionState.paused;
   bool get isCompleted => _state == ProductionState.completed;
 
   String? get stageId => _stageId;
-  String? get expectedMachineId => _expectedMachineId;
-  String? get expectedDieId => _expectedDieId;
-  String? get scannedMachineId => _scannedMachineId;
-  String? get scannedDieId => _scannedDieId;
-  String? get barcodeErrorMessage => _barcodeErrorMessage;
 
   Duration get elapsed {
     final startedAt = _stageStartedAt;
@@ -128,19 +100,13 @@ class ProductionRunProvider extends ChangeNotifier {
     _bankedElapsed = Duration.zero;
     _currentYield = 0;
     _currentScrap = 0;
-    _isInputLocked = false;
     notifyListeners();
   }
 
-  void enterSetup(String runId) {
-    _runId = runId;
-    _state = ProductionState.setup;
-    _stageStartedAt = null;
-    _bankedElapsed = Duration.zero;
-    _currentYield = 0;
-    _currentScrap = 0;
-    _isInputLocked = false;
-    _startServerSync();
+  /// Records which stage the run-level buffer commits against.
+  void setActiveStage(String stageId) {
+    if (_stageId == stageId) return;
+    _stageId = stageId;
     notifyListeners();
   }
 
@@ -150,27 +116,24 @@ class ProductionRunProvider extends ChangeNotifier {
     }
     _runId ??= 'local-${_now().microsecondsSinceEpoch}';
     _state = ProductionState.running;
-    _isInputLocked = false;
     _stageStartedAt = _now();
     _startTicker();
-    _startServerSync();
     notifyListeners();
   }
 
-  Future<void> pauseRun({bool remote = false}) async {
+  Future<void> pauseRun() async {
     if (_state != ProductionState.running) {
       return;
     }
     _bankElapsed();
     _state = ProductionState.paused;
-    _isInputLocked = remote;
     _ticker?.cancel();
     notifyListeners();
     await _commitBuffers();
   }
 
   void resumeRun() {
-    if (_state != ProductionState.paused || _isInputLocked) {
+    if (_state != ProductionState.paused) {
       return;
     }
     _state = ProductionState.running;
@@ -185,9 +148,7 @@ class ProductionRunProvider extends ChangeNotifier {
     }
     _bankElapsed();
     _state = ProductionState.completed;
-    _isInputLocked = true;
     _ticker?.cancel();
-    _serverSync?.cancel();
     notifyListeners();
 
     final committer = _bufferCommitter;
@@ -235,7 +196,7 @@ class ProductionRunProvider extends ChangeNotifier {
   }
 
   void incrementYield([int amount = 1]) {
-    if (_isInputLocked || amount <= 0) {
+    if (amount <= 0) {
       return;
     }
     _currentYield += amount;
@@ -243,7 +204,7 @@ class ProductionRunProvider extends ChangeNotifier {
   }
 
   void decrementYield([int amount = 1]) {
-    if (_isInputLocked || amount <= 0) {
+    if (amount <= 0) {
       return;
     }
     _currentYield = (_currentYield - amount).clamp(0, 1 << 31);
@@ -251,7 +212,7 @@ class ProductionRunProvider extends ChangeNotifier {
   }
 
   void addScrap([int amount = 1]) {
-    if (_isInputLocked || amount <= 0) {
+    if (amount <= 0) {
       return;
     }
     _currentScrap += amount;
@@ -259,15 +220,12 @@ class ProductionRunProvider extends ChangeNotifier {
   }
 
   void removeScrap([int amount = 1]) {
-    if (_isInputLocked || amount <= 0) {
+    if (amount <= 0) {
       return;
     }
     _currentScrap = (_currentScrap - amount).clamp(0, 1 << 31);
     notifyListeners();
   }
-
-  @visibleForTesting
-  Future<void> syncOnce() => _syncFromServer();
 
   void _startTicker() {
     _ticker?.cancel();
@@ -276,60 +234,6 @@ class ProductionRunProvider extends ChangeNotifier {
         notifyListeners();
       }
     });
-  }
-
-  void _startServerSync() {
-    _serverSync?.cancel();
-    if (_statusFetcher == null || _runId == null) {
-      return;
-    }
-    _serverSync = Timer.periodic(_syncInterval, (_) => _syncFromServer());
-  }
-
-  Future<void> _syncFromServer() async {
-    final fetcher = _statusFetcher;
-    final runId = _runId;
-    if (fetcher == null || runId == null) {
-      return;
-    }
-    final remoteState = await fetcher(runId);
-    if (remoteState == null || remoteState == _state) {
-      return;
-    }
-
-    switch (remoteState) {
-      case ProductionState.paused:
-        if (_state == ProductionState.running) {
-          await pauseRun(remote: true);
-        } else {
-          _state = ProductionState.paused;
-          _isInputLocked = true;
-          _ticker?.cancel();
-          notifyListeners();
-        }
-      case ProductionState.running:
-        if (_state == ProductionState.paused && !_isInputLocked) {
-          resumeRun();
-        } else if (_state != ProductionState.running) {
-          _state = ProductionState.running;
-          _isInputLocked = false;
-          _stageStartedAt = _now();
-          _startTicker();
-          notifyListeners();
-        }
-      case ProductionState.completed:
-        await completeRun();
-      case ProductionState.setup:
-        _state = ProductionState.setup;
-        _isInputLocked = false;
-        _ticker?.cancel();
-        notifyListeners();
-      case ProductionState.idle:
-        _state = ProductionState.idle;
-        _isInputLocked = false;
-        _ticker?.cancel();
-        notifyListeners();
-    }
   }
 
   void _bankElapsed() {
@@ -378,62 +282,12 @@ class ProductionRunProvider extends ChangeNotifier {
         '${seconds.toString().padLeft(2, '0')}';
   }
 
-  void updateExpectedAssets({
-    required String stageId,
-    required String machineId,
-    required String dieId,
-  }) {
-    _stageId = stageId;
-    _expectedMachineId = machineId;
-    _expectedDieId = dieId;
-    _scannedMachineId = null;
-    _scannedDieId = null;
-    _barcodeErrorMessage = null;
-    notifyListeners();
-  }
-
-  void verifyScannedAsset(String barcode, {VoidCallback? onVerifiedAll}) {
-    final normalized = _normalizeAssetCode(barcode);
-    final normExpectedMachine = _normalizeAssetCode(_expectedMachineId ?? '');
-    final normExpectedDie = _normalizeAssetCode(_expectedDieId ?? '');
-
-    bool matched = false;
-    if (normalized == normExpectedMachine) {
-      _scannedMachineId = _expectedMachineId;
-      _barcodeErrorMessage = null;
-      matched = true;
-    } else if (normalized == normExpectedDie) {
-      _scannedDieId = _expectedDieId;
-      _barcodeErrorMessage = null;
-      matched = true;
-    }
-
-    if (!matched) {
-      _barcodeErrorMessage =
-          'Invalid scan: "$barcode" does not match expected assets.';
-    }
-
-    notifyListeners();
-
-    if (_scannedMachineId != null && _scannedDieId != null) {
-      onVerifiedAll?.call();
-    }
-  }
-
-  String _normalizeAssetCode(String value) {
-    final upper = value.trim().toUpperCase();
-    if (upper.contains(':')) {
-      return upper.split(':').last.trim();
-    }
-    if (upper.contains('|')) {
-      return upper.split('|').last.trim();
-    }
-    return upper;
-  }
-
   void _startOfflineSyncTimer() {
     _offlineSyncTimer?.cancel();
-    _offlineSyncTimer = Timer.periodic(_offlinePollInterval, (_) => _pollOfflineLogs());
+    _offlineSyncTimer = Timer.periodic(
+      _offlinePollInterval,
+      (_) => _pollOfflineLogs(),
+    );
   }
 
   Future<void> _pollOfflineLogs() async {
@@ -468,7 +322,6 @@ class ProductionRunProvider extends ChangeNotifier {
   @override
   void dispose() {
     _ticker?.cancel();
-    _serverSync?.cancel();
     _offlineSyncTimer?.cancel();
     super.dispose();
   }

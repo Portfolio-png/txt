@@ -1744,6 +1744,7 @@ async function rowToRun(row) {
     nodeStatuses: parseJson(row.node_status_json, {}),
     scrapRouting: row.scrap_routing || 'inventory',
     nodeMetrics: parseJson(row.node_metrics_json, {}),
+    batches: parseJson(row.batches_json, []),
     attachedBarcodeInputs,
     startedAt: row.started_at,
     completedAt: row.completed_at,
@@ -3557,6 +3558,7 @@ async function initDb() {
 
   await ensureColumnExists('pipeline_runs', 'scrap_routing', "TEXT DEFAULT 'inventory'");
   await ensureColumnExists('pipeline_runs', 'node_metrics_json', "TEXT DEFAULT '{}'");
+  await ensureColumnExists('pipeline_runs', 'batches_json', "TEXT DEFAULT '[]'");
 
   await run(`
     CREATE TABLE IF NOT EXISTS production_scrap (
@@ -20651,6 +20653,27 @@ app.put('/runs/:id/node-metrics', async (req, res) => {
       req.params.id,
     ]);
     
+    const updatedRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
+    res.json({ success: true, run: await rowToRun(updatedRow) });
+  } catch (error) {
+    res.status(500).json({ success: false, run: null, error: error.message });
+  }
+});
+
+app.put('/runs/:id/batches', async (req, res) => {
+  try {
+    const { batches } = req.body;
+    if (!Array.isArray(batches)) {
+      return res.status(400).json({ success: false, run: null, error: 'batches array is required.' });
+    }
+    const runRow = await get('SELECT id FROM pipeline_runs WHERE id = ?', [req.params.id]);
+    if (!runRow) {
+      return res.status(404).json({ success: false, run: null, error: 'Run not found.' });
+    }
+    await run('UPDATE pipeline_runs SET batches_json = ? WHERE id = ?', [
+      JSON.stringify(batches),
+      req.params.id,
+    ]);
     const updatedRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
     res.json({ success: true, run: await rowToRun(updatedRow) });
   } catch (error) {

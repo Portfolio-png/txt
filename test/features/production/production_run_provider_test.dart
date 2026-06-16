@@ -47,38 +47,6 @@ void main() {
     },
   );
 
-  test(
-    'remote paused state locks kiosk input and banks elapsed time',
-    () async {
-      var now = DateTime(2026, 5, 21, 10);
-      var remoteState = ProductionState.running;
-      final commits = <ProductionRunCommit>[];
-      final provider = ProductionRunProvider(
-        now: () => now,
-        statusFetcher: (_) async => remoteState,
-        bufferCommitter: (commit) async => commits.add(commit),
-      );
-      addTearDown(provider.dispose);
-
-      provider.startRun(runId: 'RUN-3');
-      provider.incrementYield(10);
-      now = now.add(const Duration(minutes: 2));
-      remoteState = ProductionState.paused;
-
-      await provider.syncOnce();
-
-      expect(provider.isPaused, isTrue);
-      expect(provider.isInputLocked, isTrue);
-      expect(provider.elapsedDisplay, '00:02:00');
-      expect(commits, hasLength(1));
-
-      provider.incrementYield();
-      provider.addScrap();
-      expect(provider.goodYield, 10);
-      expect(provider.setupScrap, 0);
-    },
-  );
-
   test('completion commits the latest local buffers', () async {
     final commits = <ProductionRunCommit>[];
     final provider = ProductionRunProvider(
@@ -92,50 +60,10 @@ void main() {
     await provider.completeRun();
 
     expect(provider.isCompleted, isTrue);
-    expect(provider.isInputLocked, isTrue);
     expect(commits, hasLength(1));
     expect(commits.single.goodYield, 12);
     expect(commits.single.setupScrap, 4);
     expect(commits.single.state, ProductionState.completed);
-  });
-
-  test('asset verification updates expectations, verifies codes with normalization, and triggers callbacks', () {
-    final provider = ProductionRunProvider();
-    addTearDown(provider.dispose);
-
-    provider.updateExpectedAssets(
-      stageId: 'stage-1',
-      machineId: 'MC-SLIT-01',
-      dieId: 'DIE-1450-A',
-    );
-
-    expect(provider.stageId, 'stage-1');
-    expect(provider.expectedMachineId, 'MC-SLIT-01');
-    expect(provider.expectedDieId, 'DIE-1450-A');
-    expect(provider.scannedMachineId, isNull);
-    expect(provider.scannedDieId, isNull);
-
-    // Scan wrong asset
-    provider.verifyScannedAsset('WRONG-BARCODE');
-    expect(provider.barcodeErrorMessage, contains('does not match expected assets'));
-    expect(provider.scannedMachineId, isNull);
-
-    // Scan machine with normalization (lowercase, prefix)
-    bool callbackTriggered = false;
-    provider.verifyScannedAsset('mc:mc-slit-01', onVerifiedAll: () {
-      callbackTriggered = true;
-    });
-    expect(provider.barcodeErrorMessage, isNull);
-    expect(provider.scannedMachineId, 'MC-SLIT-01');
-    expect(callbackTriggered, isFalse);
-
-    // Scan die with normalization
-    provider.verifyScannedAsset('die-1450-a', onVerifiedAll: () {
-      callbackTriggered = true;
-    });
-    expect(provider.barcodeErrorMessage, isNull);
-    expect(provider.scannedDieId, 'DIE-1450-A');
-    expect(callbackTriggered, isTrue);
   });
 
   test('offline fallback logs stage closure payload on SocketException', () async {
