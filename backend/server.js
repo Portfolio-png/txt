@@ -20628,6 +20628,11 @@ app.delete(['/runs/:id/barcodes', '/runs/:id/barcodes/:nodeId/:barcode'], async 
       [existingInput.id]
     );
 
+    // Recompute AFTER the row is gone so linked_pipeline_count (and the
+    // "in pipeline" headband) reflects the detachment. Any movement above ran
+    // while the row still existed, so it would have counted the stale row.
+    await recomputeMaterialInventorySummary(barcode);
+
     const updatedRunRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
     res.json({ success: true, run: await rowToRun(updatedRunRow) });
   } catch (error) {

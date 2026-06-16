@@ -9,18 +9,24 @@ import '../../production_pipelines/domain/material_batch.dart';
 /// canvas's pan/zoom. While dragging, the source chip ghosts out and a larger
 /// elevated chip follows the finger.
 class BatchChip extends StatelessWidget {
-  const BatchChip({super.key, required this.batch, this.compact = false});
+  const BatchChip({
+    super.key,
+    required this.batch,
+    this.compact = false,
+    this.onRevert,
+  });
 
   final MaterialBatch batch;
   final bool compact;
 
-  String _fmtQty(double v) =>
-      v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);
+  /// When set, a small revert affordance is shown that undoes this lot's last
+  /// forward hop.
+  final VoidCallback? onRevert;
 
   @override
   Widget build(BuildContext context) {
     final body = _ChipBody(
-      label: '${_fmtQty(batch.quantity)} ${batch.unitLabel}'.trim(),
+      label: '${fmtQty(batch.quantity)} ${batch.unitLabel}'.trim(),
       sub: batch.materialName,
       compact: compact,
     );
@@ -35,7 +41,7 @@ class BatchChip extends StatelessWidget {
           child: Transform.scale(
             scale: 1.12,
             child: _ChipBody(
-              label: '${_fmtQty(batch.quantity)} ${batch.unitLabel}'.trim(),
+              label: '${fmtQty(batch.quantity)} ${batch.unitLabel}'.trim(),
               sub: batch.materialName,
               elevated: true,
             ),
@@ -46,7 +52,46 @@ class BatchChip extends StatelessWidget {
       child: Tooltip(
         message: 'Hold to lift • drop on a station to move',
         waitDuration: const Duration(milliseconds: 600),
-        child: body,
+        child: onRevert == null
+            ? body
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(child: body),
+                  const SizedBox(width: 4),
+                  _RevertButton(onTap: onRevert!),
+                ],
+              ),
+      ),
+    );
+  }
+}
+
+class _RevertButton extends StatelessWidget {
+  const _RevertButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Revert this lot’s last move',
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFEF2F2),
+            shape: BoxShape.circle,
+            border: Border.all(color: const Color(0xFFFECACA)),
+          ),
+          child: const Icon(
+            Icons.undo_rounded,
+            size: 13,
+            color: Color(0xFFDC2626),
+          ),
+        ),
       ),
     );
   }
@@ -147,6 +192,9 @@ class BatchSplitDialog extends StatefulWidget {
   }) {
     return showDialog<double>(
       context: context,
+      // A stock move must be an explicit choice — Cancel or Move — so a stray
+      // outside-click can never commit the move.
+      barrierDismissible: false,
       builder: (_) =>
           BatchSplitDialog(batch: batch, targetNodeName: targetNodeName),
     );
@@ -158,9 +206,6 @@ class BatchSplitDialog extends StatefulWidget {
 
 class _BatchSplitDialogState extends State<BatchSplitDialog> {
   late double _qty = widget.batch.quantity;
-
-  String _fmt(double v) =>
-      v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);
 
   @override
   Widget build(BuildContext context) {
@@ -187,7 +232,7 @@ class _BatchSplitDialogState extends State<BatchSplitDialog> {
               ),
               const SizedBox(height: 6),
               Text(
-                '${widget.batch.materialName} · ${_fmt(max)} $unit available',
+                '${widget.batch.materialName} · ${fmtQty(max)} $unit available',
                 style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
               ),
               const SizedBox(height: 20),
@@ -203,7 +248,7 @@ class _BatchSplitDialogState extends State<BatchSplitDialog> {
                     ),
                   ),
                   Text(
-                    '${_fmt(_qty)} $unit',
+                    '${fmtQty(_qty)} $unit',
                     style: const TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w900,
@@ -217,7 +262,7 @@ class _BatchSplitDialogState extends State<BatchSplitDialog> {
                 min: 0,
                 max: max,
                 divisions: max >= 1 ? max.round().clamp(1, 1000) : null,
-                label: _fmt(_qty),
+                label: fmtQty(_qty),
                 onChanged: (v) => setState(() => _qty = v),
               ),
               Row(
@@ -234,7 +279,7 @@ class _BatchSplitDialogState extends State<BatchSplitDialog> {
                   const Spacer(),
                   if (isPartial)
                     Text(
-                      'Splits • ${_fmt(max - _qty)} $unit stays',
+                      'Splits • ${fmtQty(max - _qty)} $unit stays',
                       style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,

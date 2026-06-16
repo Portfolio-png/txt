@@ -6,6 +6,7 @@ import 'package:core_erp/features/inventory/data/repositories/inventory_reposito
 import 'package:core_erp/features/inventory/domain/inventory_control_tower.dart';
 
 import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
+import '../../production_pipelines/domain/material_batch.dart';
 import '../../production_pipelines/domain/pipeline_run.dart';
 import '../../production_pipelines/domain/process_node.dart';
 import '../domain/utils/stage_input_resolver.dart';
@@ -13,6 +14,28 @@ import '../providers/production_provider.dart';
 import '../providers/production_run_provider.dart';
 
 enum LeftoverAction { returnToInventory, scrap }
+
+/// What a reconcile commit booked, so a later revert can compensate it.
+class ReconcileResult {
+  const ReconcileResult({
+    required this.loss,
+    required this.scrapLogged,
+    required this.leftoverReturned,
+    this.barcode,
+  });
+
+  /// Allotted − output: the amount deducted from the source chip.
+  final double loss;
+
+  /// Scrap booked to the production scrap ledger.
+  final double scrapLogged;
+
+  /// Leftover returned to inventory.
+  final double leftoverReturned;
+
+  /// The material the scrap/leftover was booked against.
+  final String? barcode;
+}
 
 /// Asks the engineer to account for the difference between the material
 /// allotted to a stage and the stage's output. The difference can only be
@@ -28,7 +51,7 @@ class StageReconciliationDialog extends StatefulWidget {
     this.batchAllottedMax,
     this.batchUnit,
     this.batchBarcode,
-    this.onCommitLoss,
+    this.onCommitted,
   });
 
   final ProcessNode node;
@@ -44,7 +67,7 @@ class StageReconciliationDialog extends StatefulWidget {
   final double? batchAllottedMax;
   final String? batchUnit;
   final String? batchBarcode;
-  final ValueChanged<double>? onCommitLoss;
+  final ValueChanged<ReconcileResult>? onCommitted;
 
   static Future<bool?> show(
     BuildContext context, {
@@ -54,7 +77,7 @@ class StageReconciliationDialog extends StatefulWidget {
     double? batchAllottedMax,
     String? batchUnit,
     String? batchBarcode,
-    ValueChanged<double>? onCommitLoss,
+    ValueChanged<ReconcileResult>? onCommitted,
   }) {
     return showDialog<bool>(
       context: context,
@@ -65,7 +88,7 @@ class StageReconciliationDialog extends StatefulWidget {
         batchAllottedMax: batchAllottedMax,
         batchUnit: batchUnit,
         batchBarcode: batchBarcode,
-        onCommitLoss: onCommitLoss,
+        onCommitted: onCommitted,
       ),
     );
   }
@@ -135,8 +158,8 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
               : (inputs.isNotEmpty
                     ? (inputs.first.unit ?? '')
                     : (widget.node.inputItem?.unitSymbol ?? ''));
-          _outputCtrl.text = _fmt(moved);
-          _allottedCtrl.text = _fmt(moved);
+          _outputCtrl.text = fmtQty(moved);
+          _allottedCtrl.text = fmtQty(moved);
         } else {
           _allottedFromBarcodes = allotted > 0;
           _firstBarcode = inputs.isNotEmpty ? inputs.first.barcode : null;
@@ -144,9 +167,9 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
               ? (inputs.first.unit ?? '')
               : (widget.node.inputItem?.unitSymbol ?? '');
           _allottedCtrl.text = allotted > 0
-              ? _fmt(allotted)
-              : _fmt((metrics['allotted'] as num?)?.toDouble() ?? 0);
-          _outputCtrl.text = _fmt((metrics['output'] as num?)?.toDouble() ?? 0);
+              ? fmtQty(allotted)
+              : fmtQty((metrics['allotted'] as num?)?.toDouble() ?? 0);
+          _outputCtrl.text = fmtQty((metrics['output'] as num?)?.toDouble() ?? 0);
         }
         _recalculate(keepScrap: true);
       });
@@ -164,13 +187,6 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
   double get _difference =>
       (_allotted - _output) < 0 ? 0 : (_allotted - _output);
 
-  String _fmt(double value) {
-    if (value == value.roundToDouble()) {
-      return value.toInt().toString();
-    }
-    return value.toStringAsFixed(2);
-  }
-
   /// Keeps leftover + scrap equal to the difference. When [keepScrap] the
   /// scrap entry is preserved and leftover absorbs the rest; otherwise the
   /// leftover entry is preserved and scrap absorbs the rest.
@@ -178,12 +194,12 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
     final difference = _difference;
     if (keepScrap) {
       final scrap = _scrap.clamp(0, difference).toDouble();
-      _scrapCtrl.text = _fmt(scrap);
-      _leftoverCtrl.text = _fmt(difference - scrap);
+      _scrapCtrl.text = fmtQty(scrap);
+      _leftoverCtrl.text = fmtQty(difference - scrap);
     } else {
       final leftover = _leftover.clamp(0, difference).toDouble();
-      _leftoverCtrl.text = _fmt(leftover);
-      _scrapCtrl.text = _fmt(difference - leftover);
+      _leftoverCtrl.text = fmtQty(leftover);
+      _scrapCtrl.text = fmtQty(difference - leftover);
     }
     _errorText = null;
   }
@@ -194,7 +210,7 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
     if (_output > _allotted) {
       setState(
         () => _errorText =
-            'Output cannot exceed the allotted material (${_fmt(_allotted)} $_unit).',
+            'Output cannot exceed the allotted material (${fmtQty(_allotted)} $_unit).',
       );
       return;
     }
@@ -203,7 +219,7 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
         _allotted > widget.batchAllottedMax! + 0.001) {
       setState(
         () => _errorText =
-            'Consumed cannot exceed the ${_fmt(widget.batchAllottedMax!)} $_unit '
+            'Consumed cannot exceed the ${fmtQty(widget.batchAllottedMax!)} $_unit '
             'available at this stage.',
       );
       return;
@@ -211,7 +227,7 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
     if ((_leftover + _scrap - difference).abs() > 0.001) {
       setState(
         () => _errorText =
-            'Leftover + scrap must account for the full difference of ${_fmt(difference)} $_unit.',
+            'Leftover + scrap must account for the full difference of ${fmtQty(difference)} $_unit.',
       );
       return;
     }
@@ -289,7 +305,14 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
         );
       }
 
-      widget.onCommitLoss?.call(_allotted - _output);
+      widget.onCommitted?.call(
+        ReconcileResult(
+          loss: _allotted - _output,
+          scrapLogged: totalScrap,
+          leftoverReturned: returnedLeftover,
+          barcode: _firstBarcode,
+        ),
+      );
       runProvider.triggerRefresh();
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {

@@ -4,10 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/production_provider.dart';
 import '../providers/production_run_provider.dart';
-import 'material_ledger_closure_dialog.dart';
-import 'order_fulfillment_prompt_dialog.dart';
 import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
-import '../../production_pipelines/domain/pipeline_template.dart';
 import 'package:core_erp/features/orders/domain/order_inputs.dart';
 import 'package:core_erp/features/orders/domain/order_entry.dart';
 import 'package:core_erp/features/orders/presentation/providers/orders_provider.dart';
@@ -55,17 +52,6 @@ class RemoteActionConsole extends StatelessWidget {
                   color: const Color(0xFFF59E0B),
                   onPressed: isRunning || isPaused
                       ? () => _togglePause(context, isPaused)
-                      : null,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _ConsoleAction(
-                  label: 'FORCE LEDGER CLOSURE',
-                  icon: Icons.inventory_2_outlined,
-                  color: const Color(0xFF64748B),
-                  onPressed: isRunning || isPaused
-                      ? () => _openClosure(context)
                       : null,
                 ),
               ),
@@ -169,74 +155,6 @@ class RemoteActionConsole extends StatelessWidget {
     }
     production.pauseRun();
     await run.pauseRun();
-  }
-
-  Future<void> _openClosure(BuildContext context) async {
-    final production = context.read<ProductionProvider>();
-    final run = context.read<ProductionRunProvider>();
-    production.initiateClosure();
-    await run.pauseRun();
-    if (!context.mounted) return;
-
-    final committed = await showDialog<bool>(
-      context: context,
-      builder: (_) => MultiProvider(
-        providers: [
-          ChangeNotifierProvider<ProductionProvider>.value(value: production),
-          ChangeNotifierProvider<ProductionRunProvider>.value(value: run),
-        ],
-        child: const MaterialLedgerClosureDialog(),
-      ),
-    );
-    if (!context.mounted) return;
-    if (committed == true) {
-      final repo = context.read<PipelineRunRepository>();
-      final workingTemplate = production.template;
-      final blueprint = production.blueprint;
-
-      // If the template was structurally modified by dynamics (branch, reverse, skip)
-      if (workingTemplate.id != blueprint.id) {
-        try {
-          await repo.createTemplate(
-            workingTemplate.copyWith(
-              name: '${blueprint.name} (Production Route)',
-              status: PipelineTemplateStatus.active,
-            ),
-          );
-        } catch (e) {
-          debugPrint('Failed to save dynamic pipeline route: $e');
-        }
-      }
-
-      await run.completeRun();
-      final yieldProduced = production.goodYieldCount;
-      final linkedOrderId = production.linkedOrderId;
-
-      production.completeClosure();
-
-      if (linkedOrderId != null && yieldProduced > 0) {
-        if (!context.mounted) return;
-        final orders = context.read<OrdersProvider>().orders;
-        final index = orders.indexWhere((o) => o.id == linkedOrderId);
-        if (index >= 0) {
-          final order = orders[index];
-          // Determine if we should show the prompt
-          final totalNow = order.totalDeliveredQty + yieldProduced;
-          if (totalNow >= order.quantity * 0.95) {
-            await showDialog(
-              context: context,
-              builder: (_) => OrderFulfillmentPromptDialog(
-                order: order,
-                yieldProduced: yieldProduced.toInt(),
-              ),
-            );
-          }
-        }
-      }
-    } else {
-      production.cancelClosure();
-      run.resumeRun();
-    }
   }
 }
 

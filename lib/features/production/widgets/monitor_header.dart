@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:core_erp/features/orders/presentation/providers/orders_provider.dart';
 import '../providers/production_provider.dart';
 import '../providers/production_run_provider.dart';
+import '../providers/batch_flow_provider.dart';
+import 'order_fulfillment_prompt_dialog.dart';
+import 'floor_toast.dart';
 
 class MonitorHeader extends StatelessWidget {
   const MonitorHeader({super.key, required this.provider});
@@ -83,9 +87,79 @@ class MonitorHeader extends StatelessWidget {
           ),
           const Spacer(),
           const _ElapsedClockLight(),
+          const SizedBox(width: 20),
+          FilledButton.icon(
+            onPressed: () => _completeOrder(context),
+            icon: const Icon(Icons.task_alt_rounded, size: 18),
+            label: const Text('Complete Order'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF10B981),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+              textStyle: const TextStyle(
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  /// Marks the order complete — but only once every batch has reached an
+  /// Output node. Lots still on any stage block completion.
+  Future<void> _completeOrder(BuildContext context) async {
+    final runProvider = context.read<ProductionRunProvider>();
+    final batchProvider = context.read<BatchFlowProvider>();
+    final production = context.read<ProductionProvider>();
+    final runId = runProvider.runId;
+    if (runId == null) {
+      showFloorToast(context, 'No active run.', kind: FloorToastKind.error);
+      return;
+    }
+
+    final outputIds = production.template.nodes
+        .where((n) => n.processType == 'Output')
+        .map((n) => n.id)
+        .toSet();
+    final batches = batchProvider.batchesForRun(runId);
+    final inFlight = batches
+        .where((b) => b.isLive && !outputIds.contains(b.currentNodeId))
+        .toList();
+
+    if (inFlight.isNotEmpty) {
+      final total = inFlight.fold<double>(0, (s, b) => s + b.quantity);
+      showFloorToast(
+        context,
+        '${inFlight.length} lot(s) ($total) still on the floor — move them '
+        'to Output before completing the order.',
+      );
+      return;
+    }
+
+    final produced = batches
+        .where((b) => b.isLive && outputIds.contains(b.currentNodeId))
+        .fold<double>(0, (s, b) => s + b.quantity);
+
+    final orderId = production.linkedOrderId;
+    final order = orderId == null
+        ? null
+        : context
+              .read<OrdersProvider>()
+              .orders
+              .where((o) => o.id == orderId)
+              .firstOrNull;
+
+    if (order != null) {
+      await showDialog<void>(
+        context: context,
+        builder: (_) => OrderFulfillmentPromptDialog(
+          order: order,
+          yieldProduced: produced.round(),
+        ),
+      );
+    }
+    await runProvider.completeRun();
   }
 }
 

@@ -2,6 +2,39 @@ import 'package:flutter/foundation.dart';
 
 import '../../production_pipelines/domain/material_batch.dart';
 
+/// A reversible record of one forward batch move and every side effect it
+/// caused, so any chip's last hop can be precisely undone (chip + inventory).
+/// The side-effect fields are filled in by the caller after the move/booking.
+class BatchMoveRecord {
+  BatchMoveRecord({
+    required this.resultBatchId,
+    required this.fromNodeId,
+    required this.toNodeId,
+    required this.qty,
+    required this.wasSplit,
+    this.parentBatchId,
+  });
+
+  /// The batch now sitting at [toNodeId] (a new child for a split, or the same
+  /// batch for a full move).
+  final String resultBatchId;
+  final String fromNodeId;
+  final String toNodeId;
+  final double qty;
+  final bool wasSplit;
+  final String? parentBatchId;
+
+  // Side effects to compensate on revert.
+  String? consumeBarcode; // raw consumed when leaving Input
+  double consumeQty = 0;
+  String? yieldLotBarcode; // produced lot when landing at Output
+  double yieldQty = 0;
+  double scrapLogged = 0; // scrap booked by reconcile
+  double leftoverReturned = 0; // leftover returned to inventory by reconcile
+  String? reconcileBarcode; // material the scrap/leftover was booked against
+  double lossQty = 0; // amount reduced from the source chip by reconcile
+}
+
 /// In-memory store of [MaterialBatch] tokens per run (Phase 0).
 ///
 /// This is deliberately client-side only: it lets the gamified token-chip UX
@@ -10,6 +43,7 @@ import '../../production_pipelines/domain/material_batch.dart';
 /// Phase 1 will back these operations with the pipeline run repository.
 class BatchFlowProvider extends ChangeNotifier {
   final Map<String, List<MaterialBatch>> _byRun = {};
+  final Map<String, List<BatchMoveRecord>> _historyByRun = {};
   final Set<String> _seededRuns = {};
   int _counter = 0;
 
@@ -34,29 +68,35 @@ class BatchFlowProvider extends ChangeNotifier {
   /// Moves [quantity] of a batch to [toNodeId]. If the quantity is less than
   /// the batch total the batch is split: the source shrinks and a new child
   /// batch lands at the target node. Moving the whole batch relocates it.
-  void moveBatch({
+  ///
+  /// Returns the id of the batch now sitting at [toNodeId] (the new child for a
+  /// split, or the same id for a full move), or null if nothing moved.
+  String? moveBatch({
     required String runId,
     required String batchId,
     required String toNodeId,
     required double quantity,
   }) {
     final list = _byRun[runId];
-    if (list == null) return;
+    if (list == null) return null;
     final idx = list.indexWhere((b) => b.id == batchId);
-    if (idx == -1) return;
+    if (idx == -1) return null;
     final batch = list[idx];
-    if (batch.currentNodeId == toNodeId) return;
+    if (batch.currentNodeId == toNodeId) return null;
 
     final qty = quantity.clamp(0, batch.quantity).toDouble();
-    if (qty <= 0) return;
+    if (qty <= 0) return null;
 
+    String resultId;
     if (qty >= batch.quantity) {
       list[idx] = batch.copyWith(currentNodeId: toNodeId);
+      resultId = batch.id;
     } else {
       list[idx] = batch.copyWith(quantity: batch.quantity - qty);
+      resultId = _newId();
       list.add(
         batch.copyWith(
-          id: _newId(),
+          id: resultId,
           quantity: qty,
           currentNodeId: toNodeId,
           parentBatchId: batch.id,
@@ -64,6 +104,72 @@ class BatchFlowProvider extends ChangeNotifier {
       );
     }
     notifyListeners();
+    return resultId;
+  }
+
+  /// Records a reversible forward move for [runId].
+  void recordMove(String runId, BatchMoveRecord record) {
+    (_historyByRun[runId] ??= []).add(record);
+  }
+
+  /// The most recent move that brought batch [batchId] to its current node,
+  /// or null if there's no reversible history for it.
+  BatchMoveRecord? lastRecordForBatch(String runId, String batchId) {
+    final history = _historyByRun[runId];
+    if (history == null) return null;
+    for (var i = history.length - 1; i >= 0; i--) {
+      if (history[i].resultBatchId == batchId) return history[i];
+    }
+    return null;
+  }
+
+  /// Reverses the chip half of a move: removes the target arrival and restores
+  /// the advanced qty (plus any reconcile loss) to the source. The caller is
+  /// responsible for compensating the inventory side effects. Returns false if
+  /// the target batch is gone (e.g. it was moved on again) — revert unsafe.
+  bool revertChip(String runId, BatchMoveRecord r) {
+    final list = _byRun[runId];
+    if (list == null) return false;
+    final idx = list.indexWhere((b) => b.id == r.resultBatchId);
+    if (idx == -1) return false;
+    final result = list[idx];
+
+    if (r.wasSplit) {
+      // The loss was deducted from the parent remainder, not the child.
+      final restore = r.qty + r.lossQty;
+      list.removeAt(idx);
+      final pIdx = r.parentBatchId == null
+          ? -1
+          : list.indexWhere(
+              (b) => b.id == r.parentBatchId && b.currentNodeId == r.fromNodeId,
+            );
+      if (pIdx != -1) {
+        list[pIdx] = list[pIdx].copyWith(
+          quantity: list[pIdx].quantity + restore,
+        );
+      } else {
+        // Parent already moved on — recreate the stock at the source node.
+        list.add(
+          result.copyWith(
+            id: _newId(),
+            quantity: restore,
+            currentNodeId: r.fromNodeId,
+            parentBatchId: null,
+          ),
+        );
+      }
+    } else {
+      // Full move: the loss was deducted from this same batch — relocate it
+      // back and add the loss back.
+      list[idx] = result.copyWith(
+        currentNodeId: r.fromNodeId,
+        quantity: result.quantity + r.lossQty,
+      );
+    }
+
+    _historyByRun[runId]?.remove(r);
+    notifyListeners();
+    return true;
   }
 
   /// Adds a fresh batch at [nodeId] — used when new stock is assigned to a
@@ -117,6 +223,7 @@ class BatchFlowProvider extends ChangeNotifier {
   /// Clears a run's batches so it can be re-seeded (e.g. after a reset).
   void resetRun(String runId) {
     _byRun.remove(runId);
+    _historyByRun.remove(runId);
     _seededRuns.remove(runId);
     notifyListeners();
   }

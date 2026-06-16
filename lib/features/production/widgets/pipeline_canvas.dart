@@ -2,6 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:core_erp/features/inventory/domain/material_record.dart';
 import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
+import 'package:core_erp/features/inventory/data/repositories/inventory_repository.dart';
+import 'package:core_erp/features/inventory/domain/inventory_control_tower.dart';
+import 'package:core_erp/features/inventory/domain/material_inputs.dart';
+import 'package:core_erp/features/orders/presentation/providers/orders_provider.dart';
+import 'package:core_erp/features/orders/domain/order_entry.dart';
+import '../providers/production_provider.dart';
 import '../providers/production_run_provider.dart';
 import '../providers/batch_flow_provider.dart';
 import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
@@ -15,6 +21,7 @@ import 'graph_edges_painter.dart';
 import 'flow_stage_block.dart';
 import 'batch_chip.dart';
 import 'node_batch_tray.dart';
+import 'floor_toast.dart';
 import 'stage_reconciliation_dialog.dart';
 import '../domain/utils/stage_input_resolver.dart';
 
@@ -87,8 +94,10 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
       final material = await context.read<InventoryProvider>().lookupBarcode(input.barcode);
       if (material == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to locate material record for barcode ${input.barcode}')),
+          showFloorToast(
+            context,
+            'Failed to locate material record for barcode ${input.barcode}',
+            kind: FloorToastKind.error,
           );
         }
         return;
@@ -118,14 +127,18 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
       
       if (mounted) {
         context.read<InventoryProvider>().refresh();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Updated assigned quantity of ${input.barcode} to $newQty ${input.unit ?? ''}')),
+        showFloorToast(
+          context,
+          'Updated assigned quantity of ${input.barcode} to $newQty ${input.unit ?? ''}',
+          kind: FloorToastKind.info,
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update quantity: $e')),
+        showFloorToast(
+          context,
+          'Failed to update quantity: $e',
+          kind: FloorToastKind.error,
         );
       }
     }
@@ -169,14 +182,18 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
 
       if (mounted) {
         context.read<InventoryProvider>().refresh();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Removed ${input.barcode} from ${node.name}')),
+        showFloorToast(
+          context,
+          'Removed ${input.barcode} from ${node.name}',
+          kind: FloorToastKind.info,
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to remove stock: $e')),
+        showFloorToast(
+          context,
+          'Failed to remove stock: $e',
+          kind: FloorToastKind.error,
         );
       }
     }
@@ -313,10 +330,120 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save batch change: $e')),
+        showFloorToast(
+          context,
+          'Failed to save batch change: $e',
+          kind: FloorToastKind.error,
         );
       }
+    }
+  }
+
+  /// The order this run is fulfilling, if any (for output item resolution).
+  OrderEntry? _orderForRun() {
+    try {
+      final orderId = context.read<ProductionProvider>().linkedOrderId;
+      if (orderId == null) return null;
+      return context
+          .read<OrdersProvider>()
+          .orders
+          .where((o) => o.id == orderId)
+          .firstOrNull;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Books raw-material consumption when [qty] of [barcode] leaves the Input.
+  Future<void> _bookRawConsume(String barcode, double qty) async {
+    try {
+      final repo = context.read<InventoryRepository>();
+      await repo.createInventoryMovement(
+        CreateInventoryMovementInput(
+          materialBarcode: barcode,
+          movementType: InventoryMovementType.consume,
+          qty: qty,
+          reasonCode: 'PRODUCTION_CONSUME',
+          actor: context.read<ProductionProvider>().activeOperator,
+        ),
+      );
+      if (mounted) context.read<InventoryProvider>().refresh();
+    } catch (e) {
+      if (mounted) {
+        showFloorToast(
+          context,
+          'Could not book raw consumption: $e',
+          kind: FloorToastKind.error,
+        );
+      }
+    }
+  }
+
+  /// Receives produced goods into inventory when a batch lands at the Output
+  /// node. The concrete item is the node's specific output item, or — when the
+  /// output endpoint is a group — the run's order item.
+  /// Returns the produced lot barcode (for revert), or null on failure.
+  Future<String?> _receiveYieldAtOutput(
+    ProcessNode node,
+    MaterialBatch batch,
+    double qty,
+  ) async {
+    try {
+      final repo = context.read<InventoryRepository>();
+      final production = context.read<ProductionProvider>();
+      final runId = context.read<ProductionRunProvider>().runId;
+      final endpoint = node.outputItem ?? node.inputItem;
+
+      int? itemId;
+      int? variationLeafNodeId;
+      String name;
+      if (endpoint != null && !endpoint.isGroup) {
+        itemId = endpoint.itemId;
+        name = endpoint.itemName;
+      } else {
+        final order = _orderForRun();
+        itemId = order?.itemId;
+        variationLeafNodeId = order?.variationLeafNodeId;
+        name = order?.itemName ?? endpoint?.groupName ?? 'Yield';
+      }
+
+      final lot = await repo.createChildMaterial(
+        CreateChildMaterialInput(
+          parentBarcode: batch.barcode,
+          name: 'Yield · $name',
+        ),
+      );
+      if (itemId != null) {
+        await repo.linkMaterialToItem(
+          lot.barcode,
+          itemId,
+          variationLeafNodeId: variationLeafNodeId,
+        );
+      }
+      await repo.createInventoryMovement(
+        CreateInventoryMovementInput(
+          materialBarcode: lot.barcode,
+          movementType: InventoryMovementType.receive,
+          qty: qty,
+          reasonCode: 'PRODUCTION_YIELD',
+          actor: production.activeOperator,
+          // Manual provenance: receive movements require a reference, and
+          // tying it to the run links the produced stock back to production.
+          referenceType: 'pipeline_run',
+          referenceId: runId ?? lot.barcode,
+        ),
+      );
+      if (mounted) context.read<InventoryProvider>().refresh();
+      return lot.barcode;
+    } catch (e) {
+      if (mounted) {
+        showFloorToast(
+          context,
+          'Could not receive yield into inventory: $e',
+          kind: FloorToastKind.error,
+        );
+      }
+      return null;
     }
   }
 
@@ -340,14 +467,45 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
     final sourceNode = widget.template.nodes
         .where((n) => n.id == batch.currentNodeId)
         .firstOrNull;
+    final fromNodeId = batch.currentNodeId;
+    final wasSplit = qty < batch.quantity;
 
-    batchProvider.moveBatch(
+    final resultId = batchProvider.moveBatch(
       runId: runId,
       batchId: batch.id,
       toNodeId: node.id,
       quantity: qty,
     );
+    if (resultId == null) return;
     await _persistBatches(runId, batchProvider);
+
+    // Record the move so it can be reverted with all its side effects.
+    final record = BatchMoveRecord(
+      resultBatchId: resultId,
+      fromNodeId: fromNodeId,
+      toNodeId: node.id,
+      qty: qty,
+      wasSplit: wasSplit,
+      parentBatchId: wasSplit ? batch.id : null,
+    );
+    batchProvider.recordMove(runId, record);
+
+    // Raw consumption is booked as stock leaves the Input endpoint.
+    if (mounted && sourceNode?.processType == 'Input') {
+      await _bookRawConsume(batch.barcode, qty);
+      record
+        ..consumeBarcode = batch.barcode
+        ..consumeQty = qty;
+    }
+    // Produced goods are received into inventory as each batch lands at Output.
+    if (mounted && node.processType == 'Output') {
+      final lot = await _receiveYieldAtOutput(node, batch, qty);
+      if (lot != null) {
+        record
+          ..yieldLotBarcode = lot
+          ..yieldQty = qty;
+      }
+    }
 
     if (!mounted) return;
     if (sourceNode != null &&
@@ -361,17 +519,137 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
         batchAllottedMax: batch.quantity,
         batchUnit: batch.unit,
         batchBarcode: batch.barcode,
-        onCommitLoss: (loss) {
+        onCommitted: (result) {
           // Scrap/leftover declared beyond what advanced leaves the source
           // chip too, keeping the chips consistent with the ledger.
           batchProvider.reduceBatch(
             runId: runId,
             batchId: batch.id,
-            amount: loss,
+            amount: result.loss,
           );
+          record
+            ..scrapLogged = result.scrapLogged
+            ..leftoverReturned = result.leftoverReturned
+            ..reconcileBarcode = result.barcode
+            ..lossQty = result.loss;
           _persistBatches(runId, batchProvider);
         },
       );
+    }
+  }
+
+  /// Reverts a batch's last forward hop — unwinds the inventory side effects
+  /// (consume, yield, leftover, scrap) then the chip move itself.
+  Future<void> _revertBatchArrival(MaterialBatch batch) async {
+    final runProvider = context.read<ProductionRunProvider>();
+    final batchProvider = context.read<BatchFlowProvider>();
+    final runId = runProvider.runId;
+    if (runId == null) return;
+
+    final rec = batchProvider.lastRecordForBatch(runId, batch.id);
+    if (rec == null) {
+      showFloorToast(context, 'Nothing to revert for this lot.');
+      return;
+    }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Revert this move?'),
+        content: const Text(
+          'The lot returns to the previous stage and the inventory it booked '
+          '(consume / yield / leftover / scrap) is reversed.',
+          style: TextStyle(fontSize: 13, color: Color(0xFF475569)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Revert'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    await _reverseInventory(rec);
+    if (!mounted) return;
+    final ok = batchProvider.revertChip(runId, rec);
+    if (ok) await _persistBatches(runId, batchProvider);
+    if (mounted) {
+      showFloorToast(
+        context,
+        ok ? 'Move reverted.' : 'Could not revert this lot.',
+        kind: ok ? FloorToastKind.info : FloorToastKind.error,
+      );
+    }
+  }
+
+  /// Posts compensating movements to unwind a move's inventory effects. The
+  /// movement API requires qty > 0, so reversal is expressed by direction:
+  /// `adjust` adds raw back, `issue` removes produced/leftover stock, and scrap
+  /// is netted with a negative ledger entry.
+  Future<void> _reverseInventory(BatchMoveRecord rec) async {
+    try {
+      final repo = context.read<InventoryRepository>();
+      final actor = context.read<ProductionProvider>().activeOperator;
+      final pipelineRepo = context.read<PipelineRunRepository>();
+      final runId = context.read<ProductionRunProvider>().runId;
+
+      if (rec.consumeBarcode != null && rec.consumeQty > 0) {
+        await repo.createInventoryMovement(
+          CreateInventoryMovementInput(
+            materialBarcode: rec.consumeBarcode!,
+            movementType: InventoryMovementType.adjust,
+            qty: rec.consumeQty,
+            reasonCode: 'PRODUCTION_REVERT_CONSUME',
+            actor: actor,
+          ),
+        );
+      }
+      if (rec.yieldLotBarcode != null && rec.yieldQty > 0) {
+        await repo.createInventoryMovement(
+          CreateInventoryMovementInput(
+            materialBarcode: rec.yieldLotBarcode!,
+            movementType: InventoryMovementType.issue,
+            qty: rec.yieldQty,
+            reasonCode: 'PRODUCTION_REVERT_YIELD',
+            actor: actor,
+          ),
+        );
+      }
+      if (rec.leftoverReturned > 0 && rec.reconcileBarcode != null) {
+        await repo.createInventoryMovement(
+          CreateInventoryMovementInput(
+            materialBarcode: rec.reconcileBarcode!,
+            movementType: InventoryMovementType.issue,
+            qty: rec.leftoverReturned,
+            reasonCode: 'PRODUCTION_REVERT_LEFTOVER',
+            actor: actor,
+          ),
+        );
+      }
+      if (rec.scrapLogged > 0 && rec.reconcileBarcode != null && runId != null) {
+        await pipelineRepo.logProductionScrap(
+          runId: runId,
+          nodeId: rec.fromNodeId,
+          materialBarcode: rec.reconcileBarcode!,
+          scrapQty: -rec.scrapLogged,
+        );
+      }
+      if (mounted) context.read<InventoryProvider>().refresh();
+    } catch (e) {
+      if (mounted) {
+        showFloorToast(
+          context,
+          'Inventory reversal failed: $e',
+          kind: FloorToastKind.error,
+        );
+      }
     }
   }
 
@@ -466,8 +744,14 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
                     final nodeBatches = runId != null
                         ? batchProvider.batchesAtNode(runId, node.id)
                         : const <MaterialBatch>[];
-                    final showBarcodeCard =
-                        activeStockNodeId == node.id && nodeBatches.isEmpty;
+                    // Once a run is seeded, chips are the single source of
+                    // truth. The legacy assigned-stock card is only a fallback
+                    // for un-seeded (legacy) runs — otherwise it double-shows
+                    // stock a chip already represents.
+                    final seeded = runId != null && batchProvider.isSeeded(runId);
+                    final showBarcodeCard = !seeded &&
+                        activeStockNodeId == node.id &&
+                        nodeBatches.isEmpty;
                     final assignedBarcodes = showBarcodeCard
                         ? effectiveStageInputs(
                             run: activeRun,
@@ -536,14 +820,18 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
                                   runProvider.triggerRefresh();
                                   if (context.mounted) {
                                     context.read<InventoryProvider>().refresh();
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Assigned $quantity ${material.unit} of ${material.barcode} to ${node.name}')),
+                                    showFloorToast(
+                                      context,
+                                      'Assigned $quantity ${material.unit} of ${material.barcode} to ${node.name}',
+                                      kind: FloorToastKind.info,
                                     );
                                   }
                                 } catch (e) {
                                   if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Failed to assign stock: $e')),
+                                    showFloorToast(
+                                      context,
+                                      'Failed to assign stock: $e',
+                                      kind: FloorToastKind.error,
                                     );
                                   }
                                 }
@@ -582,6 +870,7 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
                             NodeBatchTray(
                               batches: nodeBatches,
                               width: nodeWidth,
+                              onRevert: _revertBatchArrival,
                             )
                           else if (assignedBarcodes != null &&
                               assignedBarcodes.isNotEmpty)

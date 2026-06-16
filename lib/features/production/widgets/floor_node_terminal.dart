@@ -58,6 +58,20 @@ class FloorNodeTerminal extends StatelessWidget {
     final outputName =
         node.outputItem?.itemName ??
         (node.outputs.isNotEmpty ? node.outputs.first : null);
+    final inUnit = node.inputItem?.unitSymbol ?? '';
+    final outUnit = node.outputItem?.unitSymbol ?? '';
+    final inIsGroup = node.inputItem?.isGroup ?? false;
+    final outIsGroup = node.outputItem?.isGroup ?? false;
+    final inText = inputName == null
+        ? null
+        : inIsGroup
+        ? '$inputName [group]'
+        : (inUnit.isEmpty ? inputName : '$inputName ($inUnit)');
+    final outText = outputName == null
+        ? null
+        : outIsGroup
+        ? '$outputName [group]'
+        : (outUnit.isEmpty ? outputName : '$outputName ($outUnit)');
 
     return Container(
       margin: const EdgeInsets.only(bottom: 24, left: 24, right: 24),
@@ -133,6 +147,33 @@ class FloorNodeTerminal extends StatelessWidget {
                           fontWeight: FontWeight.w500,
                         ),
                       ),
+                      if (inText != null || outText != null) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.science_outlined,
+                              size: 12,
+                              color: Color(0xFF94A3B8),
+                            ),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                outText == null
+                                    ? (inText ?? '')
+                                    : '${inText ?? '—'}  →  $outText',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF475569),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),

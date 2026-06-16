@@ -11,13 +11,12 @@ class NodeBatchTray extends StatelessWidget {
     super.key,
     required this.batches,
     required this.width,
+    this.onRevert,
   });
 
   final List<MaterialBatch> batches;
   final double width;
-
-  String _fmt(double v) =>
-      v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);
+  final ValueChanged<MaterialBatch>? onRevert;
 
   @override
   Widget build(BuildContext context) {
@@ -66,7 +65,7 @@ class NodeBatchTray extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  '${batches.length == 1 ? 'batch' : 'batches'} · ${_fmt(total)} $unit'
+                  '${batches.length == 1 ? 'batch' : 'batches'} · ${fmtQty(total)} $unit'
                       .trim(),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -86,7 +85,11 @@ class NodeBatchTray extends StatelessWidget {
             runSpacing: 6,
             children: [
               for (final batch in batches)
-                BatchChip(batch: batch, compact: batches.length > 2),
+                BatchChip(
+                  batch: batch,
+                  compact: batches.length > 2,
+                  onRevert: onRevert == null ? null : () => onRevert!(batch),
+                ),
             ],
           ),
         ],

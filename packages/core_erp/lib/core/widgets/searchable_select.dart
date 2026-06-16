@@ -561,7 +561,7 @@ class _SearchableSelectOptionTileState<T>
               : const Color(0xFFEDE9FF))
         : widget.isSelected
         ? const Color(0xFFF3F0FF)
-        : Colors.white;
+        : (baseColor != null ? baseColor.withValues(alpha: 0.08) : Colors.white);
 
     void selectOption() {
       Navigator.of(context).pop(widget.option);
@@ -601,6 +601,17 @@ class _SearchableSelectOptionTileState<T>
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
             child: Row(
               children: [
+                if (baseColor != null) ...[
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: baseColor,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 Expanded(
                   child: Tooltip(
                     message: widget.option.label,

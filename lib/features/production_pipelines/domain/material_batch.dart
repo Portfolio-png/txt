@@ -1,3 +1,7 @@
+/// Formats a quantity: whole numbers drop the decimals, fractions show two.
+String fmtQty(double v) =>
+    v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);
+
 /// A discrete chunk of material in flight through a pipeline run.
 ///
 /// Unlike the monolithic per-node quantity tracked by `nodeMetrics`, a batch

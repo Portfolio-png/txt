@@ -1056,14 +1056,16 @@ class _SelectedNodeCard extends StatelessWidget {
           if (node.inputItem != null)
             _NodeFact(
               label: 'Input',
-              value:
-                  '${node.inputItem!.itemName} (${node.inputItem!.unitLabel})',
+              value: node.inputItem!.isGroup
+                  ? '${node.inputItem!.itemName} [group]'
+                  : '${node.inputItem!.itemName} (${node.inputItem!.unitLabel})',
             ),
           if (node.outputItem != null)
             _NodeFact(
               label: 'Output',
-              value:
-                  '${node.outputItem!.itemName} (${node.outputItem!.unitLabel})',
+              value: node.outputItem!.isGroup
+                  ? '${node.outputItem!.itemName} [group]'
+                  : '${node.outputItem!.itemName} (${node.outputItem!.unitLabel})',
             ),
           const SizedBox(height: 10),
           const Text(
@@ -1737,6 +1739,18 @@ String _materialOptionSearchText(
   ].where((part) => part.trim().isNotEmpty).join(' ');
 }
 
+/// A picked endpoint: either a specific item or an abstract item group.
+class _EndpointPick {
+  const _EndpointPick.item(this.itemId)
+    : groupId = null,
+      groupName = null;
+  const _EndpointPick.group(this.groupId, this.groupName) : itemId = null;
+
+  final int? itemId;
+  final int? groupId;
+  final String? groupName;
+}
+
 class _ItemEndpointDropdown extends StatelessWidget {
   const _ItemEndpointDropdown({
     required this.tapTargetKey,
@@ -1744,6 +1758,7 @@ class _ItemEndpointDropdown extends StatelessWidget {
     required this.selectedItem,
     required this.items,
     required this.units,
+    required this.groups,
     required this.onChanged,
   });
 
@@ -1752,48 +1767,65 @@ class _ItemEndpointDropdown extends StatelessWidget {
   final PipelineItemEndpoint? selectedItem;
   final List<ItemDefinition> items;
   final List<UnitDefinition> units;
-  final ValueChanged<int?> onChanged;
+  final List<GroupDefinition> groups;
+  final ValueChanged<_EndpointPick> onChanged;
+
+  static const Color _groupColor = Color(0xFF7C6BFF);
 
   @override
   Widget build(BuildContext context) {
-    final selectedItemId = selectedItem?.itemId;
-    final hasSelectionInList = items.any((item) => item.id == selectedItemId);
+    final selectedValue = selectedItem == null
+        ? null
+        : (selectedItem!.isGroup
+              ? 'group:${selectedItem!.groupId}'
+              : 'item:${selectedItem!.itemId}');
 
-    final options = items
-        .map(
-          (item) => SearchableSelectOption<int>(
-            value: item.id,
-            label: _materialOptionLabel(item, units),
-            searchText: _materialOptionSearchText(item, units),
-          ),
-        )
-        .toList(growable: true);
+    final options = <SearchableSelectOption<String>>[
+      for (final group in groups)
+        SearchableSelectOption<String>(
+          value: 'group:${group.id}',
+          label: '${group.name}  ·  group',
+          searchText: '${group.name} group',
+          highlightColor: _groupColor,
+        ),
+      for (final item in items)
+        SearchableSelectOption<String>(
+          value: 'item:${item.id}',
+          label: _materialOptionLabel(item, units),
+          searchText: _materialOptionSearchText(item, units),
+        ),
+    ];
 
-    if (selectedItemId != null && !hasSelectionInList && selectedItem != null) {
+    // Keep a current selection visible even if it isn't in the lists
+    // (e.g. inherited from an upstream stage).
+    final hasSelection =
+        selectedValue != null && options.any((o) => o.value == selectedValue);
+    if (selectedItem != null && selectedValue != null && !hasSelection) {
       options.insert(
         0,
-        SearchableSelectOption<int>(
-          value: selectedItemId,
-          label: selectedItem!.itemName,
-          searchText: selectedItem!.itemName,
+        SearchableSelectOption<String>(
+          value: selectedValue,
+          label: selectedItem!.isGroup
+              ? '${selectedItem!.groupName ?? selectedItem!.itemName}  ·  group'
+              : selectedItem!.itemName,
+          searchText: selectedItem!.groupName ?? selectedItem!.itemName,
+          highlightColor: selectedItem!.isGroup ? _groupColor : null,
         ),
       );
     }
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 0),
-      child: SearchableSelectField<int>(
+      child: SearchableSelectField<String>(
         tapTargetKey: tapTargetKey,
-        value: selectedItemId,
+        value: selectedValue,
         decoration: _softSearchDecoration(
           label: label,
-          helper: items.isEmpty
-              ? 'Search item masters or create a new item.'
-              : 'Unit comes from the selected item master.',
+          helper: 'Pick an item master, or a group to resolve at production.',
         ),
         dialogTitle: label,
-        searchHintText: 'Search item master',
-        emptyText: 'No item masters found',
+        searchHintText: 'Search items or groups',
+        emptyText: 'No items or groups found',
         options: options,
         canCreateOption: (query, allOptions) {
           final normalized = query.trim().toLowerCase();
@@ -1804,12 +1836,24 @@ class _ItemEndpointDropdown extends StatelessWidget {
         },
         onCreateOption: (query) => _createItemOption(context, query),
         createOptionLabelBuilder: (query) => 'Create item "$query"',
-        onChanged: onChanged,
+        onChanged: (value) {
+          if (value == null) return;
+          if (value.startsWith('group:')) {
+            final id = int.tryParse(value.substring(6));
+            if (id == null) return;
+            final group = groups.where((g) => g.id == id).firstOrNull;
+            onChanged(_EndpointPick.group(id, group?.name));
+          } else if (value.startsWith('item:')) {
+            final id = int.tryParse(value.substring(5));
+            if (id == null) return;
+            onChanged(_EndpointPick.item(id));
+          }
+        },
       ),
     );
   }
 
-  Future<SearchableSelectOption<int>?> _createItemOption(
+  Future<SearchableSelectOption<String>?> _createItemOption(
     BuildContext context,
     String query,
   ) async {
@@ -1824,8 +1868,8 @@ class _ItemEndpointDropdown extends StatelessWidget {
     try {
       await context.read<ItemsProvider>().refresh();
     } catch (_) {}
-    return SearchableSelectOption<int>(
-      value: created.id,
+    return SearchableSelectOption<String>(
+      value: 'item:${created.id}',
       label: _materialOptionLabel(created, units),
       searchText: _materialOptionSearchText(created, units),
     );
@@ -3021,6 +3065,10 @@ class _NodePropertiesPanel extends StatefulWidget {
 class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
   int? _inputItemId;
   int? _outputItemId;
+  int? _inputGroupId;
+  String? _inputGroupName;
+  int? _outputGroupId;
+  String? _outputGroupName;
   int? _selectedMachineGroupId;
   Timer? _debounce;
   late final TextEditingController _customProcessCodeController;
@@ -3079,6 +3127,10 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
     super.initState();
     _inputItemId = widget.node.inputItem?.itemId;
     _outputItemId = widget.node.outputItem?.itemId;
+    _inputGroupId = widget.node.inputItem?.groupId;
+    _inputGroupName = widget.node.inputItem?.groupName;
+    _outputGroupId = widget.node.outputItem?.groupId;
+    _outputGroupName = widget.node.outputItem?.groupName;
     _selectedMachineGroupId = widget.node.machineGroupId;
     _customProcessCodeController = TextEditingController(
       text: widget.node.outputItem?.itemName ?? '',
@@ -3104,6 +3156,10 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
     if (oldWidget.node.id != widget.node.id) {
       _inputItemId = widget.node.inputItem?.itemId;
       _outputItemId = widget.node.outputItem?.itemId;
+      _inputGroupId = widget.node.inputItem?.groupId;
+      _inputGroupName = widget.node.inputItem?.groupName;
+      _outputGroupId = widget.node.outputItem?.groupId;
+      _outputGroupName = widget.node.outputItem?.groupName;
       _selectedMachineGroupId = widget.node.machineGroupId;
       _customProcessCodeController.text = widget.node.outputItem?.itemName ?? '';
     }
@@ -3172,11 +3228,16 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
                 selectedItem: widget.node.inputItem ?? _getInheritedInput(),
                 items: widget.items,
                 units: widget.units,
-                onChanged: (itemId) {
+                groups: context.watch<GroupsProvider>().itemGroups,
+                onChanged: (pick) {
                   setState(() {
-                    _inputItemId = itemId;
+                    _inputItemId = pick.itemId;
+                    _inputGroupId = pick.groupId;
+                    _inputGroupName = pick.groupName;
                     if (_isInputNode) {
-                      _outputItemId = itemId;
+                      _outputItemId = pick.itemId;
+                      _outputGroupId = pick.groupId;
+                      _outputGroupName = pick.groupName;
                     }
                   });
                   _saveItems();
@@ -3192,11 +3253,16 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
                 selectedItem: widget.node.outputItem ?? _getInheritedOutput(),
                 items: widget.items,
                 units: widget.units,
-                onChanged: (itemId) {
+                groups: context.watch<GroupsProvider>().itemGroups,
+                onChanged: (pick) {
                   setState(() {
-                    _outputItemId = itemId;
+                    _outputItemId = pick.itemId;
+                    _outputGroupId = pick.groupId;
+                    _outputGroupName = pick.groupName;
                     if (_isOutputNode) {
-                      _inputItemId = itemId;
+                      _inputItemId = pick.itemId;
+                      _inputGroupId = pick.groupId;
+                      _inputGroupName = pick.groupName;
                     }
                   });
                   _saveItems();
@@ -3228,6 +3294,8 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
                             unitId: currentItem.unitId,
                             unitName: currentItem.unitName,
                             unitSymbol: currentItem.unitSymbol,
+                            groupId: currentItem.groupId,
+                            groupName: currentItem.groupName,
                           ),
                           units: widget.units,
                           propagate: true,
@@ -3348,10 +3416,14 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
       nodeId: widget.node.id,
       inputItem: _endpointFor(
         _inputItemId,
+        groupId: _inputGroupId,
+        groupName: _inputGroupName,
         fallback: widget.node.inputItem ?? _getInheritedInput(),
       ),
       outputItem: _endpointFor(
         _outputItemId,
+        groupId: _outputGroupId,
+        groupName: _outputGroupName,
         fallback: widget.node.outputItem ?? _getInheritedOutput(),
       ),
       units: widget.units,
@@ -3361,8 +3433,23 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
 
   PipelineItemEndpoint? _endpointFor(
     int? itemId, {
+    int? groupId,
+    String? groupName,
     PipelineItemEndpoint? fallback,
   }) {
+    // A group endpoint is abstract: no specific item or unit (resolved from
+    // assigned stock at production time).
+    if (groupId != null) {
+      return PipelineItemEndpoint(
+        itemId: 0,
+        itemName: groupName ?? 'Group',
+        unitId: 0,
+        unitName: '',
+        unitSymbol: '',
+        groupId: groupId,
+        groupName: groupName,
+      );
+    }
     if (itemId == null) {
       return fallback;
     }
