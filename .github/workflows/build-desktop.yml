@@ -43,6 +43,8 @@ jobs:
       SECRET_API_BASE_URL: ${{ secrets.PAPER_API_BASE_URL }}
       SECRET_AUTO_LOGIN_EMAIL: ${{ secrets.PAPER_AUTO_LOGIN_EMAIL }}
       SECRET_AUTO_LOGIN_PASSWORD: ${{ secrets.PAPER_AUTO_LOGIN_PASSWORD }}
+      SECRET_SENTRY_DSN: ${{ secrets.PAPER_SENTRY_DSN }}
+      SECRET_APPCAST_URL: ${{ secrets.PAPER_APPCAST_URL }}
 
     steps:
       - uses: actions/checkout@v4
@@ -79,7 +81,7 @@ jobs:
               echo "Missing required repo secret PAPER_API_BASE_URL for push builds."
               exit 1
             fi
-            echo "dart_defines=--dart-define=PAPER_API_BASE_URL=${API_URL} ${AUTO_LOGIN_DEFINES}" >> "$GITHUB_OUTPUT"
+            echo "dart_defines=--dart-define=PAPER_API_BASE_URL=${API_URL} ${AUTO_LOGIN_DEFINES} --dart-define=PAPER_SENTRY_DSN=${SECRET_SENTRY_DSN:-} --dart-define=PAPER_APPCAST_URL=${SECRET_APPCAST_URL:-}" >> "$GITHUB_OUTPUT"
             echo "label=api" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -89,7 +91,7 @@ jobs:
           DEMO="${INPUT_DEMO_MODE:-true}"
 
           if [[ "${DEMO}" == "true" ]]; then
-            echo "dart_defines=--dart-define=PAPER_DEMO_MODE=true" >> "$GITHUB_OUTPUT"
+            echo "dart_defines=--dart-define=PAPER_DEMO_MODE=true --dart-define=PAPER_SENTRY_DSN=${SECRET_SENTRY_DSN:-} --dart-define=PAPER_APPCAST_URL=${SECRET_APPCAST_URL:-}" >> "$GITHUB_OUTPUT"
             echo "label=demo" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -99,7 +101,7 @@ jobs:
             exit 1
           fi
 
-          echo "dart_defines=--dart-define=PAPER_API_BASE_URL=${API_URL} ${AUTO_LOGIN_DEFINES}" >> "$GITHUB_OUTPUT"
+          echo "dart_defines=--dart-define=PAPER_API_BASE_URL=${API_URL} ${AUTO_LOGIN_DEFINES} --dart-define=PAPER_SENTRY_DSN=${SECRET_SENTRY_DSN:-} --dart-define=PAPER_APPCAST_URL=${SECRET_APPCAST_URL:-}" >> "$GITHUB_OUTPUT"
           echo "label=api" >> "$GITHUB_OUTPUT"
 
       - name: Build (Windows)

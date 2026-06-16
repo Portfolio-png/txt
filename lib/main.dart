@@ -51,7 +51,9 @@ import 'features/production/providers/production_run_provider.dart';
 import 'features/production/providers/batch_flow_provider.dart';
 import 'features/production_pipelines/domain/node_run_status.dart';
 
-
+import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:auto_updater/auto_updater.dart';
+import 'dart:io' show Platform;
 const _isDemoMode = bool.fromEnvironment(
   'PAPER_DEMO_MODE',
   defaultValue: false,
@@ -89,8 +91,24 @@ String _resolveApiBaseUrl() {
   return _localApiBaseUrl;
 }
 
-void main() {
-  runApp(const MyApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  if (!kIsWeb && (Platform.isWindows || Platform.isMacOS)) {
+    // Note: The actual feedURL will be injected or set during final production build
+    const String feedURL = String.fromEnvironment('PAPER_APPCAST_URL', defaultValue: 'https://update.example.com/appcast.xml');
+    await autoUpdater.setFeedURL(feedURL);
+    await autoUpdater.checkForUpdates(inBackground: true);
+    await autoUpdater.setScheduledCheckInterval(3600);
+  }
+
+  await SentryFlutter.init(
+    (options) {
+      options.dsn = const String.fromEnvironment('PAPER_SENTRY_DSN', defaultValue: '');
+      options.tracesSampleRate = 1.0;
+    },
+    appRunner: () => runApp(const MyApp()),
+  );
 }
 
 class MyApp extends StatelessWidget {

@@ -3,8 +3,10 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  auto_updater_windows
   file_selector_windows
   printing
+  sentry_flutter
   url_launcher_windows
 )
 

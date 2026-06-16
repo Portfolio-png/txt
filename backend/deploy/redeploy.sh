@@ -75,6 +75,9 @@ echo "==> Rebuilding sqlite3 native module for this machine"
 npm uninstall sqlite3
 npm install sqlite3 --build-from-source
 
+echo "==> Ensuring pm2-logrotate is installed"
+pm2 install pm2-logrotate || true
+
 echo "==> Restarting PM2 app using ecosystem.config.js"
 pm2 delete paper-backend >/dev/null 2>&1 || true
 pm2 start ecosystem.config.js

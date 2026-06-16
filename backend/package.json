@@ -17,10 +17,13 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1065.0",
     "@aws-sdk/s3-request-presigner": "^3.1065.0",
+    "@sentry/node": "^10.58.0",
+    "@sentry/profiling-node": "^10.58.0",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
     "image-size": "^2.0.2",
+    "morgan": "^1.11.0",
     "pdfkit": "^0.18.0",
     "sqlite3": "^5.1.7"
   }

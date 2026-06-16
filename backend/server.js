@@ -12,7 +12,20 @@ const fs = require('fs');
 const { imageSize } = require('image-size');
 const path = require('path');
 const PDFDocument = require('pdfkit');
+const morgan = require('morgan');
 const sqlite3 = require('sqlite3').verbose();
+const Sentry = require("@sentry/node");
+const { nodeProfilingIntegration } = require("@sentry/profiling-node");
+const { runMigrations } = require('./migrate');
+
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    integrations: [nodeProfilingIntegration()],
+    tracesSampleRate: 1.0,
+    profilesSampleRate: 1.0,
+  });
+}
 
 try {
   // Optional local/server convenience. Production should still inject env vars.
@@ -346,6 +359,7 @@ function buildCorsOptions() {
 
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
+app.use(morgan('combined'));
 app.use(cors(buildCorsOptions()));
 app.use(express.json());
 
@@ -20724,6 +20738,8 @@ app.get('/api/production-scrap', requirePermission('config.read'), async (req, r
 });
 
 
+Sentry.setupExpressErrorHandler(app);
+
 app.use('/api', (error, req, res, _next) => {
   console.error(`[API ERROR] ${req.method} ${req.originalUrl}`, error);
   const message = error.message || 'Internal server error';
@@ -20860,19 +20876,20 @@ async function resetAndSeedDemoData() {
 function startServer() {
   console.log(`Booting Paper backend on port ${PORT} using ${DB_PATH}`);
   return new Promise((resolve, reject) => {
-    const server = app.listen(PORT, '0.0.0.0', () => {
+    const server = app.listen(PORT, '0.0.0.0', async () => {
       console.log(`Paper backend listening on port ${PORT}`);
-      console.log('Initializing database schema...');
-      initDb()
-        .then(() => {
-          dbReady = true;
-          console.log('Database schema ready.');
-          console.log(`Paper backend running on port ${PORT} using ${DB_PATH}`);
-        })
-        .catch((error) => {
-          dbInitError = error;
-          console.error('Failed to initialize backend database:', error);
-        });
+      try {
+        console.log('Running migrations...');
+        await runMigrations();
+        console.log('Initializing database schema...');
+        await initDb();
+        dbReady = true;
+        console.log('Database schema ready.');
+        console.log(`Paper backend running on port ${PORT} using ${DB_PATH}`);
+      } catch (error) {
+        dbInitError = error;
+        console.error('Failed to initialize backend database/migrations:', error);
+      }
       resolve(server);
     });
     server.on('error', reject);
