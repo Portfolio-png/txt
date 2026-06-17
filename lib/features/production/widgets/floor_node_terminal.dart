@@ -62,6 +62,10 @@ class _FloorNodeTerminalState extends State<FloorNodeTerminal> {
   Widget build(BuildContext context) {
     final node = widget.node;
     final startedAt = widget.startedAt;
+    final batchPanel = BatchTrainPanel(
+      expanded: _expanded,
+      onToggle: () => setState(() => _expanded = !_expanded),
+    );
     final inputName =
         node.inputItem?.itemName ??
         (node.inputs.isNotEmpty ? node.inputs.first : null);
@@ -268,21 +272,13 @@ class _FloorNodeTerminalState extends State<FloorNodeTerminal> {
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
-                  child: BatchTrainPanel(
-                    node: node,
-                    expanded: true,
-                    onToggle: () => setState(() => _expanded = false),
-                  ),
+                  child: batchPanel,
                 ),
               )
             else
               Padding(
                 padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
-                child: BatchTrainPanel(
-                  node: node,
-                  expanded: false,
-                  onToggle: () => setState(() => _expanded = true),
-                ),
+                child: batchPanel,
               ),
           ],
         ),

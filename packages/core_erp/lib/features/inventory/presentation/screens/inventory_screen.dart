@@ -3944,38 +3944,7 @@ class _InventoryItemCardState extends State<_InventoryItemCard> {
                     if (record.linkedPipelineCount > 0)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 6),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFEF3C7),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(color: const Color(0xFFFBBF24)),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.account_tree_rounded,
-                                size: 11,
-                                color: Color(0xFF78350F),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                record.linkedPipelineCount > 1
-                                    ? 'In ${record.linkedPipelineCount} pipelines'
-                                    : 'In pipeline',
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF78350F),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                        child: _PipelinePill(count: record.linkedPipelineCount),
                       ),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.end,
@@ -4014,6 +3983,46 @@ class _InventoryItemCardState extends State<_InventoryItemCard> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Yellow "in pipeline" badge shared by the inventory table and card views, so
+/// committed stock reads the same as the production sidebar's headband.
+class _PipelinePill extends StatelessWidget {
+  const _PipelinePill({required this.count, this.fontSize = 10});
+
+  final int count;
+  final double fontSize;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF3C7),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFFBBF24)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.account_tree_rounded,
+            size: 11,
+            color: Color(0xFF78350F),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            count > 1 ? 'In $count pipelines' : 'In pipeline',
+            style: _inventorySegoeStyle(
+              color: const Color(0xFF78350F),
+              size: fontSize,
+              weight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -4993,42 +5002,9 @@ class _InventoryNameCell extends StatelessWidget {
                           message: record.linkedPipelineCount > 1
                               ? 'Assigned to ${record.linkedPipelineCount} production pipelines'
                               : 'Assigned to a production pipeline',
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFEF3C7),
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(
-                                color: const Color(0xFFFBBF24),
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(
-                                  Icons.account_tree_rounded,
-                                  size: 11,
-                                  color: Color(0xFF78350F),
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  record.linkedPipelineCount > 1
-                                      ? 'In ${record.linkedPipelineCount} pipelines'
-                                      : 'In pipeline',
-                                  style: _inventorySegoeStyle(
-                                    color: const Color(0xFF78350F),
-                                    size: math.max(
-                                      10,
-                                      metrics.bodyFontSize - 4,
-                                    ),
-                                    weight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
+                          child: _PipelinePill(
+                            count: record.linkedPipelineCount,
+                            fontSize: math.max(10, metrics.bodyFontSize - 4),
                           ),
                         ),
                       ],

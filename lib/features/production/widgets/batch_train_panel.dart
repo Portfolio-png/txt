@@ -8,11 +8,8 @@ import '../providers/batch_flow_provider.dart';
 import '../providers/production_provider.dart';
 import '../providers/production_run_provider.dart';
 
-/// Lays the whole pipeline out as stations and parks each batch at the stage it
-/// currently sits in. A batch that leaves mid-pipeline (e.g. the client sells
-/// the part after a stage) simply stays parked at that stage — no need to reach
-/// the output. Below the lane, the same batches are tabulated like the floor's
-/// ledger sheet (batch × stage).
+/// Tabulates the run's batches like the floor's ledger sheet (batch × stage),
+/// parking each batch's quantity under the stage it currently occupies.
 ///
 /// Reads the same live [BatchFlowProvider] tokens the canvas chips draw from, so
 /// the panel and the canvas always agree on where each batch is. If the run
@@ -21,14 +18,11 @@ import '../providers/production_run_provider.dart';
 class BatchTrainPanel extends StatefulWidget {
   const BatchTrainPanel({
     super.key,
-    required this.node,
     required this.expanded,
     required this.onToggle,
   });
 
-  final ProcessNode node;
-
-  /// Whether the lane + ledger are shown. The header always shows and toggles
+  /// Whether the ledger is shown. The header always shows and toggles
   /// this via [onToggle].
   final bool expanded;
   final VoidCallback onToggle;
@@ -86,9 +80,7 @@ class _BatchTrainPanelState extends State<BatchTrainPanel> {
       for (var i = 0; i < batches.length; i++)
         _BatchRow(
           label: 'Batch ${i + 1}',
-          lot: batches[i].barcode,
           qty: batches[i].quantity,
-          unit: batches[i].unitLabel,
           // Park at the stage the batch is actually parked at on the canvas.
           stageIndex: () {
             final s = stageNodes.indexWhere(
@@ -192,18 +184,14 @@ class _BatchTrainPanelState extends State<BatchTrainPanel> {
 class _BatchRow {
   const _BatchRow({
     required this.label,
-    required this.lot,
     required this.qty,
-    required this.unit,
     required this.stageIndex,
     required this.colorIndex,
     this.at,
   });
 
   final String label;
-  final String lot;
   final double qty;
-  final String unit;
   final int stageIndex;
   final int colorIndex;
   final DateTime? at;
