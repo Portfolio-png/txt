@@ -15,7 +15,6 @@ CREATE TABLE IF NOT EXISTS materials (
       linked_child_barcodes TEXT,
       scan_count INTEGER NOT NULL DEFAULT 0
     , unit_id INTEGER, linked_group_id INTEGER, linked_item_id INTEGER, display_stock TEXT DEFAULT '', created_by TEXT DEFAULT '', workflow_status TEXT DEFAULT 'notStarted', location TEXT DEFAULT '', group_mode TEXT, inheritance_enabled INTEGER NOT NULL DEFAULT 0, material_class TEXT DEFAULT 'raw_material', inventory_state TEXT DEFAULT 'available', procurement_state TEXT DEFAULT 'not_ordered', traceability_mode TEXT DEFAULT 'bulk', on_hand_qty REAL NOT NULL DEFAULT 0, reserved_qty REAL NOT NULL DEFAULT 0, available_to_promise_qty REAL NOT NULL DEFAULT 0, incoming_qty REAL NOT NULL DEFAULT 0, linked_order_count INTEGER NOT NULL DEFAULT 0, linked_pipeline_count INTEGER NOT NULL DEFAULT 0, pending_alert_count INTEGER NOT NULL DEFAULT 0, updated_at TEXT, last_scanned_at TEXT, linked_variation_leaf_node_id INTEGER);
-CREATE TABLE IF NOT EXISTS sqlite_sequence(name,seq);
 CREATE TABLE IF NOT EXISTS pipeline_templates (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
