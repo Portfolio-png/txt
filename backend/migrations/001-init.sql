@@ -1,4 +1,4 @@
-CREATE TABLE materials (
+CREATE TABLE IF NOT EXISTS materials (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       barcode TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
@@ -15,8 +15,8 @@ CREATE TABLE materials (
       linked_child_barcodes TEXT,
       scan_count INTEGER NOT NULL DEFAULT 0
     , unit_id INTEGER, linked_group_id INTEGER, linked_item_id INTEGER, display_stock TEXT DEFAULT '', created_by TEXT DEFAULT '', workflow_status TEXT DEFAULT 'notStarted', location TEXT DEFAULT '', group_mode TEXT, inheritance_enabled INTEGER NOT NULL DEFAULT 0, material_class TEXT DEFAULT 'raw_material', inventory_state TEXT DEFAULT 'available', procurement_state TEXT DEFAULT 'not_ordered', traceability_mode TEXT DEFAULT 'bulk', on_hand_qty REAL NOT NULL DEFAULT 0, reserved_qty REAL NOT NULL DEFAULT 0, available_to_promise_qty REAL NOT NULL DEFAULT 0, incoming_qty REAL NOT NULL DEFAULT 0, linked_order_count INTEGER NOT NULL DEFAULT 0, linked_pipeline_count INTEGER NOT NULL DEFAULT 0, pending_alert_count INTEGER NOT NULL DEFAULT 0, updated_at TEXT, last_scanned_at TEXT, linked_variation_leaf_node_id INTEGER);
-CREATE TABLE sqlite_sequence(name,seq);
-CREATE TABLE pipeline_templates (
+CREATE TABLE IF NOT EXISTS sqlite_sequence(name,seq);
+CREATE TABLE IF NOT EXISTS pipeline_templates (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       description TEXT DEFAULT '',
@@ -29,7 +29,7 @@ CREATE TABLE pipeline_templates (
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     , factory_id TEXT DEFAULT '', shop_floor_id TEXT DEFAULT '', intermediate_naming_convention TEXT DEFAULT '');
-CREATE TABLE pipeline_runs (
+CREATE TABLE IF NOT EXISTS pipeline_runs (
       id TEXT PRIMARY KEY,
       template_id TEXT NOT NULL REFERENCES pipeline_templates(id),
       template_version INTEGER NOT NULL,
@@ -41,7 +41,7 @@ CREATE TABLE pipeline_runs (
       completed_at TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
-CREATE TABLE run_barcode_inputs (
+CREATE TABLE IF NOT EXISTS run_barcode_inputs (
       id TEXT PRIMARY KEY,
       run_id TEXT NOT NULL REFERENCES pipeline_runs(id),
       node_id TEXT NOT NULL,
@@ -50,7 +50,7 @@ CREATE TABLE run_barcode_inputs (
       material_payload_json TEXT NOT NULL,
       scanned_at TEXT DEFAULT (datetime('now'))
     );
-CREATE TABLE units (
+CREATE TABLE IF NOT EXISTS units (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       symbol TEXT NOT NULL,
@@ -59,7 +59,7 @@ CREATE TABLE units (
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     , unit_group_id INTEGER, conversion_factor REAL NOT NULL DEFAULT 1, conversion_base_unit_id INTEGER);
-CREATE TABLE groups (
+CREATE TABLE IF NOT EXISTS groups (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       parent_group_id INTEGER REFERENCES groups(id),
@@ -68,7 +68,7 @@ CREATE TABLE groups (
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-CREATE TABLE items (
+CREATE TABLE IF NOT EXISTS items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       alias TEXT DEFAULT '',
@@ -79,7 +79,7 @@ CREATE TABLE items (
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     , quantity REAL NOT NULL DEFAULT 0, naming_format TEXT NOT NULL DEFAULT '');
-CREATE TABLE item_variations (
+CREATE TABLE IF NOT EXISTS item_variations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
@@ -89,7 +89,7 @@ CREATE TABLE item_variations (
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-CREATE TABLE clients (
+CREATE TABLE IF NOT EXISTS clients (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       alias TEXT DEFAULT '',
@@ -99,19 +99,19 @@ CREATE TABLE clients (
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     , logo_url TEXT DEFAULT '', photo_url TEXT DEFAULT '');
-CREATE TABLE item_variation_dimensions (
+CREATE TABLE IF NOT EXISTS item_variation_dimensions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
       position INTEGER NOT NULL DEFAULT 0
     );
-CREATE TABLE item_variation_values (
+CREATE TABLE IF NOT EXISTS item_variation_values (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       variation_id INTEGER NOT NULL REFERENCES item_variations(id) ON DELETE CASCADE,
       dimension_id INTEGER NOT NULL REFERENCES item_variation_dimensions(id) ON DELETE CASCADE,
       value TEXT NOT NULL
     );
-CREATE TABLE item_variation_nodes (
+CREATE TABLE IF NOT EXISTS item_variation_nodes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
       parent_node_id INTEGER REFERENCES item_variation_nodes(id) ON DELETE CASCADE,
@@ -123,7 +123,7 @@ CREATE TABLE item_variation_nodes (
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     , code TEXT NOT NULL DEFAULT '');
-CREATE TABLE orders (
+CREATE TABLE IF NOT EXISTS orders (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       order_no TEXT NOT NULL,
       client_id INTEGER NOT NULL REFERENCES clients(id),
@@ -141,18 +141,18 @@ CREATE TABLE orders (
       start_date TEXT,
       end_date TEXT
     , previous_status TEXT, hold_reason TEXT, cancel_reason TEXT, confirmed_at TEXT, allocated_at TEXT, production_started_at TEXT, completed_at TEXT, dispatched_at TEXT, closed_at TEXT, updated_by TEXT DEFAULT 'system', priority TEXT NOT NULL DEFAULT 'normal', updated_at TEXT NOT NULL DEFAULT '', unit_price REAL NOT NULL DEFAULT 0, total_invoiced_qty REAL NOT NULL DEFAULT 0, unit_id INTEGER, unit_name TEXT NOT NULL DEFAULT 'Pieces', unit_symbol TEXT NOT NULL DEFAULT 'Pieces');
-CREATE TABLE unit_groups (
+CREATE TABLE IF NOT EXISTS unit_groups (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-CREATE TABLE scan_history (
+CREATE TABLE IF NOT EXISTS scan_history (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       barcode TEXT NOT NULL,
       scanned_at TEXT NOT NULL
     );
-CREATE TABLE material_activity (
+CREATE TABLE IF NOT EXISTS material_activity (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       barcode TEXT NOT NULL,
       event_type TEXT NOT NULL,
@@ -161,7 +161,7 @@ CREATE TABLE material_activity (
       actor TEXT DEFAULT '',
       created_at TEXT NOT NULL
     );
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       email TEXT NOT NULL UNIQUE,
@@ -177,7 +177,7 @@ CREATE TABLE users (
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-CREATE TABLE auth_sessions (
+CREATE TABLE IF NOT EXISTS auth_sessions (
       id TEXT PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id),
       token_hash TEXT NOT NULL,
@@ -189,9 +189,9 @@ CREATE TABLE auth_sessions (
       ip_address TEXT DEFAULT '',
       user_agent TEXT DEFAULT ''
     );
-CREATE INDEX idx_auth_sessions_user ON auth_sessions(user_id);
-CREATE INDEX idx_auth_sessions_revoked ON auth_sessions(revoked_at);
-CREATE TABLE delete_requests (
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_revoked ON auth_sessions(revoked_at);
+CREATE TABLE IF NOT EXISTS delete_requests (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       entity_type TEXT NOT NULL,
       entity_id TEXT NOT NULL,
@@ -203,7 +203,7 @@ CREATE TABLE delete_requests (
       reviewed_at TEXT,
       created_at TEXT NOT NULL
     , reviewed_note TEXT DEFAULT '');
-CREATE TABLE auth_events (
+CREATE TABLE IF NOT EXISTS auth_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       event_type TEXT NOT NULL,
       actor_user_id INTEGER REFERENCES users(id),
@@ -213,9 +213,9 @@ CREATE TABLE auth_events (
       metadata_json TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL
     );
-CREATE INDEX idx_auth_events_created ON auth_events(created_at);
-CREATE INDEX idx_auth_events_target ON auth_events(target_user_id);
-CREATE TABLE material_group_item_links (
+CREATE INDEX IF NOT EXISTS idx_auth_events_created ON auth_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_auth_events_target ON auth_events(target_user_id);
+CREATE TABLE IF NOT EXISTS material_group_item_links (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       material_id INTEGER NOT NULL REFERENCES materials(id),
       item_id INTEGER NOT NULL REFERENCES items(id),
@@ -224,7 +224,7 @@ CREATE TABLE material_group_item_links (
       updated_at TEXT NOT NULL,
       UNIQUE(material_id, item_id)
     );
-CREATE TABLE material_group_properties (
+CREATE TABLE IF NOT EXISTS material_group_properties (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       material_id INTEGER NOT NULL REFERENCES materials(id),
       property_key TEXT NOT NULL,
@@ -243,7 +243,7 @@ CREATE TABLE material_group_properties (
       updated_at TEXT NOT NULL, unit_id INTEGER, unit_symbol TEXT, unit_label TEXT, source_group_id INTEGER, source_group_name TEXT,
       UNIQUE(material_id, property_key)
     );
-CREATE TABLE material_group_units (
+CREATE TABLE IF NOT EXISTS material_group_units (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       material_id INTEGER NOT NULL REFERENCES materials(id),
       unit_id INTEGER NOT NULL REFERENCES units(id),
@@ -253,7 +253,7 @@ CREATE TABLE material_group_units (
       updated_at TEXT NOT NULL,
       UNIQUE(material_id, unit_id)
     );
-CREATE TABLE material_group_preferences (
+CREATE TABLE IF NOT EXISTS material_group_preferences (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       material_id INTEGER NOT NULL REFERENCES materials(id),
       common_only_mode INTEGER NOT NULL DEFAULT 1,
@@ -262,7 +262,7 @@ CREATE TABLE material_group_preferences (
       updated_at TEXT NOT NULL, discarded_property_keys_json TEXT NOT NULL DEFAULT '[]',
       UNIQUE(material_id)
     );
-CREATE TABLE inventory_stock_positions (
+CREATE TABLE IF NOT EXISTS inventory_stock_positions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       material_barcode TEXT NOT NULL,
       location_id TEXT NOT NULL DEFAULT 'MAIN',
@@ -274,7 +274,7 @@ CREATE TABLE inventory_stock_positions (
       updated_at TEXT NOT NULL,
       UNIQUE(material_barcode, location_id, lot_code)
     );
-CREATE TABLE inventory_movements (
+CREATE TABLE IF NOT EXISTS inventory_movements (
       id TEXT PRIMARY KEY,
       material_barcode TEXT NOT NULL,
       movement_type TEXT NOT NULL,
@@ -288,7 +288,7 @@ CREATE TABLE inventory_movements (
       lot_code TEXT DEFAULT '',
       created_at TEXT NOT NULL
     , source_challan_id INTEGER, source_challan_type TEXT, source_challan_line_id INTEGER, primary_qty REAL, uom TEXT, reverses_movement_id TEXT);
-CREATE TABLE inventory_reservations (
+CREATE TABLE IF NOT EXISTS inventory_reservations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       material_barcode TEXT NOT NULL,
       reference_type TEXT NOT NULL,
@@ -298,7 +298,7 @@ CREATE TABLE inventory_reservations (
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-CREATE TABLE inventory_alerts (
+CREATE TABLE IF NOT EXISTS inventory_alerts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       material_barcode TEXT NOT NULL,
       alert_type TEXT NOT NULL,
@@ -308,7 +308,7 @@ CREATE TABLE inventory_alerts (
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-CREATE TABLE role_permissions (
+CREATE TABLE IF NOT EXISTS role_permissions (
       role TEXT NOT NULL,
       permission_key TEXT NOT NULL,
       is_allowed INTEGER NOT NULL DEFAULT 0,
@@ -316,7 +316,7 @@ CREATE TABLE role_permissions (
       updated_at TEXT NOT NULL,
       PRIMARY KEY(role, permission_key)
     );
-CREATE TABLE user_permission_overrides (
+CREATE TABLE IF NOT EXISTS user_permission_overrides (
       user_id INTEGER NOT NULL REFERENCES users(id),
       permission_key TEXT NOT NULL,
       is_allowed INTEGER NOT NULL DEFAULT 0,
@@ -324,8 +324,8 @@ CREATE TABLE user_permission_overrides (
       updated_at TEXT NOT NULL,
       PRIMARY KEY(user_id, permission_key)
     );
-CREATE INDEX idx_user_permission_overrides_user ON user_permission_overrides(user_id);
-CREATE TABLE permission_templates (
+CREATE INDEX IF NOT EXISTS idx_user_permission_overrides_user ON user_permission_overrides(user_id);
+CREATE TABLE IF NOT EXISTS permission_templates (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
       description TEXT DEFAULT '',
@@ -333,7 +333,7 @@ CREATE TABLE permission_templates (
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-CREATE TABLE permission_template_permissions (
+CREATE TABLE IF NOT EXISTS permission_template_permissions (
       template_id INTEGER NOT NULL REFERENCES permission_templates(id),
       permission_key TEXT NOT NULL,
       is_allowed INTEGER NOT NULL DEFAULT 1,
@@ -341,14 +341,14 @@ CREATE TABLE permission_template_permissions (
       updated_at TEXT NOT NULL,
       PRIMARY KEY(template_id, permission_key)
     );
-CREATE TABLE user_permission_templates (
+CREATE TABLE IF NOT EXISTS user_permission_templates (
       user_id INTEGER NOT NULL REFERENCES users(id),
       template_id INTEGER NOT NULL REFERENCES permission_templates(id),
       created_at TEXT NOT NULL,
       PRIMARY KEY(user_id, template_id)
     );
-CREATE INDEX idx_user_permission_templates_user ON user_permission_templates(user_id);
-CREATE TABLE order_activity_log (
+CREATE INDEX IF NOT EXISTS idx_user_permission_templates_user ON user_permission_templates(user_id);
+CREATE TABLE IF NOT EXISTS order_activity_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
       event_type TEXT NOT NULL,
@@ -363,8 +363,8 @@ CREATE TABLE order_activity_log (
       source TEXT DEFAULT 'api',
       created_at TEXT NOT NULL
     , activity_type TEXT NOT NULL DEFAULT '', details_json TEXT);
-CREATE INDEX idx_order_activity_log_order_id ON order_activity_log(order_id, created_at DESC);
-CREATE TABLE item_bom_lines (
+CREATE INDEX IF NOT EXISTS idx_order_activity_log_order_id ON order_activity_log(order_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS item_bom_lines (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
       material_barcode TEXT NOT NULL,
@@ -378,7 +378,7 @@ CREATE TABLE item_bom_lines (
       updated_at TEXT NOT NULL,
       UNIQUE(item_id, material_barcode)
     );
-CREATE TABLE order_material_requirements (
+CREATE TABLE IF NOT EXISTS order_material_requirements (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
       item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -396,7 +396,7 @@ CREATE TABLE order_material_requirements (
       updated_at TEXT NOT NULL,
       UNIQUE(order_id, material_barcode)
     );
-CREATE TABLE order_material_allocations (
+CREATE TABLE IF NOT EXISTS order_material_allocations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
       requirement_id INTEGER NOT NULL REFERENCES order_material_requirements(id) ON DELETE CASCADE,
@@ -408,10 +408,10 @@ CREATE TABLE order_material_allocations (
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-CREATE INDEX idx_item_bom_lines_item_id ON item_bom_lines(item_id, sort_order ASC, id ASC);
-CREATE INDEX idx_order_material_requirements_order_id ON order_material_requirements(order_id, id ASC);
-CREATE INDEX idx_order_material_allocations_order_id ON order_material_allocations(order_id, id ASC);
-CREATE TABLE procurement_requests (
+CREATE INDEX IF NOT EXISTS idx_item_bom_lines_item_id ON item_bom_lines(item_id, sort_order ASC, id ASC);
+CREATE INDEX IF NOT EXISTS idx_order_material_requirements_order_id ON order_material_requirements(order_id, id ASC);
+CREATE INDEX IF NOT EXISTS idx_order_material_allocations_order_id ON order_material_allocations(order_id, id ASC);
+CREATE TABLE IF NOT EXISTS procurement_requests (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       request_number TEXT NOT NULL UNIQUE,
       supplier_name TEXT NOT NULL,
@@ -437,7 +437,7 @@ CREATE TABLE procurement_requests (
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-CREATE TABLE procurement_request_lines (
+CREATE TABLE IF NOT EXISTS procurement_request_lines (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       procurement_request_id INTEGER NOT NULL REFERENCES procurement_requests(id) ON DELETE CASCADE,
       material_barcode TEXT NOT NULL,
@@ -452,7 +452,7 @@ CREATE TABLE procurement_request_lines (
       updated_at TEXT NOT NULL,
       UNIQUE(procurement_request_id, material_barcode)
     );
-CREATE TABLE procurement_request_line_sources (
+CREATE TABLE IF NOT EXISTS procurement_request_line_sources (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       procurement_request_id INTEGER NOT NULL REFERENCES procurement_requests(id) ON DELETE CASCADE,
       procurement_request_line_id INTEGER NOT NULL REFERENCES procurement_request_lines(id) ON DELETE CASCADE,
@@ -463,7 +463,7 @@ CREATE TABLE procurement_request_line_sources (
       created_at TEXT NOT NULL,
       UNIQUE(procurement_request_line_id, requirement_id)
     );
-CREATE TABLE procurement_activity_log (
+CREATE TABLE IF NOT EXISTS procurement_activity_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       procurement_request_id INTEGER NOT NULL REFERENCES procurement_requests(id) ON DELETE CASCADE,
       procurement_request_line_id INTEGER REFERENCES procurement_request_lines(id) ON DELETE CASCADE,
@@ -477,12 +477,12 @@ CREATE TABLE procurement_activity_log (
       source TEXT DEFAULT 'api',
       created_at TEXT NOT NULL
     );
-CREATE INDEX idx_procurement_requests_status ON procurement_requests(status, updated_at DESC);
-CREATE INDEX idx_procurement_request_lines_request_id ON procurement_request_lines(procurement_request_id, id ASC);
-CREATE INDEX idx_procurement_line_sources_requirement_id ON procurement_request_line_sources(requirement_id, id ASC);
-CREATE INDEX idx_procurement_line_sources_request_id ON procurement_request_line_sources(procurement_request_id, id ASC);
-CREATE INDEX idx_procurement_activity_request_id ON procurement_activity_log(procurement_request_id, created_at DESC);
-CREATE TABLE po_documents (
+CREATE INDEX IF NOT EXISTS idx_procurement_requests_status ON procurement_requests(status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_procurement_request_lines_request_id ON procurement_request_lines(procurement_request_id, id ASC);
+CREATE INDEX IF NOT EXISTS idx_procurement_line_sources_requirement_id ON procurement_request_line_sources(requirement_id, id ASC);
+CREATE INDEX IF NOT EXISTS idx_procurement_line_sources_request_id ON procurement_request_line_sources(procurement_request_id, id ASC);
+CREATE INDEX IF NOT EXISTS idx_procurement_activity_request_id ON procurement_activity_log(procurement_request_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS po_documents (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       file_name TEXT NOT NULL,
       content_type TEXT NOT NULL,
@@ -493,7 +493,7 @@ CREATE TABLE po_documents (
       created_at TEXT NOT NULL,
       uploaded_at TEXT
     );
-CREATE TABLE po_upload_sessions (
+CREATE TABLE IF NOT EXISTS po_upload_sessions (
       id TEXT PRIMARY KEY,
       file_name TEXT NOT NULL,
       content_type TEXT NOT NULL,
@@ -505,15 +505,15 @@ CREATE TABLE po_upload_sessions (
       created_at TEXT NOT NULL,
       completed_at TEXT
     );
-CREATE TABLE order_po_documents (
+CREATE TABLE IF NOT EXISTS order_po_documents (
       order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
       document_id INTEGER NOT NULL REFERENCES po_documents(id) ON DELETE CASCADE,
       linked_at TEXT NOT NULL,
       PRIMARY KEY (order_id, document_id)
     );
-CREATE INDEX idx_order_po_documents_order_id ON order_po_documents(order_id);
-CREATE INDEX idx_po_upload_sessions_sha256 ON po_upload_sessions(sha256);
-CREATE TABLE company_profiles (
+CREATE INDEX IF NOT EXISTS idx_order_po_documents_order_id ON order_po_documents(order_id);
+CREATE INDEX IF NOT EXISTS idx_po_upload_sessions_sha256 ON po_upload_sessions(sha256);
+CREATE TABLE IF NOT EXISTS company_profiles (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       company_name TEXT NOT NULL,
       mobile TEXT DEFAULT '',
@@ -527,7 +527,7 @@ CREATE TABLE company_profiles (
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-CREATE TABLE delivery_challans (
+CREATE TABLE IF NOT EXISTS delivery_challans (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       challan_no TEXT NOT NULL UNIQUE,
       date TEXT NOT NULL,
@@ -541,7 +541,7 @@ CREATE TABLE delivery_challans (
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     , order_id INTEGER, order_no TEXT DEFAULT '', type TEXT NOT NULL DEFAULT 'delivery', location TEXT DEFAULT '', vendor_id INTEGER, vendor_name TEXT DEFAULT '', vendor_gstin TEXT DEFAULT '', source_reference TEXT DEFAULT '', template_snapshot_json TEXT, material_owner_client_id INTEGER, material_owner_client_name TEXT DEFAULT '', material_owner_gstin TEXT DEFAULT '', maintain_stocks INTEGER NOT NULL DEFAULT 1, used_in_report INTEGER NOT NULL DEFAULT 0, purpose TEXT NOT NULL DEFAULT 'trading');
-CREATE TABLE delivery_challan_activity_log (
+CREATE TABLE IF NOT EXISTS delivery_challan_activity_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
       activity_type TEXT NOT NULL,
@@ -551,13 +551,13 @@ CREATE TABLE delivery_challan_activity_log (
       details_json TEXT,
       created_at TEXT NOT NULL
     );
-CREATE INDEX idx_delivery_challans_status ON delivery_challans(status);
-CREATE INDEX idx_delivery_challans_date ON delivery_challans(date);
-CREATE INDEX idx_delivery_challan_activity_challan_id_created_at ON delivery_challan_activity_log(challan_id, created_at);
-CREATE INDEX idx_order_material_requirements_material_barcode ON order_material_requirements(material_barcode);
-CREATE INDEX idx_order_activity_log_order_id_created_at ON order_activity_log(order_id, created_at);
-CREATE INDEX idx_delivery_challans_order_id ON delivery_challans(order_id);
-CREATE TABLE item_unit_conversions (
+CREATE INDEX IF NOT EXISTS idx_delivery_challans_status ON delivery_challans(status);
+CREATE INDEX IF NOT EXISTS idx_delivery_challans_date ON delivery_challans(date);
+CREATE INDEX IF NOT EXISTS idx_delivery_challan_activity_challan_id_created_at ON delivery_challan_activity_log(challan_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_order_material_requirements_material_barcode ON order_material_requirements(material_barcode);
+CREATE INDEX IF NOT EXISTS idx_order_activity_log_order_id_created_at ON order_activity_log(order_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_delivery_challans_order_id ON delivery_challans(order_id);
+CREATE TABLE IF NOT EXISTS item_unit_conversions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
       unit_id INTEGER NOT NULL REFERENCES units(id),
@@ -566,8 +566,8 @@ CREATE TABLE item_unit_conversions (
       updated_at TEXT NOT NULL,
       UNIQUE(item_id, unit_id)
     );
-CREATE INDEX idx_item_unit_conversions_item_id ON item_unit_conversions(item_id);
-CREATE TABLE uploaded_assets (
+CREATE INDEX IF NOT EXISTS idx_item_unit_conversions_item_id ON item_unit_conversions(item_id);
+CREATE TABLE IF NOT EXISTS uploaded_assets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       entity_type TEXT NOT NULL,
       entity_id INTEGER NOT NULL,
@@ -581,7 +581,7 @@ CREATE TABLE uploaded_assets (
       created_at TEXT NOT NULL,
       uploaded_at TEXT
     );
-CREATE TABLE asset_upload_sessions (
+CREATE TABLE IF NOT EXISTS asset_upload_sessions (
       id TEXT PRIMARY KEY,
       entity_type TEXT NOT NULL,
       entity_id INTEGER NOT NULL,
@@ -596,9 +596,9 @@ CREATE TABLE asset_upload_sessions (
       created_at TEXT NOT NULL,
       completed_at TEXT
     );
-CREATE INDEX idx_uploaded_assets_entity ON uploaded_assets(entity_type, entity_id, status, is_primary);
-CREATE INDEX idx_asset_upload_sessions_entity ON asset_upload_sessions(entity_type, entity_id);
-CREATE TABLE delivery_challan_items (
+CREATE INDEX IF NOT EXISTS idx_uploaded_assets_entity ON uploaded_assets(entity_type, entity_id, status, is_primary);
+CREATE INDEX IF NOT EXISTS idx_asset_upload_sessions_entity ON asset_upload_sessions(entity_type, entity_id);
+CREATE TABLE IF NOT EXISTS delivery_challan_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
         order_item_id INTEGER,
@@ -611,8 +611,8 @@ CREATE TABLE delivery_challan_items (
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       , variation_leaf_node_id INTEGER NOT NULL DEFAULT 0, production_run_id INTEGER, note TEXT DEFAULT '');
-CREATE INDEX idx_delivery_challan_items_challan_id ON delivery_challan_items(challan_id);
-CREATE TABLE item_property_schema (
+CREATE INDEX IF NOT EXISTS idx_delivery_challan_items_challan_id ON delivery_challan_items(challan_id);
+CREATE TABLE IF NOT EXISTS item_property_schema (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
       property_key TEXT NOT NULL,
@@ -631,18 +631,18 @@ CREATE TABLE item_property_schema (
       updated_at TEXT NOT NULL,
       UNIQUE(item_id, property_key)
     );
-CREATE INDEX idx_item_property_schema_item_id ON item_property_schema(item_id);
-CREATE TABLE inventory_sets (
+CREATE INDEX IF NOT EXISTS idx_item_property_schema_item_id ON item_property_schema(item_id);
+CREATE TABLE IF NOT EXISTS inventory_sets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-CREATE INDEX idx_materials_linked_group_id ON materials(linked_group_id);
-CREATE INDEX idx_materials_linked_item_id ON materials(linked_item_id);
-CREATE INDEX idx_materials_parent_barcode ON materials(parent_barcode);
-CREATE INDEX idx_inventory_sets_name ON inventory_sets(name);
-CREATE TABLE vendors (
+CREATE INDEX IF NOT EXISTS idx_materials_linked_group_id ON materials(linked_group_id);
+CREATE INDEX IF NOT EXISTS idx_materials_linked_item_id ON materials(linked_item_id);
+CREATE INDEX IF NOT EXISTS idx_materials_parent_barcode ON materials(parent_barcode);
+CREATE INDEX IF NOT EXISTS idx_inventory_sets_name ON inventory_sets(name);
+CREATE TABLE IF NOT EXISTS vendors (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       alias TEXT DEFAULT '',
@@ -655,7 +655,7 @@ CREATE TABLE vendors (
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     , logo_url TEXT DEFAULT '', photo_url TEXT DEFAULT '');
-CREATE TABLE inventory_set_lines (
+CREATE TABLE IF NOT EXISTS inventory_set_lines (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         set_id INTEGER NOT NULL REFERENCES inventory_sets(id) ON DELETE CASCADE,
         item_id INTEGER NOT NULL REFERENCES items(id),
@@ -664,26 +664,26 @@ CREATE TABLE inventory_set_lines (
         position INTEGER NOT NULL DEFAULT 0,
         UNIQUE(set_id, item_id, variation_leaf_node_id)
       );
-CREATE INDEX idx_inventory_set_lines_set_id ON inventory_set_lines(set_id);
-CREATE INDEX idx_inventory_set_lines_item_id ON inventory_set_lines(item_id);
-CREATE INDEX idx_inventory_set_lines_item_lookup ON inventory_set_lines(item_id, variation_leaf_node_id);
-CREATE INDEX idx_delivery_challans_vendor_id ON delivery_challans(vendor_id);
-CREATE INDEX idx_delivery_challans_type ON delivery_challans(type);
-CREATE INDEX idx_materials_inventory_state ON materials(inventory_state);
-CREATE INDEX idx_materials_stock_quantities ON materials(on_hand_qty, available_to_promise_qty, reserved_qty);
-CREATE INDEX idx_inventory_movements_health_query ON inventory_movements(movement_type, created_at);
-CREATE INDEX idx_inventory_alerts_is_open ON inventory_alerts(is_open);
-CREATE INDEX idx_materials_item_variation_lookup ON materials(linked_item_id, linked_variation_leaf_node_id);
-CREATE INDEX idx_inventory_movements_source_challan ON inventory_movements(source_challan_id, source_challan_type);
-CREATE TABLE delivery_challan_orders (
+CREATE INDEX IF NOT EXISTS idx_inventory_set_lines_set_id ON inventory_set_lines(set_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_set_lines_item_id ON inventory_set_lines(item_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_set_lines_item_lookup ON inventory_set_lines(item_id, variation_leaf_node_id);
+CREATE INDEX IF NOT EXISTS idx_delivery_challans_vendor_id ON delivery_challans(vendor_id);
+CREATE INDEX IF NOT EXISTS idx_delivery_challans_type ON delivery_challans(type);
+CREATE INDEX IF NOT EXISTS idx_materials_inventory_state ON materials(inventory_state);
+CREATE INDEX IF NOT EXISTS idx_materials_stock_quantities ON materials(on_hand_qty, available_to_promise_qty, reserved_qty);
+CREATE INDEX IF NOT EXISTS idx_inventory_movements_health_query ON inventory_movements(movement_type, created_at);
+CREATE INDEX IF NOT EXISTS idx_inventory_alerts_is_open ON inventory_alerts(is_open);
+CREATE INDEX IF NOT EXISTS idx_materials_item_variation_lookup ON materials(linked_item_id, linked_variation_leaf_node_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_movements_source_challan ON inventory_movements(source_challan_id, source_challan_type);
+CREATE TABLE IF NOT EXISTS delivery_challan_orders (
       challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
       order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
       created_at TEXT NOT NULL,
       PRIMARY KEY (challan_id, order_id)
     );
-CREATE INDEX idx_delivery_challan_orders_challan_id ON delivery_challan_orders(challan_id);
-CREATE INDEX idx_delivery_challan_orders_order_id ON delivery_challan_orders(order_id);
-CREATE TABLE challan_template_upload_sessions (
+CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_challan_id ON delivery_challan_orders(challan_id);
+CREATE INDEX IF NOT EXISTS idx_delivery_challan_orders_order_id ON delivery_challan_orders(order_id);
+CREATE TABLE IF NOT EXISTS challan_template_upload_sessions (
       id TEXT PRIMARY KEY,
       file_name TEXT NOT NULL,
       content_type TEXT NOT NULL,
@@ -695,7 +695,7 @@ CREATE TABLE challan_template_upload_sessions (
       created_at TEXT NOT NULL,
       completed_at TEXT
     , upload_type TEXT NOT NULL DEFAULT 'CHALLAN_TEMPLATE_BACKGROUND', canvas_width INTEGER NOT NULL DEFAULT 0, canvas_height INTEGER NOT NULL DEFAULT 0);
-CREATE TABLE challan_templates (
+CREATE TABLE IF NOT EXISTS challan_templates (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       party_type TEXT NOT NULL,
@@ -711,7 +711,7 @@ CREATE TABLE challan_templates (
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     , stock_size TEXT NOT NULL DEFAULT 'A4', paper_size TEXT NOT NULL DEFAULT 'A4', n_up_layout INTEGER NOT NULL DEFAULT 1);
-CREATE TABLE challan_template_mappings (
+CREATE TABLE IF NOT EXISTS challan_template_mappings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       template_id INTEGER NOT NULL REFERENCES challan_templates(id) ON DELETE CASCADE,
       field_key TEXT NOT NULL,
@@ -728,10 +728,10 @@ CREATE TABLE challan_template_mappings (
       updated_at TEXT NOT NULL, field_type TEXT NOT NULL DEFAULT 'DYNAMIC', field_value TEXT NOT NULL DEFAULT '', asset_object_key TEXT NOT NULL DEFAULT '', asset_width_px INTEGER NOT NULL DEFAULT 0, asset_height_px INTEGER NOT NULL DEFAULT 0, image_width_mm REAL NOT NULL DEFAULT 35, image_height_mm REAL NOT NULL DEFAULT 20, lock_aspect_ratio INTEGER NOT NULL DEFAULT 1, text_color TEXT NOT NULL DEFAULT 'black', max_width_mm REAL NOT NULL DEFAULT 80, width_mm REAL NOT NULL DEFAULT 80, height_mm REAL NOT NULL DEFAULT 12, min_font_size REAL NOT NULL DEFAULT 6, min_rows INTEGER NOT NULL DEFAULT 0, table_height_mm REAL NOT NULL DEFAULT 60, x_mm REAL NOT NULL DEFAULT 0, y_mm REAL NOT NULL DEFAULT 0,
       UNIQUE(template_id, field_key)
     );
-CREATE INDEX idx_challan_template_upload_sessions_sha256 ON challan_template_upload_sessions(sha256);
-CREATE INDEX idx_challan_templates_party ON challan_templates(party_type, party_id, challan_type, is_active);
-CREATE INDEX idx_challan_template_mappings_template_id ON challan_template_mappings(template_id);
-CREATE TABLE production_runs (
+CREATE INDEX IF NOT EXISTS idx_challan_template_upload_sessions_sha256 ON challan_template_upload_sessions(sha256);
+CREATE INDEX IF NOT EXISTS idx_challan_templates_party ON challan_templates(party_type, party_id, challan_type, is_active);
+CREATE INDEX IF NOT EXISTS idx_challan_template_mappings_template_id ON challan_template_mappings(template_id);
+CREATE TABLE IF NOT EXISTS production_runs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       run_code TEXT NOT NULL UNIQUE,
       status TEXT NOT NULL DEFAULT 'completed',
@@ -746,9 +746,9 @@ CREATE TABLE production_runs (
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-CREATE INDEX idx_production_runs_status ON production_runs(status, completed_at);
-CREATE INDEX idx_production_runs_item ON production_runs(item_id, variation_leaf_node_id);
-CREATE TABLE invoice_headers (
+CREATE INDEX IF NOT EXISTS idx_production_runs_status ON production_runs(status, completed_at);
+CREATE INDEX IF NOT EXISTS idx_production_runs_item ON production_runs(item_id, variation_leaf_node_id);
+CREATE TABLE IF NOT EXISTS invoice_headers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       invoice_no TEXT NOT NULL UNIQUE,
       client_id INTEGER REFERENCES clients(id),
@@ -764,7 +764,7 @@ CREATE TABLE invoice_headers (
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-CREATE TABLE invoice_lines (
+CREATE TABLE IF NOT EXISTS invoice_lines (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       invoice_id INTEGER NOT NULL REFERENCES invoice_headers(id) ON DELETE CASCADE,
       order_id INTEGER,
@@ -784,7 +784,7 @@ CREATE TABLE invoice_lines (
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-CREATE TABLE reconciliation_conversion_overrides (
+CREATE TABLE IF NOT EXISTS reconciliation_conversion_overrides (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       item_id INTEGER NOT NULL,
       variation_leaf_node_id INTEGER NOT NULL DEFAULT 0,
@@ -795,7 +795,7 @@ CREATE TABLE reconciliation_conversion_overrides (
       updated_at TEXT NOT NULL,
       UNIQUE(item_id, variation_leaf_node_id)
     );
-CREATE TABLE reconciliation_waste_audit (
+CREATE TABLE IF NOT EXISTS reconciliation_waste_audit (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       client_id INTEGER,
       client_name TEXT NOT NULL DEFAULT '',
@@ -811,13 +811,13 @@ CREATE TABLE reconciliation_waste_audit (
       source TEXT NOT NULL DEFAULT 'report_snapshot',
       created_at TEXT NOT NULL
     );
-CREATE INDEX idx_invoice_lines_invoice_id ON invoice_lines(invoice_id);
-CREATE INDEX idx_invoice_lines_challan_item ON invoice_lines(challan_item_id);
-CREATE INDEX idx_invoice_lines_order_id ON invoice_lines(order_id);
-CREATE INDEX idx_reconciliation_conversion_item ON reconciliation_conversion_overrides(item_id, variation_leaf_node_id);
-CREATE INDEX idx_reconciliation_waste_client_item ON reconciliation_waste_audit(client_id, item_id, variation_leaf_node_id);
-CREATE INDEX idx_delivery_challans_material_owner ON delivery_challans(material_owner_client_id);
-CREATE TABLE order_status_history (
+CREATE INDEX IF NOT EXISTS idx_invoice_lines_invoice_id ON invoice_lines(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_invoice_lines_challan_item ON invoice_lines(challan_item_id);
+CREATE INDEX IF NOT EXISTS idx_invoice_lines_order_id ON invoice_lines(order_id);
+CREATE INDEX IF NOT EXISTS idx_reconciliation_conversion_item ON reconciliation_conversion_overrides(item_id, variation_leaf_node_id);
+CREATE INDEX IF NOT EXISTS idx_reconciliation_waste_client_item ON reconciliation_waste_audit(client_id, item_id, variation_leaf_node_id);
+CREATE INDEX IF NOT EXISTS idx_delivery_challans_material_owner ON delivery_challans(material_owner_client_id);
+CREATE TABLE IF NOT EXISTS order_status_history (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
       previous_status TEXT,
@@ -825,22 +825,22 @@ CREATE TABLE order_status_history (
       changed_by_user_id INTEGER,
       changed_at TEXT NOT NULL
     );
-CREATE INDEX idx_order_status_history_order_id_changed_at ON order_status_history(order_id, changed_at);
-CREATE TABLE report_groups (
+CREATE INDEX IF NOT EXISTS idx_order_status_history_order_id_changed_at ON order_status_history(order_id, changed_at);
+CREATE TABLE IF NOT EXISTS report_groups (
       code TEXT PRIMARY KEY,
       label TEXT DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-CREATE TABLE delivery_challan_report_groups (
+CREATE TABLE IF NOT EXISTS delivery_challan_report_groups (
       challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
       report_group_code TEXT NOT NULL REFERENCES report_groups(code) ON DELETE CASCADE,
       created_at TEXT NOT NULL,
       PRIMARY KEY (challan_id, report_group_code)
     );
-CREATE INDEX idx_delivery_challan_report_groups_challan_id ON delivery_challan_report_groups(challan_id);
-CREATE INDEX idx_delivery_challan_report_groups_code ON delivery_challan_report_groups(report_group_code);
-CREATE TABLE machines (
+CREATE INDEX IF NOT EXISTS idx_delivery_challan_report_groups_challan_id ON delivery_challan_report_groups(challan_id);
+CREATE INDEX IF NOT EXISTS idx_delivery_challan_report_groups_code ON delivery_challan_report_groups(report_group_code);
+CREATE TABLE IF NOT EXISTS machines (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       asset_id TEXT NOT NULL UNIQUE,
@@ -855,7 +855,7 @@ CREATE TABLE machines (
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-CREATE TABLE dies (
+CREATE TABLE IF NOT EXISTS dies (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       tool_code TEXT NOT NULL UNIQUE,
       produced_part_numbers TEXT NOT NULL DEFAULT '[]',
