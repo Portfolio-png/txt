@@ -8,10 +8,11 @@ import '../providers/production_provider.dart';
 import '../providers/production_run_provider.dart';
 import '../domain/models/floor_view_models.dart';
 import '../domain/utils/stage_input_resolver.dart';
+import 'batch_train_panel.dart';
 import 'editable_metric_box.dart';
 import 'stage_reconciliation_dialog.dart';
 
-class FloorNodeTerminal extends StatelessWidget {
+class FloorNodeTerminal extends StatefulWidget {
   const FloorNodeTerminal({
     super.key,
     required this.node,
@@ -24,6 +25,13 @@ class FloorNodeTerminal extends StatelessWidget {
   final FloorOpsTokens tokens;
   final VoidCallback onClose;
   final DateTime? startedAt;
+
+  @override
+  State<FloorNodeTerminal> createState() => _FloorNodeTerminalState();
+}
+
+class _FloorNodeTerminalState extends State<FloorNodeTerminal> {
+  bool _expanded = true;
 
   String _formatDate(DateTime date) {
     final months = [
@@ -52,6 +60,8 @@ class FloorNodeTerminal extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final node = widget.node;
+    final startedAt = widget.startedAt;
     final inputName =
         node.inputItem?.itemName ??
         (node.inputs.isNotEmpty ? node.inputs.first : null);
@@ -88,159 +98,206 @@ class FloorNodeTerminal extends StatelessWidget {
         ],
       ),
       clipBehavior: Clip.hardEdge,
-      child: Stack(
-        children: [
-          if (node.status == 'active' || node.status == 'running')
-            Positioned.fill(
-              child: _ProcessingAnimationOverlay(color: node.statusColor),
-            ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+      child: SizedBox(
+        // ponytail: canvas ≈ screen here, so MediaQuery half-height is close
+        // enough without threading constraints down. Swap for a LayoutBuilder if
+        // the terminal ever lives somewhere shorter than the viewport.
+        height: _expanded ? MediaQuery.of(context).size.height * 0.5 : null,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Stack(
               children: [
-                // Section 1: Node identity
-                Expanded(
-                  flex: 3,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
+                if (node.status == 'active' || node.status == 'running')
+                  Positioned.fill(
+                    child: _ProcessingAnimationOverlay(color: node.statusColor),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 16,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Row(
-                        children: [
-                          Container(
-                            width: 10,
-                            height: 10,
-                            decoration: BoxDecoration(
-                              color: node.statusColor,
-                              shape: BoxShape.circle,
+                      // Section 1: Node identity
+                      Expanded(
+                        flex: 3,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: BoxDecoration(
+                                    color: node.statusColor,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Text(
+                                    node.name.isEmpty
+                                        ? 'Unnamed Station'
+                                        : node.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFF1E293B),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
-                              node.name.isEmpty ? 'Unnamed Station' : node.name,
+                            const SizedBox(height: 4),
+                            Text(
+                              [
+                                node.processType.isEmpty
+                                    ? 'Generic Process'
+                                    : node.processType,
+                                if (node.hasMachineAssignment)
+                                  node.machineAssignmentLabel,
+                                if (node.durationHours > 0)
+                                  '${node.durationHours}h',
+                                if (startedAt != null) _formatDate(startedAt),
+                              ].join('  •  '),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w800,
-                                color: Color(0xFF1E293B),
+                                fontSize: 12,
+                                color: Color(0xFF64748B),
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        [
-                          node.processType.isEmpty ? 'Generic Process' : node.processType,
-                          if (node.hasMachineAssignment) node.machineAssignmentLabel,
-                          if (node.durationHours > 0) '${node.durationHours}h',
-                          if (startedAt != null) _formatDate(startedAt!),
-                        ].join('  •  '),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF64748B),
-                          fontWeight: FontWeight.w500,
+                            if (inText != null || outText != null) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.science_outlined,
+                                    size: 12,
+                                    color: Color(0xFF94A3B8),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                      outText == null
+                                          ? (inText ?? '')
+                                          : '${inText ?? '—'}  →  $outText',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF475569),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
                         ),
                       ),
-                      if (inText != null || outText != null) ...[
-                        const SizedBox(height: 4),
-                        Row(
+                      // Vertical divider
+                      Container(
+                        width: 1,
+                        height: 40,
+                        color: const Color(0xFFE2E8F0),
+                        margin: const EdgeInsets.symmetric(horizontal: 16),
+                      ),
+                      // Section 2: Metrics row
+                      Expanded(
+                        flex: 7,
+                        child: Row(
                           children: [
-                            const Icon(
-                              Icons.science_outlined,
-                              size: 12,
-                              color: Color(0xFF94A3B8),
+                            _MetricBox(
+                              label: 'STATUS',
+                              value: node.status.toUpperCase(),
+                              valueColor: node.statusColor,
                             ),
-                            const SizedBox(width: 4),
-                            Flexible(
-                              child: Text(
-                                outText == null
-                                    ? (inText ?? '')
-                                    : '${inText ?? '—'}  →  $outText',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF475569),
-                                ),
-                              ),
+                            const SizedBox(width: 24),
+                            _AssignedStockMetric(node: node, flex: 2),
+                            const SizedBox(width: 24),
+                            EditableMetricBox(
+                              nodeId: node.id,
+                              metricKey: 'output',
+                              label: 'OUTPUT QTY',
+                            ),
+                            const SizedBox(width: 24),
+                            EditableMetricBox(
+                              nodeId: node.id,
+                              metricKey: 'remaining',
+                              label: 'LEFTOVER',
+                            ),
+                            const SizedBox(width: 24),
+                            EditableMetricBox(
+                              nodeId: node.id,
+                              metricKey: 'scrap',
+                              label: 'SCRAP',
                             ),
                           ],
                         ),
-                      ],
-                    ],
-                  ),
-                ),
-                // Vertical divider
-                Container(
-                  width: 1,
-                  height: 40,
-                  color: const Color(0xFFE2E8F0),
-                  margin: const EdgeInsets.symmetric(horizontal: 16),
-                ),
-                // Section 2: Metrics row
-                Expanded(
-                  flex: 7,
-                  child: Row(
-                    children: [
-                      _MetricBox(
-                        label: 'STATUS',
-                        value: node.status.toUpperCase(),
-                        valueColor: node.statusColor,
                       ),
-                      const SizedBox(width: 24),
-                      _AssignedStockMetric(node: node, flex: 2),
-                      const SizedBox(width: 24),
-                      EditableMetricBox(
-                        nodeId: node.id,
-                        metricKey: 'output',
-                        label: 'OUTPUT QTY',
-                      ),
-                      const SizedBox(width: 24),
-                      EditableMetricBox(
-                        nodeId: node.id,
-                        metricKey: 'remaining',
-                        label: 'LEFTOVER',
-                      ),
-                      const SizedBox(width: 24),
-                      EditableMetricBox(
-                        nodeId: node.id,
-                        metricKey: 'scrap',
-                        label: 'SCRAP',
+                      const SizedBox(width: 12),
+                      if (node.processType != 'Input' &&
+                          node.processType != 'Output')
+                        _StageControls(node: node),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: Color(0xFF94A3B8),
+                        ),
+                        onPressed: widget.onClose,
+                        tooltip: 'Close Panel',
+                        splashRadius: 20,
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(width: 12),
-                if (node.processType != 'Input' && node.processType != 'Output')
-                  _StageControls(node: node),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(
-                    Icons.close_rounded,
-                    color: Color(0xFF94A3B8),
-                  ),
-                  onPressed: onClose,
-                  tooltip: 'Close Panel',
-                  splashRadius: 20,
                 ),
               ],
             ),
-          ),
-        ],
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            if (_expanded)
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
+                  child: BatchTrainPanel(
+                    node: node,
+                    expanded: true,
+                    onToggle: () => setState(() => _expanded = false),
+                  ),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
+                child: BatchTrainPanel(
+                  node: node,
+                  expanded: false,
+                  onToggle: () => setState(() => _expanded = true),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
 }
 
 class _MetricBox extends StatelessWidget {
-  const _MetricBox({required this.label, required this.value, this.valueColor, this.flex = 1});
+  const _MetricBox({
+    required this.label,
+    required this.value,
+    this.valueColor,
+    this.flex = 1,
+  });
 
   final String label;
   final String value;
@@ -326,14 +383,19 @@ class _AssignedStockMetricState extends State<_AssignedStockMetric> {
           return _MetricBox(label: 'ASSIGNED', value: '...', flex: widget.flex);
         }
         final run = snapshot.data;
-        if (run == null) return _MetricBox(label: 'ASSIGNED', value: '—', flex: widget.flex);
+        if (run == null)
+          return _MetricBox(label: 'ASSIGNED', value: '—', flex: widget.flex);
         final inputs = effectiveStageInputs(
           run: run,
           node: widget.node,
           template: context.read<ProductionProvider>().template,
         );
         if (inputs.isEmpty)
-          return _MetricBox(label: 'ASSIGNED', value: 'None', flex: widget.flex);
+          return _MetricBox(
+            label: 'ASSIGNED',
+            value: 'None',
+            flex: widget.flex,
+          );
         return _MetricBox(
           label: 'ASSIGNED',
           flex: widget.flex,

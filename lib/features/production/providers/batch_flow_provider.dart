@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../production_pipelines/domain/material_batch.dart';
+import '../../production_pipelines/domain/pipeline_run.dart';
 
 /// A reversible record of one forward batch move and every side effect it
 /// caused, so any chip's last hop can be precisely undone (chip + inventory).
@@ -65,6 +66,35 @@ class BatchFlowProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Seeds a run from its persisted batches, or — first time — derives chips
+  /// from the stock assigned to each node. No-op if already seeded. Lets any
+  /// screen (not just the canvas) bring the token view up from a saved run.
+  void seedFromRun(PipelineRun run) {
+    if (_seededRuns.contains(run.id)) return;
+    if (run.batches.isNotEmpty) {
+      seedRun(run.id, run.batches);
+      return;
+    }
+    final initial = <MaterialBatch>[];
+    run.attachedBarcodeInputs.forEach((nodeId, inputs) {
+      for (final input in inputs) {
+        final qty = input.quantity ?? 0;
+        if (qty <= 0) continue;
+        initial.add(
+          MaterialBatch(
+            id: 'seed-${run.id}-$nodeId-${input.barcode}-${initial.length}',
+            barcode: input.barcode,
+            materialName: input.materialName,
+            quantity: qty,
+            unit: input.unit,
+            currentNodeId: nodeId,
+          ),
+        );
+      }
+    });
+    seedRun(run.id, initial);
+  }
+
   /// Moves [quantity] of a batch to [toNodeId]. If the quantity is less than
   /// the batch total the batch is split: the source shrinks and a new child
   /// batch lands at the target node. Moving the whole batch relocates it.
@@ -87,9 +117,11 @@ class BatchFlowProvider extends ChangeNotifier {
     final qty = quantity.clamp(0, batch.quantity).toDouble();
     if (qty <= 0) return null;
 
+    // Stamp the arrival time so the ledger can show when stock reached a stage.
+    final arrivedAt = DateTime.now();
     String resultId;
     if (qty >= batch.quantity) {
-      list[idx] = batch.copyWith(currentNodeId: toNodeId);
+      list[idx] = batch.copyWith(currentNodeId: toNodeId, createdAt: arrivedAt);
       resultId = batch.id;
     } else {
       list[idx] = batch.copyWith(quantity: batch.quantity - qty);
@@ -100,6 +132,7 @@ class BatchFlowProvider extends ChangeNotifier {
           quantity: qty,
           currentNodeId: toNodeId,
           parentBatchId: batch.id,
+          createdAt: arrivedAt,
         ),
       );
     }

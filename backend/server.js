@@ -15257,8 +15257,32 @@ async function applyInventoryMovementCore(payload, { useTransaction = true } = {
   const movementId = `mov-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
   const fromLocationId = String(payload?.fromLocationId || '').trim() || null;
   const defaultLocationId = String(material.location || '').trim() || 'MAIN';
-  const toLocationId = String(payload?.toLocationId || '').trim() || defaultLocationId;
-  const lotCode = String(payload?.lotCode || '').trim() || barcode;
+  const explicitLot = String(payload?.lotCode || '').trim();
+  let toLocationId = String(payload?.toLocationId || '').trim() || defaultLocationId;
+  let lotCode = explicitLot || barcode;
+
+  // Issuing/consuming without a caller-specified lot used to target a phantom
+  // lot==barcode bucket that's almost always empty — real stock sits under its
+  // receiving lot code. Draw from the position that actually holds stock so the
+  // assignable quantity matches what inventory shows.
+  // ponytail: picks the single fullest lot; add FIFO multi-lot consume only if a
+  // single request ever needs to span more than one lot.
+  if (!explicitLot && (movementType === 'issue' || movementType === 'consume')) {
+    const stockedPosition = await get(
+      `
+      SELECT location_id, lot_code
+      FROM inventory_stock_positions
+      WHERE material_barcode = ? AND on_hand_qty > 0
+      ORDER BY on_hand_qty DESC
+      LIMIT 1
+      `,
+      [barcode],
+    );
+    if (stockedPosition) {
+      toLocationId = stockedPosition.location_id;
+      lotCode = stockedPosition.lot_code;
+    }
+  }
   const actor = normalizeActorLabel(payload?.actor, 'Demo Admin');
   const sourceChallanId = payload?.sourceChallanId == null
     ? null

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
@@ -334,90 +335,109 @@ class _RunCard extends StatelessWidget {
           ),
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Info section
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Identity
+                    Expanded(
+                      flex: 4,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
-                            run.orderNo != null ? 'Order: ${run.orderNo}' : 'Ad-hoc Run',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: SoftErpTheme.textPrimary,
-                            ),
-                          ),
-                          if (run.clientName != null) ...[
-                            const SizedBox(width: 8),
-                            Text(
-                              '• ${run.clientName}',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: SoftErpTheme.textSecondary,
-                              ),
-                            ),
-                          ],
-                          const SizedBox(width: 12),
-                          _StatusBadge(status: run.status, isActive: isActive),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Pipeline: $templateName',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: SoftErpTheme.textPrimary,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Started: ${run.createdAt.toIso8601String().split('T').first}',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: SoftErpTheme.textSecondary,
-                        ),
-                      ),
-                      _buildTimeline(context),
-                      if (isStalled) ...[
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.amber.shade100,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
+                          Row(
                             children: [
-                              const Icon(Icons.warning_amber_rounded, size: 14, color: Colors.orange),
-                              const SizedBox(width: 6),
-                              Text(
-                                stalledMessage!,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.orange,
+                              Flexible(
+                                child: Text(
+                                  run.orderNo != null
+                                      ? 'Order: ${run.orderNo}'
+                                      : 'Ad-hoc Run',
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: SoftErpTheme.textPrimary,
+                                  ),
                                 ),
                               ),
+                              if (run.clientName != null) ...[
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Text(
+                                    '• ${run.clientName}',
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: SoftErpTheme.textSecondary,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(width: 12),
+                              _StatusBadge(status: run.status, isActive: isActive),
                             ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Pipeline: $templateName',
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: SoftErpTheme.textPrimary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      flex: 2,
+                      child: _LabeledField(
+                        label: 'Started',
+                        value: run.createdAt.toIso8601String().split('T').first,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    // Progress + flow dots fill the remaining width.
+                    Expanded(flex: 4, child: _buildTimeline(context)),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline_rounded,
+                          color: Colors.redAccent),
+                      tooltip: 'Delete production run',
+                      onPressed: onDelete,
+                    ),
+                  ],
+                ),
+                if (isStalled) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade100,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.warning_amber_rounded,
+                            size: 14, color: Colors.orange),
+                        const SizedBox(width: 6),
+                        Text(
+                          stalledMessage!,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.orange,
                           ),
                         ),
                       ],
-                    ],
+                    ),
                   ),
-                ),
-                
-                // Actions
-                IconButton(
-                  icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
-                  tooltip: 'Delete production run',
-                  onPressed: onDelete,
-                ),
+                ],
               ],
             ),
           ),
@@ -433,39 +453,148 @@ class _RunCard extends StatelessWidget {
 
     final sortedNodes = List<ProcessNode>.from(template!.nodes)
       ..sort((a, b) => a.stageIndex.compareTo(b.stageIndex));
+    final statuses = [
+      for (final n in sortedNodes)
+        run.nodeStatuses[n.id] ?? NodeRunStatus.pending,
+    ];
+    final doneCount =
+        statuses.where((s) => s == NodeRunStatus.done).length;
+    // Full names on hover so the compact dots don't lose stage info.
+    final flow = sortedNodes.map((n) => n.name).join('  ➔  ');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        const SizedBox(height: 12),
-        const Text(
-          'Pipeline Progress:',
-          style: TextStyle(
+        Row(
+          children: [
+            const Text(
+              'Pipeline Progress:',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF64748B),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '$doneCount/${statuses.length}',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF94A3B8),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Tooltip(
+          message: flow,
+          child: SizedBox(
+            height: 26,
+            width: _RunFlowPainter.inset * 2 +
+                (statuses.length - 1).clamp(0, 999) * _RunFlowPainter.gap,
+            child: CustomPaint(painter: _RunFlowPainter(statuses: statuses)),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LabeledField extends StatelessWidget {
+  const _LabeledField({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.bold,
             color: Color(0xFF64748B),
           ),
         ),
         const SizedBox(height: 6),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Row(
-            children: [
-              for (var i = 0; i < sortedNodes.length; i++) ...[
-                _RunTimelineStep(
-                  label: sortedNodes[i].name,
-                  status: run.nodeStatuses[sortedNodes[i].id] ?? NodeRunStatus.pending,
-                ),
-                if (i != sortedNodes.length - 1)
-                  _RunTimelineConnector(
-                    isComplete: (run.nodeStatuses[sortedNodes[i].id] ?? NodeRunStatus.pending) == NodeRunStatus.done,
-                  ),
-              ],
-            ],
+        Text(
+          value,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 13,
+            color: SoftErpTheme.textPrimary,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ],
     );
+  }
+}
+
+/// Compact dot-flow of a run's stages, coloured by live node status. Replaces
+/// the old full-width labelled timeline so long pipelines stay readable.
+class _RunFlowPainter extends CustomPainter {
+  const _RunFlowPainter({required this.statuses});
+
+  final List<NodeRunStatus> statuses;
+
+  static const double inset = 8.0;
+  static const double gap = 22.0;
+
+  static Color _statusColor(NodeRunStatus status) => switch (status) {
+        NodeRunStatus.done => const Color(0xFF48C7A4),
+        NodeRunStatus.active => SoftErpTheme.accent,
+        NodeRunStatus.skipped => const Color(0xFF94A3B8),
+        NodeRunStatus.pending => const Color(0xFFCBD5E1),
+      };
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (statuses.isEmpty) return;
+    final y = size.height / 2;
+    Offset dotAt(int i) => Offset(inset + gap * i, y);
+
+    // Connectors: green once the upstream stage is done, otherwise faint.
+    for (var i = 0; i < statuses.length - 1; i++) {
+      final done = statuses[i] == NodeRunStatus.done;
+      canvas.drawLine(
+        dotAt(i),
+        dotAt(i + 1),
+        Paint()
+          ..color = done ? const Color(0xFF48C7A4) : const Color(0xFFE2DFEA)
+          ..strokeWidth = 3
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+
+    final ringPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    for (var i = 0; i < statuses.length; i++) {
+      final center = dotAt(i);
+      final color = _statusColor(statuses[i]);
+      if (statuses[i] == NodeRunStatus.active) {
+        canvas.drawCircle(
+          center,
+          9,
+          Paint()..color = color.withValues(alpha: 0.22),
+        );
+      }
+      canvas.drawCircle(center, 5, Paint()..color = color);
+      canvas.drawCircle(center, 5, ringPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RunFlowPainter oldDelegate) {
+    return !listEquals(oldDelegate.statuses, statuses);
   }
 }
 
@@ -530,90 +659,3 @@ class _TemplateSelectionDialog extends StatelessWidget {
   }
 }
 
-class _RunTimelineStep extends StatelessWidget {
-  const _RunTimelineStep({
-    required this.label,
-    required this.status,
-  });
-
-  final String label;
-  final NodeRunStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = switch (status) {
-      NodeRunStatus.done => const Color(0xFF48C7A4),
-      NodeRunStatus.active => SoftErpTheme.accent,
-      NodeRunStatus.skipped => const Color(0xFF94A3B8),
-      NodeRunStatus.pending => const Color(0xFFCBD5E1),
-    };
-
-    final isComplete = status == NodeRunStatus.done;
-    final isActive = status == NodeRunStatus.active;
-    final isSkipped = status == NodeRunStatus.skipped;
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 20,
-          height: 20,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: color, width: 2),
-            color: isComplete
-                ? color
-                : isSkipped
-                    ? const Color(0xFFF1F5F9)
-                    : isActive
-                        ? Colors.white
-                        : const Color(0xFFF8FAFC),
-          ),
-          child: isComplete
-              ? const Icon(Icons.check_rounded, size: 12, color: Colors.white)
-              : isSkipped
-                  ? const Icon(Icons.redo_rounded, size: 12, color: Color(0xFF94A3B8))
-                  : Center(
-                      child: Container(
-                        width: 6,
-                        height: 6,
-                        decoration: BoxDecoration(
-                          color: isActive ? color : Colors.transparent,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-        ),
-        const SizedBox(width: 6),
-        Text(
-          label,
-          style: TextStyle(
-            color: const Color(0xFF475569),
-            fontSize: 11,
-            fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _RunTimelineConnector extends StatelessWidget {
-  const _RunTimelineConnector({required this.isComplete});
-
-  final bool isComplete;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        height: 2,
-        margin: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: BoxDecoration(
-          color: isComplete ? const Color(0xFF48C7A4) : const Color(0xFFE2DFEA),
-          borderRadius: BorderRadius.circular(99),
-        ),
-      ),
-    );
-  }
-}

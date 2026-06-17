@@ -46,6 +46,7 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
   Future<PipelineRun?>? _runFuture;
   int? _lastRefreshCount;
   String? _lastRunId;
+  bool _showBatchFlow = false;
 
   static const double nodeWidth = 160;
   static const double nodeHeight = 52;
@@ -91,7 +92,9 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
     if (runProvider.runId == null) return;
 
     try {
-      final material = await context.read<InventoryProvider>().lookupBarcode(input.barcode);
+      final material = await context.read<InventoryProvider>().lookupBarcode(
+        input.barcode,
+      );
       if (material == null) {
         if (mounted) {
           showFloorToast(
@@ -124,7 +127,7 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
       );
 
       runProvider.triggerRefresh();
-      
+
       if (mounted) {
         context.read<InventoryProvider>().refresh();
         showFloorToast(
@@ -153,17 +156,29 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Remove Assigned Stock', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        content: Text('Are you sure you want to remove barcode "${input.barcode}" from step "${node.name}"?\nThis will return the assigned quantity back to inventory.', style: const TextStyle(fontSize: 13, color: Color(0xFF475569))),
+        title: const Text(
+          'Remove Assigned Stock',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        content: Text(
+          'Are you sure you want to remove barcode "${input.barcode}" from step "${node.name}"?\nThis will return the assigned quantity back to inventory.',
+          style: const TextStyle(fontSize: 13, color: Color(0xFF475569)),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Color(0xFF64748B)),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Remove', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Remove',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -633,7 +648,9 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
           ),
         );
       }
-      if (rec.scrapLogged > 0 && rec.reconcileBarcode != null && runId != null) {
+      if (rec.scrapLogged > 0 &&
+          rec.reconcileBarcode != null &&
+          runId != null) {
         await pipelineRepo.logProductionScrap(
           runId: runId,
           nodeId: rec.fromNodeId,
@@ -657,7 +674,8 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
   Widget build(BuildContext context) {
     final runProvider = context.watch<ProductionRunProvider>();
     final batchProvider = context.watch<BatchFlowProvider>();
-    if (runProvider.refreshCount != _lastRefreshCount || runProvider.runId != _lastRunId) {
+    if (runProvider.refreshCount != _lastRefreshCount ||
+        runProvider.runId != _lastRunId) {
       _lastRefreshCount = runProvider.refreshCount;
       _lastRunId = runProvider.runId;
       final runId = runProvider.runId;
@@ -680,212 +698,260 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
         if (activeRun != null) {
           _seedBatchesIfNeeded(activeRun, batchProvider);
         }
-        final activeStockNodeId = _findActiveStockNodeId(activeRun, widget.template);
+        final activeStockNodeId = _findActiveStockNodeId(
+          activeRun,
+          widget.template,
+        );
 
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: InteractiveViewer(
-              transformationController: _controller,
-              boundaryMargin: const EdgeInsets.all(1500),
-              minScale: 0.1,
-              maxScale: 2.0,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  CustomPaint(
-                    size: const Size(4000, 4000),
-                    painter: GraphEdgesPainter(
-                      nodes: nodes,
-                      flows: flows,
-                      columnWidth: columnWidth,
-                      rowHeight: rowHeight,
-                      nodeWidth: nodeWidth,
-                      nodeHeight: nodeHeight,
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: InteractiveViewer(
+                    transformationController: _controller,
+                    boundaryMargin: const EdgeInsets.all(1500),
+                    minScale: 0.1,
+                    maxScale: 2.0,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        CustomPaint(
+                          size: const Size(4000, 4000),
+                          painter: GraphEdgesPainter(
+                            nodes: nodes,
+                            flows: flows,
+                            columnWidth: columnWidth,
+                            rowHeight: rowHeight,
+                            nodeWidth: nodeWidth,
+                            nodeHeight: nodeHeight,
+                          ),
+                        ),
+                        // Stage Labels
+                        for (int s = 0; s < stageLabels.length; s++)
+                          Positioned(
+                            left: 100 + (s * columnWidth),
+                            top: 50,
+                            width: nodeWidth,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.transparent,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(
+                                stageLabels[s].toUpperCase(),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 13,
+                                  letterSpacing: 0.5,
+                                  color: Color(0xFF64748B),
+                                ),
+                              ),
+                            ),
+                          ),
+                        // Nodes
+                        ...nodes.map((node) {
+                          final isSelected = widget.selectedNodeId == node.id;
+                          final left = 100 + (node.stageIndex * columnWidth);
+                          final top = 100 + (node.laneIndex * rowHeight);
+                          final runId = runProvider.runId;
+                          final nodeBatches = runId != null
+                              ? batchProvider.batchesAtNode(runId, node.id)
+                              : const <MaterialBatch>[];
+                          // Once a run is seeded, chips are the single source of
+                          // truth. The legacy assigned-stock card is only a fallback
+                          // for un-seeded (legacy) runs — otherwise it double-shows
+                          // stock a chip already represents.
+                          final seeded =
+                              runId != null && batchProvider.isSeeded(runId);
+                          final showBarcodeCard =
+                              !seeded &&
+                              activeStockNodeId == node.id &&
+                              nodeBatches.isEmpty;
+                          final assignedBarcodes = showBarcodeCard
+                              ? effectiveStageInputs(
+                                  run: activeRun,
+                                  node: node,
+                                  template: widget.template,
+                                )
+                              : null;
+
+                          return Positioned(
+                            left: left,
+                            top: top,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                DragTarget<Object>(
+                                  onWillAcceptWithDetails: (details) =>
+                                      details.data is MaterialRecord ||
+                                      (details.data is MaterialBatch &&
+                                          (details.data as MaterialBatch)
+                                                  .currentNodeId !=
+                                              node.id),
+                                  onAcceptWithDetails: (details) async {
+                                    final runProvider = context
+                                        .read<ProductionRunProvider>();
+                                    final runId = runProvider.runId;
+                                    if (runId == null) return;
+
+                                    // A batch chip dropped here advances stock.
+                                    if (details.data is MaterialBatch) {
+                                      await _handleBatchDrop(
+                                        node,
+                                        details.data as MaterialBatch,
+                                        batchProvider,
+                                        runId,
+                                      );
+                                      return;
+                                    }
+
+                                    final material =
+                                        details.data as MaterialRecord;
+                                    final repo = context
+                                        .read<PipelineRunRepository>();
+                                    final quantity = await showDialog<double>(
+                                      context: context,
+                                      builder: (context) =>
+                                          _StockAssignQtyDialog(
+                                            material: material,
+                                            nodeName: node.name,
+                                          ),
+                                    );
+                                    if (quantity == null) return;
+
+                                    try {
+                                      await repo.attachBarcodeToRunNode(
+                                        runId: runId,
+                                        nodeId: node.id,
+                                        barcode: material.barcode,
+                                        quantity: quantity,
+                                      );
+                                      batchProvider.addStockAtNode(
+                                        runId: runId,
+                                        nodeId: node.id,
+                                        barcode: material.barcode,
+                                        materialName: material.name,
+                                        quantity: quantity,
+                                        unit: material.unit,
+                                      );
+                                      await _persistBatches(
+                                        runId,
+                                        batchProvider,
+                                      );
+                                      runProvider.triggerRefresh();
+                                      if (context.mounted) {
+                                        context
+                                            .read<InventoryProvider>()
+                                            .refresh();
+                                        showFloorToast(
+                                          context,
+                                          'Assigned $quantity ${material.unit} of ${material.barcode} to ${node.name}',
+                                          kind: FloorToastKind.info,
+                                        );
+                                      }
+                                    } catch (e) {
+                                      if (context.mounted) {
+                                        showFloorToast(
+                                          context,
+                                          'Failed to assign stock: $e',
+                                          kind: FloorToastKind.error,
+                                        );
+                                      }
+                                    }
+                                  },
+                                  builder:
+                                      (context, candidateData, rejectedData) {
+                                        final isHovered =
+                                            candidateData.isNotEmpty;
+                                        return MouseRegion(
+                                          cursor: SystemMouseCursors.click,
+                                          child: GestureDetector(
+                                            onTap: () =>
+                                                widget.onNodeSelected(node.id),
+                                            child: Container(
+                                              foregroundDecoration: isHovered
+                                                  ? BoxDecoration(
+                                                      color: const Color(
+                                                        0xFF10B981,
+                                                      ).withValues(alpha: 0.2),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            8,
+                                                          ),
+                                                      border: Border.all(
+                                                        color: const Color(
+                                                          0xFF10B981,
+                                                        ),
+                                                        width: 2,
+                                                      ),
+                                                    )
+                                                  : null,
+                                              child: FlowStageBlock(
+                                                width: nodeWidth,
+                                                height: nodeHeight,
+                                                node:
+                                                    activeRun != null &&
+                                                        activeRun.nodeStatuses
+                                                            .containsKey(
+                                                              node.id,
+                                                            )
+                                                    ? node.copyWith(
+                                                        status: activeRun
+                                                            .nodeStatuses[node
+                                                                .id]!
+                                                            .value,
+                                                      )
+                                                    : node,
+                                                isSelected: isSelected,
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                ),
+                                if (nodeBatches.isNotEmpty) ...[
+                                  if (_showBatchFlow)
+                                    NodeBatchTray(
+                                      batches: nodeBatches,
+                                      width: nodeWidth,
+                                      onRevert: _revertBatchArrival,
+                                    ),
+                                ] else if (assignedBarcodes != null &&
+                                    assignedBarcodes.isNotEmpty)
+                                  for (final input in assignedBarcodes) ...[
+                                    const SizedBox(height: 6),
+                                    _buildAssignedStockCard(node, input),
+                                  ],
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
                     ),
                   ),
-                  // Stage Labels
-                  for (int s = 0; s < stageLabels.length; s++)
-                    Positioned(
-                      left: 100 + (s * columnWidth),
-                      top: 50,
-                      width: nodeWidth,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.transparent,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          stageLabels[s].toUpperCase(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 13,
-                            letterSpacing: 0.5,
-                            color: Color(0xFF64748B),
-                          ),
-                        ),
-                      ),
-                    ),
-                  // Nodes
-                  ...nodes.map((node) {
-                    final isSelected = widget.selectedNodeId == node.id;
-                    final left = 100 + (node.stageIndex * columnWidth);
-                    final top = 100 + (node.laneIndex * rowHeight);
-                    final runId = runProvider.runId;
-                    final nodeBatches = runId != null
-                        ? batchProvider.batchesAtNode(runId, node.id)
-                        : const <MaterialBatch>[];
-                    // Once a run is seeded, chips are the single source of
-                    // truth. The legacy assigned-stock card is only a fallback
-                    // for un-seeded (legacy) runs — otherwise it double-shows
-                    // stock a chip already represents.
-                    final seeded = runId != null && batchProvider.isSeeded(runId);
-                    final showBarcodeCard = !seeded &&
-                        activeStockNodeId == node.id &&
-                        nodeBatches.isEmpty;
-                    final assignedBarcodes = showBarcodeCard
-                        ? effectiveStageInputs(
-                            run: activeRun,
-                            node: node,
-                            template: widget.template,
-                          )
-                        : null;
-
-                    return Positioned(
-                      left: left,
-                      top: top,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          DragTarget<Object>(
-                            onWillAcceptWithDetails: (details) =>
-                                details.data is MaterialRecord ||
-                                (details.data is MaterialBatch &&
-                                    (details.data as MaterialBatch)
-                                            .currentNodeId !=
-                                        node.id),
-                            onAcceptWithDetails: (details) async {
-                              final runProvider =
-                                  context.read<ProductionRunProvider>();
-                              final runId = runProvider.runId;
-                              if (runId == null) return;
-
-                              // A batch chip dropped here advances stock.
-                              if (details.data is MaterialBatch) {
-                                await _handleBatchDrop(
-                                  node,
-                                  details.data as MaterialBatch,
-                                  batchProvider,
-                                  runId,
-                                );
-                                return;
-                              }
-
-                              final material = details.data as MaterialRecord;
-                              final repo = context.read<PipelineRunRepository>();
-                              final quantity = await showDialog<double>(
-                                  context: context,
-                                  builder: (context) => _StockAssignQtyDialog(
-                                    material: material,
-                                    nodeName: node.name,
-                                  ),
-                                );
-                                if (quantity == null) return;
-
-                                try {
-                                  await repo.attachBarcodeToRunNode(
-                                    runId: runId,
-                                    nodeId: node.id,
-                                    barcode: material.barcode,
-                                    quantity: quantity,
-                                  );
-                                  batchProvider.addStockAtNode(
-                                    runId: runId,
-                                    nodeId: node.id,
-                                    barcode: material.barcode,
-                                    materialName: material.name,
-                                    quantity: quantity,
-                                    unit: material.unit,
-                                  );
-                                  await _persistBatches(runId, batchProvider);
-                                  runProvider.triggerRefresh();
-                                  if (context.mounted) {
-                                    context.read<InventoryProvider>().refresh();
-                                    showFloorToast(
-                                      context,
-                                      'Assigned $quantity ${material.unit} of ${material.barcode} to ${node.name}',
-                                      kind: FloorToastKind.info,
-                                    );
-                                  }
-                                } catch (e) {
-                                  if (context.mounted) {
-                                    showFloorToast(
-                                      context,
-                                      'Failed to assign stock: $e',
-                                      kind: FloorToastKind.error,
-                                    );
-                                  }
-                                }
-                            },
-                            builder: (context, candidateData, rejectedData) {
-                              final isHovered = candidateData.isNotEmpty;
-                              return MouseRegion(
-                                cursor: SystemMouseCursors.click,
-                                child: GestureDetector(
-                                  onTap: () => widget.onNodeSelected(node.id),
-                                  child: Container(
-                                    foregroundDecoration: isHovered
-                                        ? BoxDecoration(
-                                            color: const Color(0xFF10B981).withValues(alpha: 0.2),
-                                            borderRadius: BorderRadius.circular(8),
-                                            border: Border.all(
-                                              color: const Color(0xFF10B981),
-                                              width: 2,
-                                            ),
-                                          )
-                                        : null,
-                                    child: FlowStageBlock(
-                                      width: nodeWidth,
-                                      height: nodeHeight,
-                                      node: activeRun != null && activeRun.nodeStatuses.containsKey(node.id)
-                                          ? node.copyWith(status: activeRun.nodeStatuses[node.id]!.value)
-                                          : node,
-                                      isSelected: isSelected,
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                          if (nodeBatches.isNotEmpty)
-                            NodeBatchTray(
-                              batches: nodeBatches,
-                              width: nodeWidth,
-                              onRevert: _revertBatchArrival,
-                            )
-                          else if (assignedBarcodes != null &&
-                              assignedBarcodes.isNotEmpty)
-                            for (final input in assignedBarcodes) ...[
-                              const SizedBox(height: 6),
-                              _buildAssignedStockCard(node, input),
-                            ],
-                        ],
-                      ),
-                    );
-                  }),
-                ],
+                ),
               ),
             ),
-          ),
+            Positioned(
+              top: 12,
+              right: 12,
+              child: _BatchFlowToggle(
+                active: _showBatchFlow,
+                onTap: () => setState(() => _showBatchFlow = !_showBatchFlow),
+              ),
+            ),
+          ],
         );
       },
     );
@@ -909,7 +975,8 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
         bool hasDonePredecessor = false;
         for (final flow in template.flows) {
           if (flow.toNodeId == node.id) {
-            final upstreamStatus = run.nodeStatuses[flow.fromNodeId]?.value ?? 'pending';
+            final upstreamStatus =
+                run.nodeStatuses[flow.fromNodeId]?.value ?? 'pending';
             if (upstreamStatus == 'done') {
               hasDonePredecessor = true;
               break;
@@ -952,11 +1019,55 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
   }
 }
 
+/// Canvas overlay pill that shows/hides the per-node batch trays. Off by
+/// default so the canvas stays clean until the engineer wants the batch view.
+class _BatchFlowToggle extends StatelessWidget {
+  const _BatchFlowToggle({required this.active, required this.onTap});
+
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = const Color(0xFF4F46E5);
+    return Material(
+      color: active ? accent : Colors.white,
+      borderRadius: BorderRadius.circular(999),
+      elevation: 1.5,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Batch flow',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: active ? Colors.white : const Color(0xFF475569),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                active
+                    ? Icons.keyboard_arrow_up_rounded
+                    : Icons.keyboard_arrow_down_rounded,
+                size: 17,
+                color: active ? Colors.white : const Color(0xFF64748B),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _StockAssignQtyDialog extends StatefulWidget {
-  const _StockAssignQtyDialog({
-    required this.material,
-    required this.nodeName,
-  });
+  const _StockAssignQtyDialog({required this.material, required this.nodeName});
 
   final MaterialRecord material;
   final String nodeName;
@@ -972,7 +1083,9 @@ class _StockAssignQtyDialogState extends State<_StockAssignQtyDialog> {
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController(text: widget.material.onHand.toString());
+    _controller = TextEditingController(
+      text: widget.material.onHand.toString(),
+    );
   }
 
   @override
@@ -997,7 +1110,8 @@ class _StockAssignQtyDialogState extends State<_StockAssignQtyDialog> {
     }
     if (value > widget.material.onHand) {
       setState(() {
-        _errorText = 'Cannot exceed available stock (${widget.material.onHand})';
+        _errorText =
+            'Cannot exceed available stock (${widget.material.onHand})';
       });
       return;
     }
@@ -1080,7 +1194,9 @@ class _StockAssignQtyDialogState extends State<_StockAssignQtyDialog> {
             const SizedBox(height: 16),
             TextField(
               controller: _controller,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               autofocus: true,
               style: const TextStyle(
                 fontSize: 15,
@@ -1089,18 +1205,30 @@ class _StockAssignQtyDialogState extends State<_StockAssignQtyDialog> {
               ),
               decoration: InputDecoration(
                 labelText: 'Quantity to Assign',
-                labelStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                labelStyle: const TextStyle(
+                  color: Color(0xFF64748B),
+                  fontSize: 13,
+                ),
                 errorText: _errorText,
                 suffixText: widget.material.unit,
-                suffixStyle: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                suffixStyle: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF64748B),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
                   borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: Color(0xFF2563EB), width: 2),
+                  borderSide: const BorderSide(
+                    color: Color(0xFF2563EB),
+                    width: 2,
+                  ),
                 ),
               ),
               onSubmitted: (_) => _submit(),
@@ -1112,8 +1240,13 @@ class _StockAssignQtyDialogState extends State<_StockAssignQtyDialog> {
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(),
                   style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                   child: const Text(
                     'Cancel',
@@ -1130,16 +1263,18 @@ class _StockAssignQtyDialogState extends State<_StockAssignQtyDialog> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF2563EB),
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 10,
+                    ),
                     elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                   child: const Text(
                     'Assign',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
                   ),
                 ),
               ],
@@ -1173,7 +1308,9 @@ class _StockEditQtyDialogState extends State<_StockEditQtyDialog> {
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController(text: widget.currentQuantity.toString());
+    _controller = TextEditingController(
+      text: widget.currentQuantity.toString(),
+    );
   }
 
   @override
@@ -1283,7 +1420,9 @@ class _StockEditQtyDialogState extends State<_StockEditQtyDialog> {
             const SizedBox(height: 16),
             TextField(
               controller: _controller,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               autofocus: true,
               style: const TextStyle(
                 fontSize: 15,
@@ -1292,18 +1431,30 @@ class _StockEditQtyDialogState extends State<_StockEditQtyDialog> {
               ),
               decoration: InputDecoration(
                 labelText: 'Quantity',
-                labelStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                labelStyle: const TextStyle(
+                  color: Color(0xFF64748B),
+                  fontSize: 13,
+                ),
                 errorText: _errorText,
                 suffixText: widget.material.unit,
-                suffixStyle: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                suffixStyle: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF64748B),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
                   borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: Color(0xFF2563EB), width: 2),
+                  borderSide: const BorderSide(
+                    color: Color(0xFF2563EB),
+                    width: 2,
+                  ),
                 ),
               ),
               onSubmitted: (_) => _submit(),
@@ -1315,8 +1466,13 @@ class _StockEditQtyDialogState extends State<_StockEditQtyDialog> {
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(),
                   style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                   child: const Text(
                     'Cancel',
@@ -1333,16 +1489,18 @@ class _StockEditQtyDialogState extends State<_StockEditQtyDialog> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF2563EB),
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 10,
+                    ),
                     elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                   child: const Text(
                     'Update',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
                   ),
                 ),
               ],
@@ -1379,19 +1537,12 @@ class _TinyIconButton extends StatelessWidget {
             color: const Color(0xFFF1F5F9),
             borderRadius: BorderRadius.circular(4),
           ),
-          child: Icon(
-            icon,
-            size: 12,
-            color: color,
-          ),
+          child: Icon(icon, size: 12, color: color),
         ),
       ),
     );
     if (tooltip != null) {
-      button = Tooltip(
-        message: tooltip!,
-        child: button,
-      );
+      button = Tooltip(message: tooltip!, child: button);
     }
     return button;
   }

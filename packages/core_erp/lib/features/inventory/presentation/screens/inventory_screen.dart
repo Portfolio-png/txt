@@ -165,6 +165,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   int? _activeGroupIdFilter;
   int? _activeSetIdFilter;
   _InventoryListingMode _listingMode = _InventoryListingMode.recentFirst;
+  bool _cardView = false;
   String? _supplierFilter;
   String? _typeFilter;
   String? _kindFilter;
@@ -415,6 +416,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
                             _listingMode = value;
                           });
                         },
+                        showCardToggle: _viewMode == _InventoryViewMode.items,
+                        cardView: _cardView,
+                        onCardViewChanged: (value) {
+                          setState(() {
+                            _cardView = value;
+                          });
+                        },
                       ),
                       if (selectedRecords.isNotEmpty) ...[
                         const SizedBox(height: 12),
@@ -440,6 +448,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
                       Expanded(
                         child: _viewMode == _InventoryViewMode.jobWork
                             ? const _JobWorkStockTable()
+                            : (_viewMode == _InventoryViewMode.items &&
+                                  _cardView)
+                            ? _InventoryCardGrid(
+                                rows: rows,
+                                onOpenDetails: _openDetails,
+                              )
                             : _InventoryTable(
                                 rows: rows,
                                 viewMode: _viewMode,
@@ -3106,6 +3120,9 @@ class _InventoryControlsRow extends StatelessWidget {
     required this.onSelectAllFiltered,
     required this.onClearFilters,
     required this.onListingModeChanged,
+    this.showCardToggle = false,
+    this.cardView = false,
+    this.onCardViewChanged,
   });
 
   final String? supplierFilter;
@@ -3123,6 +3140,9 @@ class _InventoryControlsRow extends StatelessWidget {
   final VoidCallback onSelectAllFiltered;
   final VoidCallback onClearFilters;
   final ValueChanged<_InventoryListingMode> onListingModeChanged;
+  final bool showCardToggle;
+  final bool cardView;
+  final ValueChanged<bool>? onCardViewChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -3172,6 +3192,13 @@ class _InventoryControlsRow extends StatelessWidget {
     );
 
     final trailingActions = <Widget>[
+      if (showCardToggle)
+        _ActionChip(
+          label: cardView ? 'Cards' : 'List',
+          icon: cardView ? Icons.grid_view_rounded : Icons.view_list_rounded,
+          isActive: cardView,
+          onTap: () => onCardViewChanged?.call(!cardView),
+        ),
       if (selectedCount > 0) ...[
         Text(
           '$selectedCount Selected',
@@ -3712,6 +3739,314 @@ class _InventoryActiveSetFilterBar extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Card/grid layout for the items view — a lighter alternative to the table.
+class _InventoryCardGrid extends StatelessWidget {
+  const _InventoryCardGrid({required this.rows, required this.onOpenDetails});
+
+  final List<_InventoryRowEntry> rows;
+  final ValueChanged<MaterialRecord> onOpenDetails;
+
+  @override
+  Widget build(BuildContext context) {
+    if (rows.isEmpty) {
+      return const AppEmptyState(
+        title: 'No materials found',
+        message:
+            'Try a different search or filter, or create a new inventory group to populate this workspace.',
+        icon: Icons.inventory_2_outlined,
+      );
+    }
+    return GridView.builder(
+      padding: EdgeInsets.zero,
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 320,
+        mainAxisExtent: 158,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+      ),
+      itemCount: rows.length,
+      itemBuilder: (context, index) {
+        final entry = rows[index];
+        return _InventoryItemCard(
+          entry: entry,
+          onTap: () => onOpenDetails(entry.record),
+        );
+      },
+    );
+  }
+}
+
+class _InventoryItemCard extends StatefulWidget {
+  const _InventoryItemCard({required this.entry, required this.onTap});
+
+  final _InventoryRowEntry entry;
+  final VoidCallback onTap;
+
+  @override
+  State<_InventoryItemCard> createState() => _InventoryItemCardState();
+}
+
+class _InventoryItemCardState extends State<_InventoryItemCard> {
+  bool _requestedAssets = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _ensureAssetsLoaded();
+    });
+  }
+
+  // The image lives on the linked item, fetched lazily once per visible card.
+  void _ensureAssetsLoaded() {
+    final itemId = widget.entry.record.linkedItemId;
+    if (itemId == null || _requestedAssets) return;
+    final provider = context.read<ItemsProvider>();
+    if (provider.assetsForItem(itemId).isNotEmpty) return;
+    _requestedAssets = true;
+    provider.loadItemAssets(itemId);
+  }
+
+  ({Color bg, Color border, Color text, String label}) _status(
+    MaterialRecord r,
+  ) {
+    if (!r.hasBeenScanned) {
+      return (
+        bg: SoftErpTheme.warningBg,
+        border: const Color(0xFFE9C99A),
+        text: SoftErpTheme.warningText,
+        label: 'Awaiting Scan',
+      );
+    }
+    switch (r.workflowStatus) {
+      case 'completed':
+        return (
+          bg: SoftErpTheme.successBg,
+          border: const Color(0xFFA3EBCB),
+          text: SoftErpTheme.successText,
+          label: 'Completed',
+        );
+      case 'inProgress':
+        return (
+          bg: SoftErpTheme.infoBg,
+          border: const Color(0xFFA8C3FF),
+          text: SoftErpTheme.infoText,
+          label: 'In Progress',
+        );
+      default:
+        return (
+          bg: SoftErpTheme.warningBg,
+          border: const Color(0xFFE9C99A),
+          text: SoftErpTheme.warningText,
+          label: 'Not Started',
+        );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final record = widget.entry.record;
+    final title = widget.entry.displayName ?? record.name;
+    final id = widget.entry.displayId ?? record.barcode;
+    final stock = record.displayStock.trim().isNotEmpty
+        ? record.displayStock
+        : '${record.onHand} ${record.unit}'.trim();
+    final scheme = _status(record);
+    final metaParts = [
+      if (record.supplier.trim().isNotEmpty) record.supplier.trim(),
+      if (record.location.trim().isNotEmpty) record.location.trim(),
+    ];
+
+    final itemId = record.linkedItemId;
+    final imageUrl = context.select<ItemsProvider, String?>((provider) {
+      if (itemId == null) return null;
+      final assets = provider.assetsForItem(itemId);
+      final asset =
+          assets.where((a) => a.isPrimary).firstOrNull ?? assets.firstOrNull;
+      return asset?.readUrl?.toString();
+    });
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: widget.onTap,
+        borderRadius: BorderRadius.circular(14),
+        hoverColor: _inventoryHoverColor,
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: SoftErpTheme.cardSurface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: SoftErpTheme.border),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(width: 76, child: _Thumb(url: imageUrl)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: _inventoryManropeStyle(
+                              color: SoftErpTheme.textPrimary,
+                              size: 14,
+                              weight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: scheme.bg,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: scheme.border),
+                          ),
+                          child: Text(
+                            scheme.label,
+                            style: TextStyle(
+                              color: scheme.text,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      id,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _inventorySegoeStyle(
+                        color: SoftErpTheme.textSecondary,
+                        size: 11,
+                        weight: FontWeight.w500,
+                      ),
+                    ),
+                    const Spacer(),
+                    if (record.linkedPipelineCount > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF3C7),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: const Color(0xFFFBBF24)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.account_tree_rounded,
+                                size: 11,
+                                color: Color(0xFF78350F),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                record.linkedPipelineCount > 1
+                                    ? 'In ${record.linkedPipelineCount} pipelines'
+                                    : 'In pipeline',
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF78350F),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            stock,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: _inventoryManropeStyle(
+                              color: SoftErpTheme.textPrimary,
+                              size: 17,
+                              weight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        if (metaParts.isNotEmpty)
+                          Flexible(
+                            child: Text(
+                              metaParts.join(' • '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.right,
+                              style: _inventorySegoeStyle(
+                                color: SoftErpTheme.textSecondary,
+                                size: 11,
+                                weight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Square thumbnail for an inventory card — the linked item's image, or a
+/// neutral placeholder when there's no image.
+class _Thumb extends StatelessWidget {
+  const _Thumb({required this.url});
+
+  final String? url;
+
+  @override
+  Widget build(BuildContext context) {
+    final placeholder = ColoredBox(
+      color: const Color(0xFFF1F5F9),
+      child: const Center(
+        child: Icon(
+          Icons.inventory_2_outlined,
+          size: 26,
+          color: Color(0xFFCBD5E1),
+        ),
+      ),
+    );
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: (url == null || url!.isEmpty)
+          ? placeholder
+          : Image.network(
+              url!,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => placeholder,
+            ),
     );
   }
 }
@@ -4650,6 +4985,53 @@ class _InventoryNameCell extends StatelessWidget {
                           ),
                         ),
                       ),
+                      // Mirror the production sidebar's yellow "in pipeline"
+                      // headband so committed stock is obvious from inventory too.
+                      if (record.linkedPipelineCount > 0) ...[
+                        const SizedBox(width: 8),
+                        Tooltip(
+                          message: record.linkedPipelineCount > 1
+                              ? 'Assigned to ${record.linkedPipelineCount} production pipelines'
+                              : 'Assigned to a production pipeline',
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFEF3C7),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: const Color(0xFFFBBF24),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.account_tree_rounded,
+                                  size: 11,
+                                  color: Color(0xFF78350F),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  record.linkedPipelineCount > 1
+                                      ? 'In ${record.linkedPipelineCount} pipelines'
+                                      : 'In pipeline',
+                                  style: _inventorySegoeStyle(
+                                    color: const Color(0xFF78350F),
+                                    size: math.max(
+                                      10,
+                                      metrics.bodyFontSize - 4,
+                                    ),
+                                    weight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                       if (entry.directItemCount != null) ...[
                         const SizedBox(width: 8),
                         Container(
@@ -7026,7 +7408,11 @@ class _LinkGroupSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final groups = context.watch<GroupsProvider>().itemGroups.where((g) => !g.isArchived).toList(growable: false);
+    final groups = context
+        .watch<GroupsProvider>()
+        .itemGroups
+        .where((g) => !g.isArchived)
+        .toList(growable: false);
     final provider = context.watch<InventoryProvider>();
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -7251,7 +7637,11 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<InventoryProvider>();
-    final groups = context.watch<GroupsProvider>().itemGroups.where((g) => !g.isArchived).toList(growable: false);
+    final groups = context
+        .watch<GroupsProvider>()
+        .itemGroups
+        .where((g) => !g.isArchived)
+        .toList(growable: false);
     final units = context.watch<UnitsProvider>().activeUnits;
     final items = context
         .watch<ItemsProvider>()
@@ -8359,7 +8749,11 @@ class _InventoryCreateGroupEditorState
   @override
   Widget build(BuildContext context) {
     final inventory = context.watch<InventoryProvider>();
-    final groups = context.watch<GroupsProvider>().itemGroups.where((g) => !g.isArchived).toList(growable: false);
+    final groups = context
+        .watch<GroupsProvider>()
+        .itemGroups
+        .where((g) => !g.isArchived)
+        .toList(growable: false);
     final items = context.watch<ItemsProvider>().items.toList(growable: false);
     final unitGroups =
         context
