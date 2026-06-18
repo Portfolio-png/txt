@@ -2082,25 +2082,40 @@ function buildSeedTemplates() {
   ];
 }
 
+// Repairs dangling `groups_old_migration` references left in other objects'
+// schema (e.g. child-table foreign keys) when an older groups migration renamed
+// the table. `groups_old_migration` is a migration-only temp name, so rewriting
+// it back to `groups` anywhere it appears is always safe. Covers every object
+// type, not just tables.
+async function repairGroupsOldMigrationRefs() {
+  try {
+    const broken = await all(
+      "SELECT name FROM sqlite_master WHERE sql LIKE '%groups_old_migration%' AND name != 'groups_old_migration'",
+    );
+    if (broken.length === 0) return;
+    console.log(
+      'Repairing dangling groups_old_migration references in:',
+      broken.map((b) => b.name).join(', '),
+    );
+    await run('PRAGMA writable_schema = ON');
+    await run(
+      "UPDATE sqlite_master SET sql = replace(sql, 'groups_old_migration', 'groups') WHERE sql LIKE '%groups_old_migration%' AND name != 'groups_old_migration'",
+    );
+    await run('PRAGMA writable_schema = OFF');
+    const { schema_version } = await get('PRAGMA schema_version');
+    await run(`PRAGMA schema_version = ${schema_version + 1}`);
+    console.log('Repaired groups_old_migration references.');
+  } catch (err) {
+    await run('PRAGMA writable_schema = OFF').catch(() => {});
+    console.error('Failed to repair groups_old_migration references:', err);
+  }
+}
+
 async function initDb() {
   await enableForeignKeys();
 
-  // Fix broken foreign key references caused by previous groups_old_migration rename
-  try {
-    const brokenTables = await all("SELECT name FROM sqlite_master WHERE sql LIKE '%groups_old_migration%' AND type='table'");
-    if (brokenTables.length > 0) {
-      console.log('Fixing broken foreign key references from groups_old_migration...');
-      await run('PRAGMA writable_schema = ON');
-      await run("UPDATE sqlite_master SET sql = replace(sql, 'groups_old_migration', 'groups') WHERE sql LIKE '%groups_old_migration%' AND type='table'");
-      await run('PRAGMA writable_schema = OFF');
-      
-      const { schema_version } = await get('PRAGMA schema_version');
-      await run(`PRAGMA schema_version = ${schema_version + 1}`);
-      console.log('Fixed broken foreign keys successfully.');
-    }
-  } catch (err) {
-    console.error('Failed to fix groups_old_migration references:', err);
-  }
+  // Heal any DB already broken by a prior rename-based groups migration.
+  await repairGroupsOldMigrationRefs();
 
   // Cleanup legacy "Material Transform" labels
   try {
@@ -2180,6 +2195,10 @@ async function initDb() {
     if (unitIdCol && unitIdCol.notnull === 1) {
       console.log('Migrating groups table to remove NOT NULL constraint on unit_id...');
       await run('PRAGMA foreign_keys = OFF');
+      // legacy_alter_table = ON stops the RENAME from rewriting other tables'
+      // FK references to `groups` into `groups_old_migration` (which would
+      // dangle once the temp table is dropped).
+      await run('PRAGMA legacy_alter_table = ON');
       await run('BEGIN TRANSACTION');
       await run('ALTER TABLE groups RENAME TO groups_old_migration');
       await run(`
@@ -2197,14 +2216,21 @@ async function initDb() {
       await run('INSERT INTO groups (id, name, parent_group_id, unit_id, is_archived, created_at, updated_at) SELECT id, name, parent_group_id, unit_id, is_archived, created_at, updated_at FROM groups_old_migration');
       await run('DROP TABLE groups_old_migration');
       await run('COMMIT');
+      await run('PRAGMA legacy_alter_table = OFF');
       await run('PRAGMA foreign_keys = ON');
       console.log('Successfully migrated groups table.');
     }
   } catch (err) {
     await run('ROLLBACK').catch(() => {});
+    await run('PRAGMA legacy_alter_table = OFF').catch(() => {});
     await run('PRAGMA foreign_keys = ON');
     console.error('Migration failed:', err);
   }
+
+  // Re-run the repair: heals any references this run's migration may have left
+  // dangling (older DBs broken before the legacy_alter_table guard), so the
+  // fix takes effect immediately instead of after the next restart.
+  await repairGroupsOldMigrationRefs();
 
   await run(`
     CREATE TABLE IF NOT EXISTS materials (
