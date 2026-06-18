@@ -356,11 +356,11 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
     }
   }
 
-  /// The double-click popout that floats above a stage. Rendered as a
-  /// zero-height overflow child so it sits above the node without pushing the
-  /// stage block down. First shows the action circles (start / mark done /
-  /// skip); "mark done" escalates to the reconcile panel.
-  Widget _popoutAbove(
+  /// Builds the double-click popout content: first the action circles (start /
+  /// mark done / skip, or batch actions), then the reconcile panel on "mark
+  /// done". Rendered as a real overlay (see [_popoutOverlay]) so it's
+  /// hit-testable — content above a zero-height/zoomed box can't receive taps.
+  Widget _popoutContent(
     ProcessNode node,
     ProductionRunProvider runProvider,
     BatchFlowProvider batchProvider,
@@ -398,32 +398,67 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
               },
             ),
           )
-        : _StageActionCircles(
-            onStart: () {
-              _setNodeStatus(node, NodeRunStatus.active);
-              runProvider.closePopout();
-            },
-            onMarkDone: runProvider.showReconcile,
-            onSkip: () {
-              _setNodeStatus(node, NodeRunStatus.skipped);
-              runProvider.closePopout();
-            },
-            onClose: runProvider.closePopout,
-          );
+        : (batch != null
+              ? _BatchActionCircles(
+                  label: '${fmtQty(batch.quantity)}'
+                      '${batch.unit != null && batch.unit!.isNotEmpty ? ' ${batch.unit}' : ''}',
+                  onReconcile: runProvider.showReconcile,
+                  onRevert: () {
+                    runProvider.closePopout();
+                    _revertBatchArrival(batch);
+                  },
+                  onClose: runProvider.closePopout,
+                )
+              : _StageActionCircles(
+                  onStart: () {
+                    _setNodeStatus(node, NodeRunStatus.active);
+                    runProvider.closePopout();
+                  },
+                  onMarkDone: runProvider.showReconcile,
+                  onSkip: () {
+                    _setNodeStatus(node, NodeRunStatus.skipped);
+                    runProvider.closePopout();
+                  },
+                  onClose: runProvider.closePopout,
+                ));
 
-    return SizedBox(
-      width: nodeWidth,
-      height: 0,
-      child: OverflowBox(
-        minWidth: 0,
-        maxWidth: isReconcile ? 320 : 240,
-        minHeight: 0,
-        maxHeight: 460,
-        alignment: Alignment.bottomCenter,
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: content,
-        ),
+    return content;
+  }
+
+  /// Hit-testable popout overlay anchored directly above its stage. Lives
+  /// outside the InteractiveViewer (so taps land and it isn't scaled by zoom),
+  /// but its screen position is derived by running the stage's canvas
+  /// coordinates through the viewer's current transform so it tracks the column.
+  Widget _popoutOverlay(
+    ProductionRunProvider runProvider,
+    BatchFlowProvider batchProvider,
+  ) {
+    final nodeId = runProvider.popoutNodeId;
+    if (nodeId == null) return const SizedBox.shrink();
+    ProcessNode? found;
+    for (final n in widget.template.nodes) {
+      if (n.id == nodeId) {
+        found = n;
+        break;
+      }
+    }
+    if (found == null) return const SizedBox.shrink();
+    final node = found;
+
+    // Top-centre of the stage block in canvas coordinates → viewport pixels.
+    final canvasPoint = Offset(
+      100 + (node.stageIndex * columnWidth) + (nodeWidth / 2),
+      100 + (node.laneIndex * rowHeight),
+    );
+    final p = MatrixUtils.transformPoint(_controller.value, canvasPoint);
+
+    return Positioned(
+      left: p.dx,
+      top: p.dy - 12,
+      child: FractionalTranslation(
+        // Centre horizontally on the column and sit just above the stage.
+        translation: const Offset(-0.5, -1.0),
+        child: _popoutContent(node, runProvider, batchProvider),
       ),
     );
   }
@@ -827,7 +862,9 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
                         .toList(),
             ),
             Expanded(
-              child: DecoratedBox(
+              child: Stack(
+                children: [
+                  DecoratedBox(
                 decoration: BoxDecoration(
                   color: const Color(0xFFF8FAFC),
                   borderRadius: BorderRadius.circular(16),
@@ -913,15 +950,6 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                // Double-click pops the action circles above
-                                // this stage (mirrors the batch tray below);
-                                // "mark done" escalates to the reconcile panel.
-                                if (runProvider.popoutNodeId == node.id)
-                                  _popoutAbove(
-                                    node,
-                                    runProvider,
-                                    batchProvider,
-                                  ),
                                 DragTarget<Object>(
                                   onWillAcceptWithDetails: (details) =>
                                       details.data is MaterialRecord ||
@@ -1076,6 +1104,9 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
                     ),
                   ),
                 ),
+              ),
+                  _popoutOverlay(runProvider, batchProvider),
+                ],
               ),
             ),
           ],
@@ -2127,6 +2158,98 @@ class _StageActionCircles extends StatelessWidget {
       message: tooltip,
       child: Material(
         color: color.withValues(alpha: 0.12),
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: SizedBox(
+            width: size,
+            height: size,
+            child: Icon(icon, color: color, size: size * 0.55),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Batch-flavored popout (blue, with the batch qty) so it reads clearly as a
+/// per-batch action vs the stage circles: reconcile this batch • revert move.
+class _BatchActionCircles extends StatelessWidget {
+  const _BatchActionCircles({
+    required this.label,
+    required this.onReconcile,
+    required this.onRevert,
+    required this.onClose,
+  });
+
+  final String label;
+  final VoidCallback onReconcile;
+  final VoidCallback onRevert;
+  final VoidCallback onClose;
+
+  static const Color _blue = Color(0xFF2563EB);
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFEFF4FF),
+      elevation: 3,
+      borderRadius: BorderRadius.circular(40),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.inventory_2_rounded, size: 16, color: _blue),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: _blue,
+              ),
+            ),
+            const SizedBox(width: 10),
+            _circle(
+              Icons.fact_check_rounded,
+              _blue,
+              'Reconcile batch',
+              onReconcile,
+            ),
+            const SizedBox(width: 8),
+            _circle(
+              Icons.undo_rounded,
+              const Color(0xFFD97706),
+              'Revert last move',
+              onRevert,
+            ),
+            const SizedBox(width: 4),
+            _circle(
+              Icons.close_rounded,
+              const Color(0xFF94A3B8),
+              'Close',
+              onClose,
+              size: 30,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _circle(
+    IconData icon,
+    Color color,
+    String tooltip,
+    VoidCallback onTap, {
+    double size = 40,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.white,
         shape: const CircleBorder(),
         child: InkWell(
           customBorder: const CircleBorder(),
