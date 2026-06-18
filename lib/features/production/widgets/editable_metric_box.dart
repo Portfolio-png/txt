@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:provider/provider.dart';
 import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
 import '../providers/production_run_provider.dart';
@@ -63,7 +64,7 @@ class _EditableMetricBoxState extends State<EditableMetricBox> {
           }
         } catch (e) {
           if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: \$e')));
+            showAppSnack(SnackBar(content: Text('Error: \$e')));
           }
         }
       }

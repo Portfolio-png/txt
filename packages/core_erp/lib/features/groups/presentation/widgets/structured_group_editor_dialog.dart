@@ -977,7 +977,7 @@ class _StructuredGroupEditorDialogState
       return;
     }
     if (_selectedUnitId == null && widget.groupType != 'machine') {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnack(
         const SnackBar(content: Text('Select a group unit before saving.')),
       );
       return;

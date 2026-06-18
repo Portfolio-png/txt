@@ -1,4 +1,5 @@
 import 'package:excel/excel.dart' as xls;
+import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
@@ -1081,9 +1082,7 @@ class _ClientReportGeneratorDialogState
   }
 
   void _showSnack(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showAppSnack(SnackBar(content: Text(message)));
   }
 
   String _selectedReportGroupCode() {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:flutter/services.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
 import 'package:core_erp/core/widgets/searchable_select.dart';
@@ -1467,9 +1468,7 @@ class _QuickItemCreateDialogState extends State<_QuickItemCreateDialog> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to create item: $e')));
+        showAppSnack(SnackBar(content: Text('Failed to create item: $e')));
         setState(() => _isLoading = false);
       }
     }

@@ -1446,7 +1446,7 @@ class _OrderDataRowState extends State<_OrderDataRow> {
       return;
     }
     setState(() => _updatingLifecycle = false);
-    ScaffoldMessenger.of(context).showSnackBar(
+    showAppSnack(
       SnackBar(content: Text('${action.label} applied to ${group.orderNo}.')),
     );
   }
@@ -2561,9 +2561,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
   }
 
   void _handlePrintOrder() {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Print order coming soon')));
+    showAppSnack(const SnackBar(content: Text('Print order coming soon')));
   }
 
   Future<void> _loadRecentPoFiles() async {
@@ -2596,15 +2594,13 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(error.toString())));
+      showAppSnack(SnackBar(content: Text(error.toString())));
     }
   }
 
   void _addCachedPoFile(CachedPoFile file) {
     if (_poDocuments.any((document) => document.sha256 == file.sha256)) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnack(
         const SnackBar(content: Text('This PO is already selected.')),
       );
       return;
@@ -2705,9 +2701,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       if (!mounted) {
         return null;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('PO upload failed: $error')));
+      showAppSnack(SnackBar(content: Text('PO upload failed: $error')));
       return null;
     } finally {
       if (mounted) {
@@ -3513,11 +3507,10 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     String query = '',
   }) async {
     final line = _lines[lineIndex];
-    final messenger = ScaffoldMessenger.of(context);
     final itemsProvider = context.read<ItemsProvider>();
     final item = _selectedItemForLine(items, line.selectedItemId);
     if (item == null) {
-      messenger.showSnackBar(
+      showAppSnack(
         const SnackBar(
           content: Text('Choose the item first. Then add its unit conversion.'),
         ),
@@ -3528,7 +3521,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     final unitsProvider = context.read<UnitsProvider>();
     var addableUnits = _addableUnitsForItem(item, unitsProvider.activeUnits);
     if (addableUnits.isEmpty) {
-      messenger.showSnackBar(
+      showAppSnack(
         SnackBar(
           content: Text(
             'All active units are already available for ${item.displayName}.',
@@ -3572,7 +3565,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       return null;
     }
     if (updated == null) {
-      messenger.showSnackBar(
+      showAppSnack(
         SnackBar(
           content: Text(
             itemsProvider.errorMessage ??
@@ -3593,7 +3586,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
         leaf: _selectedLeafForLine(updated, line.selectedVariationLeafId),
       );
     });
-    messenger.showSnackBar(
+    showAppSnack(
       SnackBar(
         content: Text(
           '${result.unit.displayLabel} is now available for ${updated.displayName}.',
@@ -3688,7 +3681,6 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     required String valueName,
   }) async {
     final itemsProvider = context.read<ItemsProvider>();
-    final messenger = ScaffoldMessenger.of(context);
     final result = await itemsProvider.appendVariationValue(
       itemId: item.id,
       propertyNodeId: propertyNodeId,
@@ -3700,10 +3692,10 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     if (result == null) {
       final message =
           itemsProvider.errorMessage ?? 'Unable to create variation.';
-      messenger.showSnackBar(SnackBar(content: Text(message)));
+      showAppSnack(SnackBar(content: Text(message)));
       return null;
     }
-    messenger.showSnackBar(
+    showAppSnack(
       SnackBar(
         content: Text('Variation "$valueName" added to $propertyLabel.'),
       ),
@@ -3767,7 +3759,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
   Future<void> _showGlobalItemHistoryDialog(int lineIndex) async {
     if (_selectedClientId == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnack(
           const SnackBar(content: Text('Please select a client first.')),
         );
       }
@@ -3792,7 +3784,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
 
     if (uniqueVariations.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnack(
           const SnackBar(content: Text('No previous item history found.')),
         );
       }
@@ -3853,7 +3845,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     final selectedClient = _selectedClient(clients);
     final isDraft = statusOverride == OrderStatus.draft;
     if (selectedClient == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnack(
         const SnackBar(content: Text('Select a client before saving.')),
       );
       return;
@@ -3880,7 +3872,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
           line.variationPathError =
               'This item has no orderable variants yet. Add leaf values in Masters → Items.';
         });
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnack(
           const SnackBar(
             content: Text(
               'One or more items have an incomplete variation tree. Add leaf variants before ordering.',
@@ -3909,7 +3901,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
               ? 'Select an item first.'
               : 'Select a complete variation path.';
         });
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnack(
           SnackBar(
             content: Text(
               index == 0
@@ -3923,7 +3915,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
 
       final selectedUnit = _selectedUnitForLine(line, item, activeUnits);
       if (selectedUnit == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnack(
           SnackBar(
             content: Text(
               index == 0
@@ -5006,7 +4998,7 @@ class _OrderLifecycleEditorSheetState
     }
 
     if (result != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnack(
         const SnackBar(content: Text('Order updated successfully.')),
       );
       Navigator.of(context).pop();
@@ -5016,9 +5008,7 @@ class _OrderLifecycleEditorSheetState
     final message =
         context.read<OrdersProvider>().errorMessage ??
         'Unable to update order. Please try again.';
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showAppSnack(SnackBar(content: Text(message)));
   }
 
   Future<void> _pickDate(
@@ -6342,7 +6332,7 @@ class _OrderPoDocumentTile extends StatelessWidget {
         if (!context.mounted) {
           return;
         }
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnack(
           const SnackBar(content: Text('Document URL copied to clipboard.')),
         );
       }
@@ -6350,7 +6340,7 @@ class _OrderPoDocumentTile extends StatelessWidget {
       if (!context.mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnack(
         SnackBar(content: Text('Unable to open PO document: $error')),
       );
     }
@@ -7985,7 +7975,6 @@ class _OrderCreateUnitDialogState extends State<_OrderCreateUnitDialog> {
     setState(() => _isCreating = true);
 
     final provider = context.read<UnitsProvider>();
-    final messenger = ScaffoldMessenger.of(context);
     final unitsPerPrimary = double.parse(_factorController.text.trim());
 
     try {
@@ -7999,7 +7988,7 @@ class _OrderCreateUnitDialogState extends State<_OrderCreateUnitDialog> {
         return;
       }
       if (newUnit == null) {
-        messenger.showSnackBar(
+        showAppSnack(
           SnackBar(
             content: Text(provider.errorMessage ?? 'Could not create unit.'),
           ),

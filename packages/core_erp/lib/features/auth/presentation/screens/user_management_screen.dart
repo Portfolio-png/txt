@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:provider/provider.dart';
 
 import '../../domain/auth_user.dart';
@@ -505,7 +506,7 @@ class _UserRow extends StatelessWidget {
     final catalog = auth.permissionDescriptors;
     final templates = auth.permissionTemplates;
     if (catalog.isEmpty || states.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnack(
         SnackBar(
           content: Text(
             auth.errorMessage ?? 'No editable permissions were returned.',

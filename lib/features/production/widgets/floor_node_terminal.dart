@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:provider/provider.dart';
 import '../../production_pipelines/domain/node_run_status.dart';
 import '../../production_pipelines/domain/process_node.dart';
@@ -620,9 +621,7 @@ class _StageControlsState extends State<_StageControls> {
       runProvider.triggerRefresh();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to update stage: $e')));
+        showAppSnack(SnackBar(content: Text('Failed to update stage: $e')));
       }
     } finally {
       if (mounted) setState(() => _isBusy = false);

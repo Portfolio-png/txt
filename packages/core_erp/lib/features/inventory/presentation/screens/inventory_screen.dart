@@ -665,7 +665,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
       final inferredUnitId =
           initialRecord.unitId ?? unitsProvider.activeUnits.firstOrNull?.id;
       if (inferredUnitId == null || initialRecord.name.trim().isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnack(
           const SnackBar(
             content: Text(
               'This legacy group cannot be upgraded for structured editing because it is missing a name or unit.',
@@ -913,7 +913,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnack(
         const SnackBar(
           content: Text('Failed to persist pinned inventory rows.'),
         ),
@@ -1826,7 +1826,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
       return;
     }
     if (!auth.can('inventory.delete')) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnack(
         const SnackBar(
           content: Text('You do not have permission to delete records.'),
         ),
@@ -1903,7 +1903,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
+    showAppSnack(
       SnackBar(
         content: Text(
           ok
@@ -2123,7 +2123,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
       return;
     }
     if (!auth.can('inventory.delete')) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnack(
         const SnackBar(
           content: Text('You do not have permission to delete records.'),
         ),
@@ -2251,7 +2251,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
+    showAppSnack(
       SnackBar(
         content: Text(
           'Sent $success delete request${success == 1 ? '' : 's'}.',
@@ -2318,7 +2318,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
     final messenger = ScaffoldMessenger.of(context);
     messenger.clearSnackBars();
-    messenger.showSnackBar(
+    showAppSnack(
       SnackBar(
         content: Text('$actionLabel: ${parts.join(', ')}'),
         behavior: SnackBarBehavior.floating,
@@ -2694,7 +2694,7 @@ class _InventoryMovementComposerDialogState
     if (widget.movementType == InventoryMovementType.adjust &&
         _normalized(_reasonController.text) == null &&
         _normalized(_referenceIdController.text) == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnack(
         const SnackBar(
           content: Text('Adjustments require a reason code or reference id.'),
         ),
@@ -2704,7 +2704,7 @@ class _InventoryMovementComposerDialogState
     if (widget.movementType == InventoryMovementType.receive &&
         (_normalized(_referenceTypeController.text) == null ||
             _normalized(_referenceIdController.text) == null)) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnack(
         const SnackBar(
           content: Text(
             'Manual receive requires both a reference type and reference id.',
@@ -7604,9 +7604,7 @@ class _LinkItemSheet extends StatelessWidget {
                                             );
                                         if (!context.mounted) return null;
                                         if (result == null) {
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
+                                          showAppSnack(
                                             SnackBar(
                                               content: Text(
                                                 itemsProvider.errorMessage ??
@@ -8306,7 +8304,7 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
     }
 
     if (_selectedUnitId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnack(
         const SnackBar(content: Text('Select a group unit before saving.')),
       );
       return;

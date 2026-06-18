@@ -568,7 +568,7 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
           line.variationLeafNodeId == null ||
           quantity == null ||
           quantity <= 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnack(
           SnackBar(
             content: Text(
               'Complete row ${index + 1} with an item reference and quantity.',
@@ -591,7 +591,7 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
       );
     }
     if (parsedLines.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnack(
         const SnackBar(content: Text('Add at least one composition row.')),
       );
       return;

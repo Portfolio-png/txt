@@ -280,7 +280,6 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
     }
 
     setState(() => _isUploading = true);
-    final messenger = ScaffoldMessenger.of(context);
     final provider = context.read<MachinesProvider>();
     try {
       final bytes = await file.readAsBytes();
@@ -305,7 +304,7 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
       }
       if (intent.alreadyUploaded && intent.photoUrl != null) {
         _photoUrlController.text = intent.photoUrl!;
-        messenger.showSnackBar(
+        showAppSnack(
           const SnackBar(content: Text('Image already uploaded.')),
         );
         return;
@@ -337,11 +336,11 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
         throw Exception(provider.errorMessage ?? 'Failed to finish upload.');
       }
       _photoUrlController.text = finalUrl;
-      messenger.showSnackBar(
+      showAppSnack(
         const SnackBar(content: Text('Machine photo uploaded.')),
       );
     } catch (error) {
-      messenger.showSnackBar(
+      showAppSnack(
         SnackBar(content: Text('Image upload failed: $error')),
       );
     } finally {
@@ -1051,7 +1050,7 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
     
     if (savedMachine == null && mounted) {
       final error = context.read<MachinesProvider>().errorMessage ?? 'Failed to save machine';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      showAppSnack(SnackBar(
         content: Text(error),
         backgroundColor: Colors.red,
       ));

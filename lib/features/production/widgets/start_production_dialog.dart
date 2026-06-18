@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:provider/provider.dart';
 import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:core_erp/features/orders/domain/order_entry.dart';
@@ -23,7 +24,7 @@ Future<bool> showStartProductionDialog(BuildContext context, OrderGroup orderGro
   final unassignedItems = orderGroup.items.where((i) => !assignedItemIds.contains(i.id)).toList();
 
   if (unassignedItems.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
+    showAppSnack(
       const SnackBar(content: Text('All items for this order are already in production.')),
     );
     return false;
@@ -231,13 +232,13 @@ class _StartProductionDialogState extends State<_StartProductionDialog> {
               _selectedItem = _currentItems.isNotEmpty ? _currentItems.first : null;
             });
             
-            ScaffoldMessenger.of(context).showSnackBar(
+            showAppSnack(
               const SnackBar(content: Text('Item successfully assigned to production!')),
             );
           } catch (e) {
             if (!mounted) return;
             setState(() => _isLoading = false);
-            ScaffoldMessenger.of(context).showSnackBar(
+            showAppSnack(
               SnackBar(content: Text('Failed to start production: $e')),
             );
           }

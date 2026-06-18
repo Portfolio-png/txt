@@ -706,7 +706,6 @@ class _VendorImagePickerFieldState extends State<_VendorImagePickerField> {
     }
 
     setState(() => _isUploading = true);
-    final messenger = ScaffoldMessenger.of(context);
     final baseUrl = const String.fromEnvironment(
       'PAPER_API_BASE_URL',
       defaultValue: 'http://localhost:8080',
@@ -748,11 +747,11 @@ class _VendorImagePickerFieldState extends State<_VendorImagePickerField> {
       }
 
       widget.controller.text = intent.readUrl!;
-      messenger.showSnackBar(
+      showAppSnack(
         const SnackBar(content: Text('Image uploaded successfully.')),
       );
     } catch (error) {
-      messenger.showSnackBar(
+      showAppSnack(
         SnackBar(content: Text('Image upload failed: $error')),
       );
     } finally {

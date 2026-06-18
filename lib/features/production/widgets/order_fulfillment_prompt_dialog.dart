@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:provider/provider.dart';
 
 import 'package:core_erp/features/orders/domain/order_entry.dart';
@@ -37,7 +38,7 @@ class _OrderFulfillmentPromptDialogState
           .updateOrderLifecycle(UpdateOrderLifecycleInput(id: widget.order.id, status: OrderStatus.completed));
       if (!mounted) return;
       Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnack(
         const SnackBar(
           content: Text('Order marked as completed!'),
           backgroundColor: Color(0xFF16A34A),
@@ -45,7 +46,7 @@ class _OrderFulfillmentPromptDialogState
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnack(
         SnackBar(
           content: Text('Failed to complete order: $e'),
           backgroundColor: const Color(0xFFDC2626),
@@ -103,7 +104,7 @@ class _OrderFulfillmentPromptDialogState
       Navigator.of(context).pop();
 
       if (challan != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnack(
           const SnackBar(
             content: Text('Delivery Challan drafted successfully!'),
             backgroundColor: Color(0xFF16A34A),
@@ -112,7 +113,7 @@ class _OrderFulfillmentPromptDialogState
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnack(
         SnackBar(
           content: Text('Failed to draft challan: $e'),
           backgroundColor: const Color(0xFFDC2626),

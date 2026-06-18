@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
@@ -611,7 +612,6 @@ class _SettingsPreferencesDialogState
     setState(() {
       _isResetting = true;
     });
-    final messenger = ScaffoldMessenger.of(context);
     final auth = context.read<AuthProvider>();
     final success = await auth.clearBackendDatabase();
     if (!mounted) {
@@ -621,7 +621,7 @@ class _SettingsPreferencesDialogState
       setState(() {
         _isResetting = false;
       });
-      messenger.showSnackBar(
+      showAppSnack(
         SnackBar(
           content: Text(
             auth.errorMessage ?? 'Failed to clear backend database.',
@@ -648,7 +648,7 @@ class _SettingsPreferencesDialogState
     setState(() {
       _isResetting = false;
     });
-    messenger.showSnackBar(
+    showAppSnack(
       const SnackBar(content: Text('Backend database cleared successfully.')),
     );
   }
@@ -657,7 +657,6 @@ class _SettingsPreferencesDialogState
     setState(() {
       _isResetting = true;
     });
-    final messenger = ScaffoldMessenger.of(context);
     final auth = context.read<AuthProvider>();
     final success = await auth.resetDemoData();
     if (!mounted) {
@@ -667,7 +666,7 @@ class _SettingsPreferencesDialogState
       setState(() {
         _isResetting = false;
       });
-      messenger.showSnackBar(
+      showAppSnack(
         SnackBar(
           content: Text(auth.errorMessage ?? 'Failed to reset demo data.'),
         ),
@@ -692,7 +691,7 @@ class _SettingsPreferencesDialogState
     setState(() {
       _isResetting = false;
     });
-    messenger.showSnackBar(
+    showAppSnack(
       const SnackBar(
         content: Text('Demo data reset and reseeded successfully.'),
       ),

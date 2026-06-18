@@ -192,7 +192,6 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
     }
 
     setState(() => _isUploading = true);
-    final messenger = ScaffoldMessenger.of(context);
     final provider = context.read<DiesProvider>();
     try {
       final bytes = await file.readAsBytes();
@@ -219,7 +218,7 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
         setState(() {
           _photoUrls.add(intent.photoUrl!);
         });
-        messenger.showSnackBar(
+        showAppSnack(
           const SnackBar(content: Text('Image already uploaded.')),
         );
         return;
@@ -253,11 +252,11 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
       setState(() {
         _photoUrls.add(finalUrl);
       });
-      messenger.showSnackBar(
+      showAppSnack(
         const SnackBar(content: Text('Die photo uploaded.')),
       );
     } catch (error) {
-      messenger.showSnackBar(
+      showAppSnack(
         SnackBar(content: Text('Image upload failed: $error')),
       );
     } finally {
@@ -786,7 +785,7 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
     
     if (savedDie == null && mounted) {
       final error = context.read<DiesProvider>().errorMessage ?? 'Failed to save die';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      showAppSnack(SnackBar(
         content: Text(error),
         backgroundColor: Colors.red,
       ));

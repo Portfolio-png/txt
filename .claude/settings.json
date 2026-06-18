@@ -5,7 +5,9 @@
       "Bash(find /c/Users -type d -name \"flutter\" -o -name \"Flutter\" 2>/dev/null | head -5)",
       "Read(//c/Users/**)",
       "Bash(node --check server.js)",
-      "Bash(node --check f:/Rutu/txt/backend/server.js)"
+      "Bash(node --check f:/Rutu/txt/backend/server.js)",
+      "Bash(python3 -)",
+      "Bash(grep -vE \"^Analyzing|^$|issues found|^\\\\s*$\")"
     ]
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:core_erp/core/widgets/app_toast.dart';
 
 import 'package:crypto/crypto.dart';
 import 'package:file_selector/file_selector.dart';
@@ -121,7 +122,6 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
     }
 
     setState(() => _isUploading = true);
-    final messenger = ScaffoldMessenger.of(context);
     final provider = context.read<ItemsProvider>();
     try {
       final bytes = await file.readAsBytes();
@@ -145,7 +145,7 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
       }
       if (intent.alreadyUploaded && intent.asset != null) {
         await provider.loadItemAssets(widget.item.id);
-        messenger.showSnackBar(
+        showAppSnack(
           const SnackBar(content: Text('Image already uploaded.')),
         );
         return;
@@ -176,11 +176,11 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
       if (completed == null) {
         throw Exception(provider.errorMessage ?? 'Failed to finish upload.');
       }
-      messenger.showSnackBar(
+      showAppSnack(
         const SnackBar(content: Text('Item image uploaded.')),
       );
     } catch (error) {
-      messenger.showSnackBar(
+      showAppSnack(
         SnackBar(content: Text('Image upload failed: $error')),
       );
     } finally {
@@ -196,7 +196,7 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
+    showAppSnack(
       SnackBar(
         content: Text(
           success

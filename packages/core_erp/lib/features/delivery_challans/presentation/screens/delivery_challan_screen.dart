@@ -316,11 +316,11 @@ class _ChallanScreenState extends State<ChallanScreen> {
     if (cancelled != null) {
       await context.read<InventoryProvider>().refresh();
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnack(
         SnackBar(content: Text('Cancelled challan ${challan.challanNo}.')),
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnack(
         SnackBar(content: Text(provider.errorMessage ?? 'Could not cancel challan.')),
       );
     }
@@ -331,11 +331,11 @@ class _ChallanScreenState extends State<ChallanScreen> {
     await provider.deleteChallan(challan.id);
     if (!context.mounted) return;
     if (provider.errorMessage != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnack(
         SnackBar(content: Text(provider.errorMessage!)),
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnack(
         SnackBar(
           content: Text(
             challan.isReception ? 'Deleted reception challan.' : 'Deleted draft challan.',
@@ -394,7 +394,7 @@ class _ChallanScreenState extends State<ChallanScreen> {
     if (!context.mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
+    showAppSnack(
       SnackBar(
         content: Text(
           updated == null
@@ -411,7 +411,7 @@ class _ChallanScreenState extends State<ChallanScreen> {
   ) async {
     if (_selectedDeliveryChallanNos.isEmpty ||
         _selectedReceptionChallanNos.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnack(
         const SnackBar(
           content: Text(
             'Select at least one delivery and one linked reception challan.',
@@ -491,9 +491,7 @@ class _ChallanScreenState extends State<ChallanScreen> {
       });
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error.toString())));
+        showAppSnack(SnackBar(content: Text(error.toString())));
       }
     } finally {
       if (mounted) {
@@ -5396,9 +5394,7 @@ class _PrintPreviewState extends State<_PrintPreview> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        this.context,
-      ).showSnackBar(SnackBar(content: Text(error.toString())));
+      showAppSnack(SnackBar(content: Text(error.toString())));
     } finally {
       if (mounted) {
         setState(() => _isPrintingTemplate = false);

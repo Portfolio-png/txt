@@ -3,16 +3,86 @@ import 'package:flutter/material.dart';
 
 enum AppToastKind { info, success, warning, error }
 
+/// App-wide navigator key so toasts can reach a global overlay without a
+/// call-site context. Wired into MaterialApp(navigatorKey: appNavigatorKey).
+final GlobalKey<NavigatorState> appNavigatorKey =
+    GlobalKey<NavigatorState>(debugLabel: 'appNavigator');
+
 /// Shows a transient notice anchored to the TOP of the screen (SnackBars are
 /// stuck to the bottom). Uses the root overlay, so it survives the dialog or
-/// route it was triggered from being popped.
+/// route it was triggered from being popped. Falls back to the global overlay
+/// if the context has none (e.g. called after the context unmounted).
 void showAppToast(
   BuildContext context,
   String message, {
   AppToastKind kind = AppToastKind.info,
   Duration duration = const Duration(seconds: 3),
 }) {
-  final overlay = Overlay.maybeOf(context, rootOverlay: true);
+  final overlay = Overlay.maybeOf(context, rootOverlay: true) ??
+      appNavigatorKey.currentState?.overlay;
+  _insertToast(overlay, message, kind, duration);
+}
+
+/// Context-free top toast via the global overlay — used to redirect bottom
+/// SnackBars and for fire-and-forget notices after async gaps.
+void showGlobalToast(
+  String message, {
+  AppToastKind kind = AppToastKind.info,
+  Duration duration = const Duration(seconds: 3),
+}) {
+  _insertToast(appNavigatorKey.currentState?.overlay, message, kind, duration);
+}
+
+/// Renders an existing [SnackBar] as a top toast instead of at the bottom.
+/// Message comes from the SnackBar's Text content; kind is inferred from its
+/// background colour, then message keywords.
+void showAppSnack(SnackBar bar) {
+  final message = _snackMessage(bar);
+  if (message.isEmpty) return;
+  showGlobalToast(message, kind: _snackKind(bar, message));
+}
+
+String _snackMessage(SnackBar bar) {
+  final content = bar.content;
+  if (content is Text) return content.data ?? '';
+  return '';
+}
+
+AppToastKind _snackKind(SnackBar bar, String message) {
+  final bg = bar.backgroundColor;
+  if (bg != null) {
+    if (bg.r > 0.55 && bg.g < 0.5 && bg.b < 0.5) return AppToastKind.error;
+    if (bg.g > 0.5 && bg.r < 0.55 && bg.b < 0.6) return AppToastKind.success;
+  }
+  final m = message.toLowerCase();
+  if (m.contains('fail') ||
+      m.contains('error') ||
+      m.contains('could not') ||
+      m.contains("couldn't") ||
+      m.contains('cannot') ||
+      m.contains('unable') ||
+      m.contains('invalid')) {
+    return AppToastKind.error;
+  }
+  if (m.contains('success') ||
+      m.contains('saved') ||
+      m.contains('created') ||
+      m.contains('updated') ||
+      m.contains('added') ||
+      m.contains('deleted') ||
+      m.contains('assigned') ||
+      m.contains('completed')) {
+    return AppToastKind.success;
+  }
+  return AppToastKind.info;
+}
+
+void _insertToast(
+  OverlayState? overlay,
+  String message,
+  AppToastKind kind,
+  Duration duration,
+) {
   if (overlay == null) return;
   late OverlayEntry entry;
   var removed = false;

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
+import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:core_erp/core/network/authenticated_http_client.dart';
 import 'package:core_erp/core/navigation/app_navigation.dart';
 import 'package:core_erp/app/preferences/preferences_provider.dart';
@@ -339,6 +340,7 @@ class MyApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
+        navigatorKey: appNavigatorKey,
         title: 'Challan Book',
         debugShowCheckedModeBanner: false,
         theme: base.copyWith(

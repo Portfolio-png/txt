@@ -23,6 +23,7 @@ import 'package:core_erp/features/delivery_challans/data/api_delivery_challan_re
 import 'package:core_erp/features/delivery_challans/data/delivery_challan_repository.dart';
 import 'package:core_erp/features/delivery_challans/presentation/providers/challan_editor_command_provider.dart';
 import 'package:core_erp/features/inventory/presentation/providers/inventory_create_command_provider.dart';
+import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:core_erp/features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
 import 'package:core_erp/features/items/data/repositories/api_item_repository.dart';
 import 'package:core_erp/features/items/data/repositories/item_repository.dart';
@@ -448,6 +449,7 @@ class MyApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
+        navigatorKey: appNavigatorKey,
         title: 'Paper',
         debugShowCheckedModeBanner: false,
         theme: base.copyWith(

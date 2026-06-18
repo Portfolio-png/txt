@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart' show listEquals;
+import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
@@ -73,7 +74,7 @@ class _ProductionRunsScreenState extends State<ProductionRunsScreen> {
     // 1. Show template picker
     final activeTemplates = _templates.where((t) => t.status != PipelineTemplateStatus.archived).toList();
     if (activeTemplates.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnack(
         const SnackBar(content: Text('No active templates available to start production.')),
       );
       return;
@@ -132,7 +133,7 @@ class _ProductionRunsScreenState extends State<ProductionRunsScreen> {
     } catch (e) {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop(); // remove loading
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnack(
         SnackBar(content: Text('Failed to start production: $e')),
       );
     }
@@ -185,7 +186,7 @@ class _ProductionRunsScreenState extends State<ProductionRunsScreen> {
       await _loadData();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnack(
           SnackBar(content: Text('Failed to delete run: $e')),
         );
       }

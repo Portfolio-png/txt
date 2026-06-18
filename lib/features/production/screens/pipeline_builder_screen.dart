@@ -218,9 +218,7 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
               if (provider.selectedNodeId != null) {
                 final message = provider.deleteSelectedNode();
                 if (message != null && context.mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text(message)));
+                  showAppSnack(SnackBar(content: Text(message)));
                 }
                 return KeyEventResult.handled;
               }
@@ -1268,7 +1266,7 @@ class _BuilderHeader extends StatelessWidget {
       return repo.updateTemplate(template);
     } catch (_) {
       if (showError && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnack(
           const SnackBar(
             content: Text(
               'Pipeline could not be saved. Please check the route and try again.',
@@ -1322,7 +1320,7 @@ class _BuilderHeader extends StatelessWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnack(
           SnackBar(content: Text('Failed to delete pipeline: $e')),
         );
       }
@@ -1339,7 +1337,7 @@ class _BuilderHeader extends StatelessWidget {
             shopFloorId: shopFloorId,
           ),
         );
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnack(
           const SnackBar(content: Text('Loaded Sheet Metal Process.')),
         );
         return;
@@ -1348,7 +1346,7 @@ class _BuilderHeader extends StatelessWidget {
           factoryId: factoryId,
           shopFloorId: shopFloorId,
         );
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnack(
           const SnackBar(content: Text('Started a blank production canvas.')),
         );
         return;
@@ -2384,9 +2382,7 @@ class _GitGraphCanvas extends StatelessWidget {
                         onDelete: () {
                           final message = provider.deleteSelectedNode();
                           if (message != null && context.mounted) {
-                            ScaffoldMessenger.of(
-                              context,
-                            ).showSnackBar(SnackBar(content: Text(message)));
+                            showAppSnack(SnackBar(content: Text(message)));
                           }
                         },
                       ),
@@ -4406,9 +4402,7 @@ class _QuickItemCreateDialogState extends State<_QuickItemCreateDialog> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to create item: $e')));
+        showAppSnack(SnackBar(content: Text('Failed to create item: $e')));
         setState(() => _isLoading = false);
       }
     }

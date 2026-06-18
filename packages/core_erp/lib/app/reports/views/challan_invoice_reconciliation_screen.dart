@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:core_erp/core/widgets/app_toast.dart';
 
 import 'package:excel/excel.dart' as xls;
 import 'package:file_selector/file_selector.dart';
@@ -1040,9 +1041,7 @@ class _ChallanInvoiceReconciliationScreenState
   }
 
   void _showSnack(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showAppSnack(SnackBar(content: Text(message)));
   }
 }
 
@@ -2955,7 +2954,7 @@ class _InvoiceDraftSidebarState extends State<_InvoiceDraftSidebar> {
     for (final controller in _lineControllers) {
       final quantity = controller.quantity;
       if (quantity <= 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnack(
           const SnackBar(content: Text('Invoice quantity must be positive.')),
         );
         return;
@@ -2995,15 +2994,13 @@ class _InvoiceDraftSidebarState extends State<_InvoiceDraftSidebar> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnack(
         SnackBar(content: Text('Draft invoice ${invoice.invoiceNo} created.')),
       );
       widget.onInvoiceCreated();
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error.toString())));
+        showAppSnack(SnackBar(content: Text(error.toString())));
       }
     } finally {
       if (mounted) {
@@ -3231,7 +3228,7 @@ class _ConversionOverrideDialogState extends State<_ConversionOverrideDialog> {
                   onPressed: () {
                     final ratio = _parseNumber(_ratioController.text);
                     if (ratio <= 0) {
-                      ScaffoldMessenger.of(context).showSnackBar(
+                      showAppSnack(
                         const SnackBar(
                           content: Text('Conversion ratio must be positive.'),
                         ),
@@ -4130,7 +4127,6 @@ class _InvoicesSidebarState extends State<_InvoicesSidebar> {
 
   Future<void> _printInvoice(int invoiceId, String invoiceNo) async {
     final provider = context.read<DeliveryChallanProvider>();
-    final messenger = ScaffoldMessenger.of(context);
     try {
       final bytes = await provider.repository.fetchInvoicePdf(invoiceId);
       await Printing.layoutPdf(
@@ -4138,7 +4134,7 @@ class _InvoicesSidebarState extends State<_InvoicesSidebar> {
         onLayout: (_) async => bytes,
       );
     } catch (e) {
-      messenger.showSnackBar(
+      showAppSnack(
         SnackBar(
           content: Text('Failed to print invoice: $e'),
           backgroundColor: SoftErpTheme.dangerText,
@@ -4219,7 +4215,6 @@ class _InvoicesSidebarState extends State<_InvoicesSidebar> {
                         _isLoadingInvoice = true;
                       });
                       final provider = context.read<DeliveryChallanProvider>();
-                      final messenger = ScaffoldMessenger.of(context);
                       try {
                         await provider.updateInvoiceStatus(
                           _selectedInvoice!.id,
@@ -4229,7 +4224,7 @@ class _InvoicesSidebarState extends State<_InvoicesSidebar> {
                         widget.onInvoiceStatusChanged();
                       } catch (e) {
                         if (mounted) {
-                          messenger.showSnackBar(
+                          showAppSnack(
                             SnackBar(
                               content: Text('Failed to update status: $e'),
                               backgroundColor: SoftErpTheme.dangerText,
