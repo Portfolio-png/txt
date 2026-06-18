@@ -205,6 +205,36 @@ class ApiGroupRepository implements GroupRepository {
     return parsed.group!.toDomain();
   }
 
+  @override
+  Future<void> deleteGroup(int id) async {
+    if (useMockResponses) {
+      _seedMockStoreIfNeeded();
+      final index = _mockGroups.indexWhere((group) => group.id == id);
+      if (index == -1) {
+        throw GroupApiException('Group not found.');
+      }
+      if (_mockGroups.any((group) => group.parentGroupId == id)) {
+        throw GroupApiException(
+          'This group has child groups. Reassign or delete them first.',
+        );
+      }
+      _mockGroups.removeAt(index);
+      return;
+    }
+
+    final uri = Uri.parse('$baseUrl/api/groups/$id');
+    final response = await _client.delete(uri);
+    final payload = _decodeJsonObject(response.body);
+    final success = payload['success'] == true;
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !success) {
+      throw GroupApiException(
+        payload['error']?.toString() ?? 'Failed to delete group.',
+      );
+    }
+  }
+
   void _validateCreateOrUpdate({
     int? id,
     required String name,

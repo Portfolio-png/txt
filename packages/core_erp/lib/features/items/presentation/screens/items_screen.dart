@@ -7,6 +7,8 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_section_title.dart';
+import '../../../../core/widgets/app_toast.dart';
+import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../../core/widgets/soft_master_data.dart';
 import '../../../../core/widgets/soft_primitives.dart';
@@ -49,11 +51,13 @@ class ItemsScreen extends StatefulWidget {
     VoidCallback? onCreatePipeline,
   }) {
     final isNarrow = MediaQuery.of(context).size.width < 980;
-    final body = _ItemEditorSheet(
-      item: item,
-      initialName: initialName,
-      initialGroupId: initialGroupId,
-      onCreatePipeline: onCreatePipeline,
+    final body = SubmitFormShortcuts(
+      child: _ItemEditorSheet(
+        item: item,
+        initialName: initialName,
+        initialGroupId: initialGroupId,
+        onCreatePipeline: onCreatePipeline,
+      ),
     );
     if (isNarrow) {
       return showModalBottomSheet<ItemDefinition?>(
@@ -1104,9 +1108,16 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   }
 
   Future<void> _handleGroupChanged(int? value) async {
+    // Seed the item's unit from the group's unit (alongside properties).
+    final groupUnitId = value == null
+        ? null
+        : context.read<GroupsProvider>().findById(value)?.unitId;
     setState(() {
       _selectedGroupId = value;
       _localError = null;
+      if (groupUnitId != null) {
+        _selectedUnitId = groupUnitId;
+      }
     });
     if (value == null) {
       setState(_resetInheritedFlags);
@@ -1771,9 +1782,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                           onMoveDown: index == _rootNodes.length - 1
                               ? null
                               : () => _moveNode(_rootNodes, index, index + 1),
-                          onRemove: _rootNodes[index].isLockedInheritedProperty
-                              ? null
-                              : () => _removeNode(_rootNodes, index),
+                          onRemove: () => _removeNode(_rootNodes, index),
                           buildChildEditor: _buildChildEditor,
                         ),
                         if (index != _rootNodes.length - 1)
@@ -2016,9 +2025,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       onMoveDown: index == siblings.length - 1
           ? null
           : () => _moveNode(siblings, index, index + 1),
-      onRemove: child.isLockedInheritedProperty
-          ? null
-          : () => _removeNode(siblings, index),
+      onRemove: () => _removeNode(siblings, index),
       buildChildEditor: _buildChildEditor,
     );
   }
@@ -2611,6 +2618,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     if (context.mounted &&
         result != null &&
         itemsProvider.errorMessage == null) {
+      showAppToast(
+        context,
+        widget.item == null ? 'Item created' : 'Item saved',
+        kind: AppToastKind.success,
+      );
       Navigator.of(context).pop(result);
     }
   }

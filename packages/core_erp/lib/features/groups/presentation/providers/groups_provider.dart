@@ -212,6 +212,24 @@ class GroupsProvider extends ChangeNotifier {
     return _save(() => _repository.restoreGroup(id));
   }
 
+  Future<bool> deleteGroup(int id) async {
+    _isSaving = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      await _repository.deleteGroup(id);
+      await refresh();
+      return true;
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return false;
+    } finally {
+      _isSaving = false;
+      notifyListeners();
+    }
+  }
+
   Future<GroupDefinition?> _save(
     Future<GroupDefinition> Function() action,
   ) async {

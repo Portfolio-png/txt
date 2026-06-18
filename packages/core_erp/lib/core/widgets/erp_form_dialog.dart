@@ -1,9 +1,69 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../theme/soft_erp_theme.dart';
+import 'app_button.dart';
 import 'soft_primitives.dart';
+
+/// Wraps a form so Ctrl/Cmd+Enter presses its submit button — the first
+/// enabled primary [AppButton] in the subtree, falling back to the first
+/// enabled [FilledButton]. ponytail: forms whose submit is neither just
+/// won't trigger; wrap them or give them a primary AppButton if needed.
+class SubmitFormShortcuts extends StatelessWidget {
+  const SubmitFormShortcuts({super.key, required this.child});
+
+  final Widget child;
+
+  void _submit(BuildContext context) {
+    // The submit is conventionally the last action button (footer, bottom of
+    // tree). Take the last enabled primary AppButton; fall back to the last
+    // enabled FilledButton for forms that don't use AppButton.
+    VoidCallback? onPressed;
+    void visit(Element el) {
+      final w = el.widget;
+      if (w is AppButton &&
+          w.variant == AppButtonVariant.primary &&
+          !w.isLoading &&
+          w.onPressed != null) {
+        onPressed = w.onPressed;
+      }
+      el.visitChildElements(visit);
+    }
+
+    context.visitChildElements(visit);
+    if (onPressed == null) {
+      void visitFilled(Element el) {
+        final w = el.widget;
+        if (w is FilledButton && w.enabled) {
+          onPressed = w.onPressed;
+        }
+        el.visitChildElements(visitFilled);
+      }
+
+      context.visitChildElements(visitFilled);
+    }
+    onPressed?.call();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.enter, control: true): () =>
+            _submit(context),
+        const SingleActivator(LogicalKeyboardKey.enter, meta: true): () =>
+            _submit(context),
+        const SingleActivator(LogicalKeyboardKey.numpadEnter, control: true):
+            () => _submit(context),
+        const SingleActivator(LogicalKeyboardKey.numpadEnter, meta: true): () =>
+            _submit(context),
+      },
+      child: child,
+    );
+  }
+}
 
 Future<T?> showErpFormDialog<T>(
   BuildContext context, {
@@ -13,6 +73,7 @@ Future<T?> showErpFormDialog<T>(
   double mobileBreakpoint = 900,
   EdgeInsets desktopInsetPadding = const EdgeInsets.all(24),
 }) {
+  final wrappedChild = SubmitFormShortcuts(child: child);
   final isNarrow = MediaQuery.of(context).size.width < mobileBreakpoint;
   if (isNarrow) {
     return showModalBottomSheet<T>(
@@ -23,7 +84,7 @@ Future<T?> showErpFormDialog<T>(
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).viewInsets.bottom,
         ),
-        child: child,
+        child: wrappedChild,
       ),
     );
   }
@@ -48,7 +109,7 @@ Future<T?> showErpFormDialog<T>(
             maxHeight,
             size.height - desktopInsetPadding.vertical,
           ),
-          child: child,
+          child: wrappedChild,
         ),
       );
     },
@@ -87,6 +148,8 @@ class ErpFormScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Ctrl/Cmd+Enter submit is provided by SubmitFormShortcuts, which the
+    // form presenters (showErpFormDialog etc.) wrap around this scaffold.
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.vertical(top: Radius.circular(borderRadius)),

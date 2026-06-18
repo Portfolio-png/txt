@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../items/domain/item_definition.dart';
@@ -630,11 +631,14 @@ class _InventorySetEditorDialogState extends State<InventorySetEditorDialog> {
     }
     final provider = context.read<InventoryProvider>();
     if (provider.errorMessage != null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(provider.errorMessage!)));
+      showAppToast(context, provider.errorMessage!, kind: AppToastKind.error);
       return;
     }
+    showAppToast(
+      context,
+      widget.setDefinition == null ? 'Set created' : 'Set saved',
+      kind: AppToastKind.success,
+    );
     Navigator.of(context).pop();
   }
 

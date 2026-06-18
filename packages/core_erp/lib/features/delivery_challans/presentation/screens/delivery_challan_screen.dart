@@ -16,6 +16,8 @@ import '../../../../app/preferences/preferences_provider.dart';
 import '../../../../app/reports/domain/reconciliation_report.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/app_toast.dart';
+import '../../../../core/widgets/autofill_restore.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/widgets/page_container.dart';
 import '../../../../core/widgets/searchable_select.dart';
@@ -1925,6 +1927,9 @@ class _ChallanEditorState extends State<_ChallanEditor> {
               _ItemDraft.blank(1),
           ];
     _applySelectedOrderSnapshots();
+    // Double-space restores the auto/obvious value the field opened with.
+    attachDoubleSpaceRestore(_challanNumberController);
+    attachDoubleSpaceRestore(_dateController);
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncOrdersCommand());
   }
 
@@ -2976,6 +2981,15 @@ class _ChallanEditorState extends State<_ChallanEditor> {
         ? await provider.updateChallan(widget.challan!.id, input)
         : await provider.createChallan(input);
     if (saved != null && mounted) {
+      showAppToast(
+        context,
+        _editingExisting
+            ? 'Challan saved'
+            : _isReception
+            ? 'Reception challan created'
+            : 'Delivery challan created',
+        kind: AppToastKind.success,
+      );
       Navigator.of(context).pop();
     }
   }
@@ -3170,6 +3184,11 @@ class _ChallanEditorState extends State<_ChallanEditor> {
       await inventoryProvider.refresh();
     }
     if (mounted) {
+      showAppToast(
+        context,
+        _isReception ? 'Reception challan issued' : 'Challan issued',
+        kind: AppToastKind.success,
+      );
       Navigator.of(context).pop();
     }
   }
@@ -5161,6 +5180,7 @@ class _CompanyProfileEditorState extends State<_CompanyProfileEditor> {
           ),
         );
     if (saved != null && mounted) {
+      showAppToast(context, 'Company profile saved', kind: AppToastKind.success);
       Navigator.of(context).pop();
     }
   }

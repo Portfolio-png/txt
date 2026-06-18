@@ -489,6 +489,83 @@ class ApiItemRepository implements ItemRepository {
     return parsed.item!.toDomain();
   }
 
+  @override
+  Future<void> deleteItem(int id) async {
+    if (useMockResponses) {
+      _seedMockStoreIfNeeded();
+      final index = _mockItems.indexWhere((item) => item.id == id);
+      if (index == -1) {
+        throw ItemApiException('Item not found.');
+      }
+      if (_mockItems[index].usageCount > 0) {
+        throw ItemApiException(
+          'Item is in use (orders, challans, or inventory) and cannot be '
+          'deleted. Relocate it instead.',
+        );
+      }
+      _mockItems.removeAt(index);
+      return;
+    }
+
+    final uri = Uri.parse('$baseUrl/api/items/$id');
+    final response = await _client.delete(uri);
+    final payload = _decodeJsonObject(response.body);
+    final success = payload['success'] == true;
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !success) {
+      throw ItemApiException(
+        payload['error']?.toString() ?? 'Failed to delete item.',
+      );
+    }
+  }
+
+  @override
+  Future<ItemDefinition> reassignItemGroup(int id, int groupId) async {
+    if (useMockResponses) {
+      _seedMockStoreIfNeeded();
+      final index = _mockItems.indexWhere((item) => item.id == id);
+      if (index == -1) {
+        throw ItemApiException('Item not found.');
+      }
+      final current = _mockItems[index];
+      final updated = ItemDefinition(
+        id: current.id,
+        name: current.name,
+        alias: current.alias,
+        displayName: current.displayName,
+        quantity: current.quantity,
+        groupId: groupId,
+        unitId: current.unitId,
+        unitConversions: current.unitConversions,
+        namingFormat: current.namingFormat,
+        isArchived: current.isArchived,
+        usageCount: current.usageCount,
+        createdAt: current.createdAt,
+        updatedAt: DateTime.now(),
+        variationTree: current.variationTree,
+      );
+      _mockItems[index] = updated;
+      return updated;
+    }
+
+    final uri = Uri.parse('$baseUrl/api/items/$id/group');
+    final response = await _client.patch(
+      uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({'groupId': groupId}),
+    );
+    final payload = _decodeJsonObject(response.body);
+    final parsed = ItemResponse.fromJson(payload);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !parsed.success ||
+        parsed.item == null) {
+      throw ItemApiException(parsed.error ?? 'Failed to relocate item.');
+    }
+    return parsed.item!.toDomain();
+  }
+
   List<ItemVariationNodeDefinition> _copyTreeArchiveState(
     List<ItemVariationNodeDefinition> nodes,
     bool archive,

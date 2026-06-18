@@ -18,6 +18,8 @@ import 'package:core_erp/features/inventory/presentation/screens/inventory_scree
 import 'package:core_erp/features/inventory/presentation/screens/material_scan_screen.dart';
 import 'package:core_erp/features/items/presentation/screens/items_screen.dart';
 import 'package:core_erp/features/clients/presentation/screens/clients_screen.dart';
+import 'package:core_erp/features/groups/presentation/screens/groups_screen.dart';
+import 'package:core_erp/features/inventory/presentation/providers/inventory_create_command_provider.dart';
 import 'package:core_erp/features/orders/presentation/screens/orders_screen.dart';
 import '../../features/pm/presentation/screens/pm_screen.dart';
 import 'package:core_erp/features/units/presentation/screens/units_screen.dart';
@@ -260,15 +262,8 @@ class _PaperShortcutManagerState extends State<PaperShortcutManager> {
             navProvider.selectRelativeSidebarItem(reverse: true),
         const SingleActivator(LogicalKeyboardKey.keyF, control: true):
             navProvider.focusTopStripSearch,
-        const SingleActivator(LogicalKeyboardKey.keyN, control: true): () {
-          if (currentTab == 1) {
-            _handleCreateOrder(context);
-            return;
-          }
-          if (currentTab == 2) {
-            _handleCreateDeliveryChallan(context);
-          }
-        },
+        const SingleActivator(LogicalKeyboardKey.keyN, control: true): () =>
+            _handleCreateForScreen(context),
         const SingleActivator(LogicalKeyboardKey.keyO, control: true): () {
           if (currentTab == 2) {
             context
@@ -422,6 +417,37 @@ class _PaperShortcutManagerState extends State<PaperShortcutManager> {
       editableFound = _elementContainsEditableText(child, primaryFocus);
     });
     return editableFound;
+  }
+
+  void _handleCreateForScreen(BuildContext context) {
+    final key = context.read<NavigationProvider>().selectedKey;
+    switch (key) {
+      case 'orders':
+        _handleCreateOrder(context);
+      case 'delivery_challans':
+        _handleCreateDeliveryChallan(context);
+      case 'inventory':
+        context.read<InventoryCreateCommandProvider>().create();
+      case 'production':
+      case 'production_pipelines':
+        _handleCreatePipeline(context);
+      case 'configurator_clients':
+        _runModalShortcut(() => ClientsScreen.openEditor(context));
+      case 'configurator_vendors':
+        _runModalShortcut(() => VendorsScreen.openEditor(context));
+      case 'configurator_items':
+        _runModalShortcut(() => ItemsScreen.openEditor(context,
+            onCreatePipeline: () => _handleCreatePipeline(context)));
+      case 'configurator_groups':
+        _runModalShortcut(() => GroupsScreen.openEditor(context));
+      case 'configurator_units':
+        _runModalShortcut(() async => UnitsScreen.openEditor(context));
+      case 'configurator_machines':
+      case 'configurator_machine_groups':
+        _runModalShortcut(() async => MachinesScreen.openMachineEditor(context));
+      case 'configurator_dies':
+        _runModalShortcut(() async => DiesScreen.openDieEditor(context));
+    }
   }
 
   Future<void> _handleCreateOrder(BuildContext context) {

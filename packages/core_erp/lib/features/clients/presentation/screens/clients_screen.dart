@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:mime/mime.dart';
 
 import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/widgets/soft_master_data.dart';
@@ -528,6 +529,11 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
           );
 
     if (context.mounted && result != null && provider.errorMessage == null) {
+      showAppToast(
+        context,
+        widget.client == null ? 'Client created' : 'Client saved',
+        kind: AppToastKind.success,
+      );
       Navigator.of(context).pop(result);
     }
   }

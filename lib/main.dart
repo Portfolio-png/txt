@@ -22,6 +22,7 @@ import 'package:core_erp/features/clients/presentation/providers/clients_provide
 import 'package:core_erp/features/delivery_challans/data/api_delivery_challan_repository.dart';
 import 'package:core_erp/features/delivery_challans/data/delivery_challan_repository.dart';
 import 'package:core_erp/features/delivery_challans/presentation/providers/challan_editor_command_provider.dart';
+import 'package:core_erp/features/inventory/presentation/providers/inventory_create_command_provider.dart';
 import 'package:core_erp/features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
 import 'package:core_erp/features/items/data/repositories/api_item_repository.dart';
 import 'package:core_erp/features/items/data/repositories/item_repository.dart';
@@ -331,6 +332,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => NavigationProvider()),
         Provider<AppNavigation>(create: (context) => AppNavigationWrapper(context.read<NavigationProvider>())),
         ChangeNotifierProvider(create: (_) => ChallanEditorCommandProvider()),
+        ChangeNotifierProvider(create: (_) => InventoryCreateCommandProvider()),
         ChangeNotifierProxyProvider<OrderRepository, OrdersProvider>(
           create: (context) =>
               OrdersProvider(repository: context.read<OrderRepository>())

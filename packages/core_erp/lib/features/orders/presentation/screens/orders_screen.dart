@@ -8,6 +8,8 @@ import 'dart:math' as math;
 
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/app_toast.dart';
+import '../../../../core/widgets/autofill_restore.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/widgets/page_container.dart';
 import '../../../../core/widgets/searchable_select.dart';
@@ -2309,6 +2311,9 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     _endDateController = TextEditingController(
       text: _endDate != null ? _formatDate(_endDate!) : '',
     );
+    // Double-space restores the auto/obvious value the field opened with.
+    attachDoubleSpaceRestore(_orderNoController);
+    attachDoubleSpaceRestore(_endDateController);
 
     if (group != null && group.items.isNotEmpty) {
       _lines = group.items.map((item) {
@@ -4069,9 +4074,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
             ? '$mergedLineCount order line(s) merged into existing orders.'
             : '$createdLineCount order line(s) created, $mergedLineCount merged into existing orders.';
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(finalMessage)));
+      showAppToast(context, finalMessage, kind: AppToastKind.success);
       Navigator.of(context).pop();
       return;
     }
@@ -4079,9 +4082,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     final message =
         ordersProvider.errorMessage ??
         'Unable to create order. Please try again.';
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showAppToast(context, message, kind: AppToastKind.error);
   }
 
   bool _normalizeCompletionDateInputs() {

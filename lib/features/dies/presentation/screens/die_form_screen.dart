@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:mime/mime.dart';
 
 import 'package:core_erp/core/widgets/app_button.dart';
+import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:core_erp/core/widgets/erp_form_dialog.dart';
 import 'package:core_erp/core/widgets/searchable_select.dart';
 import '../../domain/die.dart';
@@ -793,6 +794,11 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
     }
     
     if (mounted) {
+      showAppToast(
+        context,
+        widget.die == null ? 'Die created' : 'Die saved',
+        kind: AppToastKind.success,
+      );
       Navigator.of(context).pop(savedDie);
     }
   }

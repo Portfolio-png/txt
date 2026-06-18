@@ -19795,6 +19795,75 @@ app.patch('/api/items/:id/restore', requirePermission('config.write'), async (re
   }
 });
 
+app.delete('/api/items/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const existing = await getItemRowById(id);
+    if (!existing) {
+      res.status(404).json({ success: false, error: 'Item not found.' });
+      return;
+    }
+    // usage_count counts every non-cascading reference (orders, challans,
+    // material requirements, linked materials, group links). > 0 means the
+    // item is in use and must be relocated, not deleted.
+    if ((existing.usage_count || 0) > 0) {
+      res.status(409).json({
+        success: false,
+        error: 'Item is in use (orders, challans, or inventory) and cannot be deleted. Relocate it instead.',
+      });
+      return;
+    }
+    // Own children (variation nodes, conversions, schema, BOM) cascade.
+    await run('DELETE FROM items WHERE id = ?', [id]);
+    res.json({ success: true, error: null });
+  } catch (error) {
+    if (/SQLITE_CONSTRAINT|FOREIGN KEY/i.test(`${error.code || ''} ${error.message || ''}`)) {
+      res.status(409).json({
+        success: false,
+        error: 'Item is referenced elsewhere and cannot be deleted. Relocate it instead.',
+      });
+      return;
+    }
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Relocate an item to another group without touching its variation tree /
+// conversions (saveItem would rewrite those). Used by the delete-group flow.
+app.patch('/api/items/:id/group', requirePermission('config.write'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const groupId = Number((req.body || {}).groupId);
+    const existing = await getItemRowById(id);
+    if (!existing) {
+      res.status(404).json({ success: false, item: null, error: 'Item not found.' });
+      return;
+    }
+    if (!groupId) {
+      res.status(400).json({ success: false, item: null, error: 'A target group is required.' });
+      return;
+    }
+    const groupRow = await get('SELECT * FROM groups WHERE id = ?', [groupId]);
+    if (!groupRow || groupRow.is_archived) {
+      res.status(400).json({
+        success: false,
+        item: null,
+        error: 'Selected group does not exist or is archived.',
+      });
+      return;
+    }
+    await run('UPDATE items SET group_id = ?, updated_at = ? WHERE id = ?', [
+      groupId,
+      new Date().toISOString(),
+      id,
+    ]);
+    const updated = await getItemRowById(id);
+    res.json({ success: true, item: await rowToItemDto(updated), error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, item: null, error: error.message });
+  }
+});
+
 app.post('/api/groups', requirePermission('config.write'), async (req, res) => {
   try {
     const group = await saveGroup(req.body || {});
@@ -19876,6 +19945,44 @@ app.patch('/api/groups/:id/restore', requirePermission('config.write'), async (r
     res.json({ success: true, group: rowToGroupDto(updated), error: null });
   } catch (error) {
     res.status(500).json({ success: false, group: null, error: error.message });
+  }
+});
+
+app.delete('/api/groups/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const existing = await getGroupRowById(id);
+    if (!existing) {
+      res.status(404).json({ success: false, error: 'Group not found.' });
+      return;
+    }
+    const items = await all('SELECT id FROM items WHERE group_id = ?', [id]);
+    if (items.length > 0) {
+      res.status(409).json({
+        success: false,
+        error: 'Group still has items. Relocate or delete its items first.',
+      });
+      return;
+    }
+    const children = await all('SELECT id FROM groups WHERE parent_group_id = ?', [id]);
+    if (children.length > 0) {
+      res.status(409).json({
+        success: false,
+        error: 'This group has child groups. Reassign or delete them first.',
+      });
+      return;
+    }
+    await run('DELETE FROM groups WHERE id = ?', [id]);
+    res.json({ success: true, error: null });
+  } catch (error) {
+    if (/SQLITE_CONSTRAINT|FOREIGN KEY/i.test(`${error.code || ''} ${error.message || ''}`)) {
+      res.status(409).json({
+        success: false,
+        error: 'Group is referenced elsewhere (e.g. inventory) and cannot be deleted.',
+      });
+      return;
+    }
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

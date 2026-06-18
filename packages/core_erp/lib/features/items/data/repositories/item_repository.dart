@@ -9,6 +9,8 @@ abstract class ItemRepository {
   Future<ItemDefinition> updateItem(UpdateItemInput input);
   Future<ItemDefinition> archiveItem(int id);
   Future<ItemDefinition> restoreItem(int id);
+  Future<void> deleteItem(int id);
+  Future<ItemDefinition> reassignItemGroup(int id, int groupId);
   Future<List<ItemAsset>> getItemAssets(int itemId);
   Future<ItemAssetUploadIntent> createAssetUploadIntent(
     ItemAssetUploadIntentInput input,

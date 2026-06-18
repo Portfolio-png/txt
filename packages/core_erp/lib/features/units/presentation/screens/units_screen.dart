@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_empty_state.dart';
+import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../../core/widgets/soft_master_data.dart';
@@ -1018,6 +1019,11 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
           );
 
     if (context.mounted && result != null && provider.errorMessage == null) {
+      showAppToast(
+        context,
+        widget.unit == null ? 'Unit created' : 'Unit saved',
+        kind: AppToastKind.success,
+      );
       Navigator.of(context).pop(result);
     }
   }

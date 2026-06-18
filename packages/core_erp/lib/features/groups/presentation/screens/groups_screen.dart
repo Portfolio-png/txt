@@ -11,6 +11,7 @@ import '../../../../core/widgets/soft_primitives.dart';
 import '../../../units/domain/unit_definition.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../domain/group_definition.dart';
+import '../widgets/delete_group_dialog.dart';
 import '../providers/groups_provider.dart';
 import '../widgets/structured_group_editor_dialog.dart';
 import '../../../../core/widgets/export_preview_dialog.dart';
@@ -75,7 +76,15 @@ class GroupsScreen extends StatelessWidget {
               label: 'Add Group',
               icon: Icons.add,
               isLoading: groups.isSaving,
-              onPressed: () => openEditor(context, groupType: mode == 'machines' ? 'machine' : 'item'),
+              onPressed: () => openEditor(
+                context,
+                groupType: mode == 'machines' ? 'machine' : 'item',
+                // Item groups use the same rich (inventory-backed) creation
+                // flow as the Inventory screen; machine groups stay simple.
+                createMode: mode == 'machines'
+                    ? StructuredGroupEditorCreateMode.groupsOnly
+                    : StructuredGroupEditorCreateMode.inventoryBacked,
+              ),
             ),
             toolbar: _GroupsToolbar(mode: mode),
             messages: [
@@ -104,13 +113,15 @@ class GroupsScreen extends StatelessWidget {
     GroupDefinition? group,
     String groupType = 'item',
     String initialName = '',
+    StructuredGroupEditorCreateMode createMode =
+        StructuredGroupEditorCreateMode.groupsOnly,
   }) {
     return StructuredGroupEditorDialog.open(
       context,
       group: group,
       groupType: groupType,
       initialName: initialName,
-      createMode: StructuredGroupEditorCreateMode.groupsOnly,
+      createMode: createMode,
     );
   }
 }
@@ -290,6 +301,12 @@ class _GroupRow extends StatelessWidget {
                           groupsProvider.archiveGroup(group.id);
                         }
                       },
+              ),
+              SoftActionLink(
+                label: 'Delete',
+                onTap: groupsProvider.isSaving
+                    ? null
+                    : () => DeleteGroupDialog.open(context, group),
               ),
             ],
           ),

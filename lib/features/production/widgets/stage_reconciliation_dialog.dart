@@ -204,6 +204,25 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
     _errorText = null;
   }
 
+  // While the user types in scrap/leftover, only update the *other* field —
+  // never rewrite the one being edited, or partial decimals like "0." get
+  // reformatted to "0" and you can never enter 0.xxx values.
+  void _syncLeftoverFromScrap() {
+    final difference = _difference;
+    _leftoverCtrl.text = fmtQty(
+      (difference - _scrap).clamp(0, difference).toDouble(),
+    );
+    _errorText = null;
+  }
+
+  void _syncScrapFromLeftover() {
+    final difference = _difference;
+    _scrapCtrl.text = fmtQty(
+      (difference - _leftover).clamp(0, difference).toDouble(),
+    );
+    _errorText = null;
+  }
+
   Future<void> _commit() async {
     if (_isCommitting) return;
     final difference = _difference;
@@ -399,7 +418,7 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
                             label: 'Leftover ($_unit)',
                             controller: _leftoverCtrl,
                             onChanged: (_) => setState(
-                              () => _recalculate(keepScrap: false),
+                              () => _syncScrapFromLeftover(),
                             ),
                           ),
                         ),
@@ -409,7 +428,7 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
                             label: 'Scrap ($_unit)',
                             controller: _scrapCtrl,
                             onChanged: (_) => setState(
-                              () => _recalculate(keepScrap: true),
+                              () => _syncLeftoverFromScrap(),
                             ),
                           ),
                         ),

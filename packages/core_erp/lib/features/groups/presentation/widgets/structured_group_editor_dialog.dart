@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/widgets/app_toast.dart';
+import '../../../../core/widgets/erp_form_dialog.dart';
+import 'delete_group_dialog.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../groups/domain/group_definition.dart';
 import '../../../groups/domain/group_inputs.dart';
@@ -40,11 +43,13 @@ class StructuredGroupEditorDialog extends StatefulWidget {
     StructuredGroupEditorCreateMode createMode =
         StructuredGroupEditorCreateMode.groupsOnly,
   }) {
-    final body = StructuredGroupEditorDialog(
-      group: group,
-      groupType: groupType,
-      initialName: initialName,
-      createMode: createMode,
+    final body = SubmitFormShortcuts(
+      child: StructuredGroupEditorDialog(
+        group: group,
+        groupType: groupType,
+        initialName: initialName,
+        createMode: createMode,
+      ),
     );
     final isNarrow = MediaQuery.of(context).size.width < 900;
     if (isNarrow) {
@@ -84,6 +89,7 @@ class _StructuredGroupEditorDialogState
   final _nameController = TextEditingController();
   final _propertyController = TextEditingController();
   final FocusNode _nameFocus = FocusNode();
+  final FocusNode _propertyFocus = FocusNode();
 
   int? _selectedUnitId;
   int? _selectedParentGroupId;
@@ -125,6 +131,7 @@ class _StructuredGroupEditorDialogState
     _nameController.dispose();
     _propertyController.dispose();
     _nameFocus.dispose();
+    _propertyFocus.dispose();
     super.dispose();
   }
 
@@ -678,6 +685,7 @@ class _StructuredGroupEditorDialogState
                                         label: 'Add Property',
                                         child: TextFormField(
                                           controller: _propertyController,
+                                          focusNode: _propertyFocus,
                                           decoration: const InputDecoration(
                                             hintText:
                                                 'e.g. Material, Size, Color',
@@ -689,8 +697,19 @@ class _StructuredGroupEditorDialogState
                                             size: 14,
                                             weight: FontWeight.w400,
                                           ),
-                                          onFieldSubmitted: (_) =>
-                                              _addPropertyChip(),
+                                          // Enter adds the property and keeps
+                                          // the cursor here for rapid entry;
+                                          // Tab moves focus on as usual.
+                                          onFieldSubmitted: (_) {
+                                            _addPropertyChip();
+                                            WidgetsBinding.instance
+                                                .addPostFrameCallback((_) {
+                                                  if (mounted) {
+                                                    _propertyFocus
+                                                        .requestFocus();
+                                                  }
+                                                });
+                                          },
                                         ),
                                       ),
                                     ),
@@ -790,7 +809,6 @@ class _StructuredGroupEditorDialogState
                                             ...manualDrafts.map(
                                               (draft) => _PropertyChip(
                                                 label: draft.name,
-                                                badge: 'Manual',
                                                 tone: _PropertyChipTone.manual,
                                                 onRemove: () {
                                                   setState(() {
@@ -863,6 +881,27 @@ class _StructuredGroupEditorDialogState
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
+                    if (_isEditMode) ...[
+                      TextButton.icon(
+                        onPressed: provider.isSaving
+                            ? null
+                            : () => _handleDelete(context),
+                        icon: const Icon(
+                          Icons.delete_outline_rounded,
+                          size: 18,
+                          color: Color(0xFFDC2626),
+                        ),
+                        label: Text(
+                          'Delete group',
+                          style: _inventoryInterStyle(
+                            color: const Color(0xFFDC2626),
+                            size: 14,
+                            weight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                    ],
                     OutlinedButton(
                       onPressed: () => Navigator.of(context).pop(),
                       style: OutlinedButton.styleFrom(
@@ -924,6 +963,15 @@ class _StructuredGroupEditorDialogState
     );
   }
 
+  Future<void> _handleDelete(BuildContext context) async {
+    final group = widget.group;
+    if (group == null) return;
+    final deleted = await DeleteGroupDialog.open(context, group);
+    if (deleted && context.mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+
   Future<void> _submit(BuildContext context) async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -983,6 +1031,7 @@ class _StructuredGroupEditorDialogState
         if (!context.mounted) {
           return;
         }
+        showAppToast(context, 'Group created', kind: AppToastKind.success);
         Navigator.of(context).pop(savedGroup);
         return;
       }
@@ -1107,6 +1156,11 @@ class _StructuredGroupEditorDialogState
         inventoryProvider.errorMessage != null) {
       return;
     }
+    showAppToast(
+      context,
+      _isEditMode ? 'Group saved' : 'Group created',
+      kind: AppToastKind.success,
+    );
     Navigator.of(context).pop(savedGroup);
   }
 

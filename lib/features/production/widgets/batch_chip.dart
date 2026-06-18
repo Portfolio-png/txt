@@ -4,10 +4,8 @@ import '../../production_pipelines/domain/material_batch.dart';
 
 /// A tactile, draggable token representing a [MaterialBatch] parked at a node.
 ///
-/// Uses [LongPressDraggable] so "lifting a chip" is a deliberate press-and-hold
-/// gesture — it reads as picking up a physical token and never fights the
-/// canvas's pan/zoom. While dragging, the source chip ghosts out and a larger
-/// elevated chip follows the finger.
+/// Uses [Draggable] so a chip lifts on a plain click-and-drag. While dragging,
+/// the source chip ghosts out and a larger elevated chip follows the pointer.
 class BatchChip extends StatelessWidget {
   const BatchChip({
     super.key,
@@ -31,7 +29,7 @@ class BatchChip extends StatelessWidget {
       compact: compact,
     );
 
-    return LongPressDraggable<MaterialBatch>(
+    return Draggable<MaterialBatch>(
       data: batch,
       dragAnchorStrategy: pointerDragAnchorStrategy,
       feedback: Transform.translate(
@@ -50,7 +48,7 @@ class BatchChip extends StatelessWidget {
       ),
       childWhenDragging: Opacity(opacity: 0.35, child: body),
       child: Tooltip(
-        message: 'Hold to lift • drop on a station to move',
+        message: 'Drag onto a station to move',
         waitDuration: const Duration(milliseconds: 600),
         child: onRevert == null
             ? body

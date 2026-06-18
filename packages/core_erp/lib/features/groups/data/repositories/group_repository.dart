@@ -13,4 +13,6 @@ abstract class GroupRepository {
   Future<GroupDefinition> archiveGroup(int id);
 
   Future<GroupDefinition> restoreGroup(int id);
+
+  Future<void> deleteGroup(int id);
 }

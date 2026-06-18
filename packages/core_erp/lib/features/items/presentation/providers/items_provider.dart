@@ -365,6 +365,11 @@ class ItemsProvider extends ChangeNotifier {
           displayName: current.displayName,
           groupId: current.groupId,
           unitId: current.unitId,
+          // Preserve everything else — saveItem rewrites the whole item, so
+          // omitting these would wipe conversions / naming / pipeline.
+          unitConversions: _preservedConversions(current),
+          namingFormat: current.namingFormat,
+          defaultPipelineId: current.defaultPipelineId,
           variationTree: mutation.nodes,
         ),
       ),
@@ -373,6 +378,16 @@ class ItemsProvider extends ChangeNotifier {
       propertyPathSegments: propertyPathSegments,
     );
   }
+
+  List<ItemUnitConversionInput> _preservedConversions(ItemDefinition item) =>
+      item.unitConversions
+          .map(
+            (c) => ItemUnitConversionInput(
+              unitId: c.unitId,
+              factorToPrimary: c.factorToPrimary,
+            ),
+          )
+          .toList(growable: false);
 
   Future<QuickCreateVariationPropertyResult?> appendTopLevelProperty({
     required int itemId,
@@ -412,6 +427,9 @@ class ItemsProvider extends ChangeNotifier {
           displayName: current.displayName,
           groupId: current.groupId,
           unitId: current.unitId,
+          unitConversions: _preservedConversions(current),
+          namingFormat: current.namingFormat,
+          defaultPipelineId: current.defaultPipelineId,
           variationTree: <ItemVariationNodeInput>[
             ...current.variationTree.map(_toInput),
             ItemVariationNodeInput(
@@ -453,6 +471,28 @@ class ItemsProvider extends ChangeNotifier {
 
   Future<ItemDefinition?> restoreItem(int id) async {
     return _save(() => _repository.restoreItem(id));
+  }
+
+  Future<bool> deleteItem(int id) async {
+    _isSaving = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      await _repository.deleteItem(id);
+      await refresh();
+      return true;
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return false;
+    } finally {
+      _isSaving = false;
+      notifyListeners();
+    }
+  }
+
+  Future<ItemDefinition?> reassignItemGroup(int id, int groupId) async {
+    return _save(() => _repository.reassignItemGroup(id, groupId));
   }
 
   Future<List<ItemAsset>> loadItemAssets(int itemId) async {

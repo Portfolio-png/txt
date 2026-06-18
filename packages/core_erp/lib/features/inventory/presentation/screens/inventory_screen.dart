@@ -8,10 +8,12 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
+import '../providers/inventory_create_command_provider.dart';
 import '../../../../app/preferences/preferences_provider.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_empty_state.dart';
+import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/widgets/app_info_panel.dart';
 import '../../../../core/widgets/app_section_title.dart';
@@ -115,6 +117,7 @@ class InventoryScreen extends StatefulWidget {
     BuildContext context,
     Widget body,
   ) async {
+    body = SubmitFormShortcuts(child: body);
     final isNarrow =
         MediaQuery.of(context).size.width < 800 || !_isDesktopPlatform;
     if (isNarrow) {
@@ -175,11 +178,26 @@ class _InventoryScreenState extends State<InventoryScreen> {
   String? _bulkProgressLabel;
   final Set<String> _pinnedBarcodes = <String>{};
 
+  InventoryCreateCommandProvider? _createCommand;
+
   @override
   void initState() {
     super.initState();
     // KPIs removed: loadInventoryHealth() call removed
     _loadPinnedState();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _createCommand = context.read<InventoryCreateCommandProvider>();
+    _createCommand?.registerCreate(_handlePrimaryCreateTap);
+  }
+
+  @override
+  void dispose() {
+    _createCommand?.unregisterCreate(_handlePrimaryCreateTap);
+    super.dispose();
   }
 
   @override
@@ -1292,6 +1310,56 @@ class _InventoryScreenState extends State<InventoryScreen> {
       );
     }
 
+    // Realtime rolled-up stock per group: sum of contained items' on-hand
+    // plus all descendant child groups. Recomputed each build, so it tracks
+    // movements / pipeline consumption live like the rest of the screen.
+    final aggregateQtyCache = <int, double>{};
+    double aggregateGroupQty(int groupId) {
+      final cached = aggregateQtyCache[groupId];
+      if (cached != null) {
+        return cached;
+      }
+      aggregateQtyCache[groupId] = 0; // cycle guard
+      var total = 0.0;
+      for (final record
+          in itemRecordsByGroupId[groupId] ?? const <MaterialRecord>[]) {
+        total += record.onHand;
+      }
+      for (final childId in childGroupIdsByParentId[groupId] ?? const <int>[]) {
+        total += aggregateGroupQty(childId);
+      }
+      aggregateQtyCache[groupId] = total;
+      return total;
+    }
+
+    String aggregateGroupUnit(int groupId) {
+      for (final record
+          in itemRecordsByGroupId[groupId] ?? const <MaterialRecord>[]) {
+        if (record.unit.trim().isNotEmpty) {
+          return record.unit.trim();
+        }
+      }
+      for (final childId in childGroupIdsByParentId[groupId] ?? const <int>[]) {
+        final unit = aggregateGroupUnit(childId);
+        if (unit.isNotEmpty) {
+          return unit;
+        }
+      }
+      return '';
+    }
+
+    String aggregateGroupStockLabel(int groupId, MaterialRecord groupRecord) {
+      final qty = aggregateGroupQty(groupId);
+      final rounded = qty.roundToDouble();
+      final qtyText = qty == rounded
+          ? rounded.toInt().toString()
+          : qty.toStringAsFixed(2);
+      final unit = groupRecord.unit.trim().isNotEmpty
+          ? groupRecord.unit.trim()
+          : aggregateGroupUnit(groupId);
+      return unit.isEmpty ? qtyText : '$qtyText $unit';
+    }
+
     void appendGroupRows(
       int groupId,
       int depth,
@@ -1325,6 +1393,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
           canExpand: hasChildren,
           isExpanded: isExpanded,
           opensDetails: false,
+          aggregateStockLabel: aggregateGroupStockLabel(groupId, groupRecord),
         ),
       );
       if (!isExpanded) {
@@ -1926,24 +1995,19 @@ class _InventoryScreenState extends State<InventoryScreen> {
       return;
     }
 
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.clearSnackBars();
     if (detail == null) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(inventory.errorMessage ?? 'Failed to post movement.'),
-        ),
+      showAppToast(
+        context,
+        inventory.errorMessage ?? 'Failed to post movement.',
+        kind: AppToastKind.error,
       );
       return;
     }
 
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          '${_movementTypeLabel(movementType)} posted for ${draft.materialBarcode}.',
-        ),
-        behavior: SnackBarBehavior.floating,
-      ),
+    showAppToast(
+      context,
+      '${_movementTypeLabel(movementType)} posted for ${draft.materialBarcode}.',
+      kind: AppToastKind.success,
     );
   }
 
@@ -4655,7 +4719,8 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
                         metrics: widget.metrics,
                       ),
                     _DataCell(
-                      _displayStock(widget.record),
+                      widget.entry.aggregateStockLabel ??
+                          _displayStock(widget.record),
                       width: widget.metrics.stockWidth,
                       metrics: widget.metrics,
                     ),
@@ -6209,6 +6274,7 @@ class _InventoryRowEntry {
     this.canExpand = false,
     this.isExpanded = false,
     this.opensDetails = true,
+    this.aggregateStockLabel,
   });
 
   final MaterialRecord record;
@@ -6224,6 +6290,10 @@ class _InventoryRowEntry {
   final bool canExpand;
   final bool isExpanded;
   final bool opensDetails;
+
+  /// Realtime rolled-up stock for a group row (sum of contained items/child
+  /// groups). Null for non-group rows, which fall back to [record.displayStock].
+  final String? aggregateStockLabel;
 }
 
 class _InventoryTableMetrics {
@@ -6874,6 +6944,8 @@ class _AddChildMaterialSheetState extends State<_AddChildMaterialSheet> {
                             null) {
                       return;
                     }
+                    showAppToast(context, 'Material created',
+                        kind: AppToastKind.success);
                     Navigator.of(context).pop();
                   },
                 ),
@@ -6999,6 +7071,8 @@ class _EditMaterialSheetState extends State<_EditMaterialSheet> {
                             null) {
                       return;
                     }
+                    showAppToast(context, 'Material saved',
+                        kind: AppToastKind.success);
                     Navigator.of(context).pop();
                   },
                 ),
@@ -8306,6 +8380,7 @@ class _AddMaterialFormState extends State<_AddMaterialForm> {
       return;
     }
 
+    showAppToast(context, 'Group created', kind: AppToastKind.success);
     Navigator.of(context).maybePop();
   }
 
@@ -10431,6 +10506,11 @@ class _InventoryCreateGroupEditorState
       return;
     }
 
+    showAppToast(
+      context,
+      initial == null ? 'Item group created' : 'Item group saved',
+      kind: AppToastKind.success,
+    );
     widget.onClose();
   }
 
@@ -12025,6 +12105,7 @@ class _AddStockFormState extends State<_AddStockForm> {
       return;
     }
 
+    showAppToast(context, 'Stock added', kind: AppToastKind.success);
     Navigator.of(context).pop(true);
   }
 }
@@ -12258,6 +12339,7 @@ class _QuickCreateUnitSheetState extends State<_QuickCreateUnitSheet> {
     if (!context.mounted || created == null) {
       return;
     }
+    showAppToast(context, 'Unit created', kind: AppToastKind.success);
     Navigator.of(context).pop(created);
   }
 }

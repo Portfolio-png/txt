@@ -10,13 +10,13 @@ import 'package:core_erp/features/units/domain/unit_definition.dart';
 import 'package:core_erp/features/units/domain/unit_inputs.dart';
 import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
+import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:core_erp/core/widgets/searchable_select.dart';
 import 'package:core_erp/features/items/domain/item_inputs.dart';
 import 'package:core_erp/features/groups/domain/group_definition.dart';
 import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
 
 import '../providers/pipeline_editor_provider.dart';
-import '../providers/production_provider.dart';
 import '../domain/default_floor_context.dart';
 import '../../production_pipelines/data/default_pipeline_templates.dart';
 import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
@@ -50,6 +50,30 @@ class PipelineBuilderScreen extends StatefulWidget {
 class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
   final FocusNode _focusNode = FocusNode(debugLabel: 'pipeline_builder');
   bool _showQuickAddPanel = true;
+  // Ctrl+Shift keyboard-takeover: shows number hints on stages to jump to.
+  bool _hintMode = false;
+
+  static int? _digitIndex(LogicalKeyboardKey key) {
+    const order = <LogicalKeyboardKey>[
+      LogicalKeyboardKey.digit1,
+      LogicalKeyboardKey.digit2,
+      LogicalKeyboardKey.digit3,
+      LogicalKeyboardKey.digit4,
+      LogicalKeyboardKey.digit5,
+      LogicalKeyboardKey.digit6,
+      LogicalKeyboardKey.digit7,
+      LogicalKeyboardKey.digit8,
+      LogicalKeyboardKey.digit9,
+      LogicalKeyboardKey.digit0, // 10th stage
+    ];
+    final index = order.indexOf(key);
+    return index == -1 ? null : index;
+  }
+
+  void _setHintMode(bool value) {
+    if (_hintMode == value) return;
+    setState(() => _hintMode = value);
+  }
 
   @override
   void initState() {
@@ -94,14 +118,20 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
         await repo.updateTemplate(provider.template);
       }
       if (context.mounted) {
-        ScaffoldMessenger.of(
+        final isNew =
+            provider.template.status == PipelineTemplateStatus.draft;
+        showAppToast(
           context,
-        ).showSnackBar(const SnackBar(content: Text('Pipeline saved.')));
+          isNew ? 'Pipeline created' : 'Pipeline saved',
+          kind: AppToastKind.success,
+        );
       }
     } catch (_) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to save pipeline.')),
+        showAppToast(
+          context,
+          'Failed to save pipeline.',
+          kind: AppToastKind.error,
         );
       }
     }
@@ -120,11 +150,50 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
         focusNode: _focusNode,
         autofocus: true,
         onKeyEvent: (node, event) {
+          final kb = HardwareKeyboard.instance;
+          // Drop the Ctrl+Shift hint overlay once either modifier is released.
+          if (event is KeyUpEvent) {
+            if (_hintMode && (!kb.isControlPressed || !kb.isShiftPressed)) {
+              _setHintMode(false);
+            }
+            return KeyEventResult.ignored;
+          }
           if (event is KeyDownEvent) {
             final bool isMac = defaultTargetPlatform == TargetPlatform.macOS;
             final bool isModifier = isMac
                 ? HardwareKeyboard.instance.isMetaPressed
                 : HardwareKeyboard.instance.isControlPressed;
+
+            // Ctrl/Cmd + Shift keyboard takeover: number-jump to a stage.
+            if (isModifier && kb.isShiftPressed) {
+              final stageIndex = _digitIndex(event.logicalKey);
+              if (stageIndex != null) {
+                final nodes = provider.template.nodes;
+                if (stageIndex < nodes.length) {
+                  provider.selectNode(nodes[stageIndex].id, units: units);
+                }
+                _setHintMode(false);
+                return KeyEventResult.handled;
+              }
+              if (event.logicalKey == LogicalKeyboardKey.keyQ) {
+                setState(() => _showQuickAddPanel = true);
+                _setHintMode(false);
+                return KeyEventResult.handled;
+              }
+              // Completing the Ctrl+Shift combo reveals the hints.
+              if (event.logicalKey == LogicalKeyboardKey.shiftLeft ||
+                  event.logicalKey == LogicalKeyboardKey.shiftRight ||
+                  event.logicalKey == LogicalKeyboardKey.controlLeft ||
+                  event.logicalKey == LogicalKeyboardKey.controlRight ||
+                  event.logicalKey == LogicalKeyboardKey.metaLeft ||
+                  event.logicalKey == LogicalKeyboardKey.metaRight) {
+                _setHintMode(true);
+              }
+            } else if (_hintMode &&
+                event.logicalKey == LogicalKeyboardKey.escape) {
+              _setHintMode(false);
+              return KeyEventResult.handled;
+            }
 
             if (isModifier) {
               if (event.logicalKey == LogicalKeyboardKey.keyS) {
@@ -227,8 +296,13 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
               ),
             );
 
+            // Isolate Tab traversal within the stage-edit form so it cycles
+            // its own fields instead of jumping into the quick-stages panel.
+            leftPropertiesPanel = FocusTraversalGroup(child: leftPropertiesPanel);
+
             // Middle flowchart panel
-            final middleFlowchartPanel = Container(
+            final middleFlowchartPanel = FocusTraversalGroup(
+              child: Container(
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(20),
@@ -238,6 +312,7 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
                 children: [
                   _FlowchartSequencePanel(
                     provider: provider,
+                    hintMode: _hintMode,
                     onCanvasTap: () => _focusNode.requestFocus(),
                   ),
                   Positioned(
@@ -265,18 +340,21 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
                   ),
                 ],
               ),
+            ),
             );
 
             // Right quick add panel
-            final rightQuickAddPanel = _QuickAddPanel(
-              provider: provider,
-              items: items,
-              units: units,
-              onClose: () {
-                setState(() {
-                  _showQuickAddPanel = false;
-                });
-              },
+            final rightQuickAddPanel = FocusTraversalGroup(
+              child: _QuickAddPanel(
+                provider: provider,
+                items: items,
+                units: units,
+                onClose: () {
+                  setState(() {
+                    _showQuickAddPanel = false;
+                  });
+                },
+              ),
             );
 
             // Header widget
@@ -1207,9 +1285,7 @@ class _BuilderHeader extends StatelessWidget {
     if (saved == null || !context.mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Pipeline saved to this canvas.')),
-    );
+    showAppToast(context, 'Pipeline saved', kind: AppToastKind.success);
   }
 
   Future<void> _deletePipeline(BuildContext context) async {
@@ -2435,6 +2511,37 @@ class _CanvasNodeAction extends StatelessWidget {
   }
 }
 
+class _HintBadge extends StatelessWidget {
+  const _HintBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 22,
+      height: 22,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: const Color(0xFF6049E3),
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: const [
+          BoxShadow(color: Color(0x336049E3), blurRadius: 6, offset: Offset(0, 2)),
+        ],
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
 class _FlowStageBlock extends StatelessWidget {
   const _FlowStageBlock({
     required this.width,
@@ -3497,10 +3604,12 @@ class _FlowchartSequencePanel extends StatefulWidget {
   const _FlowchartSequencePanel({
     required this.provider,
     required this.onCanvasTap,
+    this.hintMode = false,
   });
 
   final PipelineEditorProvider provider;
   final VoidCallback onCanvasTap;
+  final bool hintMode;
 
   @override
   State<_FlowchartSequencePanel> createState() =>
@@ -3882,6 +3991,26 @@ class _FlowchartSequencePanelState extends State<_FlowchartSequencePanel> {
       isSelected: isSelected,
     );
 
+    Widget badgedNodeWidget = nodeWidget;
+    if (widget.hintMode) {
+      final ordinal = widget.provider.template.nodes.indexWhere(
+        (n) => n.id == node.id,
+      );
+      if (ordinal >= 0 && ordinal < 10) {
+        badgedNodeWidget = Stack(
+          clipBehavior: Clip.none,
+          children: [
+            nodeWidget,
+            Positioned(
+              top: -8,
+              left: -8,
+              child: _HintBadge(label: '${(ordinal + 1) % 10}'),
+            ),
+          ],
+        );
+      }
+    }
+
     final draggableWidget = LongPressDraggable<String>(
       data: node.id,
       feedback: Material(
@@ -3892,7 +4021,7 @@ class _FlowchartSequencePanelState extends State<_FlowchartSequencePanel> {
         ),
       ),
       childWhenDragging: Opacity(opacity: 0.3, child: nodeWidget),
-      child: nodeWidget,
+      child: badgedNodeWidget,
     );
 
     return Column(

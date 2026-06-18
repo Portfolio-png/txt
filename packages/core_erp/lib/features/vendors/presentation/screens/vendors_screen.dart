@@ -10,6 +10,7 @@ import '../../../../core/widgets/export_preview_dialog.dart';
 
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_empty_state.dart';
+import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/widgets/soft_master_data.dart';
 import '../../../../core/widgets/soft_primitives.dart';
@@ -593,6 +594,11 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
             ),
           );
     if (saved != null && mounted && provider.errorMessage == null) {
+      showAppToast(
+        context,
+        widget.vendor == null ? 'Vendor created' : 'Vendor saved',
+        kind: AppToastKind.success,
+      );
       Navigator.of(context).pop(saved);
     }
   }
