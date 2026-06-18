@@ -15,13 +15,19 @@ const PDFDocument = require('pdfkit');
 const morgan = require('morgan');
 const sqlite3 = require('sqlite3').verbose();
 const Sentry = require("@sentry/node");
-const { nodeProfilingIntegration } = require("@sentry/profiling-node");
+let nodeProfilingIntegration = null;
+try {
+  const profilingNode = require("@sentry/profiling-node");
+  nodeProfilingIntegration = profilingNode.nodeProfilingIntegration;
+} catch (e) {
+  console.warn("Sentry CPU Profiler not supported on this Node version. Skipping profiling integration.");
+}
 const { runMigrations } = require('./migrate');
 
 if (process.env.SENTRY_DSN) {
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
-    integrations: [nodeProfilingIntegration()],
+    integrations: nodeProfilingIntegration ? [nodeProfilingIntegration()] : [],
     tracesSampleRate: 1.0,
     profilesSampleRate: 1.0,
   });
