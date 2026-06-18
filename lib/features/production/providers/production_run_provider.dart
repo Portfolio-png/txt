@@ -3,9 +3,14 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../production_pipelines/domain/material_batch.dart';
 import '../data/datasources/offline_database_helper.dart';
 
 enum ProductionState { idle, setup, running, paused, completed }
+
+/// The step shown in the stage/batch double-click popout: first the action
+/// circles (start / mark done / skip), then the reconcile panel.
+enum StagePopoutMode { actions, reconcile }
 
 typedef ProductionNow = DateTime Function();
 typedef ProductionBufferCommitter =
@@ -65,6 +70,47 @@ class ProductionRunProvider extends ChangeNotifier {
 
   void triggerRefresh() {
     _refreshCount++;
+    notifyListeners();
+  }
+
+  // Double-clicking a stage/batch first pops out the stage-action circles
+  // (start / mark done / skip); only "mark done" escalates to the reconcile
+  // panel. [_popoutBatch] null => whole-stage; otherwise per-batch.
+  String? _popoutNodeId;
+  MaterialBatch? _popoutBatch;
+  StagePopoutMode _popoutMode = StagePopoutMode.actions;
+
+  String? get popoutNodeId => _popoutNodeId;
+  MaterialBatch? get popoutBatch => _popoutBatch;
+  StagePopoutMode get popoutMode => _popoutMode;
+  bool get hasPopout => _popoutNodeId != null;
+
+  void openStageActions(String nodeId) {
+    _popoutNodeId = nodeId;
+    _popoutBatch = null;
+    _popoutMode = StagePopoutMode.actions;
+    notifyListeners();
+  }
+
+  void openBatchActions(String nodeId, MaterialBatch batch) {
+    _popoutNodeId = nodeId;
+    _popoutBatch = batch;
+    _popoutMode = StagePopoutMode.actions;
+    notifyListeners();
+  }
+
+  /// Escalate the open popout from the action circles to the reconcile panel.
+  void showReconcile() {
+    if (_popoutNodeId == null) return;
+    _popoutMode = StagePopoutMode.reconcile;
+    notifyListeners();
+  }
+
+  void closePopout() {
+    if (_popoutNodeId == null && _popoutBatch == null) return;
+    _popoutNodeId = null;
+    _popoutBatch = null;
+    _popoutMode = StagePopoutMode.actions;
     notifyListeners();
   }
 

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../production_pipelines/domain/material_batch.dart';
+import '../providers/production_run_provider.dart';
 
 /// A tactile, draggable token representing a [MaterialBatch] parked at a node.
 ///
@@ -47,19 +49,24 @@ class BatchChip extends StatelessWidget {
         ),
       ),
       childWhenDragging: Opacity(opacity: 0.35, child: body),
-      child: Tooltip(
-        message: 'Drag onto a station to move',
-        waitDuration: const Duration(milliseconds: 600),
-        child: onRevert == null
-            ? body
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(child: body),
-                  const SizedBox(width: 4),
-                  _RevertButton(onTap: onRevert!),
-                ],
-              ),
+      child: GestureDetector(
+        onDoubleTap: () => context
+            .read<ProductionRunProvider>()
+            .openBatchActions(batch.currentNodeId, batch),
+        child: Tooltip(
+          message: 'Drag to move • double-click to reconcile',
+          waitDuration: const Duration(milliseconds: 600),
+          child: onRevert == null
+              ? body
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(child: body),
+                    const SizedBox(width: 4),
+                    _RevertButton(onTap: onRevert!),
+                  ],
+                ),
+        ),
       ),
     );
   }

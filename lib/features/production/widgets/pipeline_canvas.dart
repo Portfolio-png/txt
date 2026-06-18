@@ -32,11 +32,13 @@ class PipelineCanvas extends StatefulWidget {
     required this.template,
     required this.selectedNodeId,
     required this.onNodeSelected,
+    this.onNodeDoubleTap,
   });
 
   final PipelineTemplate template;
   final String? selectedNodeId;
   final ValueChanged<String> onNodeSelected;
+  final ValueChanged<String>? onNodeDoubleTap;
 
   @override
   State<PipelineCanvas> createState() => _PipelineCanvasState();
@@ -348,6 +350,112 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
         showFloorToast(
           context,
           'Failed to save batch change: $e',
+          kind: FloorToastKind.error,
+        );
+      }
+    }
+  }
+
+  /// The double-click popout that floats above a stage. Rendered as a
+  /// zero-height overflow child so it sits above the node without pushing the
+  /// stage block down. First shows the action circles (start / mark done /
+  /// skip); "mark done" escalates to the reconcile panel.
+  Widget _popoutAbove(
+    ProcessNode node,
+    ProductionRunProvider runProvider,
+    BatchFlowProvider batchProvider,
+  ) {
+    final runId = runProvider.runId;
+    if (runId == null) return const SizedBox.shrink();
+    final isReconcile = runProvider.popoutMode == StagePopoutMode.reconcile;
+    final batch = runProvider.popoutBatch;
+
+    final Widget content = isReconcile
+        ? SizedBox(
+            width: 320,
+            child: StageReconciliationDialog(
+              key: ValueKey('reconcile-${node.id}-${batch?.id ?? 'stage'}'),
+              node: node,
+              runId: runId,
+              onClose: runProvider.closePopout,
+              batchReconcileQty: batch?.quantity,
+              batchUnit: batch?.unit,
+              batchBarcode: batch?.barcode,
+              onCommitted: (result) {
+                if (batch != null) {
+                  batchProvider.reduceBatch(
+                    runId: runId,
+                    batchId: batch.id,
+                    amount: result.loss,
+                    scrap: result.scrapLogged,
+                    leftover: result.leftoverReturned,
+                  );
+                  _persistBatches(runId, batchProvider);
+                } else {
+                  // Reconciling the whole stage closes it out.
+                  _setNodeStatus(node, NodeRunStatus.done);
+                }
+              },
+            ),
+          )
+        : _StageActionCircles(
+            onStart: () {
+              _setNodeStatus(node, NodeRunStatus.active);
+              runProvider.closePopout();
+            },
+            onMarkDone: runProvider.showReconcile,
+            onSkip: () {
+              _setNodeStatus(node, NodeRunStatus.skipped);
+              runProvider.closePopout();
+            },
+            onClose: runProvider.closePopout,
+          );
+
+    return SizedBox(
+      width: nodeWidth,
+      height: 0,
+      child: OverflowBox(
+        minWidth: 0,
+        maxWidth: isReconcile ? 320 : 240,
+        minHeight: 0,
+        maxHeight: 460,
+        alignment: Alignment.bottomCenter,
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: content,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _setNodeStatus(ProcessNode node, NodeRunStatus status) async {
+    final runProvider = context.read<ProductionRunProvider>();
+    final production = context.read<ProductionProvider>();
+    final repo = context.read<PipelineRunRepository>();
+    final runId = runProvider.runId;
+    if (runId == null) return;
+    try {
+      await repo.updateNodeStatus(
+        runId: runId,
+        nodeId: node.id,
+        status: status,
+      );
+      switch (status) {
+        case NodeRunStatus.active:
+          production.setNodeStatus(node.id, 'Active');
+        case NodeRunStatus.done:
+          production.setNodeStatus(node.id, 'Done');
+        case NodeRunStatus.skipped:
+          production.skipNode(node.id);
+        case NodeRunStatus.pending:
+          production.setNodeStatus(node.id, 'Queued');
+      }
+      runProvider.triggerRefresh();
+    } catch (e) {
+      if (mounted) {
+        showFloorToast(
+          context,
+          'Failed to update stage: $e',
           kind: FloorToastKind.error,
         );
       }
@@ -805,6 +913,15 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                // Double-click pops the action circles above
+                                // this stage (mirrors the batch tray below);
+                                // "mark done" escalates to the reconcile panel.
+                                if (runProvider.popoutNodeId == node.id)
+                                  _popoutAbove(
+                                    node,
+                                    runProvider,
+                                    batchProvider,
+                                  ),
                                 DragTarget<Object>(
                                   onWillAcceptWithDetails: (details) =>
                                       details.data is MaterialRecord ||
@@ -892,6 +1009,12 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
                                           child: GestureDetector(
                                             onTap: () =>
                                                 widget.onNodeSelected(node.id),
+                                            onDoubleTap: widget
+                                                        .onNodeDoubleTap ==
+                                                    null
+                                                ? null
+                                                : () => widget.onNodeDoubleTap!(
+                                                    node.id),
                                             child: Container(
                                               foregroundDecoration: isHovered
                                                   ? BoxDecoration(
@@ -1927,6 +2050,92 @@ class _StockEditQtyDialogState extends State<_StockEditQtyDialog> {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The stage-action circles that pop above a stage/batch on double-click:
+/// start • mark done • skip. "Mark done" escalates to the reconcile panel.
+class _StageActionCircles extends StatelessWidget {
+  const _StageActionCircles({
+    required this.onStart,
+    required this.onMarkDone,
+    required this.onSkip,
+    required this.onClose,
+  });
+
+  final VoidCallback onStart;
+  final VoidCallback onMarkDone;
+  final VoidCallback onSkip;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      elevation: 3,
+      borderRadius: BorderRadius.circular(40),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _circle(
+              Icons.play_arrow_rounded,
+              const Color(0xFF2563EB),
+              'Start stage',
+              onStart,
+            ),
+            const SizedBox(width: 8),
+            _circle(
+              Icons.check_circle_outline_rounded,
+              const Color(0xFF10B981),
+              'Mark done',
+              onMarkDone,
+            ),
+            const SizedBox(width: 8),
+            _circle(
+              Icons.skip_next_rounded,
+              const Color(0xFF64748B),
+              'Skip stage',
+              onSkip,
+            ),
+            const SizedBox(width: 4),
+            _circle(
+              Icons.close_rounded,
+              const Color(0xFF94A3B8),
+              'Close',
+              onClose,
+              size: 30,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _circle(
+    IconData icon,
+    Color color,
+    String tooltip,
+    VoidCallback onTap, {
+    double size = 40,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: color.withValues(alpha: 0.12),
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: SizedBox(
+            width: size,
+            height: size,
+            child: Icon(icon, color: color, size: size * 0.55),
+          ),
         ),
       ),
     );

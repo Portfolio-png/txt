@@ -106,6 +106,7 @@ class _LiveMonitorContentState extends State<_LiveMonitorContent> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<ProductionProvider>();
+    final runProvider = context.read<ProductionRunProvider>();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -127,6 +128,8 @@ class _LiveMonitorContentState extends State<_LiveMonitorContent> {
                               template: provider.template,
                               selectedNodeId: provider.selectedNodeId,
                               onNodeSelected: (id) => provider.selectNode(id),
+                              onNodeDoubleTap: (id) =>
+                                  runProvider.openStageActions(id),
                             ),
                           ),
                           if (provider.selectedNode != null)

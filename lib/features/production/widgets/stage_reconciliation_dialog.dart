@@ -49,13 +49,24 @@ class StageReconciliationDialog extends StatefulWidget {
     required this.runId,
     this.batchOutput,
     this.batchAllottedMax,
+    this.batchReconcileQty,
     this.batchUnit,
     this.batchBarcode,
     this.onCommitted,
+    this.onClose,
   });
 
   final ProcessNode node;
   final String runId;
+
+  /// When set, the widget renders inline (no Dialog chrome) and calls [onClose]
+  /// instead of popping a route on commit/cancel. Used by the strip that opens
+  /// above the stages on double-click.
+  final VoidCallback? onClose;
+
+  /// When set (double-clicking a parked batch), reconciles that batch at rest:
+  /// input material is fixed to the batch quantity and output is editable.
+  final double? batchReconcileQty;
 
   /// When set, the dialog runs in batch mode: [batchOutput] is the quantity
   /// that just advanced out of this stage (locked as the output), allotted is
@@ -160,6 +171,19 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
                     : (widget.node.inputItem?.unitSymbol ?? ''));
           _outputCtrl.text = fmtQty(moved);
           _allottedCtrl.text = fmtQty(moved);
+        } else if (_batchReconcileMode) {
+          // Reconcile a parked batch: input fixed to the batch quantity,
+          // output editable (defaults to the full quantity).
+          final qty = widget.batchReconcileQty!;
+          _allottedFromBarcodes = true; // input material is read-only here
+          _firstBarcode = widget.batchBarcode;
+          _unit = widget.batchUnit?.isNotEmpty == true
+              ? widget.batchUnit!
+              : (inputs.isNotEmpty
+                    ? (inputs.first.unit ?? '')
+                    : (widget.node.inputItem?.unitSymbol ?? ''));
+          _allottedCtrl.text = fmtQty(qty);
+          _outputCtrl.text = fmtQty(qty);
         } else {
           _allottedFromBarcodes = allotted > 0;
           _firstBarcode = inputs.isNotEmpty ? inputs.first.barcode : null;
@@ -179,6 +203,16 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
   }
 
   bool get _batchMode => widget.batchOutput != null;
+  bool get _batchReconcileMode => widget.batchReconcileQty != null;
+  bool get _inline => widget.onClose != null;
+
+  void _dismiss(bool committed) {
+    if (widget.onClose != null) {
+      widget.onClose!();
+    } else if (mounted) {
+      Navigator.of(context).pop(committed);
+    }
+  }
 
   double get _allotted => double.tryParse(_allottedCtrl.text.trim()) ?? 0;
   double get _output => double.tryParse(_outputCtrl.text.trim()) ?? 0;
@@ -333,7 +367,7 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
         ),
       );
       runProvider.triggerRefresh();
-      if (mounted) Navigator.of(context).pop(true);
+      if (mounted) _dismiss(true);
     } catch (e) {
       if (mounted) {
         setState(() => _errorText = 'Failed to commit reconciliation: $e');
@@ -345,14 +379,7 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
 
   @override
   Widget build(BuildContext context) {
-
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 22, 24, 20),
-          child: _isLoading
+    final body = _isLoading
               ? const SizedBox(
                   height: 160,
                   child: Center(child: CircularProgressIndicator()),
@@ -374,7 +401,7 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
                           ),
                         ),
                         IconButton(
-                          onPressed: () => Navigator.of(context).pop(),
+                          onPressed: () => _dismiss(false),
                           icon: const Icon(Icons.close_rounded),
                           tooltip: 'Close',
                         ),
@@ -387,7 +414,7 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
                           child: _QtyField(
                             label: _batchMode
                                 ? 'Consumed ($_unit)'
-                                : 'Allotted ($_unit)',
+                                : 'Input material ($_unit)',
                             controller: _allottedCtrl,
                             enabled: !_allottedFromBarcodes,
                             autofocus: _batchMode,
@@ -460,7 +487,7 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         TextButton(
-                          onPressed: () => Navigator.of(context).pop(),
+                          onPressed: () => _dismiss(false),
                           child: const Text('Cancel'),
                         ),
                         const SizedBox(width: 10),
@@ -480,7 +507,26 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
                       ],
                     ),
                   ],
-                ),
+                );
+
+    if (_inline) {
+      return Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        elevation: 2,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+          child: body,
+        ),
+      );
+    }
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 22, 24, 20),
+          child: body,
         ),
       ),
     );
