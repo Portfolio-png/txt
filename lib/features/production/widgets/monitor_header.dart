@@ -86,8 +86,6 @@ class MonitorHeader extends StatelessWidget {
             color: const Color(0xFF64748B),
           ),
           const Spacer(),
-          const _ElapsedClockLight(),
-          const SizedBox(width: 20),
           FilledButton.icon(
             onPressed: () => _completeOrder(context),
             icon: const Icon(Icons.task_alt_rounded, size: 18),
@@ -270,25 +268,3 @@ class _PulsingDotState extends State<_PulsingDot>
   }
 }
 
-class _ElapsedClockLight extends StatelessWidget {
-  const _ElapsedClockLight();
-
-  @override
-  Widget build(BuildContext context) {
-    return Selector<ProductionRunProvider, String>(
-      selector: (context, provider) => provider.elapsedDisplay,
-      builder: (context, elapsedDisplay, child) {
-        return Text(
-          elapsedDisplay,
-          style: const TextStyle(
-            color: Color(0xFF0F172A),
-            fontFamily: 'monospace',
-            fontSize: 28,
-            fontWeight: FontWeight.w300,
-            letterSpacing: 2,
-          ),
-        );
-      },
-    );
-  }
-}
