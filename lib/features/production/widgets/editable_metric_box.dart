@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
-import '../../production_pipelines/domain/pipeline_run.dart';
 import '../providers/production_run_provider.dart';
 
 class EditableMetricBox extends StatefulWidget {
@@ -23,26 +22,8 @@ class EditableMetricBox extends StatefulWidget {
 }
 
 class _EditableMetricBoxState extends State<EditableMetricBox> {
-  Future<PipelineRun?>? _runFuture;
-  String? _lastRunId;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final runProvider = Provider.of<ProductionRunProvider>(context);
-    final runId = runProvider.runId;
-
-    if (runId != _lastRunId) {
-      _lastRunId = runId;
-      if (runId != null) {
-        _runFuture = context.read<PipelineRunRepository>().getRun(runId);
-      } else {
-        _runFuture = null;
-      }
-    }
-  }
-
   Future<void> _editValue(BuildContext context, double currentValue) async {
+    final runId = context.read<ProductionRunProvider>().runId;
     final controller = TextEditingController(text: currentValue.toString());
     final newValueStr = await showDialog<String>(
       context: context,
@@ -67,19 +48,19 @@ class _EditableMetricBoxState extends State<EditableMetricBox> {
       ),
     );
 
-    if (newValueStr != null && context.mounted && _lastRunId != null) {
+    if (newValueStr != null && context.mounted && runId != null) {
       final val = double.tryParse(newValueStr);
       if (val != null) {
         try {
           await context.read<PipelineRunRepository>().updateNodeMetrics(
-            runId: _lastRunId!,
+            runId: runId,
             nodeId: widget.nodeId,
             metrics: {widget.metricKey: val},
           );
-          // Trigger refresh local future
-          setState(() {
-            _runFuture = context.read<PipelineRunRepository>().getRun(_lastRunId!);
-          });
+          // Re-pull shared run so this and every other watcher updates.
+          if (context.mounted) {
+            context.read<ProductionRunProvider>().triggerRefresh();
+          }
         } catch (e) {
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: \$e')));
@@ -91,63 +72,55 @@ class _EditableMetricBoxState extends State<EditableMetricBox> {
 
   @override
   Widget build(BuildContext context) {
-    if (_runFuture == null) return _buildStatic('—');
+    // Reads the shared run published by the canvas poll, so the value tracks
+    // server truth live (including other clients' reconciliations).
+    final run = context.watch<ProductionRunProvider>().currentRun;
+    if (run == null) return _buildStatic('—');
 
-    return FutureBuilder<PipelineRun?>(
-      future: _runFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return _buildStatic('...');
-        }
-        final run = snapshot.data;
-        if (run == null) return _buildStatic('—');
-        
-        final nodeMetrics = run.nodeMetrics[widget.nodeId] ?? {};
-        final metricVal = (nodeMetrics[widget.metricKey] as num?)?.toDouble() ?? 0.0;
-        final valStr = '${metricVal} Kg';
+    final nodeMetrics = run.nodeMetrics[widget.nodeId] ?? {};
+    final metricVal = (nodeMetrics[widget.metricKey] as num?)?.toDouble() ?? 0.0;
+    final valStr = '$metricVal Kg';
 
-        return Expanded(
-          flex: widget.flex,
-          child: InkWell(
-            onTap: () => _editValue(context, metricVal),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return Expanded(
+      flex: widget.flex,
+      child: InkWell(
+        onTap: () => _editValue(context, metricVal),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        widget.label,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF94A3B8),
-                          letterSpacing: 0.8,
-                        ),
-                      ),
+                Flexible(
+                  child: Text(
+                    widget.label,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF94A3B8),
+                      letterSpacing: 0.8,
                     ),
-                    const SizedBox(width: 4),
-                    const Icon(Icons.edit, size: 10, color: Color(0xFF94A3B8)),
-                  ],
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  valStr,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF334155),
                   ),
                 ),
+                const SizedBox(width: 4),
+                const Icon(Icons.edit, size: 10, color: Color(0xFF94A3B8)),
               ],
             ),
-          ),
-        );
-      },
+            const SizedBox(height: 3),
+            Text(
+              valStr,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF334155),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

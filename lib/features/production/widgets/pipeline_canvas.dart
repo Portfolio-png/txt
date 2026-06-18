@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -49,6 +51,12 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
   Future<PipelineRun?>? _runFuture;
   int? _lastRefreshCount;
   String? _lastRunId;
+  // Last successfully loaded run — shown while a refetch is in flight so the
+  // ~4s live poll doesn't flicker the canvas to an empty state.
+  PipelineRun? _lastRun;
+  // Live cross-client sync: periodically pull server truth for this run.
+  Timer? _pollTimer;
+  static const Duration _pollInterval = Duration(seconds: 4);
 
   static const double nodeWidth = 160;
   static const double nodeHeight = 52;
@@ -63,6 +71,16 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
     _controller.value = Matrix4.identity()
       ..translateByDouble(-50.0, -50.0, 0.0, 1.0)
       ..scaleByDouble(0.9, 0.9, 1.0, 1.0);
+    // Live cross-client sync: re-pull server truth for the open run. The
+    // canvas already refetches when refreshCount changes, so a periodic
+    // triggerRefresh is the whole heartbeat.
+    _pollTimer = Timer.periodic(_pollInterval, (_) {
+      if (!mounted) return;
+      final runProvider = context.read<ProductionRunProvider>();
+      if (runProvider.runId != null) {
+        runProvider.triggerRefresh();
+      }
+    });
   }
 
   @override
@@ -84,6 +102,7 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
 
   @override
   void dispose() {
+    _pollTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -295,6 +314,25 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
         ],
       ),
     );
+  }
+
+  /// Brings the token view in line with freshly-fetched server state: seeds
+  /// on first load, otherwise adopts the server's batches (live sync) — unless
+  /// the local user just edited, in which case we let that settle first so the
+  /// poll doesn't clobber an in-flight, not-yet-persisted change.
+  void _syncBatchesFromRun(PipelineRun run, BatchFlowProvider batchProvider) {
+    if (!batchProvider.isSeeded(run.id)) {
+      _seedBatchesIfNeeded(run, batchProvider);
+      return;
+    }
+    final lastEdit = batchProvider.lastLocalChangeAt(run.id);
+    if (lastEdit != null &&
+        DateTime.now().difference(lastEdit) < const Duration(seconds: 6)) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) batchProvider.syncFromRun(run);
+    });
   }
 
   /// Seeds the run's batch chips once from its assigned stock so the gamified
@@ -839,10 +877,21 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
     return FutureBuilder<PipelineRun?>(
       future: _runFuture,
       builder: (context, snapshot) {
-        final activeRun = snapshot.data;
-        if (activeRun != null) {
-          _seedBatchesIfNeeded(activeRun, batchProvider);
+        if (snapshot.connectionState == ConnectionState.done &&
+            snapshot.data != null) {
+          final freshRun = snapshot.data!;
+          _lastRun = freshRun;
+          _syncBatchesFromRun(freshRun, batchProvider);
+          // Publish to the shared run so node-metric widgets update live too.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              context.read<ProductionRunProvider>().setCurrentRun(freshRun);
+            }
+          });
         }
+        // Fall back to the last loaded run while a poll refetch is in flight
+        // so the canvas doesn't blank out every few seconds.
+        final activeRun = snapshot.data ?? _lastRun;
         final activeStockNodeId = _findActiveStockNodeId(
           activeRun,
           widget.template,

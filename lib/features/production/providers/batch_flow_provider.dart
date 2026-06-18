@@ -95,6 +95,46 @@ class BatchFlowProvider extends ChangeNotifier {
     seedRun(run.id, initial);
   }
 
+  // --- Live sync (cross-client polling) -----------------------------------
+  final Map<String, DateTime> _lastLocalChangeAt = {};
+
+  /// When the local user last mutated this run's batches. The live poller uses
+  /// this to avoid clobbering an edit that may not have finished persisting.
+  DateTime? lastLocalChangeAt(String runId) => _lastLocalChangeAt[runId];
+
+  void _touchLocal(String runId) {
+    _lastLocalChangeAt[runId] = DateTime.now();
+  }
+
+  /// Replaces a run's batches with authoritative server state (from a poll),
+  /// marking the run seeded. No-op if the batches are already identical so the
+  /// poll doesn't churn the UI. Caller should skip this while a local edit is
+  /// still settling (see [lastLocalChangeAt]).
+  void syncFromRun(PipelineRun run) {
+    final current = _byRun[run.id];
+    if (current != null && _sameBatches(current, run.batches)) {
+      _seededRuns.add(run.id);
+      return;
+    }
+    _seededRuns.add(run.id);
+    _byRun[run.id] = [...run.batches];
+    notifyListeners();
+  }
+
+  bool _sameBatches(List<MaterialBatch> a, List<MaterialBatch> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].id != b[i].id ||
+          a[i].quantity != b[i].quantity ||
+          a[i].currentNodeId != b[i].currentNodeId ||
+          a[i].scrap != b[i].scrap ||
+          a[i].leftover != b[i].leftover) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   /// Moves [quantity] of a batch to [toNodeId]. If the quantity is less than
   /// the batch total the batch is split: the source shrinks and a new child
   /// batch lands at the target node. Moving the whole batch relocates it.
@@ -136,6 +176,7 @@ class BatchFlowProvider extends ChangeNotifier {
         ),
       );
     }
+    _touchLocal(runId);
     notifyListeners();
     return resultId;
   }
@@ -201,6 +242,7 @@ class BatchFlowProvider extends ChangeNotifier {
     }
 
     _historyByRun[runId]?.remove(r);
+    _touchLocal(runId);
     notifyListeners();
     return true;
   }
@@ -228,6 +270,7 @@ class BatchFlowProvider extends ChangeNotifier {
         createdAt: DateTime.now(),
       ),
     );
+    _touchLocal(runId);
     notifyListeners();
   }
 
@@ -261,6 +304,7 @@ class BatchFlowProvider extends ChangeNotifier {
         leftover: list[idx].leftover + leftover,
       );
     }
+    _touchLocal(runId);
     notifyListeners();
   }
 

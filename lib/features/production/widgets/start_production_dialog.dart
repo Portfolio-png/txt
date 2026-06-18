@@ -93,9 +93,25 @@ class _StartProductionDialogState extends State<_StartProductionDialog> {
             ? _buildAllAssignedContent()
             : (_showConfirmation ? _buildConfirmationContent() : _buildSelectionContent()),
       ),
-      actions: _currentItems.isEmpty
-          ? [TextButton(onPressed: () => Navigator.of(context).pop(_didCreateRun), child: const Text('Close'))]
-          : (_showConfirmation ? _buildConfirmationActions() : _buildSelectionActions()),
+      // Lay actions out in a Wrap so a long label drops to the next line
+      // instead of overflowing the dialog (same fix as the reconcile dialog).
+      actions: [
+        Wrap(
+          alignment: WrapAlignment.end,
+          spacing: 8,
+          runSpacing: 8,
+          children: _currentItems.isEmpty
+              ? [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(_didCreateRun),
+                    child: const Text('Close'),
+                  ),
+                ]
+              : (_showConfirmation
+                    ? _buildConfirmationActions()
+                    : _buildSelectionActions()),
+        ),
+      ],
     );
   }
 

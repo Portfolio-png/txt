@@ -124,6 +124,14 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
   LeftoverAction _leftoverAction = LeftoverAction.returnToInventory;
   String? _errorText;
 
+  // Manual event times — operators logging from paper enter when material
+  // actually entered/left the stage rather than relying on the PC clock.
+  // Input time defaults to the upstream stage's output time (carried forward,
+  // still editable); it can't predate the upstream stage's input time.
+  DateTime _inputTime = DateTime.now();
+  DateTime _outputTime = DateTime.now();
+  DateTime? _inputFloor;
+
   @override
   void initState() {
     super.initState();
@@ -155,9 +163,33 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
         allotted += input.quantity ?? 0;
       }
       final metrics = run?.nodeMetrics[widget.node.id] ?? const {};
+
+      // Default the event times: carry the upstream stage's output time into
+      // this stage's input time; the floor is the upstream input time.
+      DateTime? upstreamOutput;
+      DateTime? upstreamInput;
+      for (final flow in template.flows) {
+        if (flow.toNodeId != widget.node.id) continue;
+        final m = run?.nodeMetrics[flow.fromNodeId] ?? const {};
+        final o = _parseTime(m['outputTime']);
+        final i = _parseTime(m['inputTime']);
+        if (o != null && (upstreamOutput == null || o.isAfter(upstreamOutput))) {
+          upstreamOutput = o;
+        }
+        if (i != null && (upstreamInput == null || i.isAfter(upstreamInput))) {
+          upstreamInput = i;
+        }
+      }
+      final existingInput = _parseTime(metrics['inputTime']);
+      final existingOutput = _parseTime(metrics['outputTime']);
+
       setState(() {
         _run = run;
         _isLoading = false;
+        _inputFloor = upstreamInput;
+        _inputTime =
+            existingInput ?? upstreamOutput ?? run?.startedAt ?? DateTime.now();
+        _outputTime = existingOutput ?? DateTime.now();
         if (_batchMode) {
           // The moved quantity is the (locked) output; allotted is editable
           // from there up to the source chip's original size.
@@ -212,6 +244,41 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
     } else if (mounted) {
       Navigator.of(context).pop(committed);
     }
+  }
+
+  static DateTime? _parseTime(dynamic value) =>
+      value is String ? DateTime.tryParse(value) : null;
+
+  static String _fmtDateTime(DateTime t) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    return '${two(t.day)} ${months[t.month - 1]} ${t.year}, '
+        '${two(t.hour)}:${two(t.minute)}';
+  }
+
+  static String _fmtTime(DateTime t) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(t.hour)}:${two(t.minute)}';
+  }
+
+  /// Time-only edit: keeps the (carried) date and just changes the clock time,
+  /// which is all an operator logging a same-day shift needs.
+  Future<DateTime?> _pickTime(DateTime initial) async {
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initial),
+    );
+    if (time == null) return null;
+    return DateTime(
+      initial.year,
+      initial.month,
+      initial.day,
+      time.hour,
+      time.minute,
+    );
   }
 
   double get _allotted => double.tryParse(_allottedCtrl.text.trim()) ?? 0;
@@ -284,6 +351,21 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
       );
       return;
     }
+    if (_outputTime.isBefore(_inputTime)) {
+      setState(
+        () => _errorText =
+            'Output time can’t be before the input time (${_fmtDateTime(_inputTime)}).',
+      );
+      return;
+    }
+    if (_inputFloor != null && _inputTime.isBefore(_inputFloor!)) {
+      setState(
+        () => _errorText =
+            'Input time can’t be before the previous stage’s input time '
+            '(${_fmtDateTime(_inputFloor!)}).',
+      );
+      return;
+    }
     final scrappedLeftover = _leftoverAction == LeftoverAction.scrap
         ? _leftover
         : 0.0;
@@ -330,6 +412,8 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
               : (_leftoverAction == LeftoverAction.returnToInventory
                     ? 'returned_to_inventory'
                     : 'scrapped'),
+          'inputTime': _inputTime.toIso8601String(),
+          'outputTime': _outputTime.toIso8601String(),
         },
       );
 
@@ -462,6 +546,41 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
                       ],
                     ),
                     const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _TimeField(
+                            label: 'Input time',
+                            value: _fmtTime(_inputTime),
+                            onTap: () async {
+                              final picked = await _pickTime(_inputTime);
+                              if (picked != null) {
+                                setState(() {
+                                  _inputTime = picked;
+                                  if (_outputTime.isBefore(_inputTime)) {
+                                    _outputTime = _inputTime;
+                                  }
+                                });
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _TimeField(
+                            label: 'Output time',
+                            value: _fmtTime(_outputTime),
+                            onTap: () async {
+                              final picked = await _pickTime(_outputTime);
+                              if (picked != null) {
+                                setState(() => _outputTime = picked);
+                              }
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
                     const Text(
                       'Leftover material will be sent to original inventory stock.',
                       style: TextStyle(
@@ -483,14 +602,15 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
                       ),
                       const SizedBox(height: 10),
                     ],
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
+                    Wrap(
+                      alignment: WrapAlignment.end,
+                      spacing: 10,
+                      runSpacing: 10,
                       children: [
                         TextButton(
                           onPressed: () => _dismiss(false),
                           child: const Text('Cancel'),
                         ),
-                        const SizedBox(width: 10),
                         FilledButton.icon(
                           onPressed: _isCommitting ? null : _commit,
                           icon: _isCommitting
@@ -569,6 +689,53 @@ class _QtyField extends StatelessWidget {
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+        ),
+      ),
+    );
+  }
+}
+
+/// Tappable date+time field matching [_QtyField]'s look. Opens a date then
+/// time picker so operators can log when material actually moved.
+class _TimeField extends StatelessWidget {
+  const _TimeField({
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          isDense: true,
+          filled: true,
+          fillColor: const Color(0xFFF8FAFC),
+          suffixIcon: const Icon(Icons.schedule_rounded, size: 18),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+          ),
+        ),
+        child: Text(
+          value,
+          style: const TextStyle(
+            fontSize: 13.5,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1E293B),
+          ),
         ),
       ),
     );

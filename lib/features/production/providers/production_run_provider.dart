@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../production_pipelines/domain/material_batch.dart';
+import '../../production_pipelines/domain/pipeline_run.dart';
 import '../data/datasources/offline_database_helper.dart';
 
 enum ProductionState { idle, setup, running, paused, completed }
@@ -70,6 +71,17 @@ class ProductionRunProvider extends ChangeNotifier {
 
   void triggerRefresh() {
     _refreshCount++;
+    notifyListeners();
+  }
+
+  // Latest server snapshot of the open run, published by the canvas poll so
+  // node-metric widgets read one shared source instead of each re-fetching.
+  PipelineRun? _currentRun;
+  PipelineRun? get currentRun => _currentRun;
+
+  void setCurrentRun(PipelineRun? run) {
+    if (identical(_currentRun, run)) return;
+    _currentRun = run;
     notifyListeners();
   }
 
