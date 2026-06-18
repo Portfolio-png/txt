@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../data/datasources/offline_database_helper.dart';
 
 enum ProductionState { idle, setup, running, paused, completed }
@@ -37,7 +38,10 @@ class ProductionRunProvider extends ChangeNotifier {
        _tickInterval = tickInterval,
        _offlinePollInterval = offlinePollInterval {
     _startOfflineSyncTimer();
+    _restoreActiveRun();
   }
+
+  static const String _activeRunKey = 'active_run_id';
 
   final ProductionBufferCommitter? _bufferCommitter;
   final ProductionNow _now;
@@ -100,7 +104,38 @@ class ProductionRunProvider extends ChangeNotifier {
     _bankedElapsed = Duration.zero;
     _currentYield = 0;
     _currentScrap = 0;
+    _persistActiveRun(runId);
     notifyListeners();
+  }
+
+  /// Restores the last active run id so a hot restart / app relaunch resumes
+  /// the run the operator was on instead of dropping to idle.
+  Future<void> _restoreActiveRun() async {
+    if (_runId != null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString(_activeRunKey);
+      if (saved != null && saved.isNotEmpty && _runId == null) {
+        _runId = saved;
+        _state = ProductionState.idle;
+        notifyListeners();
+      }
+    } catch (_) {
+      // Prefs unavailable (e.g. tests) — stay idle.
+    }
+  }
+
+  Future<void> _persistActiveRun(String? runId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (runId == null || runId.isEmpty) {
+        await prefs.remove(_activeRunKey);
+      } else {
+        await prefs.setString(_activeRunKey, runId);
+      }
+    } catch (_) {
+      // Best-effort; losing the pointer just means a manual reselect.
+    }
   }
 
   /// Records which stage the run-level buffer commits against.
@@ -117,6 +152,7 @@ class ProductionRunProvider extends ChangeNotifier {
     _runId ??= 'local-${_now().microsecondsSinceEpoch}';
     _state = ProductionState.running;
     _stageStartedAt = _now();
+    _persistActiveRun(_runId);
     _startTicker();
     notifyListeners();
   }
@@ -149,6 +185,10 @@ class ProductionRunProvider extends ChangeNotifier {
     _bankElapsed();
     _state = ProductionState.completed;
     _ticker?.cancel();
+    // Forget the active-run pointer so a restart lands on a clean "pick a run"
+    // state. The finished run stays viewable through its order (assign pipeline
+    // → assigned → production complete). Keep _runId in memory for this session.
+    _persistActiveRun(null);
     notifyListeners();
 
     final committer = _bufferCommitter;
@@ -174,10 +214,7 @@ class ProductionRunProvider extends ChangeNotifier {
         final log = OfflineStageLog(
           runId: runId,
           stageId: stageId ?? '',
-          payload: {
-            'goodYield': _currentYield,
-            'setupScrap': _currentScrap,
-          },
+          payload: {'goodYield': _currentYield, 'setupScrap': _currentScrap},
           createdAt: _now(),
           syncStatus: 'pending',
         );
@@ -310,7 +347,10 @@ class ProductionRunProvider extends ChangeNotifier {
           await OfflineSyncDbHelper.instance.deleteLog(log.id!);
         } on Exception catch (e) {
           if (e is SocketException || e is TimeoutException) {
-            await OfflineSyncDbHelper.instance.updateLogStatus(log.id!, 'failed');
+            await OfflineSyncDbHelper.instance.updateLogStatus(
+              log.id!,
+              'failed',
+            );
           }
         }
       }

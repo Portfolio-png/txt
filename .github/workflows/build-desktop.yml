@@ -130,6 +130,14 @@ jobs:
           name: paper-windows-${{ steps.flags.outputs.label }}
           path: dist/*.zip
 
+      # Some plugins (auto_updater_macos, printing) don't support Swift Package
+      # Manager, and SPM resolves a sentry-cocoa that lacks an API sentry_flutter
+      # calls (binaryImageCache.image). Force the CocoaPods path, which pins a
+      # compatible native Sentry version.
+      - name: Disable Swift Package Manager (macOS)
+        if: matrix.target == 'macos'
+        run: flutter config --no-enable-swift-package-manager
+
       - name: Build (macOS)
         if: matrix.target == 'macos'
         run: flutter build macos --release ${{ steps.flags.outputs.dart_defines }}

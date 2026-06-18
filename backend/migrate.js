@@ -2,7 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
 
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'paper.db');
+// Must match server.js so migrations run against the same database the server
+// actually serves (default backend/paper.db, overridable via DB_PATH).
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'paper.db');
 const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
 
 async function runMigrations() {

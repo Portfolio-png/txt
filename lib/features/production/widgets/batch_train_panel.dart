@@ -16,16 +16,7 @@ import '../providers/production_run_provider.dart';
 /// isn't seeded yet (e.g. opened on a screen without the canvas), it seeds from
 /// the saved run so batches show up without re-opening the run.
 class BatchTrainPanel extends StatefulWidget {
-  const BatchTrainPanel({
-    super.key,
-    required this.expanded,
-    required this.onToggle,
-  });
-
-  /// Whether the ledger is shown. The header always shows and toggles
-  /// this via [onToggle].
-  final bool expanded;
-  final VoidCallback onToggle;
+  const BatchTrainPanel({super.key});
 
   @override
   State<BatchTrainPanel> createState() => _BatchTrainPanelState();
@@ -80,7 +71,12 @@ class _BatchTrainPanelState extends State<BatchTrainPanel> {
       for (var i = 0; i < batches.length; i++)
         _BatchRow(
           label: 'Batch ${i + 1}',
+          material: batches[i].materialName.trim().isNotEmpty
+              ? batches[i].materialName
+              : batches[i].barcode,
           qty: batches[i].quantity,
+          leftover: batches[i].leftover,
+          scrap: batches[i].scrap,
           // Park at the stage the batch is actually parked at on the canvas.
           stageIndex: () {
             final s = stageNodes.indexWhere(
@@ -100,82 +96,65 @@ class _BatchTrainPanelState extends State<BatchTrainPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // The header is the toggle: click it to open/close the lane + ledger.
-        InkWell(
-          onTap: widget.onToggle,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.account_tree_rounded,
-                  size: 16,
-                  color: Color(0xFF475569),
-                ),
-                const SizedBox(width: 6),
-                const Text(
-                  'Batch flow',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF1E293B),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                if (rows.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEEF2FF),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      '${rows.length} batch${rows.length == 1 ? "" : "es"} • ${fmtQty(total)}${unit.isNotEmpty ? " $unit" : ""}',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF4F46E5),
-                      ),
-                    ),
-                  ),
-                const SizedBox(width: 6),
-                Icon(
-                  widget.expanded
-                      ? Icons.keyboard_arrow_up_rounded
-                      : Icons.keyboard_arrow_down_rounded,
-                  size: 18,
-                  color: const Color(0xFF94A3B8),
-                ),
-              ],
-            ),
-          ),
-        ),
-        if (!widget.expanded)
-          const SizedBox.shrink()
-        else ...[
-          const SizedBox(height: 12),
-          if (rows.isEmpty)
-            const Expanded(child: _EmptyState())
-          else
-            // Lane graph dropped — the canvas above already shows batch
-            // positions. The ledger is the unique, per-stage view.
-            Expanded(
-              child: SingleChildScrollView(
-                child: _BatchLedger(
-                  stages: [
-                    for (final n in stageNodes)
-                      n.name.isEmpty ? n.processType : n.name,
-                  ],
-                  rows: rows,
-                  colors: _batchColors,
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.account_tree_rounded,
+                size: 16,
+                color: Color(0xFF475569),
+              ),
+              const SizedBox(width: 6),
+              const Text(
+                'Batch flow',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF1E293B),
                 ),
               ),
+              const SizedBox(width: 8),
+              if (rows.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEEF2FF),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '${rows.length} batch${rows.length == 1 ? "" : "es"} • ${fmtQty(total)}${unit.isNotEmpty ? " $unit" : ""}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF4F46E5),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (rows.isEmpty)
+          const Expanded(child: _EmptyState())
+        else
+          // Lane graph dropped — the canvas above already shows batch
+          // positions. The ledger is the unique, per-stage view.
+          Expanded(
+            child: SingleChildScrollView(
+              child: _BatchLedger(
+                stages: [
+                  for (final n in stageNodes)
+                    n.name.isEmpty ? n.processType : n.name,
+                ],
+                rows: rows,
+                colors: _batchColors,
+              ),
             ),
-        ],
+          ),
       ],
     );
   }
@@ -184,14 +163,20 @@ class _BatchTrainPanelState extends State<BatchTrainPanel> {
 class _BatchRow {
   const _BatchRow({
     required this.label,
+    required this.material,
     required this.qty,
+    required this.leftover,
+    required this.scrap,
     required this.stageIndex,
     required this.colorIndex,
     this.at,
   });
 
   final String label;
+  final String material;
   final double qty;
+  final double leftover;
+  final double scrap;
   final int stageIndex;
   final int colorIndex;
   final DateTime? at;
@@ -238,8 +223,8 @@ class _BatchLedger extends StatelessWidget {
       ),
     );
 
-    // A stage cell: the batch's qty plus when it arrived at this stage, but
-    // only for the stage the batch currently occupies.
+    // A stage cell: the batch's qty, its leftover (L, sky-blue) and scrap (S,
+    // yellow), then when it arrived — only for the stage the batch occupies.
     Widget stageCell(_BatchRow r, int i) {
       if (i != r.stageIndex) return num(0);
       return Column(
@@ -247,6 +232,31 @@ class _BatchLedger extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           num(r.qty),
+          if (r.leftover > 0 || r.scrap > 0)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (r.leftover > 0)
+                  Text(
+                    'L ${fmtQty(r.leftover)}',
+                    style: const TextStyle(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF0284C7), // sky blue
+                    ),
+                  ),
+                if (r.leftover > 0 && r.scrap > 0) const SizedBox(width: 6),
+                if (r.scrap > 0)
+                  Text(
+                    'S ${fmtQty(r.scrap)}',
+                    style: const TextStyle(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFFCA8A04), // yellow
+                    ),
+                  ),
+              ],
+            ),
           Text(
             fmtTime(r.at),
             style: const TextStyle(
@@ -264,7 +274,7 @@ class _BatchLedger extends StatelessWidget {
       child: DataTable(
         headingRowHeight: 36,
         dataRowMinHeight: 44,
-        dataRowMaxHeight: 52,
+        dataRowMaxHeight: 64,
         columnSpacing: 26,
         headingTextStyle: const TextStyle(
           fontSize: 11,
@@ -294,13 +304,28 @@ class _BatchLedger extends StatelessWidget {
                           shape: BoxShape.circle,
                         ),
                       ),
-                      Text(
-                        r.label,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w900,
-                          color: Color(0xFF1E293B),
-                        ),
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            r.label,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFF1E293B),
+                            ),
+                          ),
+                          if (r.material.isNotEmpty)
+                            Text(
+                              r.material,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF94A3B8),
+                              ),
+                            ),
+                        ],
                       ),
                     ],
                   ),

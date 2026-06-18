@@ -233,11 +233,18 @@ class BatchFlowProvider extends ChangeNotifier {
 
   /// Reduces a batch's quantity by [amount] — e.g. the scrap/leftover that a
   /// stage reconciliation declared as having left the production pool beyond
-  /// what advanced. Removes the batch if it drops to (near) zero.
+  /// what advanced. The [scrap] and [leftover] split is accumulated onto the
+  /// batch so the ledger can report it. Removes the batch if it drops to (near)
+  /// zero.
+  // ponytail: a batch fully consumed to scrap/leftover is removed, so its
+  // totals drop off the ledger. Keep a zero-qty "spent" batch only if that case
+  // needs reporting.
   void reduceBatch({
     required String runId,
     required String batchId,
     required double amount,
+    double scrap = 0,
+    double leftover = 0,
   }) {
     if (amount <= 0) return;
     final list = _byRun[runId];
@@ -248,7 +255,11 @@ class BatchFlowProvider extends ChangeNotifier {
     if (next <= 0.0001) {
       list.removeAt(idx);
     } else {
-      list[idx] = list[idx].copyWith(quantity: next);
+      list[idx] = list[idx].copyWith(
+        quantity: next,
+        scrap: list[idx].scrap + scrap,
+        leftover: list[idx].leftover + leftover,
+      );
     }
     notifyListeners();
   }

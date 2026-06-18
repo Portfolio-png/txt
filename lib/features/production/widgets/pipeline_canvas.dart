@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:core_erp/features/inventory/domain/material_record.dart';
@@ -46,7 +47,6 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
   Future<PipelineRun?>? _runFuture;
   int? _lastRefreshCount;
   String? _lastRunId;
-  bool _showBatchFlow = false;
 
   static const double nodeWidth = 160;
   static const double nodeHeight = 52;
@@ -541,6 +541,8 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
             runId: runId,
             batchId: batch.id,
             amount: result.loss,
+            scrap: result.scrapLogged,
+            leftover: result.leftoverReturned,
           );
           record
             ..scrapLogged = result.scrapLogged
@@ -703,9 +705,20 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
           widget.template,
         );
 
-        return Stack(
+        return Column(
           children: [
-            Positioned.fill(
+            _PipelineMetricsBar(
+              runId: runProvider.runId,
+              run: activeRun,
+              template: widget.template,
+              batches: runProvider.runId == null
+                  ? const []
+                  : batchProvider
+                        .batchesForRun(runProvider.runId!)
+                        .where((b) => b.isLive)
+                        .toList(),
+            ),
+            Expanded(
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   color: const Color(0xFFF8FAFC),
@@ -920,14 +933,13 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
                                         );
                                       },
                                 ),
-                                if (nodeBatches.isNotEmpty) ...[
-                                  if (_showBatchFlow)
-                                    NodeBatchTray(
-                                      batches: nodeBatches,
-                                      width: nodeWidth,
-                                      onRevert: _revertBatchArrival,
-                                    ),
-                                ] else if (assignedBarcodes != null &&
+                                if (nodeBatches.isNotEmpty)
+                                  NodeBatchTray(
+                                    batches: nodeBatches,
+                                    width: nodeWidth,
+                                    onRevert: _revertBatchArrival,
+                                  )
+                                else if (assignedBarcodes != null &&
                                     assignedBarcodes.isNotEmpty)
                                   for (final input in assignedBarcodes) ...[
                                     const SizedBox(height: 6),
@@ -941,14 +953,6 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
                     ),
                   ),
                 ),
-              ),
-            ),
-            Positioned(
-              top: 12,
-              right: 12,
-              child: _BatchFlowToggle(
-                active: _showBatchFlow,
-                onTap: () => setState(() => _showBatchFlow = !_showBatchFlow),
               ),
             ),
           ],
@@ -1019,44 +1023,461 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
   }
 }
 
-/// Canvas overlay pill that shows/hides the per-node batch trays. Off by
-/// default so the canvas stays clean until the engineer wants the batch view.
-class _BatchFlowToggle extends StatelessWidget {
-  const _BatchFlowToggle({required this.active, required this.onTap});
+/// Live, per-pipeline metrics strip above the canvas — flow/throughput figures
+/// that are otherwise buried in paperwork, scoped to this run. The strip is
+/// always-on; a "Run insights" toggle expands deeper, threshold-driven health
+/// metrics (Phase 1: Flow & time + Stockout risk, all computed client-side).
+class _PipelineMetricsBar extends StatefulWidget {
+  const _PipelineMetricsBar({
+    required this.runId,
+    required this.run,
+    required this.template,
+    required this.batches,
+  });
 
-  final bool active;
+  final String? runId;
+  final PipelineRun? run;
+  final PipelineTemplate template;
+  final List<MaterialBatch> batches;
+
+  @override
+  State<_PipelineMetricsBar> createState() => _PipelineMetricsBarState();
+}
+
+class _PipelineMetricsBarState extends State<_PipelineMetricsBar> {
+  bool _open = false;
+
+  // User-tunable thresholds — recompute on change (refresh on page).
+  double _maxCycleH = 8; // cycle time red above this many hours
+  double _stallMin = 30; // a batch idle this long flags a stall
+  double _lowStock = 100; // input ATP amber below this, red at <= 0
+
+  static const _green = Color(0xFF10B981);
+  static const _amber = Color(0xFFEAB308); // warning (yellow)
+  static const _red = Color(0xFFCA8A04); // worst case — amber, no red
+  static const _grey = Color(0xFF94A3B8);
+
+  static String _dur(Duration? d) {
+    if (d == null) return '—';
+    final h = d.inHours;
+    final m = d.inMinutes % 60;
+    return h > 0 ? '${h}h ${m}m' : '${m}m';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.runId == null) return const SizedBox.shrink();
+    final run = widget.run;
+    final batches = widget.batches;
+
+    final stages = List<ProcessNode>.from(widget.template.nodes)
+      ..sort((a, b) => a.stageIndex.compareTo(b.stageIndex));
+    final total = stages.length;
+    final done = run == null
+        ? 0
+        : stages
+              .where((n) => run.nodeStatuses[n.id] == NodeRunStatus.done)
+              .length;
+    final outputId = stages.isEmpty ? null : stages.last.id;
+
+    final qtyByNode = <String, double>{};
+    for (final b in batches) {
+      qtyByNode[b.currentNodeId] =
+          (qtyByNode[b.currentNodeId] ?? 0) + b.quantity;
+    }
+    final completed = outputId == null ? 0.0 : (qtyByNode[outputId] ?? 0);
+    final inFlight = batches.where((b) => b.currentNodeId != outputId).toList();
+    final inFlightQty = inFlight.fold<double>(0, (s, b) => s + b.quantity);
+
+    String bottleneck = '—';
+    double bnQty = 0;
+    for (final n in stages) {
+      if (n.id == outputId) continue;
+      final q = qtyByNode[n.id] ?? 0;
+      if (q > bnQty) {
+        bnQty = q;
+        bottleneck =
+            '${n.name.isEmpty ? n.processType : n.name} · ${fmtQty(q)}';
+      }
+    }
+
+    final elapsed = run == null
+        ? null
+        : DateTime.now().difference(run.createdAt);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              _metric('STAGES DONE', '$done / $total'),
+              _divider(),
+              _metric('RUNNING FOR', _dur(elapsed)),
+              _divider(),
+              _metric(
+                'MOVING',
+                '${inFlight.length} · ${fmtQty(inFlightQty)}',
+              ),
+              _divider(),
+              _metric('BUSIEST STAGE', bottleneck),
+              _divider(),
+              _metric('DONE', fmtQty(completed)),
+              const SizedBox(width: 12),
+              _InsightsToggle(
+                open: _open,
+                onTap: () => setState(() => _open = !_open),
+              ),
+            ],
+          ),
+          if (_open) ...[
+            const Divider(height: 26, color: Color(0xFFE2E8F0)),
+            _thresholdsRow(),
+            const SizedBox(height: 14),
+            _insights(context, stages, inFlight, elapsed, done, total),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _insights(
+    BuildContext context,
+    List<ProcessNode> stages,
+    List<MaterialBatch> inFlight,
+    Duration? cycle,
+    int done,
+    int total,
+  ) {
+    final now = DateTime.now();
+
+    // Oldest idle batch → dwell/stall signal.
+    Duration? oldest;
+    String oldestStage = '—';
+    for (final b in inFlight) {
+      final at = b.createdAt;
+      if (at == null) continue;
+      final age = now.difference(at);
+      if (oldest == null || age > oldest) {
+        oldest = age;
+        final n = stages.firstWhereOrNull((s) => s.id == b.currentNodeId);
+        oldestStage = n == null
+            ? '—'
+            : (n.name.isEmpty ? n.processType : n.name);
+      }
+    }
+    final pending = total - done;
+    final stalled =
+        oldest != null && oldest.inMinutes >= _stallMin && pending > 0;
+
+    // Stockout risk per distinct input material (ATP from inventory).
+    final inv = context.watch<InventoryProvider>();
+    final seen = <String>{};
+    final stockCards = <Widget>[];
+    for (final b in widget.batches) {
+      if (!seen.add(b.barcode)) continue;
+      final m = inv.materials.firstWhereOrNull((x) => x.barcode == b.barcode);
+      final atp = m?.availableToPromise;
+      final color = atp == null
+          ? _grey
+          : atp <= 0
+          ? _red
+          : atp < _lowStock
+          ? _amber
+          : _green;
+      stockCards.add(
+        _card(
+          (m?.name.trim().isNotEmpty ?? false) ? m!.name : b.barcode,
+          atp == null ? '—' : '${fmtQty(atp)} free',
+          atp == null
+              ? 'not tracked'
+              : atp <= 0
+              ? 'out of stock'
+              : atp < _lowStock
+              ? 'running low'
+              : 'ok',
+          color,
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionLabel('SPEED'),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            _card(
+              'Time taken',
+              _dur(cycle),
+              'so far',
+              _band(
+                (cycle?.inMinutes ?? 0) / 60.0,
+                _maxCycleH * 0.8,
+                _maxCycleH,
+              ),
+            ),
+            const SizedBox(width: 12),
+            _card(
+              'Slowest batch',
+              _dur(oldest),
+              oldest == null ? 'nothing moving' : 'stuck at $oldestStage',
+              _band(
+                (oldest?.inMinutes ?? 0).toDouble(),
+                _stallMin * 0.6,
+                _stallMin,
+              ),
+            ),
+            const SizedBox(width: 12),
+            _card(
+              'Moving?',
+              stalled ? 'Stuck' : 'Moving',
+              stalled ? 'stuck over ${_stallMin.toInt()}m' : 'all good',
+              stalled ? _red : _green,
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        _sectionLabel('STOCK'),
+        const SizedBox(height: 8),
+        if (stockCards.isEmpty)
+          const Text(
+            'No input materials yet.',
+            style: TextStyle(
+              fontSize: 12,
+              color: _grey,
+              fontWeight: FontWeight.w600,
+            ),
+          )
+        else
+          Row(
+            children: [
+              for (var i = 0; i < stockCards.length; i++) ...[
+                if (i > 0) const SizedBox(width: 12),
+                stockCards[i],
+              ],
+            ],
+          ),
+      ],
+    );
+  }
+
+  /// Green below [amberAt], amber up to [redAt], red beyond.
+  Color _band(double v, double amberAt, double redAt) {
+    if (v >= redAt) return _red;
+    if (v >= amberAt) return _amber;
+    return _green;
+  }
+
+  Widget _thresholdsRow() => Row(
+    children: [
+      _stepper('Too slow after', _maxCycleH, 'h', 1, () {
+        setState(() => _maxCycleH = (_maxCycleH - 1).clamp(1, 999));
+      }, () => setState(() => _maxCycleH += 1)),
+      const SizedBox(width: 18),
+      _stepper('Stuck after', _stallMin, 'm', 5, () {
+        setState(() => _stallMin = (_stallMin - 5).clamp(5, 999));
+      }, () => setState(() => _stallMin += 5)),
+      const SizedBox(width: 18),
+      _stepper('Low stock below', _lowStock, '', 10, () {
+        setState(() => _lowStock = (_lowStock - 10).clamp(0, 99999));
+      }, () => setState(() => _lowStock += 10)),
+    ],
+  );
+
+  Widget _stepper(
+    String label,
+    double value,
+    String suffix,
+    double step,
+    VoidCallback onMinus,
+    VoidCallback onPlus,
+  ) {
+    Widget btn(IconData i, VoidCallback f) => InkWell(
+      onTap: f,
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.all(2),
+        child: Icon(i, size: 16, color: const Color(0xFF64748B)),
+      ),
+    );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '$label  ',
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: _grey,
+          ),
+        ),
+        btn(Icons.remove_circle_outline_rounded, onMinus),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Text(
+            '${value.toInt()}$suffix',
+            style: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF1E293B),
+            ),
+          ),
+        ),
+        btn(Icons.add_circle_outline_rounded, onPlus),
+      ],
+    );
+  }
+
+  Widget _sectionLabel(String t) => Text(
+    t,
+    style: const TextStyle(
+      fontSize: 10,
+      fontWeight: FontWeight.w800,
+      letterSpacing: 0.7,
+      color: _grey,
+    ),
+  );
+
+  Widget _card(String label, String value, String sub, Color color) => Expanded(
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFBFCFE),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF475569),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+              color: color == _green ? const Color(0xFF1E293B) : color,
+            ),
+          ),
+          Text(
+            sub,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w600,
+              color: _grey,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _divider() => Container(
+    width: 1,
+    height: 28,
+    color: const Color(0xFFE2E8F0),
+    margin: const EdgeInsets.symmetric(horizontal: 16),
+  );
+
+  Widget _metric(String label, String value) => Expanded(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+            color: _grey,
+            letterSpacing: 0.6,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 14.5,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF1E293B),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _InsightsToggle extends StatelessWidget {
+  const _InsightsToggle({required this.open, required this.onTap});
+
+  final bool open;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final accent = const Color(0xFF4F46E5);
+    const accent = Color(0xFF4F46E5);
     return Material(
-      color: active ? accent : Colors.white,
+      color: open ? accent : const Color(0xFFF1F5F9),
       borderRadius: BorderRadius.circular(999),
-      elevation: 1.5,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(999),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Batch flow',
+                'Run health',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
-                  color: active ? Colors.white : const Color(0xFF475569),
+                  color: open ? Colors.white : const Color(0xFF475569),
                 ),
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 2),
               Icon(
-                active
+                open
                     ? Icons.keyboard_arrow_up_rounded
                     : Icons.keyboard_arrow_down_rounded,
                 size: 17,
-                color: active ? Colors.white : const Color(0xFF64748B),
+                color: open ? Colors.white : const Color(0xFF64748B),
               ),
             ],
           ),

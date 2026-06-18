@@ -19,6 +19,8 @@ class MaterialBatch {
     this.status = atNode,
     this.parentBatchId,
     this.createdAt,
+    this.scrap = 0,
+    this.leftover = 0,
   });
 
   static const String atNode = 'atNode';
@@ -41,6 +43,11 @@ class MaterialBatch {
   final String? parentBatchId;
   final DateTime? createdAt;
 
+  /// Cumulative scrap and leftover declared against this batch during stage
+  /// reconciliations as it advanced.
+  final double scrap;
+  final double leftover;
+
   bool get isLive => status != consumed;
 
   String get unitLabel => unit != null && unit!.isNotEmpty ? unit! : '';
@@ -55,6 +62,8 @@ class MaterialBatch {
     String? status,
     String? parentBatchId,
     DateTime? createdAt,
+    double? scrap,
+    double? leftover,
   }) {
     return MaterialBatch(
       id: id ?? this.id,
@@ -66,6 +75,8 @@ class MaterialBatch {
       status: status ?? this.status,
       parentBatchId: parentBatchId ?? this.parentBatchId,
       createdAt: createdAt ?? this.createdAt,
+      scrap: scrap ?? this.scrap,
+      leftover: leftover ?? this.leftover,
     );
   }
 
@@ -80,6 +91,8 @@ class MaterialBatch {
       status: json['status'] as String? ?? atNode,
       parentBatchId: json['parentBatchId'] as String?,
       createdAt: DateTime.tryParse(json['createdAt'] as String? ?? ''),
+      scrap: (json['scrap'] as num?)?.toDouble() ?? 0,
+      leftover: (json['leftover'] as num?)?.toDouble() ?? 0,
     );
   }
 
@@ -94,6 +107,8 @@ class MaterialBatch {
       'status': status,
       if (parentBatchId != null) 'parentBatchId': parentBatchId,
       if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
+      if (scrap != 0) 'scrap': scrap,
+      if (leftover != 0) 'leftover': leftover,
     };
   }
 }
