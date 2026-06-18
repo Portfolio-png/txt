@@ -57,6 +57,9 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
   // Live cross-client sync: periodically pull server truth for this run.
   Timer? _pollTimer;
   static const Duration _pollInterval = Duration(seconds: 4);
+  // A stage already marked done warns once on re-entry; double-tapping again
+  // (while armed) overrides and reopens its actions.
+  String? _overrideArmedNodeId;
 
   static const double nodeWidth = 160;
   static const double nodeHeight = 52;
@@ -499,6 +502,22 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
         child: _popoutContent(node, runProvider, batchProvider),
       ),
     );
+  }
+
+  /// Opens a stage's actions, but warns once if the stage is already done —
+  /// a second double-tap (while armed) overrides and reopens it.
+  void _handleNodeDoubleTap(ProcessNode node, PipelineRun? run) {
+    final isDone = run?.nodeStatuses[node.id] == NodeRunStatus.done;
+    if (isDone && _overrideArmedNodeId != node.id) {
+      _overrideArmedNodeId = node.id;
+      showFloorToast(
+        context,
+        '"${node.name}" is already marked done. Double-tap again to override.',
+      );
+      return;
+    }
+    _overrideArmedNodeId = null;
+    widget.onNodeDoubleTap?.call(node.id);
   }
 
   Future<void> _setNodeStatus(ProcessNode node, NodeRunStatus status) async {
@@ -1090,8 +1109,8 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
                                                         .onNodeDoubleTap ==
                                                     null
                                                 ? null
-                                                : () => widget.onNodeDoubleTap!(
-                                                    node.id),
+                                                : () => _handleNodeDoubleTap(
+                                                    node, activeRun),
                                             child: Container(
                                               foregroundDecoration: isHovered
                                                   ? BoxDecoration(
