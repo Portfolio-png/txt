@@ -2753,17 +2753,10 @@ class _FlowStagePalette {
 }
 
 class _DialogField extends StatelessWidget {
-  const _DialogField(
-    this.label,
-    this.controller, {
-    this.isNumeric = false,
-    this.enabled = true,
-  });
+  const _DialogField(this.label, this.controller);
 
   final String label;
   final TextEditingController controller;
-  final bool isNumeric;
-  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -2771,10 +2764,6 @@ class _DialogField extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 16),
       child: TextField(
         controller: controller,
-        enabled: enabled,
-        keyboardType: isNumeric
-            ? const TextInputType.numberWithOptions(decimal: true)
-            : null,
         decoration: InputDecoration(
           labelText: label,
           border: const OutlineInputBorder(),
@@ -3447,39 +3436,8 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
                   );
                 },
               ),
-              const SizedBox(height: 12),
-              _DialogField('Process Action', widget.draft.processType),
-              Row(
-                children: [
-                  Expanded(
-                    child: _DialogField(
-                      'Duration (Hours)',
-                      widget.draft.durationHours,
-                      isNumeric: true,
-                      enabled: widget.draft.durationHours.text != '-1',
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Checkbox(
-                        value: widget.draft.durationHours.text == '-1',
-                        onChanged: (val) {
-                          setState(() {
-                            if (val == true) {
-                              widget.draft.durationHours.text = '-1';
-                            } else {
-                              widget.draft.durationHours.text = '';
-                            }
-                          });
-                        },
-                      ),
-                      const Text('Variable'),
-                    ],
-                  ),
-                ],
-              ),
+              // Process action & duration removed — production timing is
+              // captured live during reconciliation, not at template design.
             ],
 
           ],

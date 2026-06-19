@@ -3916,9 +3916,11 @@ class _InventoryItemCardState extends State<_InventoryItemCard> {
     final record = widget.entry.record;
     final title = widget.entry.displayName ?? record.name;
     final id = widget.entry.displayId ?? record.barcode;
-    final stock = record.displayStock.trim().isNotEmpty
-        ? record.displayStock
-        : '${record.onHand} ${record.unit}'.trim();
+    final stock = _round2Decimals(
+      record.displayStock.trim().isNotEmpty
+          ? record.displayStock
+          : '${record.onHand} ${record.unit}'.trim(),
+    );
     final scheme = _status(record);
     final metaParts = [
       if (record.supplier.trim().isNotEmpty) record.supplier.trim(),
@@ -4051,6 +4053,14 @@ class _InventoryItemCardState extends State<_InventoryItemCard> {
     );
   }
 }
+
+/// Rounds any number with 3+ decimals in [text] to 2 places, leaving integers,
+/// short decimals, and surrounding text/units untouched. Tames float noise like
+/// "0.7999999999" → "0.80" in stock displays.
+String _round2Decimals(String text) => text.replaceAllMapped(
+      RegExp(r'\d+\.\d{3,}'),
+      (m) => double.parse(m[0]!).toStringAsFixed(2),
+    );
 
 /// Yellow "in pipeline" badge shared by the inventory table and card views, so
 /// committed stock reads the same as the production sidebar's headband.
@@ -4792,7 +4802,7 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
 
   String _displayStock(MaterialRecord value) {
     if (value.displayStock.trim().isNotEmpty) {
-      return value.displayStock;
+      return _round2Decimals(value.displayStock);
     }
     final unit = value.unit.trim();
     if (unit.isNotEmpty) {

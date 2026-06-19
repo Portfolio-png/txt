@@ -2368,9 +2368,20 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       bindings: _submitShortcutBindings(() {
         if (canSubmit) {
           _submit(context, clients, items);
+        } else {
+          showGlobalToast(
+            'Add a client, an item, and a unit before creating an order.',
+            kind: AppToastKind.warning,
+          );
         }
       }),
-      child: FocusTraversalGroup(
+      // The dialog opens with no field focused; without a focused descendant
+      // CallbackShortcuts never sees Ctrl+Enter. This anchor holds focus so the
+      // shortcut works immediately (skipTraversal keeps it out of Tab order).
+      child: Focus(
+        autofocus: true,
+        skipTraversal: true,
+        child: FocusTraversalGroup(
         policy: OrderedTraversalPolicy(),
         child: Form(
           key: _formKey,
@@ -2535,6 +2546,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
             ),
           ),
         ),
+      ),
       ),
     );
   }
@@ -3835,10 +3847,18 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     String successMessage = 'Order created successfully.',
   }) async {
     if (!_formKey.currentState!.validate()) {
+      showGlobalToast(
+        'Please fix the highlighted fields before saving.',
+        kind: AppToastKind.error,
+      );
       return;
     }
     final completionInputsValid = _normalizeCompletionDateInputs();
     if (!completionInputsValid) {
+      showGlobalToast(
+        'Check the completion date(s) before saving.',
+        kind: AppToastKind.error,
+      );
       return;
     }
 

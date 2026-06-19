@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:provider/provider.dart';
+import '../../production_pipelines/domain/material_batch.dart' show fmtQty;
 import '../../production_pipelines/domain/node_run_status.dart';
 import '../../production_pipelines/domain/process_node.dart';
 import '../../production_pipelines/domain/pipeline_run.dart';
@@ -449,7 +450,7 @@ class _AssignedStockMetricState extends State<_AssignedStockMetric> {
                   final unitStr = b.unit != null && b.unit!.isNotEmpty
                       ? ' ${b.unit}'
                       : '';
-                  return '${b.barcode} (${b.quantity}$unitStr)';
+                  return '${b.barcode} (${fmtQty(b.quantity!)}$unitStr)';
                 }
                 return b.barcode;
               })

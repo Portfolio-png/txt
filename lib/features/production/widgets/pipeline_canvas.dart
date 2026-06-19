@@ -25,7 +25,6 @@ import 'flow_stage_block.dart';
 import 'batch_chip.dart';
 import 'node_batch_tray.dart';
 import 'floor_toast.dart';
-import 'stage_reconciliation_dialog.dart';
 import '../domain/utils/stage_input_resolver.dart';
 
 class PipelineCanvas extends StatefulWidget {
@@ -408,62 +407,88 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
   ) {
     final runId = runProvider.runId;
     if (runId == null) return const SizedBox.shrink();
-    final isReconcile = runProvider.popoutMode == StagePopoutMode.reconcile;
     final batch = runProvider.popoutBatch;
 
-    final Widget content = isReconcile
-        ? SizedBox(
-            width: 320,
-            child: StageReconciliationDialog(
-              key: ValueKey('reconcile-${node.id}-${batch?.id ?? 'stage'}'),
-              node: node,
-              runId: runId,
-              onClose: runProvider.closePopout,
-              batchReconcileQty: batch?.quantity,
-              batchUnit: batch?.unit,
-              batchBarcode: batch?.barcode,
-              onCommitted: (result) {
-                if (batch != null) {
-                  batchProvider.reduceBatch(
-                    runId: runId,
-                    batchId: batch.id,
-                    amount: result.loss,
-                    scrap: result.scrapLogged,
-                    leftover: result.leftoverReturned,
-                  );
-                  _persistBatches(runId, batchProvider);
-                } else {
-                  // Reconciling the whole stage closes it out.
-                  _setNodeStatus(node, NodeRunStatus.done);
-                }
-              },
-            ),
-          )
-        : (batch != null
-              ? _BatchActionCircles(
-                  label: '${fmtQty(batch.quantity)}'
-                      '${batch.unit != null && batch.unit!.isNotEmpty ? ' ${batch.unit}' : ''}',
-                  onReconcile: runProvider.showReconcile,
-                  onRevert: () {
-                    runProvider.closePopout();
-                    _revertBatchArrival(batch);
-                  },
-                  onClose: runProvider.closePopout,
-                )
-              : _StageActionCircles(
-                  onStart: () {
-                    _setNodeStatus(node, NodeRunStatus.active);
-                    runProvider.closePopout();
-                  },
-                  onMarkDone: runProvider.showReconcile,
-                  onSkip: () {
-                    _setNodeStatus(node, NodeRunStatus.skipped);
-                    runProvider.closePopout();
-                  },
-                  onClose: runProvider.closePopout,
-                ));
+    // "Batch N" = this batch's 1-based position among the live batches at the
+    // stage, so the popout/reconcile panel says what it was opened for.
+    String? batchLabel;
+    if (batch != null) {
+      final atNode = batchProvider.batchesAtNode(runId, node.id);
+      final idx = atNode.indexWhere((b) => b.id == batch.id);
+      batchLabel = 'Batch ${idx >= 0 ? idx + 1 : 1}';
+    }
 
-    return content;
+    // Reconcile no longer renders here — "mark done" / "reconcile batch" dock
+    // the form into the Assign Stock sidebar (see [_reconcileStage]/
+    // [_reconcileBatch]).
+    return batch != null
+        ? _BatchActionCircles(
+            label: '${node.name} · $batchLabel · '
+                '${fmtQty(batch.quantity)}'
+                '${batch.unit != null && batch.unit!.isNotEmpty ? ' ${batch.unit}' : ''}',
+            onReconcile: () => _reconcileBatch(node, batch, batchLabel),
+            onRevert: () {
+              runProvider.closePopout();
+              _revertBatchArrival(batch);
+            },
+            onClose: runProvider.closePopout,
+          )
+        : _StageActionCircles(
+            title: node.name,
+            onStart: () {
+              _setNodeStatus(node, NodeRunStatus.active);
+              runProvider.closePopout();
+            },
+            onMarkDone: () => _reconcileStage(node),
+            onSkip: () {
+              _setNodeStatus(node, NodeRunStatus.skipped);
+              runProvider.closePopout();
+            },
+            onClose: runProvider.closePopout,
+          );
+  }
+
+  /// Reconcile a whole stage via the docked sidebar panel, then mark it done.
+  Future<void> _reconcileStage(ProcessNode node) async {
+    final runProvider = context.read<ProductionRunProvider>();
+    final runId = runProvider.runId;
+    if (runId == null) return;
+    final result = await runProvider.requestReconcile(
+      ReconcileRequest(node: node, runId: runId),
+    );
+    if (result != null) _setNodeStatus(node, NodeRunStatus.done);
+  }
+
+  /// Reconcile a parked batch via the docked sidebar panel, then deduct the
+  /// declared loss (scrap + leftover beyond output) from the source chip.
+  Future<void> _reconcileBatch(
+    ProcessNode node,
+    MaterialBatch batch,
+    String? batchLabel,
+  ) async {
+    final runProvider = context.read<ProductionRunProvider>();
+    final batchProvider = context.read<BatchFlowProvider>();
+    final runId = runProvider.runId;
+    if (runId == null) return;
+    final result = await runProvider.requestReconcile(
+      ReconcileRequest(
+        node: node,
+        runId: runId,
+        batchReconcileQty: batch.quantity,
+        batchUnit: batch.unit,
+        batchBarcode: batch.barcode,
+        batchLabel: batchLabel,
+      ),
+    );
+    if (result == null) return;
+    batchProvider.reduceBatch(
+      runId: runId,
+      batchId: batch.id,
+      amount: result.loss,
+      scrap: result.scrapLogged,
+      leftover: result.leftoverReturned,
+    );
+    await _persistBatches(runId, batchProvider);
   }
 
   /// Hit-testable popout overlay anchored directly above its stage. Lives
@@ -486,19 +511,14 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
     if (found == null) return const SizedBox.shrink();
     final node = found;
 
-    // Top-centre of the stage block in canvas coordinates → viewport pixels.
-    final canvasPoint = Offset(
-      100 + (node.stageIndex * columnWidth) + (nodeWidth / 2),
-      100 + (node.laneIndex * rowHeight),
-    );
-    final p = MatrixUtils.transformPoint(_controller.value, canvasPoint);
-
+    // Centred horizontally just under the KPI bar, not floating over the
+    // tapped stage — a single, predictable spot for every popout.
     return Positioned(
-      left: p.dx,
-      top: p.dy - 12,
-      child: FractionalTranslation(
-        // Centre horizontally on the column and sit just above the stage.
-        translation: const Offset(-0.5, -1.0),
+      top: 12,
+      left: 0,
+      right: 0,
+      child: Align(
+        alignment: Alignment.topCenter,
         child: _popoutContent(node, runProvider, batchProvider),
       ),
     );
@@ -726,32 +746,34 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
     if (sourceNode != null &&
         sourceNode.processType != 'Input' &&
         sourceNode.processType != 'Output') {
-      await StageReconciliationDialog.show(
-        context,
-        node: sourceNode,
-        runId: runId,
-        batchOutput: qty,
-        batchAllottedMax: batch.quantity,
-        batchUnit: batch.unit,
-        batchBarcode: batch.barcode,
-        onCommitted: (result) {
-          // Scrap/leftover declared beyond what advanced leaves the source
-          // chip too, keeping the chips consistent with the ledger.
-          batchProvider.reduceBatch(
-            runId: runId,
-            batchId: batch.id,
-            amount: result.loss,
-            scrap: result.scrapLogged,
-            leftover: result.leftoverReturned,
-          );
-          record
-            ..scrapLogged = result.scrapLogged
-            ..leftoverReturned = result.leftoverReturned
-            ..reconcileBarcode = result.barcode
-            ..lossQty = result.loss;
-          _persistBatches(runId, batchProvider);
-        },
+      final runProvider = context.read<ProductionRunProvider>();
+      final result = await runProvider.requestReconcile(
+        ReconcileRequest(
+          node: sourceNode,
+          runId: runId,
+          batchOutput: qty,
+          batchAllottedMax: batch.quantity,
+          batchUnit: batch.unit,
+          batchBarcode: batch.barcode,
+        ),
       );
+      if (result != null) {
+        // Scrap/leftover declared beyond what advanced leaves the source
+        // chip too, keeping the chips consistent with the ledger.
+        batchProvider.reduceBatch(
+          runId: runId,
+          batchId: batch.id,
+          amount: result.loss,
+          scrap: result.scrapLogged,
+          leftover: result.leftoverReturned,
+        );
+        record
+          ..scrapLogged = result.scrapLogged
+          ..leftoverReturned = result.leftoverReturned
+          ..reconcileBarcode = result.barcode
+          ..lossQty = result.loss;
+        await _persistBatches(runId, batchProvider);
+      }
     }
   }
 
@@ -2159,12 +2181,14 @@ class _StockEditQtyDialogState extends State<_StockEditQtyDialog> {
 /// start • mark done • skip. "Mark done" escalates to the reconcile panel.
 class _StageActionCircles extends StatelessWidget {
   const _StageActionCircles({
+    required this.title,
     required this.onStart,
     required this.onMarkDone,
     required this.onSkip,
     required this.onClose,
   });
 
+  final String title;
   final VoidCallback onStart;
   final VoidCallback onMarkDone;
   final VoidCallback onSkip;
@@ -2177,10 +2201,25 @@ class _StageActionCircles extends StatelessWidget {
       elevation: 3,
       borderRadius: BorderRadius.circular(40),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        padding: const EdgeInsets.fromLTRB(14, 6, 8, 6),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Icon(
+              Icons.account_tree_rounded,
+              size: 16,
+              color: const Color(0xFF2563EB).withValues(alpha: 0.9),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF1E293B),
+              ),
+            ),
+            const SizedBox(width: 10),
             _circle(
               Icons.play_arrow_rounded,
               const Color(0xFF2563EB),

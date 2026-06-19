@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import 'package:core_erp/core/theme/soft_erp_theme.dart';
+import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:core_erp/features/inventory/data/repositories/inventory_repository.dart';
 import 'package:core_erp/features/inventory/domain/inventory_control_tower.dart';
 
@@ -12,30 +14,6 @@ import '../../production_pipelines/domain/process_node.dart';
 import '../domain/utils/stage_input_resolver.dart';
 import '../providers/production_provider.dart';
 import '../providers/production_run_provider.dart';
-
-enum LeftoverAction { returnToInventory, scrap }
-
-/// What a reconcile commit booked, so a later revert can compensate it.
-class ReconcileResult {
-  const ReconcileResult({
-    required this.loss,
-    required this.scrapLogged,
-    required this.leftoverReturned,
-    this.barcode,
-  });
-
-  /// Allotted − output: the amount deducted from the source chip.
-  final double loss;
-
-  /// Scrap booked to the production scrap ledger.
-  final double scrapLogged;
-
-  /// Leftover returned to inventory.
-  final double leftoverReturned;
-
-  /// The material the scrap/leftover was booked against.
-  final String? barcode;
-}
 
 /// Asks the engineer to account for the difference between the material
 /// allotted to a stage and the stage's output. The difference can only be
@@ -52,12 +30,17 @@ class StageReconciliationDialog extends StatefulWidget {
     this.batchReconcileQty,
     this.batchUnit,
     this.batchBarcode,
+    this.batchLabel,
     this.onCommitted,
     this.onClose,
   });
 
   final ProcessNode node;
   final String runId;
+
+  /// e.g. "Batch 2" — shown in the title so the centred popout says which
+  /// batch it reconciles. Null for a whole-stage reconcile.
+  final String? batchLabel;
 
   /// When set, the widget renders inline (no Dialog chrome) and calls [onClose]
   /// instead of popping a route on commit/cancel. Used by the strip that opens
@@ -121,7 +104,7 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
   bool _allottedFromBarcodes = false;
   String _unit = '';
   String? _firstBarcode;
-  LeftoverAction _leftoverAction = LeftoverAction.returnToInventory;
+  final LeftoverAction _leftoverAction = LeftoverAction.returnToInventory;
   String? _errorText;
 
   // Manual event times — operators logging from paper enter when material
@@ -472,24 +455,15 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Reconcile "${widget.node.name}"',
-                            style: const TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w900,
-                              color: Color(0xFF1E293B),
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => _dismiss(false),
-                          icon: const Icon(Icons.close_rounded),
-                          tooltip: 'Close',
-                        ),
-                      ],
+                    Text(
+                      widget.batchLabel == null
+                          ? 'Reconcile "${widget.node.name}"'
+                          : 'Reconcile "${widget.node.name}" · ${widget.batchLabel}',
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: SoftErpTheme.textPrimary,
+                      ),
                     ),
                     const SizedBox(height: 18),
                     Row(
@@ -607,22 +581,16 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
                       spacing: 10,
                       runSpacing: 10,
                       children: [
-                        TextButton(
-                          onPressed: () => _dismiss(false),
-                          child: const Text('Cancel'),
+                        AppButton(
+                          label: 'Cancel',
+                          variant: AppButtonVariant.secondary,
+                          onPressed: _isCommitting ? null : () => _dismiss(false),
                         ),
-                        FilledButton.icon(
+                        AppButton(
+                          label: 'Commit Reconciliation',
+                          icon: Icons.fact_check_rounded,
+                          isLoading: _isCommitting,
                           onPressed: _isCommitting ? null : _commit,
-                          icon: _isCommitting
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.fact_check_rounded, size: 18),
-                          label: const Text('Commit Reconciliation'),
                         ),
                       ],
                     ),

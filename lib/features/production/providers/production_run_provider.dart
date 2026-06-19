@@ -5,13 +5,60 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../production_pipelines/domain/material_batch.dart';
 import '../../production_pipelines/domain/pipeline_run.dart';
+import '../../production_pipelines/domain/process_node.dart';
 import '../data/datasources/offline_database_helper.dart';
 
 enum ProductionState { idle, setup, running, paused, completed }
 
-/// The step shown in the stage/batch double-click popout: first the action
-/// circles (start / mark done / skip), then the reconcile panel.
-enum StagePopoutMode { actions, reconcile }
+enum LeftoverAction { returnToInventory, scrap }
+
+/// What a reconcile commit booked, so a later revert can compensate it.
+class ReconcileResult {
+  const ReconcileResult({
+    required this.loss,
+    required this.scrapLogged,
+    required this.leftoverReturned,
+    this.barcode,
+  });
+
+  /// Allotted − output: the amount deducted from the source chip.
+  final double loss;
+
+  /// Scrap booked to the production scrap ledger.
+  final double scrapLogged;
+
+  /// Leftover returned to inventory.
+  final double leftoverReturned;
+
+  /// The material the scrap/leftover was booked against.
+  final String? barcode;
+}
+
+/// A request to reconcile a stage/batch, surfaced in the Assign Stock sidebar
+/// (SolidWorks-style docked panel) rather than a centred dialog. The caller
+/// awaits [ProductionRunProvider.requestReconcile]; the sidebar form resolves
+/// it with a [ReconcileResult] on commit or null on cancel.
+class ReconcileRequest {
+  const ReconcileRequest({
+    required this.node,
+    required this.runId,
+    this.batchOutput,
+    this.batchAllottedMax,
+    this.batchReconcileQty,
+    this.batchUnit,
+    this.batchBarcode,
+    this.batchLabel,
+  });
+
+  final ProcessNode node;
+  final String runId;
+  final double? batchOutput;
+  final double? batchAllottedMax;
+  final double? batchReconcileQty;
+  final String? batchUnit;
+  final String? batchBarcode;
+  final String? batchLabel;
+}
 
 typedef ProductionNow = DateTime Function();
 typedef ProductionBufferCommitter =
@@ -85,36 +132,26 @@ class ProductionRunProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Double-clicking a stage/batch first pops out the stage-action circles
-  // (start / mark done / skip); only "mark done" escalates to the reconcile
-  // panel. [_popoutBatch] null => whole-stage; otherwise per-batch.
+  // Double-clicking a stage/batch pops out the action circles (start / mark
+  // done / skip, or batch reconcile / revert). Reconcile itself is handled by
+  // the docked panel below, not a popout mode. [_popoutBatch] null =>
+  // whole-stage; otherwise per-batch.
   String? _popoutNodeId;
   MaterialBatch? _popoutBatch;
-  StagePopoutMode _popoutMode = StagePopoutMode.actions;
 
   String? get popoutNodeId => _popoutNodeId;
   MaterialBatch? get popoutBatch => _popoutBatch;
-  StagePopoutMode get popoutMode => _popoutMode;
   bool get hasPopout => _popoutNodeId != null;
 
   void openStageActions(String nodeId) {
     _popoutNodeId = nodeId;
     _popoutBatch = null;
-    _popoutMode = StagePopoutMode.actions;
     notifyListeners();
   }
 
   void openBatchActions(String nodeId, MaterialBatch batch) {
     _popoutNodeId = nodeId;
     _popoutBatch = batch;
-    _popoutMode = StagePopoutMode.actions;
-    notifyListeners();
-  }
-
-  /// Escalate the open popout from the action circles to the reconcile panel.
-  void showReconcile() {
-    if (_popoutNodeId == null) return;
-    _popoutMode = StagePopoutMode.reconcile;
     notifyListeners();
   }
 
@@ -122,8 +159,38 @@ class ProductionRunProvider extends ChangeNotifier {
     if (_popoutNodeId == null && _popoutBatch == null) return;
     _popoutNodeId = null;
     _popoutBatch = null;
-    _popoutMode = StagePopoutMode.actions;
     notifyListeners();
+  }
+
+  // The reconcile form docks into the Assign Stock sidebar. A caller (canvas
+  // drag-drop or a stage/batch action) opens one with [requestReconcile] and
+  // awaits the result; the sidebar form resolves it via [submitReconcile] /
+  // [cancelReconcile].
+  ReconcileRequest? _reconcileRequest;
+  Completer<ReconcileResult?>? _reconcileCompleter;
+
+  ReconcileRequest? get reconcileRequest => _reconcileRequest;
+
+  Future<ReconcileResult?> requestReconcile(ReconcileRequest request) {
+    // Only one docked reconcile at a time — cancel any in-flight one first.
+    _reconcileCompleter?.complete(null);
+    closePopout();
+    _reconcileRequest = request;
+    _reconcileCompleter = Completer<ReconcileResult?>();
+    notifyListeners();
+    return _reconcileCompleter!.future;
+  }
+
+  void submitReconcile(ReconcileResult result) => _resolveReconcile(result);
+
+  void cancelReconcile() => _resolveReconcile(null);
+
+  void _resolveReconcile(ReconcileResult? result) {
+    final completer = _reconcileCompleter;
+    _reconcileRequest = null;
+    _reconcileCompleter = null;
+    notifyListeners();
+    if (completer != null && !completer.isCompleted) completer.complete(result);
   }
 
   ProductionState get state => _state;

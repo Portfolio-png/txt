@@ -153,7 +153,12 @@ class _LiveMonitorContentState extends State<_LiveMonitorContent> {
                 ),
               ),
             ),
-            const InventorySidebar(),
+            InventorySidebar(
+              reconcile: context
+                  .select<ProductionRunProvider, ReconcileRequest?>(
+                    (p) => p.reconcileRequest,
+                  ),
+            ),
           ],
         ),
       ),

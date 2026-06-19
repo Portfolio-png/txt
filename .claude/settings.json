@@ -7,7 +7,16 @@
       "Bash(node --check server.js)",
       "Bash(node --check f:/Rutu/txt/backend/server.js)",
       "Bash(python3 -)",
-      "Bash(grep -vE \"^Analyzing|^$|issues found|^\\\\s*$\")"
+      "Bash(grep -vE \"^Analyzing|^$|issues found|^\\\\s*$\")",
+      "Bash(grep -n \"Kg\\\\|toStringAsFixed\\\\|ASSIGNED\\\\|Assigned\\\\|assigned\\\\|stock\\\\|Stock\\\\|quantity\\\\|\\\\.toString\\(\\)\\\\|metricVal\\\\|effectiveStageInputs\\\\|\\\\\\\\\\\\$\" lib/features/production/widgets/floor_node_terminal.dart)",
+      "Bash(grep -ivE \"pipeline_run|PipelineRun|pipeline_template|PipelineTemplate|import|//|pipeline_builder|pipeline_canvas|production_pipelines/data|repositories\")",
+      "Bash(grep -iE \"Text\\\\\\(|'.*pipeline|\\\\\".*pipeline|label|in \\\\\\\\\\\\$|count\")",
+      "Bash(grep -iE \"Text\\\\\\(|label:|'.*pipeline|in \\\\\\\\\\\\$|count|\\\\\\\\\\\\$\\\\{\")",
+      "Bash(awk 'NR>=3890 && NR<=3980 && /stock|quantity/' packages/core_erp/lib/features/inventory/presentation/screens/inventory_screen.dart)",
+      "PowerShell(flutter analyze lib/features/production/providers/production_run_provider.dart lib/features/production/widgets/stage_reconciliation_dialog.dart lib/features/production/widgets/pipeline_canvas.dart lib/features/production/widgets/inventory_sidebar.dart lib/features/production/screens/live_production_monitor_screen.dart 2>&1)",
+      "PowerShell(flutter test test/features/production/production_widget_test.dart 2>&1)",
+      "PowerShell(flutter analyze lib/features/production 2>&1)",
+      "PowerShell(flutter analyze lib/features/production/widgets/inventory_sidebar.dart 2>&1)"
     ]
   }
 }
