@@ -41,6 +41,8 @@ import 'package:core_erp/features/units/presentation/providers/units_provider.da
 import 'package:core_erp/features/vendors/data/repositories/api_vendor_repository.dart';
 import 'package:core_erp/features/vendors/data/repositories/vendor_repository.dart';
 import 'package:core_erp/features/vendors/presentation/providers/vendors_provider.dart';
+import 'package:core_erp/features/departments/data/repositories/departments_repository.dart';
+import 'package:core_erp/features/departments/presentation/providers/departments_provider.dart';
 import 'features/machines/data/machine_repository.dart';
 import 'features/machines/data/api_machine_repository.dart';
 import 'features/machines/presentation/providers/machine_provider.dart';
@@ -128,6 +130,7 @@ class MyApp extends StatelessWidget {
     this.pipelineRunRepository,
     this.machineRepository,
     this.dieRepository,
+    this.departmentsRepository,
     this.demoModeOverride,
   });
 
@@ -143,6 +146,7 @@ class MyApp extends StatelessWidget {
   final PipelineRunRepository? pipelineRunRepository;
   final MachineRepository? machineRepository;
   final DieRepository? dieRepository;
+  final DepartmentsRepository? departmentsRepository;
   final bool? demoModeOverride;
 
 
@@ -329,6 +333,11 @@ class MyApp extends StatelessWidget {
               dieRepository ??
               _buildDieRepository(context.read<AuthProvider>()),
         ),
+        Provider<DepartmentsRepository>(
+          create: (context) =>
+              departmentsRepository ??
+              _buildDepartmentsRepository(context.read<AuthProvider>()),
+        ),
         ChangeNotifierProvider(create: (_) => PreferencesProvider()),
         ChangeNotifierProvider(create: (_) => NavigationProvider()),
         Provider<AppNavigation>(create: (context) => AppNavigationWrapper(context.read<NavigationProvider>())),
@@ -413,6 +422,14 @@ class MyApp extends StatelessWidget {
           update: (context, repository, previous) =>
               previous ?? DiesProvider(repository: repository)
                 ..initialize(),
+        ),
+        ChangeNotifierProxyProvider<DepartmentsRepository, DepartmentsProvider>(
+          create: (context) =>
+              DepartmentsProvider(repository: context.read<DepartmentsRepository>())
+                ..load(),
+          update: (context, repository, previous) =>
+              previous ?? DepartmentsProvider(repository: repository)
+                ..load(),
         ),
         ChangeNotifierProvider(create: (_) => TelemetryProvider()),
         ChangeNotifierProvider(create: (_) => ProductionProvider.seeded()),
@@ -555,6 +572,13 @@ class MyApp extends StatelessWidget {
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
       useMockResponses: _effectiveDemoMode,
+    );
+  }
+
+  DepartmentsRepository _buildDepartmentsRepository(AuthProvider auth) {
+    return DepartmentsRepository(
+      client: _authClient(auth),
+      baseUrl: _apiBaseUrl,
     );
   }
 }

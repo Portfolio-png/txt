@@ -14,6 +14,8 @@ import 'package:core_erp/features/auth/presentation/screens/user_management_scre
 import 'package:core_erp/features/delivery_challans/domain/delivery_challan.dart';
 import 'package:core_erp/features/delivery_challans/presentation/providers/challan_editor_command_provider.dart';
 import 'package:core_erp/features/delivery_challans/presentation/screens/delivery_challan_screen.dart';
+import 'package:core_erp/features/departments/presentation/screens/departments_screen.dart';
+import 'package:core_erp/features/departments/presentation/screens/department_editor_dialog.dart';
 import 'package:core_erp/features/inventory/presentation/screens/inventory_screen.dart';
 import 'package:core_erp/features/inventory/presentation/screens/material_scan_screen.dart';
 import 'package:core_erp/features/items/presentation/screens/items_screen.dart';
@@ -431,6 +433,8 @@ class _PaperShortcutManagerState extends State<PaperShortcutManager> {
       case 'production':
       case 'production_pipelines':
         _handleCreatePipeline(context);
+      case 'configurator_employees':
+        _runModalShortcut(() => DepartmentEditorDialog.open(context));
       case 'configurator_clients':
         _runModalShortcut(() => ClientsScreen.openEditor(context));
       case 'configurator_vendors':
@@ -811,6 +815,7 @@ class _ShellContentSwitcher extends StatelessWidget {
                     'Choose a master-data section from the sidebar to manage configuration records.',
                 icon: Icons.tune_outlined,
               ),
+              'configurator_employees' => const DepartmentsScreen(),
               'configurator_clients' => const ClientsScreen(),
               'configurator_vendors' => const VendorsScreen(),
               'configurator_items' => ItemsScreen(initialTab: 0, onCreatePipeline: () => _handleCreatePipeline(outerContext)),

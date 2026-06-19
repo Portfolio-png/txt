@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
 import 'package:core_erp/features/inventory/domain/material_record.dart';
+import 'package:core_erp/features/inventory/domain/inventory_control_tower.dart';
+import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
 import '../../production_pipelines/domain/material_batch.dart' show fmtQty;
 import '../providers/production_run_provider.dart';
 import 'stage_reconciliation_dialog.dart';
@@ -27,6 +29,7 @@ class _InventorySidebarState extends State<InventorySidebar> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<InventoryProvider>().initialize();
+      context.read<GroupsProvider>().initialize();
     });
   }
 
@@ -72,9 +75,10 @@ class _InventorySidebarState extends State<InventorySidebar> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<InventoryProvider>();
+    final groupsProvider = context.watch<GroupsProvider>();
     final reconcile = widget.reconcile;
     final availableMaterials = provider.materials
-        .where((m) => m.onHand > 0)
+        .where((m) => m.onHand > 0 && m.materialClass != MaterialClass.finishedGood)
         .toList();
     final materials = availableMaterials.where(_matchesSearch).toList();
     final isSearching = _query.isNotEmpty;
@@ -137,7 +141,7 @@ class _InventorySidebarState extends State<InventorySidebar> {
                     children: [
                       _buildSearchField(isSearching),
                       const SizedBox(height: 12),
-                      _buildStockContent(provider, materials, availableMaterials),
+                      _buildStockContent(provider, groupsProvider, materials, availableMaterials),
                     ],
                   ),
                 ),
@@ -206,10 +210,11 @@ class _InventorySidebarState extends State<InventorySidebar> {
 
   Widget _buildStockContent(
     InventoryProvider provider,
+    GroupsProvider groupsProvider,
     List<MaterialRecord> materials,
     List<MaterialRecord> availableMaterials,
   ) {
-    if (provider.isLoading) {
+    if (provider.isLoading || groupsProvider.isLoading) {
       return const Padding(
         padding: EdgeInsets.all(24),
         child: Center(child: CircularProgressIndicator()),
@@ -228,9 +233,33 @@ class _InventorySidebarState extends State<InventorySidebar> {
         ),
       );
     }
+    
+    final grouped = <String, List<MaterialRecord>>{};
+    for (final m in materials) {
+      final groupName = m.linkedGroupId != null
+          ? groupsProvider.findById(m.linkedGroupId)?.name ?? 'Ungrouped'
+          : m.type.isNotEmpty ? m.type : 'Ungrouped';
+      grouped.putIfAbsent(groupName, () => []).add(m);
+    }
+    final sortedGroups = grouped.keys.toList()..sort();
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final material in materials) ...[
+        for (final groupName in sortedGroups) ...[
+          Padding(
+            padding: const EdgeInsets.only(left: 4, top: 12, bottom: 8),
+            child: Text(
+              groupName.toUpperCase(),
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF64748B),
+                letterSpacing: 0.6,
+              ),
+            ),
+          ),
+          for (final material in grouped[groupName]!) ...[
           Draggable<MaterialRecord>(
             data: material,
             feedback: Material(
@@ -250,7 +279,8 @@ class _InventorySidebarState extends State<InventorySidebar> {
             ),
             child: _MaterialCard(material: material),
           ),
-          if (material != materials.last) const SizedBox(height: 10),
+          if (material != grouped[groupName]!.last) const SizedBox(height: 10),
+          ],
         ],
       ],
     );

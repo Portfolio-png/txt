@@ -64,6 +64,7 @@ const S3_UPLOAD_PREFIXES = Object.freeze({
   CHALLAN_TEMPLATE_STAMP: 'logistics/challan-template-stamps/',
   MACHINE_IMAGE: 'masters/machines/',
   DIE_IMAGE: 'masters/dies/',
+  DEPARTMENT_IMAGE: 'masters/departments/',
 });
 const COMMON_WEAK_PASSWORDS = new Set([
   'password',
@@ -2606,6 +2607,35 @@ async function initDb() {
       is_archived INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS departments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      photo_url TEXT DEFAULT '',
+      is_archived INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS employees (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      department_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      role TEXT DEFAULT '',
+      phone TEXT DEFAULT '',
+      email TEXT DEFAULT '',
+      employment_type TEXT DEFAULT 'in-house',
+      status TEXT DEFAULT 'active',
+      is_archived INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (department_id) REFERENCES departments (id) ON DELETE CASCADE
     )
   `);
 
@@ -21035,6 +21065,160 @@ async function resetAndSeedDemoData() {
   await clearAllData();
   await reseedDemoData();
 }
+
+function rowToDepartmentDto(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description || '',
+    photoUrl: row.photo_url || '',
+    isArchived: Number(row.is_archived || 0) === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToEmployeeDto(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    departmentId: row.department_id,
+    name: row.name,
+    role: row.role || '',
+    phone: row.phone || '',
+    email: row.email || '',
+    employmentType: row.employment_type || 'in-house',
+    status: row.status || 'active',
+    isArchived: Number(row.is_archived || 0) === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+app.get('/api/departments', requirePermission('config.read'), async (_req, res) => {
+  try {
+    const rows = await all('SELECT * FROM departments WHERE is_archived = 0 ORDER BY name ASC');
+    res.json({ success: true, departments: rows.map(rowToDepartmentDto), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, departments: [], error: error.message });
+  }
+});
+
+app.post('/api/departments', requirePermission('config.write'), async (req, res) => {
+  try {
+    const { name, description = '', photoUrl = '' } = req.body;
+    if (!name || name.trim() === '') {
+      return res.status(400).json({ success: false, error: 'Name is required' });
+    }
+    const now = new Date().toISOString();
+    const result = await run(
+      'INSERT INTO departments (name, description, photo_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+      [name.trim(), description.trim(), photoUrl, now, now]
+    );
+    const row = await get('SELECT * FROM departments WHERE id = ?', [result.lastID]);
+    res.status(201).json({ success: true, department: rowToDepartmentDto(row), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.patch('/api/departments/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { name, description, photoUrl } = req.body;
+    const existing = await get('SELECT * FROM departments WHERE id = ?', [id]);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Department not found' });
+    }
+    const newName = name !== undefined ? name.trim() : existing.name;
+    const newDesc = description !== undefined ? description.trim() : existing.description;
+    const newPhoto = photoUrl !== undefined ? photoUrl : existing.photo_url;
+    
+    await run(
+      'UPDATE departments SET name = ?, description = ?, photo_url = ?, updated_at = ? WHERE id = ?',
+      [newName, newDesc, newPhoto, new Date().toISOString(), id]
+    );
+    const row = await get('SELECT * FROM departments WHERE id = ?', [id]);
+    res.json({ success: true, department: rowToDepartmentDto(row), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.delete('/api/departments/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    await run('UPDATE departments SET is_archived = 1, updated_at = ? WHERE id = ?', [new Date().toISOString(), id]);
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/employees', requirePermission('config.read'), async (_req, res) => {
+  try {
+    const rows = await all('SELECT * FROM employees WHERE is_archived = 0 ORDER BY name ASC');
+    res.json({ success: true, employees: rows.map(rowToEmployeeDto), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, employees: [], error: error.message });
+  }
+});
+
+app.post('/api/employees', requirePermission('config.write'), async (req, res) => {
+  try {
+    const { departmentId, name, role = '', phone = '', email = '', employmentType = 'in-house', status = 'active' } = req.body;
+    if (!name || !departmentId) {
+      return res.status(400).json({ success: false, error: 'Name and departmentId are required' });
+    }
+    const now = new Date().toISOString();
+    const result = await run(
+      'INSERT INTO employees (department_id, name, role, phone, email, employment_type, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [departmentId, name.trim(), role.trim(), phone.trim(), email.trim(), employmentType, status, now, now]
+    );
+    const row = await get('SELECT * FROM employees WHERE id = ?', [result.lastID]);
+    res.status(201).json({ success: true, employee: rowToEmployeeDto(row), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.patch('/api/employees/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { name, role, phone, email, employmentType, status, departmentId } = req.body;
+    const existing = await get('SELECT * FROM employees WHERE id = ?', [id]);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Employee not found' });
+    }
+    const newName = name !== undefined ? name.trim() : existing.name;
+    const newRole = role !== undefined ? role.trim() : existing.role;
+    const newPhone = phone !== undefined ? phone.trim() : existing.phone;
+    const newEmail = email !== undefined ? email.trim() : existing.email;
+    const newEmpType = employmentType !== undefined ? employmentType : existing.employment_type;
+    const newStatus = status !== undefined ? status : existing.status;
+    const newDep = departmentId !== undefined ? departmentId : existing.department_id;
+
+    await run(
+      'UPDATE employees SET name = ?, role = ?, phone = ?, email = ?, employment_type = ?, status = ?, department_id = ?, updated_at = ? WHERE id = ?',
+      [newName, newRole, newPhone, newEmail, newEmpType, newStatus, newDep, new Date().toISOString(), id]
+    );
+    const row = await get('SELECT * FROM employees WHERE id = ?', [id]);
+    res.json({ success: true, employee: rowToEmployeeDto(row), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.delete('/api/employees/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    await run('UPDATE employees SET is_archived = 1, updated_at = ? WHERE id = ?', [new Date().toISOString(), id]);
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 function startServer() {
   console.log(`Booting Paper backend on port ${PORT} using ${DB_PATH}`);

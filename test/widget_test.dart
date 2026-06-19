@@ -1067,6 +1067,9 @@ class FakeGroupRepository extends GroupRepository {
   }
 
   @override
+  Future<void> deleteGroup(int id) async {}
+
+  @override
   Future<GroupDefinition> updateGroup(UpdateGroupInput input) async {
     final index = _groups.indexWhere((group) => group.id == input.id);
     final current = _groups[index];
@@ -2160,6 +2163,13 @@ class FakeItemRepository extends ItemRepository {
     _items.add(created);
     return created;
   }
+
+  @override
+  Future<void> deleteItem(int id) async {}
+
+  @override
+  Future<ItemDefinition> reassignItemGroup(int id, int groupId) async =>
+      _items.first;
 
   @override
   Future<ItemDefinition> updateItem(UpdateItemInput input) async {
@@ -6745,9 +6755,7 @@ void main() {
     await tester.ensureVisible(
       find.widgetWithText(ElevatedButton, 'Add Top-Level Property'),
     );
-    await tester.tap(
-      find.widgetWithText(ElevatedButton, 'Add Top-Level Property'),
-    );
+    tester.widget<ElevatedButton>(find.widgetWithText(ElevatedButton, 'Add Top-Level Property')).onPressed?.call();
     await tester.pumpAndSettle();
     await startEditingLatestTreeNode(tester);
     await tester.enterText(treeNameEditor('Property name').last, 'Color');
@@ -6811,9 +6819,7 @@ void main() {
     await tester.ensureVisible(
       find.widgetWithText(ElevatedButton, 'Add Top-Level Property'),
     );
-    await tester.tap(
-      find.widgetWithText(ElevatedButton, 'Add Top-Level Property'),
-    );
+    tester.widget<ElevatedButton>(find.widgetWithText(ElevatedButton, 'Add Top-Level Property')).onPressed?.call();
     await tester.pumpAndSettle();
     await startEditingLatestTreeNode(tester);
     await tester.enterText(treeNameEditor('Property name').last, 'Color');
@@ -6821,9 +6827,7 @@ void main() {
     await tester.ensureVisible(
       find.widgetWithText(ElevatedButton, 'Add Top-Level Property'),
     );
-    await tester.tap(
-      find.widgetWithText(ElevatedButton, 'Add Top-Level Property'),
-    );
+    tester.widget<ElevatedButton>(find.widgetWithText(ElevatedButton, 'Add Top-Level Property')).onPressed?.call();
     await tester.pumpAndSettle();
     await startEditingLatestTreeNode(tester);
     await tester.enterText(treeNameEditor('Property name').last, 'Color');
@@ -7563,3 +7567,4 @@ void main() {
     },
   );
 }
+
