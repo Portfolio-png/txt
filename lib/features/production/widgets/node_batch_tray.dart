@@ -3,9 +3,6 @@ import 'package:flutter/material.dart';
 import '../../production_pipelines/domain/material_batch.dart';
 import 'batch_chip.dart';
 
-/// The dock of batch chips parked at a single node, shown beneath the node
-/// block on the pipeline canvas. Renders a small header with a count badge and
-/// the live total, then the chips themselves.
 class NodeBatchTray extends StatelessWidget {
   const NodeBatchTray({
     super.key,
@@ -22,76 +19,151 @@ class NodeBatchTray extends StatelessWidget {
   Widget build(BuildContext context) {
     if (batches.isEmpty) return const SizedBox.shrink();
 
+    // Group batches by material name
+    final grouped = <String, List<MaterialBatch>>{};
+    for (final b in batches) {
+      grouped.putIfAbsent(b.materialName, () => []).add(b);
+    }
+
+    return SizedBox(
+      width: width,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: grouped.values.map((group) {
+          return Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: BatchStack(
+              batches: group,
+              width: width,
+              onRevert: onRevert,
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+class BatchStack extends StatefulWidget {
+  const BatchStack({
+    super.key,
+    required this.batches,
+    required this.width,
+    this.onRevert,
+  });
+
+  final List<MaterialBatch> batches;
+  final double width;
+  final ValueChanged<MaterialBatch>? onRevert;
+
+  @override
+  State<BatchStack> createState() => _BatchStackState();
+}
+
+class _BatchStackState extends State<BatchStack> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final batches = widget.batches;
     final total = batches.fold<double>(0, (sum, b) => sum + b.quantity);
-    final unit = batches.first.unitLabel;
+    final unitLabel = batches.first.unitLabel;
+    final unitStr = unitLabel == '-' ? '' : ' $unitLabel';
+    final materialName = batches.first.materialName;
 
     return Container(
-      width: width,
-      margin: const EdgeInsets.only(top: 6),
-      padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+      width: widget.width,
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: const Color(0xFFE2E8F0), // Slate 200
+        borderRadius: BorderRadius.circular(6), // Smooth outer border radius
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+          // Header
+          MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _expanded = !_expanded;
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
-                  borderRadius: BorderRadius.circular(999),
+                  color: const Color(0xFF0EA5E9), // The blue color
+                  borderRadius: BorderRadius.circular(4), // Slightly rounded inner block
                 ),
-                child: Text(
-                  '${batches.length}',
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                    color: Color(0xFF2563EB),
-                  ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            materialName,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                              height: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${fmtQty(total)}$unitStr',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white.withValues(alpha: 0.9),
+                              height: 1.2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Icon(
+                        _expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                        color: Colors.white,
+                        size: 14,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  '${batches.length == 1 ? 'batch' : 'batches'} · ${fmtQty(total)} $unit'
-                      .trim(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF94A3B8),
-                    letterSpacing: 0.4,
-                  ),
-                ),
+            ),
+          ),
+          
+          // Expanded Items
+          if (_expanded)
+            Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (int i = 0; i < batches.length; i++)
+                    Padding(
+                      padding: EdgeInsets.only(bottom: i < batches.length - 1 ? 3 : 0),
+                      child: BatchChip(
+                        batch: batches[i],
+                        compact: true,
+                        onRevert: widget.onRevert == null ? null : () => widget.onRevert!(batches[i]),
+                      ),
+                    ),
+                ],
               ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final batch in batches)
-                BatchChip(
-                  batch: batch,
-                  compact: batches.length > 2,
-                  onRevert: onRevert == null ? null : () => onRevert!(batch),
-                ),
-            ],
-          ),
+            ),
         ],
       ),
     );

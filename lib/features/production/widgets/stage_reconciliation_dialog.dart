@@ -7,6 +7,9 @@ import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:core_erp/features/inventory/data/repositories/inventory_repository.dart';
 import 'package:core_erp/features/inventory/domain/inventory_control_tower.dart';
 
+import 'package:core_erp/shared/widgets/exact_item_variation_select_field.dart';
+import 'output_item_picker_dialog.dart';
+
 import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
 import '../../production_pipelines/domain/material_batch.dart';
 import '../../production_pipelines/domain/pipeline_run.dart';
@@ -100,6 +103,7 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
 
   PipelineRun? _run;
   bool _isLoading = true;
+  bool _isRefreshing = false;
   bool _isCommitting = false;
   bool _allottedFromBarcodes = false;
   String _unit = '';
@@ -121,6 +125,18 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
     _load();
   }
 
+
+  @override
+  void didUpdateWidget(StageReconciliationDialog oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.node.id != oldWidget.node.id || widget.runId != oldWidget.runId) {
+      setState(() {
+        _isRefreshing = true;
+      });
+      _load();
+    }
+  }
+
   @override
   void dispose() {
     _allottedCtrl.dispose();
@@ -128,6 +144,16 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
     _leftoverCtrl.dispose();
     _scrapCtrl.dispose();
     super.dispose();
+  }
+
+  bool get _isOutputStage {
+    try {
+      final template = context.read<ProductionProvider>().template;
+      if (template == null) return false;
+      return !template.flows.any((f) => f.fromNodeId == widget.node.id);
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> _load() async {
@@ -169,6 +195,7 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
       setState(() {
         _run = run;
         _isLoading = false;
+        _isRefreshing = false;
         _inputFloor = upstreamInput;
         _inputTime =
             existingInput ?? upstreamOutput ?? run?.startedAt ?? DateTime.now();
@@ -455,6 +482,11 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (_isRefreshing)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 8.0),
+                        child: LinearProgressIndicator(minHeight: 2),
+                      ),
                     Text(
                       widget.batchLabel == null
                           ? 'Reconcile "${widget.node.name}"'
@@ -587,10 +619,14 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
                           onPressed: _isCommitting ? null : () => _dismiss(false),
                         ),
                         AppButton(
-                          label: 'Commit Reconciliation',
+                          label: _isOutputStage 
+                              ? (widget.node.outputItem != null 
+                                  ? 'Commit & Send to Inventory' 
+                                  : 'Define Output & Send to Inventory')
+                              : 'Commit & Move to Next Stage',
                           icon: Icons.fact_check_rounded,
                           isLoading: _isCommitting,
-                          onPressed: _isCommitting ? null : _commit,
+                          onPressed: (_isCommitting || _isRefreshing) ? null : _commit,
                         ),
                       ],
                     ),
@@ -705,6 +741,46 @@ class _TimeField extends StatelessWidget {
             color: Color(0xFF1E293B),
           ),
         ),
+      ),
+    );
+  }
+}
+
+
+class _SidebarSection extends StatelessWidget {
+  const _SidebarSection({
+    required this.title,
+    required this.icon,
+    required this.child,
+    this.initiallyExpanded = true,
+  });
+
+  final String title;
+  final IconData icon;
+  final Widget child;
+  final bool initiallyExpanded;
+
+  @override
+  Widget build(BuildContext context) {
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        initiallyExpanded: initiallyExpanded,
+        shape: const Border(),
+        collapsedShape: const Border(),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        leading: Icon(icon, size: 18, color: const Color(0xFF64748B)),
+        title: Text(
+          title,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF0F172A),
+            letterSpacing: 0.3,
+          ),
+        ),
+        children: [child],
       ),
     );
   }

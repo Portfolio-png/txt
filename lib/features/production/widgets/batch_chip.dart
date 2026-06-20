@@ -5,9 +5,6 @@ import '../../production_pipelines/domain/material_batch.dart';
 import '../providers/production_run_provider.dart';
 
 /// A tactile, draggable token representing a [MaterialBatch] parked at a node.
-///
-/// Uses [Draggable] so a chip lifts on a plain click-and-drag. While dragging,
-/// the source chip ghosts out and a larger elevated chip follows the pointer.
 class BatchChip extends StatelessWidget {
   const BatchChip({
     super.key,
@@ -18,30 +15,30 @@ class BatchChip extends StatelessWidget {
 
   final MaterialBatch batch;
   final bool compact;
-
-  /// When set, a small revert affordance is shown that undoes this lot's last
-  /// forward hop.
   final VoidCallback? onRevert;
 
   @override
   Widget build(BuildContext context) {
+    final unitStr = batch.unitLabel == '-' ? '' : ' ${batch.unitLabel}';
+    
     final body = _ChipBody(
-      label: '${fmtQty(batch.quantity)} ${batch.unitLabel}'.trim(),
+      label: '${fmtQty(batch.quantity)}$unitStr'.trim(),
       sub: batch.materialName,
       compact: compact,
+      onRevert: onRevert,
     );
 
     return Draggable<MaterialBatch>(
       data: batch,
       dragAnchorStrategy: pointerDragAnchorStrategy,
       feedback: Transform.translate(
-        offset: const Offset(-40, -24),
+        offset: const Offset(-40, -12),
         child: Material(
           color: Colors.transparent,
           child: Transform.scale(
-            scale: 1.12,
+            scale: 1.05,
             child: _ChipBody(
-              label: '${fmtQty(batch.quantity)} ${batch.unitLabel}'.trim(),
+              label: '${fmtQty(batch.quantity)}$unitStr'.trim(),
               sub: batch.materialName,
               elevated: true,
             ),
@@ -56,46 +53,7 @@ class BatchChip extends StatelessWidget {
         child: Tooltip(
           message: 'Drag to move • double-click to reconcile',
           waitDuration: const Duration(milliseconds: 600),
-          child: onRevert == null
-              ? body
-              : Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Flexible(child: body),
-                    const SizedBox(width: 4),
-                    _RevertButton(onTap: onRevert!),
-                  ],
-                ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RevertButton extends StatelessWidget {
-  const _RevertButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: 'Revert this lot’s last move',
-      child: InkWell(
-        onTap: onTap,
-        customBorder: const CircleBorder(),
-        child: Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFEF2F2),
-            shape: BoxShape.circle,
-            border: Border.all(color: const Color(0xFFFECACA)),
-          ),
-          child: const Icon(
-            Icons.undo_rounded,
-            size: 13,
-            color: Color(0xFFDC2626),
-          ),
+          child: body,
         ),
       ),
     );
@@ -108,70 +66,82 @@ class _ChipBody extends StatelessWidget {
     required this.sub,
     this.compact = false,
     this.elevated = false,
+    this.onRevert,
   });
 
   final String label;
   final String sub;
   final bool compact;
   final bool elevated;
+  final VoidCallback? onRevert;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(maxWidth: 150),
-      padding: EdgeInsets.symmetric(
-        horizontal: compact ? 8 : 10,
-        vertical: compact ? 4 : 6,
-      ),
+      constraints: const BoxConstraints(maxWidth: 180),
+      height: 28, // slightly taller for better click area
+      padding: const EdgeInsets.only(left: 8),
+      alignment: Alignment.centerLeft,
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF3B82F6), Color(0xFF2563EB)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(999),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF2563EB).withValues(alpha: elevated ? 0.45 : 0.2),
-            blurRadius: elevated ? 16 : 6,
-            offset: Offset(0, elevated ? 6 : 2),
-          ),
-        ],
+        color: const Color(0xFF0EA5E9),
+        borderRadius: BorderRadius.circular(4), // Subtle rounding
+        boxShadow: elevated
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 12,
+                  offset: const Offset(0, 6),
+                )
+              ]
+            : null,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.token_rounded, size: 14, color: Colors.white),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                  ),
-                ),
-                if (!compact && sub.isNotEmpty)
-                  Text(
-                    sub,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white.withValues(alpha: 0.85),
-                    ),
-                  ),
-              ],
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
             ),
           ),
+          if (onRevert != null)
+            Tooltip(
+              message: 'Revert this lot’s last move',
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: onRevert,
+                  borderRadius: const BorderRadius.only(
+                    topRight: Radius.circular(4),
+                    bottomRight: Radius.circular(4),
+                  ),
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      border: Border(
+                        left: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          width: 1,
+                        ),
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.undo_rounded,
+                      size: 14,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -197,8 +167,6 @@ class BatchSplitDialog extends StatefulWidget {
   }) {
     return showDialog<double>(
       context: context,
-      // A stock move must be an explicit choice — Cancel or Move — so a stray
-      // outside-click can never commit the move.
       barrierDismissible: false,
       builder: (_) =>
           BatchSplitDialog(batch: batch, targetNodeName: targetNodeName),
@@ -215,7 +183,7 @@ class _BatchSplitDialogState extends State<BatchSplitDialog> {
   @override
   Widget build(BuildContext context) {
     final max = widget.batch.quantity;
-    final unit = widget.batch.unitLabel;
+    final unitStr = widget.batch.unitLabel == '-' ? '' : ' ${widget.batch.unitLabel}';
     final isPartial = _qty < max;
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
@@ -237,7 +205,7 @@ class _BatchSplitDialogState extends State<BatchSplitDialog> {
               ),
               const SizedBox(height: 6),
               Text(
-                '${widget.batch.materialName} · ${fmtQty(max)} $unit available',
+                '${widget.batch.materialName} • ${fmtQty(max)}$unitStr available',
                 style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
               ),
               const SizedBox(height: 20),
@@ -253,7 +221,7 @@ class _BatchSplitDialogState extends State<BatchSplitDialog> {
                     ),
                   ),
                   Text(
-                    '${fmtQty(_qty)} $unit',
+                    '${fmtQty(_qty)}$unitStr',
                     style: const TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w900,
@@ -284,7 +252,7 @@ class _BatchSplitDialogState extends State<BatchSplitDialog> {
                   const Spacer(),
                   if (isPartial)
                     Text(
-                      'Splits • ${fmtQty(max - _qty)} $unit stays',
+                      'Splits • ${fmtQty(max - _qty)}$unitStr stays',
                       style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,

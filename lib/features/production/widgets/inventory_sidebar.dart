@@ -6,15 +6,15 @@ import 'package:core_erp/features/inventory/domain/inventory_control_tower.dart'
 import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
 import '../../production_pipelines/domain/material_batch.dart' show fmtQty;
 import '../providers/production_run_provider.dart';
+import '../providers/production_provider.dart';
 import 'stage_reconciliation_dialog.dart';
+import '../../production_pipelines/domain/process_node.dart';
+import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
+import '../../production_pipelines/domain/pipeline_run.dart';
+import '../../production_pipelines/domain/node_run_status.dart';
 
 class InventorySidebar extends StatefulWidget {
-  const InventorySidebar({super.key, this.reconcile});
-
-  /// When set, the reconcile form docks into this sidebar (SolidWorks-style)
-  /// above the stock list instead of opening a centred dialog. The owning
-  /// screen sources it from [ProductionRunProvider.reconcileRequest].
-  final ReconcileRequest? reconcile;
+  const InventorySidebar({super.key});
 
   @override
   State<InventorySidebar> createState() => _InventorySidebarState();
@@ -23,13 +23,17 @@ class InventorySidebar extends StatefulWidget {
 class _InventorySidebarState extends State<InventorySidebar> {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
+  int _activeTab = 0; // 0: Assign Stock, 1: Reconcile
+  String? _lastSelectedNodeId;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<InventoryProvider>().initialize();
-      context.read<GroupsProvider>().initialize();
+      if (mounted) {
+        context.read<InventoryProvider>().initialize();
+        context.read<GroupsProvider>().initialize();
+      }
     });
   }
 
@@ -74,11 +78,22 @@ class _InventorySidebarState extends State<InventorySidebar> {
 
   @override
   Widget build(BuildContext context) {
+    final prodProvider = context.watch<ProductionProvider>();
+    if (prodProvider.selectedNodeId != _lastSelectedNodeId) {
+      _lastSelectedNodeId = prodProvider.selectedNodeId;
+      if (_lastSelectedNodeId != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _activeTab != 1) setState(() => _activeTab = 1);
+        });
+      }
+    }
+
     final provider = context.watch<InventoryProvider>();
     final groupsProvider = context.watch<GroupsProvider>();
-    final reconcile = widget.reconcile;
+    
+    // Only groups and sub groups of raw materials
     final availableMaterials = provider.materials
-        .where((m) => m.onHand > 0 && m.materialClass != MaterialClass.finishedGood)
+        .where((m) => m.onHand > 0 && m.materialClass == MaterialClass.rawMaterial)
         .toList();
     final materials = availableMaterials.where(_matchesSearch).toList();
     final isSearching = _query.isNotEmpty;
@@ -97,58 +112,110 @@ class _InventorySidebarState extends State<InventorySidebar> {
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(20, 20, 20, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            child: Row(
               children: [
-                Text(
-                  'Assign Stock',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF0F172A),
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'Drag materials to pipeline stages to assign specific inventory.',
-                  style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-                ),
+                _buildTab(0, 'Assign Stock', Icons.inventory_2_rounded),
+                const SizedBox(width: 4),
+                _buildTab(1, 'Reconcile', Icons.fact_check_rounded),
               ],
             ),
           ),
           const Divider(height: 1, color: Color(0xFFE2E8F0)),
-          // SolidWorks-style feature tree: collapsible sections, each its own
-          // task. The whole tree scrolls so sections size to their content.
           Expanded(
-            child: ListView(
-              padding: EdgeInsets.zero,
-              children: [
-                if (reconcile != null)
-                  _SidebarSection(
-                    title: 'Reconcile',
-                    icon: Icons.fact_check_rounded,
-                    child: _ReconcilePanel(request: reconcile),
-                  ),
-                _SidebarSection(
-                  title: 'Stock',
-                  icon: Icons.inventory_2_rounded,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildSearchField(isSearching),
-                      const SizedBox(height: 12),
-                      _buildStockContent(provider, groupsProvider, materials, availableMaterials),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+            child: _activeTab == 0
+                ? _buildAssignStockTab(provider, groupsProvider, materials, availableMaterials, isSearching)
+                : _buildReconcileTab(),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildAssignStockTab(
+    InventoryProvider provider,
+    GroupsProvider groupsProvider,
+    List<MaterialRecord> materials,
+    List<MaterialRecord> availableMaterials,
+    bool isSearching,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: _buildSearchField(isSearching),
+        ),
+        Expanded(
+          child: _buildStockContent(provider, groupsProvider, materials, availableMaterials),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReconcileTab() {
+    final runProvider = context.watch<ProductionRunProvider>();
+    final prodProvider = context.watch<ProductionProvider>();
+    final selectedNodeId = prodProvider.selectedNodeId;
+
+    if (selectedNodeId == null || runProvider.runId == null) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'Select a stage to reconcile',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
+          ),
+        ),
+      );
+    }
+    
+    // Find the node
+    final node = prodProvider.template.nodes.firstWhere((n) => n.id == selectedNodeId);
+    
+    return _ReconcilePanel(node: node);
+  }
+
+
+  Widget _buildTab(int index, String label, IconData icon) {
+    final isActive = _activeTab == index;
+    return Expanded(
+      child: InkWell(
+        onTap: () => setState(() => _activeTab = index),
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+          decoration: BoxDecoration(
+            color: isActive ? const Color(0xFFEFF4FF) : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: isActive ? const Color(0xFF3B82F6) : const Color(0xFFE2E8F0),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 16, color: isActive ? const Color(0xFF2563EB) : const Color(0xFF64748B)),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: isActive ? FontWeight.w700 : FontWeight.w600,
+                    color: isActive ? const Color(0xFF1E3A8A) : const Color(0xFF475569),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -215,21 +282,15 @@ class _InventorySidebarState extends State<InventorySidebar> {
     List<MaterialRecord> availableMaterials,
   ) {
     if (provider.isLoading || groupsProvider.isLoading) {
-      return const Padding(
-        padding: EdgeInsets.all(24),
-        child: Center(child: CircularProgressIndicator()),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
     if (materials.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 24),
-        child: Center(
-          child: Text(
-            availableMaterials.isEmpty
-                ? 'No available stock.'
-                : 'No stock matches this search.',
-            style: const TextStyle(color: Color(0xFF94A3B8)),
-          ),
+      return Center(
+        child: Text(
+          availableMaterials.isEmpty
+              ? 'No available stock.'
+              : 'No stock matches this search.',
+          style: const TextStyle(color: Color(0xFF94A3B8)),
         ),
       );
     }
@@ -243,12 +304,12 @@ class _InventorySidebarState extends State<InventorySidebar> {
     }
     final sortedGroups = grouped.keys.toList()..sort();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 8),
       children: [
         for (final groupName in sortedGroups) ...[
           Padding(
-            padding: const EdgeInsets.only(left: 4, top: 12, bottom: 8),
+            padding: const EdgeInsets.only(left: 16, top: 12, bottom: 8),
             child: Text(
               groupName.toUpperCase(),
               style: const TextStyle(
@@ -260,26 +321,25 @@ class _InventorySidebarState extends State<InventorySidebar> {
             ),
           ),
           for (final material in grouped[groupName]!) ...[
-          Draggable<MaterialRecord>(
-            data: material,
-            feedback: Material(
-              elevation: 8,
-              borderRadius: BorderRadius.circular(12),
-              child: Opacity(
-                opacity: 0.85,
-                child: SizedBox(
-                  width: 280,
-                  child: _MaterialCard(material: material),
+            Draggable<MaterialRecord>(
+              data: material,
+              feedback: Material(
+                elevation: 8,
+                borderRadius: BorderRadius.circular(8),
+                child: Opacity(
+                  opacity: 0.85,
+                  child: SizedBox(
+                    width: 280,
+                    child: _MaterialCard(material: material),
+                  ),
                 ),
               ),
-            ),
-            childWhenDragging: Opacity(
-              opacity: 0.3,
+              childWhenDragging: Opacity(
+                opacity: 0.3,
+                child: _MaterialCard(material: material),
+              ),
               child: _MaterialCard(material: material),
             ),
-            child: _MaterialCard(material: material),
-          ),
-          if (material != grouped[groupName]!.last) const SizedBox(height: 10),
           ],
         ],
       ],
@@ -287,71 +347,45 @@ class _InventorySidebarState extends State<InventorySidebar> {
   }
 }
 
-/// A collapsible feature-tree section (SolidWorks-style) with a header row and
-/// a chevron. Built on the native [ExpansionTile] — no custom accordion.
-class _SidebarSection extends StatelessWidget {
-  const _SidebarSection({
-    required this.title,
-    required this.icon,
-    required this.child,
-  });
-
-  final String title;
-  final IconData icon;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Theme(
-      // Drop the default top/bottom dividers ExpansionTile draws when open.
-      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-      child: ExpansionTile(
-        initiallyExpanded: true,
-        shape: const Border(),
-        collapsedShape: const Border(),
-        tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        leading: Icon(icon, size: 18, color: const Color(0xFF64748B)),
-        title: Text(
-          title,
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w800,
-            color: Color(0xFF0F172A),
-            letterSpacing: 0.3,
-          ),
-        ),
-        children: [child],
-      ),
-    );
-  }
-}
-
-/// Hosts the [StageReconciliationDialog] inline (no Dialog chrome) and wires its
-/// commit/cancel back to the run provider that opened the request.
 class _ReconcilePanel extends StatelessWidget {
-  const _ReconcilePanel({required this.request});
+  const _ReconcilePanel({required this.node});
 
-  final ReconcileRequest request;
+  final ProcessNode node;
 
   @override
   Widget build(BuildContext context) {
-    final runProvider = context.read<ProductionRunProvider>();
+    final runProvider = context.watch<ProductionRunProvider>();
+    final repo = context.read<PipelineRunRepository>();
     return StageReconciliationDialog(
-      key: ValueKey(
-        'reconcile-${request.node.id}-'
-        '${request.batchBarcode ?? 'stage'}-${request.runId}',
-      ),
-      node: request.node,
-      runId: request.runId,
-      batchOutput: request.batchOutput,
-      batchAllottedMax: request.batchAllottedMax,
-      batchReconcileQty: request.batchReconcileQty,
-      batchUnit: request.batchUnit,
-      batchBarcode: request.batchBarcode,
-      batchLabel: request.batchLabel,
-      onCommitted: runProvider.submitReconcile,
-      onClose: runProvider.cancelReconcile,
+      // Removed dynamic key to preserve state between node switches
+      node: node,
+      runId: runProvider.runId!,
+      // Pass null to onClose to render inline
+      onClose: () {}, 
+      onCommitted: (result) async {
+        try {
+          await repo.updateNodeStatus(
+            runId: runProvider.runId!,
+            nodeId: node.id,
+            status: NodeRunStatus.done,
+          );
+          runProvider.triggerRefresh();
+          if (context.mounted) {
+            context.read<ProductionProvider>().setNodeStatus(node.id, 'Done');
+          }
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Stage marked as done')),
+            );
+          }
+        } catch (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Failed to update stage: $e'), backgroundColor: Colors.red),
+            );
+          }
+        }
+      },
     );
   }
 }
@@ -363,118 +397,109 @@ class _MaterialCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Stock attached to one or more pipeline runs stays watchable here but is
-    // flagged yellow so it's obvious it's already committed.
     final inPipeline = material.linkedPipelineCount > 0;
 
     return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: inPipeline ? const Color(0xFFFBBF24) : const Color(0xFFE2E8F0),
-        ),
+        border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: const Color(0xFFEFF4FF),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(
-              Icons.inventory_2_rounded,
-              size: 18,
-              color: Color(0xFF3B82F6),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        leading: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: const Color(0xFFEFF4FF),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: inPipeline ? const Color(0xFFFBBF24) : Colors.transparent,
+              width: 1.5,
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  material.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF0F172A),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        material.barcode,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF64748B),
-                          fontFamily: 'monospace',
-                        ),
-                      ),
-                    ),
-                    if (inPipeline) ...[
-                      const SizedBox(width: 6),
-                      const _PipelinePill(),
-                    ],
-                  ],
-                ),
-              ],
-            ),
+          child: const Icon(
+            Icons.inventory_2_rounded,
+            size: 18,
+            color: Color(0xFF3B82F6),
           ),
-          const SizedBox(width: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF1F5F9),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              '${fmtQty(material.onHand)} ${material.unit}',
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF334155),
+        ),
+        title: Text(
+          material.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF0F172A),
+          ),
+        ),
+        subtitle: Row(
+          children: [
+            Flexible(
+              child: Text(
+                material.barcode,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF64748B),
+                  fontFamily: 'monospace',
+                ),
               ),
             ),
+            if (inPipeline) ...[
+              const SizedBox(width: 6),
+              const _PipelinePill(),
+            ],
+          ],
+        ),
+        trailing: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(6),
           ),
-        ],
+          child: Text(
+            '${fmtQty(material.onHand)} ${material.unit}',
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF334155),
+            ),
+          ),
+        ),
       ),
     );
   }
 }
 
-/// Small yellow pill marking stock already committed to a pipeline run.
 class _PipelinePill extends StatelessWidget {
   const _PipelinePill();
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
       decoration: BoxDecoration(
-        color: const Color(0xFFFBBF24),
+        color: const Color(0xFFFBBF24).withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(4),
       ),
       child: const Text(
-        'In pipeline',
+        'In use',
         style: TextStyle(
           fontSize: 9,
-          fontWeight: FontWeight.w800,
-          color: Color(0xFF78350F),
+          fontWeight: FontWeight.w700,
+          color: Color(0xFFB45309),
           letterSpacing: 0.2,
         ),
       ),
     );
   }
 }
+
+
+
+
+
+

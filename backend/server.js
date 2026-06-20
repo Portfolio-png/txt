@@ -18539,7 +18539,7 @@ app.put('/api/production/pipeline-templates/:id', requirePermission('config.writ
         data.shopFloorId ?? existing.shop_floor_id,
         data.name ?? existing.name,
         data.description ?? existing.description,
-        data.version ?? existing.version,
+        data.version ?? nextVersion,
         data.status ?? existing.status,
         data.stageLabels ? JSON.stringify(data.stageLabels) : existing.stage_labels_json,
         data.laneLabels ? JSON.stringify(data.laneLabels) : existing.lane_labels_json,

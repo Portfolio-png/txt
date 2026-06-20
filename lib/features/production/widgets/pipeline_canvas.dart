@@ -1195,7 +1195,6 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
                   ),
                 ),
               ),
-                  _popoutOverlay(runProvider, batchProvider),
                 ],
               ),
             ),
@@ -2407,3 +2406,4 @@ class _TinyIconButton extends StatelessWidget {
     return button;
   }
 }
+

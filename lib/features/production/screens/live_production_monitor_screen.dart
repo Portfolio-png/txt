@@ -8,7 +8,7 @@ import '../../production_pipelines/data/repositories/pipeline_run_repository.dar
 
 import '../domain/models/floor_view_models.dart';
 import '../widgets/monitor_header.dart';
-import '../widgets/pipeline_canvas.dart';
+import '../widgets/multi_pipeline_canvas.dart';
 import '../widgets/monitor_action_console.dart';
 import '../widgets/floor_node_terminal.dart';
 import '../widgets/inventory_sidebar.dart';
@@ -41,51 +41,8 @@ class _LiveMonitorContentState extends State<_LiveMonitorContent> {
   }
 
   Future<void> _initializeRun() async {
-    final productionProvider = context.read<ProductionProvider>();
-    final runProvider = context.read<ProductionRunProvider>();
-    final repo = context.read<PipelineRunRepository>();
-
-    if (runProvider.runId != null) return;
-
-    final template = productionProvider.template;
-    final orderNo = productionProvider.linkedOrderNo;
-    final orderItemId = productionProvider.linkedOrderId;
-
-    if (orderNo != null) {
-      try {
-        final existingRuns = await repo.getRunsForOrder(orderNo);
-        final activeRun = existingRuns
-            .where((r) => r.templateId == template.id && r.status != 'completed')
-            .firstOrNull;
-        if (activeRun != null) {
-          runProvider.initializeIdleRun(activeRun.id);
-          return;
-        }
-      } catch (e) {
-        debugPrint('Error fetching existing runs: $e');
-      }
-    }
-
-    try {
-      final newRun = await repo.createRun(
-        template.id,
-        orderNo: orderNo,
-        orderItemId: orderItemId,
-      );
-      runProvider.initializeIdleRun(newRun.id);
-    } catch (e) {
-      try {
-        await repo.createTemplate(template);
-        final newRun = await repo.createRun(
-          template.id,
-          orderNo: orderNo,
-          orderItemId: orderItemId,
-        );
-        runProvider.initializeIdleRun(newRun.id);
-      } catch (err) {
-        debugPrint('Failed to auto-create run: $err');
-      }
-    }
+    // Run fetching logic moved to MultiPipelineCanvas
+    // This is kept here for backwards compatibility if needed, but MultiPipelineCanvas will set the active run
   }
 
   @override
@@ -123,14 +80,8 @@ class _LiveMonitorContentState extends State<_LiveMonitorContent> {
                     Expanded(
                       child: Stack(
                         children: [
-                          Positioned.fill(
-                            child: PipelineCanvas(
-                              template: provider.template,
-                              selectedNodeId: provider.selectedNodeId,
-                              onNodeSelected: (id) => provider.selectNode(id),
-                              onNodeDoubleTap: (id) =>
-                                  runProvider.openStageActions(id),
-                            ),
+                          const Positioned.fill(
+                            child: MultiPipelineCanvas(),
                           ),
                           if (provider.selectedNode != null)
                             Positioned(
@@ -153,15 +104,11 @@ class _LiveMonitorContentState extends State<_LiveMonitorContent> {
                 ),
               ),
             ),
-            InventorySidebar(
-              reconcile: context
-                  .select<ProductionRunProvider, ReconcileRequest?>(
-                    (p) => p.reconcileRequest,
-                  ),
-            ),
+            const InventorySidebar(),
           ],
         ),
       ),
     );
   }
 }
+
