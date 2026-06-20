@@ -6,7 +6,6 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/soft_master_data.dart';
 import '../../../../core/widgets/soft_primitives.dart';
-import '../../domain/department_definition.dart';
 import '../../domain/employee_definition.dart';
 import '../providers/departments_provider.dart';
 import 'department_editor_dialog.dart';
@@ -40,7 +39,7 @@ class _DepartmentsScreenState extends State<DepartmentsScreen> {
 
         return SoftMasterDataPage(
           title: 'Employees Master',
-          subtitle: 'Manage departments and their employees.',
+          subtitle: 'Manage departments and the people who work in them.',
           action: AppButton(
             label: selectedDept == null ? 'Add Department' : 'Add Employee',
             icon: Icons.add,
@@ -52,18 +51,15 @@ class _DepartmentsScreenState extends State<DepartmentsScreen> {
               }
             },
           ),
-          toolbar: _Toolbar(),
+          toolbar: const _Toolbar(),
           messages: [
             if (provider.errorMessage != null)
-              Container(
-                width: double.infinity,
+              SoftSurface(
+                color: const Color(0xFFFEF2F2),
+                radius: 12,
+                elevated: false,
+                showBorder: true,
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFEF2F2),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFFECACA)),
-                ),
                 child: Text(
                   provider.errorMessage!,
                   style: const TextStyle(
@@ -74,17 +70,11 @@ class _DepartmentsScreenState extends State<DepartmentsScreen> {
               ),
           ],
           body: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                flex: 1,
-                child: _DepartmentList(),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                flex: 2,
-                child: _EmployeeList(),
-              ),
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: const [
+              Expanded(flex: 2, child: _DepartmentList()),
+              SizedBox(width: 16),
+              Expanded(flex: 3, child: _EmployeePanel()),
             ],
           ),
         );
@@ -94,13 +84,15 @@ class _DepartmentsScreenState extends State<DepartmentsScreen> {
 }
 
 class _Toolbar extends StatelessWidget {
+  const _Toolbar();
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<DepartmentsProvider>();
     return SoftMasterToolbar(
       children: [
         SoftMasterSearchField(
-          width: 300,
+          width: 320,
           hintText: 'Search departments or employees',
           onChanged: provider.setSearchQuery,
         ),
@@ -110,6 +102,8 @@ class _Toolbar extends StatelessWidget {
 }
 
 class _DepartmentList extends StatelessWidget {
+  const _DepartmentList();
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<DepartmentsProvider>();
@@ -119,41 +113,67 @@ class _DepartmentList extends StatelessWidget {
       return const AppEmptyState(
         title: 'No departments',
         message: 'Create a department to get started.',
-        icon: Icons.business,
+        icon: Icons.business_outlined,
       );
     }
 
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: SoftErpTheme.border),
-      ),
-      child: ListView.separated(
-        shrinkWrap: true,
-        itemCount: depts.length,
-        separatorBuilder: (_, __) => Divider(height: 1, color: SoftErpTheme.border),
-        itemBuilder: (context, index) {
-          final dept = depts[index];
-          final isSelected = provider.selectedDepartment?.id == dept.id;
-          return ListTile(
-            selected: isSelected,
-            selectedTileColor: SoftErpTheme.accent.withOpacity(0.1),
-            title: Text(dept.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: Text(dept.description, maxLines: 1, overflow: TextOverflow.ellipsis),
-            onTap: () => provider.selectDepartment(isSelected ? null : dept),
-            trailing: IconButton(
-              icon: const Icon(Icons.edit, size: 18),
-              onPressed: () => DepartmentEditorDialog.open(context, department: dept),
+    return ListView.separated(
+      itemCount: depts.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        final dept = depts[index];
+        final isSelected = provider.selectedDepartment?.id == dept.id;
+        final count = provider.employeesForDepartment(dept.id).length;
+        return SoftRowCard(
+          isSelected: isSelected,
+          onTap: () => provider.selectDepartment(isSelected ? null : dept),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                _DeptAvatar(url: dept.photoUrl, size: 42),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SoftInlineText(dept.name, weight: FontWeight.w700),
+                      if (dept.description.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        SoftInlineText(
+                          dept.description,
+                          color: SoftErpTheme.textSecondary,
+                          weight: FontWeight.w500,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                SoftStatusPill(
+                  label: '$count',
+                  background: SoftErpTheme.accentSoft,
+                  textColor: SoftErpTheme.accentDark,
+                  borderColor: SoftErpTheme.accentSoft,
+                ),
+                const SizedBox(width: 6),
+                SoftIconButton(
+                  icon: Icons.edit_outlined,
+                  tooltip: 'Edit department',
+                  onTap: () => DepartmentEditorDialog.open(context, department: dept),
+                ),
+              ],
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 }
 
-class _EmployeeList extends StatelessWidget {
+class _EmployeePanel extends StatelessWidget {
+  const _EmployeePanel();
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<DepartmentsProvider>();
@@ -162,89 +182,177 @@ class _EmployeeList extends StatelessWidget {
     if (selectedDept == null) {
       return const AppEmptyState(
         title: 'Select a department',
-        message: 'Select a department from the left to view employees.',
+        message: 'Pick a department on the left to view its employees.',
         icon: Icons.people_outline,
       );
     }
 
     final emps = provider.employeesForDepartment(selectedDept.id);
 
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: SoftErpTheme.border),
-      ),
+    return SoftSurface(
+      padding: const EdgeInsets.all(18),
+      radius: SoftErpTheme.radiusLg,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              children: [
-                if (selectedDept.photoUrl.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 16),
-                    child: CircleAvatar(
-                      radius: 24,
-                      backgroundImage: NetworkImage(selectedDept.photoUrl),
+          Row(
+            children: [
+              _DeptAvatar(url: selectedDept.photoUrl, size: 48),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      selectedDept.name,
+                      style: const TextStyle(
+                        color: SoftErpTheme.textPrimary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                  )
-                else
-                  const Padding(
-                    padding: EdgeInsets.only(right: 16),
-                    child: CircleAvatar(
-                      radius: 24,
-                      child: Icon(Icons.business),
-                    ),
-                  ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(selectedDept.name, style: Theme.of(context).textTheme.titleMedium),
-                      Text(selectedDept.description, style: Theme.of(context).textTheme.bodyMedium),
+                    if (selectedDept.description.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        selectedDept.description,
+                        style: const TextStyle(
+                          color: SoftErpTheme.textSecondary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                     ],
-                  ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              AppButton(
+                label: 'Add Employee',
+                icon: Icons.add,
+                variant: AppButtonVariant.secondary,
+                onPressed: () => EmployeeEditorDialog.open(context, departmentId: selectedDept.id),
+              ),
+            ],
           ),
-          Divider(height: 1, color: SoftErpTheme.border),
+          const SizedBox(height: 16),
           if (emps.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(32.0),
-              child: Center(child: Text('No employees found in this department.')),
+            const Expanded(
+              child: AppEmptyState(
+                title: 'No employees yet',
+                message: 'Add the first employee to this department.',
+                icon: Icons.person_add_alt,
+              ),
             )
           else
             Expanded(
               child: ListView.separated(
                 itemCount: emps.length,
-                separatorBuilder: (_, __) => Divider(height: 1, color: SoftErpTheme.border),
-                itemBuilder: (context, index) {
-                  final emp = emps[index];
-                  return ListTile(
-                    title: Text(emp.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: Text('${emp.role} • ${emp.phone} • ${emp.email}'),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.edit, size: 18),
-                          onPressed: () => EmployeeEditorDialog.open(context, departmentId: selectedDept.id, employee: emp),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete, size: 18, color: Colors.red),
-                          onPressed: () => provider.deleteEmployee(emp.id),
-                        ),
-                      ],
-                    ),
-                  );
-                },
+                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                itemBuilder: (context, index) => _EmployeeRow(
+                  emp: emps[index],
+                  departmentId: selectedDept.id,
+                ),
               ),
             ),
         ],
       ),
+    );
+  }
+}
+
+class _EmployeeRow extends StatelessWidget {
+  const _EmployeeRow({required this.emp, required this.departmentId});
+
+  final EmployeeDefinition emp;
+  final int departmentId;
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.read<DepartmentsProvider>();
+    final isFreelancer = emp.employmentType == 'freelancer';
+    final contact = [emp.phone, emp.email].where((s) => s.isNotEmpty).join(' • ');
+    return SoftRowCard(
+      onTap: () => EmployeeEditorDialog.open(context, departmentId: departmentId, employee: emp),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 20,
+              backgroundColor: SoftErpTheme.accentSoft,
+              child: Text(
+                emp.name.isNotEmpty ? emp.name[0].toUpperCase() : '?',
+                style: const TextStyle(
+                  color: SoftErpTheme.accentDark,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SoftInlineText(emp.name, weight: FontWeight.w700),
+                  const SizedBox(height: 3),
+                  SoftInlineText(
+                    [emp.role, contact].where((s) => s.isNotEmpty).join(' • '),
+                    color: SoftErpTheme.textSecondary,
+                    weight: FontWeight.w500,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            SoftStatusPill(
+              label: isFreelancer ? 'Freelancer' : 'In-house',
+              background: isFreelancer ? SoftErpTheme.infoBg : SoftErpTheme.successBg,
+              textColor: isFreelancer ? SoftErpTheme.infoText : SoftErpTheme.successText,
+              borderColor: isFreelancer ? SoftErpTheme.infoBg : SoftErpTheme.successBg,
+            ),
+            const SizedBox(width: 6),
+            SoftIconButton(
+              icon: Icons.edit_outlined,
+              tooltip: 'Edit',
+              onTap: () => EmployeeEditorDialog.open(context, departmentId: departmentId, employee: emp),
+            ),
+            const SizedBox(width: 6),
+            SoftIconButton(
+              icon: Icons.delete_outline,
+              tooltip: 'Delete',
+              iconColor: const Color(0xFFB91C1C),
+              onTap: () => provider.deleteEmployee(emp.id),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DeptAvatar extends StatelessWidget {
+  const _DeptAvatar({required this.url, required this.size});
+
+  final String url;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: SoftErpTheme.cardSurfaceAlt,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: url.isNotEmpty
+          ? Image.network(
+              url,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) =>
+                  const Icon(Icons.business, color: SoftErpTheme.textSecondary),
+            )
+          : const Icon(Icons.business, color: SoftErpTheme.textSecondary),
     );
   }
 }

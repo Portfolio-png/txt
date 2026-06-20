@@ -74,7 +74,7 @@ class DepartmentsRepository {
     return list.map((e) => EmployeeDefinition.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  Future<EmployeeDefinition> createEmployee(int departmentId, String name, String role, String phone, String email, String employmentType) async {
+  Future<EmployeeDefinition> createEmployee(int departmentId, String name, String role, String phone, String email, String employmentType, String barcodeId) async {
     final uri = Uri.parse('$baseUrl/api/employees');
     final response = await _client.post(
       uri,
@@ -85,6 +85,8 @@ class DepartmentsRepository {
         'role': role,
         'phone': phone,
         'email': email,
+        'employmentType': employmentType,
+        'barcodeId': barcodeId,
       }),
     );
     final payload = _decodeJsonObject(response.body);
@@ -94,7 +96,7 @@ class DepartmentsRepository {
     return EmployeeDefinition.fromJson(payload['employee'] as Map<String, dynamic>);
   }
 
-  Future<EmployeeDefinition> updateEmployee(int id, int departmentId, String name, String role, String phone, String email, String employmentType) async {
+  Future<EmployeeDefinition> updateEmployee(int id, int departmentId, String name, String role, String phone, String email, String employmentType, String barcodeId) async {
     final uri = Uri.parse('$baseUrl/api/employees/$id');
     final response = await _client.patch(
       uri,
@@ -105,6 +107,8 @@ class DepartmentsRepository {
         'role': role,
         'phone': phone,
         'email': email,
+        'employmentType': employmentType,
+        'barcodeId': barcodeId,
       }),
     );
     final payload = _decodeJsonObject(response.body);

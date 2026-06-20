@@ -23,6 +23,8 @@ import 'package:core_erp/features/clients/presentation/screens/clients_screen.da
 import 'package:core_erp/features/groups/presentation/screens/groups_screen.dart';
 import 'package:core_erp/features/inventory/presentation/providers/inventory_create_command_provider.dart';
 import 'package:core_erp/features/orders/presentation/screens/orders_screen.dart';
+import '../../features/jobs/presentation/screens/jobs_screen.dart';
+import '../../features/jobs/presentation/widgets/freelancer_barcode_listener.dart';
 import '../../features/pm/presentation/screens/pm_screen.dart';
 import 'package:core_erp/features/units/presentation/screens/units_screen.dart';
 import 'package:core_erp/features/vendors/presentation/screens/vendors_screen.dart';
@@ -78,8 +80,9 @@ class AppShell extends StatelessWidget {
         final totalSidebarSpace =
             actualSidebarWidth + actualLeftInset + actualRightGap;
 
-        return PaperShortcutManager(
-          child: MouseRegion(
+        return FreelancerBarcodeListener(
+          child: PaperShortcutManager(
+            child: MouseRegion(
             onHover: (e) => GlobalMouseTracker.position.value = e.position,
             child: Scaffold(
             backgroundColor: Colors.transparent,
@@ -202,7 +205,7 @@ class AppShell extends StatelessWidget {
               ),
             ),
           ),
-        ));
+        )));
       },
     );
   }
@@ -744,6 +747,7 @@ class _ShellContentSwitcher extends StatelessWidget {
                 embeddedInShell: true,
                 mode: ProductionPipelinesScreenMode.manage,
               ),
+              'jobs' => const JobsScreen(),
               'pm' => const PMScreen(),
               'telemetry' => const MachineTelemetryScreen(),
               'orders' => OrdersScreen(

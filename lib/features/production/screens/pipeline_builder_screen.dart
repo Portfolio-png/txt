@@ -4103,6 +4103,7 @@ class _QuickAddPanelState extends State<_QuickAddPanel> {
     'Tapping',
     'Riveting',
     'Plating',
+    'Assembly',
     'Packing',
   ];
 

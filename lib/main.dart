@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:core_erp/core/navigation/app_navigation.dart';
+import 'package:http/http.dart' as http;
 
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
 import 'package:core_erp/core/network/authenticated_http_client.dart';
@@ -16,6 +17,9 @@ import 'package:core_erp/features/groups/presentation/providers/groups_provider.
 import 'package:core_erp/features/inventory/data/repositories/api_inventory_repository.dart';
 import 'package:core_erp/features/inventory/data/repositories/inventory_repository.dart';
 import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
+import 'features/jobs/data/jobs_repository.dart';
+import 'features/jobs/presentation/providers/jobs_provider.dart';
+import 'features/jobs/presentation/screens/freelancer_portal_screen.dart';
 import 'package:core_erp/features/clients/data/repositories/api_client_repository.dart';
 import 'package:core_erp/features/clients/data/repositories/client_repository.dart';
 import 'package:core_erp/features/clients/presentation/providers/clients_provider.dart';
@@ -323,6 +327,9 @@ class MyApp extends StatelessWidget {
         Provider<ProductionRepository>(
           create: (_) => SqliteProductionRepository(),
         ),
+        Provider<JobsRepository>(
+          create: (context) => JobsRepository(client: _authClient(context.read<AuthProvider>())),
+        ),
         Provider<MachineRepository>(
           create: (context) =>
               machineRepository ??
@@ -431,6 +438,12 @@ class MyApp extends StatelessWidget {
               previous ?? DepartmentsProvider(repository: repository)
                 ..load(),
         ),
+        ChangeNotifierProxyProvider<JobsRepository, JobsProvider>(
+          create: (context) =>
+              JobsProvider(repository: context.read<JobsRepository>())..fetchJobs(),
+          update: (_, repository, previous) =>
+              previous ?? JobsProvider(repository: repository)..fetchJobs(),
+        ),
         ChangeNotifierProvider(create: (_) => TelemetryProvider()),
         ChangeNotifierProvider(create: (_) => ProductionProvider.seeded()),
         ChangeNotifierProvider(create: (_) => BatchFlowProvider()),
@@ -475,6 +488,16 @@ class MyApp extends StatelessWidget {
             displayColor: SoftErpTheme.textPrimary,
           ),
         ),
+        onGenerateRoute: (settings) {
+          if (settings.name != null && settings.name!.startsWith('/freelancer-portal')) {
+            final uri = Uri.parse(settings.name!);
+            final token = uri.queryParameters['token'] ?? '';
+            return MaterialPageRoute(
+              builder: (_) => FreelancerPortalScreen(token: token),
+            );
+          }
+          return null;
+        },
         home: const _AuthGate(),
       ),
     );

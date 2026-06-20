@@ -2632,10 +2632,25 @@ async function initDb() {
       email TEXT DEFAULT '',
       employment_type TEXT DEFAULT 'in-house',
       status TEXT DEFAULT 'active',
+      barcode_id TEXT DEFAULT '',
       is_archived INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (department_id) REFERENCES departments (id) ON DELETE CASCADE
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS freelancer_jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      freelancer_id INTEGER NOT NULL REFERENCES employees(id),
+      item_id INTEGER NOT NULL REFERENCES items(id),
+      variation_leaf_node_id INTEGER NOT NULL DEFAULT 0,
+      count INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'pending',
+      payout_balance REAL NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
     )
   `);
 
@@ -20520,6 +20535,32 @@ app.put('/runs/:id/node-status', async (req, res) => {
       [JSON.stringify(nodeStatuses), JSON.stringify(overrides), req.params.id],
     );
 
+    // Push to freelancer pool if Assembly node is reached
+    const templateRowNode = await get('SELECT * FROM pipeline_templates WHERE id = ?', [runRow.template_id]);
+    if (templateRowNode && (payload.status === 'ready' || payload.status === 'active' || payload.status === 'queued')) {
+      const tpl = rowToTemplate(templateRowNode);
+      const targetNode = tpl.nodes.find(n => n.id === nodeId);
+      if (targetNode && targetNode.processType === 'Assembly') {
+        const qty = overrides.batchQuantityByNode[nodeId] || 1;
+        
+        // Find output item
+        let itemId = 0;
+        const outName = targetNode.outputs && targetNode.outputs[0];
+        if (outName) {
+           const matched = await get('SELECT id FROM items WHERE LOWER(name) = ? OR LOWER(alias) = ?', [outName.toLowerCase(), outName.toLowerCase()]);
+           if (matched) itemId = matched.id;
+        }
+        
+        // Check if job already exists for this run/node (we can use run_id in the future, but for now just check if a pending job exists for this item with same count to avoid naive duplicates, or just insert it)
+        // To be safe, we'll just insert a new pending job. We will need a way to track the run_id, but the schema doesn't have it. We'll just insert.
+        await run(
+          `INSERT INTO freelancer_jobs (freelancer_id, item_id, variation_leaf_node_id, count, status, payout_balance, created_at, updated_at)
+           VALUES (0, ?, 0, ?, 'pending', 0, ?, ?)`,
+          [itemId, qty, new Date().toISOString(), new Date().toISOString()]
+        );
+      }
+    }
+
     // Check if the overall pipeline run is completed
     const templateRow = await get('SELECT * FROM pipeline_templates WHERE id = ?', [
       runRow.template_id,
@@ -20943,27 +20984,6 @@ app.use('/api', (error, req, res, _next) => {
   });
 });
 
-// ── API 404 catch-all: must come AFTER all real routes, BEFORE error handler ──
-// Any /api/* path that fell through all routes gets a JSON 404 (never HTML).
-app.use('/api', (req, res) => {
-  console.warn(`[API 404] ${req.method} ${req.originalUrl}`);
-  const message = `API route not found: ${req.method} ${req.originalUrl}`;
-  res.status(404).json({
-    success: false,
-    message,
-    error: message,
-  });
-});
-
-app.use((error, req, res, _next) => {
-  console.error(`Request failed: ${req.method} ${req.originalUrl}`, error);
-  const message = IS_PRODUCTION ? 'Request failed.' : error.message;
-  res.status(error.statusCode || 500).json({
-    success: false,
-    message,
-    error: message,
-  });
-});
 
 async function clearAllData() {
   // FK enforcement off for the wipe: every data table is deleted anyway, and
@@ -21090,6 +21110,7 @@ function rowToEmployeeDto(row) {
     email: row.email || '',
     employmentType: row.employment_type || 'in-house',
     status: row.status || 'active',
+    barcodeId: row.barcode_id || '',
     isArchived: Number(row.is_archived || 0) === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -21102,6 +21123,29 @@ app.get('/api/departments', requirePermission('config.read'), async (_req, res) 
     res.json({ success: true, departments: rows.map(rowToDepartmentDto), error: null });
   } catch (error) {
     res.status(500).json({ success: false, departments: [], error: error.message });
+  }
+});
+
+app.get('/api/freelancer-jobs', requirePermission('config.read'), async (req, res) => {
+  try {
+    const jobs = await all('SELECT * FROM freelancer_jobs');
+    res.json({ success: true, jobs });
+  } catch (error) {
+    res.status(500).json({ success: false, jobs: [], error: error.message });
+  }
+});
+
+app.put('/api/freelancer-jobs/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    const { freelancer_id, status } = req.body;
+    await run(
+      'UPDATE freelancer_jobs SET freelancer_id = ?, status = ?, updated_at = ? WHERE id = ?',
+      [freelancer_id, status, new Date().toISOString(), req.params.id]
+    );
+    const updated = await get('SELECT * FROM freelancer_jobs WHERE id = ?', [req.params.id]);
+    res.json({ success: true, job: updated });
+  } catch (error) {
+    res.status(500).json({ success: false, job: null, error: error.message });
   }
 });
 
@@ -21167,14 +21211,14 @@ app.get('/api/employees', requirePermission('config.read'), async (_req, res) =>
 
 app.post('/api/employees', requirePermission('config.write'), async (req, res) => {
   try {
-    const { departmentId, name, role = '', phone = '', email = '', employmentType = 'in-house', status = 'active' } = req.body;
+    const { departmentId, name, role = '', phone = '', email = '', employmentType = 'in-house', status = 'active', barcodeId = '' } = req.body;
     if (!name || !departmentId) {
       return res.status(400).json({ success: false, error: 'Name and departmentId are required' });
     }
     const now = new Date().toISOString();
     const result = await run(
-      'INSERT INTO employees (department_id, name, role, phone, email, employment_type, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [departmentId, name.trim(), role.trim(), phone.trim(), email.trim(), employmentType, status, now, now]
+      'INSERT INTO employees (department_id, name, role, phone, email, employment_type, status, barcode_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [departmentId, name.trim(), role.trim(), phone.trim(), email.trim(), employmentType, status, barcodeId.trim(), now, now]
     );
     const row = await get('SELECT * FROM employees WHERE id = ?', [result.lastID]);
     res.status(201).json({ success: true, employee: rowToEmployeeDto(row), error: null });
@@ -21186,7 +21230,7 @@ app.post('/api/employees', requirePermission('config.write'), async (req, res) =
 app.patch('/api/employees/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const { name, role, phone, email, employmentType, status, departmentId } = req.body;
+    const { name, role, phone, email, employmentType, status, departmentId, barcodeId } = req.body;
     const existing = await get('SELECT * FROM employees WHERE id = ?', [id]);
     if (!existing) {
       return res.status(404).json({ success: false, error: 'Employee not found' });
@@ -21198,10 +21242,11 @@ app.patch('/api/employees/:id', requirePermission('config.write'), async (req, r
     const newEmpType = employmentType !== undefined ? employmentType : existing.employment_type;
     const newStatus = status !== undefined ? status : existing.status;
     const newDep = departmentId !== undefined ? departmentId : existing.department_id;
+    const newBarcodeId = barcodeId !== undefined ? barcodeId.trim() : existing.barcode_id;
 
     await run(
-      'UPDATE employees SET name = ?, role = ?, phone = ?, email = ?, employment_type = ?, status = ?, department_id = ?, updated_at = ? WHERE id = ?',
-      [newName, newRole, newPhone, newEmail, newEmpType, newStatus, newDep, new Date().toISOString(), id]
+      'UPDATE employees SET name = ?, role = ?, phone = ?, email = ?, employment_type = ?, status = ?, department_id = ?, barcode_id = ?, updated_at = ? WHERE id = ?',
+      [newName, newRole, newPhone, newEmail, newEmpType, newStatus, newDep, newBarcodeId, new Date().toISOString(), id]
     );
     const row = await get('SELECT * FROM employees WHERE id = ?', [id]);
     res.json({ success: true, employee: rowToEmployeeDto(row), error: null });
@@ -21218,6 +21263,28 @@ app.delete('/api/employees/:id', requirePermission('config.write'), async (req, 
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
+});
+
+// ── API 404 catch-all: must come AFTER all real routes, BEFORE error handler ──
+// Any /api/* path that fell through all routes gets a JSON 404 (never HTML).
+app.use('/api', (req, res) => {
+  console.warn(`[API 404] ${req.method} ${req.originalUrl}`);
+  const message = `API route not found: ${req.method} ${req.originalUrl}`;
+  res.status(404).json({
+    success: false,
+    message,
+    error: message,
+  });
+});
+
+app.use((error, req, res, _next) => {
+  console.error(`Request failed: ${req.method} ${req.originalUrl}`, error);
+  const message = IS_PRODUCTION ? 'Request failed.' : error.message;
+  res.status(error.statusCode || 500).json({
+    success: false,
+    message,
+    error: message,
+  });
 });
 
 function startServer() {

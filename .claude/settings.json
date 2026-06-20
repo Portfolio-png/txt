@@ -16,7 +16,8 @@
       "PowerShell(flutter analyze lib/features/production/providers/production_run_provider.dart lib/features/production/widgets/stage_reconciliation_dialog.dart lib/features/production/widgets/pipeline_canvas.dart lib/features/production/widgets/inventory_sidebar.dart lib/features/production/screens/live_production_monitor_screen.dart 2>&1)",
       "PowerShell(flutter test test/features/production/production_widget_test.dart 2>&1)",
       "PowerShell(flutter analyze lib/features/production 2>&1)",
-      "PowerShell(flutter analyze lib/features/production/widgets/inventory_sidebar.dart 2>&1)"
+      "PowerShell(flutter analyze lib/features/production/widgets/inventory_sidebar.dart 2>&1)",
+      "PowerShell(flutter analyze packages/core_erp/lib/features/departments/ 2>&1)"
     ]
   }
 }

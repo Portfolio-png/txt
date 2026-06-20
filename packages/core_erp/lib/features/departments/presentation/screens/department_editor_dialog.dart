@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:http/http.dart' as http;
@@ -8,40 +7,53 @@ import 'package:mime/mime.dart';
 
 import '../../../../core/services/generic_asset_service.dart';
 import '../../../../core/widgets/app_toast.dart';
-
-import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../domain/department_definition.dart';
 import '../providers/departments_provider.dart';
 
-class DepartmentEditorDialog extends StatefulWidget {
+class DepartmentEditorDialog extends StatelessWidget {
   const DepartmentEditorDialog({super.key, this.department});
 
   final DepartmentDefinition? department;
 
   static Future<void> open(BuildContext context, {DepartmentDefinition? department}) {
-    return showDialog(
-      context: context,
-      builder: (_) => DepartmentEditorDialog(department: department),
+    return showErpFormDialog(
+      context,
+      maxWidth: 560,
+      maxHeight: 620,
+      child: DepartmentEditorDialog(department: department),
     );
   }
 
   @override
-  State<DepartmentEditorDialog> createState() => _DepartmentEditorDialogState();
+  Widget build(BuildContext context) {
+    return _DepartmentEditorSheet(department: department);
+  }
 }
 
-class _DepartmentEditorDialogState extends State<DepartmentEditorDialog> {
+class _DepartmentEditorSheet extends StatefulWidget {
+  const _DepartmentEditorSheet({this.department});
+
+  final DepartmentDefinition? department;
+
+  @override
+  State<_DepartmentEditorSheet> createState() => _DepartmentEditorSheetState();
+}
+
+class _DepartmentEditorSheetState extends State<_DepartmentEditorSheet> {
   final _nameController = TextEditingController();
   final _descController = TextEditingController();
-  final _photoController = TextEditingController(); // Keeping simple string input for URL for now
+  final _photoController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    if (widget.department != null) {
-      _nameController.text = widget.department!.name;
-      _descController.text = widget.department!.description;
-      _photoController.text = widget.department!.photoUrl;
+    final dept = widget.department;
+    if (dept != null) {
+      _nameController.text = dept.name;
+      _descController.text = dept.description;
+      _photoController.text = dept.photoUrl;
     }
   }
 
@@ -70,50 +82,88 @@ class _DepartmentEditorDialogState extends State<DepartmentEditorDialog> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<DepartmentsProvider>();
-    return AlertDialog(
-      title: Text(widget.department == null ? 'New Department' : 'Edit Department'),
-      content: SizedBox(
-        width: 400,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(labelText: 'Department Name'),
+    return ErpFormScaffold(
+      title: widget.department == null ? 'New Department' : 'Edit Department',
+      subtitle: 'Group employees under a department for easier management.',
+      errorBanner: provider.errorMessage == null
+          ? null
+          : ErpFormMessageBanner(message: provider.errorMessage!),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ErpDialogSectionCard(
+            title: 'Details',
+            child: Column(
+              children: [
+                _Field(controller: _nameController, label: 'Department Name'),
+                const SizedBox(height: 14),
+                _Field(controller: _descController, label: 'Description', maxLines: 2),
+              ],
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _descController,
-              decoration: const InputDecoration(labelText: 'Description'),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _photoController,
-              decoration: const InputDecoration(labelText: 'Photo URL / ID'),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 16),
+          ErpDialogSectionCard(
+            title: 'Photo',
+            child: _DepartmentImagePickerField(controller: _photoController),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        AppButton(
-          label: 'Save',
-          isLoading: provider.isSaving,
-          onPressed: _save,
-        ),
-      ],
+      footer: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          AppButton(
+            label: 'Cancel',
+            variant: AppButtonVariant.secondary,
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+          const SizedBox(width: 12),
+          AppButton(
+            label: 'Save',
+            isLoading: provider.isSaving,
+            onPressed: _save,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+InputDecoration _decoration(String label, {Widget? suffix}) {
+  return InputDecoration(
+    labelText: label,
+    filled: true,
+    fillColor: const Color(0xFFF9FAFB),
+    suffixIcon: suffix,
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(8),
+      borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(8),
+      borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+    ),
+  );
+}
+
+class _Field extends StatelessWidget {
+  const _Field({required this.controller, required this.label, this.maxLines = 1});
+
+  final TextEditingController controller;
+  final String label;
+  final int maxLines;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      maxLines: maxLines,
+      decoration: _decoration(label),
     );
   }
 }
 
 class _DepartmentImagePickerField extends StatefulWidget {
-  const _DepartmentImagePickerField({
-    required this.controller,
-  });
+  const _DepartmentImagePickerField({required this.controller});
 
   final TextEditingController controller;
 
@@ -213,16 +263,16 @@ class _DepartmentImagePickerFieldState extends State<_DepartmentImagePickerField
           ),
           clipBehavior: Clip.antiAlias,
           child: url.isNotEmpty
-              ? Image.network(url, fit: BoxFit.cover, errorBuilder: (_,__,___) => const Icon(Icons.image, color: Color(0xFF94A3B8)))
+              ? Image.network(url, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.image, color: Color(0xFF94A3B8)))
               : const Icon(Icons.image, color: Color(0xFF94A3B8)),
         ),
         const SizedBox(width: 12),
         Expanded(
-          child: TextFormField(
+          child: TextField(
             controller: widget.controller,
-            decoration: InputDecoration(
-              labelText: 'Photo URL',
-              suffixIcon: url.isNotEmpty
+            decoration: _decoration(
+              'Photo URL',
+              suffix: url.isNotEmpty
                   ? IconButton(icon: const Icon(Icons.clear, size: 18), onPressed: () => widget.controller.clear())
                   : null,
             ),
@@ -240,4 +290,3 @@ class _DepartmentImagePickerFieldState extends State<_DepartmentImagePickerField
     );
   }
 }
-

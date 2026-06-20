@@ -7,6 +7,7 @@ class EmployeeDefinition {
   final String email;
   final String employmentType;
   final String status;
+  final String barcodeId;
   final bool isArchived;
   final String createdAt;
   final String updatedAt;
@@ -20,6 +21,7 @@ class EmployeeDefinition {
     this.email = '',
     this.employmentType = 'in-house',
     this.status = 'active',
+    this.barcodeId = '',
     this.isArchived = false,
     required this.createdAt,
     required this.updatedAt,
@@ -35,6 +37,7 @@ class EmployeeDefinition {
       email: json['email'] as String? ?? '',
       employmentType: json['employmentType'] as String? ?? 'in-house',
       status: json['status'] as String? ?? 'active',
+      barcodeId: json['barcodeId'] as String? ?? '',
       isArchived: json['isArchived'] as bool? ?? false,
       createdAt: json['createdAt'] as String? ?? '',
       updatedAt: json['updatedAt'] as String? ?? '',
@@ -51,6 +54,7 @@ class EmployeeDefinition {
       'email': email,
       'employmentType': employmentType,
       'status': status,
+      'barcodeId': barcodeId,
       'isArchived': isArchived,
       'createdAt': createdAt,
       'updatedAt': updatedAt,
@@ -66,6 +70,7 @@ class EmployeeDefinition {
     String? email,
     String? employmentType,
     String? status,
+    String? barcodeId,
     bool? isArchived,
     String? createdAt,
     String? updatedAt,
@@ -79,6 +84,7 @@ class EmployeeDefinition {
       email: email ?? this.email,
       employmentType: employmentType ?? this.employmentType,
       status: status ?? this.status,
+      barcodeId: barcodeId ?? this.barcodeId,
       isArchived: isArchived ?? this.isArchived,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,

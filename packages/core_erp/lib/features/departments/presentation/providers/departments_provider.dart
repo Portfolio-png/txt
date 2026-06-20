@@ -130,11 +130,11 @@ class DepartmentsProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> createEmployee(int departmentId, String name, String role, String phone, String email, String employmentType) async {
+  Future<bool> createEmployee(int departmentId, String name, String role, String phone, String email, String employmentType, String barcodeId) async {
     _setSaving(true);
     _clearError();
     try {
-      final emp = await _repository.createEmployee(departmentId, name, role, phone, email, employmentType);
+      final emp = await _repository.createEmployee(departmentId, name, role, phone, email, employmentType, barcodeId);
       _employees.add(emp);
       _sortLists();
       return true;
@@ -146,11 +146,11 @@ class DepartmentsProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> updateEmployee(int id, int departmentId, String name, String role, String phone, String email, String employmentType) async {
+  Future<bool> updateEmployee(int id, int departmentId, String name, String role, String phone, String email, String employmentType, String barcodeId) async {
     _setSaving(true);
     _clearError();
     try {
-      final emp = await _repository.updateEmployee(id, departmentId, name, role, phone, email, employmentType);
+      final emp = await _repository.updateEmployee(id, departmentId, name, role, phone, email, employmentType, barcodeId);
       final index = _employees.indexWhere((e) => e.id == id);
       if (index >= 0) {
         _employees[index] = emp;

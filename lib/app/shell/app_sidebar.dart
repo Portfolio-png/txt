@@ -55,6 +55,7 @@ class _AppSidebarState extends State<AppSidebar> {
       Icons.precision_manufacturing_outlined,
     ),
     _SidebarItemData('pm', 'PM', Icons.widgets_outlined),
+    _SidebarItemData('jobs', 'Jobs', Icons.engineering_outlined),
   ];
 
   static const List<_SidebarItemData> _configuratorItems = <_SidebarItemData>[
