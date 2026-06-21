@@ -457,6 +457,7 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
           loss: _allotted - _output,
           scrapLogged: totalScrap,
           leftoverReturned: returnedLeftover,
+          output: _output,
           barcode: _firstBarcode,
         ),
       );

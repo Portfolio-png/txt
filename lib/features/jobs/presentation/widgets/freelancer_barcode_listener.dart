@@ -10,7 +10,6 @@ class FreelancerBarcodeListener extends StatefulWidget {
 }
 
 class _FreelancerBarcodeListenerState extends State<FreelancerBarcodeListener> {
-  final FocusNode _focusNode = FocusNode(debugLabel: 'freelancer_barcode_listener');
   String _barcodeBuffer = '';
   DateTime? _lastKeystrokeTime;
 
@@ -23,7 +22,6 @@ class _FreelancerBarcodeListenerState extends State<FreelancerBarcodeListener> {
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_handleKey);
-    _focusNode.dispose();
     super.dispose();
   }
 
@@ -71,12 +69,6 @@ class _FreelancerBarcodeListenerState extends State<FreelancerBarcodeListener> {
 
   @override
   Widget build(BuildContext context) {
-    return Focus(
-      focusNode: _focusNode,
-      onFocusChange: (hasFocus) {
-        if (!hasFocus) _focusNode.requestFocus();
-      },
-      child: widget.child,
-    );
+    return widget.child;
   }
 }

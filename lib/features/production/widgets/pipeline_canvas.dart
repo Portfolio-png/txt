@@ -456,7 +456,22 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
     final result = await runProvider.requestReconcile(
       ReconcileRequest(node: node, runId: runId),
     );
-    if (result != null) _setNodeStatus(node, NodeRunStatus.done);
+    if (result != null) {
+      final template = context.read<ProductionProvider>().template;
+      final nextFlow = template.flows.firstWhereOrNull((f) => f.fromNodeId == node.id);
+      final batchProvider = context.read<BatchFlowProvider>();
+      batchProvider.autoAdvanceBatches(
+        runId: runId,
+        nodeId: node.id,
+        loss: result.loss,
+        scrap: result.scrapLogged,
+        leftover: result.leftoverReturned,
+        output: result.output,
+        nextNodeId: nextFlow?.toNodeId,
+      );
+      await _persistBatches(runId, batchProvider);
+      _setNodeStatus(node, NodeRunStatus.done);
+    }
   }
 
   /// Reconcile a parked batch via the docked sidebar panel, then deduct the
@@ -775,6 +790,10 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
         await _persistBatches(runId, batchProvider);
       }
     }
+    
+    if (mounted) {
+      context.read<ProductionProvider>().selectNode(node.id);
+    }
   }
 
   /// Reverts a batch's last forward hop — unwinds the inventory side effects
@@ -1071,7 +1090,7 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
                                     final quantity = await showDialog<double>(
                                       context: context,
                                       builder: (context) =>
-                                          _StockAssignQtyDialog(
+                                          StockAssignQtyDialog(
                                             material: material,
                                             nodeName: node.name,
                                           ),
@@ -1099,6 +1118,7 @@ class _PipelineCanvasState extends State<PipelineCanvas> {
                                       );
                                       runProvider.triggerRefresh();
                                       if (context.mounted) {
+                                        context.read<ProductionProvider>().selectNode(node.id);
                                         context
                                             .read<InventoryProvider>()
                                             .refresh();
@@ -1730,17 +1750,17 @@ class _InsightsToggle extends StatelessWidget {
   }
 }
 
-class _StockAssignQtyDialog extends StatefulWidget {
-  const _StockAssignQtyDialog({required this.material, required this.nodeName});
+class StockAssignQtyDialog extends StatefulWidget {
+  const StockAssignQtyDialog({super.key, required this.material, required this.nodeName});
 
   final MaterialRecord material;
   final String nodeName;
 
   @override
-  State<_StockAssignQtyDialog> createState() => _StockAssignQtyDialogState();
+  State<StockAssignQtyDialog> createState() => _StockAssignQtyDialogState();
 }
 
-class _StockAssignQtyDialogState extends State<_StockAssignQtyDialog> {
+class _StockAssignQtyDialogState extends State<StockAssignQtyDialog> {
   late final TextEditingController _controller;
   String? _errorText;
 

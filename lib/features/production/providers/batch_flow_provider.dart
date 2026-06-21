@@ -274,6 +274,67 @@ class BatchFlowProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Automatically advances batches from a reconciled stage to the next node in the template.
+  /// It first applies the declared loss (scrap + leftover) to the batches, then moves up to the
+  /// output amount to the next node.
+  void autoAdvanceBatches({
+    required String runId,
+    required String nodeId,
+    required double loss,
+    required double scrap,
+    required double leftover,
+    required double output,
+    required String? nextNodeId,
+  }) {
+    final list = _byRun[runId];
+    if (list == null || list.isEmpty) return;
+    
+    // 1. Deduct loss (scrap + leftover)
+    double remainingLoss = loss;
+    double scrapToLog = scrap;
+    double leftoverToLog = leftover;
+    
+    // Iterate over batches at this node
+    for (int i = list.length - 1; i >= 0; i--) {
+      if (remainingLoss <= 0) break;
+      final batch = list[i];
+      if (batch.currentNodeId != nodeId) continue;
+      
+      final lossForBatch = batch.quantity < remainingLoss ? batch.quantity : remainingLoss;
+      final scrapForBatch = scrapToLog < lossForBatch ? scrapToLog : lossForBatch;
+      scrapToLog -= scrapForBatch;
+      final leftoverForBatch = leftoverToLog < (lossForBatch - scrapForBatch) ? leftoverToLog : (lossForBatch - scrapForBatch);
+      leftoverToLog -= leftoverForBatch;
+      
+      reduceBatch(
+        runId: runId,
+        batchId: batch.id,
+        amount: lossForBatch,
+        scrap: scrapForBatch,
+        leftover: leftoverForBatch,
+      );
+      remainingLoss -= lossForBatch;
+    }
+    
+    // 2. Advance the output to the next node
+    if (nextNodeId != null && output > 0) {
+      // Re-fetch batches since some might have been removed
+      final liveBatches = batchesAtNode(runId, nodeId);
+      double remainingOutput = output;
+      for (final batch in liveBatches) {
+        if (remainingOutput <= 0) break;
+        final moveQty = batch.quantity < remainingOutput ? batch.quantity : remainingOutput;
+        moveBatch(
+          runId: runId,
+          batchId: batch.id,
+          toNodeId: nextNodeId,
+          quantity: moveQty,
+        );
+        remainingOutput -= moveQty;
+      }
+    }
+  }
+
   /// Reduces a batch's quantity by [amount] — e.g. the scrap/leftover that a
   /// stage reconciliation declared as having left the production pool beyond
   /// what advanced. The [scrap] and [leftover] split is accumulated onto the

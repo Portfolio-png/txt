@@ -1172,6 +1172,16 @@ class _FakeItemRepository implements ItemRepository {
   }
 
   @override
+  Future<void> deleteItem(int id) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<ItemDefinition> reassignItemGroup(int id, int groupId) {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<List<ItemAsset>> getItemAssets(int itemId) async => const [];
 
   @override

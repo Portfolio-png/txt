@@ -18,6 +18,7 @@ class ReconcileResult {
     required this.loss,
     required this.scrapLogged,
     required this.leftoverReturned,
+    required this.output,
     this.barcode,
   });
 
@@ -29,6 +30,9 @@ class ReconcileResult {
 
   /// Leftover returned to inventory.
   final double leftoverReturned;
+
+  /// The exact output quantity from this stage.
+  final double output;
 
   /// The material the scrap/leftover was booked against.
   final String? barcode;

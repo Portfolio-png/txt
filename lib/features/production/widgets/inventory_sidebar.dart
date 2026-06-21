@@ -7,11 +7,13 @@ import 'package:core_erp/features/groups/presentation/providers/groups_provider.
 import '../../production_pipelines/domain/material_batch.dart' show fmtQty;
 import '../providers/production_run_provider.dart';
 import '../providers/production_provider.dart';
+import '../providers/batch_flow_provider.dart';
 import 'stage_reconciliation_dialog.dart';
 import '../../production_pipelines/domain/process_node.dart';
 import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
 import '../../production_pipelines/domain/pipeline_run.dart';
 import '../../production_pipelines/domain/node_run_status.dart';
+import 'package:collection/collection.dart';
 
 class InventorySidebar extends StatefulWidget {
   const InventorySidebar({super.key});
@@ -356,7 +358,52 @@ class _ReconcilePanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final runProvider = context.watch<ProductionRunProvider>();
     final repo = context.read<PipelineRunRepository>();
-    return StageReconciliationDialog(
+    final isDone = node.status.toLowerCase() == 'done' || node.status.toLowerCase() == 'completed';
+    final isStarted = node.status.toLowerCase() == 'active' || node.status.toLowerCase() == 'running';
+
+    return Column(
+      children: [
+        if (!isDone && node.processType != 'Input' && node.processType != 'Output')
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: isStarted
+                    ? null
+                    : () async {
+                        try {
+                          await repo.updateNodeStatus(
+                            runId: runProvider.runId!,
+                            nodeId: node.id,
+                            status: NodeRunStatus.active,
+                          );
+                          runProvider.triggerRefresh();
+                          if (context.mounted) {
+                            context.read<ProductionProvider>().setNodeStatus(node.id, 'Active');
+                          }
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Failed to start: $e'), backgroundColor: Colors.red),
+                            );
+                          }
+                        }
+                      },
+                icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                label: Text(isStarted ? 'Stage Started' : 'Start Stage'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: isStarted ? Colors.grey : const Color(0xFF2563EB),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        Expanded(
+          child: StageReconciliationDialog(
       // Removed dynamic key to preserve state between node switches
       node: node,
       runId: runProvider.runId!,
@@ -364,6 +411,24 @@ class _ReconcilePanel extends StatelessWidget {
       onClose: () {}, 
       onCommitted: (result) async {
         try {
+          final template = context.read<ProductionProvider>().template;
+          final nextFlow = template.flows.firstWhereOrNull((f) => f.fromNodeId == node.id);
+          final batchProvider = context.read<BatchFlowProvider>();
+          batchProvider.autoAdvanceBatches(
+            runId: runProvider.runId!,
+            nodeId: node.id,
+            loss: result.loss,
+            scrap: result.scrapLogged,
+            leftover: result.leftoverReturned,
+            output: result.output,
+            nextNodeId: nextFlow?.toNodeId,
+          );
+
+          await repo.saveBatches(
+            runId: runProvider.runId!,
+            batches: batchProvider.batchesForRun(runProvider.runId!),
+          );
+
           await repo.updateNodeStatus(
             runId: runProvider.runId!,
             nodeId: node.id,
@@ -386,6 +451,9 @@ class _ReconcilePanel extends StatelessWidget {
           }
         }
       },
+    ),
+  ),
+      ],
     );
   }
 }

@@ -8,7 +8,14 @@ import '../../production_pipelines/domain/material_batch.dart';
 import '../../production_pipelines/domain/node_run_status.dart';
 
 import '../providers/batch_flow_provider.dart';
+import '../providers/production_run_provider.dart';
+import '../../production_pipelines/data/repositories/pipeline_run_repository.dart';
+import '../providers/production_provider.dart';
+import 'package:core_erp/features/inventory/domain/material_record.dart';
+import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
 import 'batch_chip.dart';
+import 'floor_toast.dart';
+import 'pipeline_canvas.dart' show StockAssignQtyDialog;
 
 class PipelineRunRow extends StatelessWidget {
   const PipelineRunRow({
@@ -209,27 +216,92 @@ class PipelineRunRow extends StatelessWidget {
             ? 'Unassigned'
             : activeNode.machineAssignmentLabel);
 
-    return DragTarget<MaterialBatch>(
+    return DragTarget<Object>(
       onWillAcceptWithDetails: (details) {
-        final batch = details.data;
-        return batch.currentNodeId != node.id;
+        if (details.data is MaterialRecord) return true;
+        if (details.data is MaterialBatch) {
+          final batch = details.data as MaterialBatch;
+          return batch.currentNodeId != node.id;
+        }
+        return false;
       },
       onAcceptWithDetails: (details) async {
-        final batch = details.data;
-        if (batch.currentNodeId == node.id) return;
-        final qty = await BatchSplitDialog.show(
-          context,
-          batch: batch,
-          targetNodeName: node.name.isEmpty ? 'station' : node.name,
-        );
-        if (qty == null) return;
-        
-        batchProvider.moveBatch(
-          runId: run.id,
-          batchId: batch.id,
-          toNodeId: node.id,
-          quantity: qty,
-        );
+        if (details.data is MaterialBatch) {
+          final batch = details.data as MaterialBatch;
+          if (batch.currentNodeId == node.id) return;
+          final qty = await BatchSplitDialog.show(
+            context,
+            batch: batch,
+            targetNodeName: node.name.isEmpty ? 'station' : node.name,
+          );
+          if (qty == null) return;
+          final repo = context.read<PipelineRunRepository>();
+          batchProvider.moveBatch(
+            runId: run.id,
+            batchId: batch.id,
+            toNodeId: node.id,
+            quantity: qty,
+          );
+          repo.saveBatches(
+            runId: run.id,
+            batches: batchProvider.batchesForRun(run.id),
+          );
+          
+          if (context.mounted) {
+            context.read<ProductionProvider>().selectNode(node.id);
+          }
+        } else if (details.data is MaterialRecord) {
+          final material = details.data as MaterialRecord;
+          final repo = context.read<PipelineRunRepository>();
+          final quantity = await showDialog<double>(
+            context: context,
+            builder: (context) => StockAssignQtyDialog(
+              material: material,
+              nodeName: node.name,
+            ),
+          );
+          if (quantity == null) return;
+
+          try {
+            await repo.attachBarcodeToRunNode(
+              runId: run.id,
+              nodeId: node.id,
+              barcode: material.barcode,
+              quantity: quantity,
+            );
+            batchProvider.addStockAtNode(
+              runId: run.id,
+              nodeId: node.id,
+              barcode: material.barcode,
+              materialName: material.name,
+              quantity: quantity,
+              unit: material.unit,
+            );
+            await repo.saveBatches(
+              runId: run.id,
+              batches: batchProvider.batchesForRun(run.id),
+            );
+            
+            // To update metrics if the monitor is listening
+            if (context.mounted) {
+              context.read<ProductionRunProvider>().triggerRefresh();
+              context.read<InventoryProvider>().refresh();
+              showFloorToast(
+                context,
+                'Assigned $quantity ${material.unit} of ${material.barcode} to ${node.name}',
+                kind: FloorToastKind.info,
+              );
+            }
+          } catch (e) {
+            if (context.mounted) {
+              showFloorToast(
+                context,
+                'Failed to assign stock: $e',
+                kind: FloorToastKind.error,
+              );
+            }
+          }
+        }
       },
       builder: (context, candidateData, rejectedData) {
         return Column(
@@ -435,6 +507,14 @@ class PipelineRunRow extends StatelessWidget {
           toNodeId: targetNode.id,
           quantity: qty,
         );
+        context.read<PipelineRunRepository>().saveBatches(
+          runId: run.id,
+          batches: batchProvider.batchesForRun(run.id),
+        );
+        
+        if (context.mounted) {
+          context.read<ProductionProvider>().selectNode(targetNode.id);
+        }
       },
       builder: (context, candidateData, rejectedData) {
         return const SizedBox.expand();
