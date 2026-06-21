@@ -2641,14 +2641,38 @@ async function initDb() {
   `);
 
   await run(`
+    CREATE TABLE IF NOT EXISTS freelancer_job_batches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      freelancer_id INTEGER REFERENCES employees(id),
+      batch_number TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'assigned',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
     CREATE TABLE IF NOT EXISTS freelancer_jobs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      freelancer_id INTEGER NOT NULL REFERENCES employees(id),
-      item_id INTEGER NOT NULL REFERENCES items(id),
+      batch_id INTEGER REFERENCES freelancer_job_batches(id) ON DELETE SET NULL,
+      item_id INTEGER REFERENCES items(id),
       variation_leaf_node_id INTEGER NOT NULL DEFAULT 0,
-      count INTEGER NOT NULL DEFAULT 0,
+      quantity INTEGER NOT NULL DEFAULT 1,
       status TEXT NOT NULL DEFAULT 'pending',
       payout_balance REAL NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS freelancer_job_tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id INTEGER NOT NULL REFERENCES freelancer_jobs(id) ON DELETE CASCADE,
+      item_id INTEGER NOT NULL REFERENCES items(id),
+      variation_leaf_node_id INTEGER NOT NULL DEFAULT 0,
+      required_quantity REAL NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'pending',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
@@ -20551,13 +20575,30 @@ app.put('/runs/:id/node-status', async (req, res) => {
            if (matched) itemId = matched.id;
         }
         
-        // Check if job already exists for this run/node (we can use run_id in the future, but for now just check if a pending job exists for this item with same count to avoid naive duplicates, or just insert it)
+        // Check if job already exists for this run/node
         // To be safe, we'll just insert a new pending job. We will need a way to track the run_id, but the schema doesn't have it. We'll just insert.
-        await run(
-          `INSERT INTO freelancer_jobs (freelancer_id, item_id, variation_leaf_node_id, count, status, payout_balance, created_at, updated_at)
-           VALUES (0, ?, 0, ?, 'pending', 0, ?, ?)`,
+        const result = await run(
+          `INSERT INTO freelancer_jobs (batch_id, item_id, variation_leaf_node_id, quantity, status, payout_balance, created_at, updated_at)
+           VALUES (NULL, ?, 0, ?, 'pending', 0, ?, ?)`,
           [itemId, qty, new Date().toISOString(), new Date().toISOString()]
         );
+        const newJobId = result.lastID;
+
+        // Populate tasks from BOM
+        const bomLines = await all('SELECT * FROM item_bom_lines WHERE item_id = ?', [itemId]);
+        for (const line of bomLines) {
+           // We map the material barcode back to an item if needed, but tasks schema requires item_id.
+           // Since item_bom_lines has material_barcode, let's find the linked item.
+           const mat = await get('SELECT linked_item_id, linked_variation_leaf_node_id FROM materials WHERE barcode = ?', [line.material_barcode]);
+           if (mat && mat.linked_item_id) {
+             const reqQty = (line.quantity_per_unit * qty) * (1 + (line.wastage_percent / 100));
+             await run(
+               `INSERT INTO freelancer_job_tasks (job_id, item_id, variation_leaf_node_id, required_quantity, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
+               [newJobId, mat.linked_item_id, mat.linked_variation_leaf_node_id || 0, reqQty, new Date().toISOString(), new Date().toISOString()]
+             );
+           }
+        }
       }
     }
 
@@ -21225,23 +21266,121 @@ app.get('/api/departments', requirePermission('config.read'), async (_req, res) 
 app.get('/api/freelancer-jobs', requirePermission('config.read'), async (req, res) => {
   try {
     const jobs = await all('SELECT * FROM freelancer_jobs');
-    res.json({ success: true, jobs });
+    const tasks = await all('SELECT * FROM freelancer_job_tasks');
+    const batches = await all('SELECT * FROM freelancer_job_batches');
+    res.json({ success: true, jobs, tasks, batches });
   } catch (error) {
     res.status(500).json({ success: false, jobs: [], error: error.message });
   }
 });
 
+app.post('/api/freelancer-jobs/batches', requirePermission('config.write'), async (req, res) => {
+  try {
+    const { freelancer_id, job_ids } = req.body;
+    const batch_number = 'BATCH-' + Date.now();
+    const result = await run(
+      'INSERT INTO freelancer_job_batches (freelancer_id, batch_number, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+      [freelancer_id, batch_number, 'assigned', new Date().toISOString(), new Date().toISOString()]
+    );
+    const batch_id = result.lastID;
+    
+    for (const jid of job_ids) {
+      await run('UPDATE freelancer_jobs SET batch_id = ?, updated_at = ? WHERE id = ?', [batch_id, new Date().toISOString(), jid]);
+    }
+    
+    const batch = await get('SELECT * FROM freelancer_job_batches WHERE id = ?', [batch_id]);
+    res.json({ success: true, batch });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/freelancer-jobs', requirePermission('config.write'), async (req, res) => {
+  try {
+    const { item_id, quantity } = req.body;
+    const result = await run(
+      `INSERT INTO freelancer_jobs (batch_id, item_id, variation_leaf_node_id, quantity, status, payout_balance, created_at, updated_at)
+       VALUES (NULL, ?, 0, ?, 'pending', 0, ?, ?)`,
+      [item_id, quantity, new Date().toISOString(), new Date().toISOString()]
+    );
+    const newJobId = result.lastID;
+
+    const bomLines = await all('SELECT * FROM item_bom_lines WHERE item_id = ?', [item_id]);
+    for (const line of bomLines) {
+       const mat = await get('SELECT linked_item_id, linked_variation_leaf_node_id FROM materials WHERE barcode = ?', [line.material_barcode]);
+       if (mat && mat.linked_item_id) {
+         const reqQty = (line.quantity_per_unit * quantity) * (1 + (line.wastage_percent / 100));
+         await run(
+           `INSERT INTO freelancer_job_tasks (job_id, item_id, variation_leaf_node_id, required_quantity, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
+           [newJobId, mat.linked_item_id, mat.linked_variation_leaf_node_id || 0, reqQty, new Date().toISOString(), new Date().toISOString()]
+         );
+       }
+    }
+    
+    const job = await get('SELECT * FROM freelancer_jobs WHERE id = ?', [newJobId]);
+    res.json({ success: true, job });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.put('/api/freelancer-jobs/:id', requirePermission('config.write'), async (req, res) => {
   try {
-    const { freelancer_id, status } = req.body;
+    const { status } = req.body;
     await run(
-      'UPDATE freelancer_jobs SET freelancer_id = ?, status = ?, updated_at = ? WHERE id = ?',
-      [freelancer_id, status, new Date().toISOString(), req.params.id]
+      'UPDATE freelancer_jobs SET status = ?, updated_at = ? WHERE id = ?',
+      [status, new Date().toISOString(), req.params.id]
     );
     const updated = await get('SELECT * FROM freelancer_jobs WHERE id = ?', [req.params.id]);
     res.json({ success: true, job: updated });
   } catch (error) {
     res.status(500).json({ success: false, job: null, error: error.message });
+  }
+});
+
+app.get('/api/freelancer-portal/data', async (req, res) => {
+  try {
+    const token = req.query.token;
+    if (!token) return res.status(400).json({ success: false, error: 'Missing token' });
+    
+    const crypto = require('crypto');
+    const SECRET = 'my-very-secret-key-32charslong!!'; 
+    let barcode_id;
+    try {
+      const parts = token.split(':');
+      const iv = Buffer.from(parts[0], 'hex');
+      const encryptedText = Buffer.from(parts[1], 'hex');
+      const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(SECRET), iv);
+      let decrypted = decipher.update(encryptedText);
+      decrypted = Buffer.concat([decrypted, decipher.final()]);
+      barcode_id = decrypted.toString();
+    } catch (e) {
+      return res.status(400).json({ success: false, error: 'Invalid or tampered token' });
+    }
+
+    const employee = await get('SELECT id FROM employees WHERE barcode_id = ?', [barcode_id]);
+    if (!employee) return res.status(404).json({ success: false, error: 'Freelancer not found' });
+    
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const isoDate = thirtyDaysAgo.toISOString();
+
+    const batches = await all('SELECT * FROM freelancer_job_batches WHERE freelancer_id = ? AND created_at >= ?', [employee.id, isoDate]);
+    const batchIds = batches.map(b => b.id);
+    let jobs = [];
+    let tasks = [];
+    if (batchIds.length > 0) {
+      jobs = await all(`SELECT * FROM freelancer_jobs WHERE batch_id IN (${batchIds.join(',')})`);
+      const jobIds = jobs.map(j => j.id);
+      if (jobIds.length > 0) {
+        tasks = await all(`SELECT * FROM freelancer_job_tasks WHERE job_id IN (${jobIds.join(',')})`);
+      }
+    }
+    
+    res.json({ success: true, batches, jobs, tasks });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

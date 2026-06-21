@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:core_erp/core/navigation/app_navigation.dart';
-import 'package:http/http.dart' as http;
-
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
 import 'package:core_erp/core/network/authenticated_http_client.dart';
 import 'package:core_erp/app/preferences/preferences_provider.dart';
@@ -62,6 +60,7 @@ import 'features/production_pipelines/domain/node_run_status.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:auto_updater/auto_updater.dart';
 import 'dart:io' show Platform;
+
 const _isDemoMode = bool.fromEnvironment(
   'PAPER_DEMO_MODE',
   defaultValue: false,
@@ -101,22 +100,25 @@ String _resolveApiBaseUrl() {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   if (!kIsWeb && (Platform.isWindows || Platform.isMacOS)) {
     // Note: The actual feedURL will be injected or set during final production build
-    const String feedURL = String.fromEnvironment('PAPER_APPCAST_URL', defaultValue: 'https://update.example.com/appcast.xml');
+    const String feedURL = String.fromEnvironment(
+      'PAPER_APPCAST_URL',
+      defaultValue: 'https://update.example.com/appcast.xml',
+    );
     await autoUpdater.setFeedURL(feedURL);
     await autoUpdater.checkForUpdates(inBackground: true);
     await autoUpdater.setScheduledCheckInterval(3600);
   }
 
-  await SentryFlutter.init(
-    (options) {
-      options.dsn = const String.fromEnvironment('PAPER_SENTRY_DSN', defaultValue: '');
-      options.tracesSampleRate = 1.0;
-    },
-    appRunner: () => runApp(const MyApp()),
-  );
+  await SentryFlutter.init((options) {
+    options.dsn = const String.fromEnvironment(
+      'PAPER_SENTRY_DSN',
+      defaultValue: '',
+    );
+    options.tracesSampleRate = 1.0;
+  }, appRunner: () => runApp(const MyApp()));
 }
 
 class MyApp extends StatelessWidget {
@@ -153,7 +155,6 @@ class MyApp extends StatelessWidget {
   final DepartmentsRepository? departmentsRepository;
   final bool? demoModeOverride;
 
-
   bool get _effectiveDemoMode => demoModeOverride ?? _isDemoMode;
 
   @override
@@ -172,7 +173,10 @@ class MyApp extends StatelessWidget {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: const Color(0xFFF8F7FC),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: SoftErpTheme.border),
@@ -191,7 +195,10 @@ class MyApp extends StatelessWidget {
         ),
         focusedErrorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: SoftErpTheme.dangerText, width: 1.5),
+          borderSide: const BorderSide(
+            color: SoftErpTheme.dangerText,
+            width: 1.5,
+          ),
         ),
         labelStyle: const TextStyle(
           color: SoftErpTheme.textSecondary,
@@ -233,7 +240,11 @@ class MyApp extends StatelessWidget {
             side: const BorderSide(color: SoftErpTheme.accentDark),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-          textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, fontFamily: 'Segoe UI'),
+          textStyle: const TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+            fontFamily: 'Segoe UI',
+          ),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
@@ -243,7 +254,11 @@ class MyApp extends StatelessWidget {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
-          textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, fontFamily: 'Segoe UI'),
+          textStyle: const TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+            fontFamily: 'Segoe UI',
+          ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -254,7 +269,11 @@ class MyApp extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-          textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, fontFamily: 'Segoe UI'),
+          textStyle: const TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+            fontFamily: 'Segoe UI',
+          ),
         ),
       ),
     );
@@ -328,7 +347,10 @@ class MyApp extends StatelessWidget {
           create: (_) => SqliteProductionRepository(),
         ),
         Provider<JobsRepository>(
-          create: (context) => JobsRepository(client: _authClient(context.read<AuthProvider>())),
+          create: (context) => JobsRepository(
+            client: _authClient(context.read<AuthProvider>()),
+            baseUrl: _apiBaseUrl,
+          ),
         ),
         Provider<MachineRepository>(
           create: (context) =>
@@ -347,7 +369,10 @@ class MyApp extends StatelessWidget {
         ),
         ChangeNotifierProvider(create: (_) => PreferencesProvider()),
         ChangeNotifierProvider(create: (_) => NavigationProvider()),
-        Provider<AppNavigation>(create: (context) => AppNavigationWrapper(context.read<NavigationProvider>())),
+        Provider<AppNavigation>(
+          create: (context) =>
+              AppNavigationWrapper(context.read<NavigationProvider>()),
+        ),
         ChangeNotifierProvider(create: (_) => ChallanEditorCommandProvider()),
         ChangeNotifierProvider(create: (_) => InventoryCreateCommandProvider()),
         ChangeNotifierProxyProvider<OrderRepository, OrdersProvider>(
@@ -431,50 +456,56 @@ class MyApp extends StatelessWidget {
                 ..initialize(),
         ),
         ChangeNotifierProxyProvider<DepartmentsRepository, DepartmentsProvider>(
-          create: (context) =>
-              DepartmentsProvider(repository: context.read<DepartmentsRepository>())
-                ..load(),
+          create: (context) => DepartmentsProvider(
+            repository: context.read<DepartmentsRepository>(),
+          )..load(),
           update: (context, repository, previous) =>
               previous ?? DepartmentsProvider(repository: repository)
                 ..load(),
         ),
         ChangeNotifierProxyProvider<JobsRepository, JobsProvider>(
           create: (context) =>
-              JobsProvider(repository: context.read<JobsRepository>())..fetchJobs(),
+              JobsProvider(repository: context.read<JobsRepository>())
+                ..fetchJobsData(),
           update: (_, repository, previous) =>
-              previous ?? JobsProvider(repository: repository)..fetchJobs(),
+              previous ?? JobsProvider(repository: repository)
+                ..fetchJobsData(),
         ),
         ChangeNotifierProvider(create: (_) => TelemetryProvider()),
         ChangeNotifierProvider(create: (_) => ProductionProvider.seeded()),
         ChangeNotifierProvider(create: (_) => BatchFlowProvider()),
-        ChangeNotifierProxyProvider<PipelineRunRepository, ProductionRunProvider>(
+        ChangeNotifierProxyProvider<
+          PipelineRunRepository,
+          ProductionRunProvider
+        >(
           create: (context) => ProductionRunProvider(),
           update: (context, repo, previous) {
-            return previous ?? ProductionRunProvider(
-              bufferCommitter: (commit) async {
-                if (commit.stageId.isEmpty) return;
-                
-                NodeRunStatus nodeStatus;
-                switch (commit.state) {
-                  case ProductionState.running:
-                  case ProductionState.paused:
-                    nodeStatus = NodeRunStatus.active;
-                    break;
-                  case ProductionState.completed:
-                    nodeStatus = NodeRunStatus.done;
-                    break;
-                  default:
-                    nodeStatus = NodeRunStatus.pending;
-                }
+            return previous ??
+                ProductionRunProvider(
+                  bufferCommitter: (commit) async {
+                    if (commit.stageId.isEmpty) return;
 
-                await repo.updateNodeStatus(
-                  runId: commit.runId,
-                  nodeId: commit.stageId,
-                  status: nodeStatus,
-                  batchQuantity: commit.goodYield,
+                    NodeRunStatus nodeStatus;
+                    switch (commit.state) {
+                      case ProductionState.running:
+                      case ProductionState.paused:
+                        nodeStatus = NodeRunStatus.active;
+                        break;
+                      case ProductionState.completed:
+                        nodeStatus = NodeRunStatus.done;
+                        break;
+                      default:
+                        nodeStatus = NodeRunStatus.pending;
+                    }
+
+                    await repo.updateNodeStatus(
+                      runId: commit.runId,
+                      nodeId: commit.stageId,
+                      status: nodeStatus,
+                      batchQuantity: commit.goodYield,
+                    );
+                  },
                 );
-              },
-            );
           },
         ),
       ],
@@ -489,11 +520,13 @@ class MyApp extends StatelessWidget {
           ),
         ),
         onGenerateRoute: (settings) {
-          if (settings.name != null && settings.name!.startsWith('/freelancer-portal')) {
+          if (settings.name != null &&
+              settings.name!.startsWith('/freelancer-portal')) {
             final uri = Uri.parse(settings.name!);
             final token = uri.queryParameters['token'] ?? '';
             return MaterialPageRoute(
-              builder: (_) => FreelancerPortalScreen(token: token),
+              builder: (_) =>
+                  FreelancerPortalScreen(token: token, apiBaseUrl: _apiBaseUrl),
             );
           }
           return null;
@@ -580,7 +613,6 @@ class MyApp extends StatelessWidget {
       baseUrl: _apiBaseUrl,
     );
   }
-
 
   MachineRepository _buildMachineRepository(AuthProvider auth) {
     return ApiMachineRepository(

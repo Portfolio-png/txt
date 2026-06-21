@@ -1,24 +1,37 @@
+import 'package:barcode_widget/barcode_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
+import '../../../../core/widgets/soft_primitives.dart';
 import '../../domain/employee_definition.dart';
 import '../providers/departments_provider.dart';
 
 class EmployeeEditorDialog extends StatelessWidget {
-  const EmployeeEditorDialog({super.key, required this.departmentId, this.employee});
+  const EmployeeEditorDialog({
+    super.key,
+    required this.departmentId,
+    this.employee,
+  });
 
   final int departmentId;
   final EmployeeDefinition? employee;
 
-  static Future<void> open(BuildContext context, {required int departmentId, EmployeeDefinition? employee}) {
+  static Future<void> open(
+    BuildContext context, {
+    required int departmentId,
+    EmployeeDefinition? employee,
+  }) {
     return showErpFormDialog(
       context,
       maxWidth: 520,
       maxHeight: 720,
-      child: EmployeeEditorDialog(departmentId: departmentId, employee: employee),
+      child: EmployeeEditorDialog(
+        departmentId: departmentId,
+        employee: employee,
+      ),
     );
   }
 
@@ -79,8 +92,25 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
 
     final provider = context.read<DepartmentsProvider>();
     final success = widget.employee == null
-        ? await provider.createEmployee(widget.departmentId, name, _roleController.text, _phoneController.text, _emailController.text, _employmentType, _barcodeIdController.text)
-        : await provider.updateEmployee(widget.employee!.id, widget.departmentId, name, _roleController.text, _phoneController.text, _emailController.text, _employmentType, _barcodeIdController.text);
+        ? await provider.createEmployee(
+            widget.departmentId,
+            name,
+            _roleController.text,
+            _phoneController.text,
+            _emailController.text,
+            _employmentType,
+            _barcodeIdController.text,
+          )
+        : await provider.updateEmployee(
+            widget.employee!.id,
+            widget.departmentId,
+            name,
+            _roleController.text,
+            _phoneController.text,
+            _emailController.text,
+            _employmentType,
+            _barcodeIdController.text,
+          );
 
     if (success && mounted) {
       Navigator.of(context).pop();
@@ -93,7 +123,8 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
     final isFreelancer = _employmentType == 'freelancer';
     return ErpFormScaffold(
       title: widget.employee == null ? 'New Employee' : 'Edit Employee',
-      subtitle: 'Capture the person\'s details, role, and how they\'re engaged.',
+      subtitle:
+          'Capture the person\'s details, role, and how they\'re engaged.',
       errorBanner: provider.errorMessage == null
           ? null
           : ErpFormMessageBanner(message: provider.errorMessage!),
@@ -108,9 +139,17 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
                 const SizedBox(height: 14),
                 _Field(controller: _roleController, label: 'Role / Position'),
                 const SizedBox(height: 14),
-                _Field(controller: _phoneController, label: 'Phone', keyboardType: TextInputType.phone),
+                _Field(
+                  controller: _phoneController,
+                  label: 'Phone',
+                  keyboardType: TextInputType.phone,
+                ),
                 const SizedBox(height: 14),
-                _Field(controller: _emailController, label: 'Email', keyboardType: TextInputType.emailAddress),
+                _Field(
+                  controller: _emailController,
+                  label: 'Email',
+                  keyboardType: TextInputType.emailAddress,
+                ),
               ],
             ),
           ),
@@ -120,17 +159,24 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
             child: Column(
               children: [
                 DropdownButtonFormField<String>(
-                  value: _employmentType,
+                  initialValue: _employmentType,
                   decoration: _decoration('Employment Type'),
                   items: const [
-                    DropdownMenuItem(value: 'in-house', child: Text('In-house')),
-                    DropdownMenuItem(value: 'freelancer', child: Text('Freelancer')),
+                    DropdownMenuItem(
+                      value: 'in-house',
+                      child: Text('In-house'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'freelancer',
+                      child: Text('Freelancer'),
+                    ),
                   ],
                   onChanged: (val) {
                     if (val == null) return;
                     setState(() {
                       _employmentType = val;
-                      if (val == 'freelancer' && _barcodeIdController.text.isEmpty) {
+                      if (val == 'freelancer' &&
+                          _barcodeIdController.text.isEmpty) {
                         _barcodeIdController.text = _generateBarcode();
                       }
                     });
@@ -144,18 +190,44 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
                     suffix: IconButton(
                       icon: const Icon(Icons.refresh),
                       tooltip: 'Regenerate',
-                      onPressed: () => setState(() => _barcodeIdController.text = _generateBarcode()),
+                      onPressed: () => setState(
+                        () => _barcodeIdController.text = _generateBarcode(),
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: AppButton(
-                      label: 'Print ID Card',
-                      icon: Icons.print,
-                      variant: AppButtonVariant.secondary,
-                      onPressed: _showIdCard,
-                    ),
+                  const SizedBox(height: 8),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(top: 2),
+                        child: Icon(
+                          Icons.info_outline_rounded,
+                          size: 16,
+                          color: SoftErpTheme.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(width: 7),
+                      const Expanded(
+                        child: Text(
+                          'This code identifies the freelancer at job hand-off and internal scan points.',
+                          style: TextStyle(
+                            color: SoftErpTheme.textSecondary,
+                            fontSize: 12,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      AppButton(
+                        label: 'Preview ID card',
+                        icon: Icons.badge_outlined,
+                        variant: AppButtonVariant.secondary,
+                        onPressed: _barcodeIdController.text.trim().isEmpty
+                            ? null
+                            : _showIdCard,
+                      ),
+                    ],
                   ),
                 ],
               ],
@@ -183,45 +255,138 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
   }
 
   void _showIdCard() {
-    showDialog(
+    final barcodeId = _barcodeIdController.text.trim();
+    if (barcodeId.isEmpty) return;
+    showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Freelancer ID Card'),
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Freelancer ID card'),
         content: Container(
-          width: 300,
-          height: 200,
+          width: 390,
+          padding: const EdgeInsets.all(22),
           decoration: BoxDecoration(
-            border: Border.all(color: SoftErpTheme.textPrimary, width: 2),
-            borderRadius: BorderRadius.circular(12),
+            gradient: const LinearGradient(
+              colors: [Color(0xFFFDFCFF), Color(0xFFF2F0FF)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            border: Border.all(color: SoftErpTheme.borderStrong),
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: SoftErpTheme.subtleShadow,
           ),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                _nameController.text.isNotEmpty ? _nameController.text : 'Freelancer Name',
-                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      gradient: SoftErpTheme.accentGradient,
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: const Icon(
+                      Icons.handyman_rounded,
+                      color: Colors.white,
+                      size: 21,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'PAPER ERP',
+                          style: TextStyle(
+                            color: SoftErpTheme.accentDark,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.1,
+                          ),
+                        ),
+                        Text(
+                          'Freelancer identification',
+                          style: TextStyle(
+                            color: SoftErpTheme.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SoftStatusPill(
+                    label: 'ACTIVE',
+                    background: SoftErpTheme.successBg,
+                    textColor: SoftErpTheme.successText,
+                    borderColor: SoftErpTheme.successBg,
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
-              const Icon(Icons.qr_code_2, size: 64),
-              const SizedBox(height: 8),
+              const SizedBox(height: 22),
               Text(
-                _barcodeIdController.text,
-                style: const TextStyle(fontSize: 16, letterSpacing: 2),
+                _nameController.text.trim().isNotEmpty
+                    ? _nameController.text.trim()
+                    : 'Freelancer name',
+                style: const TextStyle(
+                  color: SoftErpTheme.textPrimary,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              if (_roleController.text.trim().isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  _roleController.text.trim(),
+                  style: const TextStyle(
+                    color: SoftErpTheme.textSecondary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: SoftErpTheme.border),
+                ),
+                child: BarcodeWidget(
+                  barcode: Barcode.code128(),
+                  data: barcodeId,
+                  width: double.infinity,
+                  height: 76,
+                  drawText: true,
+                  style: const TextStyle(
+                    color: SoftErpTheme.textPrimary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.2,
+                  ),
+                ),
               ),
             ],
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
-          ElevatedButton.icon(
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+          FilledButton.icon(
             onPressed: () {
-              Navigator.pop(ctx);
+              Navigator.pop(dialogContext);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Sent to printer...')),
+                const SnackBar(
+                  content: Text('Freelancer ID card sent to printer.'),
+                ),
               );
             },
-            icon: const Icon(Icons.print),
-            label: const Text('Print'),
+            icon: const Icon(Icons.print_outlined, size: 18),
+            label: const Text('Print card'),
           ),
         ],
       ),

@@ -6,21 +6,29 @@ class JobsProvider extends ChangeNotifier {
   JobsProvider({required this.repository});
   final JobsRepository repository;
 
+  List<FreelancerJobBatch> _batches = [];
   List<FreelancerJob> _jobs = [];
+  List<FreelancerJobTask> _tasks = [];
   bool _isLoading = false;
   String? _error;
 
+  List<FreelancerJobBatch> get batches => _batches;
   List<FreelancerJob> get jobs => _jobs;
+  List<FreelancerJobTask> get tasks => _tasks;
+
   bool get isLoading => _isLoading;
   String? get error => _error;
 
-  Future<void> fetchJobs() async {
+  Future<void> fetchJobsData() async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      _jobs = await repository.getJobs();
+      final data = await repository.getJobsData();
+      _batches = data.batches;
+      _jobs = data.jobs;
+      _tasks = data.tasks;
     } catch (e) {
       _error = e.toString();
     } finally {
@@ -29,9 +37,39 @@ class JobsProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> updateJob(int id, int freelancerId, String status) async {
+  Future<void> createBatchAndAssign(int freelancerId, List<int> jobIds) async {
     try {
-      final updatedJob = await repository.updateJob(id, freelancerId, status);
+      final batch = await repository.createBatch(freelancerId, jobIds);
+      _batches.add(batch);
+      for (final id in jobIds) {
+        final index = _jobs.indexWhere((j) => j.id == id);
+        if (index != -1) {
+          _jobs[index] = _jobs[index].copyWith(batchId: batch.id);
+        }
+      }
+      notifyListeners();
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<void> createJob(int itemId, int quantity) async {
+    try {
+      final job = await repository.createJob(itemId, quantity);
+      _jobs.add(job);
+      notifyListeners();
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<void> updateJobStatus(int id, String status) async {
+    try {
+      final updatedJob = await repository.updateJobStatus(id, status);
       final index = _jobs.indexWhere((j) => j.id == id);
       if (index != -1) {
         _jobs[index] = updatedJob;

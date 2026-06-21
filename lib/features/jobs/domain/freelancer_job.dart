@@ -1,57 +1,106 @@
+class FreelancerJobBatch {
+  const FreelancerJobBatch({
+    required this.id,
+    this.freelancerId,
+    required this.batchNumber,
+    required this.status,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final int id;
+  final int? freelancerId;
+  final String batchNumber;
+  final String status;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  factory FreelancerJobBatch.fromJson(Map<String, dynamic> json) {
+    return FreelancerJobBatch(
+      id: json['id'] as int,
+      freelancerId: json['freelancer_id'] as int?,
+      batchNumber: json['batch_number'] as String,
+      status: json['status'] as String,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      updatedAt: DateTime.parse(json['updated_at'] as String),
+    );
+  }
+}
+
 class FreelancerJob {
   const FreelancerJob({
     required this.id,
-    required this.freelancerId,
+    this.batchId,
     required this.itemId,
-    required this.count,
+    required this.quantity,
     required this.status,
+    required this.payoutBalance,
     required this.createdAt,
   });
 
   final int id;
-  final int freelancerId;
+  final int? batchId;
   final int itemId;
-  final int count;
+  final int quantity;
   final String status;
+  final double payoutBalance;
   final DateTime createdAt;
 
   factory FreelancerJob.fromJson(Map<String, dynamic> json) {
     return FreelancerJob(
       id: json['id'] as int,
-      freelancerId: json['freelancer_id'] as int,
+      batchId: json['batch_id'] as int?,
       itemId: json['item_id'] as int,
-      count: json['count'] as int,
+      quantity: json['quantity'] as int,
       status: json['status'] as String,
+      payoutBalance: (json['payout_balance'] as num).toDouble(),
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'freelancer_id': freelancerId,
-      'item_id': itemId,
-      'count': count,
-      'status': status,
-      'created_at': createdAt.toIso8601String(),
-    };
-  }
-
   FreelancerJob copyWith({
     int? id,
-    int? freelancerId,
+    int? batchId,
     int? itemId,
-    int? count,
+    int? quantity,
     String? status,
+    double? payoutBalance,
     DateTime? createdAt,
   }) {
     return FreelancerJob(
       id: id ?? this.id,
-      freelancerId: freelancerId ?? this.freelancerId,
+      batchId: batchId ?? this.batchId,
       itemId: itemId ?? this.itemId,
-      count: count ?? this.count,
+      quantity: quantity ?? this.quantity,
       status: status ?? this.status,
+      payoutBalance: payoutBalance ?? this.payoutBalance,
       createdAt: createdAt ?? this.createdAt,
+    );
+  }
+}
+
+class FreelancerJobTask {
+  const FreelancerJobTask({
+    required this.id,
+    required this.jobId,
+    required this.itemId,
+    required this.requiredQuantity,
+    required this.status,
+  });
+
+  final int id;
+  final int jobId;
+  final int itemId;
+  final double requiredQuantity;
+  final String status;
+
+  factory FreelancerJobTask.fromJson(Map<String, dynamic> json) {
+    return FreelancerJobTask(
+      id: json['id'] as int,
+      jobId: json['job_id'] as int,
+      itemId: json['item_id'] as int,
+      requiredQuantity: (json['required_quantity'] as num).toDouble(),
+      status: json['status'] as String,
     );
   }
 }

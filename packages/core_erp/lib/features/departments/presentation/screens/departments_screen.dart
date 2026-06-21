@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/theme/soft_erp_theme.dart';
@@ -47,7 +48,10 @@ class _DepartmentsScreenState extends State<DepartmentsScreen> {
               if (selectedDept == null) {
                 DepartmentEditorDialog.open(context);
               } else {
-                EmployeeEditorDialog.open(context, departmentId: selectedDept.id);
+                EmployeeEditorDialog.open(
+                  context,
+                  departmentId: selectedDept.id,
+                );
               }
             },
           ),
@@ -59,7 +63,10 @@ class _DepartmentsScreenState extends State<DepartmentsScreen> {
                 radius: 12,
                 elevated: false,
                 showBorder: true,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 child: Text(
                   provider.errorMessage!,
                   style: const TextStyle(
@@ -93,8 +100,33 @@ class _Toolbar extends StatelessWidget {
       children: [
         SoftMasterSearchField(
           width: 320,
-          hintText: 'Search departments or employees',
+          hintText: 'Search name, role, or barcode',
           onChanged: provider.setSearchQuery,
+        ),
+        SoftSegmentedFilter<String>(
+          selected: provider.employmentFilter,
+          onChanged: provider.setEmploymentFilter,
+          options: [
+            SoftSegmentOption(
+              value: 'all',
+              label: 'All people',
+              count: provider.employees.length,
+            ),
+            SoftSegmentOption(
+              value: 'in-house',
+              label: 'In-house',
+              count: provider.employees
+                  .where((employee) => employee.employmentType == 'in-house')
+                  .length,
+            ),
+            SoftSegmentOption(
+              value: 'freelancer',
+              label: 'Freelancers',
+              count: provider.employees
+                  .where((employee) => employee.employmentType == 'freelancer')
+                  .length,
+            ),
+          ],
         ),
       ],
     );
@@ -119,7 +151,7 @@ class _DepartmentList extends StatelessWidget {
 
     return ListView.separated(
       itemCount: depts.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
         final dept = depts[index];
         final isSelected = provider.selectedDepartment?.id == dept.id;
@@ -160,7 +192,8 @@ class _DepartmentList extends StatelessWidget {
                 SoftIconButton(
                   icon: Icons.edit_outlined,
                   tooltip: 'Edit department',
-                  onTap: () => DepartmentEditorDialog.open(context, department: dept),
+                  onTap: () =>
+                      DepartmentEditorDialog.open(context, department: dept),
                 ),
               ],
             ),
@@ -228,7 +261,10 @@ class _EmployeePanel extends StatelessWidget {
                 label: 'Add Employee',
                 icon: Icons.add,
                 variant: AppButtonVariant.secondary,
-                onPressed: () => EmployeeEditorDialog.open(context, departmentId: selectedDept.id),
+                onPressed: () => EmployeeEditorDialog.open(
+                  context,
+                  departmentId: selectedDept.id,
+                ),
               ),
             ],
           ),
@@ -245,7 +281,7 @@ class _EmployeePanel extends StatelessWidget {
             Expanded(
               child: ListView.separated(
                 itemCount: emps.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                separatorBuilder: (_, _) => const SizedBox(height: 10),
                 itemBuilder: (context, index) => _EmployeeRow(
                   emp: emps[index],
                   departmentId: selectedDept.id,
@@ -268,9 +304,16 @@ class _EmployeeRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = context.read<DepartmentsProvider>();
     final isFreelancer = emp.employmentType == 'freelancer';
-    final contact = [emp.phone, emp.email].where((s) => s.isNotEmpty).join(' • ');
+    final contact = [
+      emp.phone,
+      emp.email,
+    ].where((s) => s.isNotEmpty).join(' • ');
     return SoftRowCard(
-      onTap: () => EmployeeEditorDialog.open(context, departmentId: departmentId, employee: emp),
+      onTap: () => EmployeeEditorDialog.open(
+        context,
+        departmentId: departmentId,
+        employee: emp,
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
@@ -302,17 +345,56 @@ class _EmployeeRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 10),
+            if (isFreelancer && emp.barcodeId.isNotEmpty) ...[
+              Tooltip(
+                message: 'Copy freelancer barcode',
+                child: SoftPill(
+                  label: emp.barcodeId,
+                  leading: const Icon(
+                    Icons.qr_code_2_rounded,
+                    size: 16,
+                    color: SoftErpTheme.accentDark,
+                  ),
+                  background: SoftErpTheme.accentSurface,
+                  foreground: SoftErpTheme.accentDark,
+                  borderColor: SoftErpTheme.accentSoft,
+                  onTap: () async {
+                    await Clipboard.setData(ClipboardData(text: emp.barcodeId));
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context)
+                      ..hideCurrentSnackBar()
+                      ..showSnackBar(
+                        const SnackBar(
+                          content: Text('Freelancer barcode copied.'),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                  },
+                ),
+              ),
+              const SizedBox(width: 6),
+            ],
             SoftStatusPill(
               label: isFreelancer ? 'Freelancer' : 'In-house',
-              background: isFreelancer ? SoftErpTheme.infoBg : SoftErpTheme.successBg,
-              textColor: isFreelancer ? SoftErpTheme.infoText : SoftErpTheme.successText,
-              borderColor: isFreelancer ? SoftErpTheme.infoBg : SoftErpTheme.successBg,
+              background: isFreelancer
+                  ? SoftErpTheme.infoBg
+                  : SoftErpTheme.successBg,
+              textColor: isFreelancer
+                  ? SoftErpTheme.infoText
+                  : SoftErpTheme.successText,
+              borderColor: isFreelancer
+                  ? SoftErpTheme.infoBg
+                  : SoftErpTheme.successBg,
             ),
             const SizedBox(width: 6),
             SoftIconButton(
               icon: Icons.edit_outlined,
               tooltip: 'Edit',
-              onTap: () => EmployeeEditorDialog.open(context, departmentId: departmentId, employee: emp),
+              onTap: () => EmployeeEditorDialog.open(
+                context,
+                departmentId: departmentId,
+                employee: emp,
+              ),
             ),
             const SizedBox(width: 6),
             SoftIconButton(
@@ -349,7 +431,7 @@ class _DeptAvatar extends StatelessWidget {
           ? Image.network(
               url,
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) =>
+              errorBuilder: (_, _, _) =>
                   const Icon(Icons.business, color: SoftErpTheme.textSecondary),
             )
           : const Icon(Icons.business, color: SoftErpTheme.textSecondary),

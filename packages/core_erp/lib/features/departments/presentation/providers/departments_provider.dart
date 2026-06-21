@@ -5,9 +5,8 @@ import '../../domain/employee_definition.dart';
 import '../../data/repositories/departments_repository.dart';
 
 class DepartmentsProvider extends ChangeNotifier {
-  DepartmentsProvider({
-    required DepartmentsRepository repository,
-  }) : _repository = repository;
+  DepartmentsProvider({required DepartmentsRepository repository})
+    : _repository = repository;
 
   final DepartmentsRepository _repository;
 
@@ -28,6 +27,9 @@ class DepartmentsProvider extends ChangeNotifier {
 
   String _searchQuery = '';
   String get searchQuery => _searchQuery;
+
+  String _employmentFilter = 'all';
+  String get employmentFilter => _employmentFilter;
 
   DepartmentDefinition? _selectedDepartment;
   DepartmentDefinition? get selectedDepartment => _selectedDepartment;
@@ -60,24 +62,49 @@ class DepartmentsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setEmploymentFilter(String value) {
+    _employmentFilter = value;
+    notifyListeners();
+  }
+
   List<DepartmentDefinition> get filteredDepartments {
     if (_searchQuery.isEmpty) return _departments;
-    return _departments.where((d) => d.name.toLowerCase().contains(_searchQuery)).toList();
+    return _departments
+        .where((d) => d.name.toLowerCase().contains(_searchQuery))
+        .toList();
   }
 
   List<EmployeeDefinition> employeesForDepartment(int departmentId) {
     var emps = _employees.where((e) => e.departmentId == departmentId).toList();
+    if (_employmentFilter != 'all') {
+      emps = emps.where((e) => e.employmentType == _employmentFilter).toList();
+    }
     if (_searchQuery.isNotEmpty) {
-      emps = emps.where((e) => e.name.toLowerCase().contains(_searchQuery)).toList();
+      emps = emps
+          .where(
+            (e) =>
+                e.name.toLowerCase().contains(_searchQuery) ||
+                e.role.toLowerCase().contains(_searchQuery) ||
+                e.barcodeId.toLowerCase().contains(_searchQuery),
+          )
+          .toList();
     }
     return emps;
   }
 
-  Future<bool> createDepartment(String name, String description, String photoUrl) async {
+  Future<bool> createDepartment(
+    String name,
+    String description,
+    String photoUrl,
+  ) async {
     _setSaving(true);
     _clearError();
     try {
-      final dept = await _repository.createDepartment(name, description, photoUrl);
+      final dept = await _repository.createDepartment(
+        name,
+        description,
+        photoUrl,
+      );
       _departments.add(dept);
       _sortLists();
       return true;
@@ -89,11 +116,21 @@ class DepartmentsProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> updateDepartment(int id, String name, String description, String photoUrl) async {
+  Future<bool> updateDepartment(
+    int id,
+    String name,
+    String description,
+    String photoUrl,
+  ) async {
     _setSaving(true);
     _clearError();
     try {
-      final dept = await _repository.updateDepartment(id, name, description, photoUrl);
+      final dept = await _repository.updateDepartment(
+        id,
+        name,
+        description,
+        photoUrl,
+      );
       final index = _departments.indexWhere((d) => d.id == id);
       if (index >= 0) {
         _departments[index] = dept;
@@ -130,11 +167,27 @@ class DepartmentsProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> createEmployee(int departmentId, String name, String role, String phone, String email, String employmentType, String barcodeId) async {
+  Future<bool> createEmployee(
+    int departmentId,
+    String name,
+    String role,
+    String phone,
+    String email,
+    String employmentType,
+    String barcodeId,
+  ) async {
     _setSaving(true);
     _clearError();
     try {
-      final emp = await _repository.createEmployee(departmentId, name, role, phone, email, employmentType, barcodeId);
+      final emp = await _repository.createEmployee(
+        departmentId,
+        name,
+        role,
+        phone,
+        email,
+        employmentType,
+        barcodeId,
+      );
       _employees.add(emp);
       _sortLists();
       return true;
@@ -146,11 +199,29 @@ class DepartmentsProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> updateEmployee(int id, int departmentId, String name, String role, String phone, String email, String employmentType, String barcodeId) async {
+  Future<bool> updateEmployee(
+    int id,
+    int departmentId,
+    String name,
+    String role,
+    String phone,
+    String email,
+    String employmentType,
+    String barcodeId,
+  ) async {
     _setSaving(true);
     _clearError();
     try {
-      final emp = await _repository.updateEmployee(id, departmentId, name, role, phone, email, employmentType, barcodeId);
+      final emp = await _repository.updateEmployee(
+        id,
+        departmentId,
+        name,
+        role,
+        phone,
+        email,
+        employmentType,
+        barcodeId,
+      );
       final index = _employees.indexWhere((e) => e.id == id);
       if (index >= 0) {
         _employees[index] = emp;
@@ -204,5 +275,3 @@ class DepartmentsProvider extends ChangeNotifier {
 
   void _clearError() => _setError(null);
 }
-
-
