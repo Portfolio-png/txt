@@ -20650,6 +20650,53 @@ app.put('/runs/:id/node-status', async (req, res) => {
                 now,
               ]
             );
+            
+            // Generate a fresh barcode and add inventory for the completed pipeline
+            const freshBarcode = `LOT-${runCode}-${Math.floor(Math.random() * 1000)}`;
+            const actor = actorFromRequest(req);
+            
+            // We use ensureMaterialForItemSelection, but we override barcode to force a fresh lot
+            // First get the template/snapshot
+            const snapshot = await getItemSelectionSnapshot(itemId, variationLeafNodeId);
+            if (snapshot) {
+              const uom = snapshot.item.unit || 'pcs';
+              const uomId = snapshot.item.unit_id || null;
+              
+              await run(`
+                INSERT INTO materials (
+                  barcode, name, type, kind, group_mode, 
+                  linked_group_id, linked_item_id, linked_variation_leaf_node_id,
+                  unit, unit_id, inventory_state, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              `, [
+                freshBarcode,
+                snapshot.fullName || 'Finished Good',
+                'material',
+                'lot',
+                'tracked',
+                snapshot.item.group_id,
+                itemId,
+                variationLeafNodeId,
+                uom,
+                uomId,
+                'available',
+                now
+              ]);
+              
+              await applyInventoryMovementCore({
+                barcode: freshBarcode,
+                movementType: 'receive',
+                qty: Number(batchQuantity),
+                primaryQty: Number(batchQuantity),
+                uom: uom,
+                toLocationId: 'MAIN',
+                reasonCode: 'production_output',
+                referenceType: 'pipeline_run',
+                referenceId: req.params.id,
+                actor: actor?.id || null,
+                lotCode: freshBarcode,
+              }, { useTransaction: false });
+            }
           }
         }
       }
@@ -20940,10 +20987,59 @@ app.post('/api/production-scrap', requirePermission('config.write'), async (req,
     if (!pipelineRunId || !nodeId || !materialBarcode) {
       return res.status(400).json({ success: false, error: 'pipelineRunId, nodeId, and materialBarcode are required.' });
     }
+    
+    // First log to legacy production_scrap table
     await run(`
       INSERT INTO production_scrap (pipeline_run_id, node_id, order_no, material_barcode, scrap_qty, logged_by)
       VALUES (?, ?, ?, ?, ?, ?)
     `, [pipelineRunId, nodeId, orderNo, materialBarcode, scrapQty, actorFromRequest(req)]);
+
+    // Check pipeline for targeted scrap routing group
+    const runRow = await get('SELECT scrap_routing FROM pipeline_runs WHERE id = ?', [pipelineRunId]);
+    const scrapRoutingGroupId = runRow?.scrap_routing && runRow.scrap_routing !== 'inventory' ? runRow.scrap_routing : null;
+    
+    // Bridge to actual inventory
+    const sourceMaterial = await getMaterialRowByBarcode(materialBarcode);
+    if (sourceMaterial && Number(scrapQty) > 0) {
+      const actor = actorFromRequest(req);
+      const newLotBarcode = `LOT-SCRAP-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      
+      await run(`
+        INSERT INTO materials (
+          barcode, name, type, kind, group_mode, 
+          linked_group_id, linked_item_id, linked_variation_leaf_node_id,
+          unit, unit_id, inventory_state, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        newLotBarcode,
+        `Scrap - ${sourceMaterial.name}`,
+        sourceMaterial.type,
+        'lot',
+        'tracked',
+        scrapRoutingGroupId ? Number(scrapRoutingGroupId) : null,
+        sourceMaterial.linked_item_id,
+        sourceMaterial.linked_variation_leaf_node_id,
+        sourceMaterial.unit,
+        sourceMaterial.unit_id,
+        'available',
+        new Date().toISOString()
+      ]);
+      
+      await applyInventoryMovementCore({
+        barcode: newLotBarcode,
+        movementType: 'receive',
+        qty: Number(scrapQty),
+        primaryQty: Number(scrapQty),
+        uom: sourceMaterial.unit || 'pcs',
+        toLocationId: 'SCRAP-BIN',
+        reasonCode: 'production_scrap',
+        referenceType: 'pipeline_scrap',
+        referenceId: pipelineRunId,
+        actor: actor?.id || null,
+        lotCode: newLotBarcode,
+      }, { useTransaction: false });
+    }
+
     res.status(201).json({ success: true });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

@@ -1,12 +1,47 @@
 {
   "units": [
-    { "id": "unit-kg", "name": "Kilogram", "symbol": "kg", "category": "weight" },
-    { "id": "unit-pcs", "name": "Pieces", "symbol": "pcs", "category": "count" },
-    { "id": "unit-meter", "name": "Meter", "symbol": "meter", "category": "length" },
-    { "id": "unit-liter", "name": "Liter", "symbol": "liter", "category": "volume" },
-    { "id": "unit-hour", "name": "Hour", "symbol": "hour", "category": "time" },
-    { "id": "unit-roll", "name": "Roll", "symbol": "roll", "category": "count" },
-    { "id": "unit-sheet", "name": "Sheet", "symbol": "sheet", "category": "count" }
+    {
+      "id": "unit-kg",
+      "name": "Kilogram",
+      "symbol": "kg",
+      "category": "weight"
+    },
+    {
+      "id": "unit-pcs",
+      "name": "Pieces",
+      "symbol": "pcs",
+      "category": "count"
+    },
+    {
+      "id": "unit-meter",
+      "name": "Meter",
+      "symbol": "meter",
+      "category": "length"
+    },
+    {
+      "id": "unit-liter",
+      "name": "Liter",
+      "symbol": "liter",
+      "category": "volume"
+    },
+    {
+      "id": "unit-hour",
+      "name": "Hour",
+      "symbol": "hour",
+      "category": "time"
+    },
+    {
+      "id": "unit-roll",
+      "name": "Roll",
+      "symbol": "roll",
+      "category": "count"
+    },
+    {
+      "id": "unit-sheet",
+      "name": "Sheet",
+      "symbol": "sheet",
+      "category": "count"
+    }
   ],
   "clients": [
     {
@@ -195,7 +230,10 @@
       "hourlyRate": 1850,
       "status": "running",
       "barcode": "MCH-IMM-450",
-      "compatibleDieIds": ["die-mold-b7", "die-trim-c3"]
+      "compatibleDieIds": [
+        "die-mold-b7",
+        "die-trim-c3"
+      ]
     },
     {
       "id": "machine-cnc-router",
@@ -204,7 +242,10 @@
       "hourlyRate": 1450,
       "status": "available",
       "barcode": "MCH-CNC-ROUTER",
-      "compatibleDieIds": ["die-trim-c3", "die-punch-d21"]
+      "compatibleDieIds": [
+        "die-trim-c3",
+        "die-punch-d21"
+      ]
     },
     {
       "id": "machine-press-brake",
@@ -213,7 +254,10 @@
       "hourlyRate": 1650,
       "status": "running",
       "barcode": "MCH-PRESS-BRAKE",
-      "compatibleDieIds": ["die-a12", "die-punch-d21"]
+      "compatibleDieIds": [
+        "die-a12",
+        "die-punch-d21"
+      ]
     },
     {
       "id": "machine-assembly-line",
@@ -222,14 +266,18 @@
       "hourlyRate": 950,
       "status": "available",
       "barcode": "MCH-ASSY-01",
-      "compatibleDieIds": ["die-assembly-f9"]
+      "compatibleDieIds": [
+        "die-assembly-f9"
+      ]
     }
   ],
   "dies": [
     {
       "id": "die-a12",
       "name": "Die A-12",
-      "compatibleMachineIds": ["machine-press-brake"],
+      "compatibleMachineIds": [
+        "machine-press-brake"
+      ],
       "strokeCount": 58200,
       "maintenanceDueAt": 65000,
       "notes": "V-bend tool for metal mounting brackets.",
@@ -239,7 +287,9 @@
     {
       "id": "die-mold-b7",
       "name": "Mold B-7",
-      "compatibleMachineIds": ["machine-imm-450"],
+      "compatibleMachineIds": [
+        "machine-imm-450"
+      ],
       "strokeCount": 124800,
       "maintenanceDueAt": 140000,
       "notes": "Two-cavity mold for plastic gear housing.",
@@ -249,7 +299,10 @@
     {
       "id": "die-trim-c3",
       "name": "Trim Fixture C-3",
-      "compatibleMachineIds": ["machine-imm-450", "machine-cnc-router"],
+      "compatibleMachineIds": [
+        "machine-imm-450",
+        "machine-cnc-router"
+      ],
       "strokeCount": 31340,
       "maintenanceDueAt": 40000,
       "notes": "Trimming fixture for molded housing gates.",
@@ -259,7 +312,10 @@
     {
       "id": "die-punch-d21",
       "name": "Punch D-21",
-      "compatibleMachineIds": ["machine-cnc-router", "machine-press-brake"],
+      "compatibleMachineIds": [
+        "machine-cnc-router",
+        "machine-press-brake"
+      ],
       "strokeCount": 87900,
       "maintenanceDueAt": 100000,
       "notes": "Slot and mounting hole punch for brackets.",
@@ -269,7 +325,9 @@
     {
       "id": "die-assembly-f9",
       "name": "Assembly Fixture F-9",
-      "compatibleMachineIds": ["machine-assembly-line"],
+      "compatibleMachineIds": [
+        "machine-assembly-line"
+      ],
       "strokeCount": 18400,
       "maintenanceDueAt": 25000,
       "notes": "Fixture for screw fastening and packaging checks.",
@@ -283,26 +341,51 @@
       "name": "Plastic Part Molding Route",
       "version": 1,
       "status": "active",
-      "inputItemIds": ["item-abs-resin", "item-packaging-film"],
+      "inputItemIds": [
+        "item-abs-resin",
+        "item-packaging-film"
+      ],
       "outputItemId": "item-plastic-housing",
       "stages": [
         {
           "id": "stage-plastic-material-prep",
           "name": "Material Prep",
           "sequence": 1,
-          "inputs": [{ "itemId": "item-abs-resin", "qtyPerUnit": 0.09, "unitId": "unit-kg" }],
-          "outputs": [{ "itemId": "item-abs-resin", "state": "dried" }],
+          "inputs": [
+            {
+              "itemId": "item-abs-resin",
+              "qtyPerUnit": 0.09,
+              "unitId": "unit-kg"
+            }
+          ],
+          "outputs": [
+            {
+              "itemId": "item-abs-resin",
+              "state": "dried"
+            }
+          ],
           "scrapPercent": 0.5,
           "machineId": null,
           "dieId": null,
-          "expectedHours": 1.0
+          "expectedHours": 1
         },
         {
           "id": "stage-plastic-molding",
           "name": "Injection Molding",
           "sequence": 2,
-          "inputs": [{ "itemId": "item-abs-resin", "qtyPerUnit": 0.09, "unitId": "unit-kg" }],
-          "outputs": [{ "itemId": "item-plastic-housing", "state": "molded" }],
+          "inputs": [
+            {
+              "itemId": "item-abs-resin",
+              "qtyPerUnit": 0.09,
+              "unitId": "unit-kg"
+            }
+          ],
+          "outputs": [
+            {
+              "itemId": "item-plastic-housing",
+              "state": "molded"
+            }
+          ],
           "scrapPercent": 2.5,
           "machineId": "machine-imm-450",
           "dieId": "die-mold-b7",
@@ -312,22 +395,46 @@
           "id": "stage-plastic-trim-qc",
           "name": "Trim and QC",
           "sequence": 3,
-          "inputs": [{ "itemId": "item-plastic-housing", "qtyPerUnit": 1, "unitId": "unit-pcs" }],
-          "outputs": [{ "itemId": "item-plastic-housing", "state": "accepted" }],
+          "inputs": [
+            {
+              "itemId": "item-plastic-housing",
+              "qtyPerUnit": 1,
+              "unitId": "unit-pcs"
+            }
+          ],
+          "outputs": [
+            {
+              "itemId": "item-plastic-housing",
+              "state": "accepted"
+            }
+          ],
           "scrapPercent": 0.75,
           "machineId": "machine-cnc-router",
           "dieId": "die-trim-c3",
-          "expectedHours": 2.0
+          "expectedHours": 2
         },
         {
           "id": "stage-plastic-pack",
           "name": "Pack",
           "sequence": 4,
           "inputs": [
-            { "itemId": "item-plastic-housing", "qtyPerUnit": 1, "unitId": "unit-pcs" },
-            { "itemId": "item-packaging-film", "qtyPerUnit": 0.002, "unitId": "unit-roll" }
+            {
+              "itemId": "item-plastic-housing",
+              "qtyPerUnit": 1,
+              "unitId": "unit-pcs"
+            },
+            {
+              "itemId": "item-packaging-film",
+              "qtyPerUnit": 0.002,
+              "unitId": "unit-roll"
+            }
           ],
-          "outputs": [{ "itemId": "item-plastic-housing", "state": "packed" }],
+          "outputs": [
+            {
+              "itemId": "item-plastic-housing",
+              "state": "packed"
+            }
+          ],
           "scrapPercent": 0.1,
           "machineId": "machine-assembly-line",
           "dieId": "die-assembly-f9",
@@ -340,15 +447,29 @@
       "name": "Metal Bracket Fabrication",
       "version": 1,
       "status": "active",
-      "inputItemIds": ["item-cr-steel-coil", "item-m3-screws"],
+      "inputItemIds": [
+        "item-cr-steel-coil",
+        "item-m3-screws"
+      ],
       "outputItemId": "item-metal-bracket",
       "stages": [
         {
           "id": "stage-metal-shear",
           "name": "Sheet Shearing",
           "sequence": 1,
-          "inputs": [{ "itemId": "item-cr-steel-coil", "qtyPerUnit": 0.42, "unitId": "unit-kg" }],
-          "outputs": [{ "itemId": "item-metal-bracket", "state": "blanked" }],
+          "inputs": [
+            {
+              "itemId": "item-cr-steel-coil",
+              "qtyPerUnit": 0.42,
+              "unitId": "unit-kg"
+            }
+          ],
+          "outputs": [
+            {
+              "itemId": "item-metal-bracket",
+              "state": "blanked"
+            }
+          ],
           "scrapPercent": 1.5,
           "machineId": "machine-cnc-router",
           "dieId": "die-punch-d21",
@@ -358,8 +479,19 @@
           "id": "stage-metal-punch",
           "name": "Punch Holes",
           "sequence": 2,
-          "inputs": [{ "itemId": "item-metal-bracket", "qtyPerUnit": 1, "unitId": "unit-pcs" }],
-          "outputs": [{ "itemId": "item-metal-bracket", "state": "punched" }],
+          "inputs": [
+            {
+              "itemId": "item-metal-bracket",
+              "qtyPerUnit": 1,
+              "unitId": "unit-pcs"
+            }
+          ],
+          "outputs": [
+            {
+              "itemId": "item-metal-bracket",
+              "state": "punched"
+            }
+          ],
           "scrapPercent": 0.8,
           "machineId": "machine-press-brake",
           "dieId": "die-punch-d21",
@@ -369,9 +501,20 @@
           "id": "stage-metal-bend",
           "name": "Bend Form",
           "sequence": 3,
-          "inputs": [{ "itemId": "item-metal-bracket", "qtyPerUnit": 1, "unitId": "unit-pcs" }],
-          "outputs": [{ "itemId": "item-metal-bracket", "state": "formed" }],
-          "scrapPercent": 1.0,
+          "inputs": [
+            {
+              "itemId": "item-metal-bracket",
+              "qtyPerUnit": 1,
+              "unitId": "unit-pcs"
+            }
+          ],
+          "outputs": [
+            {
+              "itemId": "item-metal-bracket",
+              "state": "formed"
+            }
+          ],
+          "scrapPercent": 1,
           "machineId": "machine-press-brake",
           "dieId": "die-a12",
           "expectedHours": 2.25
@@ -381,10 +524,23 @@
           "name": "Final Assembly and Pack",
           "sequence": 4,
           "inputs": [
-            { "itemId": "item-metal-bracket", "qtyPerUnit": 1, "unitId": "unit-pcs" },
-            { "itemId": "item-m3-screws", "qtyPerUnit": 2, "unitId": "unit-pcs" }
+            {
+              "itemId": "item-metal-bracket",
+              "qtyPerUnit": 1,
+              "unitId": "unit-pcs"
+            },
+            {
+              "itemId": "item-m3-screws",
+              "qtyPerUnit": 2,
+              "unitId": "unit-pcs"
+            }
           ],
-          "outputs": [{ "itemId": "item-metal-bracket", "state": "packed" }],
+          "outputs": [
+            {
+              "itemId": "item-metal-bracket",
+              "state": "packed"
+            }
+          ],
           "scrapPercent": 0.25,
           "machineId": "machine-assembly-line",
           "dieId": "die-assembly-f9",
@@ -399,7 +555,9 @@
       "name": "Asha Admin",
       "email": "admin@paper.local",
       "role": "admin",
-      "permissions": ["all"],
+      "permissions": [
+        "all"
+      ],
       "status": "active"
     },
     {
@@ -407,7 +565,13 @@
       "name": "Rohit Production",
       "email": "production@paper.local",
       "role": "production_operator",
-      "permissions": ["orders.read", "inventory.read", "production.read", "production.write", "challans.read"],
+      "permissions": [
+        "orders.read",
+        "inventory.read",
+        "production.read",
+        "production.write",
+        "challans.read"
+      ],
       "status": "active"
     },
     {
@@ -415,7 +579,13 @@
       "name": "Meera Warehouse",
       "email": "warehouse@paper.local",
       "role": "warehouse_staff",
-      "permissions": ["inventory.read", "inventory.write", "challans.read", "challans.write", "orders.read"],
+      "permissions": [
+        "inventory.read",
+        "inventory.write",
+        "challans.read",
+        "challans.write",
+        "orders.read"
+      ],
       "status": "active"
     }
   ],
@@ -541,10 +711,20 @@
       "orderDate": "2026-06-01",
       "deliveryDate": "2026-06-12",
       "status": "completed",
-      "linkedProductionRunIds": ["run-metal-0001"],
-      "linkedChallanIds": ["challan-dc-2026-0001"],
+      "linkedProductionRunIds": [
+        "run-metal-0001"
+      ],
+      "linkedChallanIds": [
+        "challan-dc-2026-0001"
+      ],
       "lineItems": [
-        { "id": "order-line-0001-1", "itemId": "item-metal-bracket", "quantity": 300, "unitId": "unit-pcs", "price": 165 }
+        {
+          "id": "order-line-0001-1",
+          "itemId": "item-metal-bracket",
+          "quantity": 300,
+          "unitId": "unit-pcs",
+          "price": 165
+        }
       ]
     },
     {
@@ -554,10 +734,18 @@
       "orderDate": "2026-06-04",
       "deliveryDate": "2026-06-18",
       "status": "in_production",
-      "linkedProductionRunIds": ["run-plastic-0002"],
+      "linkedProductionRunIds": [
+        "run-plastic-0002"
+      ],
       "linkedChallanIds": [],
       "lineItems": [
-        { "id": "order-line-0002-1", "itemId": "item-plastic-housing", "quantity": 1200, "unitId": "unit-pcs", "price": 86 }
+        {
+          "id": "order-line-0002-1",
+          "itemId": "item-plastic-housing",
+          "quantity": 1200,
+          "unitId": "unit-pcs",
+          "price": 86
+        }
       ]
     },
     {
@@ -570,7 +758,13 @@
       "linkedProductionRunIds": [],
       "linkedChallanIds": [],
       "lineItems": [
-        { "id": "order-line-0003-1", "itemId": "item-printed-sleeve", "quantity": 5000, "unitId": "unit-pcs", "price": 22 }
+        {
+          "id": "order-line-0003-1",
+          "itemId": "item-printed-sleeve",
+          "quantity": 5000,
+          "unitId": "unit-pcs",
+          "price": 22
+        }
       ]
     },
     {
@@ -583,8 +777,20 @@
       "linkedProductionRunIds": [],
       "linkedChallanIds": [],
       "lineItems": [
-        { "id": "order-line-0004-1", "itemId": "item-metal-bracket", "quantity": 200, "unitId": "unit-pcs", "price": 165 },
-        { "id": "order-line-0004-2", "itemId": "item-plastic-housing", "quantity": 300, "unitId": "unit-pcs", "price": 86 }
+        {
+          "id": "order-line-0004-1",
+          "itemId": "item-metal-bracket",
+          "quantity": 200,
+          "unitId": "unit-pcs",
+          "price": 165
+        },
+        {
+          "id": "order-line-0004-2",
+          "itemId": "item-plastic-housing",
+          "quantity": 300,
+          "unitId": "unit-pcs",
+          "price": 86
+        }
       ]
     },
     {
@@ -595,9 +801,17 @@
       "deliveryDate": "2026-06-08",
       "status": "completed",
       "linkedProductionRunIds": [],
-      "linkedChallanIds": ["challan-dc-2026-0002"],
+      "linkedChallanIds": [
+        "challan-dc-2026-0002"
+      ],
       "lineItems": [
-        { "id": "order-line-0005-1", "itemId": "item-printed-sleeve", "quantity": 1000, "unitId": "unit-pcs", "price": 22 }
+        {
+          "id": "order-line-0005-1",
+          "itemId": "item-printed-sleeve",
+          "quantity": 1000,
+          "unitId": "unit-pcs",
+          "price": 22
+        }
       ]
     }
   ],
@@ -609,9 +823,17 @@
       "orderDate": "2026-06-05",
       "expectedDate": "2026-06-10",
       "status": "received",
-      "linkedReceptionChallanIds": ["challan-rc-2026-0001"],
+      "linkedReceptionChallanIds": [
+        "challan-rc-2026-0001"
+      ],
       "lineItems": [
-        { "id": "po-line-0001-1", "itemId": "item-cr-steel-coil", "quantity": 500, "unitId": "unit-kg", "price": 78.5 }
+        {
+          "id": "po-line-0001-1",
+          "itemId": "item-cr-steel-coil",
+          "quantity": 500,
+          "unitId": "unit-kg",
+          "price": 78.5
+        }
       ]
     },
     {
@@ -621,10 +843,24 @@
       "orderDate": "2026-06-07",
       "expectedDate": "2026-06-11",
       "status": "partially_received",
-      "linkedReceptionChallanIds": ["challan-rc-2026-0002"],
+      "linkedReceptionChallanIds": [
+        "challan-rc-2026-0002"
+      ],
       "lineItems": [
-        { "id": "po-line-0002-1", "itemId": "item-abs-resin", "quantity": 1000, "unitId": "unit-kg", "price": 142 },
-        { "id": "po-line-0002-2", "itemId": "item-packaging-film", "quantity": 20, "unitId": "unit-roll", "price": 1850 }
+        {
+          "id": "po-line-0002-1",
+          "itemId": "item-abs-resin",
+          "quantity": 1000,
+          "unitId": "unit-kg",
+          "price": 142
+        },
+        {
+          "id": "po-line-0002-2",
+          "itemId": "item-packaging-film",
+          "quantity": 20,
+          "unitId": "unit-roll",
+          "price": 1850
+        }
       ]
     },
     {
@@ -636,7 +872,13 @@
       "status": "open",
       "linkedReceptionChallanIds": [],
       "lineItems": [
-        { "id": "po-line-0003-1", "itemId": "item-m3-screws", "quantity": 2000, "unitId": "unit-pcs", "price": 0.42 }
+        {
+          "id": "po-line-0003-1",
+          "itemId": "item-m3-screws",
+          "quantity": 2000,
+          "unitId": "unit-pcs",
+          "price": 0.42
+        }
       ]
     }
   ],
@@ -653,14 +895,62 @@
       "startedAt": "2026-06-10T08:00:00+05:30",
       "endedAt": "2026-06-10T16:35:00+05:30",
       "assignedStock": [
-        { "stageId": "stage-metal-shear", "stockId": "stock-steel-lot-240601", "barcode": "STK-RM-STL-240601", "quantityIssued": 126, "unitId": "unit-kg" },
-        { "stageId": "stage-metal-final-assembly", "stockId": "stock-screws-bin-19", "barcode": "STK-RM-SCR-M3-B19", "quantityIssued": 600, "unitId": "unit-pcs" }
+        {
+          "stageId": "stage-metal-shear",
+          "stockId": "stock-steel-lot-240601",
+          "barcode": "STK-RM-STL-240601",
+          "quantityIssued": 126,
+          "unitId": "unit-kg"
+        },
+        {
+          "stageId": "stage-metal-final-assembly",
+          "stockId": "stock-screws-bin-19",
+          "barcode": "STK-RM-SCR-M3-B19",
+          "quantityIssued": 600,
+          "unitId": "unit-pcs"
+        }
       ],
       "stageActuals": [
-        { "stageId": "stage-metal-shear", "machineId": "machine-cnc-router", "dieId": "die-punch-d21", "operatorUserId": "user-production-operator", "status": "completed", "goodQty": 298, "scrapQty": 2, "actualHours": 2.4 },
-        { "stageId": "stage-metal-punch", "machineId": "machine-press-brake", "dieId": "die-punch-d21", "operatorUserId": "user-production-operator", "status": "completed", "goodQty": 296, "scrapQty": 2, "actualHours": 1.6 },
-        { "stageId": "stage-metal-bend", "machineId": "machine-press-brake", "dieId": "die-a12", "operatorUserId": "user-production-operator", "status": "completed", "goodQty": 294, "scrapQty": 2, "actualHours": 2.1 },
-        { "stageId": "stage-metal-final-assembly", "machineId": "machine-assembly-line", "dieId": "die-assembly-f9", "operatorUserId": "user-production-operator", "status": "completed", "goodQty": 294, "scrapQty": 0, "actualHours": 1.2 }
+        {
+          "stageId": "stage-metal-shear",
+          "machineId": "machine-cnc-router",
+          "dieId": "die-punch-d21",
+          "operatorUserId": "user-production-operator",
+          "status": "completed",
+          "goodQty": 298,
+          "scrapQty": 2,
+          "actualHours": 2.4
+        },
+        {
+          "stageId": "stage-metal-punch",
+          "machineId": "machine-press-brake",
+          "dieId": "die-punch-d21",
+          "operatorUserId": "user-production-operator",
+          "status": "completed",
+          "goodQty": 296,
+          "scrapQty": 2,
+          "actualHours": 1.6
+        },
+        {
+          "stageId": "stage-metal-bend",
+          "machineId": "machine-press-brake",
+          "dieId": "die-a12",
+          "operatorUserId": "user-production-operator",
+          "status": "completed",
+          "goodQty": 294,
+          "scrapQty": 2,
+          "actualHours": 2.1
+        },
+        {
+          "stageId": "stage-metal-final-assembly",
+          "machineId": "machine-assembly-line",
+          "dieId": "die-assembly-f9",
+          "operatorUserId": "user-production-operator",
+          "status": "completed",
+          "goodQty": 294,
+          "scrapQty": 0,
+          "actualHours": 1.2
+        }
       ]
     },
     {
@@ -675,14 +965,62 @@
       "startedAt": "2026-06-14T09:00:00+05:30",
       "endedAt": null,
       "assignedStock": [
-        { "stageId": "stage-plastic-material-prep", "stockId": "stock-abs-lot-240602", "barcode": "STK-RM-ABS-240602", "quantityIssued": 108, "unitId": "unit-kg" },
-        { "stageId": "stage-plastic-pack", "stockId": "stock-film-roll-08", "barcode": "STK-RM-PKG-FILM-08", "quantityIssued": 3, "unitId": "unit-roll" }
+        {
+          "stageId": "stage-plastic-material-prep",
+          "stockId": "stock-abs-lot-240602",
+          "barcode": "STK-RM-ABS-240602",
+          "quantityIssued": 108,
+          "unitId": "unit-kg"
+        },
+        {
+          "stageId": "stage-plastic-material-prep",
+          "stockId": "stock-film-roll-08",
+          "barcode": "STK-RM-PKG-FILM-08",
+          "quantityIssued": 3,
+          "unitId": "unit-roll"
+        }
       ],
       "stageActuals": [
-        { "stageId": "stage-plastic-material-prep", "machineId": null, "dieId": null, "operatorUserId": "user-warehouse-staff", "status": "completed", "goodQty": 1200, "scrapQty": 0, "actualHours": 1.0 },
-        { "stageId": "stage-plastic-molding", "machineId": "machine-imm-450", "dieId": "die-mold-b7", "operatorUserId": "user-production-operator", "status": "active", "goodQty": 540, "scrapQty": 18, "actualHours": 3.2 },
-        { "stageId": "stage-plastic-trim-qc", "machineId": "machine-cnc-router", "dieId": "die-trim-c3", "operatorUserId": "user-production-operator", "status": "pending", "goodQty": 0, "scrapQty": 0, "actualHours": 0 },
-        { "stageId": "stage-plastic-pack", "machineId": "machine-assembly-line", "dieId": "die-assembly-f9", "operatorUserId": "user-production-operator", "status": "pending", "goodQty": 0, "scrapQty": 0, "actualHours": 0 }
+        {
+          "stageId": "stage-plastic-material-prep",
+          "machineId": null,
+          "dieId": null,
+          "operatorUserId": "user-warehouse-staff",
+          "status": "completed",
+          "goodQty": 1200,
+          "scrapQty": 0,
+          "actualHours": 1
+        },
+        {
+          "stageId": "stage-plastic-molding",
+          "machineId": "machine-imm-450",
+          "dieId": "die-mold-b7",
+          "operatorUserId": "user-production-operator",
+          "status": "active",
+          "goodQty": 540,
+          "scrapQty": 18,
+          "actualHours": 3.2
+        },
+        {
+          "stageId": "stage-plastic-trim-qc",
+          "machineId": "machine-cnc-router",
+          "dieId": "die-trim-c3",
+          "operatorUserId": "user-production-operator",
+          "status": "pending",
+          "goodQty": 0,
+          "scrapQty": 0,
+          "actualHours": 0
+        },
+        {
+          "stageId": "stage-plastic-pack",
+          "machineId": "machine-assembly-line",
+          "dieId": "die-assembly-f9",
+          "operatorUserId": "user-production-operator",
+          "status": "pending",
+          "goodQty": 0,
+          "scrapQty": 0,
+          "actualHours": 0
+        }
       ]
     },
     {
@@ -690,6 +1028,20 @@
       "pipelineId": "pipeline-metal-bracket",
       "orderId": "order-so-2026-0004",
       "orderLineItemId": "order-line-0004-1",
+      "status": "planned",
+      "plannedQuantity": 200,
+      "goodYield": 0,
+      "scrapQuantity": 0,
+      "startedAt": null,
+      "endedAt": null,
+      "assignedStock": [],
+      "stageActuals": []
+    },
+    {
+      "id": "run-plastic-0004-2",
+      "pipelineId": "pipeline-plastic-molding",
+      "orderId": "order-so-2026-0004",
+      "orderLineItemId": "order-line-0004-2",
       "status": "planned",
       "plannedQuantity": 200,
       "goodYield": 0,
@@ -717,7 +1069,13 @@
       "cancelledAt": null,
       "reportGroupCode": "RPT-ABC-2026-06",
       "lineItems": [
-        { "itemId": "item-metal-bracket", "quantity": 294, "unitId": "unit-pcs", "rate": 165, "sourceStockId": "stock-fg-bracket-02" }
+        {
+          "itemId": "item-metal-bracket",
+          "quantity": 294,
+          "unitId": "unit-pcs",
+          "rate": 165,
+          "sourceStockId": "stock-fg-bracket-02"
+        }
       ]
     },
     {
@@ -736,7 +1094,13 @@
       "cancelledAt": null,
       "reportGroupCode": "RPT-NOVA-2026-06",
       "lineItems": [
-        { "itemId": "item-printed-sleeve", "quantity": 1000, "unitId": "unit-pcs", "rate": 22, "sourceStockId": "stock-fg-sleeve-01" }
+        {
+          "itemId": "item-printed-sleeve",
+          "quantity": 1000,
+          "unitId": "unit-pcs",
+          "rate": 22,
+          "sourceStockId": "stock-fg-sleeve-01"
+        }
       ]
     },
     {
@@ -755,7 +1119,13 @@
       "cancelledAt": null,
       "reportGroupCode": "RPT-RM-2026-06",
       "lineItems": [
-        { "itemId": "item-cr-steel-coil", "quantity": 500, "unitId": "unit-kg", "rate": 78.5, "targetStockId": "stock-steel-lot-240601" }
+        {
+          "itemId": "item-cr-steel-coil",
+          "quantity": 500,
+          "unitId": "unit-kg",
+          "rate": 78.5,
+          "targetStockId": "stock-steel-lot-240601"
+        }
       ]
     },
     {
@@ -774,7 +1144,13 @@
       "cancelledAt": "2026-06-11T16:45:00+05:30",
       "reportGroupCode": "RPT-RM-2026-06",
       "lineItems": [
-        { "itemId": "item-abs-resin", "quantity": 820, "unitId": "unit-kg", "rate": 142, "targetStockId": "stock-abs-lot-240602" }
+        {
+          "itemId": "item-abs-resin",
+          "quantity": 820,
+          "unitId": "unit-kg",
+          "rate": 142,
+          "targetStockId": "stock-abs-lot-240602"
+        }
       ]
     }
   ]

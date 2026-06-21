@@ -234,6 +234,14 @@ class ProductionProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setTemplate(PipelineTemplate newTemplate) {
+    if (_template.id == newTemplate.id && _workingTemplate == null) return;
+    _template = newTemplate;
+    _workingTemplate = null;
+    _selectedNodeId = null;
+    notifyListeners();
+  }
+
   PipelineTemplate get template => _workingTemplate ?? _template;
   PipelineTemplate get blueprint => _template;
   ProcessNode? get selectedStage => selectedNode;

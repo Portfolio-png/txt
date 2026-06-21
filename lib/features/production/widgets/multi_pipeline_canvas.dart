@@ -65,6 +65,7 @@ class _MultiPipelineCanvasState extends State<MultiPipelineCanvas> {
               onNodeSelected: (nodeId) {
                 if (runProvider.runId != run.id) {
                   runProvider.initializeIdleRun(run.id);
+                  prodProvider.setTemplate(template);
                 }
                 prodProvider.selectNode(nodeId);
                 runProvider.setActiveStage(nodeId);
@@ -72,6 +73,7 @@ class _MultiPipelineCanvasState extends State<MultiPipelineCanvas> {
               onNodeDoubleTap: (nodeId) {
                 if (runProvider.runId != run.id) {
                   runProvider.initializeIdleRun(run.id);
+                  prodProvider.setTemplate(template);
                 }
                 prodProvider.selectNode(nodeId);
                 runProvider.openStageActions(nodeId);
@@ -88,16 +90,14 @@ class _MultiPipelineCanvasState extends State<MultiPipelineCanvas> {
     final orderNo = provider.linkedOrderNo;
     
     if (orderNo == null) {
-      if (provider.template != null) {
-        // Fallback for non-order context: just show the default template
-        if (context.read<ProductionRunProvider>().runId != null) {
+      // Fallback for non-order context: just show the default template
+      if (context.read<ProductionRunProvider>().runId != null) {
            final runId = context.read<ProductionRunProvider>().runId!;
            final run = await repo.getRun(runId);
            if (run != null) {
              _runs = [run];
              _templates = { provider.template.id: provider.template };
            }
-        }
       }
       return;
     }
@@ -106,7 +106,7 @@ class _MultiPipelineCanvasState extends State<MultiPipelineCanvas> {
       final existingRuns = await repo.getRunsForOrder(orderNo);
       
       // If we don't have any runs but we have an order item ID and a template, auto-create one
-      if (existingRuns.isEmpty && provider.linkedOrderId != null && provider.template != null) {
+      if (existingRuns.isEmpty && provider.linkedOrderId != null) {
          try {
            final newRun = await repo.createRun(
              provider.template.id,

@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Barcode Trail Visualization</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --text-color: #f8fafc;
+            --node-bg: #1e293b;
+            --node-border: #334155;
+            --primary: #3b82f6;
+            --success: #22c55e;
+            --danger: #ef4444;
+            --warning: #eab308;
+            --line-color: #64748b;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 {
+            font-weight: 300;
+            margin-bottom: 40px;
+            text-align: center;
+            background: linear-gradient(90deg, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .trail-container {
+            display: flex;
+            align-items: center;
+            gap: 40px;
+            margin-top: 20px;
+            position: relative;
+        }
+
+        .node {
+            background-color: var(--node-bg);
+            border: 2px solid var(--node-border);
+            border-radius: 12px;
+            padding: 24px;
+            width: 260px;
+            text-align: center;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+            position: relative;
+            z-index: 10;
+            transition: transform 0.3s ease, border-color 0.3s ease;
+        }
+
+        .node:hover {
+            transform: translateY(-5px);
+        }
+
+        .node-icon {
+            font-size: 32px;
+            margin-bottom: 12px;
+        }
+
+        .node-title {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #94a3b8;
+            margin-bottom: 8px;
+        }
+
+        .barcode {
+            font-family: monospace;
+            font-size: 16px;
+            background-color: rgba(0, 0, 0, 0.3);
+            padding: 8px;
+            border-radius: 6px;
+            border: 1px dashed;
+            margin: 12px 0;
+            word-break: break-all;
+        }
+
+        .node.raw .barcode { border-color: var(--primary); color: #93c5fd; }
+        .node.pipeline .barcode { border-color: var(--warning); color: #fde047; }
+        .node.scrap .barcode { border-color: var(--danger); color: #fca5a5; }
+        .node.finished .barcode { border-color: var(--success); color: #bbf7d0; }
+        .node.challan .barcode { border-color: var(--primary); color: #93c5fd; }
+
+        .node-desc {
+            font-size: 13px;
+            color: #cbd5e1;
+            line-height: 1.4;
+        }
+
+        .arrow {
+            width: 60px;
+            height: 2px;
+            background-color: var(--line-color);
+            position: relative;
+        }
+
+        .arrow::after {
+            content: '';
+            position: absolute;
+            right: -2px;
+            top: -4px;
+            border-top: 5px solid transparent;
+            border-bottom: 5px solid transparent;
+            border-left: 10px solid var(--line-color);
+        }
+
+        .split-path {
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+            position: relative;
+        }
+
+        /* Connecting lines for split */
+        .split-connector-top, .split-connector-bottom {
+            position: absolute;
+            left: -40px;
+            width: 40px;
+            border-left: 2px solid var(--line-color);
+            border-bottom: 2px solid var(--line-color);
+        }
+
+        .split-connector-top {
+            top: 50%;
+            height: 90px;
+            transform: translateY(-100%);
+            border-top: 2px solid var(--line-color);
+            border-bottom: none;
+            border-radius: 8px 0 0 0;
+        }
+        
+        .split-connector-bottom {
+            bottom: 50%;
+            height: 90px;
+            transform: translateY(100%);
+            border-radius: 0 0 0 8px;
+        }
+
+        .split-connector-top::after, .split-connector-bottom::after {
+            content: '';
+            position: absolute;
+            right: -2px;
+            border-top: 5px solid transparent;
+            border-bottom: 5px solid transparent;
+            border-left: 10px solid var(--line-color);
+        }
+        .split-connector-top::after { top: -6px; }
+        .split-connector-bottom::after { bottom: -6px; }
+
+        .info-panel {
+            margin-top: 60px;
+            background: rgba(30, 41, 59, 0.5);
+            border-left: 4px solid var(--primary);
+            padding: 20px;
+            border-radius: 0 8px 8px 0;
+            max-width: 800px;
+            line-height: 1.6;
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
+            70% { box-shadow: 0 0 0 15px rgba(34, 197, 94, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+        }
+
+        .node.finished {
+            animation: pulse 2s infinite;
+            border-color: var(--success);
+        }
+        .node.scrap {
+            border-color: var(--danger);
+        }
+
+    </style>
+</head>
+<body>
+
+    <h1>End-to-End Production Barcode Trail</h1>
+
+    <div class="trail-container">
+        
+        <!-- Input -->
+        <div class="node raw">
+            <div class="node-icon">📦</div>
+            <div class="node-title">Raw Material</div>
+            <div class="barcode">RAW-ALUM-8821</div>
+            <div class="node-desc">Initial stock from Supplier. Scanned into the pipeline.</div>
+        </div>
+
+        <div class="arrow"></div>
+
+        <!-- Pipeline -->
+        <div class="node pipeline">
+            <div class="node-icon">⚙️</div>
+            <div class="node-title">Pipeline Run</div>
+            <div class="barcode">RUN-2026-0004</div>
+            <div class="node-desc">Material is consumed. Processing nodes execute.</div>
+        </div>
+
+        <div style="width: 40px; position: relative;">
+            <div class="split-connector-top"></div>
+            <div class="split-connector-bottom"></div>
+        </div>
+
+        <!-- Split Output -->
+        <div class="split-path">
+            
+            <!-- Finished Good -->
+            <div class="node finished">
+                <div class="node-icon">✨</div>
+                <div class="node-title">Finished Good (Fresh Lot)</div>
+                <div class="barcode">LOT-RUN-2026-884</div>
+                <div class="node-desc">Brand new barcode generated upon completion. Added to 'MAIN' inventory stock.</div>
+            </div>
+
+            <!-- Scrap -->
+            <div class="node scrap">
+                <div class="node-icon">🗑️</div>
+                <div class="node-title">Logged Scrap</div>
+                <div class="barcode">LOT-SCRAP-1718-42</div>
+                <div class="node-desc">Routed directly to user-selected Scrap Group/Subgroup.</div>
+            </div>
+            
+        </div>
+
+        <div class="arrow" style="margin-top: -150px;"></div>
+
+        <!-- Dispatch -->
+        <div class="node challan" style="margin-top: -150px;">
+            <div class="node-icon">🚚</div>
+            <div class="node-title">Delivery Challan</div>
+            <div class="barcode">DC-2026-092</div>
+            <div class="node-desc">Fresh LOT is assigned and consumed for delivery to the client.</div>
+        </div>
+
+    </div>
+
+    <div class="info-panel">
+        <h3>How the flow works now:</h3>
+        <p>1. <strong>Raw Materials</strong> are pulled from stock.</p>
+        <p>2. During the <strong>Pipeline</strong>, if any goods are defective, the user logs scrap. The backend dynamically reads the pipeline's <code>scrapRouting</code> setting and generates a new <strong>LOT-SCRAP</strong> barcode, automatically placing it in that specific inventory subgroup.</p>
+        <p>3. When the pipeline <strong>Completes</strong>, the backend calculates the final output and securely generates a <strong>Fresh Barcode (LOT-RUN)</strong>, inserting it directly into your available inventory.</p>
+        <p>4. Finally, when creating a <strong>Delivery Challan</strong>, the system easily finds this fresh <code>LOT-RUN</code> barcode in stock and successfully deducts it for dispatch.</p>
+    </div>
+
+</body>
+</html>
