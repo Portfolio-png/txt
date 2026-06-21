@@ -79,14 +79,14 @@ class _ChipBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(maxWidth: 180),
-      height: 28, // slightly taller for better click area
-      padding: const EdgeInsets.only(left: 8),
+      constraints: const BoxConstraints(maxWidth: 160),
+      height: 22, // smaller than the 48px node card
+      padding: const EdgeInsets.only(left: 7),
       alignment: Alignment.centerLeft,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14), // Pill shape
-        border: Border.all(color: const Color(0xFF0EA5E9), width: 1.5),
+        borderRadius: BorderRadius.circular(11), // Pill shape
+        border: Border.all(color: const Color(0xFF0EA5E9), width: 1.25),
         boxShadow: elevated
             ? [
                 BoxShadow(
@@ -101,21 +101,21 @@ class _ChipBody extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 6,
-            height: 6,
+            width: 5,
+            height: 5,
             decoration: const BoxDecoration(
               color: Color(0xFF0EA5E9),
               shape: BoxShape.circle,
             ),
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 5),
           Expanded(
             child: Text(
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontSize: 11.5,
+                fontSize: 10,
                 fontWeight: FontWeight.w700,
                 color: Color(0xFF0F172A),
               ),
@@ -129,12 +129,12 @@ class _ChipBody extends StatelessWidget {
                 child: InkWell(
                   onTap: onRevert,
                   borderRadius: const BorderRadius.only(
-                    topRight: Radius.circular(14),
-                    bottomRight: Radius.circular(14),
+                    topRight: Radius.circular(11),
+                    bottomRight: Radius.circular(11),
                   ),
                   child: Container(
-                    width: 28,
-                    height: 28,
+                    width: 22,
+                    height: 22,
                     alignment: Alignment.center,
                     decoration: const BoxDecoration(
                       border: Border(
@@ -146,7 +146,7 @@ class _ChipBody extends StatelessWidget {
                     ),
                     child: const Icon(
                       Icons.undo_rounded,
-                      size: 14,
+                      size: 12,
                       color: Color(0xFF64748B),
                     ),
                   ),

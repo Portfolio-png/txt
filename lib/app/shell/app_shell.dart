@@ -371,57 +371,12 @@ class _PaperShortcutManagerState extends State<PaperShortcutManager> {
 
   bool _isEditableFocusActive() {
     final primaryFocus = FocusManager.instance.primaryFocus;
-    if (primaryFocus == null) {
-      return false;
-    }
-    if (primaryFocus ==
-        context.read<NavigationProvider>().topStripSearchFocusNode) {
-      return true;
-    }
-
-    final focusedContext = primaryFocus.context;
-    if (focusedContext == null) {
-      return false;
-    }
-    if (_contextContainsEditableText(focusedContext, primaryFocus)) {
-      return true;
-    }
-    return focusedContext.findAncestorWidgetOfExactType<EditableText>() != null;
-  }
-
-  bool _contextContainsEditableText(
-    BuildContext context,
-    FocusNode primaryFocus,
-  ) {
-    final widget = context.widget;
-    if (widget is EditableText && widget.focusNode == primaryFocus) {
-      return true;
-    }
-
-    var editableFound = false;
-    context.visitChildElements((element) {
-      if (editableFound) {
-        return;
-      }
-      editableFound = _elementContainsEditableText(element, primaryFocus);
-    });
-    return editableFound;
-  }
-
-  bool _elementContainsEditableText(Element element, FocusNode primaryFocus) {
-    final widget = element.widget;
-    if (widget is EditableText && widget.focusNode == primaryFocus) {
-      return true;
-    }
-
-    var editableFound = false;
-    element.visitChildElements((child) {
-      if (editableFound) {
-        return;
-      }
-      editableFound = _elementContainsEditableText(child, primaryFocus);
-    });
-    return editableFound;
+    // The shell's own root focus node is the only "nothing is focused" state.
+    // Any other focus owner — text fields in dialogs/popouts, the top-strip
+    // search — must keep its own keystrokes instead of routing them to search.
+    // ponytail: identity check beats walking the element tree for EditableText,
+    // which missed fields in inline popouts and ate their digits.
+    return primaryFocus != null && primaryFocus != _focusNode;
   }
 
   void _handleCreateForScreen(BuildContext context) {

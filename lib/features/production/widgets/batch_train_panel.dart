@@ -75,6 +75,7 @@ class _BatchTrainPanelState extends State<BatchTrainPanel> {
               ? batches[i].materialName
               : batches[i].barcode,
           qty: batches[i].quantity,
+          unit: batches[i].unitLabel,
           leftover: batches[i].leftover,
           scrap: batches[i].scrap,
           // Park at the stage the batch is actually parked at on the canvas.
@@ -88,10 +89,7 @@ class _BatchTrainPanelState extends State<BatchTrainPanel> {
           at: batches[i].createdAt,
         ),
     ];
-    final total = rows.fold<double>(0, (s, r) => s + r.qty);
-    final unit = batches
-        .map((b) => b.unitLabel)
-        .firstWhere((u) => u.isNotEmpty, orElse: () => '');
+    final itemCount = rows.map((r) => r.material).toSet().length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -126,7 +124,7 @@ class _BatchTrainPanelState extends State<BatchTrainPanel> {
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
-                    '${rows.length} batch${rows.length == 1 ? "" : "es"} • ${fmtQty(total)}${unit.isNotEmpty ? " $unit" : ""}',
+                    '$itemCount item${itemCount == 1 ? "" : "s"} • ${rows.length} batch${rows.length == 1 ? "" : "es"}',
                     style: const TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
@@ -165,6 +163,7 @@ class _BatchRow {
     required this.label,
     required this.material,
     required this.qty,
+    required this.unit,
     required this.leftover,
     required this.scrap,
     required this.stageIndex,
@@ -175,6 +174,7 @@ class _BatchRow {
   final String label;
   final String material;
   final double qty;
+  final String unit;
   final double leftover;
   final double scrap;
   final int stageIndex;
@@ -189,8 +189,12 @@ String fmtTime(DateTime? d) {
   return '$h:$m ${d.hour >= 12 ? 'PM' : 'AM'}';
 }
 
-/// Floor ledger: one row per batch, one column per pipeline stage, plus a
-/// totals row. A batch's quantity shows under the stage it currently occupies.
+/// Floor ledger: batches grouped by their output item. Within a group, one
+/// row per batch and one column per pipeline stage; a batch's quantity shows
+/// under the stage it currently occupies, with a subtotal per item group.
+///
+/// Compact fixed-width layout (not a DataTable) so it stays dense — the bulky
+/// row heights made a small run look empty.
 class _BatchLedger extends StatelessWidget {
   const _BatchLedger({
     required this.stages,
@@ -202,15 +206,25 @@ class _BatchLedger extends StatelessWidget {
   final List<_BatchRow> rows;
   final List<Color> colors;
 
+  static const _batchW = 168.0;
+  static const _stageW = 84.0;
+  static const _totalW = 60.0;
+
+  static const _muted = Color(0xFF94A3B8);
+  static const _ink = Color(0xFF1E293B);
+
   @override
   Widget build(BuildContext context) {
-    final stageTotals = List<double>.filled(stages.length, 0);
+    // Group by item, preserving first-seen order (Dart Maps keep insertion order).
+    final groups = <String, List<_BatchRow>>{};
     for (final r in rows) {
-      if (r.stageIndex >= 0 && r.stageIndex < stages.length) {
-        stageTotals[r.stageIndex] += r.qty;
-      }
+      groups.putIfAbsent(r.material, () => []).add(r);
     }
-    final grand = rows.fold<double>(0, (s, r) => s + r.qty);
+
+    final tableW = _batchW + stages.length * _stageW + _totalW;
+
+    Widget cell(double w, Widget child, {Alignment align = Alignment.centerRight}) =>
+        SizedBox(width: w, child: Align(alignment: align, child: child));
 
     Widget num(double v, {bool strong = false}) => Text(
       v == 0 ? '·' : fmtQty(v),
@@ -219,16 +233,15 @@ class _BatchLedger extends StatelessWidget {
         fontWeight: strong ? FontWeight.w900 : FontWeight.w600,
         color: v == 0
             ? const Color(0xFFCBD5E1)
-            : (strong ? const Color(0xFF1E293B) : const Color(0xFF334155)),
+            : (strong ? _ink : const Color(0xFF334155)),
       ),
     );
 
-    // A stage cell: the batch's qty, its leftover (L, sky-blue) and scrap (S,
-    // yellow), then when it arrived — only for the stage the batch occupies.
+    // Occupied stage: qty, optional leftover (L, sky) / scrap (S, yellow), time.
     Widget stageCell(_BatchRow r, int i) {
       if (i != r.stageIndex) return num(0);
       return Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           num(r.qty),
@@ -237,122 +250,135 @@ class _BatchLedger extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (r.leftover > 0)
-                  Text(
-                    'L ${fmtQty(r.leftover)}',
-                    style: const TextStyle(
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF0284C7), // sky blue
-                    ),
-                  ),
+                  Text('L ${fmtQty(r.leftover)}',
+                      style: const TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF0284C7))),
                 if (r.leftover > 0 && r.scrap > 0) const SizedBox(width: 6),
                 if (r.scrap > 0)
-                  Text(
-                    'S ${fmtQty(r.scrap)}',
-                    style: const TextStyle(
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFFCA8A04), // yellow
-                    ),
-                  ),
+                  Text('S ${fmtQty(r.scrap)}',
+                      style: const TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFFCA8A04))),
               ],
             ),
-          Text(
-            fmtTime(r.at),
-            style: const TextStyle(
-              fontSize: 9.5,
-              color: Color(0xFF94A3B8),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+          Text(fmtTime(r.at),
+              style: const TextStyle(
+                  fontSize: 9.5, color: _muted, fontWeight: FontWeight.w600)),
         ],
       );
     }
 
+    const headStyle = TextStyle(
+      fontSize: 11,
+      fontWeight: FontWeight.w800,
+      color: Color(0xFF64748B),
+      letterSpacing: 0.3,
+    );
+
+    final children = <Widget>[
+      // Column header
+      Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(children: [
+          cell(_batchW, const Text('BATCH', style: headStyle),
+              align: Alignment.centerLeft),
+          for (final s in stages)
+            cell(_stageW,
+                Text(s, style: headStyle, maxLines: 1, overflow: TextOverflow.ellipsis)),
+          cell(_totalW, const Text('TOTAL', style: headStyle)),
+        ]),
+      ),
+    ];
+
+    groups.forEach((item, groupRows) {
+      final groupQty = groupRows.fold<double>(0, (s, r) => s + r.qty);
+      final unit = groupRows
+          .map((r) => r.unit)
+          .firstWhere((u) => u.isNotEmpty, orElse: () => '');
+      final stageTotals = List<double>.filled(stages.length, 0);
+      for (final r in groupRows) {
+        if (r.stageIndex >= 0 && r.stageIndex < stages.length) {
+          stageTotals[r.stageIndex] += r.qty;
+        }
+      }
+
+      // Group header: ─ Item ───── (qty unit)
+      children.add(Padding(
+        padding: const EdgeInsets.only(top: 10, bottom: 4),
+        child: Row(children: [
+          const Text('─ ',
+              style: TextStyle(fontSize: 12, color: Color(0xFFCBD5E1))),
+          Flexible(
+            child: Text(item.isEmpty ? '—' : item,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontSize: 12.5, fontWeight: FontWeight.w800, color: _ink)),
+          ),
+          const SizedBox(width: 8),
+          // ponytail: solid hairline reads as the section rule at this density;
+          // swap for a dashed CustomPaint only if design insists on dashes.
+          const Expanded(child: Divider(height: 1, color: Color(0xFFE2E8F0))),
+          const SizedBox(width: 8),
+          Text('(${fmtQty(groupQty)}${unit.isNotEmpty ? " $unit" : ""})',
+              style: const TextStyle(
+                  fontSize: 11.5, fontWeight: FontWeight.w700, color: _muted)),
+        ]),
+      ));
+
+      // Batch rows
+      for (final r in groupRows) {
+        children.add(Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            cell(
+              _batchW,
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  margin: const EdgeInsets.only(right: 7),
+                  decoration: BoxDecoration(
+                      color: colors[r.colorIndex % colors.length],
+                      shape: BoxShape.circle),
+                ),
+                Text(r.label,
+                    style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: _ink)),
+              ]),
+              align: Alignment.centerLeft,
+            ),
+            for (var i = 0; i < stages.length; i++)
+              cell(_stageW, stageCell(r, i)),
+            cell(_totalW, num(r.qty, strong: true)),
+          ]),
+        ));
+      }
+
+      // Subtotal row
+      children.add(Padding(
+        padding: const EdgeInsets.only(top: 2, bottom: 2),
+        child: Row(children: [
+          cell(_batchW, const Text('subtotal',
+              style: TextStyle(
+                  fontSize: 11.5, fontWeight: FontWeight.w800, color: _muted)),
+              align: Alignment.centerLeft),
+          for (final t in stageTotals) cell(_stageW, num(t, strong: true)),
+          cell(_totalW, num(groupQty, strong: true)),
+        ]),
+      ));
+    });
+
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      child: DataTable(
-        headingRowHeight: 36,
-        dataRowMinHeight: 44,
-        dataRowMaxHeight: 64,
-        columnSpacing: 26,
-        headingTextStyle: const TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w800,
-          color: Color(0xFF64748B),
-          letterSpacing: 0.4,
-        ),
-        columns: [
-          const DataColumn(label: Text('BATCH')),
-          for (final s in stages) DataColumn(label: Text(s), numeric: true),
-          const DataColumn(label: Text('TOTAL'), numeric: true),
-        ],
-        rows: [
-          for (final r in rows)
-            DataRow(
-              cells: [
-                DataCell(
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 9,
-                        height: 9,
-                        margin: const EdgeInsets.only(right: 7),
-                        decoration: BoxDecoration(
-                          color: colors[r.colorIndex % colors.length],
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            r.label,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w900,
-                              color: Color(0xFF1E293B),
-                            ),
-                          ),
-                          if (r.material.isNotEmpty)
-                            Text(
-                              r.material,
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF94A3B8),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                for (var i = 0; i < stages.length; i++)
-                  DataCell(stageCell(r, i)),
-                DataCell(num(r.qty, strong: true)),
-              ],
-            ),
-          DataRow(
-            color: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
-            cells: [
-              const DataCell(
-                Text(
-                  'Total',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w900,
-                    color: Color(0xFF475569),
-                  ),
-                ),
-              ),
-              for (final t in stageTotals) DataCell(num(t, strong: true)),
-              DataCell(num(grand, strong: true)),
-            ],
-          ),
-        ],
+      child: SizedBox(
+        width: tableW,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
       ),
     );
   }

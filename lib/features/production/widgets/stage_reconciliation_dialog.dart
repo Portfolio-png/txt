@@ -507,6 +507,9 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
                                 : 'Input material ($_unit)',
                             controller: _allottedCtrl,
                             enabled: !_allottedFromBarcodes,
+                            helperText: _allottedFromBarcodes
+                                ? 'Locked — set by the stock assigned to this stage'
+                                : null,
                             autofocus: _batchMode,
                             onChanged: (_) =>
                                 setState(() => _recalculate(keepScrap: true)),
@@ -664,6 +667,7 @@ class _QtyField extends StatelessWidget {
     required this.onChanged,
     this.enabled = true,
     this.autofocus = false,
+    this.helperText,
   });
 
   final String label;
@@ -671,6 +675,7 @@ class _QtyField extends StatelessWidget {
   final ValueChanged<String> onChanged;
   final bool enabled;
   final bool autofocus;
+  final String? helperText;
 
   @override
   Widget build(BuildContext context) {
@@ -683,6 +688,13 @@ class _QtyField extends StatelessWidget {
       onChanged: onChanged,
       decoration: InputDecoration(
         labelText: label,
+        helperText: helperText,
+        helperMaxLines: 2,
+        helperStyle: const TextStyle(
+          fontSize: 11,
+          color: Color(0xFF94A3B8),
+          fontWeight: FontWeight.w600,
+        ),
         isDense: true,
         filled: true,
         fillColor: enabled ? const Color(0xFFF8FAFC) : const Color(0xFFF1F5F9),

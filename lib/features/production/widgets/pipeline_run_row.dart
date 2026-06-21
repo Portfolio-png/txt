@@ -449,7 +449,7 @@ class PipelineRunRow extends StatelessWidget {
 
     return SizedBox(
       width: totalContentWidth,
-      height: 28, // Matches BatchChip height
+      height: 22, // Matches BatchChip height
       child: Stack(
         alignment: Alignment.centerLeft,
         clipBehavior: Clip.none,
