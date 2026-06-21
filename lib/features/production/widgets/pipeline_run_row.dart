@@ -26,10 +26,10 @@ class PipelineRunRow extends StatelessWidget {
   final ValueChanged<String> onNodeSelected;
   final ValueChanged<String>? onNodeDoubleTap;
 
-  static const double _cardW = 172;
-  static const double _cardH = 56;
+  static const double _cardW = 140;
+  static const double _cardH = 48;
   static const double _captionBlockH = 32;
-  static const double _connectorW = 60; // 44 + 8 + 8
+  static const double _connectorW = 56;
 
   @override
   Widget build(BuildContext context) {
@@ -111,6 +111,11 @@ class PipelineRunRow extends StatelessWidget {
                       color: _getStatusColor(run.status),
                     ),
                   ),
+                ),
+                const SizedBox(width: 16),
+                const Tooltip(
+                  message: 'Color Legend:\n🟢 Done / Completed\n🔵 Active / Running\n⚪ Pending\n🟠 Warning / Missing Setup',
+                  child: Icon(Icons.info_outline_rounded, size: 18, color: Color(0xFF94A3B8)),
                 ),
               ],
             ),
@@ -227,7 +232,6 @@ class PipelineRunRow extends StatelessWidget {
         );
       },
       builder: (context, candidateData, rejectedData) {
-        final isHovered = candidateData.isNotEmpty;
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -243,90 +247,84 @@ class PipelineRunRow extends StatelessWidget {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(11),
                     border: Border.all(
-                      color: isHovered ? Colors.orange : (isSelected ? accent : const Color(0xFFE2E8F0)),
-                      width: isHovered || isSelected ? 1.5 : 1,
+                      color: isSelected ? accent : const Color(0xFFE2E8F0),
+                      width: isSelected ? 1.5 : 1,
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: isHovered 
-                            ? Colors.orange.withValues(alpha: 0.16)
-                            : (isSelected
-                                ? accent.withValues(alpha: 0.16)
-                                : Colors.black.withValues(alpha: 0.04)),
-                        blurRadius: isHovered || isSelected ? 12 : 6,
+                        color: isSelected
+                            ? accent.withValues(alpha: 0.16)
+                            : Colors.black.withValues(alpha: 0.04),
+                        blurRadius: isSelected ? 12 : 6,
                         offset: const Offset(0, 3),
                       ),
                     ],
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(10),
-                    child: Row(
-                      children: [
-                        Container(width: 4, color: isHovered ? Colors.orange : accent),
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
-                            child: Row(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              color: accent,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Icon(
-                                  _iconFor(activeNode, isEndpoint),
-                                  size: 16,
-                                  color: isHovered ? Colors.orange : accent,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        activeNode.name,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontSize: 12.5,
-                                          fontWeight: FontWeight.w700,
-                                          color: Color(0xFF0F172A),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        subtitle,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontSize: 10.5,
-                                          fontWeight: FontWeight.w500,
-                                          color: Color(0xFF64748B),
-                                        ),
-                                      ),
-                                    ],
+                                Text(
+                                  activeNode.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF0F172A),
                                   ),
                                 ),
-                                if (!isValid)
-                                  Padding(
-                                    padding: const EdgeInsets.only(left: 4),
-                                    child: Tooltip(
-                                      message: [
-                                        if (!activeNode.hasMachineAssignment)
-                                          'Missing Machine / Group',
-                                        if (activeNode.inputItem == null)
-                                          'Missing Input Item',
-                                        if (activeNode.outputItem == null)
-                                          'Missing Output Item',
-                                      ].join('\n'),
-                                      child: const Icon(
-                                        Icons.warning_amber_rounded,
-                                        color: Colors.orange,
-                                        size: 15,
-                                      ),
-                                    ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  subtitle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF64748B),
                                   ),
+                                ),
                               ],
                             ),
                           ),
-                        ),
-                      ],
+                          if (!isValid)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 4),
+                              child: Tooltip(
+                                message: [
+                                  if (!activeNode.hasMachineAssignment)
+                                    'Missing Machine / Group',
+                                  if (activeNode.inputItem == null)
+                                    'Missing Input Item',
+                                  if (activeNode.outputItem == null)
+                                    'Missing Output Item',
+                                ].join('\n'),
+                                child: const Icon(
+                                  Icons.warning_amber_rounded,
+                                  color: Colors.orange,
+                                  size: 15,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -344,35 +342,107 @@ class PipelineRunRow extends StatelessWidget {
 
     final double totalContentWidth = 24.0 + sortedStageIndices.length * _cardW + (sortedStageIndices.length > 0 ? sortedStageIndices.length - 1 : 0) * _connectorW + 24.0;
 
+    // Group the stages list for the drop zones
+    final stagesDict = <int, List<ProcessNode>>{};
+    for (final node in template.nodes) {
+      stagesDict.putIfAbsent(node.stageIndex, () => []).add(node);
+    }
+
     return Container(
       width: totalContentWidth,
       padding: const EdgeInsets.only(bottom: 32),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Stack(
         children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 24),
-            child: Text(
-              'BATCH TRACKING',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF94A3B8),
-                letterSpacing: 1.0,
-              ),
+          // Background Drop Zones matching the column areas
+          Positioned.fill(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(width: 24.0),
+                for (int i = 0; i < sortedStageIndices.length; i++) ...[
+                  if (i > 0) const SizedBox(width: _connectorW),
+                  SizedBox(
+                    width: _cardW,
+                    child: _buildTrackDropZone(context, stagesDict[sortedStageIndices[i]]!, batchProvider),
+                  ),
+                ],
+                const SizedBox(width: 24.0),
+              ],
             ),
           ),
-          const SizedBox(height: 16),
-          for (final batch in batches) ...[
-            _buildSingleTrack(context, batch, sortedStageIndices, totalContentWidth),
-            const SizedBox(height: 16),
-          ],
+          // Foreground Tracks
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 24),
+                child: Text(
+                  'BATCH TRACKING',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF94A3B8),
+                    letterSpacing: 1.0,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              for (int i = 0; i < batches.length; i++) ...[
+                _buildSingleTrack(context, batches[i], i, sortedStageIndices, totalContentWidth),
+                const SizedBox(height: 16),
+              ],
+            ],
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildSingleTrack(BuildContext context, MaterialBatch batch, List<int> sortedStageIndices, double totalContentWidth) {
+  Widget _buildTrackDropZone(BuildContext context, List<ProcessNode> stageNodes, BatchFlowProvider batchProvider) {
+    return DragTarget<MaterialBatch>(
+      onWillAcceptWithDetails: (details) {
+        final batch = details.data;
+        return !stageNodes.any((n) => n.id == batch.currentNodeId);
+      },
+      onAcceptWithDetails: (details) async {
+        final batch = details.data;
+        ProcessNode targetNode = stageNodes.first;
+        if (stageNodes.length > 1) {
+          final selected = await showDialog<ProcessNode>(
+             context: context,
+             builder: (ctx) => SimpleDialog(
+               title: const Text('Select Target Node'),
+               children: stageNodes.map((n) => SimpleDialogOption(
+                 onPressed: () => Navigator.pop(ctx, n),
+                 child: Text(n.name),
+               )).toList(),
+             ),
+          );
+          if (selected == null) return;
+          targetNode = selected;
+        }
+
+        final qty = await BatchSplitDialog.show(
+          context,
+          batch: batch,
+          targetNodeName: targetNode.name.isEmpty ? 'station' : targetNode.name,
+        );
+        if (qty == null) return;
+        
+        batchProvider.moveBatch(
+          runId: run.id,
+          batchId: batch.id,
+          toNodeId: targetNode.id,
+          quantity: qty,
+        );
+      },
+      builder: (context, candidateData, rejectedData) {
+        return const SizedBox.expand();
+      },
+    );
+  }
+
+  Widget _buildSingleTrack(BuildContext context, MaterialBatch batch, int index, List<int> sortedStageIndices, double totalContentWidth) {
     final node = template.nodes.firstWhere((n) => n.id == batch.currentNodeId, orElse: () => template.nodes.first);
     final stageIndex = sortedStageIndices.indexOf(node.stageIndex);
     final targetX = 24.0 + stageIndex * (_cardW + _connectorW) + (_cardW / 2.0);
@@ -384,20 +454,37 @@ class PipelineRunRow extends StatelessWidget {
         alignment: Alignment.centerLeft,
         clipBehavior: Clip.none,
         children: [
+          // Batch Name Label
+          Positioned(
+            left: 24.0,
+            child: SizedBox(
+              width: (_cardW / 2.0) - 16.0, // Space between left edge and start of track
+              child: Text(
+                'Batch ${index + 1}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF64748B),
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
           Positioned(
             left: 24.0 + (_cardW / 2.0),
             right: 24.0 + (_cardW / 2.0),
             child: Container(
-              height: 4,
+              height: 2,
               decoration: BoxDecoration(
                 color: const Color(0xFFE2E8F0),
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(1),
               ),
             ),
           ),
           AnimatedPositioned(
-            duration: const Duration(milliseconds: 600),
-            curve: Curves.easeOutCubic,
+            duration: const Duration(milliseconds: 1000),
+            curve: Curves.elasticOut,
             left: targetX,
             top: 0,
             bottom: 0,

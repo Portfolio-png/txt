@@ -30,6 +30,7 @@ class BatchChip extends StatelessWidget {
 
     return Draggable<MaterialBatch>(
       data: batch,
+      axis: Axis.horizontal,
       dragAnchorStrategy: pointerDragAnchorStrategy,
       feedback: Transform.translate(
         offset: const Offset(-40, -12),
@@ -83,14 +84,15 @@ class _ChipBody extends StatelessWidget {
       padding: const EdgeInsets.only(left: 8),
       alignment: Alignment.centerLeft,
       decoration: BoxDecoration(
-        color: const Color(0xFF0EA5E9),
-        borderRadius: BorderRadius.circular(4), // Subtle rounding
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14), // Pill shape
+        border: Border.all(color: const Color(0xFF0EA5E9), width: 1.5),
         boxShadow: elevated
             ? [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.15),
+                  color: const Color(0xFF0EA5E9).withValues(alpha: 0.15),
                   blurRadius: 12,
-                  offset: const Offset(0, 6),
+                  offset: const Offset(0, 4),
                 )
               ]
             : null,
@@ -98,15 +100,24 @@ class _ChipBody extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: const BoxDecoration(
+              color: Color(0xFF0EA5E9),
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 6),
           Expanded(
             child: Text(
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontSize: 12,
+                fontSize: 11.5,
                 fontWeight: FontWeight.w700,
-                color: Colors.white,
+                color: Color(0xFF0F172A),
               ),
             ),
           ),
@@ -118,17 +129,17 @@ class _ChipBody extends StatelessWidget {
                 child: InkWell(
                   onTap: onRevert,
                   borderRadius: const BorderRadius.only(
-                    topRight: Radius.circular(4),
-                    bottomRight: Radius.circular(4),
+                    topRight: Radius.circular(14),
+                    bottomRight: Radius.circular(14),
                   ),
                   child: Container(
                     width: 28,
                     height: 28,
                     alignment: Alignment.center,
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
                       border: Border(
                         left: BorderSide(
-                          color: Colors.white.withValues(alpha: 0.2),
+                          color: Color(0xFFE2E8F0),
                           width: 1,
                         ),
                       ),
@@ -136,7 +147,7 @@ class _ChipBody extends StatelessWidget {
                     child: const Icon(
                       Icons.undo_rounded,
                       size: 14,
-                      color: Colors.white,
+                      color: Color(0xFF64748B),
                     ),
                   ),
                 ),
