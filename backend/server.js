@@ -3905,6 +3905,36 @@ async function initDb() {
     )
   `);
 
+  await run(`
+    CREATE TABLE IF NOT EXISTS sandbox_client_pins (
+      client_id TEXT PRIMARY KEY,
+      activation_pin TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS sandbox_activated_machines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      client_id TEXT NOT NULL,
+      machine_fingerprint TEXT NOT NULL,
+      token TEXT NOT NULL,
+      activated_at TEXT NOT NULL,
+      UNIQUE(client_id, machine_fingerprint)
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS sandbox_client_users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      client_id TEXT NOT NULL,
+      user_email TEXT NOT NULL,
+      role TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(client_id, user_email)
+    )
+  `);
+
   // Insert default client config if not exists
   const defaultConf = await get('SELECT client_id FROM sandbox_client_configs WHERE client_id = ?', ['default']);
   if (!defaultConf) {
@@ -21350,10 +21380,16 @@ app.get('/api/sandbox-dashboard/client/:clientId', async (req, res) => {
     const clientId = req.params.clientId;
     const configRow = await get('SELECT config_json FROM sandbox_client_configs WHERE client_id = ?', [clientId]);
     const syncRow = await get('SELECT db_state, updated_at FROM sandbox_sync_states WHERE client_id = ?', [clientId]);
+    const pinRow = await get('SELECT activation_pin FROM sandbox_client_pins WHERE client_id = ?', [clientId]);
+    const machines = await all('SELECT * FROM sandbox_activated_machines WHERE client_id = ?', [clientId]);
+    const users = await all('SELECT * FROM sandbox_client_users WHERE client_id = ?', [clientId]);
     
     res.json({
       success: true,
       clientId,
+      activationPin: pinRow ? pinRow.activation_pin : null,
+      activatedMachines: machines || [],
+      users: users || [],
       config: configRow ? JSON.parse(configRow.config_json) : null,
       syncState: syncRow ? JSON.parse(syncRow.db_state) : null,
       syncUpdatedAt: syncRow ? syncRow.updated_at : null
@@ -21379,7 +21415,73 @@ app.post('/api/sandbox-dashboard/client/:clientId/config', async (req, res) => {
         updated_at = excluded.updated_at
     `, [clientId, JSON.stringify(config)]);
     
+    // Generate an activation pin if it doesn't exist
+    const pinRow = await get('SELECT activation_pin FROM sandbox_client_pins WHERE client_id = ?', [clientId]);
+    if (!pinRow) {
+      const newPin = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit pin
+      await run('INSERT INTO sandbox_client_pins (client_id, activation_pin, created_at) VALUES (?, ?, datetime("now"))', [clientId, newPin]);
+    }
+    
     res.json({ success: true, message: 'Configuration saved' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/activation/activate', async (req, res) => {
+  try {
+    const { client_id, activation_pin, fingerprint } = req.body;
+    if (!client_id || !activation_pin || !fingerprint) {
+      return res.status(400).json({ success: false, error: 'Missing required activation parameters' });
+    }
+
+    // Verify pin
+    const pinRow = await get('SELECT activation_pin FROM sandbox_client_pins WHERE client_id = ?', [client_id]);
+    if (!pinRow || pinRow.activation_pin !== activation_pin) {
+      return res.status(401).json({ success: false, error: 'Invalid client ID or activation PIN' });
+    }
+
+    // Verify machine limit (max 3)
+    const machineCountRow = await get('SELECT COUNT(*) as count FROM sandbox_activated_machines WHERE client_id = ?', [client_id]);
+    if (machineCountRow && machineCountRow.count >= 3) {
+      // Check if this fingerprint is already one of the 3
+      const existing = await get('SELECT token FROM sandbox_activated_machines WHERE client_id = ? AND machine_fingerprint = ?', [client_id, fingerprint]);
+      if (!existing) {
+        return res.status(403).json({ success: false, error: 'Activation limit reached (Max 3 machines).' });
+      }
+    }
+
+    // Generate token (crypto random for sandbox)
+    const token = crypto.randomBytes(32).toString('hex');
+    
+    await run(`
+      INSERT INTO sandbox_activated_machines (client_id, machine_fingerprint, token, activated_at)
+      VALUES (?, ?, ?, datetime('now'))
+      ON CONFLICT(client_id, machine_fingerprint) DO UPDATE SET token = excluded.token, activated_at = excluded.activated_at
+    `, [client_id, fingerprint, token]);
+
+    // Check if this is the first activation (to guide user creation on the frontend)
+    const isFirstActivation = machineCountRow.count === 0;
+
+    res.json({ success: true, token, isFirstActivation });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/sandbox-dashboard/client/:clientId/users', async (req, res) => {
+  try {
+    const clientId = req.params.clientId;
+    const { email, role } = req.body;
+    if (!email || !role) return res.status(400).json({ success: false, error: 'Missing user details' });
+
+    await run(`
+      INSERT INTO sandbox_client_users (client_id, user_email, role, created_at)
+      VALUES (?, ?, ?, datetime('now'))
+      ON CONFLICT(client_id, user_email) DO UPDATE SET role = excluded.role
+    `, [clientId, email, role]);
+
+    res.json({ success: true });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

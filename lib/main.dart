@@ -10,6 +10,8 @@ import 'app/shell/app_shell.dart';
 import 'app/shell/navigation_provider.dart';
 import 'package:core_erp/features/auth/presentation/providers/auth_provider.dart';
 import 'package:core_erp/features/auth/presentation/screens/login_screen.dart';
+import 'package:core_erp/core/services/activation_service.dart';
+import 'package:core_erp/features/auth/presentation/screens/activation_screen.dart';
 import 'package:core_erp/features/groups/data/repositories/api_group_repository.dart';
 import 'package:core_erp/features/groups/data/repositories/group_repository.dart';
 import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
@@ -668,6 +670,22 @@ class _AuthGate extends StatefulWidget {
 
 class _AuthGateState extends State<_AuthGate> {
   String? _lastRefreshToken;
+  bool? _isActivated;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkActivation();
+  }
+
+  Future<void> _checkActivation() async {
+    final activated = await ActivationService.isActivated();
+    if (mounted) {
+      setState(() {
+        _isActivated = activated;
+      });
+    }
+  }
 
   void _refreshAfterAuthentication(String token) {
     if (_lastRefreshToken == token) {
@@ -695,6 +713,21 @@ class _AuthGateState extends State<_AuthGate> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isActivated == null) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF0F172A),
+        body: Center(child: CircularProgressIndicator(color: Color(0xFF8B5CF6))),
+      );
+    }
+
+    if (!_isActivated!) {
+      return ActivationScreen(onActivated: () {
+        setState(() {
+          _isActivated = true;
+        });
+      });
+    }
+
     final auth = context.watch<AuthProvider>();
     final authenticated = auth.isAuthenticated;
     final token = auth.token;

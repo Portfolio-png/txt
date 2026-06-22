@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:core_erp/core/services/data_sync_service.dart';
 
 import '../../data/auth_api.dart';
 import '../../domain/auth_user.dart';
@@ -251,6 +252,10 @@ class AuthProvider extends ChangeNotifier {
         password: password,
         admin: admin,
       );
+      
+      // Sync the user to the control plane sandbox dashboard
+      DataSyncService.instance.syncUser(email, admin ? 'admin' : 'worker');
+
       await loadManagementData();
       return true;
     } catch (error) {

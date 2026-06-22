@@ -1,21 +1,35 @@
-enum FeatureKey {
-  modulesOrders('modules.orders', 'Orders Module', 'Modules', 'Enable the Orders module'),
-  modulesMasters('modules.masters', 'Masters & Catalogs', 'Modules', 'Enable the Masters & Catalogs module'),
-  modulesInventory('modules.inventory', 'Inventory Management', 'Modules', 'Enable the Inventory Management module'),
-  modulesProduction('modules.production', 'Production & Runs', 'Modules', 'Enable the Production & Runs module'),
-  modulesPm('modules.pm', 'Preventative Maintenance', 'Modules', 'Enable the Preventative Maintenance module'),
-  modulesJobs('modules.jobs', 'Freelancer Jobs Portal', 'Modules', 'Enable the Freelancer Jobs Portal'),
-  modulesChallans('modules.delivery_challans', 'Delivery Challans', 'Modules', 'Enable Delivery Challans'),
-  ordersAllowCustomActions('orders.allowCustomActions', 'Allow Dynamic Actions Dropdown', 'Orders Screen', 'Show dynamic actions on orders'),
-  ordersAllowOrdersCreation('orders.allowOrdersCreation', 'Allow Order Creation', 'Orders Screen', 'Allow creating new orders'),
-  featuresDisableMachineCustomFields('features.disableMachineCustomFields', 'Disable Machine Custom Fields', 'Machine Form', 'Hide custom fields on Machine Creation');
+import '../annotations/feature_annotation.dart';
 
-  final String key;
-  final String displayName;
-  final String category;
-  final String description;
+class FeatureKeys {
+  @FeatureFlag(category: 'Modules', displayName: 'Orders Module', desc: 'Enable the Orders module')
+  static const String modulesOrders = 'modules.orders';
 
-  const FeatureKey(this.key, this.displayName, this.category, this.description);
+  @FeatureFlag(category: 'Modules', displayName: 'Masters & Catalogs', desc: 'Enable the Masters & Catalogs module')
+  static const String modulesMasters = 'modules.masters';
+
+  @FeatureFlag(category: 'Modules', displayName: 'Inventory Management', desc: 'Enable the Inventory Management module')
+  static const String modulesInventory = 'modules.inventory';
+
+  @FeatureFlag(category: 'Modules', displayName: 'Production & Runs', desc: 'Enable the Production & Runs module')
+  static const String modulesProduction = 'modules.production';
+
+  @FeatureFlag(category: 'Modules', displayName: 'Preventative Maintenance', desc: 'Enable the Preventative Maintenance module')
+  static const String modulesPm = 'modules.pm';
+
+  @FeatureFlag(category: 'Modules', displayName: 'Freelancer Jobs Portal', desc: 'Enable the Freelancer Jobs Portal')
+  static const String modulesJobs = 'modules.jobs';
+
+  @FeatureFlag(category: 'Modules', displayName: 'Delivery Challans', desc: 'Enable Delivery Challans')
+  static const String modulesChallans = 'modules.delivery_challans';
+
+  @FeatureFlag(category: 'Orders Screen', displayName: 'Allow Dynamic Actions Dropdown', desc: 'Show dynamic actions on orders')
+  static const String ordersAllowCustomActions = 'orders.allowCustomActions';
+
+  @FeatureFlag(category: 'Orders Screen', displayName: 'Allow Order Creation', desc: 'Allow creating new orders')
+  static const String ordersAllowOrdersCreation = 'orders.allowOrdersCreation';
+
+  @FeatureFlag(category: 'Machine Form', displayName: 'Disable Machine Custom Fields', desc: 'Hide custom fields on Machine Creation')
+  static const String featuresDisableMachineCustomFields = 'features.disableMachineCustomFields';
 }
 
 class FeatureFlags {
@@ -25,12 +39,12 @@ class FeatureFlags {
     _config = config;
   }
 
-  static bool isEnabled(FeatureKey feature) {
-    final val = _getNestedProperty(_config, feature.key);
+  static bool isEnabled(String featureKey) {
+    final val = _getNestedProperty(_config, featureKey);
     if (val is bool) {
       return val;
     }
-    return _getDefaultValue(feature);
+    return false; // Default fallback if key not found in merged config
   }
 
   static dynamic _getNestedProperty(Map<String, dynamic> config, String path) {
@@ -44,24 +58,5 @@ class FeatureFlags {
       }
     }
     return current;
-  }
-
-  static bool _getDefaultValue(FeatureKey feature) {
-    switch (feature) {
-      case FeatureKey.modulesOrders:
-      case FeatureKey.modulesMasters:
-        return true;
-      case FeatureKey.modulesInventory:
-      case FeatureKey.modulesProduction:
-      case FeatureKey.modulesPm:
-      case FeatureKey.modulesJobs:
-      case FeatureKey.modulesChallans:
-        return false;
-      case FeatureKey.ordersAllowCustomActions:
-      case FeatureKey.ordersAllowOrdersCreation:
-        return true;
-      case FeatureKey.featuresDisableMachineCustomFields:
-        return false;
-    }
   }
 }

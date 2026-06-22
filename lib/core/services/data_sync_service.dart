@@ -29,6 +29,23 @@ class DataSyncService {
     Future.delayed(const Duration(seconds: 5), () => syncState());
   }
 
+  Future<void> syncUser(String email, String role) async {
+    if (_baseUrl == null || _clientId == null) return;
+    try {
+      final url = Uri.parse('$_baseUrl/api/sandbox-dashboard/client/$_clientId/users');
+      await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': email,
+          'role': role,
+        }),
+      );
+    } catch (e) {
+      debugPrint('Failed to sync user to dashboard: $e');
+    }
+  }
+
   Future<void> syncState() async {
     if (_isSyncing || _baseUrl == null || _clientId == null) return;
     
