@@ -1,0 +1,62 @@
+[
+  {
+    "key": "modules.orders",
+    "displayName": "Orders Module",
+    "category": "Modules",
+    "description": "Enable the Orders module"
+  },
+  {
+    "key": "modules.masters",
+    "displayName": "Masters & Catalogs",
+    "category": "Modules",
+    "description": "Enable the Masters & Catalogs module"
+  },
+  {
+    "key": "modules.inventory",
+    "displayName": "Inventory Management",
+    "category": "Modules",
+    "description": "Enable the Inventory Management module"
+  },
+  {
+    "key": "modules.production",
+    "displayName": "Production & Runs",
+    "category": "Modules",
+    "description": "Enable the Production & Runs module"
+  },
+  {
+    "key": "modules.pm",
+    "displayName": "Preventative Maintenance",
+    "category": "Modules",
+    "description": "Enable the Preventative Maintenance module"
+  },
+  {
+    "key": "modules.jobs",
+    "displayName": "Freelancer Jobs Portal",
+    "category": "Modules",
+    "description": "Enable the Freelancer Jobs Portal"
+  },
+  {
+    "key": "modules.delivery_challans",
+    "displayName": "Delivery Challans",
+    "category": "Modules",
+    "description": "Enable Delivery Challans"
+  },
+  {
+    "key": "orders.allowCustomActions",
+    "displayName": "Allow Dynamic Actions Dropdown",
+    "category": "Orders Screen",
+    "description": "Show dynamic actions on orders"
+  },
+  {
+    "key": "orders.allowOrdersCreation",
+    "displayName": "Allow Order Creation",
+    "category": "Orders Screen",
+    "description": "Allow creating new orders"
+  },
+  {
+    "key": "features.disableMachineCustomFields",
+    "displayName": "Disable Machine Custom Fields",
+    "category": "Machine Form",
+    "description": "Hide custom fields on Machine Creation"
+  }
+]

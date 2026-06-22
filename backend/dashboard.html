@@ -693,70 +693,14 @@
         <!-- Panel 1: Configuration & Feature Flags -->
         <div class="tab-panel active" id="config-panel">
           <div class="config-grid">
-            <!-- Feature Toggles Card -->
-            <div class="panel-card">
-              <div class="panel-card-title">
-                <span style="color: var(--accent-violet);">🔌</span> Enabled Modules
+            <!-- Centralized Feature Toggles Card -->
+            <div class="panel-card" style="grid-row: span 2;">
+              <div class="panel-card-title" style="display: flex; justify-content: space-between; align-items: center;">
+                <div><span style="color: var(--accent-violet);">🔌</span> Feature Flags Registry</div>
+                <input type="text" id="feature-search" placeholder="Search flags..." style="width: 150px; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(255,255,255,0.05); color: white; font-size: 0.8rem;" onkeyup="filterFeatures()">
               </div>
-              <div class="toggle-row">
-                <div class="toggle-label-container">
-                  <div class="toggle-name">Orders Module</div>
-                  <div class="toggle-desc">Enable client order tracking and dispatch workflows.</div>
-                </div>
-                <label class="switch">
-                  <input type="checkbox" id="mod-orders">
-                  <span class="slider"></span>
-                </label>
-              </div>
-              <div class="toggle-row">
-                <div class="toggle-label-container">
-                  <div class="toggle-name">Masters & Catalogs</div>
-                  <div class="toggle-desc">Enable clients, vendors, and items master screens.</div>
-                </div>
-                <label class="switch">
-                  <input type="checkbox" id="mod-masters">
-                  <span class="slider"></span>
-                </label>
-              </div>
-              <div class="toggle-row">
-                <div class="toggle-label-container">
-                  <div class="toggle-name">Inventory Management</div>
-                  <div class="toggle-desc">Enable full real-time stock positions and movements tracking.</div>
-                </div>
-                <label class="switch">
-                  <input type="checkbox" id="mod-inventory">
-                  <span class="slider"></span>
-                </label>
-              </div>
-              <div class="toggle-row">
-                <div class="toggle-label-container">
-                  <div class="toggle-name">Production & Runs</div>
-                  <div class="toggle-desc">Enable pipeline templates, runs, and scrap tracking.</div>
-                </div>
-                <label class="switch">
-                  <input type="checkbox" id="mod-production">
-                  <span class="slider"></span>
-                </label>
-              </div>
-              <div class="toggle-row">
-                <div class="toggle-label-container">
-                  <div class="toggle-name">Freelancer Jobs Portal</div>
-                  <div class="toggle-desc">Enable production job assignments to external freelancers.</div>
-                </div>
-                <label class="switch">
-                  <input type="checkbox" id="mod-jobs">
-                  <span class="slider"></span>
-                </label>
-              </div>
-              <div class="toggle-row">
-                <div class="toggle-label-container">
-                  <div class="toggle-name">Delivery Challans</div>
-                  <div class="toggle-desc">Enable generating physical delivery notes and challans.</div>
-                </div>
-                <label class="switch">
-                  <input type="checkbox" id="mod-challans">
-                  <span class="slider"></span>
-                </label>
+              <div id="dynamic-features-container" style="max-height: 550px; overflow-y: auto; padding-right: 10px; margin-top: 1rem; display: flex; flex-direction: column; gap: 0.5rem;">
+                <!-- Dynamically populated from /api/sandbox-dashboard/feature-registry -->
               </div>
             </div>
 
@@ -1197,7 +1141,10 @@
     let lastActiveEventIndex = -1;
 
     // Initialize Page
-    window.addEventListener('DOMContentLoaded', () => {
+    let featureRegistry = [];
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      await loadFeatureRegistry();
       loadClients();
       
       // Bind color inputs to text inputs
@@ -1231,6 +1178,67 @@
           picker.value = val;
         }
       });
+    }
+
+    async function loadFeatureRegistry() {
+      try {
+        const response = await fetch('/api/sandbox-dashboard/feature-registry');
+        featureRegistry = await response.json();
+      } catch(err) { console.error('Failed to load feature registry', err); }
+    }
+
+    function renderFeatureRegistry(config) {
+      const container = document.getElementById('dynamic-features-container');
+      if (!container) return;
+      container.innerHTML = '';
+      
+      featureRegistry.forEach(feature => {
+        const value = getNestedProperty(config, feature.key);
+        // default to false if not set
+        const isChecked = value === true || (value !== false && (feature.key.startsWith('modules.orders') || feature.key.startsWith('modules.masters') || feature.key.startsWith('orders.allow')));
+        
+        const row = document.createElement('div');
+        row.className = 'toggle-row feature-toggle-item';
+        row.setAttribute('data-search-text', (feature.displayName + " " + feature.description + " " + feature.category).toLowerCase());
+        row.innerHTML = `
+          <div class="toggle-label-container">
+            <div style="font-size: 0.7rem; color: var(--accent-violet); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px;">${feature.category}</div>
+            <div class="toggle-name">${feature.displayName}</div>
+            <div class="toggle-desc">${feature.description}</div>
+            <div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 4px; font-family: monospace;">${feature.key}</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" data-feature-key="${feature.key}" ${isChecked ? 'checked' : ''}>
+            <span class="slider"></span>
+          </label>
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    function filterFeatures() {
+      const query = document.getElementById('feature-search').value.toLowerCase();
+      document.querySelectorAll('.feature-toggle-item').forEach(el => {
+        if (el.getAttribute('data-search-text').includes(query)) {
+          el.style.display = 'flex';
+        } else {
+          el.style.display = 'none';
+        }
+      });
+    }
+
+    function getNestedProperty(obj, path) {
+      return path.split('.').reduce((o, p) => (o ? o[p] : undefined), obj);
+    }
+    
+    function setNestedProperty(obj, path, value) {
+      const parts = path.split('.');
+      let current = obj;
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!current[parts[i]]) current[parts[i]] = {};
+        current = current[parts[i]];
+      }
+      current[parts[parts.length - 1]] = value;
     }
 
     async function loadClients() {
@@ -1295,14 +1303,8 @@
           
           // Populate config tab
           const config = data.config || {};
-          const modules = config.modules || {};
           
-          document.getElementById('mod-orders').checked = modules.orders !== false;
-          document.getElementById('mod-masters').checked = modules.masters !== false;
-          document.getElementById('mod-inventory').checked = !!modules.inventory;
-          document.getElementById('mod-production').checked = !!modules.production;
-          document.getElementById('mod-jobs').checked = !!modules.jobs;
-          document.getElementById('mod-challans').checked = !!modules.delivery_challans;
+          renderFeatureRegistry(config);
           
           const orders = config.orders || {};
           const colors = orders.statusColors || { pending: '#FFA500', in_progress: '#1E90FF', completed: '#32CD32' };
@@ -1430,38 +1432,25 @@
     }
 
     async function saveConfig() {
-      // Get current feature states
-      const allowOrdersCreation = !document.getElementById('mock-config-orders-add').classList.contains('feature-disabled');
-      const disableMachineCustomFields = document.getElementById('mock-config-machine-custom-fields').classList.contains('feature-disabled');
-
-      const config = {
-        modules: {
-          orders: document.getElementById('mod-orders').checked,
-          masters: document.getElementById('mod-masters').checked,
-          inventory: document.getElementById('mod-inventory').checked,
-          production: document.getElementById('mod-production').checked,
-          pm: document.getElementById('mod-production').checked, // linked to production
-          jobs: document.getElementById('mod-jobs').checked,
-          delivery_challans: document.getElementById('mod-challans').checked
-        },
-        orders: {
-          statusColors: {
-            pending: document.getElementById('color-pending-text').value,
-            in_progress: document.getElementById('color-inprogress-text').value,
-            completed: document.getElementById('color-completed-text').value
-          },
-          allowCustomActions: document.getElementById('allow-custom-actions').checked,
-          allowOrdersCreation: allowOrdersCreation
-        },
-        features: {
-          disableMachineCustomFields: disableMachineCustomFields
-        },
-        update: {
-          channel: document.getElementById('updater-channel').value,
-          latest_version: document.getElementById('updater-version').value,
-          appcast_url: document.getElementById('updater-appcast-url').value || undefined
-        }
-      };
+      const config = currentClientData ? { ...currentClientData.config } : {};
+      
+      // Update dynamic features
+      document.querySelectorAll('#dynamic-features-container input[type="checkbox"]').forEach(input => {
+        setNestedProperty(config, input.getAttribute('data-feature-key'), input.checked);
+      });
+      
+      // Merge static configs (colors, updaters)
+      setNestedProperty(config, 'orders.statusColors', {
+        pending: document.getElementById('color-pending-text').value,
+        in_progress: document.getElementById('color-inprogress-text').value,
+        completed: document.getElementById('color-completed-text').value
+      });
+      
+      setNestedProperty(config, 'update', {
+        channel: document.getElementById('updater-channel').value,
+        latest_version: document.getElementById('updater-version').value,
+        appcast_url: document.getElementById('updater-appcast-url').value || undefined
+      });
       
       try {
         const response = await fetch(`/api/sandbox-dashboard/client/${currentClientId}/config`, {

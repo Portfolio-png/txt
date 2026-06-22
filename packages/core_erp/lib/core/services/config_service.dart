@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'feature_flags.dart';
 
 class ConfigService {
   ConfigService._();
@@ -16,6 +17,7 @@ class ConfigService {
       final response = await http.get(Uri.parse('$baseUrl/sandbox-config/$clientId'));
       if (response.statusCode == 200) {
         _config = jsonDecode(response.body);
+        FeatureFlags.setConfig(_config);
       } else {
         _loadDefaultConfig();
       }
@@ -49,13 +51,20 @@ class ConfigService {
         "latest_version": "1.0.0"
       }
     };
+    FeatureFlags.setConfig(_config);
   }
 
   bool isModuleEnabled(String moduleName) {
-    if (_config.containsKey('modules')) {
-      return _config['modules'][moduleName] == true;
+    switch (moduleName) {
+      case 'orders': return FeatureFlags.isEnabled(FeatureKey.modulesOrders);
+      case 'masters': return FeatureFlags.isEnabled(FeatureKey.modulesMasters);
+      case 'inventory': return FeatureFlags.isEnabled(FeatureKey.modulesInventory);
+      case 'production': return FeatureFlags.isEnabled(FeatureKey.modulesProduction);
+      case 'pm': return FeatureFlags.isEnabled(FeatureKey.modulesPm);
+      case 'jobs': return FeatureFlags.isEnabled(FeatureKey.modulesJobs);
+      case 'delivery_challans': return FeatureFlags.isEnabled(FeatureKey.modulesChallans);
+      default: return true;
     }
-    return true; // Default to true if not specified
   }
 
   Map<String, String> get ordersStatusColors {
@@ -69,24 +78,9 @@ class ConfigService {
     };
   }
 
-  bool get allowCustomOrderActions {
-    if (_config.containsKey('orders')) {
-      return _config['orders']['allowCustomActions'] == true;
-    }
-    return true;
-  }
+  bool get allowCustomOrderActions => FeatureFlags.isEnabled(FeatureKey.ordersAllowCustomActions);
 
-  bool get allowOrdersCreation {
-    if (_config.containsKey('orders')) {
-      return _config['orders']['allowOrdersCreation'] != false;
-    }
-    return true;
-  }
+  bool get allowOrdersCreation => FeatureFlags.isEnabled(FeatureKey.ordersAllowOrdersCreation);
 
-  bool get disableMachineCustomFields {
-    if (_config.containsKey('features')) {
-      return _config['features']['disableMachineCustomFields'] == true;
-    }
-    return false;
-  }
+  bool get disableMachineCustomFields => FeatureFlags.isEnabled(FeatureKey.featuresDisableMachineCustomFields);
 }

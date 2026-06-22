@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:core_erp/core/services/feature_flags.dart';
 import '../domain/machine.dart';
 import '../domain/machine_capability.dart';
 import 'machine_repository.dart';
@@ -313,9 +314,11 @@ class ApiMachineRepository implements MachineRepository {
       location: json['location'] as String?,
       installationDate: json['installationDate'] != null ? DateTime.tryParse(json['installationDate'] as String) : null,
       status: _parseStatus(json['status'] as String? ?? ''),
-      customProperties: (json['customProperties'] as List<dynamic>? ?? [])
-          .map((p) => _propertyFromJson(p as Map<String, dynamic>))
-          .toList(),
+      customProperties: FeatureFlags.isEnabled(FeatureKey.featuresDisableMachineCustomFields)
+          ? const []
+          : (json['customProperties'] as List<dynamic>? ?? [])
+              .map((p) => _propertyFromJson(p as Map<String, dynamic>))
+              .toList(),
       capabilities: (json['capabilities'] as List<dynamic>? ?? [])
           .map((c) => MachineCapability.fromJson(c as Map<String, dynamic>))
           .toList(),
@@ -336,7 +339,9 @@ class ApiMachineRepository implements MachineRepository {
       'location': m.location,
       'installationDate': m.installationDate?.toIso8601String(),
       'status': _statusToString(m.status),
-      'customProperties': m.customProperties.map(_propertyToJson).toList(),
+      'customProperties': FeatureFlags.isEnabled(FeatureKey.featuresDisableMachineCustomFields)
+          ? const []
+          : m.customProperties.map(_propertyToJson).toList(),
       'capabilities': m.capabilities.map((c) => c.toJson()).toList(),
       'createdAt': m.createdAt.toIso8601String(),
       'updatedAt': m.updatedAt.toIso8601String(),

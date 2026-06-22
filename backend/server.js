@@ -21225,6 +21225,21 @@ app.get('/sandbox-config/:clientId', async (req, res) => {
   }
 });
 
+// Serve the centralized feature registry definition
+app.get('/api/sandbox-dashboard/feature-registry', (req, res) => {
+  try {
+    const registryPath = path.join(__dirname, 'feature_registry.json');
+    if (fs.existsSync(registryPath)) {
+      const data = fs.readFileSync(registryPath, 'utf8');
+      res.setHeader('Content-Type', 'application/json');
+      return res.send(data);
+    }
+    return res.json([]);
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Client SQLite database sync endpoint
 app.post('/api/sandbox-sync/:clientId', async (req, res) => {
   try {
