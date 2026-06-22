@@ -1,0 +1,46 @@
+name: Deploy Node.js Backend
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - 'packages/core_erp/lib/core/services/feature_flags.dart'
+      - 'bin/export_registry.dart'
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Export Feature Registry
+        run: dart bin/export_registry.dart
+
+      - name: Copy files to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.AWS_EC2_HOST }}
+          username: ${{ secrets.AWS_SSH_USER }}
+          key: ${{ secrets.AWS_SSH_KEY }}
+          source: "backend"
+          target: "txt"
+
+      - name: Install Dependencies and Restart PM2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.AWS_EC2_HOST }}
+          username: ${{ secrets.AWS_SSH_USER }}
+          key: ${{ secrets.AWS_SSH_KEY }}
+          script: |
+            cd txt/backend
+            npm install --omit=dev
+            pm2 restart all || pm2 start server.js
