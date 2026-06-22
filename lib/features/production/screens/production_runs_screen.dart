@@ -1,5 +1,8 @@
 import 'package:flutter/foundation.dart' show listEquals;
+import 'package:core_erp/core/widgets/app_button.dart';
+import 'package:core_erp/core/widgets/app_empty_state.dart';
 import 'package:core_erp/core/widgets/app_toast.dart';
+import 'package:core_erp/core/widgets/soft_master_data.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
@@ -199,61 +202,25 @@ class _ProductionRunsScreenState extends State<ProductionRunsScreen> {
   Widget build(BuildContext context) {
     final inventoryProvider = context.watch<InventoryProvider>();
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
-      child: Column(
-        children: [
-          // Header
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Production',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.5,
-                        color: SoftErpTheme.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Monitor active production runs and start new pipelines.',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: SoftErpTheme.textSecondary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              FilledButton.icon(
-                onPressed: _startProduction,
-                icon: const Icon(Icons.play_arrow_rounded, size: 20),
-                label: const Text('Start Production'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          
-          // Content
-          Expanded(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 180),
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _runs.isEmpty
-                      ? Center(
-                          child: Text(
-                            'No production runs found.',
-                            style: TextStyle(color: SoftErpTheme.textSecondary),
-                          ),
-                        )
+    return SoftMasterDataPage(
+      title: 'Production',
+      subtitle: 'Monitor active production runs and start new pipelines.',
+      action: AppButton(
+        label: 'Start Production',
+        icon: Icons.play_arrow_rounded,
+        onPressed: _startProduction,
+      ),
+      toolbar: const SizedBox.shrink(),
+      body: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 180),
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _runs.isEmpty
+                ? const AppEmptyState(
+                    title: 'No production runs found',
+                    message: 'Start a new pipeline to see it here.',
+                    icon: Icons.precision_manufacturing_outlined,
+                  )
                       : ListView.separated(
                           padding: const EdgeInsets.only(bottom: 24),
                           itemCount: _runs.length,
@@ -292,9 +259,6 @@ class _ProductionRunsScreenState extends State<ProductionRunsScreen> {
                             );
                           },
                         ),
-            ),
-          ),
-        ],
       ),
     );
   }

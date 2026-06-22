@@ -95,7 +95,13 @@ class _InventorySidebarState extends State<InventorySidebar> {
     
     // Only groups and sub groups of raw materials
     final availableMaterials = provider.materials
-        .where((m) => m.onHand > 0 && m.materialClass == MaterialClass.rawMaterial)
+        .where((m) {
+          if (m.onHand <= 0) return false;
+          final groupName = m.linkedGroupId != null
+              ? groupsProvider.findById(m.linkedGroupId)?.name.toLowerCase() ?? ''
+              : '';
+          return groupName.contains('raw material');
+        })
         .toList();
     final materials = availableMaterials.where(_matchesSearch).toList();
     final isSearching = _query.isNotEmpty;

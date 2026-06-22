@@ -1,0 +1,2117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sandbox Control Plane Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #0f172a;
+      --bg-secondary: #1e293b;
+      --bg-tertiary: #334155;
+      --accent-violet: #8b5cf6;
+      --accent-cyan: #06b6d4;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --border-color: rgba(148, 163, 184, 0.12);
+      --font-family: 'Outfit', sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-family);
+      background-color: var(--bg-primary);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    header {
+      background-color: var(--bg-secondary);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-color);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    }
+
+    .logo-container {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .logo-badge {
+      background: linear-gradient(135deg, var(--accent-violet), var(--accent-cyan));
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      color: white;
+      box-shadow: 0 0 15px rgba(139, 92, 246, 0.4);
+    }
+
+    .logo-text {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.025em;
+    }
+
+    .logo-subtitle {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-left: 0.5rem;
+      border-left: 1px solid var(--border-color);
+      padding-left: 0.5rem;
+    }
+
+    .main-container {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+    }
+
+    .sidebar {
+      width: 280px;
+      background-color: var(--bg-secondary);
+      border-right: 1px solid var(--border-color);
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      flex-shrink: 0;
+    }
+
+    .sidebar-section-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    .client-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      overflow-y: auto;
+      max-height: 350px;
+    }
+
+    .client-item {
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      background-color: rgba(255, 255, 255, 0.02);
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .client-item:hover {
+      background-color: rgba(255, 255, 255, 0.05);
+      border-color: rgba(148, 163, 184, 0.2);
+    }
+
+    .client-item.active {
+      background: rgba(139, 92, 246, 0.1);
+      border-color: var(--accent-violet);
+    }
+
+    .client-name-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .client-id-label {
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+
+    .client-status-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--accent-cyan);
+    }
+
+    .client-sync-time {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+    }
+
+    .new-client-box {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .btn {
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+      font-family: var(--font-family);
+    }
+
+    .btn-primary {
+      background-color: var(--accent-violet);
+      color: white;
+      box-shadow: 0 4px 12px rgba(139, 92, 246, 0.2);
+    }
+
+    .btn-primary:hover {
+      background-color: #7c3aed;
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background-color: var(--bg-tertiary);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+    }
+
+    .btn-secondary:hover {
+      background-color: #475569;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 0.6rem 0.8rem;
+      border-radius: 8px;
+      background-color: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      font-family: var(--font-family);
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--accent-violet);
+    }
+
+    .content-area {
+      flex: 1;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      overflow-y: auto;
+    }
+
+    .welcome-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      text-align: center;
+      gap: 1rem;
+      opacity: 0.8;
+    }
+
+    .welcome-icon {
+      font-size: 3rem;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.8; }
+      50% { transform: scale(1.1); opacity: 1; }
+    }
+
+    .client-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 1rem;
+    }
+
+    .tabs-container {
+      display: flex;
+      gap: 0.5rem;
+      background-color: rgba(255, 255, 255, 0.02);
+      padding: 0.25rem;
+      border-radius: 10px;
+      border: 1px solid var(--border-color);
+      width: fit-content;
+    }
+
+    .tab-button {
+      padding: 0.5rem 1.25rem;
+      border-radius: 8px;
+      border: none;
+      background-color: transparent;
+      color: var(--text-muted);
+      font-family: var(--font-family);
+      font-weight: 500;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .tab-button.active {
+      background-color: var(--bg-tertiary);
+      color: var(--text-main);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .tab-panel {
+      display: none;
+      animation: fadeIn 0.3s ease-in-out;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* GRID LAYOUTS FOR CONFIG */
+    .config-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .panel-card {
+      background-color: var(--bg-secondary);
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+      padding: 1.5rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+
+    .panel-card-title {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 0.5rem;
+    }
+
+    .toggle-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.75rem 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    }
+
+    .toggle-row:last-child {
+      border-bottom: none;
+    }
+
+    .toggle-label-container {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .toggle-name {
+      font-weight: 500;
+      font-size: 0.95rem;
+    }
+
+    .toggle-desc {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    /* Beautiful custom switch */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: var(--bg-tertiary);
+      transition: .3s;
+      border-radius: 24px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background-color: var(--accent-violet);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(20px);
+    }
+
+    /* COLORS SECTION */
+    .color-picker-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .color-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .color-row label {
+      font-size: 0.9rem;
+      font-weight: 500;
+      flex: 1;
+    }
+
+    .color-picker-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      width: 150px;
+    }
+
+    .color-picker-wrapper input[type="color"] {
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      border: none;
+      background: none;
+      cursor: pointer;
+    }
+
+    /* DB VIEWER SECTION */
+    .db-viewer-container {
+      display: flex;
+      gap: 1.5rem;
+      height: 550px;
+    }
+
+    .db-table-list {
+      width: 220px;
+      background-color: rgba(255, 255, 255, 0.01);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      flex-shrink: 0;
+    }
+
+    .db-table-item {
+      padding: 0.6rem 0.8rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      transition: all 0.2s;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .db-table-item:hover {
+      background-color: rgba(255, 255, 255, 0.04);
+    }
+
+    .db-table-item.active {
+      background-color: var(--bg-tertiary);
+      color: var(--accent-cyan);
+    }
+
+    .db-table-count {
+      font-size: 0.75rem;
+      background-color: rgba(255, 255, 255, 0.08);
+      padding: 0.1rem 0.4rem;
+      border-radius: 10px;
+      color: var(--text-muted);
+    }
+
+    .db-table-view {
+      flex: 1;
+      background-color: rgba(255, 255, 255, 0.01);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .db-table-view-header {
+      padding: 1rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background-color: rgba(0, 0, 0, 0.1);
+    }
+
+    .search-input-wrapper {
+      width: 250px;
+    }
+
+    .table-container {
+      flex: 1;
+      overflow: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      text-align: left;
+    }
+
+    th {
+      background-color: rgba(0, 0, 0, 0.2);
+      color: var(--text-muted);
+      font-weight: 600;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 0;
+    }
+
+    td {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.06);
+      max-width: 300px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    tr:hover td {
+      background-color: rgba(255, 255, 255, 0.01);
+    }
+
+    .no-data {
+      padding: 2rem;
+      text-align: center;
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    /* TELEMETRY / OBSERVABILITY */
+    .telemetry-row {
+      display: flex;
+      gap: 1.5rem;
+    }
+
+    .sentry-btn-card {
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(6, 182, 212, 0.15));
+      border: 1px solid rgba(139, 92, 246, 0.3);
+    }
+
+    .action-panel-bottom {
+      display: flex;
+      justify-content: flex-end;
+      gap: 1rem;
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .status-toast {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      padding: 1rem 1.5rem;
+      border-radius: 10px;
+      background-color: var(--bg-secondary);
+      border: 1px solid var(--accent-emerald);
+      color: white;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      transform: translateY(150%);
+      transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      z-index: 1000;
+    }
+
+    .status-toast.show {
+      transform: translateY(0);
+    }
+
+    .toast-icon {
+      color: var(--accent-emerald);
+      font-weight: bold;
+    }
+
+    /* Session Replay styles */
+    .mock-view {
+      width: 100%;
+      height: 100%;
+      box-sizing: border-box;
+      display: none;
+    }
+    
+    @keyframes ping-animate {
+      0% {
+        transform: translate(-50%, -50%) scale(0.2);
+        opacity: 1;
+      }
+      100% {
+        transform: translate(-50%, -50%) scale(1.4);
+        opacity: 0;
+      }
+    }
+
+    /* Visual Configurator active styles */
+    .config-target {
+      position: relative;
+      transition: all 0.2s;
+    }
+    .configurator-active .config-target {
+      cursor: pointer !important;
+      outline: 1.5px dashed var(--accent-violet) !important;
+      outline-offset: 1px;
+      background-color: rgba(139, 92, 246, 0.08) !important;
+    }
+    .configurator-active .config-target:hover {
+      background-color: rgba(139, 92, 246, 0.2) !important;
+      box-shadow: 0 0 8px rgba(139, 92, 246, 0.5);
+    }
+    .feature-disabled {
+      opacity: 0.3 !important;
+      filter: grayscale(1) !important;
+      text-decoration: line-through !important;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo-container">
+      <div class="logo-badge">P</div>
+      <div class="logo-text">Control Plane</div>
+      <div class="logo-subtitle">Sandbox Management Console</div>
+    </div>
+    <div style="font-size: 0.85rem; color: var(--text-muted);" id="server-status">
+      Server Status: <span style="color: var(--accent-emerald); font-weight: bold;">● Active</span>
+    </div>
+  </header>
+
+  <div class="main-container">
+    <!-- Sidebar: Client Directory -->
+    <div class="sidebar">
+      <div>
+        <div class="sidebar-section-title">Client Directories</div>
+        <ul class="client-list" id="clients-ul">
+          <!-- Dynamically populated -->
+        </ul>
+      </div>
+
+      <div style="margin-top: auto;">
+        <div class="sidebar-section-title">Register Sandbox Client</div>
+        <div class="new-client-box">
+          <input type="text" id="new-client-id" placeholder="client_id (e.g. client_A)">
+          <button class="btn btn-primary" onclick="registerClient()">Add</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Workspace Content -->
+    <div class="content-area" id="workspace-content">
+      <div class="welcome-container" id="welcome-view">
+        <div class="welcome-icon">⚡</div>
+        <h2>Select a Client Sandbox</h2>
+        <p style="color: var(--text-muted); max-width: 400px; margin-top: 0.5rem;">
+          Choose a sandbox shipment client from the sidebar to inspect database updates, modify feature flags, or edit release configurations.
+        </p>
+      </div>
+
+      <!-- Active Client Dashboard (hidden by default) -->
+      <div id="active-client-view" style="display: none; height: 100%;">
+        <div class="client-header">
+          <div>
+            <h1 id="active-client-title" style="font-weight: 700; font-size: 1.75rem;">Client Sandbox</h1>
+            <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">
+              Client ID: <span id="active-client-id-span" style="color: var(--text-cyan); font-weight: 600;"></span>
+            </p>
+          </div>
+          <div class="tabs-container">
+            <button class="tab-button active" onclick="switchTab('config-panel')">Feature Flags & Config</button>
+            <button class="tab-button" onclick="switchTab('db-panel')">SQLite Sync Viewer</button>
+            <button class="tab-button" onclick="switchTab('obs-panel')">Observability & Replay</button>
+          </div>
+        </div>
+
+        <!-- Panel 1: Configuration & Feature Flags -->
+        <div class="tab-panel active" id="config-panel">
+          <div class="config-grid">
+            <!-- Feature Toggles Card -->
+            <div class="panel-card">
+              <div class="panel-card-title">
+                <span style="color: var(--accent-violet);">🔌</span> Enabled Modules
+              </div>
+              <div class="toggle-row">
+                <div class="toggle-label-container">
+                  <div class="toggle-name">Orders Module</div>
+                  <div class="toggle-desc">Enable client order tracking and dispatch workflows.</div>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="mod-orders">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <div class="toggle-label-container">
+                  <div class="toggle-name">Masters & Catalogs</div>
+                  <div class="toggle-desc">Enable clients, vendors, and items master screens.</div>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="mod-masters">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <div class="toggle-label-container">
+                  <div class="toggle-name">Inventory Management</div>
+                  <div class="toggle-desc">Enable full real-time stock positions and movements tracking.</div>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="mod-inventory">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <div class="toggle-label-container">
+                  <div class="toggle-name">Production & Runs</div>
+                  <div class="toggle-desc">Enable pipeline templates, runs, and scrap tracking.</div>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="mod-production">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <div class="toggle-label-container">
+                  <div class="toggle-name">Freelancer Jobs Portal</div>
+                  <div class="toggle-desc">Enable production job assignments to external freelancers.</div>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="mod-jobs">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <div class="toggle-label-container">
+                  <div class="toggle-name">Delivery Challans</div>
+                  <div class="toggle-desc">Enable generating physical delivery notes and challans.</div>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="mod-challans">
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <!-- UI Configuration & Dynamic Behaviors -->
+            <div class="panel-card">
+              <div class="panel-card-title">
+                <span style="color: var(--accent-cyan);">🎨</span> Dynamic Customization (Orders Screen)
+              </div>
+              <div class="color-picker-grid">
+                <div class="color-row">
+                  <label>Pending Status Color</label>
+                  <div class="color-picker-wrapper">
+                    <input type="color" id="color-pending">
+                    <input type="text" id="color-pending-text" placeholder="#FFA500" style="padding: 0.3rem 0.5rem; font-size: 0.8rem;">
+                  </div>
+                </div>
+                <div class="color-row">
+                  <label>In Progress Status Color</label>
+                  <div class="color-picker-wrapper">
+                    <input type="color" id="color-inprogress">
+                    <input type="text" id="color-inprogress-text" placeholder="#1E90FF" style="padding: 0.3rem 0.5rem; font-size: 0.8rem;">
+                  </div>
+                </div>
+                <div class="color-row">
+                  <label>Completed Status Color</label>
+                  <div class="color-picker-wrapper">
+                    <input type="color" id="color-completed">
+                    <input type="text" id="color-completed-text" placeholder="#32CD32" style="padding: 0.3rem 0.5rem; font-size: 0.8rem;">
+                  </div>
+                </div>
+              </div>
+              
+              <div class="toggle-row" style="margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1rem;">
+                <div class="toggle-label-container">
+                  <div class="toggle-name">Allow Dynamic Actions Dropdown</div>
+                  <div class="toggle-desc">Show inline Row Actions menu on orders list.</div>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="allow-custom-actions">
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Silent Installer Feed Configuration -->
+            <div class="panel-card">
+              <div class="panel-card-title">
+                <span style="color: var(--accent-emerald);">🚀</span> Silent Installer / Auto-Update Feed
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 1rem;">
+                <div>
+                  <label style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 0.4rem;">Target Version</label>
+                  <input type="text" id="updater-version" placeholder="1.0.0">
+                </div>
+                <div>
+                  <label style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 0.4rem;">Release Channel</label>
+                  <select id="updater-channel">
+                    <option value="stable">Stable (Production releases)</option>
+                    <option value="beta">Beta (Early preview releases)</option>
+                    <option value="alpha">Alpha (Development builds)</option>
+                  </select>
+                </div>
+                <div>
+                  <label style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 0.4rem;">Custom Appcast feed URL</label>
+                  <input type="text" id="updater-appcast-url" placeholder="https://updates.example.com/appcast.xml">
+                  <p style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.25rem;">
+                    Overrides defaults. Polled silently by the app cast updater.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="action-panel-bottom">
+            <button class="btn btn-secondary" onclick="loadClientDetails(currentClientId)">Revert Changes</button>
+            <button class="btn btn-primary" style="padding: 0.6rem 1.5rem;" onclick="saveConfig()">Save Configuration</button>
+          </div>
+        </div>
+
+        <!-- Panel 2: SQLite DB State Viewer -->
+        <div class="tab-panel" id="db-panel">
+          <div style="margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <h2 style="font-size: 1.1rem; font-weight: 600;">Client SQLite Replica</h2>
+              <p style="font-size: 0.8rem; color: var(--text-muted);">
+                Viewing replica state pushed dynamically from client sandbox database. Last Synced: <span id="db-sync-time-label" style="font-weight: 600; color: white;">Never</span>
+              </p>
+            </div>
+          </div>
+          
+          <div class="db-viewer-container">
+            <div class="db-table-list" id="db-table-list-container">
+              <!-- Pushed tables list -->
+            </div>
+            
+            <div class="db-table-view">
+              <div class="db-table-view-header">
+                <h3 id="current-table-title" style="font-size: 0.95rem; font-weight: 600; color: var(--accent-cyan);">Select a table</h3>
+                <div class="search-input-wrapper">
+                  <input type="text" id="db-search" placeholder="Search row contents..." oninput="filterTableRows()">
+                </div>
+              </div>
+              <div class="table-container">
+                <table id="db-data-table">
+                  <thead id="db-table-head"></thead>
+                  <tbody id="db-table-body">
+                    <tr><td colspan="100" class="no-data">Select a table from the list on the left to view raw rows.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Panel 3: Observability & Custom Visual Replay -->
+        <div class="tab-panel" id="obs-panel">
+          <div style="display: flex; gap: 1.5rem; height: 620px;">
+            <!-- Left Panel: Replay Sessions List & Stats -->
+            <div style="width: 280px; background-color: rgba(255, 255, 255, 0.01); border: 1px solid var(--border-color); border-radius: 10px; padding: 1.25rem; display: flex; flex-direction: column; gap: 0.75rem; flex-shrink: 0;">
+              <h3 style="font-size: 1rem; font-weight: 600; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                <span>🎥</span> Session Replays
+              </h3>
+              <div id="replay-sessions-list" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem; max-height: 350px;">
+                <!-- Populate dynamically -->
+                <div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 2rem 0;">
+                  No sessions recorded for this client.
+                </div>
+              </div>
+              
+              <!-- Observability Statistics -->
+              <div style="border-top: 1px solid var(--border-color); padding-top: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.75rem;">
+                <h4 style="font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem;">Observability Stats</h4>
+                <div style="display: flex; justify-content: space-between;">
+                  <span style="color: var(--text-muted);">Sync Frequency</span>
+                  <span style="font-weight: 500;">Every 30s</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                  <span style="color: var(--text-muted);">Compression</span>
+                  <span style="font-weight: 500; color: var(--accent-cyan);">GZIP</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                  <span style="color: var(--text-muted);">Active Templates</span>
+                  <span style="font-weight: 500;" id="obs-templates-count">0</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                  <span style="color: var(--text-muted);">Synced Runs</span>
+                  <span style="font-weight: 500;" id="obs-runs-count">0</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Panel: Visual Player Workspace -->
+            <div style="flex: 1; background-color: rgba(255, 255, 255, 0.01); border: 1px solid var(--border-color); border-radius: 10px; display: flex; flex-direction: column; overflow: hidden; position: relative;">
+              <!-- Player Header / Control Bar -->
+              <div style="padding: 1rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; background-color: rgba(0,0,0,0.15);">
+                <div style="display: flex; flex-direction: column; gap: 0.15rem; max-width: 60%;">
+                  <h3 id="player-session-title" style="font-size: 0.95rem; font-weight: 600; color: var(--accent-cyan); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">No Replay Loaded</h3>
+                  <span id="player-session-time" style="font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Select a session on the left to play back actions.</span>
+                </div>
+                <!-- Playback Controls -->
+                <div id="player-controls" style="display: none; align-items: center; gap: 0.75rem;">
+                  <!-- Visual Configurator Mode -->
+                  <label style="display: flex; align-items: center; gap: 0.35rem; cursor: pointer; font-size: 0.8rem; margin-right: 0.5rem; user-select: none;">
+                    <input type="checkbox" id="btn-configurator-mode" onchange="toggleConfiguratorMode(this.checked)" style="width: 14px; height: 14px; cursor: pointer; margin-right: 2px;">
+                    <span style="font-weight: 600; color: var(--text-muted);" id="configurator-mode-label">🔧 Config Mode</span>
+                  </label>
+                  
+                  <!-- Play/Pause -->
+                  <button class="btn btn-secondary" id="btn-play-pause" onclick="togglePlayback()" style="padding: 0.4rem 0.75rem; display: flex; align-items: center; gap: 0.25rem;">
+                    <span id="play-pause-icon">▶</span> <span id="play-pause-text">Play</span>
+                  </button>
+                  <!-- Speed Selector -->
+                  <select id="player-speed" onchange="changeSpeed(this.value)" style="width: 70px; padding: 0.3rem 0.5rem; font-size: 0.8rem;">
+                    <option value="1">1x</option>
+                    <option value="2">2x</option>
+                    <option value="4">4x</option>
+                  </select>
+                  <!-- Status -->
+                  <span id="player-status-badge" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; border-radius: 4px; background-color: var(--bg-tertiary); font-weight: 600;">Idle</span>
+                </div>
+              </div>
+
+              <!-- Scrubber Bar -->
+              <div id="player-scrubber-container" style="display: none; padding: 0.5rem 1rem; border-bottom: 1px solid var(--border-color); align-items: center; gap: 0.75rem; background-color: rgba(0,0,0,0.05);">
+                <span id="player-current-time-label" style="font-size: 0.75rem; font-family: monospace; color: var(--text-muted);">00:00</span>
+                <input type="range" id="player-timeline-slider" min="0" max="100" value="0" oninput="scrubTimeline(this.value)" style="flex: 1; cursor: pointer; height: 4px; accent-color: var(--accent-violet);">
+                <span id="player-total-time-label" style="font-size: 0.75rem; font-family: monospace; color: var(--text-muted);">00:00</span>
+              </div>
+
+              <!-- Workspace Split Body -->
+              <div style="flex: 1; display: flex; overflow: hidden; min-height: 0;">
+                <!-- Main Screen Simulation Viewport -->
+                <div style="flex: 1; display: flex; align-items: center; justify-content: center; background-color: rgba(0, 0, 0, 0.25); padding: 1.5rem; overflow: auto; position: relative;">
+                  
+                  <!-- Device Viewport Container (looks like a phone/tablet/desktop screen) -->
+                  <div id="mock-device-viewport" style="display: none; width: 320px; height: 480px; background-color: #1e1e2d; border-radius: 20px; border: 8px solid #2e2e3d; box-shadow: 0 20px 50px rgba(0,0,0,0.5); overflow: hidden; position: relative; transition: all 0.3s ease;">
+                    
+                    <!-- Context Menu Popover for Configurator -->
+                    <div id="configurator-popover" style="display: none; position: absolute; background-color: var(--bg-secondary); border: 1px solid var(--accent-violet); border-radius: 10px; padding: 0.75rem; box-shadow: 0 10px 25px rgba(0,0,0,0.5); z-index: 2000; width: 220px; font-family: var(--font-family);">
+                      <h4 id="popover-feature-name" style="font-size: 0.85rem; font-weight: 600; margin-bottom: 0.25rem; color: white;">Feature</h4>
+                      <p id="popover-feature-desc" style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 0.75rem;">Description</p>
+                      <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
+                        <button class="btn btn-secondary" onclick="closeConfiguratorPopover()" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; height: auto;">Cancel</button>
+                        <button class="btn btn-primary" id="btn-popover-toggle" onclick="toggleFeatureEntitlement()" style="padding: 0.25rem 0.75rem; font-size: 0.75rem; background-color: var(--accent-violet); height: auto;">Disable</button>
+                      </div>
+                    </div>
+                    
+                    <!-- Screen Header / Navigation Bar -->
+                    <div style="height: 44px; background-color: #11111b; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; padding: 0 1rem; position: relative;">
+                      <div style="font-size: 0.7rem; color: #6272a4; position: absolute; left: 1rem;">9:41 📱</div>
+                      <div id="mock-screen-title" style="font-size: 0.85rem; font-weight: 600; color: #f8f8f2; letter-spacing: 0.02em;">App Screen</div>
+                      <div style="font-size: 0.75rem; color: #50fa7b; position: absolute; right: 1rem;">● Synced</div>
+                    </div>
+
+                    <!-- Screen Content area (updates dynamically based on current nav states) -->
+                    <div id="mock-screen-content" style="height: calc(100% - 44px); position: relative; background: radial-gradient(circle at top, #282a36, #1e1e2d); overflow: hidden;">
+                      
+                      <!-- Virtual Cursor (Red circle overlaying position) -->
+                      <div id="virtual-cursor" style="position: absolute; width: 22px; height: 22px; border-radius: 50%; background-color: rgba(244, 63, 94, 0.75); border: 2px solid #ffffff; box-shadow: 0 0 10px rgba(244, 63, 94, 0.9); pointer-events: none; transform: translate(-50%, -50%); left: 50%; top: 50%; transition: left 0.08s linear, top 0.08s linear; z-index: 1000; display: flex; align-items: center; justify-content: center;">
+                        <div style="width: 6px; height: 6px; border-radius: 50%; background-color: white;"></div>
+                      </div>
+
+                      <!-- Visual Click Ping effect -->
+                      <div id="click-ping" style="position: absolute; width: 50px; height: 50px; border-radius: 50%; background-color: rgba(244, 63, 94, 0.4); border: 2px solid rgba(244, 63, 94, 0.8); pointer-events: none; transform: translate(-50%, -50%) scale(0); left: 50%; top: 50%; z-index: 999; opacity: 0;"></div>
+
+                      <!-- Sub-views toggled based on active route -->
+                      
+                      <!-- Login / Splash Screen Mockup -->
+                      <div id="mock-view-login" class="mock-view" style="padding: 2rem; display: none; flex-direction: column; justify-content: center; align-items: center; gap: 1.5rem;">
+                        <div style="width: 56px; height: 56px; border-radius: 12px; background: linear-gradient(135deg, var(--accent-violet), var(--accent-cyan)); display: flex; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: 800; color: white;">P</div>
+                        <h3 style="font-size: 1.1rem; font-weight: 700; color: white;">Welcome to Paper</h3>
+                        <div style="width: 100%; display: flex; flex-direction: column; gap: 0.75rem;">
+                          <div style="height: 36px; border-radius: 6px; background-color: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; padding: 0 0.75rem; font-size: 0.8rem; color: var(--text-muted);">username / token</div>
+                          <div style="height: 36px; border-radius: 6px; background-color: var(--accent-violet); display: flex; align-items: center; justify-content: center; font-size: 0.85rem; font-weight: 600; color: white; cursor: pointer;">Authenticate</div>
+                        </div>
+                      </div>
+
+                      <!-- Dashboard Screen Mockup -->
+                      <div id="mock-view-dashboard" class="mock-view" style="padding: 1rem; display: none; flex-direction: column; gap: 0.75rem; overflow-y: auto;">
+                        <h4 style="font-size: 0.85rem; font-weight: 600; color: white; margin-bottom: 0.1rem;">Analytics Dashboard</h4>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                          <div style="background-color: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.15rem;">
+                            <span style="font-size: 0.65rem; color: var(--text-muted);">Active Runs</span>
+                            <span style="font-size: 1rem; font-weight: 700; color: var(--accent-cyan);">12</span>
+                          </div>
+                          <div style="background-color: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.15rem;">
+                            <span style="font-size: 0.65rem; color: var(--text-muted);">Total Orders</span>
+                            <span style="font-size: 1rem; font-weight: 700; color: var(--accent-emerald);">48</span>
+                          </div>
+                        </div>
+                        <div style="background-color: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.25rem; flex: 1;">
+                          <span style="font-size: 0.7rem; color: var(--text-muted); font-weight: 600;">Yield Efficiency</span>
+                          <div style="flex: 1; border-bottom: 1px solid rgba(255,255,255,0.1); border-left: 1px solid rgba(255,255,255,0.1); display: flex; align-items: flex-end; justify-content: space-around; padding: 0.25rem 0.25rem 0 0.25rem; height: 80px;">
+                            <div style="width: 10px; height: 40%; background: linear-gradient(to top, var(--accent-violet), var(--accent-cyan)); border-radius: 2px 2px 0 0;"></div>
+                            <div style="width: 10px; height: 65%; background: linear-gradient(to top, var(--accent-violet), var(--accent-cyan)); border-radius: 2px 2px 0 0;"></div>
+                            <div style="width: 10px; height: 50%; background: linear-gradient(to top, var(--accent-violet), var(--accent-cyan)); border-radius: 2px 2px 0 0;"></div>
+                            <div style="width: 10px; height: 85%; background: linear-gradient(to top, var(--accent-violet), var(--accent-cyan)); border-radius: 2px 2px 0 0;"></div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- Orders Screen Mockup -->
+                      <div id="mock-view-orders" class="mock-view" style="padding: 1rem; display: none; flex-direction: column; gap: 0.5rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                          <h4 style="font-size: 0.85rem; font-weight: 600; color: white;">Active Orders</h4>
+                          <span id="mock-config-orders-add" class="config-target" style="font-size: 0.65rem; background-color: var(--accent-violet); padding: 0.15rem 0.4rem; border-radius: 20px; font-weight: 600; color: white;">+ Add</span>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 0.4rem; overflow-y: auto; flex: 1;">
+                          <div class="mock-order-item" style="background-color: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; padding: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
+                            <div style="display: flex; flex-direction: column; gap: 0.1rem;">
+                              <span style="font-size: 0.75rem; font-weight: 600; color: white;">ORD-004</span>
+                              <span style="font-size: 0.6rem; color: var(--text-muted);">Metal Sheets • 500 pcs</span>
+                            </div>
+                            <span id="mock-status-pending" style="font-size: 0.6rem; padding: 0.15rem 0.35rem; border-radius: 4px; font-weight: bold; background-color: rgba(245, 158, 11, 0.2); color: var(--accent-amber);">PENDING</span>
+                          </div>
+                          <div class="mock-order-item" style="background-color: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; padding: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
+                            <div style="display: flex; flex-direction: column; gap: 0.1rem;">
+                              <span style="font-size: 0.75rem; font-weight: 600; color: white;">ORD-003</span>
+                              <span style="font-size: 0.65rem; color: var(--text-muted);">Aluminum Bars • 250 pcs</span>
+                            </div>
+                            <span id="mock-status-inprogress" style="font-size: 0.6rem; padding: 0.15rem 0.35rem; border-radius: 4px; font-weight: bold; background-color: rgba(6, 182, 212, 0.2); color: var(--accent-cyan);">IN_PROGRESS</span>
+                          </div>
+                          <div class="mock-order-item" style="background-color: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; padding: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
+                            <div style="display: flex; flex-direction: column; gap: 0.1rem;">
+                              <span style="font-size: 0.75rem; font-weight: 600; color: white;">ORD-002</span>
+                              <span style="font-size: 0.65rem; color: var(--text-muted);">Steel Wire • 10 pcs</span>
+                            </div>
+                            <span id="mock-status-completed" style="font-size: 0.6rem; padding: 0.15rem 0.35rem; border-radius: 4px; font-weight: bold; background-color: rgba(16, 185, 129, 0.2); color: var(--accent-emerald);">COMPLETED</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- Inventory Screen Mockup -->
+                      <div id="mock-view-inventory" class="mock-view" style="padding: 1rem; display: none; flex-direction: column; gap: 0.5rem;">
+                        <h4 style="font-size: 0.85rem; font-weight: 600; color: white;">Inventory Ledger</h4>
+                        <div style="background-color: rgba(255,255,255,0.02); border-radius: 8px; border: 1px solid rgba(255,255,255,0.06); padding: 0.5rem; display: flex; flex-direction: column; gap: 0.4rem; overflow-y: auto; flex: 1;">
+                          <div style="display: flex; justify-content: space-between; font-size: 0.7rem; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 0.2rem; font-weight: bold;">
+                            <span>Item</span>
+                            <span>Stock</span>
+                          </div>
+                          <div style="display: flex; justify-content: space-between; font-size: 0.65rem; color: #f8f8f2;">
+                            <span>Raw Steel Sheet</span>
+                            <span style="color: var(--accent-emerald); font-weight: bold;">1,450 kg</span>
+                          </div>
+                          <div style="display: flex; justify-content: space-between; font-size: 0.65rem; color: #f8f8f2;">
+                            <span>Coated Copper Wire</span>
+                            <span style="color: var(--accent-emerald); font-weight: bold;">890 m</span>
+                          </div>
+                          <div style="display: flex; justify-content: space-between; font-size: 0.65rem; color: #f8f8f2;">
+                            <span>Hydraulic Pump H-40</span>
+                            <span style="color: var(--accent-amber); font-weight: bold;">4 units</span>
+                          </div>
+                        </div>
+                        <div style="height: 32px; border-radius: 6px; background-color: var(--bg-tertiary); display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: bold; color: white; gap: 0.4rem;">
+                          📷 Scan Barcode
+                        </div>
+                      </div>
+
+                      <!-- Production Screen Mockup -->
+                      <div id="mock-view-production" class="mock-view" style="padding: 1rem; display: none; flex-direction: column; gap: 0.5rem;">
+                        <h4 style="font-size: 0.85rem; font-weight: 600; color: white;">Production Pipeline</h4>
+                        <div style="display: flex; flex-direction: column; gap: 0.4rem; flex: 1; overflow-y: auto;">
+                          <div style="background-color: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; padding: 0.5rem;">
+                            <div style="display: flex; justify-content: space-between; font-size: 0.7rem; font-weight: bold; margin-bottom: 0.15rem;">
+                              <span>Pressing Stage (L1)</span>
+                              <span style="color: var(--accent-cyan);">Active</span>
+                            </div>
+                            <div style="width: 100%; height: 4px; border-radius: 2px; background-color: rgba(255,255,255,0.1); overflow: hidden;">
+                              <div style="width: 75%; height: 100%; background-color: var(--accent-cyan); border-radius: 2px;"></div>
+                            </div>
+                          </div>
+                          <div style="background-color: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; padding: 0.5rem;">
+                            <div style="display: flex; justify-content: space-between; font-size: 0.7rem; font-weight: bold; margin-bottom: 0.15rem;">
+                              <span>Extrusion Stage (L2)</span>
+                              <span style="color: var(--accent-emerald);">Completed</span>
+                            </div>
+                            <div style="width: 100%; height: 4px; border-radius: 2px; background-color: rgba(255,255,255,0.1); overflow: hidden;">
+                              <div style="width: 100%; height: 100%; background-color: var(--accent-emerald); border-radius: 2px;"></div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- Freelancer Portal Mockup -->
+                      <div id="mock-view-freelancer-portal" class="mock-view" style="padding: 1rem; display: none; flex-direction: column; gap: 0.5rem;">
+                        <h4 style="font-size: 0.85rem; font-weight: 600; color: white;">Freelancer Job Portal</h4>
+                        <div style="display: flex; flex-direction: column; gap: 0.4rem; flex: 1; overflow-y: auto;">
+                          <div style="background-color: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.15rem;">
+                            <div style="display: flex; justify-content: space-between; font-size: 0.7rem; font-weight: bold;">
+                              <span>Assemble Harness</span>
+                              <span style="color: var(--accent-emerald); font-weight: bold;">$45</span>
+                            </div>
+                            <span style="font-size: 0.6rem; color: var(--text-muted);">Deadline: Today 6:00 PM</span>
+                            <span style="align-self: flex-end; font-size: 0.65rem; background-color: var(--accent-violet); padding: 0.1rem 0.4rem; border-radius: 4px; font-weight: bold; color: white; margin-top: 0.1rem;">Accept</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- Create Machine Form Mockup -->
+                      <div id="mock-view-machines" class="mock-view" style="padding: 1rem; display: none; flex-direction: column; gap: 0.75rem; overflow-y: auto;">
+                        <h4 style="font-size: 0.85rem; font-weight: 600; color: white; margin-bottom: 0.1rem;">Create Machine</h4>
+                        <div style="display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.7rem;">
+                          <div>
+                            <label style="color: var(--text-muted); display: block; margin-bottom: 0.2rem;">Machine Name</label>
+                            <div style="height: 30px; border-radius: 4px; background-color: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; padding: 0 0.5rem; color: #f8f8f2;">Press 1</div>
+                          </div>
+                          <div>
+                            <label style="color: var(--text-muted); display: block; margin-bottom: 0.2rem;">Machine Code</label>
+                            <div style="height: 30px; border-radius: 4px; background-color: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; padding: 0 0.5rem; color: #f8f8f2;">MC-001</div>
+                          </div>
+                          
+                          <!-- Configurable Custom Fields Section -->
+                          <div id="mock-config-machine-custom-fields" class="config-target" style="margin-top: 0.5rem; padding: 0.6rem; border-radius: 6px; background-color: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; gap: 0.25rem;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; font-weight: bold; color: white;">
+                              <span>📋 Custom Fields</span>
+                              <span style="font-size: 0.6rem; color: var(--accent-violet);">+ Add Field</span>
+                            </div>
+                            <span style="font-size: 0.6rem; color: var(--text-muted);">No custom properties added yet.</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- General Screen Mockup -->
+                      <div id="mock-view-general" class="mock-view" style="padding: 1.5rem; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: 0.5rem;">
+                        <div style="font-size: 1.75rem;">📱</div>
+                        <h4 id="mock-general-title" style="font-size: 0.9rem; font-weight: bold; color: white;">App Home</h4>
+                        <p style="font-size: 0.7rem; color: var(--text-muted); max-width: 180px;">User is interacting with this screen in the sandbox environment.</p>
+                      </div>
+
+                    </div>
+                  </div>
+
+                  <!-- Select Session Placeholder -->
+                  <div id="player-placeholder" style="text-align: center; color: var(--text-muted); opacity: 0.8; z-index: 10;">
+                    <div style="font-size: 3rem; margin-bottom: 0.75rem; animation: pulse 2s infinite;">🎬</div>
+                    <h3 style="font-size: 1.1rem; font-weight: 600; color: white;">Visual Action Replay</h3>
+                    <p style="font-size: 0.85rem; max-width: 250px; margin-top: 0.25rem;">Choose a session replay on the left to watch interactions visually.</p>
+                  </div>
+                </div>
+
+                <!-- Sync event log / timeline -->
+                <div style="width: 200px; background-color: rgba(0,0,0,0.15); border-left: 1px solid var(--border-color); display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0;">
+                  <div style="padding: 0.75rem 1rem; border-bottom: 1px solid var(--border-color); font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">
+                    Interaction Log
+                  </div>
+                  <div id="player-event-log" style="flex: 1; overflow-y: auto; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.7rem;">
+                    <div style="color: var(--text-muted); font-style: italic; text-align: center; padding: 1.5rem 0;">No active events.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-toast" id="toast">
+    <span class="toast-icon">✓</span>
+    <span id="toast-message">Configuration saved.</span>
+  </div>
+
+  <script>
+    let currentClientId = '';
+    let currentClientData = null;
+    let selectedTable = '';
+    
+    // Session Replay Player State variables
+    let selectedReplayId = null;
+    let selectedReplayCard = null;
+    let playbackInterval = null;
+    let playbackSpeed = 1;
+    let currentReplayTime = 0;
+    let totalReplayDuration = 0;
+    let isPlaying = false;
+    let replayEvents = [];
+    let lastTickTime = 0;
+    let lastActiveEventIndex = -1;
+
+    // Initialize Page
+    window.addEventListener('DOMContentLoaded', () => {
+      loadClients();
+      
+      // Bind color inputs to text inputs
+      setupColorPickerSync('color-pending', 'color-pending-text');
+      setupColorPickerSync('color-inprogress', 'color-inprogress-text');
+      setupColorPickerSync('color-completed', 'color-completed-text');
+
+      // Bind Visual Configurator delegated click listener
+      document.getElementById('mock-device-viewport').addEventListener('click', (e) => {
+        if (!document.getElementById('btn-configurator-mode') || !document.getElementById('btn-configurator-mode').checked) return;
+        const target = e.target.closest('.config-target');
+        if (!target) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openConfiguratorPopover(target);
+      });
+    });
+
+    function setupColorPickerSync(pickerId, textId) {
+      const picker = document.getElementById(pickerId);
+      const text = document.getElementById(textId);
+      
+      picker.addEventListener('input', (e) => {
+        text.value = e.target.value.toUpperCase();
+      });
+      
+      text.addEventListener('input', (e) => {
+        let val = e.target.value;
+        if (!val.startsWith('#')) val = '#' + val;
+        if (val.length === 7 && /^#[0-9A-F]{6}$/i.test(val)) {
+          picker.value = val;
+        }
+      });
+    }
+
+    async function loadClients() {
+      try {
+        const response = await fetch('/api/sandbox-dashboard/clients');
+        const data = await response.json();
+        if (data.success) {
+          const ul = document.getElementById('clients-ul');
+          ul.innerHTML = '';
+          
+          if (data.clients.length === 0) {
+            ul.innerHTML = `<li style="padding: 1rem; font-size: 0.8rem; color: var(--text-muted); text-align: center;">No sandboxes registered</li>`;
+            return;
+          }
+          
+          data.clients.forEach(c => {
+            const li = document.createElement('li');
+            li.className = `client-item ${c.clientId === currentClientId ? 'active' : ''}`;
+            li.onclick = () => selectClient(c.clientId);
+            
+            const timeStr = c.syncUpdatedAt ? new Date(c.syncUpdatedAt).toLocaleTimeString() : 'Never';
+            
+            li.innerHTML = `
+              <div class="client-name-row">
+                <span class="client-id-label">${c.clientId}</span>
+                <span class="client-status-indicator" style="background-color: ${c.syncUpdatedAt ? 'var(--accent-emerald)' : 'var(--bg-tertiary)'}"></span>
+              </div>
+              <span class="client-sync-time">Sync: ${timeStr}</span>
+            `;
+            ul.appendChild(li);
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load clients:', err);
+      }
+    }
+
+    async function selectClient(clientId) {
+      currentClientId = clientId;
+      document.getElementById('welcome-view').style.display = 'none';
+      document.getElementById('active-client-view').style.display = 'block';
+      
+      // Update sidebar styling
+      document.querySelectorAll('.client-item').forEach(el => {
+        const label = el.querySelector('.client-id-label').innerText;
+        if (label === clientId) el.classList.add('active');
+        else el.classList.remove('active');
+      });
+      
+      await loadClientDetails(clientId);
+    }
+
+    async function loadClientDetails(clientId) {
+      try {
+        const response = await fetch(`/api/sandbox-dashboard/client/${clientId}`);
+        const data = await response.json();
+        if (data.success) {
+          currentClientData = data;
+          
+          document.getElementById('active-client-title').innerText = `Sandbox: ${clientId}`;
+          document.getElementById('active-client-id-span').innerText = clientId;
+          
+          // Populate config tab
+          const config = data.config || {};
+          const modules = config.modules || {};
+          
+          document.getElementById('mod-orders').checked = modules.orders !== false;
+          document.getElementById('mod-masters').checked = modules.masters !== false;
+          document.getElementById('mod-inventory').checked = !!modules.inventory;
+          document.getElementById('mod-production').checked = !!modules.production;
+          document.getElementById('mod-jobs').checked = !!modules.jobs;
+          document.getElementById('mod-challans').checked = !!modules.delivery_challans;
+          
+          const orders = config.orders || {};
+          const colors = orders.statusColors || { pending: '#FFA500', in_progress: '#1E90FF', completed: '#32CD32' };
+          
+          setPickerAndText('color-pending', 'color-pending-text', colors.pending || '#FFA500');
+          setPickerAndText('color-inprogress', 'color-inprogress-text', colors.in_progress || '#1E90FF');
+          setPickerAndText('color-completed', 'color-completed-text', colors.completed || '#32CD32');
+          
+          document.getElementById('allow-custom-actions').checked = orders.allowCustomActions !== false;
+          
+          const update = config.update || {};
+          document.getElementById('updater-version').value = update.latest_version || '1.0.0';
+          document.getElementById('updater-channel').value = update.channel || 'stable';
+          document.getElementById('updater-appcast-url').value = update.appcast_url || '';
+          
+          // Populate visual config features
+          const ordersConfig = config.orders || {};
+          const featuresConfig = config.features || {};
+          
+          const orderAddBtn = document.getElementById('mock-config-orders-add');
+          if (ordersConfig.allowOrdersCreation === false) {
+            orderAddBtn.classList.add('feature-disabled');
+          } else {
+            orderAddBtn.classList.remove('feature-disabled');
+          }
+          
+          const machineFields = document.getElementById('mock-config-machine-custom-fields');
+          if (featuresConfig.disableMachineCustomFields === true) {
+            machineFields.classList.add('feature-disabled');
+          } else {
+            machineFields.classList.remove('feature-disabled');
+          }
+          
+          // Populate SQLite tab details
+          const syncState = data.syncState || {};
+          const syncTime = data.syncUpdatedAt;
+          
+          document.getElementById('db-sync-time-label').innerText = syncTime ? new Date(syncTime).toLocaleString() : 'Never';
+          
+          // Render table list
+          renderTableList(syncState);
+          
+          // Populate observability data
+          const runsCount = syncState.pipeline_runs ? syncState.pipeline_runs.length : 0;
+          const templatesCount = syncState.pipeline_templates ? syncState.pipeline_templates.length : 0;
+          if (document.getElementById('obs-runs-count')) {
+            document.getElementById('obs-runs-count').innerText = runsCount;
+          }
+          if (document.getElementById('obs-templates-count')) {
+            document.getElementById('obs-templates-count').innerText = templatesCount;
+          }
+          
+          // Load Replays for client
+          loadClientReplays(clientId);
+        }
+      } catch (err) {
+        console.error('Failed to load client details:', err);
+      }
+    }
+
+    function setPickerAndText(pickerId, textId, colorVal) {
+      document.getElementById(pickerId).value = colorVal;
+      document.getElementById(textId).value = colorVal.toUpperCase();
+    }
+
+    function switchTab(panelId) {
+      document.querySelectorAll('.tab-button').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      document.querySelectorAll('.tab-panel').forEach(panel => {
+        panel.classList.remove('active');
+      });
+      
+      // Activate active tab
+      event.target.classList.add('active');
+      document.getElementById(panelId).classList.add('active');
+    }
+
+    async function registerClient() {
+      const input = document.getElementById('new-client-id');
+      const clientId = input.value.trim();
+      if (!clientId) return;
+      
+      // Register via POST default config
+      const initialConfig = {
+        "modules": {
+          "orders": true,
+          "masters": true,
+          "inventory": false,
+          "production": false,
+          "pm": false,
+          "jobs": false,
+          "delivery_challans": false
+        },
+        "orders": {
+          "statusColors": {
+            "pending": "#FFA500",
+            "in_progress": "#1E90FF",
+            "completed": "#32CD32"
+          },
+          "allowCustomActions": true
+        },
+        "update": {
+          "channel": "stable",
+          "latest_version": "1.0.0"
+        }
+      };
+      
+      try {
+        const response = await fetch(`/api/sandbox-dashboard/client/${clientId}/config`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ config: initialConfig })
+        });
+        const data = await response.json();
+        if (data.success) {
+          showToast(`Client ${clientId} registered successfully!`);
+          input.value = '';
+          await loadClients();
+          selectClient(clientId);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function saveConfig() {
+      // Get current feature states
+      const allowOrdersCreation = !document.getElementById('mock-config-orders-add').classList.contains('feature-disabled');
+      const disableMachineCustomFields = document.getElementById('mock-config-machine-custom-fields').classList.contains('feature-disabled');
+
+      const config = {
+        modules: {
+          orders: document.getElementById('mod-orders').checked,
+          masters: document.getElementById('mod-masters').checked,
+          inventory: document.getElementById('mod-inventory').checked,
+          production: document.getElementById('mod-production').checked,
+          pm: document.getElementById('mod-production').checked, // linked to production
+          jobs: document.getElementById('mod-jobs').checked,
+          delivery_challans: document.getElementById('mod-challans').checked
+        },
+        orders: {
+          statusColors: {
+            pending: document.getElementById('color-pending-text').value,
+            in_progress: document.getElementById('color-inprogress-text').value,
+            completed: document.getElementById('color-completed-text').value
+          },
+          allowCustomActions: document.getElementById('allow-custom-actions').checked,
+          allowOrdersCreation: allowOrdersCreation
+        },
+        features: {
+          disableMachineCustomFields: disableMachineCustomFields
+        },
+        update: {
+          channel: document.getElementById('updater-channel').value,
+          latest_version: document.getElementById('updater-version').value,
+          appcast_url: document.getElementById('updater-appcast-url').value || undefined
+        }
+      };
+      
+      try {
+        const response = await fetch(`/api/sandbox-dashboard/client/${currentClientId}/config`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ config })
+        });
+        const data = await response.json();
+        if (data.success) {
+          showToast('Configuration saved successfully!');
+          loadClients();
+        }
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to save config', true);
+      }
+    }
+
+    function renderTableList(syncState) {
+      const container = document.getElementById('db-table-list-container');
+      container.innerHTML = `<div class="sidebar-section-title">Replica Tables</div>`;
+      
+      const tables = Object.keys(syncState);
+      if (tables.length === 0) {
+        container.innerHTML += `<div style="font-size: 0.75rem; color: var(--text-muted); padding: 0.5rem 0;">No synced tables. Run the client app to sync database state.</div>`;
+        return;
+      }
+      
+      tables.forEach(tableName => {
+        const rows = syncState[tableName] || [];
+        const btn = document.createElement('div');
+        btn.className = `db-table-item ${selectedTable === tableName ? 'active' : ''}`;
+        btn.onclick = () => selectDbTable(tableName);
+        btn.innerHTML = `
+          <span>${tableName}</span>
+          <span class="db-table-count">${rows.length}</span>
+        `;
+        container.appendChild(btn);
+      });
+    }
+
+    function selectDbTable(tableName) {
+      selectedTable = tableName;
+      
+      // Update UI active states
+      document.querySelectorAll('.db-table-item').forEach(el => {
+        if (el.querySelector('span').innerText === tableName) el.classList.add('active');
+        else el.classList.remove('active');
+      });
+      
+      document.getElementById('current-table-title').innerText = `Table: ${tableName}`;
+      renderTableRows();
+    }
+
+    function renderTableRows() {
+      const syncState = currentClientData.syncState || {};
+      const rows = syncState[selectedTable] || [];
+      
+      const head = document.getElementById('db-table-head');
+      const body = document.getElementById('db-table-body');
+      
+      head.innerHTML = '';
+      body.innerHTML = '';
+      
+      if (rows.length === 0) {
+        body.innerHTML = `<tr><td colspan="100" class="no-data">No rows in this table.</td></tr>`;
+        return;
+      }
+      
+      // Get headers from first row keys
+      const headers = Object.keys(rows[0]);
+      const hr = document.createElement('tr');
+      headers.forEach(h => {
+        const th = document.createElement('th');
+        th.innerText = h;
+        hr.appendChild(th);
+      });
+      head.appendChild(hr);
+      
+      // Render rows
+      rows.forEach(row => {
+        const tr = document.createElement('tr');
+        headers.forEach(h => {
+          const td = document.createElement('td');
+          const val = row[h];
+          
+          if (typeof val === 'object' && val !== null) {
+            td.innerText = JSON.stringify(val);
+          } else {
+            td.innerText = val !== null ? val : 'NULL';
+          }
+          
+          td.title = td.innerText; // Tooltip for full text
+          tr.appendChild(td);
+        });
+        body.appendChild(tr);
+      });
+    }
+
+    function filterTableRows() {
+      const query = document.getElementById('db-search').value.toLowerCase();
+      const rows = document.querySelectorAll('#db-table-body tr');
+      
+      rows.forEach(tr => {
+        const text = tr.innerText.toLowerCase();
+        if (text.includes(query)) {
+          tr.style.display = '';
+        } else {
+          tr.style.display = 'none';
+        }
+      });
+    }
+
+    function showToast(message, isError = false) {
+      const toast = document.getElementById('toast');
+      const msg = document.getElementById('toast-message');
+      msg.innerText = message;
+      
+      if (isError) {
+        toast.style.borderColor = 'var(--accent-rose)';
+        toast.querySelector('.toast-icon').innerText = '✕';
+        toast.querySelector('.toast-icon').style.color = 'var(--accent-rose)';
+      } else {
+        toast.style.borderColor = 'var(--accent-emerald)';
+        toast.querySelector('.toast-icon').innerText = '✓';
+        toast.querySelector('.toast-icon').style.color = 'var(--accent-emerald)';
+      }
+      
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 3000);
+    }
+
+    // Session Replay helper functions
+    async function loadClientReplays(clientId) {
+      const container = document.getElementById('replay-sessions-list');
+      container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 2rem 0;">Loading replays...</div>`;
+      
+      try {
+        const response = await fetch(`/api/sandbox-dashboard/client/${clientId}/replays`);
+        const data = await response.json();
+        if (data.success) {
+          container.innerHTML = '';
+          if (!data.replays || data.replays.length === 0) {
+            container.innerHTML = `
+              <div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 2rem 0;">
+                No sessions recorded for this client.
+              </div>`;
+            return;
+          }
+          
+          data.replays.forEach(r => {
+            const dateStr = new Date(r.created_at).toLocaleString();
+            const sizeKb = (r.size / 1024).toFixed(1);
+            
+            const card = document.createElement('div');
+            card.style.padding = '0.75rem';
+            card.style.borderRadius = '8px';
+            card.style.backgroundColor = 'rgba(255,255,255,0.02)';
+            card.style.border = '1px solid var(--border-color)';
+            card.style.cursor = 'pointer';
+            card.style.transition = 'all 0.2s';
+            card.style.display = 'flex';
+            card.style.flexDirection = 'column';
+            card.style.gap = '0.25rem';
+            
+            card.onmouseenter = () => {
+              if (selectedReplayId !== r.id) {
+                card.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+                card.style.borderColor = 'rgba(148, 163, 184, 0.2)';
+              }
+            };
+            card.onmouseleave = () => {
+              if (selectedReplayId !== r.id) {
+                card.style.backgroundColor = 'rgba(255, 255, 255, 0.02)';
+                card.style.borderColor = 'var(--border-color)';
+              }
+            };
+            
+            card.onclick = () => selectReplay(r.id, card);
+            
+            card.innerHTML = `
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-weight: 600; font-size: 0.8rem; color: var(--text-main); font-family: monospace;">Session ${r.session_id.substring(0, 8)}</span>
+                <span style="font-size: 0.7rem; color: var(--accent-cyan); font-weight: 600;">${sizeKb} KB</span>
+              </div>
+              <span style="font-size: 0.7rem; color: var(--text-muted);">${dateStr}</span>
+            `;
+            container.appendChild(card);
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load client replays:', err);
+        container.innerHTML = `<div style="text-align: center; color: var(--accent-rose); font-size: 0.85rem; padding: 2rem 0;">Error loading replays.</div>`;
+      }
+    }
+
+    async function selectReplay(replayId, cardElement) {
+      stopPlayback();
+      
+      selectedReplayId = replayId;
+      if (selectedReplayCard) {
+        selectedReplayCard.style.backgroundColor = 'rgba(255,255,255,0.02)';
+        selectedReplayCard.style.borderColor = 'var(--border-color)';
+      }
+      selectedReplayCard = cardElement;
+      selectedReplayCard.style.backgroundColor = 'rgba(139, 92, 246, 0.1)';
+      selectedReplayCard.style.borderColor = 'var(--accent-violet)';
+      
+      document.getElementById('player-placeholder').style.display = 'none';
+      document.getElementById('mock-device-viewport').style.display = 'block';
+      document.getElementById('player-controls').style.display = 'flex';
+      document.getElementById('player-scrubber-container').style.display = 'flex';
+      
+      document.getElementById('player-session-title').innerText = `Session ${replayId}`;
+      document.getElementById('player-session-time').innerText = 'Loading replay data...';
+      
+      try {
+        const response = await fetch(`/api/sandbox-dashboard/replay/${replayId}`);
+        const data = await response.json();
+        if (data.success) {
+          replayEvents = data.events || [];
+          replayEvents.sort((a, b) => a.t - b.t);
+          
+          document.getElementById('player-session-title').innerText = `Session: ${data.sessionId.substring(0, 8)}...`;
+          
+          if (replayEvents.length > 0) {
+            totalReplayDuration = replayEvents[replayEvents.length - 1].t;
+          } else {
+            totalReplayDuration = 0;
+          }
+          
+          const durSec = Math.ceil(totalReplayDuration / 1000);
+          const durMin = Math.floor(durSec / 60);
+          const durSecRem = durSec % 60;
+          const totalTimeStr = `${String(durMin).padStart(2, '0')}:${String(durSecRem).padStart(2, '0')}`;
+          
+          document.getElementById('player-total-time-label').innerText = totalTimeStr;
+          document.getElementById('player-session-time').innerText = `Recorded ${new Date(data.createdAt).toLocaleString()} • ${replayEvents.length} events`;
+          
+          const slider = document.getElementById('player-timeline-slider');
+          slider.max = totalReplayDuration;
+          slider.value = 0;
+          
+          currentReplayTime = 0;
+          lastActiveEventIndex = -1;
+          
+          renderEventLog(replayEvents);
+          updatePlaybackFrame();
+        }
+      } catch (err) {
+        console.error('Failed to load replay data:', err);
+        document.getElementById('player-session-time').innerText = 'Error loading session data';
+      }
+    }
+
+    function renderEventLog(events) {
+      const container = document.getElementById('player-event-log');
+      container.innerHTML = '';
+      
+      if (events.length === 0) {
+        container.innerHTML = `<div style="color: var(--text-muted); font-style: italic; text-align: center; padding: 1.5rem 0;">No events in this session.</div>`;
+        return;
+      }
+      
+      events.forEach((ev, idx) => {
+        const item = document.createElement('div');
+        item.id = `log-item-${idx}`;
+        item.style.padding = '0.4rem 0.5rem';
+        item.style.borderRadius = '4px';
+        item.style.backgroundColor = 'rgba(255,255,255,0.01)';
+        item.style.borderLeft = '2px solid transparent';
+        item.style.display = 'flex';
+        item.style.flexDirection = 'column';
+        item.style.gap = '0.15rem';
+        item.style.cursor = 'pointer';
+        
+        item.onclick = () => {
+          scrubTimeline(ev.t);
+          document.getElementById('player-timeline-slider').value = ev.t;
+        };
+        
+        const sec = Math.floor(ev.t / 1000);
+        const ms = ev.t % 1000;
+        const timeStr = `${String(sec).padStart(2, '0')}.${String(Math.floor(ms/100)).padStart(1, '0')}s`;
+        
+        let typeStr = '';
+        let detailStr = '';
+        let icon = '';
+        
+        if (ev.type === 'tap') {
+          icon = '👆';
+          typeStr = 'Tap Event';
+          const xPct = ev.w ? ((ev.x / ev.w) * 100).toFixed(0) : 0;
+          const yPct = ev.h ? ((ev.y / ev.h) * 100).toFixed(0) : 0;
+          detailStr = `Click at (${ev.x.toFixed(0)}, ${ev.y.toFixed(0)}) [${xPct}%, ${yPct}%]`;
+        } else if (ev.type === 'nav') {
+          icon = '🧭';
+          typeStr = 'Navigation';
+          detailStr = `Entered view: ${ev.name}`;
+        } else {
+          icon = '📝';
+          typeStr = ev.type || 'Event';
+          detailStr = JSON.stringify(ev);
+        }
+        
+        item.innerHTML = `
+          <div style="display: flex; justify-content: space-between; align-items: center; font-weight: 600;">
+            <span style="color: var(--text-main);">${icon} ${typeStr}</span>
+            <span style="font-family: monospace; color: var(--text-muted); font-size: 0.7rem;">${timeStr}</span>
+          </div>
+          <span style="color: var(--text-muted); font-size: 0.7rem;">${detailStr}</span>
+        `;
+        container.appendChild(item);
+      });
+    }
+
+    function togglePlayback() {
+      if (isPlaying) {
+        pausePlayback();
+      } else {
+        startPlayback();
+      }
+    }
+
+    function startPlayback() {
+      if (replayEvents.length === 0) return;
+      
+      isPlaying = true;
+      lastTickTime = performance.now();
+      document.getElementById('play-pause-icon').innerText = '⏸';
+      document.getElementById('play-pause-text').innerText = 'Pause';
+      document.getElementById('player-status-badge').innerText = 'Playing';
+      document.getElementById('player-status-badge').style.backgroundColor = 'rgba(16, 185, 129, 0.2)';
+      document.getElementById('player-status-badge').style.color = 'var(--accent-emerald)';
+      
+      if (playbackInterval) clearInterval(playbackInterval);
+      
+      playbackInterval = setInterval(() => {
+        const now = performance.now();
+        const dt = now - lastTickTime;
+        lastTickTime = now;
+        
+        currentReplayTime += dt * playbackSpeed;
+        
+        if (currentReplayTime >= totalReplayDuration) {
+          currentReplayTime = totalReplayDuration;
+          stopPlayback();
+          document.getElementById('player-status-badge').innerText = 'Finished';
+          document.getElementById('player-status-badge').style.backgroundColor = 'rgba(139, 92, 246, 0.2)';
+          document.getElementById('player-status-badge').style.color = 'var(--accent-violet)';
+        }
+        
+        document.getElementById('player-timeline-slider').value = currentReplayTime;
+        updatePlaybackFrame();
+      }, 30);
+    }
+
+    function pausePlayback() {
+      isPlaying = false;
+      if (playbackInterval) {
+        clearInterval(playbackInterval);
+        playbackInterval = null;
+      }
+      document.getElementById('play-pause-icon').innerText = '▶';
+      document.getElementById('play-pause-text').innerText = 'Play';
+      document.getElementById('player-status-badge').innerText = 'Paused';
+      document.getElementById('player-status-badge').style.backgroundColor = 'rgba(245, 158, 11, 0.2)';
+      document.getElementById('player-status-badge').style.color = 'var(--accent-amber)';
+    }
+
+    function stopPlayback() {
+      isPlaying = false;
+      if (playbackInterval) {
+        clearInterval(playbackInterval);
+        playbackInterval = null;
+      }
+      document.getElementById('play-pause-icon').innerText = '▶';
+      document.getElementById('play-pause-text').innerText = 'Play';
+      document.getElementById('player-status-badge').innerText = 'Idle';
+      document.getElementById('player-status-badge').style.backgroundColor = 'var(--bg-tertiary)';
+      document.getElementById('player-status-badge').style.color = 'var(--text-muted)';
+    }
+
+    function changeSpeed(speedVal) {
+      playbackSpeed = parseFloat(speedVal);
+      if (isPlaying) {
+        lastTickTime = performance.now();
+      }
+    }
+
+    function scrubTimeline(val) {
+      currentReplayTime = parseFloat(val);
+      if (isPlaying) {
+        lastTickTime = performance.now();
+      }
+      updatePlaybackFrame();
+    }
+
+    function updatePlaybackFrame() {
+      const curSec = Math.floor(currentReplayTime / 1000);
+      const curSecRem = curSec % 60;
+      const curMin = Math.floor(curSec / 60);
+      document.getElementById('player-current-time-label').innerText = `${String(curMin).padStart(2, '0')}:${String(curSecRem).padStart(2, '0')}`;
+      
+      if (replayEvents.length === 0) return;
+      
+      const tapEvents = replayEvents.filter(e => e.type === 'tap');
+      let cursorVisible = false;
+      let x_ratio = 0.5;
+      let y_ratio = 0.5;
+      
+      if (tapEvents.length > 0) {
+        cursorVisible = true;
+        let tapA = null;
+        let tapB = null;
+        
+        for (let i = 0; i < tapEvents.length; i++) {
+          if (tapEvents[i].t <= currentReplayTime) {
+            tapA = tapEvents[i];
+          } else {
+            tapB = tapEvents[i];
+            break;
+          }
+        }
+        
+        if (tapA && tapB) {
+          const ratio = (currentReplayTime - tapA.t) / (tapB.t - tapA.t);
+          const xA_ratio = tapA.w ? tapA.x / tapA.w : 0.5;
+          const yA_ratio = tapA.h ? tapA.y / tapA.h : 0.5;
+          const xB_ratio = tapB.w ? tapB.x / tapB.w : 0.5;
+          const yB_ratio = tapB.h ? tapB.y / tapB.h : 0.5;
+          
+          x_ratio = xA_ratio + ratio * (xB_ratio - xA_ratio);
+          y_ratio = yA_ratio + ratio * (yB_ratio - yA_ratio);
+        } else if (tapA) {
+          x_ratio = tapA.w ? tapA.x / tapA.w : 0.5;
+          y_ratio = tapA.h ? tapA.y / tapA.h : 0.5;
+        } else if (tapB) {
+          x_ratio = tapB.w ? tapB.x / tapB.w : 0.5;
+          y_ratio = tapB.h ? tapB.y / tapB.h : 0.5;
+        }
+        
+        x_ratio = Math.max(0, Math.min(1, x_ratio));
+        y_ratio = Math.max(0, Math.min(1, y_ratio));
+      }
+      
+      const cursor = document.getElementById('virtual-cursor');
+      if (cursorVisible) {
+        cursor.style.display = 'flex';
+        cursor.style.left = (x_ratio * 100) + '%';
+        cursor.style.top = (y_ratio * 100) + '%';
+      } else {
+        cursor.style.display = 'none';
+      }
+      
+      let activeEventIndex = -1;
+      for (let i = 0; i < replayEvents.length; i++) {
+        if (replayEvents[i].t <= currentReplayTime) {
+          activeEventIndex = i;
+        } else {
+          break;
+        }
+      }
+      
+      if (activeEventIndex !== lastActiveEventIndex) {
+        if (activeEventIndex > lastActiveEventIndex && activeEventIndex >= 0) {
+          const ev = replayEvents[activeEventIndex];
+          if (ev.type === 'tap') {
+            const ping = document.getElementById('click-ping');
+            const px = ev.w ? ev.x / ev.w : 0.5;
+            const py = ev.h ? ev.y / ev.h : 0.5;
+            ping.style.left = (px * 100) + '%';
+            ping.style.top = (py * 100) + '%';
+            
+            ping.style.animation = 'none';
+            ping.offsetHeight;
+            ping.style.animation = 'ping-animate 0.4s ease-out forwards';
+            ping.style.opacity = '1';
+          }
+        }
+        
+        document.querySelectorAll('[id^="log-item-"]').forEach(el => {
+          el.style.backgroundColor = 'rgba(255,255,255,0.01)';
+          el.style.borderLeftColor = 'transparent';
+        });
+        
+        if (activeEventIndex >= 0) {
+          const activeItem = document.getElementById(`log-item-${activeEventIndex}`);
+          if (activeItem) {
+            activeItem.style.backgroundColor = 'rgba(255,255,255,0.06)';
+            activeItem.style.borderLeftColor = 'var(--accent-violet)';
+            activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        }
+        
+        lastActiveEventIndex = activeEventIndex;
+      }
+      
+      const navEvents = replayEvents.filter(e => e.type === 'nav');
+      let activeRoute = '/';
+      
+      for (let i = 0; i < navEvents.length; i++) {
+        if (navEvents[i].t <= currentReplayTime) {
+          activeRoute = navEvents[i].name;
+        } else {
+          break;
+        }
+      }
+      
+      updateActiveView(activeRoute);
+    }
+
+    function updateActiveView(routeName) {
+      const titleEl = document.getElementById('mock-screen-title');
+      
+      document.querySelectorAll('.mock-view').forEach(el => {
+        el.style.display = 'none';
+      });
+      
+      let viewId = 'mock-view-general';
+      let cleanName = routeName;
+      
+      if (routeName.includes('/orders') || routeName === 'orders') {
+        viewId = 'mock-view-orders';
+        cleanName = 'Orders List';
+        
+        const config = (currentClientData && currentClientData.config) || {};
+        const ordersConfig = config.orders || {};
+        const colors = ordersConfig.statusColors || { pending: '#FFA500', in_progress: '#1E90FF', completed: '#32CD32' };
+        
+        const pendingBadge = document.getElementById('mock-status-pending');
+        const inprogressBadge = document.getElementById('mock-status-inprogress');
+        const completedBadge = document.getElementById('mock-status-completed');
+        
+        if (pendingBadge) {
+          pendingBadge.style.color = colors.pending;
+          pendingBadge.style.backgroundColor = colors.pending + '20';
+        }
+        if (inprogressBadge) {
+          inprogressBadge.style.color = colors.in_progress;
+          inprogressBadge.style.backgroundColor = colors.in_progress + '20';
+        }
+        if (completedBadge) {
+          completedBadge.style.color = colors.completed;
+          completedBadge.style.backgroundColor = colors.completed + '20';
+        }
+      } else if (routeName.includes('/freelancer-portal') || routeName === 'jobs') {
+        viewId = 'mock-view-freelancer-portal';
+        cleanName = 'Freelancer Portal';
+      } else if (routeName.includes('/inventory') || routeName === 'inventory') {
+        viewId = 'mock-view-inventory';
+        cleanName = 'Inventory & Scan';
+      } else if (routeName.includes('/production') || routeName === 'production') {
+        viewId = 'mock-view-production';
+        cleanName = 'Production Pipeline';
+      } else if (routeName.includes('/dashboard') || routeName === 'dashboard' || routeName === 'home') {
+        viewId = 'mock-view-dashboard';
+        cleanName = 'Dashboard';
+      } else if (routeName.includes('/login') || routeName === 'login') {
+        viewId = 'mock-view-login';
+        cleanName = 'Sign In';
+      } else {
+        viewId = 'mock-view-general';
+        document.getElementById('mock-general-title').innerText = routeName;
+      }
+      
+      const activeView = document.getElementById(viewId);
+      if (activeView) {
+        if (viewId === 'mock-view-login' || viewId === 'mock-view-general') {
+          activeView.style.display = 'flex';
+        } else {
+          activeView.style.display = 'flex';
+        }
+      }
+      
+      titleEl.innerText = cleanName;
+    }
+
+    // Visual Configurator Helper functions
+    let currentConfigPopoverTarget = null;
+
+    function openConfiguratorPopover(element) {
+      currentConfigPopoverTarget = element;
+      const popover = document.getElementById('configurator-popover');
+      const title = document.getElementById('popover-feature-name');
+      const desc = document.getElementById('popover-feature-desc');
+      const btn = document.getElementById('btn-popover-toggle');
+
+      const isCurrentlyDisabled = element.classList.contains('feature-disabled');
+
+      if (element.id === 'mock-config-orders-add') {
+        title.innerText = 'Order Creation Action';
+        desc.innerText = 'Toggles whether the "+ Add" button is visible and active on the client Orders screen.';
+        btn.innerText = isCurrentlyDisabled ? '🟢 Enable Feature' : '🔴 Disable Feature';
+      } else if (element.id === 'mock-config-machine-custom-fields') {
+        title.innerText = 'Machine Custom Fields';
+        desc.innerText = 'Toggles whether the Custom Fields section is visible on the Machine Creation form.';
+        btn.innerText = isCurrentlyDisabled ? '🟢 Enable Feature' : '🔴 Disable Feature';
+      }
+
+      const viewport = document.getElementById('mock-device-viewport');
+      const vRect = viewport.getBoundingClientRect();
+      const eRect = element.getBoundingClientRect();
+
+      const top = (eRect.top - vRect.top) + (eRect.height / 2) - 50;
+      const left = (eRect.left - vRect.left) + (eRect.width / 2) - 110;
+
+      popover.style.top = Math.max(10, Math.min(vRect.height - 150, top)) + 'px';
+      popover.style.left = Math.max(10, Math.min(vRect.width - 230, left)) + 'px';
+      popover.style.display = 'block';
+    }
+
+    function closeConfiguratorPopover() {
+      document.getElementById('configurator-popover').style.display = 'none';
+      currentConfigPopoverTarget = null;
+    }
+
+    function toggleFeatureEntitlement() {
+      if (!currentConfigPopoverTarget) return;
+
+      const element = currentConfigPopoverTarget;
+      const isCurrentlyDisabled = element.classList.contains('feature-disabled');
+
+      if (isCurrentlyDisabled) {
+        element.classList.remove('feature-disabled');
+        showToast('Sub-feature enabled! Click "Save Configuration" to apply changes.');
+      } else {
+        element.classList.add('feature-disabled');
+        showToast('Sub-feature disabled! Click "Save Configuration" to apply changes.');
+      }
+
+      closeConfiguratorPopover();
+    }
+
+    function toggleConfiguratorMode(isActive) {
+      const viewport = document.getElementById('mock-device-viewport');
+      const label = document.getElementById('configurator-mode-label');
+
+      if (isActive) {
+        viewport.classList.add('configurator-active');
+        label.style.color = 'var(--accent-violet)';
+        showToast('Config Mode active. Click highlighted widgets to customize.', false);
+      } else {
+        viewport.classList.remove('configurator-active');
+        label.style.color = 'var(--text-muted)';
+        closeConfiguratorPopover();
+      }
+    }
+  </script>
+</body>
+</html>

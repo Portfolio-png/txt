@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:core_erp/core/services/config_service.dart';
 import 'package:crypto/crypto.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:http/http.dart' as http;
@@ -467,91 +468,40 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  ErpDialogSectionCard(
-                    title: 'Custom Fields',
-                    subtitle: 'Define any text field name and its corresponding value.',
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (_customProperties.isEmpty)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8.0),
-                            child: Text(
-                              'No custom fields added yet.',
-                              style: TextStyle(color: Colors.grey[600], fontSize: 13),
-                            ),
-                          )
-                        else
-                          ..._customProperties.asMap().entries.map((entry) {
-                            final index = entry.key;
-                            final prop = entry.value;
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 12.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        flex: 4,
-                                        child: TextFormField(
-                                          initialValue: prop.key,
-                                          decoration: InputDecoration(
-                                            labelText: 'Field Name',
-                                            hintText: 'e.g. Tonnage, Location, etc.',
-                                            filled: true,
-                                            fillColor: const Color(0xFFF9FAFB),
-                                            border: OutlineInputBorder(
-                                              borderRadius: BorderRadius.circular(8),
-                                              borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
-                                            ),
-                                            enabledBorder: OutlineInputBorder(
-                                              borderRadius: BorderRadius.circular(8),
-                                              borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
-                                            ),
-                                          ),
-                                          onChanged: (val) => _updateCustomPropertyKey(index, val),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        flex: 3,
-                                        child: SearchableSelectField<CustomPropertyType>(
-                                          tapTargetKey: ValueKey<String>('machine-custom-property-type-$index'),
-                                          value: prop.type,
-                                          decoration: const InputDecoration(
-                                            labelText: 'Field Type',
-                                            filled: true,
-                                            fillColor: Color(0xFFF9FAFB),
-                                          ),
-                                          dialogTitle: 'Field Type',
-                                          options: const [
-                                            SearchableSelectOption(value: CustomPropertyType.text, label: 'Text'),
-                                            SearchableSelectOption(value: CustomPropertyType.numeric, label: 'Numeric'),
-                                            SearchableSelectOption(value: CustomPropertyType.dropdown, label: 'Dropdown'),
-                                          ],
-                                          onChanged: (val) {
-                                            if (val != null) _updateCustomPropertyType(index, val);
-                                          },
-                                        ),
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                                        onPressed: () => _removeCustomProperty(index),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  if (prop.type == CustomPropertyType.text)
+                  if (!ConfigService.instance.disableMachineCustomFields) ...[
+                    const SizedBox(height: 16),
+                    ErpDialogSectionCard(
+                      title: 'Custom Fields',
+                      subtitle: 'Define any text field name and its corresponding value.',
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (_customProperties.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8.0),
+                              child: Text(
+                                'No custom fields added yet.',
+                                style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                              ),
+                            )
+                          else
+                            ..._customProperties.asMap().entries.map((entry) {
+                              final index = entry.key;
+                              final prop = entry.value;
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 12.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
                                     Row(
                                       children: [
                                         Expanded(
+                                          flex: 4,
                                           child: TextFormField(
-                                            initialValue: prop.value,
+                                            initialValue: prop.key,
                                             decoration: InputDecoration(
-                                              labelText: 'Value',
-                                              hintText: 'Enter text value...',
+                                              labelText: 'Field Name',
+                                              hintText: 'e.g. Tonnage, Location, etc.',
                                               filled: true,
                                               fillColor: const Color(0xFFF9FAFB),
                                               border: OutlineInputBorder(
@@ -563,130 +513,183 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                                                 borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
                                               ),
                                             ),
-                                            onChanged: (val) => _updateCustomPropertyValue(index, val),
+                                            onChanged: (val) => _updateCustomPropertyKey(index, val),
                                           ),
                                         ),
-                                        const SizedBox(width: 48),
-                                      ],
-                                    )
-                                  else if (prop.type == CustomPropertyType.numeric)
-                                    Row(
-                                      children: [
+                                        const SizedBox(width: 12),
                                         Expanded(
-                                          flex: 2,
-                                          child: SearchableSelectField<int?>(
-                                            tapTargetKey: ValueKey<String>('machine-custom-property-unit-$index'),
-                                            value: prop.unitId,
+                                          flex: 3,
+                                          child: SearchableSelectField<CustomPropertyType>(
+                                            tapTargetKey: ValueKey<String>('machine-custom-property-type-$index'),
+                                            value: prop.type,
                                             decoration: const InputDecoration(
-                                              labelText: 'Unit (Optional)',
+                                              labelText: 'Field Type',
                                               filled: true,
                                               fillColor: Color(0xFFF9FAFB),
                                             ),
-                                            dialogTitle: 'Select Unit',
-                                            options: [
-                                              const SearchableSelectOption<int?>(value: null, label: 'None'),
-                                              ...context.watch<UnitsProvider>().activeUnits.map((u) {
-                                                return SearchableSelectOption<int?>(
-                                                  value: u.id,
-                                                  label: u.symbol,
-                                                );
-                                              }),
+                                            dialogTitle: 'Field Type',
+                                            options: const [
+                                              SearchableSelectOption(value: CustomPropertyType.text, label: 'Text'),
+                                              SearchableSelectOption(value: CustomPropertyType.numeric, label: 'Numeric'),
+                                              SearchableSelectOption(value: CustomPropertyType.dropdown, label: 'Dropdown'),
                                             ],
-                                            onChanged: (val) => _updateCustomPropertyUnit(index, val),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          flex: 3,
-                                          child: TextFormField(
-                                            initialValue: prop.value,
-                                            keyboardType: TextInputType.number,
-                                            decoration: InputDecoration(
-                                              labelText: 'Value',
-                                              hintText: 'Enter numeric value...',
-                                              filled: true,
-                                              fillColor: const Color(0xFFF9FAFB),
-                                              border: OutlineInputBorder(
-                                                borderRadius: BorderRadius.circular(8),
-                                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
-                                              ),
-                                              enabledBorder: OutlineInputBorder(
-                                                borderRadius: BorderRadius.circular(8),
-                                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
-                                              ),
-                                            ),
-                                            onChanged: (val) => _updateCustomPropertyValue(index, val),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 48),
-                                      ],
-                                    )
-                                  else if (prop.type == CustomPropertyType.dropdown)
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          flex: 2,
-                                          child: TextFormField(
-                                            initialValue: prop.options.join(', '),
-                                            decoration: InputDecoration(
-                                              labelText: 'Dropdown Options',
-                                              hintText: 'A, B, C (comma separated)',
-                                              filled: true,
-                                              fillColor: const Color(0xFFF9FAFB),
-                                              border: OutlineInputBorder(
-                                                borderRadius: BorderRadius.circular(8),
-                                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
-                                              ),
-                                              enabledBorder: OutlineInputBorder(
-                                                borderRadius: BorderRadius.circular(8),
-                                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
-                                              ),
-                                            ),
-                                            onChanged: (val) => _updateCustomPropertyOptions(index, val),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          flex: 3,
-                                          child: SearchableSelectField<String>(
-                                            tapTargetKey: ValueKey<String>('machine-custom-property-value-$index'),
-                                            value: prop.options.contains(prop.value) ? prop.value : null,
-                                            decoration: const InputDecoration(
-                                              labelText: 'Select Value',
-                                              filled: true,
-                                              fillColor: Color(0xFFF9FAFB),
-                                            ),
-                                            dialogTitle: 'Select Value',
-                                            options: prop.options.map((opt) {
-                                              return SearchableSelectOption<String>(
-                                                value: opt,
-                                                label: opt,
-                                              );
-                                            }).toList(),
                                             onChanged: (val) {
-                                              if (val != null) _updateCustomPropertyValue(index, val);
+                                              if (val != null) _updateCustomPropertyType(index, val);
                                             },
                                           ),
                                         ),
-                                        const SizedBox(width: 48),
+                                        IconButton(
+                                          icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                                          onPressed: () => _removeCustomProperty(index),
+                                        ),
                                       ],
                                     ),
-                                  const Divider(height: 24),
-                                ],
-                              ),
-                            );
-                          }),
-                        const SizedBox(height: 12),
-                        AppButton(
-                          label: 'Add Field',
-                          icon: Icons.add,
-                          variant: AppButtonVariant.secondary,
-                          onPressed: _addCustomProperty,
-                        ),
-                      ],
+                                    const SizedBox(height: 8),
+                                    if (prop.type == CustomPropertyType.text)
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: TextFormField(
+                                              initialValue: prop.value,
+                                              decoration: InputDecoration(
+                                                labelText: 'Value',
+                                                hintText: 'Enter text value...',
+                                                filled: true,
+                                                fillColor: const Color(0xFFF9FAFB),
+                                                border: OutlineInputBorder(
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                                ),
+                                                enabledBorder: OutlineInputBorder(
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                                ),
+                                              ),
+                                              onChanged: (val) => _updateCustomPropertyValue(index, val),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 48),
+                                        ],
+                                      )
+                                    else if (prop.type == CustomPropertyType.numeric)
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            flex: 2,
+                                            child: SearchableSelectField<int?>(
+                                              tapTargetKey: ValueKey<String>('machine-custom-property-unit-$index'),
+                                              value: prop.unitId,
+                                              decoration: const InputDecoration(
+                                                labelText: 'Unit (Optional)',
+                                                filled: true,
+                                                fillColor: Color(0xFFF9FAFB),
+                                              ),
+                                              dialogTitle: 'Select Unit',
+                                              options: [
+                                                const SearchableSelectOption<int?>(value: null, label: 'None'),
+                                                ...context.watch<UnitsProvider>().activeUnits.map((u) {
+                                                  return SearchableSelectOption<int?>(
+                                                    value: u.id,
+                                                    label: u.symbol,
+                                                  );
+                                                }),
+                                              ],
+                                              onChanged: (val) => _updateCustomPropertyUnit(index, val),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            flex: 3,
+                                            child: TextFormField(
+                                              initialValue: prop.value,
+                                              keyboardType: TextInputType.number,
+                                              decoration: InputDecoration(
+                                                labelText: 'Value',
+                                                hintText: 'Enter numeric value...',
+                                                filled: true,
+                                                fillColor: const Color(0xFFF9FAFB),
+                                                border: OutlineInputBorder(
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                                ),
+                                                enabledBorder: OutlineInputBorder(
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                                ),
+                                              ),
+                                              onChanged: (val) => _updateCustomPropertyValue(index, val),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 48),
+                                        ],
+                                      )
+                                    else if (prop.type == CustomPropertyType.dropdown)
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            flex: 2,
+                                            child: TextFormField(
+                                              initialValue: prop.options.join(', '),
+                                              decoration: InputDecoration(
+                                                labelText: 'Dropdown Options',
+                                                hintText: 'A, B, C (comma separated)',
+                                                filled: true,
+                                                fillColor: const Color(0xFFF9FAFB),
+                                                border: OutlineInputBorder(
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                                ),
+                                                enabledBorder: OutlineInputBorder(
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                                ),
+                                              ),
+                                              onChanged: (val) => _updateCustomPropertyOptions(index, val),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            flex: 3,
+                                            child: SearchableSelectField<String>(
+                                              tapTargetKey: ValueKey<String>('machine-custom-property-value-$index'),
+                                              value: prop.options.contains(prop.value) ? prop.value : null,
+                                              decoration: const InputDecoration(
+                                                labelText: 'Select Value',
+                                                filled: true,
+                                                fillColor: Color(0xFFF9FAFB),
+                                              ),
+                                              dialogTitle: 'Select Value',
+                                              options: prop.options.map((opt) {
+                                                return SearchableSelectOption<String>(
+                                                  value: opt,
+                                                  label: opt,
+                                                );
+                                              }).toList(),
+                                              onChanged: (val) {
+                                                if (val != null) _updateCustomPropertyValue(index, val);
+                                              },
+                                            ),
+                                          ),
+                                          const SizedBox(width: 48),
+                                        ],
+                                      ),
+                                    const Divider(height: 24),
+                                  ],
+                                ),
+                              );
+                            }),
+                          const SizedBox(height: 12),
+                          AppButton(
+                            label: 'Add Field',
+                            icon: Icons.add,
+                            variant: AppButtonVariant.secondary,
+                            onPressed: _addCustomProperty,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 16),
+                  ],
                   _buildCapabilitiesSection(context),
                 ],
               ),

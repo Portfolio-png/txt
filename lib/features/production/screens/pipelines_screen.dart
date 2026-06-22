@@ -53,6 +53,9 @@ class PipelinesScreen extends StatefulWidget {
     try {
       futures.add(context.read<UnitsProvider>().initialize());
     } catch (_) {}
+    try {
+      futures.add(context.read<GroupsProvider>().initialize());
+    } catch (_) {}
     await Future.wait(futures);
 
     if (!context.mounted) {
@@ -62,8 +65,17 @@ class PipelinesScreen extends StatefulWidget {
     final descCtrl = TextEditingController();
     final items = _activeItemsFromContext(context);
     final units = _activeUnitsFromContext(context);
-    int? inputItemId = items.isNotEmpty ? items.first.id : null;
-    int? outputItemId = items.length > 1 ? items[1].id : inputItemId;
+    final rawMaterialItems = items.where((item) {
+      try {
+        final groups = context.read<GroupsProvider>();
+        final group = groups.findById(item.groupId);
+        return group?.name.toLowerCase().contains('raw material') ?? false;
+      } catch (_) {
+        return false;
+      }
+    }).toList();
+    int? inputItemId = rawMaterialItems.isNotEmpty ? rawMaterialItems.first.id : null;
+    int? outputItemId = items.isNotEmpty ? items.last.id : null;
 
     final formKey = GlobalKey<FormState>();
 
@@ -229,7 +241,15 @@ class PipelinesScreen extends StatefulWidget {
                             label: 'Input Material',
                             dialogTitle: 'Input Material',
                             selectedItemId: inputItemId,
-                            items: currentItems,
+                            items: currentItems.where((item) {
+                              try {
+                                final groups = context.read<GroupsProvider>();
+                                final group = groups.findById(item.groupId);
+                                return group?.name.toLowerCase().contains('raw material') ?? false;
+                              } catch (_) {
+                                return false;
+                              }
+                            }).toList(),
                             units: currentUnits,
                             onChanged: (item) {
                               setDialogState(() {

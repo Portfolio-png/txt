@@ -1867,6 +1867,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                         ),
                       );
 
+                      final isRawMaterialGroup = selectedGroup?.name.toLowerCase().contains('raw material') == true;
+
                       final defaultPipelineSection = _SectionCard(
                         title: 'Default Pipeline',
                         child: Column(
@@ -1919,8 +1921,10 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                   variationTreeSection,
                                   const SizedBox(height: 16),
                                   namingFormatSection,
-                                  const SizedBox(height: 16),
-                                  defaultPipelineSection,
+                                  if (!isRawMaterialGroup) ...[
+                                    const SizedBox(height: 16),
+                                    defaultPipelineSection,
+                                  ],
                                 ],
                               ),
                             ),
@@ -1937,8 +1941,10 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                           variationTreeSection,
                           const SizedBox(height: 16),
                           namingFormatSection,
-                          const SizedBox(height: 16),
-                          defaultPipelineSection,
+                          if (!isRawMaterialGroup) ...[
+                            const SizedBox(height: 16),
+                            defaultPipelineSection,
+                          ],
                         ],
                       );
                     },

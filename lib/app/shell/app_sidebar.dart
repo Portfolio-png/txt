@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:core_erp/core/services/config_service.dart';
 import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:showcaseview/showcaseview.dart';
 
 import 'package:core_erp/app/preferences/preferences_provider.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
@@ -22,11 +24,13 @@ class AppSidebar extends StatefulWidget {
     this.compact = false,
     this.onItemSelected,
     this.transparentBackground = false,
+    this.ordersShowcaseKey,
   });
 
   final bool compact;
   final ValueChanged<String>? onItemSelected;
   final bool transparentBackground;
+  final GlobalKey? ordersShowcaseKey;
 
   @override
   State<AppSidebar> createState() => _AppSidebarState();
@@ -108,7 +112,7 @@ class _AppSidebarState extends State<AppSidebar> {
   List<String> _visibleSidebarKeys({required bool isConfiguratorExpanded}) {
     final auth = context.read<AuthProvider>();
     return <String>[
-      ..._moduleItems.map((item) => item.key),
+      ..._moduleItems.where((item) => ConfigService.instance.isModuleEnabled(item.key)).map((item) => item.key),
       'configurator',
       if (isConfiguratorExpanded) ..._configuratorItems.map((item) => item.key),
       if (auth.canAccessUserManagement) ..._adminItems.map((item) => item.key),
@@ -245,10 +249,11 @@ class _AppSidebarState extends State<AppSidebar> {
                               _SidebarSection(
                                 title: 'Modules',
                                 compact: widget.compact,
-                                children: _moduleItems,
+                                children: _moduleItems.where((item) => ConfigService.instance.isModuleEnabled(item.key)).toList(),
                                 selectedKey: selectedKey,
                                 onSelected: _selectKey,
                                 focusNodeForKey: _focusNodeFor,
+                                ordersShowcaseKey: widget.ordersShowcaseKey,
                               ),
                               const SizedBox(height: 10),
                               _SidebarSection(
@@ -341,6 +346,7 @@ class _SidebarSection extends StatelessWidget {
     this.isParentSelected = false,
     this.onExpansionToggle,
     required this.focusNodeForKey,
+    this.ordersShowcaseKey,
   });
 
   final String title;
@@ -353,6 +359,7 @@ class _SidebarSection extends StatelessWidget {
   final bool isParentSelected;
   final VoidCallback? onExpansionToggle;
   final FocusNode Function(String key) focusNodeForKey;
+  final GlobalKey? ordersShowcaseKey;
 
   static const Color _drawerColor = Color(0xFFEFEFF2);
   static const Color _drawerTabColor = Colors.white;
@@ -489,16 +496,26 @@ class _SidebarSection extends StatelessWidget {
             ),
           ),
         ...children.map(
-          (item) => Padding(
-            padding: EdgeInsets.only(bottom: tileSpacing),
-            child: _SidebarTile(
+          (item) {
+            Widget tile = _SidebarTile(
               item: item,
               compact: compact,
               isSelected: _matchesSelectedKey(item.key),
               focusNode: focusNodeForKey(item.key),
               onTap: () => onSelected(item.key),
-            ),
-          ),
+            );
+            if (item.key == 'orders' && ordersShowcaseKey != null) {
+              tile = Showcase(
+                key: ordersShowcaseKey!,
+                description: 'Manage and update client order statuses dynamically from the orders menu!',
+                child: tile,
+              );
+            }
+            return Padding(
+              padding: EdgeInsets.only(bottom: tileSpacing),
+              child: tile,
+            );
+          }
         ),
       ],
     );

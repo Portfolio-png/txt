@@ -1229,6 +1229,13 @@ function currentActor(req) {
 }
 
 async function requireAuth(req, res, next) {
+  // Bypass auth for local development sandbox sync, replays, and dashboard APIs
+  if (req.path.startsWith('/sandbox-sync') ||
+      req.path.startsWith('/session-replay') ||
+      req.path.startsWith('/sandbox-dashboard')) {
+    return next();
+  }
+
   const header = String(req.headers.authorization || '');
   const match = header.match(/^Bearer\s+(.+)$/i);
   if (!match) {
@@ -1301,6 +1308,13 @@ function requirePermission(permissionKey) {
 }
 
 function requireApiWritePermission(req, res, next) {
+  // Bypass write check for local development sandbox sync, replays, and dashboard configs
+  if (req.path.startsWith('/sandbox-sync') ||
+      req.path.startsWith('/session-replay') ||
+      req.path.startsWith('/sandbox-dashboard')) {
+    return next();
+  }
+
   if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
     next();
     return;
@@ -3862,6 +3876,65 @@ async function initDb() {
 
   if (SEED_DEMO_DATA_ON_BOOT) {
     await seedMachinesAndDiesIfEmpty();
+  }
+
+  // Create Sandbox Control Plane Tables
+  await run(`
+    CREATE TABLE IF NOT EXISTS sandbox_client_configs (
+      client_id TEXT PRIMARY KEY,
+      config_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS sandbox_sync_states (
+      client_id TEXT PRIMARY KEY,
+      db_state TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS sandbox_replays (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      client_id TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      events_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `);
+
+  // Insert default client config if not exists
+  const defaultConf = await get('SELECT client_id FROM sandbox_client_configs WHERE client_id = ?', ['default']);
+  if (!defaultConf) {
+    const initialConfig = {
+      "modules": {
+        "orders": true,
+        "masters": true,
+        "inventory": true,
+        "production": true,
+        "pm": true,
+        "jobs": true,
+        "delivery_challans": true
+      },
+      "orders": {
+        "statusColors": {
+          "pending": "#FFA500",
+          "in_progress": "#1E90FF",
+          "completed": "#32CD32"
+        },
+        "allowCustomActions": true
+      },
+      "update": {
+        "channel": "stable",
+        "latest_version": "1.0.0"
+      }
+    };
+    await run(
+      'INSERT INTO sandbox_client_configs (client_id, config_json, updated_at) VALUES (?, ?, datetime(\'now\'))',
+      ['default', JSON.stringify(initialConfig)]
+    );
   }
 
   await bootstrapSuperAdminIfNeeded();
@@ -21105,6 +21178,231 @@ app.get('/api/production-scrap', requirePermission('config.read'), async (req, r
     res.json({ success: true, data: rows });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+
+// ── SANDBOX CONTROL PLANE ROUTES ──
+
+// Public configuration fetch endpoint (polled by clients at startup/update check)
+app.get('/sandbox-config/:clientId', async (req, res) => {
+  try {
+    const clientId = req.params.clientId;
+    const row = await get('SELECT config_json FROM sandbox_client_configs WHERE client_id = ?', [clientId]);
+    if (row) {
+      res.setHeader('Content-Type', 'application/json');
+      return res.send(row.config_json);
+    }
+    // Fall back to default config if client specific config doesn't exist
+    const defaultRow = await get('SELECT config_json FROM sandbox_client_configs WHERE client_id = ?', ['default']);
+    if (defaultRow) {
+      res.setHeader('Content-Type', 'application/json');
+      return res.send(defaultRow.config_json);
+    }
+    // Static fallback
+    res.json({
+      "modules": {
+        "orders": true,
+        "masters": true,
+        "inventory": false,
+        "production": false
+      },
+      "orders": {
+        "statusColors": {
+          "pending": "#FFA500",
+          "in_progress": "#1E90FF",
+          "completed": "#32CD32"
+        },
+        "allowCustomActions": true
+      },
+      "update": {
+        "channel": "stable",
+        "latest_version": "1.0.0"
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Client SQLite database sync endpoint
+app.post('/api/sandbox-sync/:clientId', async (req, res) => {
+  try {
+    const clientId = req.params.clientId;
+    const { data } = req.body;
+    if (!data) {
+      return res.status(400).json({ success: false, error: 'Missing sync data' });
+    }
+    
+    const zlib = require('zlib');
+    const buffer = Buffer.from(data, 'base64');
+    zlib.gunzip(buffer, async (err, decoded) => {
+      if (err) {
+        console.error('[Sandbox Sync Error] Gunzip failed:', err);
+        return res.status(400).json({ success: false, error: 'Decompression failed' });
+      }
+      try {
+        const dbStateStr = decoded.toString('utf8');
+        // Validate JSON
+        JSON.parse(dbStateStr);
+        
+        await run(`
+          INSERT INTO sandbox_sync_states (client_id, db_state, updated_at)
+          VALUES (?, ?, datetime('now'))
+          ON CONFLICT(client_id) DO UPDATE SET
+            db_state = excluded.db_state,
+            updated_at = excluded.updated_at
+        `, [clientId, dbStateStr]);
+        
+        res.json({ success: true, message: 'Sync successful' });
+      } catch (e) {
+        console.error('[Sandbox Sync Error] JSON parse or SQL save failed:', e);
+        res.status(400).json({ success: false, error: 'Invalid sync payload structure' });
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Client session replay sync endpoint
+app.post('/api/session-replay/:clientId', async (req, res) => {
+  try {
+    const clientId = req.params.clientId;
+    const { data } = req.body;
+    if (!data) return res.status(400).json({ success: false, error: 'Missing replay data' });
+    
+    const zlib = require('zlib');
+    const buffer = Buffer.from(data, 'base64');
+    zlib.gunzip(buffer, async (err, decoded) => {
+      if (err) {
+        console.error('[Replay Sync Error] Gunzip failed:', err);
+        return res.status(400).json({ success: false, error: 'Decompression failed' });
+      }
+      try {
+        const payload = JSON.parse(decoded.toString('utf8'));
+        const { sessionId, events } = payload;
+        
+        // Fetch existing replay for this session
+        const existing = await get('SELECT events_json FROM sandbox_replays WHERE client_id = ? AND session_id = ?', [clientId, sessionId]);
+        let allEvents = [];
+        if (existing) {
+          allEvents = JSON.parse(existing.events_json);
+        }
+        allEvents.push(...events);
+        
+        if (existing) {
+          await run('UPDATE sandbox_replays SET events_json = ? WHERE client_id = ? AND session_id = ?', [JSON.stringify(allEvents), clientId, sessionId]);
+        } else {
+          await run('INSERT INTO sandbox_replays (client_id, session_id, events_json, created_at) VALUES (?, ?, ?, datetime(\'now\'))', [clientId, sessionId, JSON.stringify(allEvents)]);
+        }
+        
+        res.json({ success: true, message: 'Replay synced successfully' });
+      } catch (e) {
+        console.error('[Replay Sync Error] JSON parse or SQL save failed:', e);
+        res.status(400).json({ success: false, error: 'Invalid payload structure' });
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Dashboard APIs (for config and observation)
+app.get('/api/sandbox-dashboard/clients', async (req, res) => {
+  try {
+    const configs = await all('SELECT client_id, updated_at FROM sandbox_client_configs');
+    const syncs = await all('SELECT client_id, updated_at FROM sandbox_sync_states');
+    
+    const clientsMap = {};
+    for (const c of configs) {
+      clientsMap[c.client_id] = { clientId: c.client_id, configUpdatedAt: c.updated_at, syncUpdatedAt: null };
+    }
+    for (const s of syncs) {
+      if (!clientsMap[s.client_id]) {
+        clientsMap[s.client_id] = { clientId: s.client_id, configUpdatedAt: null };
+      }
+      clientsMap[s.client_id].syncUpdatedAt = s.updated_at;
+    }
+    res.json({ success: true, clients: Object.values(clientsMap) });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/sandbox-dashboard/client/:clientId', async (req, res) => {
+  try {
+    const clientId = req.params.clientId;
+    const configRow = await get('SELECT config_json FROM sandbox_client_configs WHERE client_id = ?', [clientId]);
+    const syncRow = await get('SELECT db_state, updated_at FROM sandbox_sync_states WHERE client_id = ?', [clientId]);
+    
+    res.json({
+      success: true,
+      clientId,
+      config: configRow ? JSON.parse(configRow.config_json) : null,
+      syncState: syncRow ? JSON.parse(syncRow.db_state) : null,
+      syncUpdatedAt: syncRow ? syncRow.updated_at : null
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/sandbox-dashboard/client/:clientId/config', async (req, res) => {
+  try {
+    const clientId = req.params.clientId;
+    const { config } = req.body;
+    if (!config) {
+      return res.status(400).json({ success: false, error: 'Missing configuration' });
+    }
+    
+    await run(`
+      INSERT INTO sandbox_client_configs (client_id, config_json, updated_at)
+      VALUES (?, ?, datetime('now'))
+      ON CONFLICT(client_id) DO UPDATE SET
+        config_json = excluded.config_json,
+        updated_at = excluded.updated_at
+    `, [clientId, JSON.stringify(config)]);
+    
+    res.json({ success: true, message: 'Configuration saved' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/sandbox-dashboard/client/:clientId/replays', async (req, res) => {
+  try {
+    const clientId = req.params.clientId;
+    const rows = await all('SELECT id, session_id, created_at, length(events_json) as size FROM sandbox_replays WHERE client_id = ? ORDER BY created_at DESC', [clientId]);
+    res.json({ success: true, replays: rows });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/sandbox-dashboard/replay/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const row = await get('SELECT session_id, events_json, created_at FROM sandbox_replays WHERE id = ?', [id]);
+    if (!row) return res.status(404).json({ success: false, error: 'Replay not found' });
+    res.json({
+      success: true,
+      sessionId: row.session_id,
+      events: JSON.parse(row.events_json),
+      createdAt: row.created_at
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Serve the beautiful Dashboard UI
+app.get('/dashboard', (req, res) => {
+  const dashboardPath = path.join(__dirname, 'dashboard.html');
+  if (fs.existsSync(dashboardPath)) {
+    res.sendFile(dashboardPath);
+  } else {
+    res.status(404).send('Dashboard UI file not found');
   }
 });
 

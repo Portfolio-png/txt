@@ -2,6 +2,8 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:showcaseview/showcaseview.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:core_erp/core/navigation/app_navigation.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -49,18 +51,46 @@ import 'app_sidebar.dart';
 import 'app_topbar.dart';
 import 'navigation_provider.dart';
 
-class AppShell extends StatelessWidget {
+class AppShell extends StatefulWidget {
   const AppShell({super.key});
+
+  @override
+  State<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends State<AppShell> {
+  final GlobalKey _ordersKey = GlobalKey();
+  bool _tutorialChecked = false;
 
   bool get _isDesktopPlatform =>
       kIsWeb || Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 
+  Future<void> _checkAndShowTutorial(BuildContext showcaseContext) async {
+    final prefs = await SharedPreferences.getInstance();
+    final showTutorial = prefs.getBool('show_sandbox_tutorial') ?? true;
+    if (showTutorial) {
+      if (mounted) {
+        ShowCaseWidget.of(showcaseContext).startShowCase([_ordersKey]);
+        await prefs.setBool('show_sandbox_tutorial', false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final navProvider = context.watch<NavigationProvider>();
-    final isSidebarVisible = navProvider.isSidebarVisible;
+    return ShowCaseWidget(
+      builder: (showcaseContext) {
+        if (!_tutorialChecked) {
+            _tutorialChecked = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _checkAndShowTutorial(showcaseContext);
+            });
+          }
 
-    return LayoutBuilder(
+          final navProvider = showcaseContext.watch<NavigationProvider>();
+          final isSidebarVisible = navProvider.isSidebarVisible;
+
+          return LayoutBuilder(
       builder: (context, constraints) {
         final isMobile =
             constraints.maxWidth < _ShellLayoutMetrics.mobileBreakpoint;
@@ -171,8 +201,9 @@ class AppShell extends StatelessWidget {
                                         ),
                                         child: SizedBox(
                                           width: sidebarWidth,
-                                          child: const AppSidebar(
+                                          child: AppSidebar(
                                             compact: false,
+                                            ordersShowcaseKey: _ordersKey,
                                           ),
                                         ),
                                       ),
@@ -206,6 +237,8 @@ class AppShell extends StatelessWidget {
             ),
           ),
         )));
+      },
+    );
       },
     );
   }

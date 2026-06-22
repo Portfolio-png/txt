@@ -1,0 +1,2 @@
+![alt text](image.png)  no group unit for machine group
+![alt text](image-1.png) nos number of sheet + kgs in unit for reciept challan, and take value for both. there can be connection. value like that   

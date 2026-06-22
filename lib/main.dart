@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:core_erp/core/services/config_service.dart';
 import 'package:provider/provider.dart';
 import 'package:core_erp/core/navigation/app_navigation.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
@@ -58,8 +59,9 @@ import 'features/production/providers/batch_flow_provider.dart';
 import 'features/production_pipelines/domain/node_run_status.dart';
 
 import 'package:sentry_flutter/sentry_flutter.dart';
-import 'package:auto_updater/auto_updater.dart';
-import 'dart:io' show Platform;
+import 'core/services/auto_updater_service.dart';
+import 'core/services/data_sync_service.dart';
+import 'core/services/session_replay_service.dart';
 
 const _isDemoMode = bool.fromEnvironment(
   'PAPER_DEMO_MODE',
@@ -101,16 +103,17 @@ String _resolveApiBaseUrl() {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  if (!kIsWeb && (Platform.isWindows || Platform.isMacOS)) {
-    // Note: The actual feedURL will be injected or set during final production build
-    const String feedURL = String.fromEnvironment(
-      'PAPER_APPCAST_URL',
-      defaultValue: 'https://update.example.com/appcast.xml',
-    );
-    await autoUpdater.setFeedURL(feedURL);
-    await autoUpdater.checkForUpdates(inBackground: true);
-    await autoUpdater.setScheduledCheckInterval(3600);
-  }
+  // Initialize Remote Config
+  const clientId = String.fromEnvironment('CLIENT_ID', defaultValue: 'default');
+  await ConfigService.instance.init(_resolveApiBaseUrl(), clientId);
+
+  // Initialize SQLite state sync to Control Plane
+  DataSyncService.instance.initialize(_resolveApiBaseUrl(), clientId);
+
+  // Initialize Session Replay tracking
+  SessionReplayService.instance.initialize(_resolveApiBaseUrl(), clientId);
+
+  await AutoUpdaterService.instance.initialize();
 
   await SentryFlutter.init((options) {
     options.dsn = const String.fromEnvironment(
@@ -118,6 +121,8 @@ Future<void> main() async {
       defaultValue: '',
     );
     options.tracesSampleRate = 1.0;
+    options.experimental.replay.sessionSampleRate = 1.0;
+    options.experimental.replay.onErrorSampleRate = 1.0;
   }, appRunner: () => runApp(const MyApp()));
 }
 
@@ -511,6 +516,7 @@ class MyApp extends StatelessWidget {
       ],
       child: MaterialApp(
         navigatorKey: appNavigatorKey,
+        navigatorObservers: [ReplayNavigatorObserver()],
         title: 'Paper',
         debugShowCheckedModeBanner: false,
         theme: base.copyWith(
@@ -519,12 +525,27 @@ class MyApp extends StatelessWidget {
             displayColor: SoftErpTheme.textPrimary,
           ),
         ),
+        builder: (context, child) {
+          return Listener(
+            onPointerDown: (event) {
+              final media = MediaQuery.of(context);
+              SessionReplayService.instance.recordTap(
+                event.position.dx,
+                event.position.dy,
+                media.size.width,
+                media.size.height,
+              );
+            },
+            child: child ?? const SizedBox(),
+          );
+        },
         onGenerateRoute: (settings) {
           if (settings.name != null &&
               settings.name!.startsWith('/freelancer-portal')) {
             final uri = Uri.parse(settings.name!);
             final token = uri.queryParameters['token'] ?? '';
             return MaterialPageRoute(
+              settings: settings,
               builder: (_) =>
                   FreelancerPortalScreen(token: token, apiBaseUrl: _apiBaseUrl),
             );

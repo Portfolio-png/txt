@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:core_erp/core/services/config_service.dart';
 import 'package:flutter/services.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:http/http.dart' as http;
@@ -395,7 +396,13 @@ class _OrdersHeader extends StatelessWidget {
         final actions = Row(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
-          children: [filtersButton, const SizedBox(width: 12), button],
+          children: [
+            filtersButton,
+            if (ConfigService.instance.allowOrdersCreation) ...[
+              const SizedBox(width: 12),
+              button,
+            ],
+          ],
         );
 
         final content =
@@ -1390,6 +1397,7 @@ class _OrderDataRowState extends State<_OrderDataRow> {
                                 onEdit: () =>
                                     OrdersScreen.openEditor(context, group),
                                 onDelete: () => _handleDelete(context, group),
+                                onChangeStatus: (status) => _performCustomStatusChange(status),
                               ),
                             ),
                           ),
@@ -1404,6 +1412,26 @@ class _OrderDataRowState extends State<_OrderDataRow> {
         ],
       ),
     );
+  }
+
+  Future<void> _performCustomStatusChange(OrderStatus targetStatus) async {
+    if (_updatingLifecycle) return;
+    setState(() => _updatingLifecycle = true);
+    final group = widget.order;
+    final now = DateTime.now();
+
+    for (final order in group.items) {
+      await context.read<OrdersProvider>().updateOrderLifecycle(
+        UpdateOrderLifecycleInput(
+          id: order.id,
+          status: targetStatus,
+          startDate: targetStatus == OrderStatus.inProgress ? (order.startDate ?? now) : order.startDate,
+          endDate: targetStatus == OrderStatus.completed ? (order.endDate ?? now) : order.endDate,
+        ),
+      );
+    }
+    
+    if (mounted) setState(() => _updatingLifecycle = false);
   }
 
   Future<void> _performQuickAction(_QuickRowAction action) async {
@@ -1828,6 +1856,7 @@ class _InlineRowActions extends StatelessWidget {
     required this.onView,
     required this.onEdit,
     required this.onDelete,
+    required this.onChangeStatus,
   });
 
   final bool hovered;
@@ -1837,6 +1866,7 @@ class _InlineRowActions extends StatelessWidget {
   final VoidCallback onView;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final ValueChanged<OrderStatus> onChangeStatus;
 
   @override
   Widget build(BuildContext context) {
@@ -1884,8 +1914,44 @@ class _InlineRowActions extends StatelessWidget {
                 if (value == 'view') onView();
                 if (value == 'edit') onEdit();
                 if (value == 'delete') onDelete();
+                if (value == 'status_pending') onChangeStatus(OrderStatus.notStarted);
+                if (value == 'status_inprogress') onChangeStatus(OrderStatus.inProgress);
+                if (value == 'status_completed') onChangeStatus(OrderStatus.completed);
               },
               itemBuilder: (context) => [
+                if (ConfigService.instance.allowCustomOrderActions) ...[
+                  const PopupMenuItem(
+                    value: 'status_pending',
+                    child: Row(
+                      children: [
+                        Icon(Icons.pending_actions_rounded, size: 20),
+                        SizedBox(width: 12),
+                        Text('Set Pending'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'status_inprogress',
+                    child: Row(
+                      children: [
+                        Icon(Icons.play_circle_outline_rounded, size: 20),
+                        SizedBox(width: 12),
+                        Text('Set In Progress'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'status_completed',
+                    child: Row(
+                      children: [
+                        Icon(Icons.check_circle_outline_rounded, size: 20),
+                        SizedBox(width: 12),
+                        Text('Set Completed'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuDivider(),
+                ],
                 const PopupMenuItem(
                   value: 'view',
                   child: Row(
@@ -2144,35 +2210,44 @@ class _StatusPill extends StatelessWidget {
 
   final OrderStatus status;
 
+  Color _colorFromHex(String hexColor) {
+    hexColor = hexColor.toUpperCase().replaceAll("#", "");
+    if (hexColor.length == 6) {
+      hexColor = "FF" + hexColor;
+    }
+    return Color(int.parse(hexColor, radix: 16));
+  }
+
   @override
   Widget build(BuildContext context) {
-    final scheme = switch (status) {
-      OrderStatus.draft => (
-        bg: const Color(0xFFF1EEF8),
-        border: const Color(0x00FFFFFF),
-        text: const Color(0xFF6D5E8C),
-      ),
-      OrderStatus.notStarted => (
-        bg: const Color(0xFFFDF1E3),
-        border: const Color(0x00FFFFFF),
-        text: const Color(0xFF9A6100),
-      ),
-      OrderStatus.inProgress => (
-        bg: const Color(0xFFEAF2FF),
-        border: const Color(0x00FFFFFF),
-        text: const Color(0xFF3056BA),
-      ),
-      OrderStatus.completed => (
-        bg: const Color(0xFFE9F8EE),
-        border: const Color(0x00FFFFFF),
-        text: const Color(0xFF13894A),
-      ),
-      OrderStatus.delayed => (
-        bg: const Color(0xFFFDEDEE),
-        border: const Color(0x00FFFFFF),
-        text: SoftErpTheme.dangerText,
-      ),
-    };
+    final colors = ConfigService.instance.ordersStatusColors;
+    
+    // Default fallback schemes
+    ({Color bg, Color border, Color text}) scheme;
+    
+    switch (status) {
+      case OrderStatus.draft:
+        scheme = (bg: const Color(0xFFF1EEF8), border: const Color(0x00FFFFFF), text: const Color(0xFF6D5E8C));
+        break;
+      case OrderStatus.notStarted:
+        final hex = colors['pending'] ?? "#FFA500";
+        final c = _colorFromHex(hex);
+        scheme = (bg: c.withValues(alpha: 0.15), border: const Color(0x00FFFFFF), text: c);
+        break;
+      case OrderStatus.inProgress:
+        final hex = colors['in_progress'] ?? "#1E90FF";
+        final c = _colorFromHex(hex);
+        scheme = (bg: c.withValues(alpha: 0.15), border: const Color(0x00FFFFFF), text: c);
+        break;
+      case OrderStatus.completed:
+        final hex = colors['completed'] ?? "#32CD32";
+        final c = _colorFromHex(hex);
+        scheme = (bg: c.withValues(alpha: 0.15), border: const Color(0x00FFFFFF), text: c);
+        break;
+      case OrderStatus.delayed:
+        scheme = (bg: const Color(0xFFFDEDEE), border: const Color(0x00FFFFFF), text: SoftErpTheme.dangerText);
+        break;
+    }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
