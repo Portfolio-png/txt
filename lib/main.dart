@@ -554,7 +554,7 @@ class MyApp extends StatelessWidget {
           }
           return null;
         },
-        home: const _AuthGate(),
+        home: _AuthGate(isDemoMode: _effectiveDemoMode),
       ),
     );
   }
@@ -662,7 +662,8 @@ class MyApp extends StatelessWidget {
 }
 
 class _AuthGate extends StatefulWidget {
-  const _AuthGate();
+  final bool isDemoMode;
+  const _AuthGate({super.key, this.isDemoMode = false});
 
   @override
   State<_AuthGate> createState() => _AuthGateState();
@@ -679,6 +680,15 @@ class _AuthGateState extends State<_AuthGate> {
   }
 
   Future<void> _checkActivation() async {
+    if (widget.isDemoMode) {
+      if (mounted) {
+        setState(() {
+          _isActivated = true;
+        });
+      }
+      return;
+    }
+    
     final activated = await ActivationService.isActivated();
     if (mounted) {
       setState(() {
