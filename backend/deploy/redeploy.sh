@@ -79,10 +79,6 @@ fi
 echo "==> Installing required AWS SDKs & Extra Deps"
 npm install @aws-sdk/client-s3 @aws-sdk/s3-request-presigner dotenv
 
-echo "==> Rebuilding sqlite3 native module for this machine"
-npm uninstall sqlite3
-npm install sqlite3 --build-from-source
-
 echo "==> Ensuring pm2-logrotate is installed"
 pm2 install pm2-logrotate || true
 
