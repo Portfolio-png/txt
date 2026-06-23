@@ -1233,7 +1233,10 @@ async function requireAuth(req, res, next) {
   // Bypass auth for local development sandbox sync, replays, and dashboard APIs
   if (req.path.startsWith('/sandbox-sync') ||
       req.path.startsWith('/session-replay') ||
-      req.path.startsWith('/sandbox-dashboard')) {
+      req.path.startsWith('/sandbox-dashboard') ||
+      req.path.startsWith('/activate') ||
+      req.path.startsWith('/build') ||
+      req.path.startsWith('/config')) {
     return next();
   }
 
@@ -1312,7 +1315,10 @@ function requireApiWritePermission(req, res, next) {
   // Bypass write check for local development sandbox sync, replays, and dashboard configs
   if (req.path.startsWith('/sandbox-sync') ||
       req.path.startsWith('/session-replay') ||
-      req.path.startsWith('/sandbox-dashboard')) {
+      req.path.startsWith('/sandbox-dashboard') ||
+      req.path.startsWith('/activate') ||
+      req.path.startsWith('/build') ||
+      req.path.startsWith('/config')) {
     return next();
   }
 
