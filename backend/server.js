@@ -21494,6 +21494,16 @@ app.post('/api/sandbox-dashboard/client/:clientId/users', async (req, res) => {
   }
 });
 
+app.delete('/api/sandbox-dashboard/client/:clientId/user/:email', async (req, res) => {
+  try {
+    const { clientId, email } = req.params;
+    await run('DELETE FROM sandbox_client_users WHERE client_id = ? AND user_email = ?', [clientId, email]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.delete('/api/activate/:clientId/:fingerprint', async (req, res) => {
   try {
     const clientId = req.params.clientId;
