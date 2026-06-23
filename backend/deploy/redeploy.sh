@@ -76,8 +76,8 @@ else
   npm install
 fi
 
-echo "==> Installing required AWS SDKs"
-npm install @aws-sdk/client-s3 @aws-sdk/s3-request-presigner
+echo "==> Installing required AWS SDKs & Extra Deps"
+npm install @aws-sdk/client-s3 @aws-sdk/s3-request-presigner dotenv
 
 echo "==> Rebuilding sqlite3 native module for this machine"
 npm uninstall sqlite3
