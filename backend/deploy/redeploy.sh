@@ -48,6 +48,10 @@ if ! command -v make >/dev/null 2>&1; then
 fi
 
 if [[ "$no_pull" != "true" ]]; then
+  echo "==> Backing up critical environment and database files"
+  cp .env .env.backup 2>/dev/null || true
+  cp database.sqlite database.sqlite.backup 2>/dev/null || true
+
   echo "==> Updating code"
   git fetch --all --prune
   if [[ "$force_reset" == "true" ]]; then
@@ -55,6 +59,10 @@ if [[ "$no_pull" != "true" ]]; then
   else
     git pull --ff-only
   fi
+
+  echo "==> Restoring critical environment and database files"
+  mv .env.backup .env 2>/dev/null || true
+  mv database.sqlite.backup database.sqlite 2>/dev/null || true
 fi
 
 echo "==> Installing dependencies"

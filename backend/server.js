@@ -21487,6 +21487,58 @@ app.post('/api/sandbox-dashboard/client/:clientId/users', async (req, res) => {
   }
 });
 
+app.delete('/api/activate/:clientId/:fingerprint', async (req, res) => {
+  try {
+    const clientId = req.params.clientId;
+    const fingerprint = req.params.fingerprint;
+    await run('DELETE FROM sandbox_activated_machines WHERE client_id = ? AND machine_fingerprint = ?', [clientId, fingerprint]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/build/:clientId', async (req, res) => {
+  try {
+    const clientId = req.params.clientId;
+    const githubToken = process.env.GITHUB_TOKEN;
+    const githubOwner = process.env.GITHUB_OWNER || 'your-github-username';
+    const githubRepo = process.env.GITHUB_REPO || 'core-erp';
+
+    if (!githubToken) {
+      return res.status(500).json({ success: false, error: 'GITHUB_TOKEN is not set in environment variables.' });
+    }
+
+    const url = `https://api.github.com/repos/${githubOwner}/${githubRepo}/actions/workflows/build-desktop.yml/dispatches`;
+    
+    // Using global fetch (Node 18+)
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/vnd.github+json',
+        'Authorization': `Bearer ${githubToken}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        ref: 'main',
+        inputs: {
+          client_id: clientId
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return res.status(response.status).json({ success: false, error: `GitHub API error: ${errorText}` });
+    }
+
+    res.json({ success: true, message: 'Build workflow dispatched successfully!' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.get('/api/sandbox-dashboard/client/:clientId/replays', async (req, res) => {
   try {
     const clientId = req.params.clientId;

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../core/services/activation_service.dart';
+import 'package:paper/core/services/activation_service.dart';
 import '../../../../main.dart'; // Or wherever routing logic exists. Wait, I should just use Navigator for now.
 
 class ActivationScreen extends StatefulWidget {

@@ -3,6 +3,10 @@ name: Build Desktop (Windows + macOS)
 on:
   workflow_dispatch:
     inputs:
+      client_id:
+        description: "The specific client ID to build for (e.g., client_A)"
+        required: false
+        type: string
       api_base_url:
         description: "Backend base URL (e.g. https://api.example.com). Leave empty to build demo mode."
         required: false
@@ -40,6 +44,7 @@ jobs:
       # builds never probe the backend with default dev credentials.
       INPUT_API_BASE_URL: ${{ inputs.api_base_url }}
       INPUT_DEMO_MODE: ${{ inputs.demo_mode }}
+      INPUT_CLIENT_ID: ${{ inputs.client_id }}
       SECRET_API_BASE_URL: ${{ secrets.PAPER_API_BASE_URL }}
       SECRET_AUTO_LOGIN_EMAIL: ${{ secrets.PAPER_AUTO_LOGIN_EMAIL }}
       SECRET_AUTO_LOGIN_PASSWORD: ${{ secrets.PAPER_AUTO_LOGIN_PASSWORD }}
@@ -89,9 +94,13 @@ jobs:
           # workflow_dispatch: allow explicit demo builds or overrides
           API_URL="${INPUT_API_BASE_URL:-${SECRET_API_BASE_URL:-}}"
           DEMO="${INPUT_DEMO_MODE:-true}"
+          CLIENT_DEFINE=""
+          if [[ -n "${INPUT_CLIENT_ID:-}" ]]; then
+            CLIENT_DEFINE="--dart-define=CLIENT_ID=${INPUT_CLIENT_ID}"
+          fi
 
           if [[ "${DEMO}" == "true" ]]; then
-            echo "dart_defines=--dart-define=PAPER_DEMO_MODE=true --dart-define=PAPER_SENTRY_DSN=${SECRET_SENTRY_DSN:-} --dart-define=PAPER_APPCAST_URL=${SECRET_APPCAST_URL:-}" >> "$GITHUB_OUTPUT"
+            echo "dart_defines=--dart-define=PAPER_DEMO_MODE=true ${CLIENT_DEFINE} --dart-define=PAPER_SENTRY_DSN=${SECRET_SENTRY_DSN:-} --dart-define=PAPER_APPCAST_URL=${SECRET_APPCAST_URL:-}" >> "$GITHUB_OUTPUT"
             echo "label=demo" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -101,7 +110,7 @@ jobs:
             exit 1
           fi
 
-          echo "dart_defines=--dart-define=PAPER_API_BASE_URL=${API_URL} ${AUTO_LOGIN_DEFINES} --dart-define=PAPER_SENTRY_DSN=${SECRET_SENTRY_DSN:-} --dart-define=PAPER_APPCAST_URL=${SECRET_APPCAST_URL:-}" >> "$GITHUB_OUTPUT"
+          echo "dart_defines=--dart-define=PAPER_API_BASE_URL=${API_URL} ${CLIENT_DEFINE} ${AUTO_LOGIN_DEFINES} --dart-define=PAPER_SENTRY_DSN=${SECRET_SENTRY_DSN:-} --dart-define=PAPER_APPCAST_URL=${SECRET_APPCAST_URL:-}" >> "$GITHUB_OUTPUT"
           echo "label=api" >> "$GITHUB_OUTPUT"
 
       - name: Build (Windows)

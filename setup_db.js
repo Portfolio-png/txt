@@ -1,0 +1,1 @@
+const sqlite3 = require('sqlite3').verbose(); const db = new sqlite3.Database('backend/database.sqlite'); db.run('UPDATE sandbox_clients SET config = json_set(config, \'$\.update.latest_version\', \'2.0.0\', \'$\.update.appcast_url\', \'http://localhost:8000/paper_update.exe\') WHERE client_id = \'test\'');

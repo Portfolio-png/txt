@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:core_erp/core/services/feature_flags.dart';
+import 'package:core_erp/core/services/config_service.dart';
 import '../domain/machine.dart';
 import '../domain/machine_capability.dart';
 import 'machine_repository.dart';
@@ -314,7 +314,7 @@ class ApiMachineRepository implements MachineRepository {
       location: json['location'] as String?,
       installationDate: json['installationDate'] != null ? DateTime.tryParse(json['installationDate'] as String) : null,
       status: _parseStatus(json['status'] as String? ?? ''),
-      customProperties: FeatureFlags.isEnabled(FeatureKey.featuresDisableMachineCustomFields)
+      customProperties: ConfigService.instance.disableMachineCustomFields
           ? const []
           : (json['customProperties'] as List<dynamic>? ?? [])
               .map((p) => _propertyFromJson(p as Map<String, dynamic>))
@@ -339,7 +339,7 @@ class ApiMachineRepository implements MachineRepository {
       'location': m.location,
       'installationDate': m.installationDate?.toIso8601String(),
       'status': _statusToString(m.status),
-      'customProperties': FeatureFlags.isEnabled(FeatureKey.featuresDisableMachineCustomFields)
+      'customProperties': ConfigService.instance.disableMachineCustomFields
           ? const []
           : m.customProperties.map(_propertyToJson).toList(),
       'capabilities': m.capabilities.map((c) => c.toJson()).toList(),

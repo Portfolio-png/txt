@@ -677,14 +677,21 @@
       <!-- Active Client Dashboard (hidden by default) -->
       <div id="active-client-view" style="display: none; height: 100%;">
         <div class="client-header">
-          <div>
-            <h1 id="active-client-title" style="font-weight: 700; font-size: 1.75rem;">Client Sandbox</h1>
-            <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">
-              Client ID: <span id="active-client-id-span" style="color: var(--text-cyan); font-weight: 600;"></span>
-            </p>
-            <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">
-              Activation PIN: <span id="active-client-pin-span" style="color: var(--accent-emerald); font-weight: 700; letter-spacing: 1px;"></span>
-            </p>
+          <div style="display: flex; gap: 1rem; align-items: center;">
+            <div>
+              <h1 id="active-client-title" style="font-weight: 700; font-size: 1.75rem;">Client Sandbox</h1>
+              <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">
+                Client ID: <span id="active-client-id-span" style="color: var(--text-cyan); font-weight: 600;"></span>
+              </p>
+              <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">
+                Activation PIN: <span id="active-client-pin-span" style="color: var(--accent-emerald); font-weight: 700; letter-spacing: 1px;"></span>
+              </p>
+            </div>
+            <div style="margin-left: auto;">
+              <button onclick="triggerBuild()" style="background: linear-gradient(135deg, var(--accent-violet), var(--accent-cyan)); border: none; padding: 0.75rem 1.5rem; border-radius: 8px; color: white; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; transition: transform 0.2s;">
+                <span style="font-size: 1.2rem;">🚀</span> Build & Send Installer
+              </button>
+            </div>
           </div>
           <div class="tabs-container">
             <button class="tab-button active" onclick="switchTab('config-panel')">Feature Flags & Config</button>
@@ -697,7 +704,7 @@
         <div class="tab-panel active" id="config-panel">
           <div class="config-grid">
             <!-- Centralized Feature Toggles Card -->
-            <div class="panel-card" style="grid-row: span 2;">
+            <div class="panel-card" style="grid-row: span 3;">
               <div class="panel-card-title" style="display: flex; justify-content: space-between; align-items: center;">
                 <div><span style="color: var(--accent-violet);">🔌</span> Feature Flags Registry</div>
                 <input type="text" id="feature-search" placeholder="Search flags..." style="width: 150px; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(255,255,255,0.05); color: white; font-size: 0.8rem;" onkeyup="filterFeatures()">
@@ -735,7 +742,25 @@
                   </div>
                 </div>
               </div>
-              
+            </div>
+
+            <!-- Security & Access Card -->
+            <div class="panel-card">
+              <div class="panel-card-title">
+                <span style="color: var(--accent-emerald);">🛡️</span> Security & Access Control
+              </div>
+              <div style="margin-top: 1rem;">
+                <h4 style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">Activated Machines</h4>
+                <div id="activated-machines-list" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                  <!-- Rendered dynamically -->
+                </div>
+              </div>
+              <div style="margin-top: 1.5rem;">
+                <h4 style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">Synced Users</h4>
+                <div id="synced-users-list" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                  <!-- Rendered dynamically -->
+                </div>
+              </div>
             </div>
 
             <!-- Silent Installer Feed Configuration -->
@@ -1313,6 +1338,42 @@
           document.getElementById('updater-version').value = update.latest_version || '1.0.0';
           document.getElementById('updater-channel').value = update.channel || 'stable';
           document.getElementById('updater-appcast-url').value = update.appcast_url || '';
+
+          // Populate Security & Access UI
+          const activatedMachines = data.activatedMachines || [];
+          const users = data.users || [];
+          
+          const machinesContainer = document.getElementById('activated-machines-list');
+          machinesContainer.innerHTML = '';
+          if (activatedMachines.length === 0) {
+            machinesContainer.innerHTML = '<span style="color: var(--text-muted); font-size: 0.8rem;">No machines activated.</span>';
+          } else {
+            activatedMachines.forEach(m => {
+              machinesContainer.innerHTML += `
+                <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.05); padding: 0.5rem; border-radius: 6px; font-size: 0.8rem;">
+                  <span style="color: var(--text-cyan); font-family: monospace;">${m.machine_fingerprint.substring(0, 16)}...</span>
+                  <span style="color: var(--text-muted);">${new Date(m.activated_at).toLocaleDateString()}</span>
+                  <button onclick="revokeMachine('${m.machine_fingerprint}')" style="background: rgba(255,0,0,0.2); border: 1px solid rgba(255,0,0,0.5); color: #ff6b6b; cursor: pointer; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">Revoke</button>
+                </div>
+              `;
+            });
+          }
+
+          const usersContainer = document.getElementById('synced-users-list');
+          usersContainer.innerHTML = '';
+          if (users.length === 0) {
+            usersContainer.innerHTML = '<span style="color: var(--text-muted); font-size: 0.8rem;">No users synced.</span>';
+          } else {
+            users.forEach(u => {
+              usersContainer.innerHTML += `
+                <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.05); padding: 0.5rem; border-radius: 6px; font-size: 0.8rem;">
+                  <span style="color: white;">${u.user_email}</span>
+                  <span style="color: var(--accent-emerald); background: rgba(0,255,100,0.1); padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; text-transform: uppercase;">${u.role}</span>
+                </div>
+              `;
+            });
+          }
+
           
           // Populate visual config features
           const ordersConfig = config.orders || {};
@@ -1356,6 +1417,38 @@
         }
       } catch (err) {
         console.error('Failed to load client details:', err);
+      }
+    }
+
+    async function revokeMachine(fingerprint) {
+      if (!confirm('Are you sure you want to revoke this machine? It will be logged out immediately.')) return;
+      try {
+        const response = await fetch(`/api/activate/${currentClientId}/${fingerprint}`, { method: 'DELETE' });
+        const resData = await response.json();
+        if (resData.success) {
+          showToast('Machine revoked successfully', 'success');
+          loadClientDetails(currentClientId);
+        } else {
+          showToast(resData.error, 'error');
+        }
+      } catch (err) {
+        showToast('Error revoking machine', 'error');
+      }
+    }
+
+    async function triggerBuild() {
+      if (!currentClientId) return;
+      showToast('Dispatching GitHub Actions build...', 'info');
+      try {
+        const response = await fetch(`/api/build/${currentClientId}`, { method: 'POST' });
+        const resData = await response.json();
+        if (resData.success) {
+          showToast('Installer Build Triggered successfully. Check your email.', 'success');
+        } else {
+          showToast('Build failed: ' + resData.error, 'error');
+        }
+      } catch (err) {
+        showToast('Error dispatching build', 'error');
       }
     }
 

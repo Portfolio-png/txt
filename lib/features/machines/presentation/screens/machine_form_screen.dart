@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:core_erp/core/services/feature_flags.dart';
+import 'package:core_erp/core/services/config_service.dart';
 import 'package:crypto/crypto.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:http/http.dart' as http;
@@ -468,7 +468,7 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                       ],
                     ),
                   ),
-                  if (!FeatureFlags.isEnabled(FeatureKey.featuresDisableMachineCustomFields)) ...[
+                  if (!ConfigService.instance.disableMachineCustomFields) ...[
                     const SizedBox(height: 16),
                     ErpDialogSectionCard(
                       title: 'Custom Fields',
