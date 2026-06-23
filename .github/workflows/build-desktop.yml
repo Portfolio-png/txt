@@ -14,7 +14,7 @@ on:
       demo_mode:
         description: "Build with PAPER_DEMO_MODE=true (ignores backend)"
         required: false
-        default: true
+        default: false
         type: boolean
   push:
     branches: [ "main" ]
@@ -93,7 +93,7 @@ jobs:
 
           # workflow_dispatch: allow explicit demo builds or overrides
           API_URL="${INPUT_API_BASE_URL:-${SECRET_API_BASE_URL:-}}"
-          DEMO="${INPUT_DEMO_MODE:-true}"
+          DEMO="${INPUT_DEMO_MODE:-false}"
           CLIENT_DEFINE=""
           if [[ -n "${INPUT_CLIENT_ID:-}" ]]; then
             CLIENT_DEFINE="--dart-define=CLIENT_ID=${INPUT_CLIENT_ID}"
