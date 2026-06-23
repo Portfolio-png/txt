@@ -1234,7 +1234,7 @@ async function requireAuth(req, res, next) {
   if (req.path.startsWith('/sandbox-sync') ||
       req.path.startsWith('/session-replay') ||
       req.path.startsWith('/sandbox-dashboard') ||
-      req.path.startsWith('/activate') ||
+      req.path.startsWith('/activation') ||
       req.path.startsWith('/build') ||
       req.path.startsWith('/config')) {
     return next();
@@ -1316,7 +1316,7 @@ function requireApiWritePermission(req, res, next) {
   if (req.path.startsWith('/sandbox-sync') ||
       req.path.startsWith('/session-replay') ||
       req.path.startsWith('/sandbox-dashboard') ||
-      req.path.startsWith('/activate') ||
+      req.path.startsWith('/activation') ||
       req.path.startsWith('/build') ||
       req.path.startsWith('/config')) {
     return next();
