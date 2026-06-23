@@ -86,67 +86,31 @@ class _JobsScreenState extends State<JobsScreen> {
   }
 
   Future<void> _createManualJob() async {
-    final selected = await showDialog<ExactItemVariationReference>(
-      context: context,
-      builder: (_) => const OutputItemPickerDialog(),
-    );
-    if (selected == null || !mounted) return;
+    final jobsProvider = context.read<JobsProvider>();
+    final freelancers = context
+        .read<DepartmentsProvider>()
+        .employees
+        .where((employee) => employee.employmentType == 'freelancer')
+        .toList(growable: false);
 
-    final quantityController = TextEditingController(text: '1');
-    final quantity = await showDialog<int>(
+    final draft = await showDialog<_CreateJobDraft>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Create assembly job'),
-        content: SizedBox(
-          width: 380,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Set the number of finished units required from this item.',
-                style: TextStyle(
-                  color: SoftErpTheme.textSecondary,
-                  height: 1.4,
-                ),
-              ),
-              const SizedBox(height: 18),
-              TextField(
-                controller: quantityController,
-                autofocus: true,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Quantity',
-                  prefixIcon: Icon(Icons.inventory_2_outlined),
-                  suffixText: 'units',
-                ),
-                onSubmitted: (value) =>
-                    Navigator.pop(dialogContext, int.tryParse(value)),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton.icon(
-            onPressed: () => Navigator.pop(
-              dialogContext,
-              int.tryParse(quantityController.text),
-            ),
-            icon: const Icon(Icons.add_task_rounded, size: 18),
-            label: const Text('Create job'),
-          ),
-        ],
+      builder: (_) => _CreateJobDialog(
+        jobs: jobsProvider.jobs,
+        tasks: jobsProvider.tasks,
+        batches: jobsProvider.batches,
+        freelancers: freelancers,
+        onStatusChanged: _updateStatus,
+        onOpenDetails: _showJobDetails,
+        onPrintBatch: _printBatch,
       ),
     );
-    quantityController.dispose();
-
-    if (quantity == null || quantity <= 0 || !mounted) return;
+    if (draft == null || !mounted) return;
     try {
-      await context.read<JobsProvider>().createJob(selected.itemId, quantity);
+      await context.read<JobsProvider>().createJob(
+        draft.output.itemId,
+        draft.quantity,
+      );
       if (mounted) _showMessage('Assembly job created.');
     } catch (error) {
       if (mounted) _showMessage('Could not create job: $error', isError: true);
@@ -227,6 +191,7 @@ class _JobsScreenState extends State<JobsScreen> {
               children: [
                 _SummaryStrip(
                   jobs: jobs,
+                  tasks: jobsProvider.tasks,
                   batches: jobsProvider.batches,
                   freelancers: freelancers,
                 ),
@@ -390,7 +355,7 @@ class _JobsScreenState extends State<JobsScreen> {
               ),
               const SizedBox(height: 22),
               const Text(
-                'Assembly items',
+                'Raw material picking list',
                 style: TextStyle(
                   color: SoftErpTheme.textPrimary,
                   fontSize: 16,
@@ -545,11 +510,13 @@ class _JobsToolbar extends StatelessWidget {
 class _SummaryStrip extends StatelessWidget {
   const _SummaryStrip({
     required this.jobs,
+    required this.tasks,
     required this.batches,
     required this.freelancers,
   });
 
   final List<FreelancerJob> jobs;
+  final List<FreelancerJobTask> tasks;
   final List<FreelancerJobBatch> batches;
   final List<EmployeeDefinition> freelancers;
 
@@ -557,6 +524,10 @@ class _SummaryStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final unassigned = jobs.where((job) => job.batchId == null).length;
     final active = jobs.where((job) => !_isComplete(job.status)).length;
+    final jobIds = jobs.map((job) => job.id).toSet();
+    final materialPickLines = tasks
+        .where((task) => jobIds.contains(task.jobId))
+        .length;
     final payout = jobs.fold<double>(0, (sum, job) => sum + job.payoutBalance);
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -584,8 +555,8 @@ class _SummaryStrip extends StatelessWidget {
             _SummaryTile(
               width: tileWidth,
               icon: Icons.layers_outlined,
-              label: 'Job batches',
-              value: '${batches.length}',
+              label: '${batches.length} job batches',
+              value: '$materialPickLines picks',
               tone: _Tone.accent,
             ),
             _SummaryTile(
@@ -690,6 +661,10 @@ class _AssignmentBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final selectedFreelancer = _firstWhereOrNull(
+      freelancers,
+      (freelancer) => freelancer.id == selectedFreelancerId,
+    );
     return SoftSurface(
       color: selectedCount > 0
           ? SoftErpTheme.accentSurface
@@ -720,7 +695,7 @@ class _AssignmentBar extends StatelessWidget {
                     (freelancer) => DropdownMenuItem<int>(
                       value: freelancer.id,
                       child: Text(
-                        freelancer.name,
+                        _freelancerMenuLabel(freelancer),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -729,33 +704,43 @@ class _AssignmentBar extends StatelessWidget {
               onChanged: freelancers.isEmpty ? null : onFreelancerChanged,
             ),
           );
-          final selection = Row(
+          final selection = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: const BoxDecoration(
-                  color: SoftErpTheme.accentSoft,
-                  shape: BoxShape.circle,
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  '$selectedCount',
-                  style: const TextStyle(
-                    color: SoftErpTheme.accentDark,
-                    fontWeight: FontWeight.w800,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: const BoxDecoration(
+                      color: SoftErpTheme.accentSoft,
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      '$selectedCount',
+                      style: const TextStyle(
+                        color: SoftErpTheme.accentDark,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 10),
+                  const Text(
+                    'jobs selected',
+                    style: TextStyle(
+                      color: SoftErpTheme.textPrimary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 10),
-              const Text(
-                'jobs selected',
-                style: TextStyle(
-                  color: SoftErpTheme.textPrimary,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
+              if (selectedFreelancer != null) ...[
+                const SizedBox(height: 6),
+                _FreelancerIdentityPill(freelancer: selectedFreelancer),
+              ],
             ],
           );
           final actions = Row(
@@ -800,6 +785,110 @@ class _AssignmentBar extends StatelessWidget {
       ),
     );
   }
+}
+
+class _FreelancerIdentityPill extends StatelessWidget {
+  const _FreelancerIdentityPill({required this.freelancer});
+
+  final EmployeeDefinition freelancer;
+
+  @override
+  Widget build(BuildContext context) {
+    final barcode = freelancer.barcodeId.trim();
+    final hasBarcode = barcode.isNotEmpty;
+    return SoftPill(
+      label: hasBarcode ? barcode : 'Barcode missing',
+      leading: Icon(
+        Icons.qr_code_2_rounded,
+        size: 15,
+        color: hasBarcode ? SoftErpTheme.accentDark : SoftErpTheme.warningText,
+      ),
+      background: hasBarcode
+          ? SoftErpTheme.accentSurface
+          : SoftErpTheme.warningBg,
+      foreground: hasBarcode
+          ? SoftErpTheme.accentDark
+          : SoftErpTheme.warningText,
+      borderColor: hasBarcode
+          ? SoftErpTheme.accentSoft
+          : SoftErpTheme.warningBg,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    );
+  }
+}
+
+String _freelancerMenuLabel(EmployeeDefinition freelancer) {
+  final barcode = freelancer.barcodeId.trim();
+  if (barcode.isEmpty) return freelancer.name;
+  return '${freelancer.name} · $barcode';
+}
+
+String _freelancerBoardSubtitle(
+  EmployeeDefinition freelancer,
+  int batchCount,
+  int jobCount,
+) {
+  final barcode = freelancer.barcodeId.trim();
+  final base = '$batchCount batches · $jobCount jobs';
+  if (barcode.isEmpty) return base;
+  return '$base · $barcode';
+}
+
+String _freelancerBrowserSubtitle(
+  EmployeeDefinition freelancer,
+  int batchCount,
+  int jobCount,
+) {
+  final barcode = freelancer.barcodeId.trim();
+  final identity = barcode.isEmpty ? 'no barcode' : barcode;
+  return '$jobCount jobs · $batchCount batches · $identity';
+}
+
+List<FreelancerJobBatch> _batchesForFreelancer(
+  EmployeeDefinition freelancer,
+  List<FreelancerJobBatch> batches,
+  List<FreelancerJob> jobs,
+) {
+  return batches
+      .where((batch) => batch.freelancerId == freelancer.id)
+      .where((batch) => jobs.any((job) => job.batchId == batch.id))
+      .toList(growable: false);
+}
+
+List<FreelancerJob> _jobsForBatches(
+  List<FreelancerJob> jobs,
+  List<FreelancerJobBatch> batches,
+) {
+  final batchIds = batches.map((batch) => batch.id).toSet();
+  return jobs
+      .where((job) => job.batchId != null && batchIds.contains(job.batchId))
+      .toList(growable: false);
+}
+
+_BrowserWorkSelection? _resolveWorkSelection(
+  _BrowserWorkSelection? selection,
+  List<FreelancerJobBatch> batches,
+  List<FreelancerJob> jobs,
+) {
+  if (selection == null) return null;
+  if (selection.isBatch) {
+    return batches.any((batch) => batch.id == selection.id) ? selection : null;
+  }
+  return jobs.any((job) => job.id == selection.id) ? selection : null;
+}
+
+List<FreelancerJob> _jobsForSelection(
+  _BrowserWorkSelection? selection,
+  List<FreelancerJob> jobs,
+  List<FreelancerJobBatch> batches,
+) {
+  if (selection == null) return const <FreelancerJob>[];
+  if (selection.isBatch) {
+    return jobs
+        .where((job) => job.batchId == selection.id)
+        .toList(growable: false);
+  }
+  return jobs.where((job) => job.id == selection.id).toList(growable: false);
 }
 
 class _SpreadsheetView extends StatelessWidget {
@@ -859,8 +948,8 @@ class _SpreadsheetView extends StatelessWidget {
           child: SingleChildScrollView(
             child: DataTable(
               headingRowHeight: 48,
-              dataRowMinHeight: 58,
-              dataRowMaxHeight: 66,
+              dataRowMinHeight: 64,
+              dataRowMaxHeight: 78,
               horizontalMargin: 16,
               columnSpacing: 28,
               headingRowColor: const WidgetStatePropertyAll(
@@ -998,6 +1087,17 @@ class _SpreadsheetView extends StatelessWidget {
                                         fontSize: 12,
                                       ),
                                     ),
+                                    if ((freelancer?.barcodeId ?? '')
+                                        .trim()
+                                        .isNotEmpty)
+                                      Text(
+                                        freelancer!.barcodeId,
+                                        style: const TextStyle(
+                                          color: SoftErpTheme.accentDark,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
                                   ],
                                 ),
                         ),
@@ -1046,6 +1146,1102 @@ class _SpreadsheetView extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _CreateJobDraft {
+  const _CreateJobDraft({required this.output, required this.quantity});
+
+  final ExactItemVariationReference output;
+  final int quantity;
+}
+
+class _CreateJobDialog extends StatefulWidget {
+  const _CreateJobDialog({
+    required this.jobs,
+    required this.tasks,
+    required this.batches,
+    required this.freelancers,
+    required this.onStatusChanged,
+    required this.onOpenDetails,
+    required this.onPrintBatch,
+  });
+
+  final List<FreelancerJob> jobs;
+  final List<FreelancerJobTask> tasks;
+  final List<FreelancerJobBatch> batches;
+  final List<EmployeeDefinition> freelancers;
+  final void Function(FreelancerJob, String) onStatusChanged;
+  final void Function(FreelancerJob, List<FreelancerJobTask>) onOpenDetails;
+  final void Function(
+    FreelancerJobBatch,
+    List<EmployeeDefinition>,
+    List<FreelancerJob>,
+  )
+  onPrintBatch;
+
+  @override
+  State<_CreateJobDialog> createState() => _CreateJobDialogState();
+}
+
+class _CreateJobDialogState extends State<_CreateJobDialog> {
+  final TextEditingController _quantityController = TextEditingController(
+    text: '1',
+  );
+  ExactItemVariationReference? _output;
+
+  int? get _quantity {
+    final value = int.tryParse(_quantityController.text.trim());
+    if (value == null || value <= 0) return null;
+    return value;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _quantityController.addListener(_handleQuantityChanged);
+  }
+
+  @override
+  void dispose() {
+    _quantityController.removeListener(_handleQuantityChanged);
+    _quantityController.dispose();
+    super.dispose();
+  }
+
+  void _handleQuantityChanged() {
+    setState(() {});
+  }
+
+  Future<void> _pickOutputItem() async {
+    final selected = await showDialog<ExactItemVariationReference>(
+      context: context,
+      builder: (_) => const OutputItemPickerDialog(),
+    );
+    if (selected == null || !mounted) return;
+    setState(() => _output = selected);
+  }
+
+  void _submit() {
+    final output = _output;
+    final quantity = _quantity;
+    if (output == null || quantity == null) return;
+    Navigator.of(
+      context,
+    ).pop(_CreateJobDraft(output: output, quantity: quantity));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final canCreate = _output != null && _quantity != null;
+    return Dialog(
+      insetPadding: const EdgeInsets.all(24),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusLg),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1560, maxHeight: 800),
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: SoftErpTheme.accentSoft,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(
+                      Icons.add_task_rounded,
+                      color: SoftErpTheme.accentDark,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Create freelancer job',
+                          style: TextStyle(
+                            color: SoftErpTheme.textPrimary,
+                            fontSize: 19,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        SizedBox(height: 3),
+                        Text(
+                          'Browse freelancer workload, inspect assigned inventory picks, then create the next assembly job.',
+                          style: TextStyle(
+                            color: SoftErpTheme.textSecondary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SoftIconButton(
+                    icon: Icons.close_rounded,
+                    tooltip: 'Close',
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: _FreelancerColumnBrowser(
+                        jobs: widget.jobs,
+                        allJobs: widget.jobs,
+                        tasks: widget.tasks,
+                        batches: widget.batches,
+                        freelancers: widget.freelancers,
+                        onStatusChanged: widget.onStatusChanged,
+                        onOpenDetails: widget.onOpenDetails,
+                        onPrintBatch: widget.onPrintBatch,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    SizedBox(
+                      width: 330,
+                      child: _CreateJobComposer(
+                        output: _output,
+                        quantityController: _quantityController,
+                        canCreate: canCreate,
+                        onPickOutput: _pickOutputItem,
+                        onCreate: _submit,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CreateJobComposer extends StatelessWidget {
+  const _CreateJobComposer({
+    required this.output,
+    required this.quantityController,
+    required this.canCreate,
+    required this.onPickOutput,
+    required this.onCreate,
+  });
+
+  final ExactItemVariationReference? output;
+  final TextEditingController quantityController;
+  final bool canCreate;
+  final VoidCallback onPickOutput;
+  final VoidCallback onCreate;
+
+  @override
+  Widget build(BuildContext context) {
+    final outputLabel = output == null
+        ? 'No output item selected'
+        : [
+            output!.itemLabel,
+            output!.variationPathLabel,
+          ].where((part) => part.trim().isNotEmpty).join(' / ');
+    return SoftSurface(
+      padding: const EdgeInsets.all(16),
+      radius: SoftErpTheme.radiusLg,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'New assembly job',
+            style: TextStyle(
+              color: SoftErpTheme.textPrimary,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Create jobs here. Assign unassigned jobs as a batch from the main Jobs screen.',
+            style: TextStyle(
+              color: SoftErpTheme.textSecondary,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 16),
+          _InspectorMetric(
+            icon: Icons.inventory_2_outlined,
+            label: 'Output item',
+            value: outputLabel,
+          ),
+          AppButton(
+            label: output == null ? 'Choose output item' : 'Change output item',
+            icon: Icons.search_rounded,
+            variant: AppButtonVariant.secondary,
+            onPressed: onPickOutput,
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: quantityController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Quantity',
+              prefixIcon: Icon(Icons.numbers_rounded),
+              suffixText: 'units',
+            ),
+          ),
+          const Spacer(),
+          AppButton(
+            label: 'Create job',
+            icon: Icons.add_task_rounded,
+            onPressed: canCreate ? onCreate : null,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+enum _BrowserWorkType { batch, job }
+
+class _BrowserWorkSelection {
+  const _BrowserWorkSelection.batch(this.id) : type = _BrowserWorkType.batch;
+  const _BrowserWorkSelection.job(this.id) : type = _BrowserWorkType.job;
+
+  final _BrowserWorkType type;
+  final int id;
+
+  bool get isBatch => type == _BrowserWorkType.batch;
+
+  bool matches(_BrowserWorkType type, int id) =>
+      this.type == type && this.id == id;
+}
+
+class _FreelancerColumnBrowser extends StatefulWidget {
+  const _FreelancerColumnBrowser({
+    required this.jobs,
+    required this.allJobs,
+    required this.tasks,
+    required this.batches,
+    required this.freelancers,
+    required this.onStatusChanged,
+    required this.onOpenDetails,
+    required this.onPrintBatch,
+  });
+
+  final List<FreelancerJob> jobs;
+  final List<FreelancerJob> allJobs;
+  final List<FreelancerJobTask> tasks;
+  final List<FreelancerJobBatch> batches;
+  final List<EmployeeDefinition> freelancers;
+  final void Function(FreelancerJob, String) onStatusChanged;
+  final void Function(FreelancerJob, List<FreelancerJobTask>) onOpenDetails;
+  final void Function(
+    FreelancerJobBatch,
+    List<EmployeeDefinition>,
+    List<FreelancerJob>,
+  )
+  onPrintBatch;
+
+  @override
+  State<_FreelancerColumnBrowser> createState() =>
+      _FreelancerColumnBrowserState();
+}
+
+class _FreelancerColumnBrowserState extends State<_FreelancerColumnBrowser> {
+  int? _selectedFreelancerId;
+  _BrowserWorkSelection? _selectedWork;
+  int? _selectedTaskId;
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.freelancers.isEmpty) {
+      return const AppEmptyState(
+        title: 'No freelancers available',
+        message: 'Create freelancer employees first, then assign job batches.',
+        icon: Icons.person_off_outlined,
+      );
+    }
+
+    final selectedFreelancer =
+        _firstWhereOrNull(
+          widget.freelancers,
+          (freelancer) => freelancer.id == _selectedFreelancerId,
+        ) ??
+        widget.freelancers.first;
+    final selectedFreelancerId = selectedFreelancer.id;
+    final freelancerBatches = _batchesForFreelancer(
+      selectedFreelancer,
+      widget.batches,
+      widget.jobs,
+    );
+    final freelancerJobs = _jobsForBatches(widget.jobs, freelancerBatches);
+    final selectedWork = _resolveWorkSelection(
+      _selectedWork,
+      freelancerBatches,
+      freelancerJobs,
+    );
+    final selectedJobs = _jobsForSelection(
+      selectedWork,
+      widget.jobs,
+      freelancerBatches,
+    );
+    final selectedJobIds = selectedJobs.map((job) => job.id).toSet();
+    final pickLines = widget.tasks
+        .where((task) => selectedJobIds.contains(task.jobId))
+        .toList(growable: false);
+    final selectedTask = _firstWhereOrNull(
+      pickLines,
+      (task) => task.id == _selectedTaskId,
+    );
+
+    return SoftSurface(
+      padding: EdgeInsets.zero,
+      radius: SoftErpTheme.radiusLg,
+      clipContent: true,
+      child: Scrollbar(
+        thumbVisibility: true,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _BoardColumn(
+                width: 290,
+                title: 'Freelancers',
+                subtitle: '${widget.freelancers.length} barcode identities',
+                icon: Icons.people_alt_outlined,
+                tone: _Tone.accent,
+                child: _FreelancerColumn(
+                  freelancers: widget.freelancers,
+                  jobs: widget.jobs,
+                  batches: widget.batches,
+                  selectedFreelancerId: selectedFreelancerId,
+                  onSelected: (freelancer) {
+                    setState(() {
+                      _selectedFreelancerId = freelancer.id;
+                      _selectedWork = null;
+                      _selectedTaskId = null;
+                    });
+                  },
+                ),
+              ),
+              _BrowserDivider(),
+              _BoardColumn(
+                width: 350,
+                title: selectedFreelancer.name,
+                subtitle: _freelancerBoardSubtitle(
+                  selectedFreelancer,
+                  freelancerBatches.length,
+                  freelancerJobs.length,
+                ),
+                icon: Icons.folder_copy_outlined,
+                tone: _Tone.info,
+                child: _AssignedWorkColumn(
+                  freelancer: selectedFreelancer,
+                  jobs: freelancerJobs,
+                  batches: freelancerBatches,
+                  tasks: widget.tasks,
+                  selectedWork: selectedWork,
+                  onSelected: (selection) {
+                    setState(() {
+                      _selectedWork = selection;
+                      _selectedTaskId = null;
+                    });
+                  },
+                  onStatusChanged: widget.onStatusChanged,
+                ),
+              ),
+              _BrowserDivider(),
+              _BoardColumn(
+                width: 350,
+                title: 'Inventory picks',
+                subtitle: selectedWork == null
+                    ? 'Select a batch or job'
+                    : '${pickLines.length} required item lines',
+                icon: Icons.inventory_2_outlined,
+                tone: _Tone.warning,
+                child: _InventoryPickColumn(
+                  selectedWork: selectedWork,
+                  jobs: selectedJobs,
+                  tasks: pickLines,
+                  selectedTaskId: selectedTask?.id,
+                  onSelected: (task) =>
+                      setState(() => _selectedTaskId = task.id),
+                ),
+              ),
+              _BrowserDivider(),
+              _BoardColumn(
+                width: 340,
+                title: 'Inspector',
+                subtitle: selectedTask == null
+                    ? 'Work summary'
+                    : 'Inventory item #${selectedTask.itemId}',
+                icon: Icons.view_sidebar_outlined,
+                tone: _Tone.success,
+                child: _BrowserInspector(
+                  freelancer: selectedFreelancer,
+                  selectedWork: selectedWork,
+                  selectedJobs: selectedJobs,
+                  selectedTask: selectedTask,
+                  tasks: pickLines,
+                  batches: widget.batches,
+                  allJobs: widget.allJobs,
+                  allTasks: widget.tasks,
+                  freelancers: widget.freelancers,
+                  onOpenDetails: widget.onOpenDetails,
+                  onPrintBatch: widget.onPrintBatch,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FreelancerColumn extends StatelessWidget {
+  const _FreelancerColumn({
+    required this.freelancers,
+    required this.jobs,
+    required this.batches,
+    required this.selectedFreelancerId,
+    required this.onSelected,
+  });
+
+  final List<EmployeeDefinition> freelancers;
+  final List<FreelancerJob> jobs;
+  final List<FreelancerJobBatch> batches;
+  final int selectedFreelancerId;
+  final ValueChanged<EmployeeDefinition> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.separated(
+      padding: const EdgeInsets.all(10),
+      itemCount: freelancers.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 4),
+      itemBuilder: (context, index) {
+        final freelancer = freelancers[index];
+        final freelancerBatches = _batchesForFreelancer(
+          freelancer,
+          batches,
+          jobs,
+        );
+        final assignedJobs = _jobsForBatches(jobs, freelancerBatches);
+        return _ColumnBrowserTile(
+          selected: freelancer.id == selectedFreelancerId,
+          icon: Icons.person_outline_rounded,
+          title: freelancer.name,
+          subtitle: _freelancerBrowserSubtitle(
+            freelancer,
+            freelancerBatches.length,
+            assignedJobs.length,
+          ),
+          trailing: const Icon(
+            Icons.chevron_right_rounded,
+            size: 18,
+            color: SoftErpTheme.textSecondary,
+          ),
+          onTap: () => onSelected(freelancer),
+        );
+      },
+    );
+  }
+}
+
+class _AssignedWorkColumn extends StatelessWidget {
+  const _AssignedWorkColumn({
+    required this.freelancer,
+    required this.jobs,
+    required this.batches,
+    required this.tasks,
+    required this.selectedWork,
+    required this.onSelected,
+    required this.onStatusChanged,
+  });
+
+  final EmployeeDefinition freelancer;
+  final List<FreelancerJob> jobs;
+  final List<FreelancerJobBatch> batches;
+  final List<FreelancerJobTask> tasks;
+  final _BrowserWorkSelection? selectedWork;
+  final ValueChanged<_BrowserWorkSelection> onSelected;
+  final void Function(FreelancerJob, String) onStatusChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    if (batches.isEmpty && jobs.isEmpty) {
+      return const _InlineEmpty(
+        icon: Icons.folder_off_outlined,
+        message: 'No assigned batches or jobs for this freelancer.',
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(10),
+      children: [
+        if (batches.isNotEmpty) ...[
+          const _BrowserSectionLabel('Batches'),
+          const SizedBox(height: 6),
+          ...batches.map((batch) {
+            final batchJobs = jobs
+                .where((job) => job.batchId == batch.id)
+                .toList(growable: false);
+            final jobIds = batchJobs.map((job) => job.id).toSet();
+            final pickCount = tasks
+                .where((task) => jobIds.contains(task.jobId))
+                .length;
+            final payout = batchJobs.fold<double>(
+              0,
+              (sum, job) => sum + job.payoutBalance,
+            );
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: _ColumnBrowserTile(
+                selected:
+                    selectedWork?.matches(_BrowserWorkType.batch, batch.id) ??
+                    false,
+                icon: Icons.folder_outlined,
+                title: batch.batchNumber,
+                subtitle:
+                    '${batchJobs.length} jobs · $pickCount picks · ${_money(payout)}',
+                badge: _StatusBadge(status: batch.status, compact: true),
+                trailing: const Icon(
+                  Icons.chevron_right_rounded,
+                  size: 18,
+                  color: SoftErpTheme.textSecondary,
+                ),
+                onTap: () => onSelected(_BrowserWorkSelection.batch(batch.id)),
+              ),
+            );
+          }),
+          const SizedBox(height: 8),
+        ],
+        if (jobs.isNotEmpty) ...[
+          const _BrowserSectionLabel('Jobs'),
+          const SizedBox(height: 6),
+          ...jobs.map((job) {
+            final batch = _firstWhereOrNull(
+              batches,
+              (value) => value.id == job.batchId,
+            );
+            final pickCount = tasks
+                .where((task) => task.jobId == job.id)
+                .length;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: _ColumnBrowserTile(
+                selected:
+                    selectedWork?.matches(_BrowserWorkType.job, job.id) ??
+                    false,
+                icon: Icons.assignment_outlined,
+                title: 'Job #${job.id}',
+                subtitle:
+                    '${batch?.batchNumber ?? 'No batch'} · Item #${job.itemId} · $pickCount picks',
+                badge: _StatusMenu(
+                  job: job,
+                  compact: true,
+                  onChanged: (status) => onStatusChanged(job, status),
+                ),
+                trailing: const Icon(
+                  Icons.chevron_right_rounded,
+                  size: 18,
+                  color: SoftErpTheme.textSecondary,
+                ),
+                onTap: () => onSelected(_BrowserWorkSelection.job(job.id)),
+              ),
+            );
+          }),
+        ],
+      ],
+    );
+  }
+}
+
+class _InventoryPickColumn extends StatelessWidget {
+  const _InventoryPickColumn({
+    required this.selectedWork,
+    required this.jobs,
+    required this.tasks,
+    required this.selectedTaskId,
+    required this.onSelected,
+  });
+
+  final _BrowserWorkSelection? selectedWork;
+  final List<FreelancerJob> jobs;
+  final List<FreelancerJobTask> tasks;
+  final int? selectedTaskId;
+  final ValueChanged<FreelancerJobTask> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    if (selectedWork == null) {
+      return const _InlineEmpty(
+        icon: Icons.touch_app_outlined,
+        message: 'Select a batch or job to reveal its inventory items.',
+      );
+    }
+    if (tasks.isEmpty) {
+      return const _InlineEmpty(
+        icon: Icons.inventory_2_outlined,
+        message: 'No inventory items are attached to this selection.',
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(10),
+      itemCount: tasks.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 6),
+      itemBuilder: (context, index) {
+        final task = tasks[index];
+        final job = _firstWhereOrNull(jobs, (value) => value.id == task.jobId);
+        return _ColumnBrowserTile(
+          selected: task.id == selectedTaskId,
+          icon: Icons.widgets_outlined,
+          title: 'Inventory item #${task.itemId}',
+          subtitle:
+              'Job #${task.jobId} · ${_formatQuantity(task.requiredQuantity)} required${job == null ? '' : ' · ${job.quantity} units'}',
+          badge: _StatusBadge(status: task.status, compact: true),
+          trailing: const Icon(
+            Icons.chevron_right_rounded,
+            size: 18,
+            color: SoftErpTheme.textSecondary,
+          ),
+          onTap: () => onSelected(task),
+        );
+      },
+    );
+  }
+}
+
+class _BrowserInspector extends StatelessWidget {
+  const _BrowserInspector({
+    required this.freelancer,
+    required this.selectedWork,
+    required this.selectedJobs,
+    required this.selectedTask,
+    required this.tasks,
+    required this.batches,
+    required this.allJobs,
+    required this.allTasks,
+    required this.freelancers,
+    required this.onOpenDetails,
+    required this.onPrintBatch,
+  });
+
+  final EmployeeDefinition freelancer;
+  final _BrowserWorkSelection? selectedWork;
+  final List<FreelancerJob> selectedJobs;
+  final FreelancerJobTask? selectedTask;
+  final List<FreelancerJobTask> tasks;
+  final List<FreelancerJobBatch> batches;
+  final List<FreelancerJob> allJobs;
+  final List<FreelancerJobTask> allTasks;
+  final List<EmployeeDefinition> freelancers;
+  final void Function(FreelancerJob, List<FreelancerJobTask>) onOpenDetails;
+  final void Function(
+    FreelancerJobBatch,
+    List<EmployeeDefinition>,
+    List<FreelancerJob>,
+  )
+  onPrintBatch;
+
+  @override
+  Widget build(BuildContext context) {
+    if (selectedWork == null) {
+      return _InspectorEmpty(
+        title: freelancer.name,
+        message: 'Choose a batch or job to inspect its material requirements.',
+      );
+    }
+
+    final task = selectedTask;
+    if (task != null) {
+      final job = _firstWhereOrNull(allJobs, (value) => value.id == task.jobId);
+      final batch = job == null
+          ? null
+          : _firstWhereOrNull(batches, (value) => value.id == job.batchId);
+      return _InspectorPanel(
+        title: 'Inventory item #${task.itemId}',
+        subtitle: 'Required for Job #${task.jobId}',
+        children: [
+          _InspectorMetric(
+            icon: Icons.inventory_2_outlined,
+            label: 'Required quantity',
+            value: _formatQuantity(task.requiredQuantity),
+          ),
+          _InspectorMetric(
+            icon: Icons.fact_check_outlined,
+            label: 'Pick status',
+            value: _statusLabel(task.status),
+          ),
+          if (job != null)
+            _InspectorMetric(
+              icon: Icons.assignment_outlined,
+              label: 'Assembly output',
+              value: 'Item #${job.itemId} · ${job.quantity} units',
+            ),
+          if (batch != null)
+            _InspectorMetric(
+              icon: Icons.folder_outlined,
+              label: 'Batch',
+              value: batch.batchNumber,
+            ),
+          const SizedBox(height: 14),
+          if (job != null)
+            AppButton(
+              label: 'Open job details',
+              icon: Icons.visibility_outlined,
+              variant: AppButtonVariant.secondary,
+              onPressed: () => onOpenDetails(job, allTasks),
+            ),
+          if (batch != null) ...[
+            const SizedBox(height: 8),
+            AppButton(
+              label: 'Print job card',
+              icon: Icons.print_outlined,
+              onPressed: () => onPrintBatch(batch, freelancers, allJobs),
+            ),
+          ],
+        ],
+      );
+    }
+
+    final jobIds = selectedJobs.map((job) => job.id).toSet();
+    final payout = selectedJobs.fold<double>(
+      0,
+      (sum, job) => sum + job.payoutBalance,
+    );
+    final completed = selectedJobs
+        .where((job) => _isComplete(job.status))
+        .length;
+    final batch = selectedWork!.isBatch
+        ? _firstWhereOrNull(batches, (value) => value.id == selectedWork!.id)
+        : null;
+    final primaryJob = selectedWork!.type == _BrowserWorkType.job
+        ? _firstWhereOrNull(allJobs, (value) => value.id == selectedWork!.id)
+        : null;
+    final sourceBatch = primaryJob == null
+        ? batch
+        : _firstWhereOrNull(batches, (value) => value.id == primaryJob.batchId);
+
+    return _InspectorPanel(
+      title: batch?.batchNumber ?? 'Job #${primaryJob?.id ?? selectedWork!.id}',
+      subtitle: selectedWork!.isBatch
+          ? 'Batch assigned to ${freelancer.name}'
+          : 'Single job assigned to ${freelancer.name}',
+      children: [
+        _InspectorMetric(
+          icon: Icons.work_outline,
+          label: 'Jobs selected',
+          value: '${selectedJobs.length}',
+        ),
+        _InspectorMetric(
+          icon: Icons.task_alt_outlined,
+          label: 'Completion',
+          value: '$completed/${selectedJobs.length}',
+        ),
+        _InspectorMetric(
+          icon: Icons.widgets_outlined,
+          label: 'Inventory pick lines',
+          value: '${tasks.where((task) => jobIds.contains(task.jobId)).length}',
+        ),
+        _InspectorMetric(
+          icon: Icons.account_balance_wallet_outlined,
+          label: 'Payout balance',
+          value: _money(payout),
+        ),
+        const SizedBox(height: 14),
+        if (primaryJob != null)
+          AppButton(
+            label: 'Open job details',
+            icon: Icons.visibility_outlined,
+            variant: AppButtonVariant.secondary,
+            onPressed: () => onOpenDetails(primaryJob, allTasks),
+          ),
+        if (sourceBatch != null) ...[
+          const SizedBox(height: 8),
+          AppButton(
+            label: 'Print job card',
+            icon: Icons.print_outlined,
+            onPressed: () => onPrintBatch(sourceBatch, freelancers, allJobs),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _InspectorPanel extends StatelessWidget {
+  const _InspectorPanel({
+    required this.title,
+    required this.subtitle,
+    required this.children,
+  });
+
+  final String title;
+  final String subtitle;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: SoftErpTheme.textPrimary,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: const TextStyle(
+              color: SoftErpTheme.textSecondary,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 14),
+          ...children,
+        ],
+      ),
+    );
+  }
+}
+
+class _InspectorEmpty extends StatelessWidget {
+  const _InspectorEmpty({required this.title, required this.message});
+
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return _InspectorPanel(
+      title: title,
+      subtitle: 'Freelancer selected',
+      children: [
+        _InspectorMetric(
+          icon: Icons.touch_app_outlined,
+          label: 'Next step',
+          value: message,
+        ),
+      ],
+    );
+  }
+}
+
+class _InspectorMetric extends StatelessWidget {
+  const _InspectorMetric({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: SoftErpTheme.cardSurfaceAlt,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 17, color: SoftErpTheme.textSecondary),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: SoftErpTheme.textSecondary,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: SoftErpTheme.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ColumnBrowserTile extends StatelessWidget {
+  const _ColumnBrowserTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+    this.badge,
+    this.trailing,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+  final Widget? badge;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          decoration: BoxDecoration(
+            color: selected ? SoftErpTheme.accentSurface : Colors.transparent,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected ? SoftErpTheme.accentSoft : Colors.transparent,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: selected
+                      ? SoftErpTheme.accentSoft
+                      : SoftErpTheme.cardSurfaceAlt,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: SoftErpTheme.border),
+                ),
+                child: Icon(
+                  icon,
+                  size: 18,
+                  color: selected
+                      ? SoftErpTheme.accentDark
+                      : SoftErpTheme.textSecondary,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: selected
+                                  ? SoftErpTheme.accentDark
+                                  : SoftErpTheme.textPrimary,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 13.5,
+                            ),
+                          ),
+                        ),
+                        if (badge != null) ...[
+                          const SizedBox(width: 6),
+                          badge!,
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: SoftErpTheme.textSecondary,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (trailing != null) ...[const SizedBox(width: 6), trailing!],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BrowserSectionLabel extends StatelessWidget {
+  const _BrowserSectionLabel(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+      child: Text(
+        label.toUpperCase(),
+        style: const TextStyle(
+          color: SoftErpTheme.textSecondary,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0,
+        ),
+      ),
+    );
+  }
+}
+
+class _BrowserDivider extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      width: 1,
+      child: ColoredBox(color: SoftErpTheme.border),
     );
   }
 }
@@ -1138,8 +2334,11 @@ class _BatchBoardView extends StatelessWidget {
                 padding: const EdgeInsets.only(right: 14),
                 child: _BoardColumn(
                   title: freelancer.name,
-                  subtitle:
-                      '${freelancerBatches.length} batches · $assignedJobCount jobs',
+                  subtitle: _freelancerBoardSubtitle(
+                    freelancer,
+                    freelancerBatches.length,
+                    assignedJobCount,
+                  ),
                   icon: Icons.person_outline_rounded,
                   tone: _Tone.info,
                   child: freelancerBatches.isEmpty
@@ -1185,6 +2384,7 @@ class _BoardColumn extends StatelessWidget {
     required this.icon,
     required this.tone,
     required this.child,
+    this.width = 330,
   });
 
   final String title;
@@ -1192,12 +2392,13 @@ class _BoardColumn extends StatelessWidget {
   final IconData icon;
   final _Tone tone;
   final Widget child;
+  final double width;
 
   @override
   Widget build(BuildContext context) {
     final colors = _toneColors(tone);
     return SoftSurface(
-      width: 330,
+      width: width,
       padding: EdgeInsets.zero,
       radius: SoftErpTheme.radiusLg,
       clipContent: true,
@@ -1315,16 +2516,21 @@ class _JobBoardCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            Row(
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
               children: [
                 _MiniMetric(
                   icon: Icons.numbers_rounded,
                   label: '${job.quantity} units',
                 ),
-                const SizedBox(width: 12),
                 _MiniMetric(
                   icon: Icons.widgets_outlined,
-                  label: '$taskCount items',
+                  label: '$taskCount picks',
+                ),
+                _MiniMetric(
+                  icon: Icons.account_balance_wallet_outlined,
+                  label: _money(job.payoutBalance),
                 ),
               ],
             ),
@@ -1357,6 +2563,10 @@ class _BatchCard extends StatelessWidget {
     final completed = jobs.where((job) => _isComplete(job.status)).length;
     final progress = jobs.isEmpty ? 0.0 : completed / jobs.length;
     final payout = jobs.fold<double>(0, (sum, job) => sum + job.payoutBalance);
+    final jobIds = jobs.map((job) => job.id).toSet();
+    final materialLines = tasks
+        .where((task) => jobIds.contains(task.jobId))
+        .length;
     return SoftSurface(
       padding: const EdgeInsets.all(13),
       radius: 18,
@@ -1413,20 +2623,22 @@ class _BatchCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          Row(
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               _MiniMetric(
                 icon: Icons.work_outline,
                 label: '${jobs.length} jobs',
               ),
-              const Spacer(),
-              Text(
-                _money(payout),
-                style: const TextStyle(
-                  color: SoftErpTheme.successText,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                ),
+              _MiniMetric(
+                icon: Icons.widgets_outlined,
+                label: '$materialLines picks',
+              ),
+              _MiniMetric(
+                icon: Icons.account_balance_wallet_outlined,
+                label: _money(payout),
               ),
             ],
           ),

@@ -32,15 +32,12 @@ class _DepartmentsScreenState extends State<DepartmentsScreen> {
   Widget build(BuildContext context) {
     return Consumer<DepartmentsProvider>(
       builder: (context, provider, _) {
-        if (provider.isLoading && provider.departments.isEmpty) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
         final selectedDept = provider.selectedDepartment;
 
         return SoftMasterDataPage(
           title: 'Employees Master',
-          subtitle: 'Manage departments and the people who work in them.',
+          subtitle:
+              'Manage departments, in-house staff, and freelancer barcode identities for outsourced work.',
           action: AppButton(
             label: selectedDept == null ? 'Add Department' : 'Add Employee',
             icon: Icons.add,
@@ -76,14 +73,181 @@ class _DepartmentsScreenState extends State<DepartmentsScreen> {
                 ),
               ),
           ],
-          body: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: const [
-              Expanded(flex: 2, child: _DepartmentList()),
-              SizedBox(width: 16),
-              Expanded(flex: 3, child: _EmployeePanel()),
-            ],
+          body: provider.isLoading && provider.departments.isEmpty
+              ? const _DepartmentsLoadingState()
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: const [
+                    _RosterOverview(),
+                    SizedBox(height: 14),
+                    Expanded(child: _PeopleDirectory()),
+                  ],
+                ),
+        );
+      },
+    );
+  }
+}
+
+class _RosterOverview extends StatelessWidget {
+  const _RosterOverview();
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<DepartmentsProvider>();
+    final employees = provider.employees;
+    final freelancers = employees
+        .where((employee) => employee.employmentType == 'freelancer')
+        .toList(growable: false);
+    final inHouse = employees.length - freelancers.length;
+    final barcodeReady = freelancers
+        .where((employee) => employee.barcodeId.trim().isNotEmpty)
+        .length;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final tileWidth = constraints.maxWidth < 820
+            ? (constraints.maxWidth - 10) / 2
+            : (constraints.maxWidth - 30) / 4;
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            _RosterMetricTile(
+              width: tileWidth,
+              icon: Icons.apartment_rounded,
+              label: 'Departments',
+              value: '${provider.departments.length}',
+              tone: _PeopleTone.accent,
+            ),
+            _RosterMetricTile(
+              width: tileWidth,
+              icon: Icons.badge_outlined,
+              label: 'In-house staff',
+              value: '$inHouse',
+              tone: _PeopleTone.success,
+            ),
+            _RosterMetricTile(
+              width: tileWidth,
+              icon: Icons.handyman_outlined,
+              label: 'Freelancers',
+              value: '${freelancers.length}',
+              tone: _PeopleTone.info,
+            ),
+            _RosterMetricTile(
+              width: tileWidth,
+              icon: Icons.qr_code_2_rounded,
+              label: 'Barcode ready',
+              value: '$barcodeReady/${freelancers.length}',
+              tone: barcodeReady == freelancers.length
+                  ? _PeopleTone.success
+                  : _PeopleTone.warning,
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _RosterMetricTile extends StatelessWidget {
+  const _RosterMetricTile({
+    required this.width,
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.tone,
+  });
+
+  final double width;
+  final IconData icon;
+  final String label;
+  final String value;
+  final _PeopleTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = _peopleToneColors(tone);
+    return SoftSurface(
+      width: width,
+      radius: 18,
+      elevated: false,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: colors.$1,
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: Icon(icon, size: 20, color: colors.$2),
           ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: SoftErpTheme.textPrimary,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: SoftErpTheme.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PeopleDirectory extends StatelessWidget {
+  const _PeopleDirectory();
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 860;
+        final departmentList = compact
+            ? const SizedBox(height: 240, child: _DepartmentList())
+            : const Expanded(flex: 2, child: _DepartmentList());
+        final employeePanel = compact
+            ? const Expanded(child: _EmployeePanel())
+            : const Expanded(flex: 3, child: _EmployeePanel());
+
+        if (compact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              departmentList,
+              const SizedBox(height: 14),
+              employeePanel,
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [departmentList, const SizedBox(width: 16), employeePanel],
         );
       },
     );
@@ -155,7 +319,14 @@ class _DepartmentList extends StatelessWidget {
       itemBuilder: (context, index) {
         final dept = depts[index];
         final isSelected = provider.selectedDepartment?.id == dept.id;
-        final count = provider.employeesForDepartment(dept.id).length;
+        final allEmployees = provider.employees
+            .where((employee) => employee.departmentId == dept.id)
+            .toList(growable: false);
+        final visibleCount = provider.employeesForDepartment(dept.id).length;
+        final freelancerCount = allEmployees
+            .where((employee) => employee.employmentType == 'freelancer')
+            .length;
+        final inHouseCount = allEmployees.length - freelancerCount;
         return SoftRowCard(
           isSelected: isSelected,
           onTap: () => provider.selectDepartment(isSelected ? null : dept),
@@ -170,20 +341,20 @@ class _DepartmentList extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       SoftInlineText(dept.name, weight: FontWeight.w700),
-                      if (dept.description.isNotEmpty) ...[
-                        const SizedBox(height: 3),
-                        SoftInlineText(
-                          dept.description,
-                          color: SoftErpTheme.textSecondary,
-                          weight: FontWeight.w500,
-                        ),
-                      ],
+                      const SizedBox(height: 4),
+                      SoftInlineText(
+                        dept.description.isNotEmpty
+                            ? dept.description
+                            : '$inHouseCount in-house • $freelancerCount freelancers',
+                        color: SoftErpTheme.textSecondary,
+                        weight: FontWeight.w500,
+                      ),
                     ],
                   ),
                 ),
                 const SizedBox(width: 10),
                 SoftStatusPill(
-                  label: '$count',
+                  label: '$visibleCount',
                   background: SoftErpTheme.accentSoft,
                   textColor: SoftErpTheme.accentDark,
                   borderColor: SoftErpTheme.accentSoft,
@@ -213,14 +384,26 @@ class _EmployeePanel extends StatelessWidget {
     final selectedDept = provider.selectedDepartment;
 
     if (selectedDept == null) {
-      return const AppEmptyState(
-        title: 'Select a department',
-        message: 'Pick a department on the left to view its employees.',
-        icon: Icons.people_outline,
-      );
+      final rosterMatches = _filteredRoster(provider);
+      final hasActiveRosterFilter =
+          provider.searchQuery.isNotEmpty || provider.employmentFilter != 'all';
+      if (!hasActiveRosterFilter) {
+        return const AppEmptyState(
+          title: 'Select a department',
+          message: 'Pick a department on the left to view its employees.',
+          icon: Icons.people_outline,
+        );
+      }
+      return _RosterSearchPanel(employees: rosterMatches);
     }
 
     final emps = provider.employeesForDepartment(selectedDept.id);
+    final freelancers = emps
+        .where((employee) => employee.employmentType == 'freelancer')
+        .toList(growable: false);
+    final barcodeReady = freelancers
+        .where((employee) => employee.barcodeId.trim().isNotEmpty)
+        .length;
 
     return SoftSurface(
       padding: const EdgeInsets.all(18),
@@ -268,6 +451,34 @@ class _EmployeePanel extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _PanelStatPill(
+                icon: Icons.groups_2_outlined,
+                label: '${emps.length} people',
+                tone: _PeopleTone.accent,
+              ),
+              _PanelStatPill(
+                icon: Icons.handyman_outlined,
+                label: '${freelancers.length} freelancers',
+                tone: _PeopleTone.info,
+              ),
+              _PanelStatPill(
+                icon: Icons.qr_code_2_rounded,
+                label: '$barcodeReady barcode ready',
+                tone: barcodeReady == freelancers.length
+                    ? _PeopleTone.success
+                    : _PeopleTone.warning,
+              ),
+            ],
+          ),
+          if (freelancers.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            _FreelancerBarcodeLane(freelancers: freelancers),
+          ],
           const SizedBox(height: 16),
           if (emps.isEmpty)
             const Expanded(
@@ -288,6 +499,164 @@ class _EmployeePanel extends StatelessWidget {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RosterSearchPanel extends StatelessWidget {
+  const _RosterSearchPanel({required this.employees});
+
+  final List<EmployeeDefinition> employees;
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftSurface(
+      padding: const EdgeInsets.all(18),
+      radius: SoftErpTheme.radiusLg,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: SoftErpTheme.accentSoft,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.manage_search_rounded,
+                  color: SoftErpTheme.accentDark,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Roster search',
+                      style: TextStyle(
+                        color: SoftErpTheme.textPrimary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      '${employees.length} people match the active filters',
+                      style: const TextStyle(
+                        color: SoftErpTheme.textSecondary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (employees.isEmpty)
+            const Expanded(
+              child: AppEmptyState(
+                title: 'No people match',
+                message: 'Try another name, role, barcode, or filter.',
+                icon: Icons.person_search_outlined,
+              ),
+            )
+          else
+            Expanded(
+              child: ListView.separated(
+                itemCount: employees.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 10),
+                itemBuilder: (context, index) {
+                  final employee = employees[index];
+                  return _EmployeeRow(
+                    emp: employee,
+                    departmentId: employee.departmentId,
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PanelStatPill extends StatelessWidget {
+  const _PanelStatPill({
+    required this.icon,
+    required this.label,
+    required this.tone,
+  });
+
+  final IconData icon;
+  final String label;
+  final _PeopleTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = _peopleToneColors(tone);
+    return SoftPill(
+      label: label,
+      leading: Icon(icon, size: 15, color: colors.$2),
+      background: colors.$1,
+      foreground: colors.$2,
+      borderColor: colors.$1,
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+    );
+  }
+}
+
+class _FreelancerBarcodeLane extends StatelessWidget {
+  const _FreelancerBarcodeLane({required this.freelancers});
+
+  final List<EmployeeDefinition> freelancers;
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftSurface(
+      color: SoftErpTheme.cardSurfaceAlt,
+      radius: 16,
+      elevated: false,
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(
+                Icons.qr_code_scanner_rounded,
+                size: 18,
+                color: SoftErpTheme.accentDark,
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Freelancer barcode lane',
+                style: TextStyle(
+                  color: SoftErpTheme.textPrimary,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: freelancers
+                  .map(
+                    (freelancer) => Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: _BarcodeChip(employee: freelancer),
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+          ),
         ],
       ),
     );
@@ -345,33 +714,8 @@ class _EmployeeRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 10),
-            if (isFreelancer && emp.barcodeId.isNotEmpty) ...[
-              Tooltip(
-                message: 'Copy freelancer barcode',
-                child: SoftPill(
-                  label: emp.barcodeId,
-                  leading: const Icon(
-                    Icons.qr_code_2_rounded,
-                    size: 16,
-                    color: SoftErpTheme.accentDark,
-                  ),
-                  background: SoftErpTheme.accentSurface,
-                  foreground: SoftErpTheme.accentDark,
-                  borderColor: SoftErpTheme.accentSoft,
-                  onTap: () async {
-                    await Clipboard.setData(ClipboardData(text: emp.barcodeId));
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context)
-                      ..hideCurrentSnackBar()
-                      ..showSnackBar(
-                        const SnackBar(
-                          content: Text('Freelancer barcode copied.'),
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                  },
-                ),
-              ),
+            if (isFreelancer) ...[
+              _BarcodeChip(employee: emp, compact: true),
               const SizedBox(width: 6),
             ],
             SoftStatusPill(
@@ -410,6 +754,54 @@ class _EmployeeRow extends StatelessWidget {
   }
 }
 
+class _BarcodeChip extends StatelessWidget {
+  const _BarcodeChip({required this.employee, this.compact = false});
+
+  final EmployeeDefinition employee;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final barcode = employee.barcodeId.trim();
+    final hasBarcode = barcode.isNotEmpty;
+    final label = hasBarcode ? barcode : 'Barcode missing';
+    final tone = hasBarcode ? _PeopleTone.accent : _PeopleTone.warning;
+    final colors = _peopleToneColors(tone);
+    return Tooltip(
+      message: hasBarcode
+          ? 'Copy ${employee.name} barcode'
+          : 'Add a barcode before assigning scan-based jobs',
+      child: SoftPill(
+        label: compact ? label : '${employee.name} • $label',
+        leading: Icon(Icons.qr_code_2_rounded, size: 16, color: colors.$2),
+        trailing: hasBarcode && !compact
+            ? Icon(Icons.copy_rounded, size: 14, color: colors.$2)
+            : null,
+        background: colors.$1,
+        foreground: colors.$2,
+        borderColor: colors.$1,
+        padding: compact
+            ? const EdgeInsets.symmetric(horizontal: 10, vertical: 7)
+            : const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        onTap: hasBarcode
+            ? () async {
+                await Clipboard.setData(ClipboardData(text: barcode));
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context)
+                  ..hideCurrentSnackBar()
+                  ..showSnackBar(
+                    SnackBar(
+                      content: Text('${employee.name} barcode copied.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+              }
+            : null,
+      ),
+    );
+  }
+}
+
 class _DeptAvatar extends StatelessWidget {
   const _DeptAvatar({required this.url, required this.size});
 
@@ -437,4 +829,81 @@ class _DeptAvatar extends StatelessWidget {
           : const Icon(Icons.business, color: SoftErpTheme.textSecondary),
     );
   }
+}
+
+class _DepartmentsLoadingState extends StatelessWidget {
+  const _DepartmentsLoadingState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Row(
+          children: List.generate(
+            4,
+            (index) => Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(right: index == 3 ? 0 : 10),
+                child: const _PeopleSkeleton(height: 70),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        const Expanded(child: _PeopleSkeleton()),
+      ],
+    );
+  }
+}
+
+class _PeopleSkeleton extends StatelessWidget {
+  const _PeopleSkeleton({this.height});
+
+  final double? height;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF0F6),
+        borderRadius: BorderRadius.circular(SoftErpTheme.radiusLg),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+    );
+  }
+}
+
+enum _PeopleTone { accent, info, success, warning }
+
+(Color, Color) _peopleToneColors(_PeopleTone tone) => switch (tone) {
+  _PeopleTone.accent => (SoftErpTheme.accentSoft, SoftErpTheme.accentDark),
+  _PeopleTone.info => (SoftErpTheme.infoBg, SoftErpTheme.infoText),
+  _PeopleTone.success => (SoftErpTheme.successBg, SoftErpTheme.successText),
+  _PeopleTone.warning => (SoftErpTheme.warningBg, SoftErpTheme.warningText),
+};
+
+List<EmployeeDefinition> _filteredRoster(DepartmentsProvider provider) {
+  var employees = provider.employees;
+  if (provider.employmentFilter != 'all') {
+    employees = employees
+        .where(
+          (employee) => employee.employmentType == provider.employmentFilter,
+        )
+        .toList(growable: false);
+  }
+  if (provider.searchQuery.isNotEmpty) {
+    final query = provider.searchQuery;
+    employees = employees
+        .where(
+          (employee) =>
+              employee.name.toLowerCase().contains(query) ||
+              employee.role.toLowerCase().contains(query) ||
+              employee.phone.toLowerCase().contains(query) ||
+              employee.email.toLowerCase().contains(query) ||
+              employee.barcodeId.toLowerCase().contains(query),
+        )
+        .toList(growable: false);
+  }
+  return employees;
 }
