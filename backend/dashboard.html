@@ -689,7 +689,7 @@
             </div>
             <div style="margin-left: auto;">
               <button onclick="triggerBuild()" style="background: linear-gradient(135deg, var(--accent-violet), var(--accent-cyan)); border: none; padding: 0.75rem 1.5rem; border-radius: 8px; color: white; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; transition: transform 0.2s;">
-                <span style="font-size: 1.2rem;">🚀</span> Build & Send Installer
+                <span style="font-size: 1.2rem;">🚀</span> Trigger Global Release Build
               </button>
             </div>
           </div>
@@ -1456,13 +1456,19 @@
     }
 
     async function triggerBuild() {
-      if (!currentClientId) return;
-      showToast('Dispatching GitHub Actions build...', 'info');
+      const version = prompt("Enter the new global version number to build (e.g. 1.0.1):", "1.0.1");
+      if (!version) return;
+
+      showToast(`Dispatching Global Build v${version}...`, 'info');
       try {
-        const response = await fetch(`/api/build/${currentClientId}`, { method: 'POST' });
+        const response = await fetch(`/api/build/global`, { 
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targetVersion: version })
+        });
         const resData = await response.json();
         if (resData.success) {
-          showToast('Installer Build Triggered successfully. Check your email.', 'success');
+          showToast('Global Build Triggered successfully. It will be uploaded to S3 automatically.', 'success');
         } else {
           showToast('Build failed: ' + resData.error, 'error');
         }

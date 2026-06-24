@@ -3,8 +3,12 @@ name: Build Desktop (Windows + macOS)
 on:
   workflow_dispatch:
     inputs:
+      target_version:
+        description: "Global Release Version (e.g., 1.0.1) - uploads single build to S3"
+        required: false
+        type: string
       client_id:
-        description: "The specific client ID to build for (e.g., client_A)"
+        description: "The specific client ID to build for (e.g., client_A) (Legacy)"
         required: false
         type: string
       api_base_url:
@@ -132,12 +136,29 @@ jobs:
           if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
           Compress-Archive -Path (Join-Path $src "*") -DestinationPath $zipPath
 
-      - name: Upload (Windows)
+      - name: Upload (Windows Artifact)
         if: matrix.target == 'windows'
         uses: actions/upload-artifact@v4
         with:
           name: paper-windows-${{ steps.flags.outputs.label }}
           path: dist/*.zip
+
+      - name: Upload Single Build to AWS S3 (Windows)
+        if: matrix.target == 'windows' && github.event.inputs.target_version != ''
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          S3_BUCKET: ${{ secrets.AWS_S3_UPDATE_BUCKET }}
+        shell: bash
+        run: |
+          if [[ -z "${S3_BUCKET}" ]]; then
+            echo "AWS_S3_UPDATE_BUCKET secret is missing."
+            exit 1
+          fi
+          # We upload the raw unzipped .exe so the auto-updater can download it directly
+          aws s3 cp "build/windows/x64/runner/Release/paper.exe" "s3://${S3_BUCKET}/${{ github.event.inputs.target_version }}/paper-windows-v${{ github.event.inputs.target_version }}.exe" --acl public-read
+
 
       # Some plugins (auto_updater_macos, printing) don't support Swift Package
       # Manager, and SPM resolves a sentry-cocoa that lacks an API sentry_flutter

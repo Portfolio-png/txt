@@ -21262,6 +21262,52 @@ app.get('/sandbox-config/:clientId', async (req, res) => {
   }
 });
 
+// Dynamic Appcast XML endpoint for the auto-updater
+app.get('/api/appcast/:clientId.xml', async (req, res) => {
+  try {
+    const clientId = req.params.clientId;
+    let configStr = null;
+    const row = await get('SELECT config_json FROM sandbox_client_configs WHERE client_id = ?', [clientId]);
+    if (row) {
+      configStr = row.config_json;
+    } else {
+      const defaultRow = await get('SELECT config_json FROM sandbox_client_configs WHERE client_id = ?', ['default']);
+      if (defaultRow) configStr = defaultRow.config_json;
+    }
+    
+    let targetVersion = '1.0.0';
+    if (configStr) {
+      try {
+        const config = JSON.parse(configStr);
+        if (config.update && config.update.latest_version) {
+          targetVersion = config.update.latest_version;
+        }
+      } catch (e) {}
+    }
+
+    // Replace this with your actual S3 bucket public URL or CloudFront distribution
+    const bucketUrl = process.env.AWS_S3_UPDATE_BUCKET_URL || 'https://your-bucket.s3.amazonaws.com/releases';
+    const downloadUrl = `${bucketUrl}/${targetVersion}/paper-windows-v${targetVersion}.exe`;
+
+    const xml = `<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+    <channel>
+        <title>Paper Appcast</title>
+        <item>
+            <title>Version ${targetVersion}</title>
+            <sparkle:version>${targetVersion}</sparkle:version>
+            <enclosure url="${downloadUrl}" sparkle:os="windows" />
+        </item>
+    </channel>
+</rss>`;
+
+    res.setHeader('Content-Type', 'application/xml');
+    res.send(xml);
+  } catch (error) {
+    res.status(500).send('<error>Internal Server Error</error>');
+  }
+});
+
 // Serve the centralized feature registry definition
 app.get('/api/sandbox-dashboard/feature-registry', (req, res) => {
   try {
@@ -21515,9 +21561,9 @@ app.delete('/api/activate/:clientId/:fingerprint', async (req, res) => {
   }
 });
 
-app.post('/api/build/:clientId', async (req, res) => {
+app.post('/api/build/global', async (req, res) => {
   try {
-    const clientId = req.params.clientId;
+    const targetVersion = req.body.targetVersion || '1.0.0';
     const githubToken = process.env.GITHUB_TOKEN;
     const githubOwner = process.env.GITHUB_OWNER || 'your-github-username';
     const githubRepo = process.env.GITHUB_REPO || 'core-erp';
@@ -21540,7 +21586,7 @@ app.post('/api/build/:clientId', async (req, res) => {
       body: JSON.stringify({
         ref: 'main',
         inputs: {
-          client_id: clientId
+          target_version: targetVersion
         }
       })
     });
@@ -21550,7 +21596,7 @@ app.post('/api/build/:clientId', async (req, res) => {
       return res.status(response.status).json({ success: false, error: `GitHub API error: ${errorText}` });
     }
 
-    res.json({ success: true, message: 'Build workflow dispatched successfully!' });
+    res.json({ success: true, message: `Global Build v${targetVersion} dispatched successfully!` });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
