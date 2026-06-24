@@ -438,14 +438,32 @@ class _ItemsViewToggleButton extends StatelessWidget {
   }
 }
 
-class _ItemsTable extends StatelessWidget {
+class _ItemsTable extends StatefulWidget {
   const _ItemsTable({required this.items, this.onCreatePipeline});
 
   final List<ItemDefinition> items;
   final VoidCallback? onCreatePipeline;
 
   @override
+  State<_ItemsTable> createState() => _ItemsTableState();
+}
+
+class _ItemsTableState extends State<_ItemsTable> {
+  final Set<int> _expandedBaseItemIds = <int>{};
+
+  @override
   Widget build(BuildContext context) {
+    final topLevelItems = widget.items.where((i) => i.baseItemId == null).toList();
+    final displayItems = <ItemDefinition>[];
+
+    for (final baseItem in topLevelItems) {
+      displayItems.add(baseItem);
+      if (_expandedBaseItemIds.contains(baseItem.id)) {
+        final variants = widget.items.where((i) => i.baseItemId == baseItem.id).toList();
+        displayItems.addAll(variants);
+      }
+    }
+
     return SoftMasterTable(
       minWidth: 1120,
       columns: const [
@@ -456,11 +474,27 @@ class _ItemsTable extends StatelessWidget {
         SoftTableColumn('Status', flex: 1),
         SoftTableColumn('Actions', flex: 2),
       ],
-      itemCount: items.length,
-      rowBuilder: (context, index) => _ItemRow(
-        item: items[index],
-        onCreatePipeline: onCreatePipeline,
-      ),
+      itemCount: displayItems.length,
+      rowBuilder: (context, index) {
+        final item = displayItems[index];
+        final isVariant = item.baseItemId != null;
+        return _ItemRow(
+          item: item,
+          isVariant: isVariant,
+          onCreatePipeline: widget.onCreatePipeline,
+          onDoubleTap: isVariant
+              ? null
+              : () {
+                  setState(() {
+                    if (_expandedBaseItemIds.contains(item.id)) {
+                      _expandedBaseItemIds.remove(item.id);
+                    } else {
+                      _expandedBaseItemIds.add(item.id);
+                    }
+                  });
+                },
+        );
+      },
     );
   }
 }
@@ -485,6 +519,8 @@ class _ItemsGrid extends StatelessWidget {
         final width = constraints.maxWidth;
         final spacing = width >= 1200 ? 18.0 : 14.0;
 
+        final topLevelItems = items.where((i) => i.baseItemId == null).toList();
+
         return GridView.builder(
           key: const ValueKey<String>('items-grid-view'),
           padding: const EdgeInsets.only(bottom: 12),
@@ -494,9 +530,9 @@ class _ItemsGrid extends StatelessWidget {
             mainAxisSpacing: spacing,
             childAspectRatio: cardWidth / cardHeight,
           ),
-          itemCount: items.length,
+          itemCount: topLevelItems.length,
           itemBuilder: (context, index) => _GridItemCard(
-            item: items[index],
+            item: topLevelItems[index],
             onCreatePipeline: onCreatePipeline,
           ),
         );
@@ -529,10 +565,17 @@ class _GridItemCard extends StatelessWidget {
 }
 
 class _ItemRow extends StatelessWidget {
-  const _ItemRow({required this.item, this.onCreatePipeline});
+  const _ItemRow({
+    required this.item,
+    this.onCreatePipeline,
+    this.isVariant = false,
+    this.onDoubleTap,
+  });
 
   final ItemDefinition item;
   final VoidCallback? onCreatePipeline;
+  final bool isVariant;
+  final VoidCallback? onDoubleTap;
 
   @override
   Widget build(BuildContext context) {
@@ -563,18 +606,38 @@ class _ItemRow extends StatelessWidget {
           onCreatePipeline: onCreatePipeline,
         ),
       ),
+      onDoubleTap: onDoubleTap,
       children: [
         Expanded(
           flex: 2,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SoftInlineText(item.displayName, weight: FontWeight.w700),
-              if (item.alias.trim().isNotEmpty) ...[
-                const SizedBox(height: 4),
-                SoftInlineText(item.alias, color: SoftErpTheme.textSecondary),
+          child: Padding(
+            padding: EdgeInsets.only(left: isVariant ? 24.0 : 0.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (isVariant)
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(top: 2.0),
+                        child: Icon(Icons.subdirectory_arrow_right_rounded, size: 16, color: SoftErpTheme.textSecondary),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(child: SoftInlineText(item.displayName, weight: FontWeight.w600)),
+                    ]
+                  )
+                else
+                  SoftInlineText(item.displayName, weight: FontWeight.w700),
+                if (item.alias.trim().isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Padding(
+                    padding: EdgeInsets.only(left: isVariant ? 22.0 : 0.0),
+                    child: SoftInlineText(item.alias, color: SoftErpTheme.textSecondary),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
         Expanded(flex: 2, child: SoftInlineText(unitLabel)),

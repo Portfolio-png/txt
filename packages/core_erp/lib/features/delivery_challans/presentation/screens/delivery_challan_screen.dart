@@ -26,7 +26,7 @@ import '../../../../widgets/variation_path_selector_dialog.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
 import '../../../inventory/presentation/providers/inventory_provider.dart';
 import '../../../items/domain/item_definition.dart';
-
+import '../../../items/presentation/widgets/item_finder_selector.dart';
 import '../../../units/domain/unit_inputs.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../../items/presentation/providers/items_provider.dart';
@@ -3999,11 +3999,7 @@ class _ItemsEditor extends StatelessWidget {
             ],
           ),
         ],
-        if (draft.itemId != null &&
-            draft.variationPathLabel.trim().isNotEmpty) ...[
-          const SizedBox(height: 10),
-          _buildDeliveryVariationPathField(context, index, draft),
-        ],
+
         const SizedBox(height: 8),
         _itemField(
           draft.note,
@@ -4029,17 +4025,6 @@ class _ItemsEditor extends StatelessWidget {
     if (selectedItem != null) {
       draft.initializeConversionFields(selectedItem, unitsProvider);
     }
-    final itemOptions = availableItems
-        .map((item) {
-            final primaryGroup = groupsProvider.findById(item.groupId)?.name ?? 'No primary group';
-            final fullVariationName = item.displayName.isNotEmpty ? item.displayName : item.name;
-            return SearchableSelectOption<int>(
-              value: item.id,
-              label: fullVariationName,
-              searchText: '$fullVariationName ${item.alias} ${item.name} $primaryGroup',
-            );
-          })
-        .toList(growable: false);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -4054,49 +4039,50 @@ class _ItemsEditor extends StatelessWidget {
               SizedBox(width: 28, child: Text('${index + 1}.')),
               Expanded(
                 flex: 6,
-                child: SearchableSelectField<int>(
+                child: FormField<int>(
                   key: ValueKey<String>('challan-reception-item-$index'),
-                  tapTargetKey: ValueKey<String>(
-                    'challan-reception-item-$index',
-                  ),
-                  value: draft.itemId,
-                  fieldEnabled: enabled,
-                  decoration: InputDecoration(
-                    labelText: 'Item',
-                    isDense: true,
-                    filled: true,
-                    fillColor: Colors.white,
-                    border: OutlineInputBorder(
+                  initialValue: draft.itemId,
+                  builder: (state) {
+                    final item = availableItems.where((candidate) => candidate.id == draft.itemId).firstOrNull;
+                    final fullVariationName = item != null ? (item.displayName.isNotEmpty ? item.displayName : item.name) : null;
+                    return InkWell(
                       borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  dialogTitle: 'Select Item',
-                  searchHintText: 'Search item',
-                  options: itemOptions,
-                  onChanged: (itemId) async {
-                    final item = availableItems
-                        .where((candidate) => candidate.id == itemId)
-                        .firstOrNull;
-                    draft.applyReceptionItem(item);
-                    onChanged();
-                    
-                    if (item != null && item.topLevelProperties.isNotEmpty) {
-                      final result = await _openVariationSelector(
-                        context,
-                        item: item,
-                        draft: draft,
-                        readOnly: false,
-                      );
-                      if (result != null) {
-                        draft.applyReceptionVariationSelection(
-                          result.item,
-                          result.valueNodeIds,
-                          result.leaf,
-                          _variationSelectionLabel(result.item, result.valueNodeIds),
-                        );
-                        onChanged();
-                      }
-                    }
+                      onTap: enabled
+                          ? () async {
+                              final itemId = await showDialog<int>(
+                                context: context,
+                                builder: (ctx) => const ItemFinderSelectorDialog(),
+                              );
+                              if (itemId != null) {
+                                final candidate = availableItems.where((c) => c.id == itemId).firstOrNull;
+                                draft.applyReceptionItem(candidate);
+                                state.didChange(itemId);
+                                onChanged();
+                              }
+                            }
+                          : null,
+                      child: InputDecorator(
+                        decoration: InputDecoration(
+                          labelText: 'Item',
+                          isDense: true,
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          suffixIcon: const Icon(Icons.search, size: 20),
+                        ),
+                        isEmpty: fullVariationName == null,
+                        child: Text(
+                          fullVariationName ?? 'Select Item',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: fullVariationName == null ? SoftErpTheme.textSecondary : SoftErpTheme.textPrimary,
+                          ),
+                        ),
+                      ),
+                    );
                   },
                 ),
               ),
@@ -4156,13 +4142,6 @@ class _ItemsEditor extends StatelessWidget {
           if (selectedItem != null) ...[
             const SizedBox(height: 10),
             _buildConversionSummary(context, draft, selectedItem, unitsProvider),
-            const SizedBox(height: 10),
-            _buildReceptionVariationPathField(
-              context,
-              index,
-              draft,
-              selectedItem,
-            ),
           ],
           const SizedBox(height: 8),
           _itemField(
@@ -4300,274 +4279,6 @@ class _ItemsEditor extends StatelessWidget {
     );
   }
 
-  Widget _buildReceptionVariationPathField(
-    BuildContext context,
-    int index,
-    _ItemDraft draft,
-    ItemDefinition item,
-  ) {
-    if (item.topLevelProperties.isEmpty) {
-      return Align(
-        alignment: Alignment.centerLeft,
-        child: SoftPill(
-          label: 'No variation required',
-          foreground: SoftErpTheme.textSecondary,
-          background: SoftErpTheme.cardSurfaceAlt,
-          borderColor: SoftErpTheme.border,
-        ),
-      );
-    }
-    final hasSelectedPath =
-        draft.variationLeafNodeId > 0 ||
-        draft.variationPathLabel.trim().isNotEmpty;
-    final label = hasSelectedPath
-        ? draft.variationPathLabel
-        : 'Select variation path';
-    return InkWell(
-      key: ValueKey<String>('challan-reception-variation-$index'),
-      onTap: enabled
-          ? () async {
-              final result = await _openVariationSelector(
-                context,
-                item: item,
-                draft: draft,
-                readOnly: false,
-              );
-              if (result == null) {
-                return;
-              }
-              draft.applyReceptionVariationSelection(
-                result.item,
-                result.valueNodeIds,
-                result.leaf,
-                _variationSelectionLabel(result.item, result.valueNodeIds),
-              );
-              onChanged();
-            }
-          : null,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: hasSelectedPath ? SoftErpTheme.accentSoft : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: hasSelectedPath
-                ? const Color(0xFFDAD4FF)
-                : SoftErpTheme.border,
-          ),
-        ),
-        child: Row(
-          children: [
-            const Icon(
-              Icons.route_rounded,
-              size: 17,
-              color: SoftErpTheme.textSecondary,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: hasSelectedPath
-                      ? SoftErpTheme.accentDark
-                      : SoftErpTheme.textSecondary,
-                  fontWeight: FontWeight.w700,
-                  decoration: TextDecoration.underline,
-                  decorationColor: hasSelectedPath
-                      ? SoftErpTheme.accentDark
-                      : SoftErpTheme.textSecondary,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDeliveryVariationPathField(
-    BuildContext context,
-    int index,
-    _ItemDraft draft,
-  ) {
-    final item = context
-        .read<ItemsProvider>()
-        .items
-        .where((candidate) => candidate.id == draft.itemId)
-        .firstOrNull;
-    if (item == null || draft.variationPathLabel.trim().isEmpty) {
-      return const SizedBox.shrink();
-    }
-    return InkWell(
-      key: ValueKey<String>('challan-delivery-variation-$index'),
-      onTap: () {
-        _openVariationSelector(
-          context,
-          item: item,
-          draft: draft,
-          readOnly: true,
-        );
-      },
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: SoftErpTheme.cardSurface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: SoftErpTheme.border),
-        ),
-        child: Row(
-          children: [
-            const Icon(
-              Icons.route_rounded,
-              size: 17,
-              color: SoftErpTheme.textSecondary,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                draft.variationPathLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: SoftErpTheme.textPrimary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<VariationPathSelectionResult?> _openVariationSelector(
-    BuildContext context, {
-    required ItemDefinition item,
-    required _ItemDraft draft,
-    required bool readOnly,
-  }) {
-    return showDialog<VariationPathSelectionResult>(
-      context: context,
-      builder: (dialogContext) => Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 680, maxHeight: 760),
-          child: VariationPathSelectorDialog(
-            item: item,
-            initialRootPropertyId: null,
-            initialValueNodeIds: draft.variationPathNodeIds.isNotEmpty
-                ? draft.variationPathNodeIds
-                : draft.variationLeafNodeId <= 0
-                    ? const <int>[]
-                    : _valueNodeIdsForLeaf(item, draft.variationLeafNodeId),
-            onCreateValue: null,
-            readOnly: readOnly,
-          ),
-        ),
-      ),
-    );
-  }
-
-  List<int> _valueNodeIdsForLeaf(ItemDefinition item, int leafId) {
-    final path = <ItemVariationNodeDefinition>[];
-
-    bool visit(ItemVariationNodeDefinition node) {
-      path.add(node);
-      if (node.id == leafId) {
-        return true;
-      }
-      for (final child in node.activeChildren) {
-        if (visit(child)) {
-          return true;
-        }
-      }
-      path.removeLast();
-      return false;
-    }
-
-    for (final root in item.topLevelProperties) {
-      if (visit(root)) {
-        break;
-      }
-      path.clear();
-    }
-
-    return path
-        .where((node) => node.kind == ItemVariationNodeKind.value)
-        .map((node) => node.id)
-        .toList(growable: false);
-  }
-
-  String _buildNamingFormatLabel(ItemDefinition item, List<int> valueNodeIds) {
-    final itemName = item.displayName.trim().isEmpty
-        ? item.name
-        : item.displayName;
-    if (valueNodeIds.isEmpty) {
-      return itemName;
-    }
-
-    // Build a map: propertyId -> selected value name, walking the tree
-    final selectedValueIds = valueNodeIds.toSet();
-    // Map property node id -> selected value name
-    final propIdToValue = <int, String>{};
-    for (final root in item.topLevelProperties) {
-      ItemVariationNodeDefinition currentProperty = root;
-      while (true) {
-        final selectedValue = currentProperty.activeChildren
-            .where((n) => n.kind == ItemVariationNodeKind.value)
-            .where((n) => selectedValueIds.contains(n.id))
-            .firstOrNull;
-        if (selectedValue == null) break;
-        final valName = selectedValue.name.trim().isEmpty
-            ? selectedValue.displayName.trim()
-            : selectedValue.name.trim();
-        propIdToValue[currentProperty.id] = valName;
-        final nextProp = selectedValue.activeChildren
-            .where((n) => n.kind == ItemVariationNodeKind.property)
-            .firstOrNull;
-        if (nextProp == null) break;
-        currentProperty = nextProp;
-      }
-    }
-
-    final topProps = item.topLevelProperties;
-    final parts = <String>[];
-
-    // If naming format is specified, follow it
-    if (item.namingFormat.isNotEmpty) {
-      for (final token in item.namingFormat) {
-        if (token == 'name') {
-          parts.add(itemName);
-        } else if (token.startsWith('prop_')) {
-          final idx = int.tryParse(token.substring(5));
-          if (idx != null && idx >= 0 && idx < topProps.length) {
-            final value = propIdToValue[topProps[idx].id];
-            if (value != null && value.isNotEmpty) {
-              parts.add(value);
-            }
-          }
-        }
-      }
-    }
-
-    // Fallback: item name + all selected values in tree order
-    if (parts.isEmpty) {
-      parts.add(itemName);
-      parts.addAll(propIdToValue.values.where((v) => v.isNotEmpty));
-    }
-
-    return parts.join(' ');
-  }
-
-  String _variationSelectionLabel(ItemDefinition item, List<int> valueNodeIds) {
-    return _buildNamingFormatLabel(item, valueNodeIds);
-  }
 
   Widget _itemField(
     String initialValue,

@@ -405,17 +405,20 @@ class SoftMasterRow extends StatelessWidget {
     super.key,
     required this.children,
     this.onTap,
+    this.onDoubleTap,
     this.padding = const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
   });
 
   final List<Widget> children;
   final VoidCallback? onTap;
+  final VoidCallback? onDoubleTap;
   final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context) {
     return SoftRowCard(
       onTap: onTap ?? () {},
+      onDoubleTap: onDoubleTap,
       baseColor: SoftErpTheme.cardSurface,
       hoverColor: const Color(0xFFFDFDFF),
       child: Padding(

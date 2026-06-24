@@ -343,6 +343,7 @@ class SoftRowCard extends StatefulWidget {
     super.key,
     required this.child,
     required this.onTap,
+    this.onDoubleTap,
     this.isSelected = false,
     this.baseColor,
     this.hoverColor,
@@ -353,6 +354,7 @@ class SoftRowCard extends StatefulWidget {
 
   final Widget child;
   final VoidCallback onTap;
+  final VoidCallback? onDoubleTap;
   final bool isSelected;
   final Color? baseColor;
   final Color? hoverColor;
@@ -395,6 +397,7 @@ class _SoftRowCardState extends State<SoftRowCard> {
           color: Colors.transparent,
           child: InkWell(
             onTap: widget.onTap,
+            onDoubleTap: widget.onDoubleTap,
             onHighlightChanged: (pressed) => setState(() => _pressed = pressed),
             borderRadius: BorderRadius.circular(22),
             child: Ink(

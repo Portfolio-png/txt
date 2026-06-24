@@ -27,7 +27,7 @@ import '../../../delivery_challans/presentation/screens/delivery_challan_screen.
 import 'package:core_erp/widgets/variation_path_selector_dialog.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../items/domain/item_definition.dart';
-
+import '../../../items/presentation/widgets/item_finder_selector.dart';
 import '../../../items/presentation/screens/items_screen.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../units/domain/unit_definition.dart';
@@ -3110,10 +3110,6 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       completionDateField: _itemWiseCompletionDate
           ? _buildCompletionDateFieldForLine(context, index)
           : null,
-      variationPathField: _buildVariationPathFieldForLineIfApplicable(
-        items,
-        index,
-      ),
       onHistory: () => _showGlobalItemHistoryDialog(index),
       onDuplicate: () => _duplicateLine(index),
       onDelete: index == 0 ? null : () => _removeLine(index),
@@ -3127,239 +3123,75 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
 
   Widget _buildItemSelectForLine(List<ItemDefinition> items, int index) {
     final line = _lines[index];
-    final groupsProvider = context.watch<GroupsProvider>();
     final fieldKey = index == 0
         ? const ValueKey<String>('orders-editor-item-field')
         : ValueKey<String>('orders-editor-item-field-${line.id}');
+
     return FocusTraversalOrder(
       order: _lineFocusOrder(index, 0),
-      child: SearchableSelectField<int>(
+      child: FormField<int>(
         key: fieldKey,
-        tapTargetKey: fieldKey,
-        value: line.selectedItemId,
-        decoration: _inputDecoration(hintText: 'Select Item'),
-        dialogTitle: 'Item',
-        searchHintText: 'Search item',
-        options: items
-            .map((item) {
-              final primaryGroup =
-                  groupsProvider.findById(item.groupId)?.name ??
-                  'No primary group';
-              final fullVariationName = item.displayName.isNotEmpty ? item.displayName : item.name;
-              return SearchableSelectOption<int>(
-                value: item.id,
-                label: fullVariationName,
-                searchText: '$fullVariationName $primaryGroup',
-              );
-            })
-            .toList(growable: false),
-        onCreateOption: (query) =>
-            _quickCreateItemForLine(context, lineIndex: index, name: query),
-        createOptionLabelBuilder: (query) => 'Create item "$query"',
-        onChanged: (value) async {
-          setState(() {
-            line.selectedItemId = value;
-            final latestItems = context.read<ItemsProvider>().items;
-            final item = _selectedItemForLine(latestItems, value);
-            _syncVariationSelectionForLine(line, item);
-          });
-
-          final latestItems = context.read<ItemsProvider>().items;
-          final item = _selectedItemForLine(latestItems, value);
-          if (item != null && item.topLevelProperties.isNotEmpty && mounted) {
-            await _openVariationPathSelectorForLine(
-              context,
-              items: latestItems,
-              lineIndex: index,
-            );
-          }
-        },
+        initialValue: line.selectedItemId,
         validator: (value) {
-          if (value == null) {
+          if (line.selectedItemId == null) {
             return 'Select an item.';
           }
           return null;
         },
-      ),
-    );
-  }
+        builder: (state) {
+          final selectedItem = _selectedItemForLine(items, line.selectedItemId);
+          final fullVariationName = selectedItem != null
+              ? (selectedItem.displayName.isNotEmpty ? selectedItem.displayName : selectedItem.name)
+              : null;
+              
+          return InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () async {
+              final selectedId = await showDialog<int>(
+                context: context,
+                builder: (ctx) => const ItemFinderSelectorDialog(),
+              );
+              if (selectedId != null && mounted) {
+                setState(() {
+                  line.selectedItemId = selectedId;
+                  state.didChange(selectedId);
+                  final latestItems = context.read<ItemsProvider>().items;
+                  final item = _selectedItemForLine(latestItems, selectedId);
+                  _syncVariationSelectionForLine(line, item);
+                });
 
-  Widget? _buildVariationPathFieldForLineIfApplicable(
-    List<ItemDefinition> items,
-    int index,
-  ) {
-    final line = _lines[index];
-    final selectedItem = _selectedItemForLine(items, line.selectedItemId);
-    if (selectedItem == null) return null;
-
-    return FocusTraversalOrder(
-      order: _lineFocusOrder(index, 5),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildVariationPathFieldForLine(items, index),
-          if (line.variationPathError != null) ...[
-            const SizedBox(height: 6),
-            Text(
-              line.variationPathError!,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.error,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildVariationPathFieldForLine(
-    List<ItemDefinition> items,
-    int index,
-  ) {
-    final line = _lines[index];
-    final item = _selectedItemForLine(items, line.selectedItemId);
-    final variationBaseKey = index == 0
-        ? 'orders-editor-variation-path-field'
-        : 'orders-editor-line-${line.id}-variation';
-
-    if (item == null) {
-      return SearchableSelectField<int>(
-        key: ValueKey<String>(variationBaseKey),
-        tapTargetKey: ValueKey<String>(variationBaseKey),
-        value: null,
-        decoration: _inputDecoration(hintText: 'Select item first'),
-        fieldEnabled: false,
-        options: const <SearchableSelectOption<int>>[],
-        onChanged: (_) {},
-      );
-    }
-
-    final topLevelProperties = item.topLevelProperties;
-    if (topLevelProperties.isEmpty) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFF7ED),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFF4C98B)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'This item has no variation structure yet.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: const Color(0xFF9A3412),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Open the item and create its first property/variation on the go.',
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: const Color(0xFF9A3412)),
-            ),
-            const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton.icon(
-                onPressed: () => _openItemVariationEditorForLine(
-                  context,
-                  items: items,
-                  lineIndex: index,
-                ),
-                icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                label: const Text('Open Item to Add Variation'),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    final selectedLeaf = _selectedLeafForLine(
-      item,
-      line.selectedVariationLeafId,
-    );
-    final selectedPropertyCount = line.selectedVariationValueNodeIds.length;
-    final hasSelectedPath = selectedLeaf != null || selectedPropertyCount > 0;
-
-    final fullLabel = hasSelectedPath
-        ? _buildNamingFormatLabel(item, line.selectedVariationValueNodeIds)
-        : 'Select variation path';
-    final compactLabel = hasSelectedPath
-        ? _buildNamingFormatCodeLabel(item, line.selectedVariationValueNodeIds)
-        : fullLabel;
-    final labelStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
-      color: hasSelectedPath
-          ? SoftErpTheme.accentDark
-          : SoftErpTheme.textSecondary,
-      fontWeight: FontWeight.w800,
-      decoration: TextDecoration.underline,
-      decorationColor: hasSelectedPath
-          ? SoftErpTheme.accentDark
-          : SoftErpTheme.textSecondary,
-    );
-
-    return InkWell(
-      key: ValueKey<String>(variationBaseKey),
-      borderRadius: BorderRadius.circular(12),
-      onTap: () => _openVariationPathSelectorForLine(
-        context,
-        items: items,
-        lineIndex: index,
-      ),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: hasSelectedPath ? SoftErpTheme.accentSoft : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: hasSelectedPath
-                ? const Color(0xFFDAD4FF)
-                : SoftErpTheme.border,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              Icons.route_rounded,
-              size: 17,
-              color: hasSelectedPath
-                  ? SoftErpTheme.accentDark
-                  : SoftErpTheme.textSecondary,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final displayLabel =
-                      _fitsSingleLine(
-                            fullLabel,
-                            labelStyle,
-                            constraints.maxWidth,
-                            Directionality.of(context),
-                          ) ||
-                          constraints.maxWidth >= 180
-                      ? fullLabel
-                      : compactLabel;
-                  return Text(
-                    displayLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: labelStyle,
+                final latestItems = context.read<ItemsProvider>().items;
+                final item = _selectedItemForLine(latestItems, selectedId);
+                if (item != null && item.topLevelProperties.isNotEmpty && mounted) {
+                  await _openVariationPathSelectorForLine(
+                    context,
+                    items: latestItems,
+                    lineIndex: index,
                   );
-                },
+                }
+              }
+            },
+            child: InputDecorator(
+              decoration: _inputDecoration(
+                hintText: 'Select Item',
+                errorText: state.errorText,
+              ).copyWith(
+                suffixIcon: const Icon(Icons.search, size: 20),
+              ),
+              isEmpty: fullVariationName == null,
+              child: Text(
+                fullVariationName ?? 'Select Item',
+                style: TextStyle(
+                  color: fullVariationName == null ? SoftErpTheme.textSecondary : SoftErpTheme.textPrimary,
+                ),
               ),
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
+
 
   Widget _buildUnitFieldForLine(List<ItemDefinition> items, int index) {
     final line = _lines[index];
@@ -7424,7 +7256,6 @@ class _OrderItemsRow extends StatelessWidget {
     required this.quantityField,
     required this.unitField,
     this.completionDateField,
-    this.variationPathField,
     this.onHistory,
     this.onDuplicate,
     this.onDelete,
@@ -7435,7 +7266,6 @@ class _OrderItemsRow extends StatelessWidget {
   final Widget quantityField;
   final Widget unitField;
   final Widget? completionDateField;
-  final Widget? variationPathField;
   final VoidCallback? onHistory;
   final VoidCallback? onDuplicate;
   final VoidCallback? onDelete;
@@ -7449,99 +7279,80 @@ class _OrderItemsRow extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFFF0EEF8)),
       ),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(flex: 28, child: itemField),
-              const SizedBox(width: _OrderItemsHeader._columnGap),
-              Expanded(flex: 18, child: clientCodeField),
-              const SizedBox(width: _OrderItemsHeader._columnGap),
-              Expanded(flex: 12, child: quantityField),
-              const SizedBox(width: _OrderItemsHeader._columnGap),
-              Expanded(flex: 18, child: unitField),
-              if (completionDateField != null) ...[
-                const SizedBox(width: _OrderItemsHeader._columnGap),
-                Expanded(flex: 24, child: completionDateField!),
-              ],
-              const SizedBox(width: 12),
-              SizedBox(
-                width: 108,
-                height: 52,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    if (onHistory != null)
-                      Tooltip(
-                        message: 'Fetch from history',
-                        child: InkWell(
-                          onTap: onHistory,
-                          borderRadius: BorderRadius.circular(16),
-                          child: const SizedBox(
-                            width: 32,
-                            height: 32,
-                            child: Icon(
-                              Icons.history_rounded,
-                              size: 18,
-                              color: SoftErpTheme.accent,
-                            ),
-                          ),
-                        ),
-                      ),
-                    if (onDuplicate != null)
-                      Tooltip(
-                        message: 'Duplicate item',
-                        child: InkWell(
-                          onTap: onDuplicate,
-                          borderRadius: BorderRadius.circular(16),
-                          child: const SizedBox(
-                            width: 32,
-                            height: 32,
-                            child: Icon(
-                              Icons.copy_rounded,
-                              size: 18,
-                              color: SoftErpTheme.textSecondary,
-                            ),
-                          ),
-                        ),
-                      ),
-                    Tooltip(
-                      message: 'Remove item',
-                      child: InkWell(
-                        onTap: onDelete,
-                        borderRadius: BorderRadius.circular(16),
-                        child: const SizedBox(
-                          width: 32,
-                          height: 32,
-                          child: Icon(
-                            Icons.delete_outline_rounded,
-                            size: 18,
-                            color: Color(0xFFEF4444),
-                          ),
+          Expanded(flex: 28, child: itemField),
+          const SizedBox(width: _OrderItemsHeader._columnGap),
+          Expanded(flex: 18, child: clientCodeField),
+          const SizedBox(width: _OrderItemsHeader._columnGap),
+          Expanded(flex: 12, child: quantityField),
+          const SizedBox(width: _OrderItemsHeader._columnGap),
+          Expanded(flex: 18, child: unitField),
+          if (completionDateField != null) ...[
+            const SizedBox(width: _OrderItemsHeader._columnGap),
+            Expanded(flex: 24, child: completionDateField!),
+          ],
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 108,
+            height: 52,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (onHistory != null)
+                  Tooltip(
+                    message: 'Fetch from history',
+                    child: InkWell(
+                      onTap: onHistory,
+                      borderRadius: BorderRadius.circular(16),
+                      child: const SizedBox(
+                        width: 32,
+                        height: 32,
+                        child: Icon(
+                          Icons.history_rounded,
+                          size: 18,
+                          color: SoftErpTheme.accent,
                         ),
                       ),
                     ),
-                  ],
+                  ),
+                if (onDuplicate != null)
+                  Tooltip(
+                    message: 'Duplicate item',
+                    child: InkWell(
+                      onTap: onDuplicate,
+                      borderRadius: BorderRadius.circular(16),
+                      child: const SizedBox(
+                        width: 32,
+                        height: 32,
+                        child: Icon(
+                          Icons.copy_rounded,
+                          size: 18,
+                          color: SoftErpTheme.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ),
+                Tooltip(
+                  message: 'Remove item',
+                  child: InkWell(
+                    onTap: onDelete,
+                    borderRadius: BorderRadius.circular(16),
+                    child: const SizedBox(
+                      width: 32,
+                      height: 32,
+                      child: Icon(
+                        Icons.delete_outline_rounded,
+                        size: 18,
+                        color: Color(0xFFEF4444),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ],
-          ),
-          if (variationPathField != null) ...[
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  flex: completionDateField == null ? 100 : 76,
-                  child: variationPathField!,
-                ),
-                if (completionDateField != null) const Spacer(flex: 24),
-
-                const SizedBox(width: 48),
               ],
             ),
-          ],
+          ),
         ],
       ),
     );
