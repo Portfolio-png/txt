@@ -105,6 +105,7 @@ class ItemDto {
     this.defaultPipelineName,
     required this.variationTree,
     required this.propertySchema,
+    this.baseItemId,
     this.photoUrl = '',
   });
 
@@ -125,6 +126,7 @@ class ItemDto {
   final String? defaultPipelineName;
   final List<ItemVariationNodeDto> variationTree;
   final List<ItemPropertySchemaEntryDto> propertySchema;
+  final int? baseItemId;
   final String photoUrl;
 
   factory ItemDto.fromJson(Map<String, dynamic> json) {
@@ -168,6 +170,7 @@ class ItemDto {
             ),
           )
           .toList(growable: false),
+      baseItemId: json['baseItemId'] as int?,
       photoUrl: json['photoUrl'] as String? ?? '',
     );
   }
@@ -197,6 +200,7 @@ class ItemDto {
       propertySchema: propertySchema
           .map((entry) => entry.toDomain())
           .toList(growable: false),
+      baseItemId: baseItemId,
       photoUrl: photoUrl,
     );
   }
@@ -393,6 +397,7 @@ class CreateItemRequest {
     required this.namingFormat,
     required this.variationTree,
     this.defaultPipelineId,
+    this.baseItemId,
     this.photoUrl = '',
   });
 
@@ -405,6 +410,7 @@ class CreateItemRequest {
   final List<String> namingFormat;
   final List<ItemVariationNodeRequest> variationTree;
   final String? defaultPipelineId;
+  final int? baseItemId;
   final String photoUrl;
 
   factory CreateItemRequest.fromInput(CreateItemInput input) {
@@ -422,6 +428,7 @@ class CreateItemRequest {
           .map(ItemVariationNodeRequest.fromInput)
           .toList(growable: false),
       defaultPipelineId: input.defaultPipelineId,
+      baseItemId: input.baseItemId,
       photoUrl: input.photoUrl,
     );
   }
@@ -441,6 +448,7 @@ class CreateItemRequest {
           .map((entry) => entry.toJson())
           .toList(growable: false),
       if (defaultPipelineId != null) 'defaultPipelineId': defaultPipelineId,
+      if (baseItemId != null) 'baseItemId': baseItemId,
       'photoUrl': photoUrl,
     };
   }
@@ -457,6 +465,7 @@ class UpdateItemRequest {
     required this.namingFormat,
     required this.variationTree,
     this.defaultPipelineId,
+    this.baseItemId,
     this.photoUrl = '',
   });
 
@@ -469,6 +478,7 @@ class UpdateItemRequest {
   final List<String> namingFormat;
   final List<ItemVariationNodeRequest> variationTree;
   final String? defaultPipelineId;
+  final int? baseItemId;
   final String photoUrl;
 
   factory UpdateItemRequest.fromInput(UpdateItemInput input) {
@@ -486,6 +496,7 @@ class UpdateItemRequest {
           .map(ItemVariationNodeRequest.fromInput)
           .toList(growable: false),
       defaultPipelineId: input.defaultPipelineId,
+      baseItemId: input.baseItemId,
       photoUrl: input.photoUrl,
     );
   }
@@ -505,6 +516,7 @@ class UpdateItemRequest {
           .map((entry) => entry.toJson())
           .toList(growable: false),
       if (defaultPipelineId != null) 'defaultPipelineId': defaultPipelineId,
+      if (baseItemId != null) 'baseItemId': baseItemId,
       'photoUrl': photoUrl,
     };
   }

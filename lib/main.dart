@@ -295,6 +295,8 @@ class MyApp extends StatelessWidget {
               final provider = AuthProvider(
                 baseUrl: _apiBaseUrl,
                 demoMode: _effectiveDemoMode,
+                onUserCreated: (email, role) =>
+                    DataSyncService.instance.syncUser(email, role),
               )..initialize();
               if (_autoLoginEnabled && !_effectiveDemoMode) {
                 provider.login(

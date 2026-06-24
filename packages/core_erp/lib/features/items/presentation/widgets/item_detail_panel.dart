@@ -254,7 +254,10 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
             ?.displayLabel ??
         'Unknown unit';
     final title = itemTitle(item);
-    final generatedNames = generatedItemNames(item);
+    final generatedNames = itemsProvider.items
+        .where((i) => i.baseItemId == item.id)
+        .map((i) => i.displayName)
+        .toList(growable: false);
 
     return Material(
       color: SoftErpTheme.shellSurface,
@@ -1076,120 +1079,6 @@ String generatedItemVariationCode(
     }
   }
   return parts.join(' ');
-}
-
-List<List<ItemVariationNodeDefinition>> _getPropertyValuePaths(
-  ItemVariationNodeDefinition property,
-) {
-  final result = <List<ItemVariationNodeDefinition>>[];
-  void walk(
-    ItemVariationNodeDefinition node,
-    List<ItemVariationNodeDefinition> path,
-  ) {
-    if (node.kind == ItemVariationNodeKind.value) {
-      final newPath = [...path, node];
-      final childProps = node.activeChildren
-          .where((c) => c.kind == ItemVariationNodeKind.property)
-          .toList(growable: false);
-      if (childProps.isEmpty) {
-        result.add(newPath);
-      } else {
-        for (final p in childProps) {
-          walk(p, newPath);
-        }
-      }
-    } else {
-      for (final c in node.activeChildren) {
-        walk(c, path);
-      }
-    }
-  }
-
-  walk(property, const []);
-  return result;
-}
-
-List<String> generatedItemNames(ItemDefinition item) {
-  final topProps = item.topLevelProperties;
-  if (topProps.isEmpty) {
-    return <String>[itemTitle(item)];
-  }
-
-  final topPropPaths = topProps.map(_getPropertyValuePaths).toList();
-  final combinations = <List<ItemVariationNodeDefinition>>[];
-
-  void combine(int propIndex, List<ItemVariationNodeDefinition> currentPath) {
-    if (propIndex == topPropPaths.length) {
-      if (currentPath.isNotEmpty) {
-        combinations.add(currentPath);
-      }
-      return;
-    }
-    final pathsForProp = topPropPaths[propIndex];
-    if (pathsForProp.isEmpty) {
-      combine(propIndex + 1, currentPath);
-    } else {
-      for (final path in pathsForProp) {
-        combine(propIndex + 1, [...currentPath, ...path]);
-      }
-    }
-  }
-
-  combine(0, <ItemVariationNodeDefinition>[]);
-
-  if (combinations.isEmpty) {
-    return <String>[itemTitle(item)];
-  }
-
-  final names =
-      combinations.map((combo) {
-        final selectedIds = combo.map((n) => n.id).toSet();
-        final parts = <String>[];
-        final propIdToValue = <int, String>{};
-
-        for (final prop in topProps) {
-          var current = prop;
-          while (true) {
-            final val = current.activeChildren
-                .where((n) => n.kind == ItemVariationNodeKind.value)
-                .where((n) => selectedIds.contains(n.id))
-                .firstOrNull;
-            if (val == null) break;
-            propIdToValue[prop.id] = nodeNameOrGenerated(val);
-            final nextProp = val.activeChildren
-                .where((n) => n.kind == ItemVariationNodeKind.property)
-                .firstOrNull;
-            if (nextProp == null) break;
-            current = nextProp;
-          }
-        }
-
-        final tokens = resolvedItemNamingTokens(item);
-        if (tokens.isNotEmpty) {
-          for (final token in tokens) {
-            if (token == 'name') {
-              parts.add(itemTitle(item));
-            } else if (token.startsWith('prop_')) {
-              final index = int.tryParse(token.substring(5));
-              if (index != null && index >= 0 && index < topProps.length) {
-                final value = propIdToValue[topProps[index].id];
-                if (value != null && value.isNotEmpty) {
-                  parts.add(value);
-                }
-              }
-            }
-          }
-        }
-
-        if (parts.isEmpty) {
-          parts.add(itemTitle(item));
-          parts.addAll(propIdToValue.values.where((v) => v.isNotEmpty));
-        }
-
-        return parts.join(' ');
-      }).where((name) => name.isNotEmpty).take(20).toList(growable: false);
-
-  return names.isEmpty ? <String>[itemTitle(item)] : names;
 }
 
 String nodeNameOrGenerated(ItemVariationNodeDefinition node) {

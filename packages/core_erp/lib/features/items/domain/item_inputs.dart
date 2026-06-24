@@ -41,6 +41,7 @@ class CreateItemInput {
     this.namingFormat = const [],
     this.variationTree = const [],
     this.defaultPipelineId,
+    this.baseItemId,
     this.photoUrl = '',
   });
 
@@ -53,6 +54,7 @@ class CreateItemInput {
   final List<String> namingFormat;
   final List<ItemVariationNodeInput> variationTree;
   final String? defaultPipelineId;
+  final int? baseItemId;
   final String photoUrl;
 }
 
@@ -68,6 +70,7 @@ class UpdateItemInput {
     this.namingFormat = const [],
     this.variationTree = const [],
     this.defaultPipelineId,
+    this.baseItemId,
     this.photoUrl = '',
   });
 
@@ -81,5 +84,6 @@ class UpdateItemInput {
   final List<String> namingFormat;
   final List<ItemVariationNodeInput> variationTree;
   final String? defaultPipelineId;
+  final int? baseItemId;
   final String photoUrl;
 }

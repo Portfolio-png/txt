@@ -13,6 +13,8 @@ import '../../../units/presentation/providers/units_provider.dart';
 import '../../domain/group_definition.dart';
 import '../widgets/delete_group_dialog.dart';
 import '../providers/groups_provider.dart';
+import '../../../inventory/presentation/providers/inventory_provider.dart';
+import '../../../items/presentation/providers/items_provider.dart';
 import '../widgets/structured_group_editor_dialog.dart';
 import '../../../../core/widgets/export_preview_dialog.dart';
 
@@ -115,14 +117,23 @@ class GroupsScreen extends StatelessWidget {
     String initialName = '',
     StructuredGroupEditorCreateMode createMode =
         StructuredGroupEditorCreateMode.groupsOnly,
-  }) {
-    return StructuredGroupEditorDialog.open(
+  }) async {
+    final result = await StructuredGroupEditorDialog.open(
       context,
       group: group,
       groupType: groupType,
       initialName: initialName,
       createMode: createMode,
     );
+    if (result != null && context.mounted) {
+      try {
+        context.read<InventoryProvider>().refresh();
+      } catch (_) {}
+      try {
+        context.read<ItemsProvider>().refresh();
+      } catch (_) {}
+    }
+    return result;
   }
 }
 

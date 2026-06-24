@@ -101,6 +101,7 @@ class ItemDefinition {
     required this.variationTree,
     this.defaultPipelineId,
     this.defaultPipelineName,
+    this.baseItemId,
     this.photoUrl = '',
   });
 
@@ -121,6 +122,7 @@ class ItemDefinition {
   final List<ItemVariationNodeDefinition> variationTree;
   final String? defaultPipelineId;
   final String? defaultPipelineName;
+  final int? baseItemId;
   final String photoUrl;
 
   bool get isUsed => usageCount > 0;

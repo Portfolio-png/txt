@@ -26,7 +26,7 @@ import '../../../../widgets/variation_path_selector_dialog.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
 import '../../../inventory/presentation/providers/inventory_provider.dart';
 import '../../../items/domain/item_definition.dart';
-import '../../../items/presentation/widgets/item_detail_panel.dart' show generatedItemNames;
+
 import '../../../units/domain/unit_inputs.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../../items/presentation/providers/items_provider.dart';
@@ -4032,7 +4032,7 @@ class _ItemsEditor extends StatelessWidget {
     final itemOptions = availableItems
         .map((item) {
             final primaryGroup = groupsProvider.findById(item.groupId)?.name ?? 'No primary group';
-            final fullVariationName = generatedItemNames(item).join(' / ');
+            final fullVariationName = item.displayName.isNotEmpty ? item.displayName : item.name;
             return SearchableSelectOption<int>(
               value: item.id,
               label: fullVariationName,

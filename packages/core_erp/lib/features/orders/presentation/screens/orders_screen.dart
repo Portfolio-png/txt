@@ -27,7 +27,7 @@ import '../../../delivery_challans/presentation/screens/delivery_challan_screen.
 import 'package:core_erp/widgets/variation_path_selector_dialog.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../items/domain/item_definition.dart';
-import '../../../items/presentation/widgets/item_detail_panel.dart' show generatedItemNames;
+
 import '../../../items/presentation/screens/items_screen.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../units/domain/unit_definition.dart';
@@ -3145,7 +3145,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
               final primaryGroup =
                   groupsProvider.findById(item.groupId)?.name ??
                   'No primary group';
-              final fullVariationName = generatedItemNames(item).join(' / ');
+              final fullVariationName = item.displayName.isNotEmpty ? item.displayName : item.name;
               return SearchableSelectOption<int>(
                 value: item.id,
                 label: fullVariationName,

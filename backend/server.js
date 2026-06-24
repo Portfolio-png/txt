@@ -1721,6 +1721,7 @@ async function rowToItemDto(row) {
     updatedAt: row.updated_at,
     variationTree: await getItemVariationTree(row.id),
     propertySchema,
+    baseItemId: row.base_item_id || null,
   };
 }
 
@@ -2197,6 +2198,7 @@ async function initDb() {
   try { await run("ALTER TABLE vendors ADD COLUMN logo_url TEXT DEFAULT ''"); } catch(e){}
   try { await run("ALTER TABLE vendors ADD COLUMN photo_url TEXT DEFAULT ''"); } catch(e){}
   try { await run("ALTER TABLE items ADD COLUMN default_pipeline_id TEXT DEFAULT NULL"); } catch(e){}
+  try { await run("ALTER TABLE items ADD COLUMN base_item_id INTEGER REFERENCES items(id) ON DELETE CASCADE"); } catch(e){}
 
   // Migration for groups table to remove unit_id NOT NULL constraint
   try {
@@ -2727,6 +2729,7 @@ async function initDb() {
       unit_id INTEGER NOT NULL REFERENCES units(id),
       is_archived INTEGER NOT NULL DEFAULT 0,
       default_pipeline_id TEXT DEFAULT NULL,
+      base_item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
@@ -12911,6 +12914,7 @@ async function saveItem({
   namingFormat = [],
   variationTree = [],
   defaultPipelineId = null,
+  baseItemId = null,
   id = null,
 }) {
   const trimmedName = String(name || '').trim();
@@ -12922,6 +12926,7 @@ async function saveItem({
     String(displayName || '').trim() || buildItemDisplayName(name, alias, normalizedQuantity);
   const normalizedGroupId = Number(groupId);
   const normalizedUnitId = Number(unitId);
+  const normalizedBaseItemId = baseItemId ? Number(baseItemId) : null;
 
   if (
     !trimmedName ||
@@ -13019,8 +13024,8 @@ async function saveItem({
       const result = await run(
         `
         INSERT INTO items (
-          name, alias, display_name, quantity, group_id, unit_id, naming_format, is_archived, default_pipeline_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
+          name, alias, display_name, quantity, group_id, unit_id, naming_format, is_archived, default_pipeline_id, base_item_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
         `,
         [
           trimmedName,
@@ -13031,6 +13036,7 @@ async function saveItem({
           normalizedUnitId,
           serializedNamingFormat,
           defaultPipelineId || null,
+          normalizedBaseItemId,
           now,
           now,
         ],
@@ -13054,7 +13060,7 @@ async function saveItem({
       await run(
         `
         UPDATE items
-        SET name = ?, alias = ?, display_name = ?, quantity = ?, group_id = ?, unit_id = ?, naming_format = ?, default_pipeline_id = ?, updated_at = ?
+        SET name = ?, alias = ?, display_name = ?, quantity = ?, group_id = ?, unit_id = ?, naming_format = ?, default_pipeline_id = ?, base_item_id = ?, updated_at = ?
         WHERE id = ?
         `,
         [
@@ -13066,6 +13072,7 @@ async function saveItem({
           normalizedUnitId,
           serializedNamingFormat,
           defaultPipelineId || null,
+          normalizedBaseItemId,
           now,
           id,
         ],

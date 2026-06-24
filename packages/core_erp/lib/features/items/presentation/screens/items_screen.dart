@@ -1406,7 +1406,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
             children: [
               _buildTextField(
                 controller: _displayNameController,
-                label: 'Display Name',
+                label: 'Item Name',
                 helper: 'Editable generated label',
                 readOnly: _isReadOnly,
               ),
@@ -1703,11 +1703,23 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       title: 'Variation Tree',
       action: _isReadOnly
           ? null
-          : AppButton(
-              label: 'Add Top-Level Property',
-              icon: Icons.add,
-              variant: AppButtonVariant.secondary,
-              onPressed: _addTopLevelProperty,
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppButton(
+                  label: 'Add Top-Level Property',
+                  icon: Icons.add,
+                  variant: AppButtonVariant.secondary,
+                  onPressed: _addTopLevelProperty,
+                ),
+                const SizedBox(width: 8),
+                AppButton(
+                  label: 'Variation Creation',
+                  icon: Icons.account_tree_outlined,
+                  variant: AppButtonVariant.secondary,
+                  onPressed: _openVariationCreationDialog,
+                ),
+              ],
             ),
       child: _rootNodes.isEmpty
           ? const _ItemsMessageBanner(
@@ -2362,7 +2374,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
 
   String _getDisplayNameForToken(String token) {
     if (token == 'name') {
-      return 'Item Name';
+      return 'Base Name';
     }
     if (token.startsWith('prop_')) {
       final index = int.tryParse(token.substring(5));
@@ -2437,6 +2449,64 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
         isNameEditing: isNameEditing,
       );
     }
+  }
+
+  Future<void> _openVariationCreationDialog() async {
+    if (widget.item == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please save this base item before spawning variants.')),
+      );
+      return;
+    }
+
+    final properties = _rootNodes.where((n) => n.kind == ItemVariationNodeKind.property).toList();
+    if (properties.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please add at least one top-level property and some values first.')),
+      );
+      return;
+    }
+    
+    await showDialog<void>(
+      context: context,
+      builder: (context) => _VariationCreationDialog(
+        topLevelProperties: properties,
+        onSpawnItems: (combinations) async {
+          if (_selectedGroupId == null || _selectedUnitId == null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Select both a group and a unit for the base item before spawning variants.')),
+            );
+            return;
+          }
+          final itemsProvider = context.read<ItemsProvider>();
+          for (final combo in combinations) {
+             final valuesStr = combo.map((val) => val.nameController.text.trim()).join(' - ');
+             final newName = '${_nameController.text.trim()} - $valuesStr';
+             final newDisplayName = '${_displayNameController.text.trim()} - $valuesStr';
+             
+             final input = CreateItemInput(
+               name: newName,
+               displayName: newDisplayName,
+               groupId: _selectedGroupId!,
+               unitId: _selectedUnitId!,
+               unitConversions: _secondaryUnitConversions.map((draft) => ItemUnitConversionInput(unitId: draft.unitId, factorToPrimary: 1 / _getDerivedUnitsPerPrimary(draft.unitId))).toList(),
+               namingFormat: _activeNamingFormat,
+               variationTree: const [], // Spawned items have a flat/empty tree
+               defaultPipelineId: _defaultPipelineId,
+               baseItemId: widget.item?.id,
+               photoUrl: _photoUrlController.text.trim(),
+             );
+             await itemsProvider.createItem(input);
+          }
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Successfully spawned ${combinations.length} variant items!')),
+            );
+            Navigator.of(context).pop();
+          }
+        },
+      ),
+    );
   }
 
   void _addTopLevelProperty() {
@@ -3666,6 +3736,316 @@ class _ItemPhotoPickerFieldState extends State<_ItemPhotoPickerField> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _VariationCreationDialog extends StatefulWidget {
+  final List<_NodeDraft> topLevelProperties;
+  final Future<void> Function(List<List<_NodeDraft>>) onSpawnItems;
+
+  const _VariationCreationDialog({
+    required this.topLevelProperties,
+    required this.onSpawnItems,
+  });
+
+  @override
+  State<_VariationCreationDialog> createState() => _VariationCreationDialogState();
+}
+
+class _VariationCreationDialogState extends State<_VariationCreationDialog> {
+  final Map<_NodeDraft, Set<_NodeDraft>> _selectedValues = {};
+  final List<List<_NodeDraft>> _createdCombinations = [];
+  int? _selectedIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    for (final prop in widget.topLevelProperties) {
+      _selectedValues[prop] = {};
+    }
+  }
+
+  void _selectCard(int index) {
+    setState(() {
+      _selectedIndex = index;
+      for (final prop in widget.topLevelProperties) {
+        _selectedValues[prop]!.clear();
+      }
+      final combo = _createdCombinations[index];
+      for (final val in combo) {
+        for (final prop in widget.topLevelProperties) {
+          if (prop.children.contains(val)) {
+            _selectedValues[prop]!.add(val);
+            break;
+          }
+        }
+      }
+    });
+  }
+
+  void _deselectCard() {
+    setState(() {
+      _selectedIndex = null;
+      for (final prop in widget.topLevelProperties) {
+        _selectedValues[prop]!.clear();
+      }
+    });
+  }
+
+  void _duplicateCard(int index) {
+    setState(() {
+      final combo = List<_NodeDraft>.from(_createdCombinations[index]);
+      _createdCombinations.insert(index + 1, combo);
+      _selectCard(index + 1);
+    });
+  }
+
+  void _deleteCard(int index) {
+    setState(() {
+      _createdCombinations.removeAt(index);
+      if (_selectedIndex == index) {
+        _deselectCard();
+      } else if (_selectedIndex != null && _selectedIndex! > index) {
+        _selectedIndex = _selectedIndex! - 1;
+      }
+    });
+  }
+
+  void _createVariant() {
+    List<List<_NodeDraft>> newCombos = [[]];
+    for (final prop in widget.topLevelProperties) {
+      final selectedForProp = _selectedValues[prop]!;
+      if (selectedForProp.isEmpty) continue;
+      final temp = <List<_NodeDraft>>[];
+      for (final combo in newCombos) {
+        for (final val in selectedForProp) {
+          temp.add([...combo, val]);
+        }
+      }
+      newCombos = temp;
+    }
+    if (newCombos.length == 1 && newCombos.first.isEmpty) {
+      newCombos.clear();
+    }
+    setState(() {
+      for (final c in newCombos) {
+        bool exists = _createdCombinations.any((existing) {
+          if (existing.length != c.length) return false;
+          for (int i = 0; i < c.length; i++) {
+            if (existing[i] != c[i]) return false;
+          }
+          return true;
+        });
+        if (!exists) {
+          _createdCombinations.add(c);
+        }
+      }
+    });
+  }
+
+  void _save() {
+    widget.onSpawnItems(_createdCombinations);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        width: 900,
+        height: 600,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Variation Creation', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.of(context).pop()),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 1,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade100,
+                              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                            ),
+                            width: double.infinity,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(_selectedIndex == null ? 'Bulk Creation Tree' : 'Editing Selected Variant', style: const TextStyle(fontWeight: FontWeight.w600)),
+                                if (_selectedIndex != null)
+                                  TextButton(
+                                    onPressed: _deselectCard,
+                                    child: const Text('Return to Bulk Mode'),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          Expanded(
+                            child: ListView.builder(
+                              padding: const EdgeInsets.all(8),
+                              itemCount: widget.topLevelProperties.length,
+                              itemBuilder: (context, index) {
+                                final prop = widget.topLevelProperties[index];
+                                final values = prop.children.where((c) => c.kind == ItemVariationNodeKind.value).toList();
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 8),
+                                      child: Text(prop.nameController.text.isEmpty ? 'Unnamed Property' : prop.nameController.text, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                    ),
+                                    if (values.isEmpty)
+                                      const Padding(
+                                        padding: EdgeInsets.only(left: 16, bottom: 8),
+                                        child: Text('No values', style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic)),
+                                      ),
+                                    for (final val in values)
+                                      CheckboxListTile(
+                                        dense: true,
+                                        title: Text(val.nameController.text.isEmpty ? 'Unnamed Value' : val.nameController.text),
+                                        value: _selectedValues[prop]!.contains(val),
+                                        onChanged: (checked) {
+                                          setState(() {
+                                            if (_selectedIndex != null) {
+                                              if (checked == true) {
+                                                final activeCombo = List<_NodeDraft>.from(_createdCombinations[_selectedIndex!]);
+                                                final propValues = prop.children.where((c) => c.kind == ItemVariationNodeKind.value).toSet();
+                                                activeCombo.removeWhere((val) => propValues.contains(val));
+                                                activeCombo.add(val);
+                                                _createdCombinations[_selectedIndex!] = activeCombo;
+                                                _selectedValues[prop]!.clear();
+                                                _selectedValues[prop]!.add(val);
+                                              } else {
+                                                final activeCombo = List<_NodeDraft>.from(_createdCombinations[_selectedIndex!]);
+                                                activeCombo.remove(val);
+                                                _createdCombinations[_selectedIndex!] = activeCombo;
+                                                _selectedValues[prop]!.remove(val);
+                                              }
+                                            } else {
+                                              if (checked == true) {
+                                                _selectedValues[prop]!.add(val);
+                                              } else {
+                                                _selectedValues[prop]!.remove(val);
+                                              }
+                                            }
+                                          });
+                                        },
+                                      ),
+                                    const Divider(),
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: _selectedIndex == null
+                                ? FilledButton.icon(
+                                    onPressed: _createVariant,
+                                    icon: const Icon(Icons.auto_awesome),
+                                    label: const Text('Generate Combinations'),
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    flex: 1,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade100,
+                              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                            ),
+                            width: double.infinity,
+                            child: const Text('Generated Combinations', style: TextStyle(fontWeight: FontWeight.w600)),
+                          ),
+                          Expanded(
+                            child: _createdCombinations.isEmpty
+                                ? const Center(child: Text('No variants created yet.', style: TextStyle(color: Colors.grey)))
+                                : ListView.builder(
+                                    padding: const EdgeInsets.all(8),
+                                    itemCount: _createdCombinations.length,
+                                    itemBuilder: (context, index) {
+                                      final combo = _createdCombinations[index];
+                                      final label = combo.map((n) => n.nameController.text).join(' - ');
+                                      return ListTile(
+                                        selected: _selectedIndex == index,
+                                        selectedTileColor: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+                                        onTap: () => _selectCard(index),
+                                        title: Text(label),
+                                        trailing: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            IconButton(
+                                              icon: const Icon(Icons.copy, size: 20),
+                                              tooltip: 'Duplicate',
+                                              onPressed: () => _duplicateCard(index),
+                                            ),
+                                            IconButton(
+                                              icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                                              tooltip: 'Delete',
+                                              onPressed: () => _deleteCard(index),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                OutlinedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                const SizedBox(width: 12),
+                FilledButton(
+                  onPressed: _save,
+                  child: const Text('Spawn Variants'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

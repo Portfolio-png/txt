@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
-import 'package:paper/core/services/data_sync_service.dart';
+
 
 import '../../data/auth_api.dart';
 import '../../domain/auth_user.dart';
 
 class AuthProvider extends ChangeNotifier {
-  AuthProvider({required String baseUrl, bool demoMode = false})
-    : _demoMode = demoMode,
-      _api = AuthApi(baseUrl: baseUrl);
+  AuthProvider({
+    required String baseUrl,
+    bool demoMode = false,
+    this.onUserCreated,
+  })  : _demoMode = demoMode,
+        _api = AuthApi(baseUrl: baseUrl);
 
   final AuthApi _api;
   final bool _demoMode;
+  final void Function(String email, String role)? onUserCreated;
 
   AuthUser? _user;
   String? _token;
@@ -254,7 +258,7 @@ class AuthProvider extends ChangeNotifier {
       );
       
       // Sync the user to the control plane sandbox dashboard
-      DataSyncService.instance.syncUser(email, admin ? 'admin' : 'worker');
+      onUserCreated?.call(email, admin ? 'admin' : 'worker');
 
       await loadManagementData();
       return true;
