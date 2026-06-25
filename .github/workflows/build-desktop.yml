@@ -143,21 +143,35 @@ jobs:
           name: paper-windows-${{ steps.flags.outputs.label }}
           path: dist/*.zip
 
-      - name: Upload Single Build to AWS S3 (Windows)
+      - name: Upload Single Build via EC2 to S3 (Windows)
         if: matrix.target == 'windows' && github.event.inputs.target_version != ''
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
           S3_BUCKET: ${{ secrets.AWS_S3_UPDATE_BUCKET }}
         shell: bash
         run: |
-          if [[ -z "${S3_BUCKET}" ]]; then
-            echo "AWS_S3_UPDATE_BUCKET secret is missing."
+          if [[ -z "${EC2_HOST}" || -z "${EC2_USER}" || -z "${EC2_SSH_KEY}" || -z "${S3_BUCKET}" ]]; then
+            echo "Missing EC2 SSH or AWS_S3_UPDATE_BUCKET secrets."
             exit 1
           fi
-          # We upload the raw unzipped .exe so the auto-updater can download it directly
-          aws s3 cp "build/windows/x64/runner/Release/paper.exe" "s3://${S3_BUCKET}/${{ github.event.inputs.target_version }}/paper-windows-v${{ github.event.inputs.target_version }}.exe" --acl public-read
+          
+          # Setup SSH key securely
+          mkdir -p ~/.ssh
+          echo "${EC2_SSH_KEY}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "${EC2_HOST}" >> ~/.ssh/known_hosts
+          
+          VERSION="${{ github.event.inputs.target_version }}"
+          EXE_NAME="paper-windows-v${VERSION}.exe"
+          
+          echo "Transferring file to EC2..."
+          scp "build/windows/x64/runner/Release/paper.exe" "${EC2_USER}@${EC2_HOST}:~/${EXE_NAME}"
+          
+          echo "Uploading from EC2 to S3..."
+          # The EC2 instance will use its IAM role to run the S3 copy, then clean up the file
+          ssh "${EC2_USER}@${EC2_HOST}" "aws s3 cp ~/${EXE_NAME} s3://${S3_BUCKET}/${VERSION}/${EXE_NAME} --acl public-read && rm ~/${EXE_NAME}"
 
 
       # Some plugins (auto_updater_macos, printing) don't support Swift Package
