@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
+import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:core_erp/core/widgets/soft_primitives.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -885,10 +886,10 @@ class _PortalError extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 20),
-              FilledButton.icon(
+              AppButton(
+                label: 'Try again',
+                icon: Icons.refresh_rounded,
                 onPressed: onRetry,
-                icon: const Icon(Icons.refresh_rounded),
-                label: const Text('Try again'),
               ),
             ],
           ),

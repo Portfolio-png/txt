@@ -103,9 +103,10 @@ class _StartProductionDialogState extends State<_StartProductionDialog> {
           runSpacing: 8,
           children: _currentItems.isEmpty
               ? [
-                  TextButton(
+                  AppButton(
+                    variant: AppButtonVariant.secondary,
                     onPressed: () => Navigator.of(context).pop(_didCreateRun),
-                    child: const Text('Close'),
+                    label: 'Close',
                   ),
                 ]
               : (_showConfirmation
@@ -192,9 +193,10 @@ class _StartProductionDialogState extends State<_StartProductionDialog> {
 
   List<Widget> _buildSelectionActions() {
     return [
-      TextButton(
+      AppButton(
+        variant: AppButtonVariant.secondary,
         onPressed: () => Navigator.of(context).pop(_didCreateRun),
-        child: const Text('Cancel'),
+        label: 'Cancel',
       ),
       AppButton(
         onPressed: (_selectedTemplate != null && _selectedItem != null)
@@ -207,9 +209,10 @@ class _StartProductionDialogState extends State<_StartProductionDialog> {
 
   List<Widget> _buildConfirmationActions() {
     return [
-      TextButton(
+      AppButton(
+        variant: AppButtonVariant.secondary,
         onPressed: _isLoading ? null : () => setState(() => _showConfirmation = false),
-        child: const Text('Back'),
+        label: 'Back',
       ),
       AppButton(
         isLoading: _isLoading,

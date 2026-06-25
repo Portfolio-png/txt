@@ -10,6 +10,7 @@ import 'package:core_erp/features/units/domain/unit_definition.dart';
 import 'package:core_erp/features/units/domain/unit_inputs.dart';
 import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
+import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:core_erp/core/widgets/searchable_select.dart';
 import 'package:core_erp/features/items/domain/item_inputs.dart';
@@ -1297,9 +1298,10 @@ class _BuilderHeader extends StatelessWidget {
           style: TextStyle(fontSize: 13, color: Color(0xFF475569)),
         ),
         actions: [
-          TextButton(
+          AppButton(
+            label: 'Cancel',
+            variant: AppButtonVariant.secondary,
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
@@ -1413,39 +1415,18 @@ class _BuilderHeader extends StatelessWidget {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                FilledButton.icon(
-                  icon: const Icon(Icons.add_rounded, size: 16),
-                  label: const Text('Add Step'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF3B82F6),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 12,
-                    ),
-                  ),
+                AppButton(
+                  label: 'Add Step',
+                  icon: Icons.add_rounded,
                   onPressed: () => provider.addNextStepFromSelection(
                     units: _activeUnitsFromContext(context),
                   ),
                 ),
                 const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.save_rounded, size: 16),
-                  label: const Text('Save'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF1E293B),
-                    side: const BorderSide(color: Color(0xFFE2E8F0)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 12,
-                    ),
-                  ),
+                AppButton(
+                  label: 'Save',
+                  icon: Icons.save_rounded,
+                  variant: AppButtonVariant.secondary,
                   onPressed: allValid ? () => _saveAndNotify(context) : null,
                 ),
                 const SizedBox(width: 8),
@@ -1643,11 +1624,13 @@ class _PipelineDetailsDialogState extends State<_PipelineDetailsDialog> {
         ),
       ),
       actions: [
-        TextButton(
+        AppButton(
+          label: 'Cancel',
+          variant: AppButtonVariant.secondary,
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
         ),
-        FilledButton(
+        AppButton(
+          label: 'Apply',
           onPressed: () {
             widget.onApply(
               _nameController.text,
@@ -1657,7 +1640,6 @@ class _PipelineDetailsDialogState extends State<_PipelineDetailsDialog> {
             );
             Navigator.pop(context);
           },
-          child: const Text('Apply'),
         ),
       ],
     );
@@ -2135,16 +2117,17 @@ class _GitGraphCanvas extends StatelessWidget {
           autofocus: true,
         ),
         actions: [
-          TextButton(
+          AppButton(
+            label: 'Cancel',
+            variant: AppButtonVariant.secondary,
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
           ),
-          ElevatedButton(
+          AppButton(
+            label: 'Save',
             onPressed: () {
               provider.renameStage(stageIndex, controller.text);
               Navigator.pop(context);
             },
-            child: const Text('Save'),
           ),
         ],
       ),
@@ -3643,16 +3626,9 @@ class _FlowchartSequencePanelState extends State<_FlowchartSequencePanel> {
               style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
             ),
             const SizedBox(height: 16),
-            FilledButton.icon(
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('Add First Step'),
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF3B82F6),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
+            AppButton(
+              label: 'Add First Step',
+              icon: Icons.add_rounded,
               onPressed: () =>
                   widget.provider.addNextStepFromSelection(units: units),
             ),
@@ -3778,9 +3754,10 @@ class _FlowchartSequencePanelState extends State<_FlowchartSequencePanel> {
                 else
                   Padding(
                     padding: const EdgeInsets.only(top: 16.0),
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.add_rounded, size: 16),
-                      label: const Text('Add Next Stage'),
+                    child: AppButton(
+                      label: 'Add Next Stage',
+                      icon: Icons.add_rounded,
+                      variant: AppButtonVariant.secondary,
                       onPressed: () => widget.provider.addNextStepFromSelection(
                         units: units,
                       ),
@@ -3860,9 +3837,10 @@ class _FlowchartSequencePanelState extends State<_FlowchartSequencePanel> {
             else if (showAddNext)
               Padding(
                 padding: const EdgeInsets.only(top: 16.0),
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.add_rounded, size: 16),
-                  label: const Text('Add Next Stage'),
+                child: AppButton(
+                  label: 'Add Next Stage',
+                  icon: Icons.add_rounded,
+                  variant: AppButtonVariant.secondary,
                   onPressed: () =>
                       widget.provider.addNextStepFromSelection(units: units),
                 ),
@@ -4059,16 +4037,17 @@ class _FlowchartSequencePanelState extends State<_FlowchartSequencePanel> {
           autofocus: true,
         ),
         actions: [
-          TextButton(
+          AppButton(
+            label: 'Cancel',
+            variant: AppButtonVariant.secondary,
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
           ),
-          ElevatedButton(
+          AppButton(
+            label: 'Save',
             onPressed: () {
               widget.provider.renameStage(stageIndex, controller.text);
               Navigator.pop(context);
             },
-            child: const Text('Save'),
           ),
         ],
       ),
@@ -4247,7 +4226,9 @@ class _QuickAddPanelState extends State<_QuickAddPanel> {
                     );
                   }),
                   const SizedBox(height: 12),
-                  FilledButton.icon(
+                  AppButton(
+                    label: 'Generate Flow',
+                    icon: Icons.playlist_add_rounded,
                     onPressed: _batchProcesses.isEmpty
                         ? null
                         : () {
@@ -4257,15 +4238,6 @@ class _QuickAddPanelState extends State<_QuickAddPanel> {
                             );
                             setState(() => _batchProcesses.clear());
                           },
-                    icon: const Icon(Icons.playlist_add_rounded, size: 16),
-                    label: const Text('Generate Flow'),
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size(double.infinity, 40),
-                      backgroundColor: const Color(0xFF1E293B),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
                   ),
                 ],
               ),
@@ -4417,19 +4389,15 @@ class _QuickItemCreateDialogState extends State<_QuickItemCreateDialog> {
         ],
       ),
       actions: [
-        TextButton(
+        AppButton(
+          label: 'Cancel',
+          variant: AppButtonVariant.secondary,
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
         ),
-        FilledButton(
+        AppButton(
+          label: 'Create',
+          isLoading: _isLoading,
           onPressed: _isLoading ? null : _create,
-          child: _isLoading
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Create'),
         ),
       ],
     );

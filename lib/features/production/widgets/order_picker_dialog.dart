@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
+import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:core_erp/features/orders/domain/order_entry.dart';
 import 'package:core_erp/features/orders/presentation/providers/orders_provider.dart';
 
@@ -62,9 +63,10 @@ class _OrderPickerDialogState extends State<OrderPickerDialog> {
                   ),
       ),
       actions: [
-        TextButton(
+        AppButton(
+          variant: AppButtonVariant.secondary,
           onPressed: () => Navigator.pop(context, null),
-          child: const Text('Skip (Run Without Order)', style: TextStyle(color: SoftErpTheme.textSecondary)),
+          label: 'Skip (Run Without Order)',
         ),
       ],
     );

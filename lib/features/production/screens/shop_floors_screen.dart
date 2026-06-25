@@ -1,3 +1,4 @@
+import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -107,13 +108,14 @@ class _ShopFloorsScreenState extends State<ShopFloorsScreen> {
             ),
           ),
           actions: [
-            TextButton(
+            AppButton(
+              label: 'Cancel',
+              variant: AppButtonVariant.secondary,
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
             ),
-            FilledButton(
+            AppButton(
+              label: 'Create',
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Create'),
             ),
           ],
         ),
@@ -468,21 +470,10 @@ class _ShopFloorDirectoryShell extends StatelessWidget {
                   ],
                 ),
               ),
-              FilledButton.icon(
+              AppButton(
+                label: actionLabel,
+                icon: Icons.add_rounded,
                 onPressed: onAction,
-                icon: const Icon(Icons.add_rounded, size: 18),
-                label: Text(actionLabel),
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF3B82F6),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
               ),
             ],
           ),
@@ -548,7 +539,7 @@ class _ShopFloorEmptyState extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 18),
-            FilledButton(onPressed: onAction, child: Text(actionLabel)),
+            AppButton(label: actionLabel, onPressed: onAction),
           ],
         ),
       ),

@@ -41,6 +41,8 @@ import '../../domain/po_document.dart';
 import '../../data/models/order_api_models.dart';
 import '../providers/orders_provider.dart';
 
+enum OrderSortColumn { orderDate, partyItem, poNumber, qty, startDate, endDate, status }
+
 Map<ShortcutActivator, VoidCallback> _submitShortcutBindings(
   VoidCallback onSubmit,
 ) {
@@ -111,6 +113,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
   int? _partyFilterClientId;
   int? _itemFilterId;
   OrderStatus? _statusFilter;
+  OrderSortColumn? _sortColumn;
+  bool _sortAscending = true;
+  String _orderSearchQuery = '';
+  String _clientSearchQuery = '';
+  String _poSearchQuery = '';
 
   @override
   Widget build(BuildContext context) {
@@ -191,8 +198,16 @@ class _OrdersScreenState extends State<OrdersScreen> {
                             _partyFilterClientId != null ||
                             _itemFilterId != null ||
                             _statusFilter != null ||
+                            _orderSearchQuery.trim().isNotEmpty ||
+                            _clientSearchQuery.trim().isNotEmpty ||
+                            _poSearchQuery.trim().isNotEmpty ||
                             ordersProvider.searchQuery.trim().isNotEmpty,
                         selectedOrderIds: _selectedOrderIds,
+                        orderSearchQuery: _orderSearchQuery,
+                        clientSearchQuery: _clientSearchQuery,
+                        poSearchQuery: _poSearchQuery,
+                        sortColumn: _sortColumn,
+                        sortAscending: _sortAscending,
                         onToggleSelection: (orderId, selected) {
                           setState(() {
                             if (selected) {
@@ -206,6 +221,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
                             _openLifecycleEditor(context, orderGroup),
                         onCreateOrder: _handlePrimaryCreate,
                         onGoToProduction: widget.onGoToProduction,
+                        onSortChange: (column, ascending) {
+                          setState(() {
+                            _sortColumn = column;
+                            _sortAscending = ascending;
+                          });
+                        },
+                        onOrderSearch: (query) => setState(() => _orderSearchQuery = query),
+                        onClientSearch: (query) => setState(() => _clientSearchQuery = query),
+                        onPoSearch: (query) => setState(() => _poSearchQuery = query),
                       ),
                     ),
                   ],
@@ -225,6 +249,24 @@ class _OrdersScreenState extends State<OrdersScreen> {
               group.clientId != _partyFilterClientId) {
             return false;
           }
+          if (_orderSearchQuery.trim().isNotEmpty) {
+            final query = _orderSearchQuery.trim().toLowerCase();
+            if (!group.orderNo.toLowerCase().contains(query)) {
+              return false;
+            }
+          }
+          if (_clientSearchQuery.trim().isNotEmpty) {
+            final query = _clientSearchQuery.trim().toLowerCase();
+            if (!group.clientName.toLowerCase().contains(query)) {
+              return false;
+            }
+          }
+          if (_poSearchQuery.trim().isNotEmpty) {
+            final query = _poSearchQuery.trim().toLowerCase();
+            if (!group.poNumber.toLowerCase().contains(query)) {
+              return false;
+            }
+          }
           if (_itemFilterId != null &&
               !group.items.any((i) => i.itemId == _itemFilterId)) {
             return false;
@@ -237,6 +279,57 @@ class _OrdersScreenState extends State<OrdersScreen> {
         .toList(growable: false);
 
     filtered.sort((a, b) {
+      if (_sortColumn != null) {
+        int cmp = 0;
+        switch (_sortColumn!) {
+          case OrderSortColumn.orderDate:
+            cmp = a.createdAt.compareTo(b.createdAt);
+            break;
+          case OrderSortColumn.partyItem:
+            cmp = a.clientName.compareTo(b.clientName);
+            break;
+          case OrderSortColumn.poNumber:
+            cmp = a.poNumber.compareTo(b.poNumber);
+            break;
+          case OrderSortColumn.qty:
+            final aQty = a.items.fold<int>(0, (sum, i) => sum + i.quantity);
+            final bQty = b.items.fold<int>(0, (sum, i) => sum + i.quantity);
+            cmp = aQty.compareTo(bQty);
+            break;
+          case OrderSortColumn.startDate:
+            final aStart = a.items.map((i) => i.startDate).whereType<DateTime>().fold<DateTime?>(null, (min, d) => min == null || d.isBefore(min) ? d : min);
+            final bStart = b.items.map((i) => i.startDate).whereType<DateTime>().fold<DateTime?>(null, (min, d) => min == null || d.isBefore(min) ? d : min);
+            if (aStart == null && bStart == null) {
+              cmp = 0;
+            } else if (aStart == null) {
+              cmp = 1;
+            } else if (bStart == null) {
+              cmp = -1;
+            } else {
+              cmp = aStart.compareTo(bStart);
+            }
+            break;
+          case OrderSortColumn.endDate:
+            final aEnd = a.items.map((i) => i.endDate).whereType<DateTime>().fold<DateTime?>(null, (max, d) => max == null || d.isAfter(max) ? d : max);
+            final bEnd = b.items.map((i) => i.endDate).whereType<DateTime>().fold<DateTime?>(null, (max, d) => max == null || d.isAfter(max) ? d : max);
+            if (aEnd == null && bEnd == null) {
+              cmp = 0;
+            } else if (aEnd == null) {
+              cmp = 1;
+            } else if (bEnd == null) {
+              cmp = -1;
+            } else {
+              cmp = aEnd.compareTo(bEnd);
+            }
+            break;
+          case OrderSortColumn.status:
+            cmp = _statusPriorityWeight(a.overallStatus).compareTo(_statusPriorityWeight(b.overallStatus));
+            break;
+        }
+        if (cmp != 0) {
+          return _sortAscending ? cmp : -cmp;
+        }
+      }
       final aUrgency = a.items.isEmpty
           ? _OrderUrgency.none
           : a.items
@@ -947,16 +1040,30 @@ class _OrdersTableCard extends StatelessWidget {
     required this.hasAnyOrders,
     required this.hasActiveFilters,
     required this.selectedOrderIds,
+    required this.orderSearchQuery,
+    required this.clientSearchQuery,
+    required this.poSearchQuery,
+    required this.sortColumn,
+    required this.sortAscending,
     required this.onToggleSelection,
     required this.onRowTap,
     required this.onCreateOrder,
     this.onGoToProduction,
+    this.onSortChange,
+    this.onOrderSearch,
+    this.onClientSearch,
+    this.onPoSearch,
   });
 
   final List<OrderGroup> orders;
   final bool hasAnyOrders;
   final bool hasActiveFilters;
   final Set<int> selectedOrderIds;
+  final String orderSearchQuery;
+  final String clientSearchQuery;
+  final String poSearchQuery;
+  final OrderSortColumn? sortColumn;
+  final bool sortAscending;
   final void Function(int orderId, bool selected) onToggleSelection;
   final ValueChanged<OrderGroup> onRowTap;
   final VoidCallback onCreateOrder;
@@ -966,6 +1073,10 @@ class _OrdersTableCard extends StatelessWidget {
     OrderEntry? preselectedItem,
   ])?
   onGoToProduction;
+  final void Function(OrderSortColumn? column, bool ascending)? onSortChange;
+  final ValueChanged<String>? onOrderSearch;
+  final ValueChanged<String>? onClientSearch;
+  final ValueChanged<String>? onPoSearch;
 
   @override
   Widget build(BuildContext context) {
@@ -1083,7 +1194,18 @@ class _OrdersTableCard extends StatelessWidget {
                   ),
                 ),
               ],
-              _TableHeaderRow(layout: layout),
+              _TableHeaderRow(
+                layout: layout,
+                orderSearchQuery: orderSearchQuery,
+                clientSearchQuery: clientSearchQuery,
+                poSearchQuery: poSearchQuery,
+                sortColumn: sortColumn,
+                sortAscending: sortAscending,
+                onSortChange: onSortChange,
+                onOrderSearch: onOrderSearch,
+                onClientSearch: onClientSearch,
+                onPoSearch: onPoSearch,
+              ),
               const SizedBox(height: 10),
               Expanded(
                 child: ListView.separated(
@@ -1120,9 +1242,77 @@ class _OrdersTableCard extends StatelessWidget {
 }
 
 class _TableHeaderRow extends StatelessWidget {
-  const _TableHeaderRow({required this.layout});
+  const _TableHeaderRow({
+    required this.layout,
+    required this.orderSearchQuery,
+    required this.clientSearchQuery,
+    required this.poSearchQuery,
+    required this.sortColumn,
+    required this.sortAscending,
+    this.onSortChange,
+    this.onOrderSearch,
+    this.onClientSearch,
+    this.onPoSearch,
+  });
 
   final _OrdersTableLayout layout;
+  final String orderSearchQuery;
+  final String clientSearchQuery;
+  final String poSearchQuery;
+  final OrderSortColumn? sortColumn;
+  final bool sortAscending;
+  final void Function(OrderSortColumn? column, bool ascending)? onSortChange;
+  final ValueChanged<String>? onOrderSearch;
+  final ValueChanged<String>? onClientSearch;
+  final ValueChanged<String>? onPoSearch;
+
+  void _showColumnFilterMenu(
+    BuildContext cellContext, {
+    required String title,
+    required OrderSortColumn column,
+    bool showSearch = false,
+    String searchHint = 'Search...',
+    String initialSearchQuery = '',
+    ValueChanged<String>? onSearch,
+  }) {
+    final RenderBox renderBox = cellContext.findRenderObject() as RenderBox;
+    final size = renderBox.size;
+    final offset = renderBox.localToGlobal(Offset.zero);
+
+    showDialog<void>(
+      context: cellContext,
+      barrierColor: Colors.transparent,
+      builder: (ctx) => Stack(
+        children: [
+          Positioned(
+            left: offset.dx,
+            top: offset.dy + size.height + 8,
+            child: Material(
+              elevation: 8,
+              borderRadius: BorderRadius.circular(16),
+              color: SoftErpTheme.cardSurface,
+              shadowColor: Colors.black26,
+              child: _ColumnFilterPanel(
+                title: title,
+                showSearch: showSearch,
+                searchHint: searchHint,
+                initialSearchQuery: initialSearchQuery,
+                initialSortAscending: sortColumn == column ? sortAscending : null,
+                onSort: (ascending) {
+                  if (ascending == null) {
+                    onSortChange?.call(null, true);
+                  } else {
+                    onSortChange?.call(column, ascending);
+                  }
+                },
+                onSearch: onSearch,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1139,14 +1329,14 @@ class _TableHeaderRow extends StatelessWidget {
       child: Row(
         children: [
           const SizedBox(width: _OrdersTableMetrics.prioritySlotWidth),
-          _HeaderCell('Order / Date', width: layout.orderDateGroupWidth),
-          _HeaderCell('Party / Item', width: layout.partyItemGroupWidth),
-          _HeaderCell('Purchase Order Number', width: layout.poWidth),
-          _HeaderCell('Qty', width: layout.quantityWidth),
-          _HeaderCell('Start Date', width: layout.startDateWidth),
-          _HeaderCell('End Date', width: layout.endDateWidth),
-          _HeaderCell('Status', width: layout.statusWidth),
-          _HeaderCell('Actions', width: layout.actionsWidth),
+          _HeaderCell('Order / Date', width: layout.orderDateGroupWidth, onTap: (ctx) => _showColumnFilterMenu(ctx, title: 'Order / Date', column: OrderSortColumn.orderDate, showSearch: true, searchHint: 'Search Order No...', initialSearchQuery: orderSearchQuery, onSearch: onOrderSearch)),
+          _HeaderCell('Party / Item', width: layout.partyItemGroupWidth, onTap: (ctx) => _showColumnFilterMenu(ctx, title: 'Party / Item', column: OrderSortColumn.partyItem, showSearch: true, searchHint: 'Search Client...', initialSearchQuery: clientSearchQuery, onSearch: onClientSearch)),
+          _HeaderCell('Purchase Order Number', width: layout.poWidth, onTap: (ctx) => _showColumnFilterMenu(ctx, title: 'PO Number', column: OrderSortColumn.poNumber, showSearch: true, searchHint: 'Search PO No...', initialSearchQuery: poSearchQuery, onSearch: onPoSearch)),
+          _HeaderCell('Qty', width: layout.quantityWidth, onTap: (ctx) => _showColumnFilterMenu(ctx, title: 'Quantity', column: OrderSortColumn.qty)),
+          _HeaderCell('Start Date', width: layout.startDateWidth, onTap: (ctx) => _showColumnFilterMenu(ctx, title: 'Start Date', column: OrderSortColumn.startDate)),
+          _HeaderCell('End Date', width: layout.endDateWidth, onTap: (ctx) => _showColumnFilterMenu(ctx, title: 'End Date', column: OrderSortColumn.endDate)),
+          _HeaderCell('Status', width: layout.statusWidth, onTap: (ctx) => _showColumnFilterMenu(ctx, title: 'Status', column: OrderSortColumn.status)),
+          _HeaderCell('Actions', width: layout.actionsWidth, showChevron: false),
         ],
       ),
     );
@@ -1154,24 +1344,189 @@ class _TableHeaderRow extends StatelessWidget {
 }
 
 class _HeaderCell extends StatelessWidget {
-  const _HeaderCell(this.label, {required this.width});
+  const _HeaderCell(this.label, {required this.width, this.showChevron = true, this.onTap});
 
   final String label;
   final double width;
+  final bool showChevron;
+  final void Function(BuildContext context)? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: width,
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: SoftErpTheme.textSecondary,
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
+    final content = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: SoftErpTheme.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
+        if (showChevron) ...[
+          const SizedBox(width: 4),
+          const Icon(Icons.keyboard_arrow_down_rounded, size: 14, color: SoftErpTheme.textSecondary),
+        ],
+      ],
+    );
+
+    final cell = SizedBox(
+      width: width,
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: content,
       ),
     );
+
+    if (onTap != null) {
+      return Builder(
+        builder: (ctx) => InkWell(
+          onTap: () => onTap!(ctx),
+          borderRadius: BorderRadius.circular(4),
+          child: cell,
+        ),
+      );
+    }
+
+    return cell;
+  }
+}
+
+class _ColumnFilterPanel extends StatefulWidget {
+  const _ColumnFilterPanel({
+    required this.title,
+    this.showSearch = false,
+    this.searchHint = 'Search...',
+    this.initialSearchQuery = '',
+    this.initialSortAscending,
+    this.onSort,
+    this.onSearch,
+  });
+
+  final String title;
+  final bool showSearch;
+  final String searchHint;
+  final String initialSearchQuery;
+  final bool? initialSortAscending;
+  final ValueChanged<bool?>? onSort;
+  final ValueChanged<String>? onSearch;
+
+  @override
+  State<_ColumnFilterPanel> createState() => _ColumnFilterPanelState();
+}
+
+class _ColumnFilterPanelState extends State<_ColumnFilterPanel> {
+  late TextEditingController _searchController;
+  bool? _sortAscending;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController(text: widget.initialSearchQuery);
+    _sortAscending = widget.initialSortAscending;
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 300,
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+            Text(
+              widget.title,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: SoftErpTheme.textPrimary,
+              ),
+            ),
+            if (widget.showSearch) ...[
+              const SizedBox(height: 16),
+              TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: widget.searchHint,
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: SoftErpTheme.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: SoftErpTheme.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: SoftErpTheme.accentDark),
+                  ),
+                ),
+                onChanged: (val) {
+                  widget.onSearch?.call(val);
+                },
+              ),
+            ],
+            const SizedBox(height: 20),
+            const Text(
+              'Sort',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: SoftErpTheme.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Ascending (A-Z)'),
+              trailing: _sortAscending == true ? const Icon(Icons.check, color: SoftErpTheme.accentDark) : null,
+              onTap: () {
+                setState(() => _sortAscending = true);
+                widget.onSort?.call(true);
+              },
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Descending (Z-A)'),
+              trailing: _sortAscending == false ? const Icon(Icons.check, color: SoftErpTheme.accentDark) : null,
+              onTap: () {
+                setState(() => _sortAscending = false);
+                widget.onSort?.call(false);
+              },
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Default / None'),
+              trailing: _sortAscending == null ? const Icon(Icons.check, color: SoftErpTheme.accentDark) : null,
+              onTap: () {
+                setState(() => _sortAscending = null);
+                widget.onSort?.call(null);
+              },
+            ),
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close'),
+              ),
+            ),
+          ],
+        ),
+      );
   }
 }
 

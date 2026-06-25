@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:core_erp/core/widgets/app_toast.dart';
-import 'package:flutter/services.dart';
+import 'package:core_erp/core/widgets/erp_form_dialog.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
 import 'package:core_erp/core/widgets/searchable_select.dart';
 import 'package:core_erp/features/items/domain/item_definition.dart';
@@ -78,13 +79,14 @@ class PipelinesScreen extends StatefulWidget {
     int? outputItemId = items.isNotEmpty ? items.last.id : null;
 
     final formKey = GlobalKey<FormState>();
+    var currentItems = items;
+    var currentUnits = units;
 
-    final result = await showDialog<PipelineTemplate>(
-      context: context,
-      builder: (dialogContext) {
-        var currentItems = items;
-        var currentUnits = units;
-        return StatefulBuilder(
+    final result = await showErpFormDialog<PipelineTemplate>(
+      context,
+      maxWidth: 520,
+      maxHeight: 620,
+      child: StatefulBuilder(
           builder: (context, setDialogState) {
             void submit() {
               if (formKey.currentState?.validate() == true) {
@@ -192,19 +194,11 @@ class PipelinesScreen extends StatefulWidget {
               }
             }
 
-            return CallbackShortcuts(
-              bindings: {
-                const SingleActivator(LogicalKeyboardKey.enter, meta: true):
-                    submit,
-                const SingleActivator(LogicalKeyboardKey.enter, control: true):
-                    submit,
-              },
-              child: AlertDialog(
-                title: const Text('Create New Pipeline'),
-                content: SizedBox(
-                  width: 460,
-                  child: SingleChildScrollView(
-                    child: Form(
+            return ErpFormScaffold(
+              title: 'Create New Pipeline',
+              subtitle:
+                  'Define the input and output materials for this production route.',
+              body: Form(
                       key: formKey,
                       autovalidateMode: AutovalidateMode.onUserInteraction,
                       child: Column(
@@ -309,20 +303,21 @@ class PipelinesScreen extends StatefulWidget {
                         ],
                       ),
                     ),
-                  ),
-                ),
-                actions: [
-                  TextButton(
+              footer: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  AppButton(
+                    label: 'Cancel',
+                    variant: AppButtonVariant.secondary,
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel'),
                   ),
-                  FilledButton(onPressed: submit, child: const Text('Create')),
+                  const SizedBox(width: 12),
+                  AppButton(label: 'Create', onPressed: submit),
                 ],
               ),
             );
           },
-        );
-      },
+      ),
     );
 
     // Delay controller disposal to allow the dialog pop animation to finish completely
@@ -429,25 +424,11 @@ class _PipelinesScreenState extends State<PipelinesScreen> {
   }
 
   Future<void> _deleteTemplate(PipelineTemplate template) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Pipeline'),
-        content: Text(
-          'Are you sure you want to delete "${template.name}"? This action cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+    final confirmed = await showErpFormDialog<bool>(
+      context,
+      maxWidth: 460,
+      maxHeight: 300,
+      child: _DeleteTemplateConfirm(template: template),
     );
 
     if (confirmed != true || !mounted) return;
@@ -643,10 +624,11 @@ class _PipelineItemSelectField extends StatelessWidget {
             );
       },
       onCreateOption: (query) async {
-        final created = await showDialog<ItemDefinition>(
-          context: context,
-          builder: (context) =>
-              _QuickItemCreateDialog(initialName: query, units: units),
+        final created = await showErpFormDialog<ItemDefinition>(
+          context,
+          maxWidth: 460,
+          maxHeight: 420,
+          child: _QuickItemCreateDialog(initialName: query, units: units),
         );
         if (!context.mounted || created == null) {
           return null;
@@ -1058,7 +1040,7 @@ class _PipelineTemplateCard extends StatelessWidget {
                           icon: const Icon(
                             Icons.delete_outline,
                             size: 20,
-                            color: Colors.redAccent,
+                            color: SoftErpTheme.dangerText,
                           ),
                           onPressed: onDelete,
                           tooltip: 'Delete Pipeline',
@@ -1067,7 +1049,7 @@ class _PipelineTemplateCard extends StatelessWidget {
                         icon: const Icon(
                           Icons.copy,
                           size: 20,
-                          color: Color(0xFF64748B),
+                          color: SoftErpTheme.textSecondary,
                         ),
                         onPressed: onDuplicate,
                         tooltip: 'Duplicate Pipeline',
@@ -1076,24 +1058,17 @@ class _PipelineTemplateCard extends StatelessWidget {
                         icon: const Icon(
                           Icons.edit_rounded,
                           size: 20,
-                          color: Color(0xFF64748B),
+                          color: SoftErpTheme.textSecondary,
                         ),
                         onPressed: onEdit,
                         tooltip: 'Edit pipeline',
                       ),
                       const SizedBox(width: 4),
                     ],
-                    FilledButton.icon(
+                    AppButton(
+                      label: 'Run',
+                      icon: Icons.play_arrow_rounded,
                       onPressed: canRun ? onRun : null,
-                      icon: const Icon(Icons.play_arrow_rounded, size: 16),
-                      label: const Text('Run'),
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        textStyle: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
                     ),
                   ],
                 ),
@@ -1305,21 +1280,10 @@ class _PipelineLibraryShell extends StatelessWidget {
                 ),
               ),
               if (actionLabel != null && onAction != null)
-                FilledButton.icon(
+                AppButton(
+                  label: actionLabel!,
+                  icon: Icons.add_rounded,
                   onPressed: onAction,
-                  icon: const Icon(Icons.add_rounded, size: 18),
-                  label: Text(actionLabel!),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF3B82F6),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 14,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
                 ),
             ],
           ),
@@ -1386,7 +1350,7 @@ class _PipelineEmptyState extends StatelessWidget {
             ),
             if (actionLabel != null && onAction != null) ...[
               const SizedBox(height: 18),
-              FilledButton(onPressed: onAction, child: Text(actionLabel!)),
+              AppButton(label: actionLabel!, onPressed: onAction),
             ],
           ],
         ),
@@ -1496,9 +1460,10 @@ class _QuickItemCreateDialogState extends State<_QuickItemCreateDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Quick Create Item'),
-      content: Column(
+    return ErpFormScaffold(
+      title: 'Quick Create Item',
+      subtitle: 'Add a new item master without leaving the pipeline form.',
+      body: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           TextField(
@@ -1543,22 +1508,76 @@ class _QuickItemCreateDialogState extends State<_QuickItemCreateDialog> {
           ),
         ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+      footer: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          AppButton(
+            label: 'Cancel',
+            variant: AppButtonVariant.secondary,
+            onPressed: () => Navigator.pop(context),
+          ),
+          const SizedBox(width: 12),
+          AppButton(
+            label: 'Create',
+            isLoading: _isLoading,
+            onPressed: _isLoading ? null : _create,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DeleteTemplateConfirm extends StatelessWidget {
+  const _DeleteTemplateConfirm({required this.template});
+  final PipelineTemplate template;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = template.name.trim().isEmpty ? 'this pipeline' : template.name;
+    return ErpFormScaffold(
+      title: 'Delete Pipeline',
+      subtitle: 'This permanently removes the pipeline and cannot be undone.',
+      bodyScrollable: false,
+      body: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          'Delete "$name"?',
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: SoftErpTheme.textPrimary,
+          ),
         ),
-        FilledButton(
-          onPressed: _isLoading ? null : _create,
-          child: _isLoading
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Create'),
-        ),
-      ],
+      ),
+      footer: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          AppButton(
+            label: 'Cancel',
+            variant: AppButtonVariant.secondary,
+            onPressed: () => Navigator.of(context).pop(false),
+          ),
+          const SizedBox(width: 12),
+          SizedBox(
+            height: 44,
+            child: ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFEF4444),
+                foregroundColor: Colors.white,
+                elevation: 1.5,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+              ),
+              child: const Text('Delete',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

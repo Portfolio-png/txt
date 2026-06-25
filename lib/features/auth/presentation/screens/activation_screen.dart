@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:paper/core/services/activation_service.dart';
 import '../../../../main.dart'; // Or wherever routing logic exists. Wait, I should just use Navigator for now.
 
@@ -137,16 +138,10 @@ class _ActivationScreenState extends State<ActivationScreen> {
                 ),
               SizedBox(
                 width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
+                child: AppButton(
+                  label: 'Activate Machine',
+                  isLoading: _isLoading,
                   onPressed: _isLoading ? null : _activate,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF8B5CF6),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                  child: _isLoading 
-                    ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : const Text('Activate Machine', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 ),
               )
             ],

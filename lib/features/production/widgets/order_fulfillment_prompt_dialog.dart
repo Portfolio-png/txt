@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:provider/provider.dart';
 
@@ -222,43 +223,19 @@ class _OrderFulfillmentPromptDialogState
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFFE4E4E7),
-                    side: const BorderSide(color: Color(0xFF3F3F46)),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 16,
-                    ),
-                  ),
+                AppButton(
+                  variant: AppButtonVariant.secondary,
                   onPressed: _isProcessing ? null : _completeOrder,
-                  child: const Text('Mark Completed'),
+                  label: 'Mark Completed',
                 ),
                 const SizedBox(width: 12),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF3B82F6),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 16,
-                    ),
-                  ),
+                AppButton(
+                  isLoading: _isProcessing,
                   onPressed: _isProcessing ? null : _draftChallan,
-                  icon: _isProcessing
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.local_shipping_outlined, size: 20),
-                  label: Text(
-                    _isProcessing ? 'Processing...' : 'Draft Delivery Challan',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
+                  icon: Icons.local_shipping_outlined,
+                  label: _isProcessing
+                      ? 'Processing...'
+                      : 'Draft Delivery Challan',
                 ),
               ],
             ),

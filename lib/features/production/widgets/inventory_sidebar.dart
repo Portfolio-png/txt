@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
 import 'package:core_erp/features/inventory/domain/material_record.dart';
 import 'package:core_erp/features/inventory/domain/inventory_control_tower.dart';
@@ -374,7 +375,7 @@ class _ReconcilePanel extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: SizedBox(
               width: double.infinity,
-              child: FilledButton.icon(
+              child: AppButton(
                 onPressed: isStarted
                     ? null
                     : () async {
@@ -396,15 +397,8 @@ class _ReconcilePanel extends StatelessWidget {
                           }
                         }
                       },
-                icon: const Icon(Icons.play_arrow_rounded, size: 18),
-                label: Text(isStarted ? 'Stage Started' : 'Start Stage'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: isStarted ? Colors.grey : const Color(0xFF2563EB),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
+                icon: Icons.play_arrow_rounded,
+                label: isStarted ? 'Stage Started' : 'Start Stage',
               ),
             ),
           ),

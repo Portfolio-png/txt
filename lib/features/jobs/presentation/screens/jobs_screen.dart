@@ -408,9 +408,10 @@ class _JobsScreenState extends State<JobsScreen> {
           ),
         ),
         actions: [
-          TextButton(
+          AppButton(
+            label: 'Close',
+            variant: AppButtonVariant.secondary,
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Close'),
           ),
         ],
       ),
@@ -749,7 +750,11 @@ class _AssignmentBar extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (selectedCount > 0)
-                TextButton(onPressed: onClear, child: const Text('Clear')),
+                AppButton(
+                  label: 'Clear',
+                  variant: AppButtonVariant.secondary,
+                  onPressed: onClear,
+                ),
               AppButton(
                 label: 'Assign as batch',
                 icon: Icons.assignment_ind_outlined,

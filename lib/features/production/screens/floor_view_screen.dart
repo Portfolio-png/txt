@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -170,9 +171,10 @@ class _FloorViewScreenState extends State<FloorViewScreen> {
             ),
           ),
           actions: [
-            TextButton(
+            AppButton(
+              label: 'Cancel',
+              variant: AppButtonVariant.secondary,
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
             ),
           ],
         );
@@ -2099,9 +2101,10 @@ Future<void> _showOrderQuickPeek(
               title: const Text('Order Details'),
               content: const Text('Order not found.'),
               actions: [
-                TextButton(
+                AppButton(
+                  label: 'Close',
+                  variant: AppButtonVariant.secondary,
                   onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Close'),
                 ),
               ],
             );
@@ -2169,13 +2172,9 @@ Future<void> _showOrderQuickPeek(
                   const SizedBox(height: 24),
                   Align(
                     alignment: Alignment.centerRight,
-                    child: ElevatedButton(
+                    child: AppButton(
+                      label: 'Close',
                       onPressed: () => Navigator.of(context).pop(),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: tokens.selection,
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('Close'),
                     ),
                   ),
                 ],

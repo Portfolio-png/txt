@@ -23,13 +23,10 @@ class ProductionPipelinesScreen extends StatelessWidget {
       return const ProductionRunsScreen();
     }
 
-    return const DecoratedBox(
-      decoration: BoxDecoration(color: Color(0xFFEFF3F1)),
-      child: PipelinesScreen(
-        factoryId: defaultProductionFactoryId,
-        shopFloorId: defaultProductionShopFloorId,
-        mode: PipelinesScreenMode.manage,
-      ),
+    return const PipelinesScreen(
+      factoryId: defaultProductionFactoryId,
+      shopFloorId: defaultProductionShopFloorId,
+      mode: PipelinesScreenMode.manage,
     );
   }
 }

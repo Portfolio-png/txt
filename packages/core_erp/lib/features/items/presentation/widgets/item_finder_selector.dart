@@ -25,7 +25,7 @@ class _ItemFinderSelectorDialogState extends State<ItemFinderSelectorDialog> {
     final groupsProvider = context.watch<GroupsProvider>();
     final itemsProvider = context.watch<ItemsProvider>();
 
-    final allGroupDefinitions = groupsProvider.groups;
+    final allGroupDefinitions = groupsProvider.groups.where((g) => g.groupType == 'item').toList();
     final allItems = itemsProvider.items;
     final baseItems = allItems.where((i) => i.baseItemId == null).toList();
     final variations = allItems.where((i) => i.baseItemId != null).toList();

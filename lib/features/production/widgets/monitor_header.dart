@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:core_erp/features/orders/presentation/providers/orders_provider.dart';
 import '../providers/production_provider.dart';
 import '../providers/production_run_provider.dart';
@@ -86,18 +87,10 @@ class MonitorHeader extends StatelessWidget {
             color: const Color(0xFF64748B),
           ),
           const Spacer(),
-          FilledButton.icon(
+          AppButton(
             onPressed: () => _completeOrder(context),
-            icon: const Icon(Icons.task_alt_rounded, size: 18),
-            label: const Text('Complete Order'),
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF10B981),
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-              textStyle: const TextStyle(
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.3,
-              ),
-            ),
+            icon: Icons.task_alt_rounded,
+            label: 'Complete Order',
           ),
         ],
       ),
