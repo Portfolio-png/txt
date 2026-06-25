@@ -1,5 +1,10 @@
 import '../annotations/feature_annotation.dart';
+import 'dev_config.dart';
 
+/// RULE: every user-facing feature/module ships behind a flag — nothing reaches
+/// a client build ungated. To add one: declare an `@FeatureFlag` key here, gate
+/// the feature with `FeatureFlags.isEnabled(...)`, then publish it to the
+/// dashboard with `dart run bin/generate_registry.dart`. See CLAUDE.md.
 class FeatureKeys {
   @FeatureFlag(category: 'Modules', displayName: 'Orders Module', desc: 'Enable the Orders module')
   static const String modulesOrders = 'modules.orders';
@@ -40,6 +45,11 @@ class FeatureFlags {
   }
 
   static bool isEnabled(String featureKey) {
+    // Offline dev mode: dev_config.dart wins so hot reload toggles flags live.
+    if (useDevConfig) {
+      final dev = _getNestedProperty(devConfig, featureKey);
+      if (dev is bool) return dev;
+    }
     final val = _getNestedProperty(_config, featureKey);
     if (val is bool) {
       return val;

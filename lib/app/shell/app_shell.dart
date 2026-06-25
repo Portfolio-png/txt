@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:showcaseview/showcaseview.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:core_erp/core/navigation/app_navigation.dart';
+import 'package:core_erp/core/services/config_service.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
@@ -704,6 +705,10 @@ class _ShellContentSwitcher extends StatelessWidget {
         final skipTransition = context
             .read<NavigationProvider>()
             .consumeSkipNextContentTransition();
+        // Backstop: a disabled module must not render even if it became the
+        // selected key (default landing, Ctrl+digit, cross-navigation). Falls
+        // back to the always-on dashboard.
+        final allowed = ConfigService.instance.isNavKeyAllowed(key);
         return AnimatedSwitcher(
           duration: skipTransition
               ? Duration.zero
@@ -723,8 +728,10 @@ class _ShellContentSwitcher extends StatelessWidget {
             return FadeTransition(opacity: animation, child: child);
           },
           child: KeyedSubtree(
-            key: ValueKey<String>(key),
-            child: switch (key) {
+            key: ValueKey<String>(allowed ? key : 'dashboard'),
+            child: !allowed
+                ? const DashboardScreen()
+                : switch (key) {
               'inventory' => const InventoryScreen(),
               'inventory_scan' => const MaterialScanScreen(),
               'production' => const ProductionPipelinesScreen(

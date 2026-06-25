@@ -1,0 +1,4 @@
+{
+  // Save (Ctrl+S) triggers hot reload, so edits to dev_config.dart apply live.
+  "dart.flutterHotReloadOnSave": "all"
+}

@@ -22,7 +22,8 @@
       "PowerShell(flutter analyze lib/features/production/widgets/batch_train_panel.dart 2>&1)",
       "PowerShell(flutter analyze lib/features/production/widgets/batch_chip.dart lib/features/production/widgets/pipeline_run_row.dart 2>&1)",
       "PowerShell(flutter analyze lib/features/production/widgets/stage_reconciliation_dialog.dart 2>&1)",
-      "PowerShell(flutter analyze lib/app/shell/app_shell.dart 2>&1)"
+      "PowerShell(flutter analyze lib/app/shell/app_shell.dart 2>&1)",
+      "PowerShell($conn = Get-NetTCPConnection -LocalPort 18080 -State Listen -ErrorAction SilentlyContinue; if \\($conn\\) { $p = Get-Process -Id $conn.OwningProcess; \"PID $\\($p.Id\\)  -  $\\($p.ProcessName\\)  -  started $\\($p.StartTime\\)\" } else { \"Nothing listening on 18080\" })"
     ]
   }
 }

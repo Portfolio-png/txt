@@ -1,0 +1,32 @@
+{
+  // Pick one from the Run and Debug dropdown (top-left, the ▷ play button).
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // Default: dev build talking to your LOCAL backend (localhost:18080).
+      // Start the backend first:  cd backend && npm start
+      "name": "Dev — local backend",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart"
+    },
+    {
+      // Dev build talking to the EC2 box (for your co-founder to test).
+      // Edit the IP below once to your EC2 public IP, then just pick this.
+      "name": "Dev — EC2 backend",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "args": ["--dart-define=PAPER_API_BASE_URL=http://EC2_PUBLIC_IP:18080"]
+    },
+    {
+      // Dev build with NO backend — config comes from dev_config.dart, edits
+      // apply live on Ctrl+S. Use for fast UI iteration.
+      "name": "Dev — offline (no backend)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "args": ["--dart-define=PAPER_OFFLINE_CONFIG=true"]
+    }
+  ]
+}

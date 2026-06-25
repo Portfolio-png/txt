@@ -30,7 +30,7 @@ class JobsProvider extends ChangeNotifier {
       _jobs = data.jobs;
       _tasks = data.tasks;
     } catch (e) {
-      _error = e.toString();
+      _error = e.toString().replaceAll(RegExp(r'^(Exception:\s*)+'), '');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -49,7 +49,7 @@ class JobsProvider extends ChangeNotifier {
       }
       notifyListeners();
     } catch (e) {
-      _error = e.toString();
+      _error = e.toString().replaceAll(RegExp(r'^(Exception:\s*)+'), '');
       notifyListeners();
       rethrow;
     }
@@ -61,7 +61,7 @@ class JobsProvider extends ChangeNotifier {
       _jobs.add(job);
       notifyListeners();
     } catch (e) {
-      _error = e.toString();
+      _error = e.toString().replaceAll(RegExp(r'^(Exception:\s*)+'), '');
       notifyListeners();
       rethrow;
     }
@@ -76,7 +76,7 @@ class JobsProvider extends ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
-      _error = e.toString();
+      _error = e.toString().replaceAll(RegExp(r'^(Exception:\s*)+'), '');
       notifyListeners();
       rethrow;
     }

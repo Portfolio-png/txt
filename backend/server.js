@@ -21265,8 +21265,11 @@ app.get('/sandbox-config/:clientId', async (req, res) => {
       "modules": {
         "orders": true,
         "masters": true,
-        "inventory": false,
-        "production": false
+        "inventory": true,
+        "production": true,
+        "pm": true,
+        "jobs": true,
+        "delivery_challans": true
       },
       "orders": {
         "statusColors": {

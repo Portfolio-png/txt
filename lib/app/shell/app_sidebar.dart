@@ -111,10 +111,11 @@ class _AppSidebarState extends State<AppSidebar> {
 
   List<String> _visibleSidebarKeys({required bool isConfiguratorExpanded}) {
     final auth = context.read<AuthProvider>();
+    final mastersOn = ConfigService.instance.isModuleEnabled('masters');
     return <String>[
       ..._moduleItems.where((item) => ConfigService.instance.isModuleEnabled(item.key)).map((item) => item.key),
-      'configurator',
-      if (isConfiguratorExpanded) ..._configuratorItems.map((item) => item.key),
+      if (mastersOn) 'configurator',
+      if (mastersOn && isConfiguratorExpanded) ..._configuratorItems.map((item) => item.key),
       if (auth.canAccessUserManagement) ..._adminItems.map((item) => item.key),
     ];
   }
@@ -204,6 +205,7 @@ class _AppSidebarState extends State<AppSidebar> {
     final canManageUsers = context.select<AuthProvider, bool>(
       (auth) => auth.canAccessUserManagement,
     );
+    final mastersOn = ConfigService.instance.isModuleEnabled('masters');
     final isConfiguratorExpanded = _isConfiguratorExpanded;
 
     return FocusScope(
@@ -255,24 +257,26 @@ class _AppSidebarState extends State<AppSidebar> {
                                 focusNodeForKey: _focusNodeFor,
                                 ordersShowcaseKey: widget.ordersShowcaseKey,
                               ),
-                              const SizedBox(height: 10),
-                              _SidebarSection(
-                                title: 'Configurator',
-                                compact: widget.compact,
-                                children: _configuratorItems,
-                                selectedKey: selectedKey,
-                                isExpandable: true,
-                                isExpanded: isConfiguratorExpanded,
-                                isParentSelected: false,
-                                onExpansionToggle: () {
-                                  setState(() {
-                                    _isConfiguratorExpanded =
-                                        !_isConfiguratorExpanded;
-                                  });
-                                },
-                                onSelected: _selectKey,
-                                focusNodeForKey: _focusNodeFor,
-                              ),
+                              if (mastersOn) ...[
+                                const SizedBox(height: 10),
+                                _SidebarSection(
+                                  title: 'Configurator',
+                                  compact: widget.compact,
+                                  children: _configuratorItems,
+                                  selectedKey: selectedKey,
+                                  isExpandable: true,
+                                  isExpanded: isConfiguratorExpanded,
+                                  isParentSelected: false,
+                                  onExpansionToggle: () {
+                                    setState(() {
+                                      _isConfiguratorExpanded =
+                                          !_isConfiguratorExpanded;
+                                    });
+                                  },
+                                  onSelected: _selectKey,
+                                  focusNodeForKey: _focusNodeFor,
+                                ),
+                              ],
                               if (canManageUsers) ...[
                                 const SizedBox(height: 10),
                                 _SidebarSection(

@@ -1,6 +1,7 @@
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
 import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:core_erp/core/widgets/app_empty_state.dart';
+import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:core_erp/core/widgets/soft_master_data.dart';
 import 'package:core_erp/core/widgets/soft_primitives.dart';
 import 'package:core_erp/features/departments/domain/employee_definition.dart';
@@ -51,6 +52,17 @@ class _JobsScreenState extends State<JobsScreen> {
       context.read<DepartmentsProvider>().load(),
     ]);
     if (!mounted) return;
+
+    final jobsErr = context.read<JobsProvider>().error;
+    if (jobsErr != null) {
+      _showMessage(jobsErr, isError: true);
+    }
+
+    final depsErr = context.read<DepartmentsProvider>().errorMessage;
+    if (depsErr != null) {
+      _showMessage(depsErr, isError: true);
+    }
+
     final validUnassigned = context
         .read<JobsProvider>()
         .jobs
@@ -130,17 +142,16 @@ class _JobsScreenState extends State<JobsScreen> {
   }
 
   void _showMessage(String message, {bool isError = false}) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: isError
-              ? SoftErpTheme.dangerText
-              : SoftErpTheme.textPrimary,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+    String cleanMessage = message;
+    if (isError && cleanMessage.startsWith('Exception: ')) {
+      cleanMessage = cleanMessage.substring(11).trim();
+    }
+    
+    showAppToast(
+      context,
+      cleanMessage,
+      kind: isError ? AppToastKind.error : AppToastKind.success,
+    );
   }
 
   @override
@@ -175,15 +186,6 @@ class _JobsScreenState extends State<JobsScreen> {
         onQueryChanged: (value) => setState(() => _query = value.trim()),
         onRefresh: _refresh,
       ),
-      messages: [
-        if (jobsProvider.error != null)
-          _ErrorBanner(message: jobsProvider.error!, onRetry: _refresh),
-        if (departmentsProvider.errorMessage != null)
-          _ErrorBanner(
-            message: departmentsProvider.errorMessage!,
-            onRetry: _refresh,
-          ),
-      ],
       body: jobsProvider.isLoading || departmentsProvider.isLoading
           ? const _JobsLoadingState()
           : Column(
@@ -2854,44 +2856,6 @@ class _InlineEmpty extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _ErrorBanner extends StatelessWidget {
-  const _ErrorBanner({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return SoftSurface(
-      color: SoftErpTheme.dangerBg,
-      radius: 14,
-      elevated: false,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.error_outline_rounded,
-            color: SoftErpTheme.dangerText,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              message,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: SoftErpTheme.dangerText,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          TextButton(onPressed: onRetry, child: const Text('Retry')),
-        ],
       ),
     );
   }

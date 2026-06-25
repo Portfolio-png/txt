@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dev_config.dart';
 import 'feature_flags.dart';
 
 class ConfigService {
@@ -14,7 +15,10 @@ class ConfigService {
   Timer? _pollingTimer;
   bool _isDemoMode = false;
 
-  Map<String, dynamic> get config => _config;
+  // In offline dev mode, overlay dev_config.dart live on every read so hot
+  // reload shows edits. Otherwise (backend dev + release) return config as-is.
+  Map<String, dynamic> get config =>
+      useDevConfig ? _deepMerge(Map<String, dynamic>.from(_config), devConfig) : _config;
 
   static const Map<String, dynamic> _globalDefaults = {
     "modules": {
@@ -42,6 +46,17 @@ class ConfigService {
 
   Future<void> init(String baseUrl, String clientId, {bool isDemoMode = false}) async {
     _isDemoMode = isDemoMode;
+
+    // Offline dev mode only (PAPER_OFFLINE_CONFIG=true): skip backend/DB/cache.
+    // Base = global defaults; live overrides come from dev_config.dart, which
+    // the reads below overlay so a hot reload (Ctrl+S) shows edits instantly.
+    // Default debug runs fall through to the normal backend path below.
+    if (useDevConfig) {
+      _config = Map<String, dynamic>.from(_globalDefaults);
+      FeatureFlags.setConfig(_config);
+      return; // no remote fetch, no polling, no stale cache
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final cacheKey = 'cached_config_$clientId';
     
@@ -119,9 +134,44 @@ class ConfigService {
     }
   }
 
+  /// Single source of truth for "can this client reach this screen?". Maps any
+  /// sidebar/content key to its owning module; keys with no module (dashboard,
+  /// user management) are always allowed. Used by both the sidebar (what to
+  /// show) and the content router (what to render), so a disabled module can't
+  /// leak in via a default landing, shortcut, or cross-navigation.
+  bool isNavKeyAllowed(String key) {
+    final module = _moduleForNavKey(key);
+    return module == null || isModuleEnabled(module);
+  }
+
+  static String? _moduleForNavKey(String key) {
+    if (key.startsWith('configurator')) return 'masters';
+    switch (key) {
+      case 'orders':
+        return 'orders';
+      case 'delivery_challans':
+      case 'challan_invoice_report':
+        return 'delivery_challans';
+      case 'inventory':
+      case 'inventory_scan':
+        return 'inventory';
+      case 'production':
+      case 'production_pipelines':
+      case 'telemetry':
+        return 'production';
+      case 'jobs':
+        return 'jobs';
+      case 'pm':
+        return 'pm';
+      default:
+        return null; // dashboard, user_management, reports → always allowed
+    }
+  }
+
   Map<String, String> get ordersStatusColors {
-    if (_config.containsKey('orders') && _config['orders'].containsKey('statusColors')) {
-      return Map<String, String>.from(_config['orders']['statusColors']);
+    final cfg = config;
+    if (cfg.containsKey('orders') && cfg['orders'].containsKey('statusColors')) {
+      return Map<String, String>.from(cfg['orders']['statusColors']);
     }
     return {
       "pending": "#FFA500",

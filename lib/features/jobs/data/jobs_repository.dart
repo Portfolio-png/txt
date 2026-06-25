@@ -37,7 +37,7 @@ class JobsRepository {
         tasks: tasksList.map((e) => FreelancerJobTask.fromJson(e)).toList(),
       );
     } else {
-      throw Exception('Failed to fetch jobs data: ${response.body}');
+      throw JobsApiException('Failed to fetch jobs data: ${_parseError(response.body)}');
     }
   }
 
@@ -55,7 +55,7 @@ class JobsRepository {
       final data = jsonDecode(response.body);
       return FreelancerJobBatch.fromJson(data['batch']);
     } else {
-      throw Exception('Failed to create batch: ${response.body}');
+      throw JobsApiException('Failed to create batch: ${_parseError(response.body)}');
     }
   }
 
@@ -70,7 +70,7 @@ class JobsRepository {
       final data = jsonDecode(response.body);
       return FreelancerJob.fromJson(data['job']);
     } else {
-      throw Exception('Failed to create job: ${response.body}');
+      throw JobsApiException('Failed to create job: ${_parseError(response.body)}');
     }
   }
 
@@ -85,7 +85,26 @@ class JobsRepository {
       final data = jsonDecode(response.body);
       return FreelancerJob.fromJson(data['job']);
     } else {
-      throw Exception('Failed to update job status: ${response.body}');
+      throw JobsApiException('Failed to update job status: ${_parseError(response.body)}');
     }
   }
+
+  String _parseError(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded['error'] != null) {
+        return decoded['error'].toString();
+      }
+    } catch (_) {}
+    return body;
+  }
+}
+
+class JobsApiException implements Exception {
+  const JobsApiException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }
