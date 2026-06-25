@@ -21590,7 +21590,9 @@ app.delete('/api/activate/:clientId/:fingerprint', async (req, res) => {
 
 app.post('/api/build/global', async (req, res) => {
   try {
-    const targetVersion = req.body.targetVersion || '1.0.0';
+    // Empty version = fresh build (artifact only). The workflow gates its S3
+    // publish step on a non-empty target_version, so don't default it here.
+    const targetVersion = (req.body.targetVersion || '').trim();
     const githubToken = process.env.GITHUB_TOKEN;
     const githubOwner = process.env.GITHUB_OWNER || 'your-github-username';
     const githubRepo = process.env.GITHUB_REPO || 'core-erp';
@@ -21623,7 +21625,12 @@ app.post('/api/build/global', async (req, res) => {
       return res.status(response.status).json({ success: false, error: `GitHub API error: ${errorText}` });
     }
 
-    res.json({ success: true, message: `Global Build v${targetVersion} dispatched successfully!` });
+    res.json({
+      success: true,
+      message: targetVersion
+        ? `Global Build v${targetVersion} dispatched successfully!`
+        : 'Fresh build dispatched (no version, not published).',
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

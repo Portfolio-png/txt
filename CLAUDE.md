@@ -32,6 +32,34 @@ flag is OFF until enabled in a client's config. Per-client config lives in the
 `sandbox_client_configs` table, edited via the dashboard at
 `http://localhost:18080/dashboard`, served to the app by `GET /sandbox-config/:clientId`.
 
+## Replacing a working flow (selector flags)
+
+To build a new version of an existing flow **without removing the one that
+works**: the flag *selects the implementation*. You add a branch and a new file,
+and never edit the current flow — that's what guarantees it keeps working.
+
+1. Add a selector flag, default OFF (everyone keeps the current flow):
+   ```dart
+   @FeatureFlag(category: 'Orders Screen', displayName: 'New Order Flow (v2)', desc: '...')
+   static const String ordersFlowV2 = 'orders.flowV2';
+   ```
+2. Branch at the flow's **single entry point** (e.g. `OrdersScreen.openEditor`):
+   ```dart
+   if (FeatureFlags.isEnabled(FeatureKeys.ordersFlowV2)) {
+     return OrderEditorV2.open(context, initialOrderGroup); // new flow
+   }
+   // ...existing flow below, unchanged...
+   ```
+3. The new flow lives in its own file; the old widget is never touched. Flip the
+   flag per client to roll v2 out to one client at a time.
+
+Notes:
+- 3+ variants → make the flag a string (`"orders.flow": "v1" | "v2"`) and `switch`.
+- Unreleased / secret v2 → also wrap the branch in a compile-time
+  `const bool.fromEnvironment('GARAGE')` so it's tree-shaken out of client builds
+  until you choose to ship it (runtime flag picks it; compile-time flag decides if
+  it's even present).
+
 ## Dev run modes
 
 - `flutter run -d windows` — debug against the backend at `localhost:18080`.

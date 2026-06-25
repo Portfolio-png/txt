@@ -1456,19 +1456,30 @@
     }
 
     async function triggerBuild() {
-      const version = prompt("Enter the new global version number to build (e.g. 1.0.1):", "1.0.1");
-      if (!version) return;
+      // Version is ONLY for the auto-update appcast (S3) — it tells existing
+      // installs a newer build exists. A fresh client install needs no version:
+      // leave it empty to build an artifact without publishing.
+      const version = prompt(
+        "Version to PUBLISH for auto-update (e.g. 1.0.1).\n\n" +
+        "Leave EMPTY for a fresh build (no version, not published to S3).\n" +
+        "Press Cancel to abort.",
+        ""
+      );
+      if (version === null) return; // Cancel = abort
+      const v = version.trim();
 
-      showToast(`Dispatching Global Build v${version}...`, 'info');
+      showToast(v ? `Dispatching Global Build v${v}...` : 'Dispatching fresh build (no version)...', 'info');
       try {
-        const response = await fetch(`/api/build/global`, { 
+        const response = await fetch(`/api/build/global`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ targetVersion: version })
+          body: JSON.stringify({ targetVersion: v })
         });
         const resData = await response.json();
         if (resData.success) {
-          showToast('Global Build Triggered successfully. It will be uploaded to S3 automatically.', 'success');
+          showToast(v
+            ? 'Global build triggered — it will upload to S3 automatically.'
+            : 'Fresh build triggered — artifact only, nothing published.', 'success');
         } else {
           showToast('Build failed: ' + resData.error, 'error');
         }
