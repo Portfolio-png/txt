@@ -107,7 +107,7 @@ Future<void> main() async {
 
   // Initialize Remote Config
   const clientId = String.fromEnvironment('CLIENT_ID', defaultValue: 'default');
-  await ConfigService.instance.init(_resolveApiBaseUrl(), clientId);
+  await ConfigService.instance.init(_resolveApiBaseUrl(), clientId, isDemoMode: _isDemoMode);
 
   // Initialize SQLite state sync to Control Plane
   DataSyncService.instance.initialize(_resolveApiBaseUrl(), clientId);

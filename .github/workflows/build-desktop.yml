@@ -146,9 +146,9 @@ jobs:
       - name: Upload Single Build via EC2 to S3 (Windows)
         if: matrix.target == 'windows' && github.event.inputs.target_version != ''
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_HOST: ${{ secrets.AWS_EC2_HOST }}
+          EC2_USER: ${{ secrets.AWS_SSH_USER }}
+          EC2_SSH_KEY: ${{ secrets.AWS_SSH_KEY }}
           S3_BUCKET: ${{ secrets.AWS_S3_UPDATE_BUCKET }}
         shell: bash
         run: |

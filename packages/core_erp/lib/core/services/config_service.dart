@@ -12,6 +12,7 @@ class ConfigService {
 
   Map<String, dynamic> _config = {};
   Timer? _pollingTimer;
+  bool _isDemoMode = false;
 
   Map<String, dynamic> get config => _config;
 
@@ -39,7 +40,8 @@ class ConfigService {
     }
   };
 
-  Future<void> init(String baseUrl, String clientId) async {
+  Future<void> init(String baseUrl, String clientId, {bool isDemoMode = false}) async {
+    _isDemoMode = isDemoMode;
     final prefs = await SharedPreferences.getInstance();
     final cacheKey = 'cached_config_$clientId';
     
@@ -104,6 +106,7 @@ class ConfigService {
   }
 
   bool isModuleEnabled(String moduleName) {
+    if (_isDemoMode) return true;
     switch (moduleName) {
       case 'orders': return FeatureFlags.isEnabled(FeatureKeys.modulesOrders);
       case 'masters': return FeatureFlags.isEnabled(FeatureKeys.modulesMasters);
