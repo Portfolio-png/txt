@@ -891,7 +891,7 @@ List<FreelancerJob> _jobsForSelection(
   return jobs.where((job) => job.id == selection.id).toList(growable: false);
 }
 
-class _SpreadsheetView extends StatelessWidget {
+class _SpreadsheetView extends StatefulWidget {
   const _SpreadsheetView({
     required this.jobs,
     required this.allJobs,
@@ -925,25 +925,40 @@ class _SpreadsheetView extends StatelessWidget {
   onPrint;
 
   @override
+  State<_SpreadsheetView> createState() => _SpreadsheetViewState();
+}
+
+class _SpreadsheetViewState extends State<_SpreadsheetView> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (jobs.isEmpty) {
+    if (widget.jobs.isEmpty) {
       return const AppEmptyState(
         title: 'No jobs match this view',
         message: 'Create a job or change the active filter.',
         icon: Icons.work_outline_rounded,
       );
     }
-    final selectable = jobs.where((job) => job.batchId == null).toList();
+    final selectable = widget.jobs.where((job) => job.batchId == null).toList();
     final allSelected =
         selectable.isNotEmpty &&
-        selectable.every((job) => selectedJobIds.contains(job.id));
+        selectable.every((job) => widget.selectedJobIds.contains(job.id));
     return SoftSurface(
       padding: EdgeInsets.zero,
       radius: SoftErpTheme.radiusLg,
       clipContent: true,
       child: Scrollbar(
         thumbVisibility: true,
+        controller: _scrollController,
         child: SingleChildScrollView(
+          controller: _scrollController,
           scrollDirection: Axis.horizontal,
           child: SingleChildScrollView(
             child: DataTable(
@@ -962,7 +977,7 @@ class _SpreadsheetView extends StatelessWidget {
                     value: allSelected,
                     onChanged: selectable.isEmpty
                         ? null
-                        : (value) => onSelectAll(jobs, value ?? false),
+                        : (value) => widget.onSelectAll(widget.jobs, value ?? false),
                   ),
                 ),
                 const DataColumn(label: Text('JOB')),
@@ -973,25 +988,25 @@ class _SpreadsheetView extends StatelessWidget {
                 const DataColumn(label: Text('PAYOUT'), numeric: true),
                 const DataColumn(label: Text('ACTIONS')),
               ],
-              rows: jobs
+              rows: widget.jobs
                   .map((job) {
-                    final jobTasks = tasks
+                    final jobTasks = widget.tasks
                         .where((task) => task.jobId == job.id)
                         .toList();
                     final batch = _firstWhereOrNull(
-                      batches,
+                      widget.batches,
                       (value) => value.id == job.batchId,
                     );
                     final freelancer = _firstWhereOrNull(
-                      freelancers,
+                      widget.freelancers,
                       (value) => value.id == batch?.freelancerId,
                     );
                     final assigned = job.batchId != null;
                     return DataRow(
-                      selected: selectedJobIds.contains(job.id),
+                      selected: widget.selectedJobIds.contains(job.id),
                       onSelectChanged: assigned
                           ? null
-                          : (value) => onSelectionChanged(job, value ?? false),
+                          : (value) => widget.onSelectionChanged(job, value ?? false),
                       cells: [
                         DataCell(
                           assigned
@@ -1004,9 +1019,9 @@ class _SpreadsheetView extends StatelessWidget {
                                   ),
                                 )
                               : Checkbox(
-                                  value: selectedJobIds.contains(job.id),
+                                  value: widget.selectedJobIds.contains(job.id),
                                   onChanged: (value) =>
-                                      onSelectionChanged(job, value ?? false),
+                                      widget.onSelectionChanged(job, value ?? false),
                                 ),
                         ),
                         DataCell(
@@ -1038,7 +1053,7 @@ class _SpreadsheetView extends StatelessWidget {
                         ),
                         DataCell(
                           InkWell(
-                            onTap: () => onOpenDetails(job, tasks),
+                            onTap: () => widget.onOpenDetails(job, widget.tasks),
                             borderRadius: BorderRadius.circular(8),
                             child: Padding(
                               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1104,7 +1119,7 @@ class _SpreadsheetView extends StatelessWidget {
                         DataCell(
                           _StatusMenu(
                             job: job,
-                            onChanged: (status) => onStatusChanged(job, status),
+                            onChanged: (status) => widget.onStatusChanged(job, status),
                           ),
                         ),
                         DataCell(
@@ -1120,18 +1135,18 @@ class _SpreadsheetView extends StatelessWidget {
                               SoftIconButton(
                                 icon: Icons.visibility_outlined,
                                 tooltip: 'View job items',
-                                onTap: () => onOpenDetails(job, tasks),
+                                onTap: () => widget.onOpenDetails(job, widget.tasks),
                               ),
                               if (assigned) ...[
                                 const SizedBox(width: 6),
                                 SoftIconButton(
                                   icon: Icons.print_outlined,
                                   tooltip: 'Print job card',
-                                  onTap: () => onPrint(
+                                  onTap: () => widget.onPrint(
                                     job,
-                                    batches,
-                                    freelancers,
-                                    allJobs,
+                                    widget.batches,
+                                    widget.freelancers,
+                                    widget.allJobs,
                                   ),
                                 ),
                               ],
@@ -1459,9 +1474,16 @@ class _FreelancerColumnBrowser extends StatefulWidget {
 }
 
 class _FreelancerColumnBrowserState extends State<_FreelancerColumnBrowser> {
+  final ScrollController _scrollController = ScrollController();
   int? _selectedFreelancerId;
   _BrowserWorkSelection? _selectedWork;
   int? _selectedTaskId;
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1511,7 +1533,9 @@ class _FreelancerColumnBrowserState extends State<_FreelancerColumnBrowser> {
       clipContent: true,
       child: Scrollbar(
         thumbVisibility: true,
+        controller: _scrollController,
         child: SingleChildScrollView(
+          controller: _scrollController,
           scrollDirection: Axis.horizontal,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,

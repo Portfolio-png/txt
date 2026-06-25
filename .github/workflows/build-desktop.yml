@@ -171,7 +171,7 @@ jobs:
           
           echo "Uploading from EC2 to S3..."
           # The EC2 instance will use its IAM role to run the S3 copy, then clean up the file
-          ssh "${EC2_USER}@${EC2_HOST}" "aws s3 cp ~/${EXE_NAME} s3://${S3_BUCKET}/${VERSION}/${EXE_NAME} --acl public-read && rm ~/${EXE_NAME}"
+          ssh "${EC2_USER}@${EC2_HOST}" "PATH=\$PATH:/usr/local/bin:/snap/bin:/usr/bin aws s3 cp ~/${EXE_NAME} s3://${S3_BUCKET}/${VERSION}/${EXE_NAME} --acl public-read && rm ~/${EXE_NAME}"
 
 
       # Some plugins (auto_updater_macos, printing) don't support Swift Package
