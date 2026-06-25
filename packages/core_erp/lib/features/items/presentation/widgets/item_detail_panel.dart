@@ -647,7 +647,7 @@ class _ItemFactsheet extends StatelessWidget {
             values: item.unitConversions
                 .map(
                   (entry) =>
-                      '1 ${entry.unitSymbol} = ${entry.factorToPrimary} base',
+                      '1 ${entry.unitSymbol} = ${_fmtFactor(entry.factorToPrimary)} base',
                 )
                 .toList(growable: false),
             emptyText: '',
@@ -1153,6 +1153,16 @@ String generatedCodeForText(String value) {
       .toUpperCase();
 }
 
+/// Conversion factors to 3 decimal places, trailing zeros stripped
+/// (0.006944… → "0.007", 144.0 → "144").
+String _fmtFactor(num value) {
+  var s = value.toStringAsFixed(3);
+  if (s.contains('.')) {
+    s = s.replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+  }
+  return s;
+}
+
 class _UsageFactRow extends StatefulWidget {
   const _UsageFactRow({required this.item, this.width});
 
@@ -1208,13 +1218,15 @@ class _UsageFactRowState extends State<_UsageFactRow> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    '${widget.item.usageCount} linked record(s)',
-                    style: TextStyle(
-                      color: widget.item.usageCount > 0 ? SoftErpTheme.accent : SoftErpTheme.textPrimary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      decoration: widget.item.usageCount > 0 ? TextDecoration.underline : TextDecoration.none,
+                  Flexible(
+                    child: Text(
+                      '${widget.item.usageCount} linked record(s)',
+                      style: TextStyle(
+                        color: widget.item.usageCount > 0 ? SoftErpTheme.accent : SoftErpTheme.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        decoration: widget.item.usageCount > 0 ? TextDecoration.underline : TextDecoration.none,
+                      ),
                     ),
                   ),
                   if (widget.item.usageCount > 0) ...[

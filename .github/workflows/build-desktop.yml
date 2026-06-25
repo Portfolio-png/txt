@@ -20,6 +20,11 @@ on:
         required: false
         default: false
         type: boolean
+      skip_activation:
+        description: "Skip the activation screen (for demos / first installs)"
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [ "main" ]
 
@@ -49,6 +54,7 @@ jobs:
       INPUT_API_BASE_URL: ${{ inputs.api_base_url }}
       INPUT_DEMO_MODE: ${{ inputs.demo_mode }}
       INPUT_CLIENT_ID: ${{ inputs.client_id }}
+      INPUT_SKIP_ACTIVATION: ${{ inputs.skip_activation }}
       SECRET_API_BASE_URL: ${{ secrets.PAPER_API_BASE_URL }}
       SECRET_AUTO_LOGIN_EMAIL: ${{ secrets.PAPER_AUTO_LOGIN_EMAIL }}
       SECRET_AUTO_LOGIN_PASSWORD: ${{ secrets.PAPER_AUTO_LOGIN_PASSWORD }}
@@ -103,6 +109,11 @@ jobs:
             CLIENT_DEFINE="--dart-define=CLIENT_ID=${INPUT_CLIENT_ID}"
           fi
 
+          SKIP_ACT_DEFINE=""
+          if [[ "${INPUT_SKIP_ACTIVATION:-false}" == "true" ]]; then
+            SKIP_ACT_DEFINE="--dart-define=PAPER_SKIP_ACTIVATION=true"
+          fi
+
           if [[ "${DEMO}" == "true" ]]; then
             echo "dart_defines=--dart-define=PAPER_DEMO_MODE=true ${CLIENT_DEFINE} --dart-define=PAPER_SENTRY_DSN=${SECRET_SENTRY_DSN:-} --dart-define=PAPER_APPCAST_URL=${SECRET_APPCAST_URL:-}" >> "$GITHUB_OUTPUT"
             echo "label=demo" >> "$GITHUB_OUTPUT"
@@ -114,7 +125,7 @@ jobs:
             exit 1
           fi
 
-          echo "dart_defines=--dart-define=PAPER_API_BASE_URL=${API_URL} ${CLIENT_DEFINE} ${AUTO_LOGIN_DEFINES} --dart-define=PAPER_SENTRY_DSN=${SECRET_SENTRY_DSN:-} --dart-define=PAPER_APPCAST_URL=${SECRET_APPCAST_URL:-}" >> "$GITHUB_OUTPUT"
+          echo "dart_defines=--dart-define=PAPER_API_BASE_URL=${API_URL} ${CLIENT_DEFINE} ${SKIP_ACT_DEFINE} ${AUTO_LOGIN_DEFINES} --dart-define=PAPER_SENTRY_DSN=${SECRET_SENTRY_DSN:-} --dart-define=PAPER_APPCAST_URL=${SECRET_APPCAST_URL:-}" >> "$GITHUB_OUTPUT"
           echo "label=api" >> "$GITHUB_OUTPUT"
 
       - name: Build (Windows)

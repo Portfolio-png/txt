@@ -89,6 +89,14 @@ const _autoLoginPassword = String.fromEnvironment(
   defaultValue: 'Paper@12345',
 );
 
+// Demo escape hatch: skip the activation screen without using demo mode, so a
+// real-backend (EC2) demo can't get stuck on activation. Default off.
+//   flutter run -d windows --dart-define=PAPER_SKIP_ACTIVATION=true
+const _skipActivation = bool.fromEnvironment(
+  'PAPER_SKIP_ACTIVATION',
+  defaultValue: false,
+);
+
 final _apiBaseUrl = _resolveApiBaseUrl();
 
 String _resolveApiBaseUrl() {
@@ -683,7 +691,7 @@ class _AuthGateState extends State<_AuthGate> {
   }
 
   Future<void> _checkActivation() async {
-    if (widget.isDemoMode) {
+    if (widget.isDemoMode || _skipActivation) {
       if (mounted) {
         setState(() {
           _isActivated = true;

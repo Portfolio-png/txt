@@ -2,7 +2,9 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:core_erp/core/widgets/app_button.dart';
 import 'package:core_erp/core/widgets/app_empty_state.dart';
 import 'package:core_erp/core/widgets/app_toast.dart';
+import 'package:core_erp/core/widgets/erp_form_dialog.dart';
 import 'package:core_erp/core/widgets/soft_master_data.dart';
+import 'package:core_erp/core/widgets/soft_primitives.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
@@ -83,9 +85,11 @@ class _ProductionRunsScreenState extends State<ProductionRunsScreen> {
       return;
     }
 
-    final template = await showDialog<PipelineTemplate>(
-      context: context,
-      builder: (context) => _TemplateSelectionDialog(templates: activeTemplates),
+    final template = await showErpFormDialog<PipelineTemplate>(
+      context,
+      maxWidth: 520,
+      maxHeight: 560,
+      child: _TemplateSelectionDialog(templates: activeTemplates),
     );
 
     if (template == null || !mounted) return;
@@ -157,27 +161,11 @@ class _ProductionRunsScreenState extends State<ProductionRunsScreen> {
   }
 
   Future<void> _deleteRun(PipelineRun run) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Delete Production Run', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: Text(
-          'Are you sure you want to delete the production run for "${run.orderNo != null ? 'Order: ' + run.orderNo! : 'Ad-hoc Run'}"?\nThis will permanently delete this run history.',
-          style: const TextStyle(fontSize: 13, color: Color(0xFF475569)),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+    final confirmed = await showErpFormDialog<bool>(
+      context,
+      maxWidth: 460,
+      maxHeight: 300,
+      child: _DeleteRunConfirm(run: run),
     );
 
     if (confirmed != true || !mounted) return;
@@ -597,29 +585,129 @@ class _TemplateSelectionDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Select Pipeline Template'),
-      content: SizedBox(
-        width: 400,
-        height: 300,
-        child: ListView.builder(
-          itemCount: templates.length,
-          itemBuilder: (context, index) {
-            final t = templates[index];
-            return ListTile(
-              title: Text(t.name),
-              subtitle: Text('${t.nodes.length} stages'),
-              onTap: () => Navigator.of(context).pop(t),
-            );
-          },
+    return ErpFormScaffold(
+      title: 'Select Pipeline Template',
+      subtitle: 'Choose the pipeline this production run will follow.',
+      bodyScrollable: false,
+      footer: Align(
+        alignment: Alignment.centerRight,
+        child: AppButton(
+          label: 'Cancel',
+          variant: AppButtonVariant.secondary,
+          onPressed: () => Navigator.of(context).pop(),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+      body: ListView.separated(
+        itemCount: templates.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 10),
+        itemBuilder: (context, index) {
+          final t = templates[index];
+          return SoftRowCard(
+            onTap: () => Navigator.of(context).pop(t),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: SoftErpTheme.cardSurfaceAlt,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: SoftErpTheme.border),
+                    ),
+                    child: const Icon(Icons.account_tree_outlined,
+                        size: 20, color: SoftErpTheme.accent),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          t.name,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: SoftErpTheme.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '${t.nodes.length} stages',
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w500,
+                            color: SoftErpTheme.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right_rounded,
+                      color: SoftErpTheme.textSecondary),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _DeleteRunConfirm extends StatelessWidget {
+  const _DeleteRunConfirm({required this.run});
+  final PipelineRun run;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = run.orderNo != null ? 'Order: ${run.orderNo}' : 'Ad-hoc Run';
+    return ErpFormScaffold(
+      title: 'Delete Production Run',
+      subtitle: 'This permanently removes the run history and cannot be undone.',
+      bodyScrollable: false,
+      body: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          'Delete the production run for "$label"?',
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: SoftErpTheme.textPrimary,
+          ),
         ),
-      ],
+      ),
+      footer: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          AppButton(
+            label: 'Cancel',
+            variant: AppButtonVariant.secondary,
+            onPressed: () => Navigator.of(context).pop(false),
+          ),
+          const SizedBox(width: 12),
+          SizedBox(
+            height: 44,
+            child: ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFEF4444),
+                foregroundColor: Colors.white,
+                elevation: 1.5,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+              ),
+              child: const Text('Delete',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -3179,12 +3179,14 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                 suffixIcon: const Icon(Icons.search, size: 20),
               ),
               isEmpty: fullVariationName == null,
-              child: Text(
-                fullVariationName ?? 'Select Item',
-                style: TextStyle(
-                  color: fullVariationName == null ? SoftErpTheme.textSecondary : SoftErpTheme.textPrimary,
-                ),
-              ),
+              child: fullVariationName == null
+                  ? null
+                  : Text(
+                      fullVariationName,
+                      style: const TextStyle(
+                        color: SoftErpTheme.textPrimary,
+                      ),
+                    ),
             ),
           );
         },

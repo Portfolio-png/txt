@@ -4073,14 +4073,16 @@ class _ItemsEditor extends StatelessWidget {
                           suffixIcon: const Icon(Icons.search, size: 20),
                         ),
                         isEmpty: fullVariationName == null,
-                        child: Text(
-                          fullVariationName ?? 'Select Item',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: fullVariationName == null ? SoftErpTheme.textSecondary : SoftErpTheme.textPrimary,
-                          ),
-                        ),
+                        child: fullVariationName == null
+                            ? null
+                            : Text(
+                                fullVariationName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: SoftErpTheme.textPrimary,
+                                ),
+                              ),
                       ),
                     );
                   },

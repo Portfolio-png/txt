@@ -19,10 +19,8 @@ class ProductionPipelinesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (mode == ProductionPipelinesScreenMode.production) {
-      return const DecoratedBox(
-        decoration: BoxDecoration(color: Color(0xFFEFF3F1)),
-        child: ProductionRunsScreen(),
-      );
+      // Transparent so the shell's purple gradient shows through, matching Orders.
+      return const ProductionRunsScreen();
     }
 
     return const DecoratedBox(

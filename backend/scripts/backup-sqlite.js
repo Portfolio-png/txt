@@ -6,6 +6,8 @@ const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const dbPath = String(process.env.DB_PATH || path.join(__dirname, '..', 'data', 'paper.db'));
 const backupDir = String(process.env.PAPER_BACKUP_DIR || path.join(__dirname, '..', 'backups'));
 const bucketName = process.env.PAPER_S3_BUCKET_NAME;
+// Namespace each on-prem client's uploads so they don't overwrite each other.
+const clientId = String(process.env.PAPER_CLIENT_ID || 'default');
 
 function timestamp() {
   return new Date().toISOString().replace(/[:.]/g, '-');
@@ -30,15 +32,16 @@ async function uploadToS3(filePath, fileName) {
   const s3Client = new S3Client(s3Config);
   const fileStream = fs.createReadStream(filePath);
 
+  const key = `backups/${clientId}/${fileName}`;
   const command = new PutObjectCommand({
     Bucket: bucketName,
-    Key: `backups/${fileName}`,
+    Key: key,
     Body: fileStream,
   });
 
   try {
     await s3Client.send(command);
-    console.log(`Successfully uploaded backup to S3: s3://${bucketName}/backups/${fileName}`);
+    console.log(`Successfully uploaded backup to S3: s3://${bucketName}/${key}`);
   } catch (error) {
     console.error(`Failed to upload to S3:`, error);
     throw error;

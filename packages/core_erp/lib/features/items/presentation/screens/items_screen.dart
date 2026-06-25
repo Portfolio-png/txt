@@ -1450,7 +1450,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               _responsiveFieldPair(
                 first: _buildTextField(
                   controller: _nameController,
-                  label: 'Name',
+                  label: 'Base Name',
                   helper: 'Base commercial item name',
                   readOnly: _isReadOnly,
                 ),
