@@ -4,7 +4,12 @@ class EmployeeDefinition {
   final String name;
   final String role;
   final String phone;
-  final String email;
+  final String aadharNumber;
+  final String aadharPhotoUrl;
+  final String panNumber;
+  final String panPhotoUrl;
+  final String address;
+  final String employeePhotoUrl;
   final String employmentType;
   final String status;
   final String barcodeId;
@@ -18,7 +23,12 @@ class EmployeeDefinition {
     required this.name,
     this.role = '',
     this.phone = '',
-    this.email = '',
+    this.aadharNumber = '',
+    this.aadharPhotoUrl = '',
+    this.panNumber = '',
+    this.panPhotoUrl = '',
+    this.address = '',
+    this.employeePhotoUrl = '',
     this.employmentType = 'in-house',
     this.status = 'active',
     this.barcodeId = '',
@@ -34,7 +44,12 @@ class EmployeeDefinition {
       name: json['name'] as String? ?? '',
       role: json['role'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
-      email: json['email'] as String? ?? '',
+      aadharNumber: json['aadharNumber'] as String? ?? '',
+      aadharPhotoUrl: json['aadharPhotoUrl'] as String? ?? '',
+      panNumber: json['panNumber'] as String? ?? '',
+      panPhotoUrl: json['panPhotoUrl'] as String? ?? '',
+      address: json['address'] as String? ?? '',
+      employeePhotoUrl: json['employeePhotoUrl'] as String? ?? '',
       employmentType: json['employmentType'] as String? ?? 'in-house',
       status: json['status'] as String? ?? 'active',
       barcodeId: json['barcodeId'] as String? ?? '',
@@ -51,7 +66,12 @@ class EmployeeDefinition {
       'name': name,
       'role': role,
       'phone': phone,
-      'email': email,
+      'aadharNumber': aadharNumber,
+      'aadharPhotoUrl': aadharPhotoUrl,
+      'panNumber': panNumber,
+      'panPhotoUrl': panPhotoUrl,
+      'address': address,
+      'employeePhotoUrl': employeePhotoUrl,
       'employmentType': employmentType,
       'status': status,
       'barcodeId': barcodeId,
@@ -67,7 +87,12 @@ class EmployeeDefinition {
     String? name,
     String? role,
     String? phone,
-    String? email,
+    String? aadharNumber,
+    String? aadharPhotoUrl,
+    String? panNumber,
+    String? panPhotoUrl,
+    String? address,
+    String? employeePhotoUrl,
     String? employmentType,
     String? status,
     String? barcodeId,
@@ -81,7 +106,12 @@ class EmployeeDefinition {
       name: name ?? this.name,
       role: role ?? this.role,
       phone: phone ?? this.phone,
-      email: email ?? this.email,
+      aadharNumber: aadharNumber ?? this.aadharNumber,
+      aadharPhotoUrl: aadharPhotoUrl ?? this.aadharPhotoUrl,
+      panNumber: panNumber ?? this.panNumber,
+      panPhotoUrl: panPhotoUrl ?? this.panPhotoUrl,
+      address: address ?? this.address,
+      employeePhotoUrl: employeePhotoUrl ?? this.employeePhotoUrl,
       employmentType: employmentType ?? this.employmentType,
       status: status ?? this.status,
       barcodeId: barcodeId ?? this.barcodeId,

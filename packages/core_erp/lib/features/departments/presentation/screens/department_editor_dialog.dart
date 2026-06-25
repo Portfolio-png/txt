@@ -263,7 +263,7 @@ class _DepartmentImagePickerFieldState extends State<_DepartmentImagePickerField
           ),
           clipBehavior: Clip.antiAlias,
           child: url.isNotEmpty
-              ? Image.network(url, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.image, color: Color(0xFF94A3B8)))
+              ? Image.network(url, fit: BoxFit.cover, errorBuilder: (_, _, _) => const Icon(Icons.image, color: Color(0xFF94A3B8)))
               : const Icon(Icons.image, color: Color(0xFF94A3B8)),
         ),
         const SizedBox(width: 12),

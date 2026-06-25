@@ -659,6 +659,7 @@ class MyApp extends StatelessWidget {
     return DepartmentsRepository(
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
+      useMockResponses: _effectiveDemoMode,
     );
   }
 }

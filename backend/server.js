@@ -4,6 +4,7 @@ const {
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
+  DeleteObjectCommand,
   S3Client,
 } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
@@ -2652,7 +2653,12 @@ async function initDb() {
       name TEXT NOT NULL,
       role TEXT DEFAULT '',
       phone TEXT DEFAULT '',
-      email TEXT DEFAULT '',
+      aadhar_number TEXT DEFAULT '',
+      aadhar_photo_url TEXT DEFAULT '',
+      pan_number TEXT DEFAULT '',
+      pan_photo_url TEXT DEFAULT '',
+      address TEXT DEFAULT '',
+      employee_photo_url TEXT DEFAULT '',
       employment_type TEXT DEFAULT 'in-house',
       status TEXT DEFAULT 'active',
       barcode_id TEXT DEFAULT '',
@@ -2662,6 +2668,17 @@ async function initDb() {
       FOREIGN KEY (department_id) REFERENCES departments (id) ON DELETE CASCADE
     )
   `);
+
+  try {
+    await run(`ALTER TABLE employees ADD COLUMN aadhar_number TEXT DEFAULT ''`);
+    await run(`ALTER TABLE employees ADD COLUMN aadhar_photo_url TEXT DEFAULT ''`);
+    await run(`ALTER TABLE employees ADD COLUMN pan_number TEXT DEFAULT ''`);
+    await run(`ALTER TABLE employees ADD COLUMN pan_photo_url TEXT DEFAULT ''`);
+    await run(`ALTER TABLE employees ADD COLUMN address TEXT DEFAULT ''`);
+    await run(`ALTER TABLE employees ADD COLUMN employee_photo_url TEXT DEFAULT ''`);
+  } catch (e) {
+    // Columns might already exist
+  }
 
   await run(`
     CREATE TABLE IF NOT EXISTS freelancer_job_batches (
@@ -21781,7 +21798,12 @@ function rowToEmployeeDto(row) {
     name: row.name,
     role: row.role || '',
     phone: row.phone || '',
-    email: row.email || '',
+    aadharNumber: row.aadhar_number || '',
+    aadharPhotoUrl: row.aadhar_photo_url || '',
+    panNumber: row.pan_number || '',
+    panPhotoUrl: row.pan_photo_url || '',
+    address: row.address || '',
+    employeePhotoUrl: row.employee_photo_url || '',
     employmentType: row.employment_type || 'in-house',
     status: row.status || 'active',
     barcodeId: row.barcode_id || '',
@@ -21983,14 +22005,14 @@ app.get('/api/employees', requirePermission('config.read'), async (_req, res) =>
 
 app.post('/api/employees', requirePermission('config.write'), async (req, res) => {
   try {
-    const { departmentId, name, role = '', phone = '', email = '', employmentType = 'in-house', status = 'active', barcodeId = '' } = req.body;
+    const { departmentId, name, role = '', phone = '', aadharNumber = '', aadharPhotoUrl = '', panNumber = '', panPhotoUrl = '', address = '', employeePhotoUrl = '', employmentType = 'in-house', status = 'active', barcodeId = '' } = req.body;
     if (!name || !departmentId) {
       return res.status(400).json({ success: false, error: 'Name and departmentId are required' });
     }
     const now = new Date().toISOString();
     const result = await run(
-      'INSERT INTO employees (department_id, name, role, phone, email, employment_type, status, barcode_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [departmentId, name.trim(), role.trim(), phone.trim(), email.trim(), employmentType, status, barcodeId.trim(), now, now]
+      'INSERT INTO employees (department_id, name, role, phone, aadhar_number, aadhar_photo_url, pan_number, pan_photo_url, address, employee_photo_url, employment_type, status, barcode_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [departmentId, name.trim(), role.trim(), phone.trim(), aadharNumber.trim(), aadharPhotoUrl, panNumber.trim(), panPhotoUrl, address.trim(), employeePhotoUrl, employmentType, status, barcodeId.trim(), now, now]
     );
     const row = await get('SELECT * FROM employees WHERE id = ?', [result.lastID]);
     res.status(201).json({ success: true, employee: rowToEmployeeDto(row), error: null });
@@ -22002,7 +22024,7 @@ app.post('/api/employees', requirePermission('config.write'), async (req, res) =
 app.patch('/api/employees/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const { name, role, phone, email, employmentType, status, departmentId, barcodeId } = req.body;
+    const { name, role, phone, aadharNumber, aadharPhotoUrl, panNumber, panPhotoUrl, address, employeePhotoUrl, employmentType, status, departmentId, barcodeId } = req.body;
     const existing = await get('SELECT * FROM employees WHERE id = ?', [id]);
     if (!existing) {
       return res.status(404).json({ success: false, error: 'Employee not found' });
@@ -22010,15 +22032,20 @@ app.patch('/api/employees/:id', requirePermission('config.write'), async (req, r
     const newName = name !== undefined ? name.trim() : existing.name;
     const newRole = role !== undefined ? role.trim() : existing.role;
     const newPhone = phone !== undefined ? phone.trim() : existing.phone;
-    const newEmail = email !== undefined ? email.trim() : existing.email;
+    const newAadhar = aadharNumber !== undefined ? aadharNumber.trim() : existing.aadhar_number;
+    const newAadharPhoto = aadharPhotoUrl !== undefined ? aadharPhotoUrl : existing.aadhar_photo_url;
+    const newPan = panNumber !== undefined ? panNumber.trim() : existing.pan_number;
+    const newPanPhoto = panPhotoUrl !== undefined ? panPhotoUrl : existing.pan_photo_url;
+    const newAddress = address !== undefined ? address.trim() : existing.address;
+    const newEmployeePhoto = employeePhotoUrl !== undefined ? employeePhotoUrl : existing.employee_photo_url;
     const newEmpType = employmentType !== undefined ? employmentType : existing.employment_type;
     const newStatus = status !== undefined ? status : existing.status;
     const newDep = departmentId !== undefined ? departmentId : existing.department_id;
     const newBarcodeId = barcodeId !== undefined ? barcodeId.trim() : existing.barcode_id;
 
     await run(
-      'UPDATE employees SET name = ?, role = ?, phone = ?, email = ?, employment_type = ?, status = ?, department_id = ?, barcode_id = ?, updated_at = ? WHERE id = ?',
-      [newName, newRole, newPhone, newEmail, newEmpType, newStatus, newDep, newBarcodeId, new Date().toISOString(), id]
+      'UPDATE employees SET name = ?, role = ?, phone = ?, aadhar_number = ?, aadhar_photo_url = ?, pan_number = ?, pan_photo_url = ?, address = ?, employee_photo_url = ?, employment_type = ?, status = ?, department_id = ?, barcode_id = ?, updated_at = ? WHERE id = ?',
+      [newName, newRole, newPhone, newAadhar, newAadharPhoto, newPan, newPanPhoto, newAddress, newEmployeePhoto, newEmpType, newStatus, newDep, newBarcodeId, new Date().toISOString(), id]
     );
     const row = await get('SELECT * FROM employees WHERE id = ?', [id]);
     res.json({ success: true, employee: rowToEmployeeDto(row), error: null });
@@ -22032,6 +22059,29 @@ app.delete('/api/employees/:id', requirePermission('config.write'), async (req, 
     const id = Number(req.params.id);
     await run('UPDATE employees SET is_archived = 1, updated_at = ? WHERE id = ?', [new Date().toISOString(), id]);
     res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/delete-s3-object', requirePermission('config.write'), async (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url) return res.status(400).json({ success: false, error: 'URL is required' });
+    try {
+      const parsedUrl = new URL(url);
+      const objectKey = parsedUrl.pathname.substring(1);
+      const s3Client = getS3Client();
+      await s3Client.send(new DeleteObjectCommand({
+        Bucket: process.env.S3_BUCKET,
+        Key: objectKey,
+      }));
+      // Update db status to deleted just in case
+      await run("UPDATE uploaded_assets SET status = 'deleted' WHERE object_key = ?", [objectKey]);
+      res.json({ success: true, error: null });
+    } catch (e) {
+      res.status(500).json({ success: false, error: 'Failed to delete S3 object: ' + e.message });
+    }
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

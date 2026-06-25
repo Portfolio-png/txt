@@ -11,6 +11,7 @@ import '../../domain/employee_definition.dart';
 import '../providers/departments_provider.dart';
 import 'department_editor_dialog.dart';
 import 'employee_editor_dialog.dart';
+import 'employee_view_dialog.dart';
 
 class DepartmentsScreen extends StatefulWidget {
   const DepartmentsScreen({super.key});
@@ -675,10 +676,9 @@ class _EmployeeRow extends StatelessWidget {
     final isFreelancer = emp.employmentType == 'freelancer';
     final contact = [
       emp.phone,
-      emp.email,
     ].where((s) => s.isNotEmpty).join(' • ');
     return SoftRowCard(
-      onTap: () => EmployeeEditorDialog.open(
+      onTap: () => EmployeeViewDialog.open(
         context,
         departmentId: departmentId,
         employee: emp,
@@ -900,7 +900,8 @@ List<EmployeeDefinition> _filteredRoster(DepartmentsProvider provider) {
               employee.name.toLowerCase().contains(query) ||
               employee.role.toLowerCase().contains(query) ||
               employee.phone.toLowerCase().contains(query) ||
-              employee.email.toLowerCase().contains(query) ||
+              employee.aadharNumber.toLowerCase().contains(query) ||
+              employee.panNumber.toLowerCase().contains(query) ||
               employee.barcodeId.toLowerCase().contains(query),
         )
         .toList(growable: false);
