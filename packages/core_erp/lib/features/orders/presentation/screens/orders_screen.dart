@@ -27,7 +27,6 @@ import '../../../delivery_challans/presentation/screens/delivery_challan_screen.
 import 'package:core_erp/widgets/variation_path_selector_dialog.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../items/domain/item_definition.dart';
-import '../../../items/presentation/widgets/item_finder_selector.dart';
 import '../../../items/presentation/screens/items_screen.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../units/domain/unit_definition.dart';
@@ -3478,72 +3477,58 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
 
   Widget _buildItemSelectForLine(List<ItemDefinition> items, int index) {
     final line = _lines[index];
+    final groupsProvider = context.watch<GroupsProvider>();
     final fieldKey = index == 0
         ? const ValueKey<String>('orders-editor-item-field')
         : ValueKey<String>('orders-editor-item-field-${line.id}');
-
     return FocusTraversalOrder(
       order: _lineFocusOrder(index, 0),
-      child: FormField<int>(
+      child: SearchableSelectField<int>(
         key: fieldKey,
-        initialValue: line.selectedItemId,
+        tapTargetKey: fieldKey,
+        value: line.selectedItemId,
+        decoration: _inputDecoration(hintText: 'Select Item'),
+        dialogTitle: 'Item',
+        searchHintText: 'Search item',
+        options: items
+            .map((item) {
+              final primaryGroup =
+                  groupsProvider.findById(item.groupId)?.name ??
+                  'No primary group';
+              final fullVariationName = item.displayName.isNotEmpty ? item.displayName : item.name;
+              return SearchableSelectOption<int>(
+                value: item.id,
+                label: fullVariationName,
+                searchText: '$fullVariationName $primaryGroup',
+              );
+            })
+            .toList(growable: false),
+        onCreateOption: (query) =>
+            _quickCreateItemForLine(context, lineIndex: index, name: query),
+        createOptionLabelBuilder: (query) => 'Create item "$query"',
+        onChanged: (value) async {
+          setState(() {
+            line.selectedItemId = value;
+            final latestItems = context.read<ItemsProvider>().items;
+            final item = _selectedItemForLine(latestItems, value);
+            _syncVariationSelectionForLine(line, item);
+          });
+
+          final latestItems = context.read<ItemsProvider>().items;
+          final item = _selectedItemForLine(latestItems, value);
+          if (item != null && item.topLevelProperties.isNotEmpty && mounted) {
+            await _openVariationPathSelectorForLine(
+              context,
+              items: latestItems,
+              lineIndex: index,
+            );
+          }
+        },
         validator: (value) {
-          if (line.selectedItemId == null) {
+          if (value == null) {
             return 'Select an item.';
           }
           return null;
-        },
-        builder: (state) {
-          final selectedItem = _selectedItemForLine(items, line.selectedItemId);
-          final fullVariationName = selectedItem != null
-              ? (selectedItem.displayName.isNotEmpty ? selectedItem.displayName : selectedItem.name)
-              : null;
-              
-          return InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: () async {
-              final selectedId = await showDialog<int>(
-                context: context,
-                builder: (ctx) => const ItemFinderSelectorDialog(),
-              );
-              if (selectedId != null && mounted) {
-                setState(() {
-                  line.selectedItemId = selectedId;
-                  state.didChange(selectedId);
-                  final latestItems = context.read<ItemsProvider>().items;
-                  final item = _selectedItemForLine(latestItems, selectedId);
-                  _syncVariationSelectionForLine(line, item);
-                });
-
-                final latestItems = context.read<ItemsProvider>().items;
-                final item = _selectedItemForLine(latestItems, selectedId);
-                if (item != null && item.topLevelProperties.isNotEmpty && mounted) {
-                  await _openVariationPathSelectorForLine(
-                    context,
-                    items: latestItems,
-                    lineIndex: index,
-                  );
-                }
-              }
-            },
-            child: InputDecorator(
-              decoration: _inputDecoration(
-                hintText: 'Select Item',
-                errorText: state.errorText,
-              ).copyWith(
-                suffixIcon: const Icon(Icons.search, size: 20),
-              ),
-              isEmpty: fullVariationName == null,
-              child: fullVariationName == null
-                  ? null
-                  : Text(
-                      fullVariationName,
-                      style: const TextStyle(
-                        color: SoftErpTheme.textPrimary,
-                      ),
-                    ),
-            ),
-          );
         },
       ),
     );

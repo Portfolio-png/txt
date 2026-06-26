@@ -26,7 +26,16 @@
       "PowerShell($conn = Get-NetTCPConnection -LocalPort 18080 -State Listen -ErrorAction SilentlyContinue; if \\($conn\\) { $p = Get-Process -Id $conn.OwningProcess; \"PID $\\($p.Id\\)  -  $\\($p.ProcessName\\)  -  started $\\($p.StartTime\\)\" } else { \"Nothing listening on 18080\" })",
       "PowerShell(flutter analyze lib/features/production/screens/pipelines_screen.dart 2>&1)",
       "Bash(git stash *)",
-      "PowerShell(flutter analyze lib 2>&1)"
+      "PowerShell(flutter analyze lib 2>&1)",
+      "PowerShell(git -C f:\\\\Rutu\\\\txt log --oneline -20 -- packages/core_erp/lib/features/orders/presentation/screens/orders_screen.dart)",
+      "PowerShell(git -C f:\\\\Rutu\\\\txt log --oneline -15 -- packages/core_erp/lib/widgets/variation_path_selector_dialog.dart)",
+      "PowerShell(git -C f:\\\\Rutu\\\\txt status --short)",
+      "PowerShell(git -C f:\\\\Rutu\\\\txt log --oneline --all -- packages/core_erp/lib/features/items/presentation/widgets/item_finder_selector.dart)",
+      "PowerShell(git -C f:\\\\Rutu\\\\txt log --diff-filter=A --oneline -- packages/core_erp/lib/features/items/presentation/widgets/item_finder_selector.dart)",
+      "PowerShell(git -C f:\\\\Rutu\\\\txt log --oneline -S 'ItemFinderSelectorDialog' -- packages/core_erp/lib/features/orders/presentation/screens/orders_screen.dart)",
+      "PowerShell(git -C f:\\\\Rutu\\\\txt show 7b59332^:packages/core_erp/lib/features/orders/presentation/screens/orders_screen.dart > \"$env:TEMP\\\\orders_old.dart\" 2>&1; if \\($?\\) { Write-Output \"EXTRACTED\" } else { Write-Output \"FILE NOT IN PARENT\" })",
+      "PowerShell($f = \"$env:TEMP\\\\orders_old.dart\"; Select-String -Path $f -Pattern '_buildItemSelectForLine|ItemFinderSelectorDialog|_openVariationPathSelectorForLine|VariationPathSelectorDialog|SearchableSelectField' | Select-Object LineNumber, Line | Format-Table -AutoSize -Wrap)",
+      "PowerShell($f = \"$env:TEMP\\\\orders_old.dart\"; Get-Content $f | Select-Object -Skip 3127 -First 100)"
     ]
   }
 }
