@@ -37,4 +37,11 @@ const Map<String, dynamic> devConfig = {
   'features': {
     'disableMachineCustomFields': false,
   },
+  // 2026 catalog & inventory enhancement bundle (group-scoped item picker,
+  // combination groups, measurable units, primary-unit cleanup, movement audit
+  // trail). Only honoured in offline dev mode; for a real backend run, enable
+  // "Catalog & Inventory Enhancements" for the client in the dashboard instead.
+  'enhancements': {
+    'catalogInventory': true,
+  },
 };

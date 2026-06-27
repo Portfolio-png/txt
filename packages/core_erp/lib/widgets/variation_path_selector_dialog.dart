@@ -7,6 +7,7 @@ import '../features/items/domain/item_definition.dart';
 import '../features/items/presentation/providers/items_provider.dart';
 import '../features/units/domain/unit_definition.dart';
 import '../features/units/presentation/providers/units_provider.dart';
+import 'measurable_value_input.dart';
 
 class VariationStep {
   const VariationStep({
@@ -606,41 +607,23 @@ class _MeasurableValuePromptState extends State<_MeasurableValuePrompt> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          TextField(
+          // Compact quantity + unit control: the unit lives in the field's
+          // suffix as a tappable popup instead of a separate dropdown row.
+          MeasurableValueInput(
             controller: _quantityController,
             autofocus: true,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            allowedUnits: widget.units,
+            selectedUnitId: _unitId,
+            onUnitChanged: (value) => setState(() {
+              _unitId = value;
+              _error = null;
+            }),
             decoration: const InputDecoration(
               labelText: 'Quantity',
               border: OutlineInputBorder(),
               isDense: true,
             ),
             onSubmitted: (_) => _confirm(),
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<int>(
-            initialValue: _unitId,
-            isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'Unit',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            items: [
-              for (final unit in widget.units)
-                DropdownMenuItem<int>(
-                  value: unit.id,
-                  child: Text(
-                    unit.symbol.trim().isEmpty
-                        ? unit.name
-                        : '${unit.name} (${unit.symbol})',
-                  ),
-                ),
-            ],
-            onChanged: (value) => setState(() {
-              _unitId = value;
-              _error = null;
-            }),
           ),
           if (_error != null) ...[
             const SizedBox(height: 8),

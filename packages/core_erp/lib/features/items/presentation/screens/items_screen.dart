@@ -24,6 +24,7 @@ import '../../../units/presentation/screens/units_screen.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../domain/item_definition.dart';
 import '../../domain/item_inputs.dart';
+import '../../../../widgets/measurable_value_input.dart';
 import '../providers/items_provider.dart';
 import '../widgets/item_card.dart';
 import '../widgets/item_detail_panel.dart';
@@ -1194,7 +1195,10 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     setState(() {
       _selectedGroupId = value;
       _localError = null;
-      if (groupUnitId != null) {
+      // The group's unit is only a default suggestion, not a lock: seed it
+      // when the item has no unit yet, but never override a unit the user has
+      // already chosen (or deliberately cleared mid-edit).
+      if (groupUnitId != null && _selectedUnitId == null) {
         _selectedUnitId = groupUnitId;
       }
     });
@@ -2779,9 +2783,13 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       return;
     }
 
-    if (_selectedGroupId == null || _selectedUnitId == null) {
+    // Group is validated independently by the group field's own Form validator
+    // above, so we no longer couple it with the unit. A unit is still required
+    // to persist the item, but only its own absence raises an error — selecting
+    // a group without a unit no longer triggers a combined cross-validation.
+    if (_selectedUnitId == null) {
       setState(() {
-        _localError = 'Select both a group and a unit.';
+        _localError = 'Select a unit.';
       });
       return;
     }
@@ -4211,27 +4219,15 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
                                         title: Text(val.nameController.text.isEmpty ? 'Unnamed Value' : val.nameController.text),
                                         // Enhancement 3 — measurable properties
                                         // attach a unit per value (e.g. "100 g").
+                                        // A compact unit popup keeps the row
+                                        // narrow in this dense value list.
                                         secondary: prop.isMeasurable
-                                            ? SizedBox(
-                                                width: 120,
-                                                child: DropdownButton<int>(
-                                                  isExpanded: true,
-                                                  isDense: true,
-                                                  underline: const SizedBox.shrink(),
-                                                  hint: const Text('Unit', style: TextStyle(fontSize: 12)),
-                                                  value: val.unitId,
-                                                  items: [
-                                                    for (final unit in _allowedUnitsFor(context, prop))
-                                                      DropdownMenuItem<int>(
-                                                        value: unit.id,
-                                                        child: Text(
-                                                          unit.symbol.trim().isEmpty ? unit.name : unit.symbol,
-                                                          style: const TextStyle(fontSize: 12),
-                                                        ),
-                                                      ),
-                                                  ],
-                                                  onChanged: (value) => setState(() => val.unitId = value),
-                                                ),
+                                            ? UnitSuffixButton(
+                                                allowedUnits:
+                                                    _allowedUnitsFor(context, prop),
+                                                selectedUnitId: val.unitId,
+                                                onUnitChanged: (value) =>
+                                                    setState(() => val.unitId = value),
                                               )
                                             : null,
                                         value: _selectedValues[prop]!.contains(val),
