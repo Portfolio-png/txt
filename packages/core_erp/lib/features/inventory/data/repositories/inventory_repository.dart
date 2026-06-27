@@ -9,6 +9,14 @@ import '../../domain/material_group_configuration.dart';
 import '../../domain/material_inputs.dart';
 import '../../domain/material_record.dart';
 
+/// Enhancement 5 — one row of an item's movement audit trail: the reused
+/// [InventoryMovement] plus its signed delta and the running balance after it.
+typedef ItemMovementTrailEntry = ({
+  InventoryMovement movement,
+  double quantityAdded,
+  double quantityAfter,
+});
+
 abstract class InventoryRepository {
   Future<void> init();
   Future<void> seedIfEmpty();
@@ -34,6 +42,7 @@ abstract class InventoryRepository {
   Future<MaterialControlTowerDetail?> getMaterialControlTowerDetail(
     String barcode,
   );
+  Future<List<ItemMovementTrailEntry>> getItemMovementTrail(int itemId);
   Future<MaterialControlTowerDetail> createInventoryMovement(
     CreateInventoryMovementInput input,
   );

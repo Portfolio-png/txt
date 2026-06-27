@@ -1157,6 +1157,35 @@ class ApiInventoryRepository implements InventoryRepository {
   }
 
   @override
+  Future<List<ItemMovementTrailEntry>> getItemMovementTrail(int itemId) async {
+    if (useMockResponses) {
+      return const <ItemMovementTrailEntry>[];
+    }
+
+    final uri = Uri.parse('$baseUrl/api/inventory/$itemId/movements');
+    final response = await _client.get(uri);
+    final payload = _decodeJson(response.body) as Map<String, dynamic>? ?? {};
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw InventoryApiException(
+        payload['error'] as String? ?? 'Failed to load movement trail.',
+      );
+    }
+    final rows = payload['movements'] as List<dynamic>? ?? const [];
+    return rows
+        .map((raw) {
+          final json = raw as Map<String, dynamic>;
+          return (
+            movement: InventoryMovementDto.fromJson(json).toDomain(),
+            quantityAdded: (json['quantityAdded'] as num?)?.toDouble() ?? 0,
+            quantityAfter: (json['quantityAfter'] as num?)?.toDouble() ?? 0,
+          );
+        })
+        .toList(growable: false);
+  }
+
+  @override
   Future<MaterialControlTowerDetail> createInventoryMovement(
     CreateInventoryMovementInput input,
   ) async {

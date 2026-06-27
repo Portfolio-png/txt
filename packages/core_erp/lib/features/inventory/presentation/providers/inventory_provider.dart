@@ -350,6 +350,12 @@ class InventoryProvider extends ChangeNotifier {
     return _healthSnapshot;
   }
 
+  /// Enhancement 5 — loads the immutable movement audit trail for an item.
+  /// Throws on failure so the popup can render its own error state.
+  Future<List<ItemMovementTrailEntry>> loadItemMovementTrail(int itemId) {
+    return _repository.getItemMovementTrail(itemId);
+  }
+
   Future<MaterialControlTowerDetail?> loadMaterialControlTowerDetail(
     String barcode,
   ) async {
