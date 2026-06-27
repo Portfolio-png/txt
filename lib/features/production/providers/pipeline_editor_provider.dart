@@ -327,13 +327,14 @@ class PipelineEditorProvider extends ChangeNotifier {
 
     _pushHistory();
     _template = _template.copyWith(
-      nodes: updatedNodes,
+      nodes: _renumberAutoStageNodes(updatedNodes),
       stageLabels: _stageLabelsFor(stageIndex),
       laneLabels: _laneLabelsFor(laneIndex),
     );
     _drafts[node.id] = ProcessNodeDraftController(node);
     _selectedNodeId = node.id;
     _connectingFromNodeId = null;
+    _syncStageNodeDrafts();
     notifyListeners();
   }
 
@@ -843,6 +844,43 @@ class PipelineEditorProvider extends ChangeNotifier {
 
   static final RegExp _autoStageLabel = RegExp(r'^Stage \d+$');
 
+  /// Renames auto "Stage N" nodes so they run 1, 2, 3… in stage order, closing
+  /// gaps. Same bug as the column labels: the default name counted every node
+  /// (Input/Output/custom) so new nodes jumped to "Stage 4/5" and deletions
+  /// left holes. Custom names (Input, Output, Welding…) are left untouched.
+  List<ProcessNode> _renumberAutoStageNodes(List<ProcessNode> nodes) {
+    final ordered = [...nodes]..sort((a, b) {
+        final byStage = a.stageIndex.compareTo(b.stageIndex);
+        return byStage != 0 ? byStage : a.laneIndex.compareTo(b.laneIndex);
+      });
+    final newNames = <String, String>{};
+    var n = 0;
+    for (final node in ordered) {
+      if (_autoStageLabel.hasMatch(node.name.trim())) {
+        newNames[node.id] = 'Stage ${++n}';
+      }
+    }
+    return [
+      for (final node in nodes)
+        (newNames[node.id] != null && newNames[node.id] != node.name)
+            ? node.copyWith(name: newNames[node.id])
+            : node,
+    ];
+  }
+
+  /// Keeps the editable name field in step with a renumbered node name, but
+  /// only while it still holds an auto "Stage N" value (never clobbers typing).
+  void _syncStageNodeDrafts() {
+    for (final node in _template.nodes) {
+      final draft = _drafts[node.id];
+      if (draft != null &&
+          draft.name.text != node.name &&
+          _autoStageLabel.hasMatch(draft.name.text.trim())) {
+        draft.name.text = node.name;
+      }
+    }
+  }
+
   /// Renumbers auto-generated "Stage N" labels so they run 1, 2, 3… in order,
   /// closing any gaps. Custom labels (Input, Output, Blank Cutting…) are left
   /// untouched and don't consume a number. Endpoints/custom names counting
@@ -1256,7 +1294,10 @@ class PipelineEditorProvider extends ChangeNotifier {
       }
     }
 
-    _template = _template.copyWith(nodes: updatedNodes);
+    _template = _template.copyWith(
+      nodes: _renumberAutoStageNodes(updatedNodes),
+    );
+    _syncStageNodeDrafts();
     notifyListeners();
   }
 
@@ -1286,10 +1327,11 @@ class PipelineEditorProvider extends ChangeNotifier {
 
     _pushHistory();
     _template = _template.copyWith(
-      nodes: updatedNodes,
+      nodes: _renumberAutoStageNodes(updatedNodes),
       stageLabels: _renumberAutoStages(updatedStageLabels),
       laneLabels: updatedLaneLabels,
     );
+    _syncStageNodeDrafts();
     notifyListeners();
   }
 
