@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/inventory_create_command_provider.dart';
 import '../../../../app/preferences/preferences_provider.dart';
+import '../../../../core/services/feature_flags.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_empty_state.dart';
@@ -1335,8 +1336,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
     String aggregateGroupUnit(int groupId) {
       for (final record
           in itemRecordsByGroupId[groupId] ?? const <MaterialRecord>[]) {
-        if (record.unit.trim().isNotEmpty) {
-          return record.unit.trim();
+        // Skip the primary-unit placeholder so a real descendant unit wins.
+        final unit = _effectiveUnitSymbol(record.unit);
+        if (unit.isNotEmpty) {
+          return unit;
         }
       }
       for (final childId in childGroupIdsByParentId[groupId] ?? const <int>[]) {
@@ -1354,8 +1357,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
       final qtyText = qty == rounded
           ? rounded.toInt().toString()
           : qty.toStringAsFixed(2);
-      final unit = groupRecord.unit.trim().isNotEmpty
-          ? groupRecord.unit.trim()
+      final groupUnit = _effectiveUnitSymbol(groupRecord.unit);
+      final unit = groupUnit.isNotEmpty
+          ? groupUnit
           : aggregateGroupUnit(groupId);
       return unit.isEmpty ? qtyText : '$qtyText $unit';
     }
@@ -3916,10 +3920,12 @@ class _InventoryItemCardState extends State<_InventoryItemCard> {
     final record = widget.entry.record;
     final title = widget.entry.displayName ?? record.name;
     final id = widget.entry.displayId ?? record.barcode;
-    final stock = _round2Decimals(
-      record.displayStock.trim().isNotEmpty
-          ? record.displayStock
-          : '${record.onHand} ${record.unit}'.trim(),
+    final stock = _stripPrimaryUnitFromLabel(
+      _round2Decimals(
+        record.displayStock.trim().isNotEmpty
+            ? record.displayStock
+            : '${record.onHand} ${_effectiveUnitSymbol(record.unit)}'.trim(),
+      ),
     );
     final scheme = _status(record);
     final metaParts = [
@@ -4061,6 +4067,44 @@ String _round2Decimals(String text) => text.replaceAllMapped(
       RegExp(r'\d+\.\d{3,}'),
       (m) => double.parse(m[0]!).toStringAsFixed(2),
     );
+
+/// Enhancement 4 — the "Primary Unit" catch-all uses '-' as its symbol. It only
+/// exists so items are never unassigned, so it should read as "no unit". These
+/// helpers strip it from displayed quantities; gated by the enhancement flag so
+/// clients without it keep the current behaviour.
+const String _primaryUnitPlaceholderSymbol = '-';
+
+bool get _primaryUnitCleanupEnabled =>
+    FeatureFlags.isEnabled(FeatureKeys.catalogInventoryEnhancements);
+
+/// Returns the unit symbol unless it is the primary-unit placeholder, in which
+/// case the empty string is returned (i.e. "treat as no unit assigned").
+String _effectiveUnitSymbol(String symbol) {
+  final trimmed = symbol.trim();
+  if (_primaryUnitCleanupEnabled &&
+      trimmed == _primaryUnitPlaceholderSymbol) {
+    return '';
+  }
+  return trimmed;
+}
+
+/// Strips a trailing primary-unit placeholder from a preformatted stock label
+/// such as "200 -" → "200".
+String _stripPrimaryUnitFromLabel(String label) {
+  if (!_primaryUnitCleanupEnabled) {
+    return label;
+  }
+  final trimmed = label.trim();
+  if (trimmed == _primaryUnitPlaceholderSymbol) {
+    return '';
+  }
+  if (trimmed.endsWith(' $_primaryUnitPlaceholderSymbol')) {
+    return trimmed
+        .substring(0, trimmed.length - _primaryUnitPlaceholderSymbol.length - 1)
+        .trim();
+  }
+  return trimmed;
+}
 
 /// Yellow "in pipeline" badge shared by the inventory table and card views, so
 /// committed stock reads the same as the production sidebar's headband.
@@ -4802,9 +4846,9 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
 
   String _displayStock(MaterialRecord value) {
     if (value.displayStock.trim().isNotEmpty) {
-      return _round2Decimals(value.displayStock);
+      return _stripPrimaryUnitFromLabel(_round2Decimals(value.displayStock));
     }
-    final unit = value.unit.trim();
+    final unit = _effectiveUnitSymbol(value.unit);
     if (unit.isNotEmpty) {
       return '0 $unit';
     }
@@ -5155,8 +5199,9 @@ class _InventoryNameCell extends StatelessWidget {
 
   String _metadataText(MaterialRecord material) {
     final parts = <String>[];
-    if (material.unit.trim().isNotEmpty) {
-      parts.add(material.unit.trim());
+    final unit = _effectiveUnitSymbol(material.unit);
+    if (unit.isNotEmpty) {
+      parts.add(unit);
     }
     if (material.supplier.trim().isNotEmpty) {
       parts.add(material.supplier.trim());
