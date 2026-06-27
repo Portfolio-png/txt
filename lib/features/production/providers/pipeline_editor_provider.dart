@@ -341,7 +341,9 @@ class PipelineEditorProvider extends ChangeNotifier {
     final updatedStageLabels = [..._template.stageLabels];
     updatedStageLabels.add('Stage ${updatedStageLabels.length + 1}');
     _pushHistory();
-    _template = _template.copyWith(stageLabels: updatedStageLabels);
+    _template = _template.copyWith(
+      stageLabels: _renumberAutoStages(updatedStageLabels),
+    );
     notifyListeners();
   }
 
@@ -839,12 +841,26 @@ class PipelineEditorProvider extends ChangeNotifier {
     );
   }
 
+  static final RegExp _autoStageLabel = RegExp(r'^Stage \d+$');
+
+  /// Renumbers auto-generated "Stage N" labels so they run 1, 2, 3… in order,
+  /// closing any gaps. Custom labels (Input, Output, Blank Cutting…) are left
+  /// untouched and don't consume a number. Endpoints/custom names counting
+  /// toward `length` is what produced "Stage 4, Stage 5" after "Stage 1".
+  List<String> _renumberAutoStages(List<String> labels) {
+    var n = 0;
+    return [
+      for (final label in labels)
+        _autoStageLabel.hasMatch(label.trim()) ? 'Stage ${++n}' : label,
+    ];
+  }
+
   List<String> _stageLabelsFor(int stageIndex) {
     final updatedStageLabels = [..._template.stageLabels];
     while (updatedStageLabels.length <= stageIndex) {
       updatedStageLabels.add('Stage ${updatedStageLabels.length + 1}');
     }
-    return updatedStageLabels;
+    return _renumberAutoStages(updatedStageLabels);
   }
 
   String _stageLabelForNode(ProcessNode node) {
@@ -872,7 +888,7 @@ class PipelineEditorProvider extends ChangeNotifier {
     } else {
       labels.insert(insertStage, resolvedLabel);
     }
-    return labels;
+    return _renumberAutoStages(labels);
   }
 
   List<String> _laneLabelsFor(int laneIndex) {
@@ -1271,7 +1287,7 @@ class PipelineEditorProvider extends ChangeNotifier {
     _pushHistory();
     _template = _template.copyWith(
       nodes: updatedNodes,
-      stageLabels: updatedStageLabels,
+      stageLabels: _renumberAutoStages(updatedStageLabels),
       laneLabels: updatedLaneLabels,
     );
     notifyListeners();
@@ -1419,7 +1435,7 @@ class PipelineEditorProvider extends ChangeNotifier {
     } else {
       labels.insert(insertStage, label);
     }
-    return labels;
+    return _renumberAutoStages(labels);
   }
 
   String _newNodeId({String prefix = 'node'}) {
