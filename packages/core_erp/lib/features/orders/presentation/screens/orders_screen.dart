@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:core_erp/core/services/config_service.dart';
+import 'package:core_erp/core/services/feature_flags.dart';
 import 'package:flutter/services.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:http/http.dart' as http;
@@ -3475,9 +3476,104 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
   FocusOrder _lineFocusOrder(int index, int slot) =>
       NumericFocusOrder(10.0 + index * 10 + slot);
 
+  /// Whether the group-scoped item picker (Enhancement 1) is active for this
+  /// build. Behind the catalog/inventory enhancement flag so clients without it
+  /// keep the original single-field item picker.
+  bool get _groupScopedItemPickerEnabled =>
+      FeatureFlags.isEnabled(FeatureKeys.catalogInventoryEnhancements);
+
+  /// Items visible for [groupId]: those whose primary (hierarchical) group is
+  /// the selected group or any of its descendants. `null` returns the full
+  /// list. Designed to be extended for combination-group membership.
+  List<ItemDefinition> _itemsForGroupFilter(
+    List<ItemDefinition> items,
+    int? groupId,
+  ) {
+    if (groupId == null) {
+      return items;
+    }
+    final groupsProvider = context.read<GroupsProvider>();
+    final allowedGroupIds = <int>{
+      groupId,
+      ...groupsProvider.descendantIdsOf(groupId),
+    };
+    return items
+        .where((item) => allowedGroupIds.contains(item.groupId))
+        .toList(growable: false);
+  }
+
   Widget _buildItemSelectForLine(List<ItemDefinition> items, int index) {
+    if (!_groupScopedItemPickerEnabled) {
+      return _buildItemAutocompleteForLine(items, index);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildGroupFilterForLine(items, index),
+        const SizedBox(height: 8),
+        _buildItemAutocompleteForLine(items, index),
+      ],
+    );
+  }
+
+  /// Group selector shown above the item autocomplete. Selecting a group
+  /// narrows the item list; clearing it reverts to the full list. Both
+  /// hierarchical and combination groups are selectable.
+  Widget _buildGroupFilterForLine(List<ItemDefinition> items, int index) {
     final line = _lines[index];
     final groupsProvider = context.watch<GroupsProvider>();
+    // Group ids are positive auto-increment values, so 0 is a safe sentinel for
+    // the "All groups" (clear filter) option in the dropdown.
+    const allGroupsSentinel = 0;
+    final groupOptions = <SearchableSelectOption<int>>[
+      const SearchableSelectOption<int>(
+        value: allGroupsSentinel,
+        label: 'All groups',
+      ),
+      ...groupsProvider.itemGroups
+          .where((group) => !group.isArchived)
+          .map(
+            (group) => SearchableSelectOption<int>(
+              value: group.id,
+              label: group.name,
+            ),
+          ),
+    ];
+    final fieldKey = ValueKey<String>('orders-editor-group-filter-${line.id}');
+    return SearchableSelectField<int>(
+      key: fieldKey,
+      tapTargetKey: fieldKey,
+      value: line.groupFilterId,
+      decoration: _inputDecoration(hintText: 'All groups'),
+      dialogTitle: 'Filter by group',
+      searchHintText: 'Search group',
+      emptyText: 'No groups available',
+      options: groupOptions,
+      onChanged: (raw) {
+        final value = (raw == null || raw == allGroupsSentinel) ? null : raw;
+        setState(() {
+          line.groupFilterId = value;
+          // Drop the current item if it no longer belongs to the filtered set.
+          if (value != null && line.selectedItemId != null) {
+            final visible = _itemsForGroupFilter(items, value);
+            final stillVisible =
+                visible.any((item) => item.id == line.selectedItemId);
+            if (!stillVisible) {
+              line.selectedItemId = null;
+              _syncVariationSelectionForLine(line, null);
+            }
+          }
+        });
+      },
+    );
+  }
+
+  Widget _buildItemAutocompleteForLine(List<ItemDefinition> items, int index) {
+    final line = _lines[index];
+    final groupsProvider = context.watch<GroupsProvider>();
+    final visibleItems = _groupScopedItemPickerEnabled
+        ? _itemsForGroupFilter(items, line.groupFilterId)
+        : items;
     final fieldKey = index == 0
         ? const ValueKey<String>('orders-editor-item-field')
         : ValueKey<String>('orders-editor-item-field-${line.id}');
@@ -3490,7 +3586,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
         decoration: _inputDecoration(hintText: 'Select Item'),
         dialogTitle: 'Item',
         searchHintText: 'Search item',
-        options: items
+        options: visibleItems
             .map((item) {
               final primaryGroup =
                   groupsProvider.findById(item.groupId)?.name ??
@@ -6705,6 +6801,11 @@ class _OrderLineDraft {
       completionDateController = TextEditingController();
 
   final int id;
+
+  /// Optional group used to narrow the item picker for this line. `null` means
+  /// "all items" (the unfiltered list). Gated by the catalog/inventory
+  /// enhancement flag; ignored entirely when the flag is off.
+  int? groupFilterId;
   int? selectedItemId;
   int? selectedRootPropertyId;
   List<int> selectedVariationValueNodeIds = const <int>[];

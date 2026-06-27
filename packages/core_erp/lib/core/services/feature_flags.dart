@@ -39,6 +39,14 @@ class FeatureKeys {
 
   @FeatureFlag(category: 'Machine Form', displayName: 'Disable Machine Custom Fields', desc: 'Hide custom fields on Machine Creation')
   static const String featuresDisableMachineCustomFields = 'features.disableMachineCustomFields';
+
+  /// Master switch for the 2026 catalog & inventory enhancement bundle:
+  /// group-scoped item selection in the order editor, combination groups for
+  /// variant sets, measurable property values with unit assignment, the primary
+  /// unit placeholder cleanup, and the inventory movement audit trail popup.
+  /// OFF by default so every client keeps the current behaviour until enabled.
+  @FeatureFlag(category: 'Catalog & Inventory', displayName: 'Catalog & Inventory Enhancements', desc: 'Group-scoped item picker, combination groups, measurable units, inventory audit trail')
+  static const String catalogInventoryEnhancements = 'enhancements.catalogInventory';
 }
 
 class FeatureFlags {

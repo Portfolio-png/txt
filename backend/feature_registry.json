@@ -58,5 +58,11 @@
     "displayName": "Disable Machine Custom Fields",
     "category": "Machine Form",
     "description": "Hide custom fields on Machine Creation"
+  },
+  {
+    "key": "enhancements.catalogInventory",
+    "displayName": "Catalog & Inventory Enhancements",
+    "category": "Catalog & Inventory",
+    "description": "Group-scoped item picker, combination groups, measurable units, inventory audit trail"
   }
 ]
