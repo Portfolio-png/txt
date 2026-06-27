@@ -19,6 +19,7 @@ import '../../../groups/presentation/screens/groups_screen.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../inventory/domain/group_property_draft.dart' as governance;
 import '../../../inventory/presentation/providers/inventory_provider.dart';
+import '../../../units/domain/unit_definition.dart';
 import '../../../units/presentation/screens/units_screen.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../domain/item_definition.dart';
@@ -715,10 +716,14 @@ class _NodeDraft {
     this.detailsExpanded = false,
     this.isNameEditing = false,
     this.displayNameTouched = false,
+    this.isMeasurable = false,
+    this.unitId,
+    List<int>? allowedUnitIds,
     List<_NodeDraft>? children,
   }) : nameController = TextEditingController(text: name),
        codeController = TextEditingController(text: code),
        displayNameController = TextEditingController(text: displayName),
+       allowedUnitIds = allowedUnitIds ?? <int>[],
        children = children ?? <_NodeDraft>[];
 
   final int? id;
@@ -735,6 +740,12 @@ class _NodeDraft {
   String? inheritedPropertyKey;
   int? inheritedSourceGroupId;
   String? inheritedSourceGroupName;
+
+  /// Enhancement 3 — measurable flag (property nodes), intrinsic unit (value
+  /// leaves), and allowed units for the dropdown (measurable property nodes).
+  bool isMeasurable;
+  int? unitId;
+  final List<int> allowedUnitIds;
   final List<_NodeDraft> children;
 
   bool get isLeafValue =>
@@ -898,6 +909,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       detailsExpanded: false,
       isNameEditing: false,
       displayNameTouched: node.displayName.trim().isNotEmpty,
+      isMeasurable: node.isMeasurable,
+      unitId: node.unitId,
+      allowedUnitIds: List<int>.from(node.allowedUnitIds),
     );
     draft.nameController.addListener(() {
       _syncLeafDisplayNames();
@@ -1861,6 +1875,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                               : () => _moveNode(_rootNodes, index, index + 1),
                           onRemove: () => _removeNode(_rootNodes, index),
                           buildChildEditor: _buildChildEditor,
+                          onMeasurableConfigChanged: _handleChange,
                         ),
                         if (index != _rootNodes.length - 1)
                           const SizedBox(height: 4),
@@ -2110,6 +2125,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           : () => _moveNode(siblings, index, index + 1),
       onRemove: () => _removeNode(siblings, index),
       buildChildEditor: _buildChildEditor,
+      onMeasurableConfigChanged: _handleChange,
     );
   }
 
@@ -2452,6 +2468,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   }
 
   ItemVariationNodeInput _toInput(_NodeDraft node, int? parentNodeId) {
+    final isProperty = node.kind == ItemVariationNodeKind.property;
     return ItemVariationNodeInput(
       id: node.id,
       parentNodeId: parentNodeId,
@@ -2461,6 +2478,12 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       displayName: node.isLeafValue
           ? node.displayNameController.text.trim()
           : '',
+      // Enhancement 3 — measurable metadata only applies to the relevant kind.
+      isMeasurable: isProperty && node.isMeasurable,
+      unitId: isProperty ? null : node.unitId,
+      allowedUnitIds: isProperty && node.isMeasurable
+          ? List<int>.from(node.allowedUnitIds)
+          : const <int>[],
       children: node.children
           .map((child) => _toInput(child, node.id))
           .toList(growable: false),
@@ -2544,9 +2567,20 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
             return;
           }
           final itemsProvider = context.read<ItemsProvider>();
+          final unitsProvider = context.read<UnitsProvider>();
           final createdItemIds = <int>[];
           for (final combo in combinations) {
-             final valuesStr = combo.map((val) => val.nameController.text.trim()).join(' - ');
+             // Enhancement 3 — append the unit symbol for measurable values
+             // so the variant name reads e.g. "Bracket - 100 g".
+             final valuesStr = combo.map((val) {
+               final base = val.nameController.text.trim();
+               final unitId = val.unitId;
+               if (unitId == null) {
+                 return base;
+               }
+               final symbol = unitsProvider.findById(unitId)?.symbol.trim() ?? '';
+               return symbol.isEmpty ? base : '$base $symbol';
+             }).join(' - ');
              final newName = '${_nameController.text.trim()} - $valuesStr';
              final newDisplayName = '${_displayNameController.text.trim()} - $valuesStr';
 
@@ -3033,6 +3067,87 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   }
 }
 
+/// Enhancement 3 — inline configurator under a property node: marks it
+/// measurable and picks the units allowed for its value leaves.
+class _MeasurablePropertyConfig extends StatelessWidget {
+  const _MeasurablePropertyConfig({required this.draft, this.onChanged});
+
+  final _NodeDraft draft;
+  final VoidCallback? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final units = context.watch<UnitsProvider>().activeUnits;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: 24,
+              width: 24,
+              child: Checkbox(
+                visualDensity: VisualDensity.compact,
+                value: draft.isMeasurable,
+                onChanged: (value) {
+                  draft.isMeasurable = value ?? false;
+                  if (!draft.isMeasurable) {
+                    draft.allowedUnitIds.clear();
+                  }
+                  onChanged?.call();
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Measurable (value = number + unit)',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+        if (draft.isMeasurable)
+          Padding(
+            padding: const EdgeInsets.only(left: 32, top: 2, bottom: 2),
+            child: units.isEmpty
+                ? Text(
+                    'No units defined yet — create units first.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  )
+                : Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      for (final unit in units)
+                        FilterChip(
+                          visualDensity: VisualDensity.compact,
+                          label: Text(
+                            unit.symbol.trim().isEmpty
+                                ? unit.name
+                                : '${unit.name} (${unit.symbol})',
+                          ),
+                          selected: draft.allowedUnitIds.contains(unit.id),
+                          onSelected: (selected) {
+                            if (selected) {
+                              if (!draft.allowedUnitIds.contains(unit.id)) {
+                                draft.allowedUnitIds.add(unit.id);
+                              }
+                            } else {
+                              draft.allowedUnitIds.remove(unit.id);
+                            }
+                            onChanged?.call();
+                          },
+                        ),
+                    ],
+                  ),
+          ),
+      ],
+    );
+  }
+}
+
 class _TreeNodeEditor extends StatelessWidget {
   const _TreeNodeEditor({
     required this.draft,
@@ -3050,6 +3165,7 @@ class _TreeNodeEditor extends StatelessWidget {
     this.onAddProperty,
     this.onPromoteToGroup,
     this.onAddValue,
+    this.onMeasurableConfigChanged,
   });
 
   final _NodeDraft draft;
@@ -3058,6 +3174,8 @@ class _TreeNodeEditor extends StatelessWidget {
   final String summaryLabel;
   final List<_TreeMetaPillSpec> metaPills;
   final VoidCallback onToggleBranch;
+  // Enhancement 3 — invoked after the measurable flag / allowed units change.
+  final VoidCallback? onMeasurableConfigChanged;
   final VoidCallback? onEnableNameEditing;
   final VoidCallback? onFinishNameEditing;
   final VoidCallback? onAddProperty;
@@ -3255,6 +3373,16 @@ class _TreeNodeEditor extends StatelessWidget {
             ),
           ),
         ),
+        if (isProperty &&
+            !readOnly &&
+            FeatureFlags.isEnabled(FeatureKeys.catalogInventoryEnhancements))
+          Padding(
+            padding: EdgeInsets.only(left: depth * 20.0 + 28, top: 2, bottom: 2),
+            child: _MeasurablePropertyConfig(
+              draft: draft,
+              onChanged: onMeasurableConfigChanged,
+            ),
+          ),
         if (hasChildren && draft.detailsExpanded)
           Padding(
             padding: EdgeInsets.only(left: depth * 20.0 + 10),
@@ -3992,6 +4120,18 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
     });
   }
 
+  /// Active units offered for a measurable property: the property's allowed-unit
+  /// set, or all active units when none were restricted.
+  List<UnitDefinition> _allowedUnitsFor(BuildContext context, _NodeDraft prop) {
+    final units = context.read<UnitsProvider>().activeUnits;
+    if (prop.allowedUnitIds.isEmpty) {
+      return units;
+    }
+    return units
+        .where((unit) => prop.allowedUnitIds.contains(unit.id))
+        .toList(growable: false);
+  }
+
   void _save() {
     widget.onSpawnItems(_createdCombinations);
   }
@@ -4069,6 +4209,31 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
                                       CheckboxListTile(
                                         dense: true,
                                         title: Text(val.nameController.text.isEmpty ? 'Unnamed Value' : val.nameController.text),
+                                        // Enhancement 3 — measurable properties
+                                        // attach a unit per value (e.g. "100 g").
+                                        secondary: prop.isMeasurable
+                                            ? SizedBox(
+                                                width: 120,
+                                                child: DropdownButton<int>(
+                                                  isExpanded: true,
+                                                  isDense: true,
+                                                  underline: const SizedBox.shrink(),
+                                                  hint: const Text('Unit', style: TextStyle(fontSize: 12)),
+                                                  value: val.unitId,
+                                                  items: [
+                                                    for (final unit in _allowedUnitsFor(context, prop))
+                                                      DropdownMenuItem<int>(
+                                                        value: unit.id,
+                                                        child: Text(
+                                                          unit.symbol.trim().isEmpty ? unit.name : unit.symbol,
+                                                          style: const TextStyle(fontSize: 12),
+                                                        ),
+                                                      ),
+                                                  ],
+                                                  onChanged: (value) => setState(() => val.unitId = value),
+                                                ),
+                                              )
+                                            : null,
                                         value: _selectedValues[prop]!.contains(val),
                                         onChanged: (checked) {
                                           setState(() {

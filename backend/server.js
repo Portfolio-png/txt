@@ -3582,6 +3582,9 @@ async function initDb() {
   await ensureColumnExists('item_variations', 'alias', "TEXT DEFAULT ''");
   await ensureColumnExists('item_variations', 'display_name', "TEXT DEFAULT ''");
   await ensureColumnExists('item_variation_nodes', 'code', "TEXT NOT NULL DEFAULT ''");
+  // Enhancement 3: measurable property flag + intrinsic unit on value leaves.
+  await ensureColumnExists('item_variation_nodes', 'is_measurable', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumnExists('item_variation_nodes', 'unit_id', 'INTEGER');
 
   await ensureColumnExists('materials', 'unit_id', 'INTEGER');
   await ensureColumnExists('units', 'unit_group_id', 'INTEGER');
@@ -5911,6 +5914,25 @@ async function getItemVariationNodeRows(itemId) {
 
 async function getItemVariationTree(itemId) {
   const rows = await getItemVariationNodeRows(itemId);
+  // Enhancement 3 — allowed units per measurable property node (one query for
+  // the whole item to avoid N+1).
+  const allowedUnitRows = await all(
+    `
+    SELECT property_value_units.property_node_id, property_value_units.unit_id
+    FROM property_value_units
+    INNER JOIN item_variation_nodes
+      ON item_variation_nodes.id = property_value_units.property_node_id
+    WHERE item_variation_nodes.item_id = ?
+    ORDER BY property_value_units.id ASC
+    `,
+    [itemId],
+  );
+  const allowedUnitsByNode = new Map();
+  for (const row of allowedUnitRows) {
+    const list = allowedUnitsByNode.get(row.property_node_id) || [];
+    list.push(row.unit_id);
+    allowedUnitsByNode.set(row.property_node_id, list);
+  }
   const rowMap = new Map();
   for (const row of rows) {
     rowMap.set(row.id, {
@@ -5923,6 +5945,9 @@ async function getItemVariationTree(itemId) {
       displayName: row.display_name || '',
       position: row.position || 0,
       isArchived: Boolean(row.is_archived),
+      isMeasurable: Boolean(row.is_measurable),
+      unitId: row.unit_id || null,
+      allowedUnitIds: allowedUnitsByNode.get(row.id) || [],
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       children: [],
@@ -6362,6 +6387,11 @@ function sanitizeNodes(nodes, expectedKind, pathSegments = [], parentPropertyNam
     const nodeId = node.id || null;
 
     if (kind === 'property') {
+      // Enhancement 3 — measurable flag + allowed units on property nodes.
+      const isMeasurable = Boolean(node.isMeasurable);
+      const allowedUnitIds = isMeasurable && Array.isArray(node.allowedUnitIds)
+        ? [...new Set(node.allowedUnitIds.map(Number).filter((n) => Number.isInteger(n) && n > 0))]
+        : [];
       return {
         id: nodeId,
         kind,
@@ -6369,6 +6399,8 @@ function sanitizeNodes(nodes, expectedKind, pathSegments = [], parentPropertyNam
         code: String(node.code || '').trim(),
         displayName: '',
         position: index,
+        isMeasurable,
+        allowedUnitIds,
         children: sanitizeNodes(node.children || [], 'value', pathSegments, trimmedName, depth + 1),
       };
     }
@@ -6383,6 +6415,8 @@ function sanitizeNodes(nodes, expectedKind, pathSegments = [], parentPropertyNam
       displayName:
         String(node.displayName || '').trim() || buildVariationPathLabel(nextSegments),
       position: index,
+      // Enhancement 3 — intrinsic unit on value leaves (under measurable props).
+      unitId: node.unitId ? Number(node.unitId) : null,
       children,
     };
   });
@@ -13074,6 +13108,13 @@ async function saveItem({
         // H-1 fix: include 'code' so that renaming a variation node's barcode/
         // naming code on a used item is correctly treated as a structural change.
         code: String(node.code || '').trim(),
+        // Enhancement 3 — measurable flag / intrinsic unit / allowed units are
+        // structural, so changing them on a used item is a structural change.
+        isMeasurable: Boolean(node.isMeasurable),
+        unitId: node.unitId || null,
+        allowedUnitIds: Array.isArray(node.allowedUnitIds)
+          ? [...node.allowedUnitIds].map(Number).sort((a, b) => a - b)
+          : [],
         children: comparableTree(node.children || []),
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -13158,11 +13199,15 @@ async function saveItem({
     const upsertNodes = async (nodes, parentNodeId = null) => {
       for (const node of nodes) {
         let nodeId = node.id;
+        // Enhancement 3 — measurable flag (property nodes) + intrinsic unit
+        // (value leaves).
+        const isMeasurable = node.isMeasurable ? 1 : 0;
+        const nodeUnitId = node.unitId ? Number(node.unitId) : null;
         if (nodeId && existingNodeIds.has(nodeId)) {
           await run(
             `
             UPDATE item_variation_nodes
-            SET parent_node_id = ?, name = ?, code = ?, display_name = ?, position = ?, updated_at = ?
+            SET parent_node_id = ?, name = ?, code = ?, display_name = ?, position = ?, is_measurable = ?, unit_id = ?, updated_at = ?
             WHERE id = ?
             `,
             [
@@ -13171,6 +13216,8 @@ async function saveItem({
               node.code || '',
               node.displayName,
               node.position,
+              isMeasurable,
+              nodeUnitId,
               now,
               nodeId,
             ]
@@ -13180,8 +13227,8 @@ async function saveItem({
             `
             INSERT INTO item_variation_nodes (
               item_id, parent_node_id, kind, name, code, display_name, position,
-              is_archived, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+              is_measurable, unit_id, is_archived, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
             `,
             [
               itemId,
@@ -13191,6 +13238,8 @@ async function saveItem({
               node.code || '',
               node.displayName,
               node.position,
+              isMeasurable,
+              nodeUnitId,
               now,
               now,
             ],
@@ -13198,6 +13247,21 @@ async function saveItem({
           nodeId = result.lastID;
         }
         processedNodeIds.add(nodeId);
+        // Replace the allowed-unit set for measurable property nodes.
+        if (Array.isArray(node.allowedUnitIds)) {
+          await run('DELETE FROM property_value_units WHERE property_node_id = ?', [nodeId]);
+          const seenUnitIds = new Set();
+          for (const rawUnit of node.allowedUnitIds) {
+            const allowedUnitId = Number(rawUnit);
+            if (Number.isInteger(allowedUnitId) && allowedUnitId > 0 && !seenUnitIds.has(allowedUnitId)) {
+              seenUnitIds.add(allowedUnitId);
+              await run(
+                'INSERT OR IGNORE INTO property_value_units (property_node_id, unit_id, created_at) VALUES (?, ?, ?)',
+                [nodeId, allowedUnitId, now],
+              );
+            }
+          }
+        }
         await upsertNodes(node.children || [], nodeId);
       }
     };

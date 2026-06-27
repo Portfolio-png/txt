@@ -19,6 +19,9 @@ class ItemVariationNodeInput {
     this.code = '',
     this.displayName = '',
     this.children = const [],
+    this.isMeasurable = false,
+    this.unitId,
+    this.allowedUnitIds = const <int>[],
   });
 
   final int? id;
@@ -28,6 +31,15 @@ class ItemVariationNodeInput {
   final String code;
   final String displayName;
   final List<ItemVariationNodeInput> children;
+
+  /// Enhancement 3 — measurable flag (property nodes).
+  final bool isMeasurable;
+
+  /// Intrinsic unit (value leaves under a measurable property).
+  final int? unitId;
+
+  /// Allowed units for the unit dropdown (measurable property nodes).
+  final List<int> allowedUnitIds;
 }
 
 class CreateItemInput {
