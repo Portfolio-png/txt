@@ -1500,6 +1500,8 @@ function rowToGroupDto(row) {
     id: row.id,
     name: row.name || '',
     groupType: row.group_type || 'item',
+    groupStructure: row.group_structure || 'hierarchical',
+    description: row.description || '',
     parentGroupId: row.parent_group_id || null,
     unitId: row.unit_id || null,
     isArchived: Boolean(row.is_archived),
@@ -1694,6 +1696,20 @@ async function rowToItemDto(row) {
     [row.id],
   );
   const propertySchema = await getItemPropertySchema(row.id);
+  // Enhancement 2.3 — combination groups this item additionally belongs to
+  // (distinct from its primary hierarchical group_id). Empty for most items.
+  const combinationGroupRows = await all(
+    `
+    SELECT group_item_memberships.group_id
+    FROM group_item_memberships
+    INNER JOIN groups ON groups.id = group_item_memberships.group_id
+    WHERE group_item_memberships.item_id = ?
+      AND groups.group_structure = 'combination'
+      AND groups.is_archived = 0
+    ORDER BY group_item_memberships.sort_order ASC
+    `,
+    [row.id],
+  );
 
   return {
     id: row.id,
@@ -1723,6 +1739,7 @@ async function rowToItemDto(row) {
     variationTree: await getItemVariationTree(row.id),
     propertySchema,
     baseItemId: row.base_item_id || null,
+    combinationGroupIds: combinationGroupRows.map((entry) => entry.group_id),
   };
 }
 
@@ -3362,6 +3379,9 @@ async function initDb() {
   await migrateOrderActivityLogCompatibilityColumns();
 
   await ensureColumnExists('groups', 'group_type', "TEXT NOT NULL DEFAULT 'item'");
+  // Enhancement 2: combination groups (flat variant sets) + optional description.
+  await ensureColumnExists('groups', 'group_structure', "TEXT NOT NULL DEFAULT 'hierarchical'");
+  await ensureColumnExists('groups', 'description', "TEXT NOT NULL DEFAULT ''");
 
   await ensureColumnExists('delivery_challans', 'order_id', 'INTEGER');
   await ensureColumnExists('delivery_challans', 'order_no', "TEXT DEFAULT ''");
@@ -12700,20 +12720,46 @@ async function groupWouldCreateCycle(groupId, parentGroupId) {
   return false;
 }
 
-async function saveGroup({ name, parentGroupId = null, unitId, id = null, groupType = 'item' }) {
+async function saveGroup({
+  name,
+  parentGroupId = null,
+  unitId,
+  id = null,
+  groupType = 'item',
+  groupStructure = 'hierarchical',
+  description = '',
+}) {
   const trimmedName = String(name || '').trim();
-  let normalizedParentId = parentGroupId == null ? null : Number(parentGroupId);
+  const normalizedStructure =
+    String(groupStructure || 'hierarchical').toLowerCase() === 'combination'
+      ? 'combination'
+      : 'hierarchical';
+  const isCombination = normalizedStructure === 'combination';
+  const trimmedDescription = String(description || '').trim();
+  // Combination groups are flat: they never have a parent and never auto-attach
+  // to the Primary Group, and their unit is optional (members carry their own).
+  let normalizedParentId =
+    isCombination || parentGroupId == null ? null : Number(parentGroupId);
   let normalizedUnitId = unitId ? Number(unitId) : null;
 
-  if (normalizedParentId == null && trimmedName !== 'Primary Group' && trimmedName !== 'Raw material' && trimmedName !== 'Scrap') {
+  if (
+    !isCombination &&
+    normalizedParentId == null &&
+    trimmedName !== 'Primary Group' &&
+    trimmedName !== 'Raw material' &&
+    trimmedName !== 'Scrap'
+  ) {
     const pg = await get('SELECT id FROM groups WHERE name = "Primary Group" AND parent_group_id IS NULL AND group_type = ?', [groupType]);
     if (pg) {
       normalizedParentId = pg.id;
     }
   }
 
-  if (!trimmedName || (groupType !== 'machine' && !normalizedUnitId)) {
-    throw new Error('name is required, and unitId is required for non-machine groups.');
+  if (!trimmedName) {
+    throw new Error('name is required.');
+  }
+  if (!isCombination && groupType !== 'machine' && !normalizedUnitId) {
+    throw new Error('unitId is required for non-machine hierarchical groups.');
   }
 
   if (normalizedUnitId) {
@@ -12760,10 +12806,10 @@ async function saveGroup({ name, parentGroupId = null, unitId, id = null, groupT
   if (id == null) {
     const result = await run(
       `
-      INSERT INTO groups (name, group_type, parent_group_id, unit_id, is_archived, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 0, ?, ?)
+      INSERT INTO groups (name, group_type, group_structure, description, parent_group_id, unit_id, is_archived, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
       `,
-      [trimmedName, groupType, normalizedParentId, normalizedUnitId, now, now],
+      [trimmedName, groupType, normalizedStructure, trimmedDescription, normalizedParentId, normalizedUnitId, now, now],
     );
     return getGroupRowById(result.lastID);
   }
@@ -12792,8 +12838,8 @@ async function saveGroup({ name, parentGroupId = null, unitId, id = null, groupT
   }
 
   await run(
-    'UPDATE groups SET name = ?, group_type = ?, parent_group_id = ?, unit_id = ?, updated_at = ? WHERE id = ?',
-    [trimmedName, groupType, normalizedParentId, normalizedUnitId, now, id],
+    'UPDATE groups SET name = ?, group_type = ?, group_structure = ?, description = ?, parent_group_id = ?, unit_id = ?, updated_at = ? WHERE id = ?',
+    [trimmedName, groupType, normalizedStructure, trimmedDescription, normalizedParentId, normalizedUnitId, now, id],
   );
   return getGroupRowById(id);
 }
@@ -20077,6 +20123,116 @@ app.post('/api/groups', requirePermission('config.write'), async (req, res) => {
       group: null,
       error: error.message,
     });
+  }
+});
+
+// Enhancement 2.2/2.3 — bulk-assign item variants to a combination group.
+// Idempotent: re-assigning an item that is already a member is a no-op, and the
+// item's primary hierarchical group (items.group_id) is never modified, so dual
+// membership is preserved.
+app.post('/api/groups/:groupId/items', requirePermission('config.write'), async (req, res) => {
+  try {
+    const groupId = Number(req.params.groupId);
+    const group = await getGroupRowById(groupId);
+    if (!group) {
+      res.status(404).json({ success: false, group: null, assignedCount: 0, error: 'Group not found.' });
+      return;
+    }
+    if ((group.group_structure || 'hierarchical') !== 'combination') {
+      res.status(400).json({
+        success: false,
+        group: rowToGroupDto(group),
+        assignedCount: 0,
+        error: 'Items can only be bulk-assigned to combination groups.',
+      });
+      return;
+    }
+    const rawIds = Array.isArray(req.body?.itemIds) ? req.body.itemIds : [];
+    const itemIds = [...new Set(rawIds.map((value) => Number(value)).filter((value) => Number.isInteger(value) && value > 0))];
+    if (itemIds.length === 0) {
+      res.status(400).json({
+        success: false,
+        group: rowToGroupDto(group),
+        assignedCount: 0,
+        error: 'itemIds must be a non-empty array of item ids.',
+      });
+      return;
+    }
+
+    const placeholders = itemIds.map(() => '?').join(', ');
+    const existingItems = await all(
+      `SELECT id FROM items WHERE id IN (${placeholders})`,
+      itemIds,
+    );
+    const validIds = existingItems.map((row) => row.id);
+    if (validIds.length === 0) {
+      res.status(400).json({
+        success: false,
+        group: rowToGroupDto(group),
+        assignedCount: 0,
+        error: 'None of the supplied item ids exist.',
+      });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const maxOrderRow = await get(
+      'SELECT MAX(sort_order) AS max_order FROM group_item_memberships WHERE group_id = ?',
+      [groupId],
+    );
+    let sortOrder = Number(maxOrderRow?.max_order || 0);
+    let assignedCount = 0;
+    for (const itemId of validIds) {
+      sortOrder += 1;
+      const result = await run(
+        `
+        INSERT OR IGNORE INTO group_item_memberships (group_id, item_id, sort_order, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        `,
+        [groupId, itemId, sortOrder, now, now],
+      );
+      if (result.changes > 0) {
+        assignedCount += 1;
+      } else {
+        sortOrder -= 1; // already a member; don't burn a sort slot
+      }
+    }
+    await run('UPDATE groups SET updated_at = ? WHERE id = ?', [now, groupId]);
+
+    res.status(201).json({
+      success: true,
+      group: rowToGroupDto(await getGroupRowById(groupId)),
+      assignedCount,
+      skippedCount: validIds.length - assignedCount,
+      missingCount: itemIds.length - validIds.length,
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      group: null,
+      assignedCount: 0,
+      error: error.message,
+    });
+  }
+});
+
+// List the item ids that belong to a combination (or any) group.
+app.get('/api/groups/:groupId/items', requirePermission('config.read'), async (req, res) => {
+  try {
+    const groupId = Number(req.params.groupId);
+    const group = await getGroupRowById(groupId);
+    if (!group) {
+      res.status(404).json({ success: false, itemIds: [], error: 'Group not found.' });
+      return;
+    }
+    const rows = await all(
+      'SELECT item_id FROM group_item_memberships WHERE group_id = ? ORDER BY sort_order ASC',
+      [groupId],
+    );
+    res.json({ success: true, itemIds: rows.map((row) => row.item_id), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, itemIds: [], error: error.message });
   }
 });
 

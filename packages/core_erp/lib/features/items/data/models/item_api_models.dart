@@ -107,6 +107,7 @@ class ItemDto {
     required this.propertySchema,
     this.baseItemId,
     this.photoUrl = '',
+    this.combinationGroupIds = const <int>[],
   });
 
   final int id;
@@ -128,6 +129,7 @@ class ItemDto {
   final List<ItemPropertySchemaEntryDto> propertySchema;
   final int? baseItemId;
   final String photoUrl;
+  final List<int> combinationGroupIds;
 
   factory ItemDto.fromJson(Map<String, dynamic> json) {
     return ItemDto(
@@ -172,6 +174,10 @@ class ItemDto {
           .toList(growable: false),
       baseItemId: json['baseItemId'] as int?,
       photoUrl: json['photoUrl'] as String? ?? '',
+      combinationGroupIds:
+          (json['combinationGroupIds'] as List<dynamic>? ?? const [])
+              .map((e) => e as int)
+              .toList(growable: false),
     );
   }
 
@@ -202,6 +208,7 @@ class ItemDto {
           .toList(growable: false),
       baseItemId: baseItemId,
       photoUrl: photoUrl,
+      combinationGroupIds: combinationGroupIds,
     );
   }
 }

@@ -33,7 +33,17 @@ class GroupsProvider extends ChangeNotifier {
   bool _initialized = false;
 
   List<GroupDefinition> get groups => _groups;
-  List<GroupDefinition> get itemGroups => _groups.where((g) => g.groupType == 'item').toList();
+  // Hierarchical item groups only. Combination groups (Enhancement 2) are a flat
+  // variant-set construct and are intentionally excluded here so existing
+  // hierarchical tree/selector UIs behave exactly as before; use
+  // [combinationGroups] for those.
+  List<GroupDefinition> get itemGroups =>
+      _groups.where((g) => g.groupType == 'item' && !g.isCombination).toList();
+
+  /// Active combination groups (flat variant sets).
+  List<GroupDefinition> get combinationGroups => _groups
+      .where((g) => g.groupType == 'item' && g.isCombination && !g.isArchived)
+      .toList();
   List<GroupDefinition> get machineGroups => _groups.where((g) => g.groupType == 'machine').toList();
   List<GroupDefinition> get dieGroups => _groups.where((g) => g.groupType == 'die').toList();
   bool get isLoading => _isLoading;
@@ -198,6 +208,30 @@ class GroupsProvider extends ChangeNotifier {
 
   Future<GroupDefinition?> createGroup(CreateGroupInput input) async {
     return _save(() => _repository.createGroup(input));
+  }
+
+  /// Bulk-assigns [itemIds] to combination group [groupId] (dual membership;
+  /// does not change the items' primary group). Returns the number newly added,
+  /// or `null` if the call failed (see [errorMessage]).
+  Future<int?> assignItemsToCombinationGroup({
+    required int groupId,
+    required List<int> itemIds,
+  }) async {
+    _isSaving = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final assigned = await _repository.assignItemsToGroup(groupId, itemIds);
+      await refresh();
+      return assigned;
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+      return null;
+    } finally {
+      _isSaving = false;
+      notifyListeners();
+    }
   }
 
   Future<GroupDefinition?> updateGroup(UpdateGroupInput input) async {

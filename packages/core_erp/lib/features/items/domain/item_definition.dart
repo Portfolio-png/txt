@@ -103,6 +103,7 @@ class ItemDefinition {
     this.defaultPipelineName,
     this.baseItemId,
     this.photoUrl = '',
+    this.combinationGroupIds = const <int>[],
   });
 
   final int id;
@@ -111,6 +112,10 @@ class ItemDefinition {
   final String displayName;
   final double quantity;
   final int groupId;
+
+  /// Combination groups this item additionally belongs to (Enhancement 2.3),
+  /// distinct from the primary hierarchical [groupId]. Usually empty.
+  final List<int> combinationGroupIds;
   final int unitId;
   final List<ItemUnitConversionDefinition> unitConversions;
   final List<ItemPropertySchemaEntry> propertySchema;

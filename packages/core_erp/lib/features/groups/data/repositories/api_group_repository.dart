@@ -71,6 +71,8 @@ class ApiGroupRepository implements GroupRepository {
         id: _mockNextId++,
         name: input.name.trim(),
         groupType: input.groupType,
+        groupStructure: input.groupStructure,
+        description: input.description,
         parentGroupId: input.parentGroupId,
         unitId: input.unitId,
         isArchived: false,
@@ -118,6 +120,8 @@ class ApiGroupRepository implements GroupRepository {
         id: current.id,
         name: input.name.trim(),
         groupType: input.groupType,
+        groupStructure: input.groupStructure,
+        description: input.description,
         parentGroupId: input.parentGroupId,
         unitId: input.unitId,
         isArchived: current.isArchived,
@@ -233,6 +237,35 @@ class ApiGroupRepository implements GroupRepository {
         payload['error']?.toString() ?? 'Failed to delete group.',
       );
     }
+  }
+
+  @override
+  Future<int> assignItemsToGroup(int groupId, List<int> itemIds) async {
+    final uniqueIds = itemIds.toSet().toList(growable: false);
+    if (uniqueIds.isEmpty) {
+      return 0;
+    }
+    if (useMockResponses) {
+      // Mock store has no membership index; treat all as newly assigned.
+      return uniqueIds.length;
+    }
+
+    final uri = Uri.parse('$baseUrl/api/groups/$groupId/items');
+    final response = await _client.post(
+      uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({'itemIds': uniqueIds}),
+    );
+    final payload = _decodeJsonObject(response.body);
+    final parsed = AssignGroupItemsResponse.fromJson(payload);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !parsed.success) {
+      throw GroupApiException(
+        parsed.error ?? 'Failed to assign items to the group.',
+      );
+    }
+    return parsed.assignedCount;
   }
 
   void _validateCreateOrUpdate({

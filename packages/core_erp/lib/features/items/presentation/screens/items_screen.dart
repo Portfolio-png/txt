@@ -12,7 +12,9 @@ import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../../core/widgets/soft_master_data.dart';
 import '../../../../core/widgets/soft_primitives.dart';
+import '../../../../core/services/feature_flags.dart';
 import '../../../groups/domain/group_definition.dart';
+import '../../../groups/domain/group_inputs.dart';
 import '../../../groups/presentation/screens/groups_screen.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../inventory/domain/group_property_draft.dart' as governance;
@@ -2542,11 +2544,12 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
             return;
           }
           final itemsProvider = context.read<ItemsProvider>();
+          final createdItemIds = <int>[];
           for (final combo in combinations) {
              final valuesStr = combo.map((val) => val.nameController.text.trim()).join(' - ');
              final newName = '${_nameController.text.trim()} - $valuesStr';
              final newDisplayName = '${_displayNameController.text.trim()} - $valuesStr';
-             
+
              final input = CreateItemInput(
                name: newName,
                displayName: newDisplayName,
@@ -2559,17 +2562,99 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                baseItemId: widget.item?.id,
                photoUrl: _photoUrlController.text.trim(),
              );
-             await itemsProvider.createItem(input);
+             final created = await itemsProvider.createItem(input);
+             if (created != null) {
+               createdItemIds.add(created.id);
+             }
           }
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Successfully spawned ${combinations.length} variant items!')),
-            );
-            Navigator.of(context).pop();
+          if (!context.mounted) {
+            return;
           }
+          // Enhancement 2.2 — immediately offer to add the freshly spawned
+          // variants to a combination group.
+          if (FeatureFlags.isEnabled(FeatureKeys.catalogInventoryEnhancements) &&
+              createdItemIds.isNotEmpty) {
+            await _promptAddVariantsToCombinationGroup(context, createdItemIds);
+            if (!context.mounted) {
+              return;
+            }
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Successfully spawned ${combinations.length} variant items!')),
+          );
+          Navigator.of(context).pop();
         },
       ),
     );
+  }
+
+  /// Enhancement 2.2 — follow-up flow after spawning variants: lets the user add
+  /// the new items to an existing combination group or create a new one.
+  Future<void> _promptAddVariantsToCombinationGroup(
+    BuildContext context,
+    List<int> itemIds,
+  ) async {
+    final choice = await showDialog<_CombinationGroupChoice>(
+      context: context,
+      builder: (dialogContext) => const _AddToCombinationGroupDialog(),
+    );
+    if (choice == null || !context.mounted) {
+      return; // user skipped
+    }
+
+    final groupsProvider = context.read<GroupsProvider>();
+    int? groupId = choice.existingGroupId;
+    if (choice.isCreateNew) {
+      final created = await groupsProvider.createGroup(
+        CreateGroupInput(
+          name: choice.newName,
+          groupType: 'item',
+          groupStructure: 'combination',
+          description: choice.newDescription,
+        ),
+      );
+      if (created == null) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                groupsProvider.errorMessage ??
+                    'Could not create the combination group.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+      groupId = created.id;
+    }
+    if (groupId == null) {
+      return;
+    }
+
+    final assigned = await groupsProvider.assignItemsToCombinationGroup(
+      groupId: groupId,
+      itemIds: itemIds,
+    );
+    if (!context.mounted) {
+      return;
+    }
+    if (assigned == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            groupsProvider.errorMessage ??
+                'Could not add variants to the combination group.',
+          ),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Added $assigned variant(s) to the combination group.'),
+        ),
+      );
+    }
   }
 
   void _addTopLevelProperty() {
@@ -4109,6 +4194,192 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Result of the "Add variants to a combination group?" follow-up dialog
+/// (Enhancement 2.2). `null` (not an instance of this class) means the user
+/// skipped.
+class _CombinationGroupChoice {
+  const _CombinationGroupChoice.existing(this.existingGroupId)
+    : isCreateNew = false,
+      newName = '',
+      newDescription = '';
+
+  const _CombinationGroupChoice.create({
+    required this.newName,
+    required this.newDescription,
+  }) : isCreateNew = true,
+       existingGroupId = null;
+
+  final bool isCreateNew;
+  final int? existingGroupId;
+  final String newName;
+  final String newDescription;
+}
+
+/// Bottom dialog shown right after variants are spawned, offering to add them to
+/// an existing combination group or to create a new one.
+class _AddToCombinationGroupDialog extends StatefulWidget {
+  const _AddToCombinationGroupDialog();
+
+  @override
+  State<_AddToCombinationGroupDialog> createState() =>
+      _AddToCombinationGroupDialogState();
+}
+
+class _AddToCombinationGroupDialogState
+    extends State<_AddToCombinationGroupDialog> {
+  bool _createNew = false;
+  int? _selectedGroupId;
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _descriptionController = TextEditingController();
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    // Default to "create new" when there are no combination groups yet.
+    final existing = context.read<GroupsProvider>().combinationGroups;
+    _createNew = existing.isEmpty;
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  void _confirm() {
+    if (_createNew) {
+      final name = _nameController.text.trim();
+      if (name.isEmpty) {
+        setState(() => _error = 'Enter a name for the new combination group.');
+        return;
+      }
+      Navigator.of(context).pop(
+        _CombinationGroupChoice.create(
+          newName: name,
+          newDescription: _descriptionController.text.trim(),
+        ),
+      );
+      return;
+    }
+    if (_selectedGroupId == null) {
+      setState(() => _error = 'Select a combination group.');
+      return;
+    }
+    Navigator.of(
+      context,
+    ).pop(_CombinationGroupChoice.existing(_selectedGroupId!));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final combinationGroups = context.watch<GroupsProvider>().combinationGroups;
+    return AlertDialog(
+      title: const Text('Add variants to a combination group?'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            RadioListTile<bool>(
+              value: false,
+              groupValue: _createNew,
+              onChanged: combinationGroups.isEmpty
+                  ? null
+                  : (value) => setState(() {
+                      _createNew = false;
+                      _error = null;
+                    }),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Select existing'),
+            ),
+            if (!_createNew)
+              Padding(
+                padding: const EdgeInsets.only(left: 16, bottom: 8),
+                child: SearchableSelectField<int>(
+                  value: _selectedGroupId,
+                  decoration: const InputDecoration(
+                    hintText: 'Choose combination group',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  dialogTitle: 'Combination group',
+                  searchHintText: 'Search group',
+                  emptyText: 'No combination groups yet',
+                  options: combinationGroups
+                      .map(
+                        (group) => SearchableSelectOption<int>(
+                          value: group.id,
+                          label: group.name,
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: (value) => setState(() {
+                    _selectedGroupId = value;
+                    _error = null;
+                  }),
+                ),
+              ),
+            RadioListTile<bool>(
+              value: true,
+              groupValue: _createNew,
+              onChanged: (value) => setState(() {
+                _createNew = true;
+                _error = null;
+              }),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Create new'),
+            ),
+            if (_createNew)
+              Padding(
+                padding: const EdgeInsets.only(left: 16),
+                child: Column(
+                  children: [
+                    TextField(
+                      controller: _nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Group name',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _descriptionController,
+                      minLines: 1,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Description (optional)',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (_error != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                _error!,
+                style: const TextStyle(color: Color(0xFFDC2626), fontSize: 13),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Skip'),
+        ),
+        FilledButton(onPressed: _confirm, child: const Text('Add to group')),
+      ],
     );
   }
 }

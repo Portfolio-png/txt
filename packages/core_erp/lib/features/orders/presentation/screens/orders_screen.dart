@@ -3498,7 +3498,11 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       ...groupsProvider.descendantIdsOf(groupId),
     };
     return items
-        .where((item) => allowedGroupIds.contains(item.groupId))
+        .where(
+          (item) =>
+              allowedGroupIds.contains(item.groupId) ||
+              item.combinationGroupIds.any(allowedGroupIds.contains),
+        )
         .toList(growable: false);
   }
 
@@ -3530,12 +3534,12 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
         value: allGroupsSentinel,
         label: 'All groups',
       ),
-      ...groupsProvider.itemGroups
+      ...[...groupsProvider.itemGroups, ...groupsProvider.combinationGroups]
           .where((group) => !group.isArchived)
           .map(
             (group) => SearchableSelectOption<int>(
               value: group.id,
-              label: group.name,
+              label: group.isCombination ? '${group.name} (combination)' : group.name,
             ),
           ),
     ];

@@ -15,4 +15,9 @@ abstract class GroupRepository {
   Future<GroupDefinition> restoreGroup(int id);
 
   Future<void> deleteGroup(int id);
+
+  /// Bulk-assigns [itemIds] to the combination group [groupId]. Returns the
+  /// number of newly added memberships (already-present items are skipped).
+  /// Does not modify the items' primary hierarchical group.
+  Future<int> assignItemsToGroup(int groupId, List<int> itemIds);
 }

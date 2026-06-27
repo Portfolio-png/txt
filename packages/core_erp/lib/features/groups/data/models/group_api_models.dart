@@ -6,6 +6,8 @@ class GroupDto {
     required this.id,
     required this.name,
     this.groupType = 'item',
+    this.groupStructure = 'hierarchical',
+    this.description = '',
     required this.parentGroupId,
     this.unitId,
     required this.isArchived,
@@ -17,6 +19,8 @@ class GroupDto {
   final int id;
   final String name;
   final String groupType;
+  final String groupStructure;
+  final String description;
   final int? parentGroupId;
   final int? unitId;
   final bool isArchived;
@@ -29,6 +33,8 @@ class GroupDto {
       id: json['id'] as int,
       name: json['name'] as String? ?? '',
       groupType: json['groupType'] as String? ?? 'item',
+      groupStructure: json['groupStructure'] as String? ?? 'hierarchical',
+      description: json['description'] as String? ?? '',
       parentGroupId: json['parentGroupId'] as int?,
       unitId: json['unitId'] as int?,
       isArchived: json['isArchived'] as bool? ?? false,
@@ -47,6 +53,8 @@ class GroupDto {
       id: id,
       name: name,
       groupType: groupType,
+      groupStructure: groupStructure,
+      description: description,
       parentGroupId: parentGroupId,
       unitId: unitId,
       isArchived: isArchived,
@@ -95,12 +103,16 @@ class CreateGroupRequest {
   const CreateGroupRequest({
     required this.name,
     this.groupType = 'item',
+    this.groupStructure = 'hierarchical',
+    this.description = '',
     required this.parentGroupId,
     this.unitId,
   });
 
   final String name;
   final String groupType;
+  final String groupStructure;
+  final String description;
   final int? parentGroupId;
   final int? unitId;
 
@@ -108,13 +120,22 @@ class CreateGroupRequest {
     return CreateGroupRequest(
       name: input.name,
       groupType: input.groupType,
+      groupStructure: input.groupStructure,
+      description: input.description,
       parentGroupId: input.parentGroupId,
       unitId: input.unitId,
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {'name': name, 'groupType': groupType, 'parentGroupId': parentGroupId, 'unitId': unitId};
+    return {
+      'name': name,
+      'groupType': groupType,
+      'groupStructure': groupStructure,
+      'description': description,
+      'parentGroupId': parentGroupId,
+      'unitId': unitId,
+    };
   }
 }
 
@@ -122,12 +143,16 @@ class UpdateGroupRequest {
   const UpdateGroupRequest({
     required this.name,
     this.groupType = 'item',
+    this.groupStructure = 'hierarchical',
+    this.description = '',
     required this.parentGroupId,
     this.unitId,
   });
 
   final String name;
   final String groupType;
+  final String groupStructure;
+  final String description;
   final int? parentGroupId;
   final int? unitId;
 
@@ -135,12 +160,48 @@ class UpdateGroupRequest {
     return UpdateGroupRequest(
       name: input.name,
       groupType: input.groupType,
+      groupStructure: input.groupStructure,
+      description: input.description,
       parentGroupId: input.parentGroupId,
       unitId: input.unitId,
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {'name': name, 'groupType': groupType, 'parentGroupId': parentGroupId, 'unitId': unitId};
+    return {
+      'name': name,
+      'groupType': groupType,
+      'groupStructure': groupStructure,
+      'description': description,
+      'parentGroupId': parentGroupId,
+      'unitId': unitId,
+    };
+  }
+}
+
+/// Response for `POST /api/groups/:groupId/items` (bulk membership assignment).
+class AssignGroupItemsResponse {
+  const AssignGroupItemsResponse({
+    required this.success,
+    required this.assignedCount,
+    this.skippedCount = 0,
+    this.missingCount = 0,
+    this.error,
+  });
+
+  final bool success;
+  final int assignedCount;
+  final int skippedCount;
+  final int missingCount;
+  final String? error;
+
+  factory AssignGroupItemsResponse.fromJson(Map<String, dynamic> json) {
+    return AssignGroupItemsResponse(
+      success: json['success'] as bool? ?? false,
+      assignedCount: json['assignedCount'] as int? ?? 0,
+      skippedCount: json['skippedCount'] as int? ?? 0,
+      missingCount: json['missingCount'] as int? ?? 0,
+      error: json['error'] as String?,
+    );
   }
 }

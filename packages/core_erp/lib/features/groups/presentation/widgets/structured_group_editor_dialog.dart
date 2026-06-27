@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/services/feature_flags.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
 import 'delete_group_dialog.dart';
@@ -88,8 +89,13 @@ class _StructuredGroupEditorDialogState
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _propertyController = TextEditingController();
+  final _descriptionController = TextEditingController();
   final FocusNode _nameFocus = FocusNode();
   final FocusNode _propertyFocus = FocusNode();
+
+  /// 'hierarchical' (nestable, default) or 'combination' (flat variant set).
+  /// See Enhancement 2.1.
+  String _groupStructure = 'hierarchical';
 
   int? _selectedUnitId;
   int? _selectedParentGroupId;
@@ -108,10 +114,21 @@ class _StructuredGroupEditorDialogState
   bool get _isEditMode => widget.group != null;
   bool get _isLegacyUnlinkedEdit => _isEditMode && _linkedMaterial == null;
 
+  /// Whether the hierarchical/combination structure toggle is offered. Only on
+  /// item-group creation, behind the catalog/inventory enhancement flag.
+  bool get _combinationToggleVisible =>
+      !_isEditMode &&
+      widget.groupType == 'item' &&
+      FeatureFlags.isEnabled(FeatureKeys.catalogInventoryEnhancements);
+
+  bool get _isCombination => _groupStructure == 'combination';
+
   @override
   void initState() {
     super.initState();
     _nameController.text = widget.group?.name ?? widget.initialName;
+    _descriptionController.text = widget.group?.description ?? '';
+    _groupStructure = widget.group?.groupStructure ?? 'hierarchical';
     _selectedParentGroupId = widget.group?.parentGroupId;
     _selectedUnitId = widget.group?.unitId;
   }
@@ -130,6 +147,7 @@ class _StructuredGroupEditorDialogState
   void dispose() {
     _nameController.dispose();
     _propertyController.dispose();
+    _descriptionController.dispose();
     _nameFocus.dispose();
     _propertyFocus.dispose();
     super.dispose();
@@ -354,6 +372,32 @@ class _StructuredGroupEditorDialogState
                               onChanged: (_) => setState(() {}),
                             ),
                           ),
+                          if (_combinationToggleVisible) ...[
+                            const SizedBox(height: 16),
+                            _buildStructureToggle(),
+                          ],
+                          if (_isCombination) ...[
+                            const SizedBox(height: 16),
+                            _CreateGroupField(
+                              label: 'Description (optional)',
+                              child: TextFormField(
+                                controller: _descriptionController,
+                                minLines: 1,
+                                maxLines: 3,
+                                decoration: const InputDecoration(
+                                  hintText: 'What variants does this set hold?',
+                                  border: InputBorder.none,
+                                  isCollapsed: true,
+                                ),
+                                style: _inventorySegoeStyle(
+                                  color: const Color(0xFF3F3F3F),
+                                  size: 14,
+                                  weight: FontWeight.w400,
+                                ),
+                              ),
+                            ),
+                          ],
+                          if (!_isCombination) ...[
                           const SizedBox(height: 16),
                           KeyedSubtree(
                             key: const ValueKey<String>('groups-parent-field'),
@@ -488,6 +532,7 @@ class _StructuredGroupEditorDialogState
                               ],
                             ),
                           ),
+                          ], // end if (!_isCombination)
                         ],
                       ),
                     );
@@ -833,7 +878,10 @@ class _StructuredGroupEditorDialogState
                       ],
                     );
 
-                    final compositionCard = supportsStructuredGovernance
+                    // Combination groups are flat variant sets; they have no
+                    // structure/properties panel.
+                    final compositionCard =
+                        supportsStructuredGovernance && !_isCombination
                         ? _CreateGroupSurfaceCard(
                             title: 'Structure & Properties',
                             child: compositionBody,
@@ -963,6 +1011,73 @@ class _StructuredGroupEditorDialogState
     );
   }
 
+  /// Radio toggle that selects the group structure (Enhancement 2.1).
+  Widget _buildStructureToggle() {
+    return _CreateGroupField(
+      label: 'Group Type',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _StructureOptionTile(
+            title: 'Hierarchical Group',
+            subtitle: 'Nestable group with a parent, unit and properties.',
+            selected: !_isCombination,
+            onTap: () => setState(() => _groupStructure = 'hierarchical'),
+          ),
+          const SizedBox(height: 8),
+          _StructureOptionTile(
+            title: 'Combination Group',
+            subtitle: 'Flat set that simply holds a list of item variants.',
+            selected: _isCombination,
+            onTap: () => setState(() => _groupStructure = 'combination'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Persists a flat combination group. Parent, unit and structured properties
+  /// do not apply, so this bypasses the inventory-backed material path.
+  Future<void> _submitCombinationGroup(BuildContext context) async {
+    final groupsProvider = context.read<GroupsProvider>();
+    final name = _nameController.text.trim();
+    final description = _descriptionController.text.trim();
+    GroupDefinition? saved;
+    if (_isEditMode) {
+      saved = await groupsProvider.updateGroup(
+        UpdateGroupInput(
+          id: widget.group!.id,
+          name: name,
+          groupType: widget.groupType,
+          groupStructure: 'combination',
+          description: description,
+        ),
+      );
+    } else {
+      saved = await groupsProvider.createGroup(
+        CreateGroupInput(
+          name: name,
+          groupType: widget.groupType,
+          groupStructure: 'combination',
+          description: description,
+        ),
+      );
+    }
+    if (saved == null || groupsProvider.errorMessage != null) {
+      return;
+    }
+    saved = groupsProvider.findById(saved.id) ?? saved;
+    if (!context.mounted) {
+      return;
+    }
+    showAppToast(
+      context,
+      _isEditMode ? 'Combination group updated' : 'Combination group created',
+      kind: AppToastKind.success,
+    );
+    Navigator.of(context).pop(saved);
+  }
+
   Future<void> _handleDelete(BuildContext context) async {
     final group = widget.group;
     if (group == null) return;
@@ -974,6 +1089,10 @@ class _StructuredGroupEditorDialogState
 
   Future<void> _submit(BuildContext context) async {
     if (!_formKey.currentState!.validate()) {
+      return;
+    }
+    if (_isCombination) {
+      await _submitCombinationGroup(context);
       return;
     }
     if (_selectedUnitId == null && widget.groupType != 'machine') {
@@ -1524,6 +1643,77 @@ class _CreateGroupField extends StatelessWidget {
         ),
       ),
       child: child,
+    );
+  }
+}
+
+/// Selectable radio-style tile used by the group-structure toggle.
+class _StructureOptionTile extends StatelessWidget {
+  const _StructureOptionTile({
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFF3F0FF) : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? const Color(0xFF6049E3) : const Color(0xFFD8E0EA),
+            width: selected ? 1.4 : 1,
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              selected
+                  ? Icons.radio_button_checked_rounded
+                  : Icons.radio_button_unchecked_rounded,
+              size: 20,
+              color: selected ? const Color(0xFF6049E3) : const Color(0xFF9CA3AF),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: _inventoryInterStyle(
+                      color: const Color(0xFF111827),
+                      size: 14,
+                      weight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: _inventoryInterStyle(
+                      color: const Color(0xFF6B7280),
+                      size: 12,
+                      weight: FontWeight.w400,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
