@@ -9,7 +9,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/inventory_create_command_provider.dart';
-import '../widgets/inventory_movement_trail_sheet.dart';
 import '../../../../app/preferences/preferences_provider.dart';
 import '../../../../core/services/feature_flags.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
@@ -4773,38 +4772,11 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
                         width: widget.metrics.barcodeWidth,
                         metrics: widget.metrics,
                       ),
-                    // Enhancement 5 — tapping an item's stock opens its movement
-                    // audit trail. Only for item-linked rows, behind the flag.
-                    Builder(
-                      builder: (context) {
-                        final itemId = widget.record.linkedItemId;
-                        final canShowTrail =
-                            FeatureFlags.isEnabled(
-                              FeatureKeys.catalogInventoryEnhancements,
-                            ) &&
-                            itemId != null;
-                        final cell = _DataCell(
-                          widget.entry.aggregateStockLabel ??
-                              _displayStock(widget.record),
-                          width: widget.metrics.stockWidth,
-                          metrics: widget.metrics,
-                        );
-                        if (!canShowTrail) {
-                          return cell;
-                        }
-                        return GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () => InventoryMovementTrailSheet.show(
-                            context,
-                            itemId: itemId,
-                            title:
-                                widget.entry.displayName ?? widget.record.name,
-                            fallbackUnitSymbol:
-                                _effectiveUnitSymbol(widget.record.unit),
-                          ),
-                          child: cell,
-                        );
-                      },
+                    _DataCell(
+                      widget.entry.aggregateStockLabel ??
+                          _displayStock(widget.record),
+                      width: widget.metrics.stockWidth,
+                      metrics: widget.metrics,
                     ),
                     _DataCell(
                       _activityDate(widget.record),

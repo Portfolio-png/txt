@@ -1132,12 +1132,6 @@ class LocalInventoryRepository implements InventoryRepository {
   }
 
   @override
-  Future<List<ItemMovementTrailEntry>> getItemMovementTrail(int itemId) async {
-    // The local/offline store does not maintain a per-item movement ledger.
-    return const <ItemMovementTrailEntry>[];
-  }
-
-  @override
   Future<MaterialControlTowerDetail?> getMaterialControlTowerDetail(
     String barcode,
   ) async {
