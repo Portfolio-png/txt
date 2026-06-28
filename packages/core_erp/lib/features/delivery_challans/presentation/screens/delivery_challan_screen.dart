@@ -14,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../app/preferences/preferences_provider.dart';
 import '../../../../app/reports/domain/reconciliation_report.dart';
+import '../../../../core/services/feature_flags.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_toast.dart';
@@ -181,6 +182,13 @@ class _ChallanScreenState extends State<ChallanScreen> {
               _receptionVisibleForReportGroup(challan, activeReportGroupCode),
         )
         .toList(growable: false);
+    // Internal challans (Enhancement) are not scoped to report groups.
+    final enhancementsEnabled =
+        FeatureFlags.isEnabled(FeatureKeys.catalogInventoryEnhancements);
+    final internalChallans = provider.challans
+        .where((challan) => challan.isInternal)
+        .toList(growable: false);
+    final itemFilterActive = provider.itemFilterId != null;
     final focusedChallan = _focusedChallanId == null
         ? null
         : provider.challans
@@ -200,6 +208,9 @@ class _ChallanScreenState extends State<ChallanScreen> {
                 _openEditor(context, initialType: ChallanType.delivery),
             onCreateReception: () =>
                 _openEditor(context, initialType: ChallanType.reception),
+            onCreateInternal: enhancementsEnabled
+                ? () => _openEditor(context, initialType: ChallanType.internal)
+                : null,
             onEditProfile: () => _openCompanyProfile(context),
             onOpenTemplates: () => setState(() => _showTemplates = true),
             onGenerateReport: activeReportGroupCode == null
@@ -214,10 +225,20 @@ class _ChallanScreenState extends State<ChallanScreen> {
               ),
             )
           else ...[
+            if (itemFilterActive) ...[
+              _ItemFilterBanner(label: provider.itemFilterLabel),
+              const SizedBox(height: 12),
+            ],
             _Filters(
               searchController: _searchController,
               status: provider.statusFilter,
               orderFilterId: provider.orderFilterId,
+              itemFilterLabel:
+                  itemFilterActive ? provider.itemFilterLabel : null,
+              onClearItemFilter: () => provider.setItemFilter(null),
+              typeFilter: provider.typeFilter,
+              onTypeChanged: provider.setTypeFilter,
+              showTypeSelector: enhancementsEnabled,
               reportGroups: reportGroups,
               selectedReportGroupCode: activeReportGroupCode,
               selectedDeliveryCount: _selectedDeliveryChallanNos.length,
@@ -237,6 +258,11 @@ class _ChallanScreenState extends State<ChallanScreen> {
                       activeReportGroupCode: activeReportGroupCode,
                       deliveryChallans: deliveryChallans,
                       receptionChallans: receptionChallans,
+                      internalChallans: internalChallans,
+                      showInternalColumn:
+                          enhancementsEnabled &&
+                          (internalChallans.isNotEmpty ||
+                              provider.typeFilter == ChallanType.internal),
                       selectedDeliveryChallanNos: _selectedDeliveryChallanNos,
                       selectedReceptionChallanNos: _selectedReceptionChallanNos,
                       focusedChallan: focusedChallan,
@@ -507,6 +533,7 @@ class _Header extends StatelessWidget {
     required this.canGenerateReport,
     required this.onCreateDelivery,
     required this.onCreateReception,
+    this.onCreateInternal,
     required this.onEditProfile,
     required this.onOpenTemplates,
     required this.onGenerateReport,
@@ -516,6 +543,10 @@ class _Header extends StatelessWidget {
   final bool canGenerateReport;
   final VoidCallback onCreateDelivery;
   final VoidCallback onCreateReception;
+
+  /// When non-null, an extra "Create Internal" button is shown (Enhancement —
+  /// internal challans, gated by the catalog/inventory flag at the call site).
+  final VoidCallback? onCreateInternal;
   final VoidCallback onEditProfile;
   final VoidCallback onOpenTemplates;
   final VoidCallback? onGenerateReport;
@@ -554,6 +585,15 @@ class _Header extends StatelessWidget {
           onPressed: onCreateReception,
         ),
         const SizedBox(width: 10),
+        if (onCreateInternal != null) ...[
+          AppButton(
+            label: 'Create Internal',
+            icon: Icons.sync_alt_rounded,
+            variant: AppButtonVariant.secondary,
+            onPressed: onCreateInternal,
+          ),
+          const SizedBox(width: 10),
+        ],
         AppButton(
           label: 'Create Delivery',
           icon: Icons.north_east_rounded,
@@ -646,11 +686,66 @@ class _Header extends StatelessWidget {
   }
 }
 
+/// Banner shown when the challans list is pre-filtered to a single item (e.g.
+/// after navigating from the inventory screen). Makes the applied filter
+/// obvious and explains how to clear it.
+class _ItemFilterBanner extends StatelessWidget {
+  const _ItemFilterBanner({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: SoftErpTheme.accent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: SoftErpTheme.accent.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.filter_alt_rounded, color: SoftErpTheme.accent),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Challans for item $label',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: SoftErpTheme.textPrimary,
+                  ),
+                ),
+                const Text(
+                  'Showing only challans that contain this item. Clear the Item '
+                  'chip or change the type to see more.',
+                  style: TextStyle(
+                    color: SoftErpTheme.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _Filters extends StatelessWidget {
   const _Filters({
     required this.searchController,
     required this.status,
     required this.orderFilterId,
+    required this.itemFilterLabel,
+    required this.onClearItemFilter,
+    required this.typeFilter,
+    required this.onTypeChanged,
+    required this.showTypeSelector,
     required this.reportGroups,
     required this.selectedReportGroupCode,
     required this.selectedDeliveryCount,
@@ -664,6 +759,15 @@ class _Filters extends StatelessWidget {
   final TextEditingController searchController;
   final DeliveryChallanStatus? status;
   final int? orderFilterId;
+
+  /// Item filter chip label (e.g. "ABC-123"); null hides the chip.
+  final String? itemFilterLabel;
+  final VoidCallback onClearItemFilter;
+
+  /// Type selector state. Shown only when [showTypeSelector] is true.
+  final ChallanType? typeFilter;
+  final ValueChanged<ChallanType?> onTypeChanged;
+  final bool showTypeSelector;
   final List<String> reportGroups;
   final String? selectedReportGroupCode;
   final int selectedDeliveryCount;
@@ -756,6 +860,18 @@ class _Filters extends StatelessWidget {
       foreground: SoftErpTheme.textPrimary,
       borderColor: SoftErpTheme.accent.withValues(alpha: 0.2),
     );
+    // Type selector (All / Reception / Delivery / Internal). Drives the
+    // server-side type filter so the user can see how the list is scoped.
+    final typeSelector = SegmentedButton<ChallanType?>(
+      segments: const [
+        ButtonSegment(value: null, label: Text('All')),
+        ButtonSegment(value: ChallanType.reception, label: Text('Reception')),
+        ButtonSegment(value: ChallanType.delivery, label: Text('Delivery')),
+        ButtonSegment(value: ChallanType.internal, label: Text('Internal')),
+      ],
+      selected: {typeFilter},
+      onSelectionChanged: (value) => onTypeChanged(value.first),
+    );
 
     return SoftSurface(
       padding: const EdgeInsets.all(12),
@@ -772,6 +888,13 @@ class _Filters extends StatelessWidget {
                   label: Text('Order #$orderFilterId'),
                   onDeleted: onClearOrderFilter,
                 ),
+              if (itemFilterLabel != null)
+                InputChip(
+                  avatar: const Icon(Icons.inventory_2_outlined, size: 18),
+                  label: Text('Item $itemFilterLabel'),
+                  onDeleted: onClearItemFilter,
+                ),
+              if (showTypeSelector) typeSelector,
               groupSelector,
               statusFilter,
               selectionPill,
@@ -802,6 +925,8 @@ class _ChallanWorkspace extends StatelessWidget {
     required this.activeReportGroupCode,
     required this.deliveryChallans,
     required this.receptionChallans,
+    this.internalChallans = const <DeliveryChallan>[],
+    this.showInternalColumn = false,
     required this.selectedDeliveryChallanNos,
     required this.selectedReceptionChallanNos,
     required this.focusedChallan,
@@ -819,6 +944,11 @@ class _ChallanWorkspace extends StatelessWidget {
   final String? activeReportGroupCode;
   final List<DeliveryChallan> deliveryChallans;
   final List<DeliveryChallan> receptionChallans;
+
+  /// Internal challans + whether to show their column (Enhancement — internal
+  /// challans). Off by default so the existing two-column layout is unchanged.
+  final List<DeliveryChallan> internalChallans;
+  final bool showInternalColumn;
   final Set<String> selectedDeliveryChallanNos;
   final Set<String> selectedReceptionChallanNos;
   final DeliveryChallan? focusedChallan;
@@ -879,6 +1009,28 @@ class _ChallanWorkspace extends StatelessWidget {
                     onDelete: onDelete,
                   ),
                 ),
+                if (showInternalColumn) ...[
+                  const VerticalDivider(width: 1, color: SoftErpTheme.border),
+                  Expanded(
+                    child: _ChallanColumn(
+                      title: 'Internal',
+                      subtitle: 'Movements within the company',
+                      challans: internalChallans,
+                      activeReportGroupCode: activeReportGroupCode,
+                      // Internal challans are not part of report-group
+                      // generation, so they have no selection state.
+                      selectedChallanNos: const <String>{},
+                      focusedChallanId: focusedChallan?.id,
+                      onFocus: onFocus,
+                      onToggle: (_, _) {},
+                      onOpen: onOpen,
+                      onPrint: onPrint,
+                      onDuplicate: onDuplicate,
+                      onCancel: onCancel,
+                      onDelete: onDelete,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -1750,6 +1902,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
   late final TextEditingController _gstinController;
   late final TextEditingController _locationController;
   late final TextEditingController _sourceReferenceController;
+  late final TextEditingController _internalPurposeController;
   late final TextEditingController _notesController;
   late List<_ItemDraft> _items;
   late ChallanType _selectedType;
@@ -1767,6 +1920,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
   bool get _editingExisting => widget.challan != null;
   bool get _canEdit => widget.challan?.isDraft ?? true;
   bool get _isReception => _selectedType == ChallanType.reception;
+  bool get _isInternal => _selectedType == ChallanType.internal;
   bool get _maintainStocks =>
       _source?.maintainStocks ??
       context.read<PreferencesProvider>().maintainStocks;
@@ -1915,6 +2069,9 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     _sourceReferenceController = TextEditingController(
       text: source?.sourceReference ?? '',
     );
+    _internalPurposeController = TextEditingController(
+      text: source?.internalPurpose ?? '',
+    );
     _notesController = TextEditingController(text: source?.notes ?? '');
     _items = (source?.items.isNotEmpty ?? false)
         ? source!.items.map(_ItemDraft.fromItem).toList()
@@ -1952,6 +2109,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     _gstinController.dispose();
     _locationController.dispose();
     _sourceReferenceController.dispose();
+    _internalPurposeController.dispose();
     _notesController.dispose();
     super.dispose();
   }
@@ -1962,7 +2120,8 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     }
     final commands =
         _ordersCommandProvider ?? context.read<ChallanEditorCommandProvider>();
-    final shouldRegister = _canEdit && !_isReception && _maintainStocks;
+    final shouldRegister =
+        _canEdit && !_isReception && !_isInternal && _maintainStocks;
     if (shouldRegister && !_ordersCommandRegistered) {
       commands.registerOrdersPanelOpener(_openOrdersPanelFromShortcut);
       _ordersCommandRegistered = true;
@@ -1973,7 +2132,11 @@ class _ChallanEditorState extends State<_ChallanEditor> {
   }
 
   void _openOrdersPanelFromShortcut() {
-    if (!_canEdit || _isReception || !_maintainStocks || _isOrdersPanelOpen) {
+    if (!_canEdit ||
+        _isReception ||
+        _isInternal ||
+        !_maintainStocks ||
+        _isOrdersPanelOpen) {
       return;
     }
     _toggleOrdersPanel();
@@ -2039,16 +2202,17 @@ class _ChallanEditorState extends State<_ChallanEditor> {
       _syncOrdersCommand();
       _hydrateSelectedOrdersFromSourceIfAvailable();
     });
+    final typeNoun = _isInternal
+        ? 'Internal'
+        : (_isReception ? 'Reception' : 'Delivery');
     final editorTitle = _editingExisting
-        ? (_isReception ? 'Edit Reception Challan' : 'Edit Delivery Challan')
-        : (_isReception
-              ? 'Create Reception Challan'
-              : 'Create Delivery Challan');
-    final issueLabel = _isReception ? 'Issue Reception' : 'Issue Delivery';
+        ? 'Edit $typeNoun Challan'
+        : 'Create $typeNoun Challan';
+    final issueLabel = 'Issue $typeNoun';
     final errorText = _validationError ?? provider.errorMessage;
     final challanNumberWarningText =
         provider.warningMessage ?? _manualChallanWarningText();
-    final showOrdersPanel = _isOrdersPanelOpen && !_isReception;
+    final showOrdersPanel = _isOrdersPanelOpen && !_isReception && !_isInternal;
     return LayoutBuilder(
       builder: (context, constraints) {
         final maxWidth = constraints.hasBoundedWidth
@@ -2328,7 +2492,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
                   ],
                 ),
               ),
-              if (!_isReception && _maintainStocks && _selectedPurpose != ChallanPurpose.jobWork) ...[
+              if (!_isReception && !_isInternal && _maintainStocks && _selectedPurpose != ChallanPurpose.jobWork) ...[
                 const SizedBox(width: 12),
                 _ordersHeaderButton(),
               ],
@@ -2361,7 +2525,22 @@ class _ChallanEditorState extends State<_ChallanEditor> {
               ),
             ),
           ],
-          if (_maintainStocks) ...[
+          if (_isInternal) ...[
+            // Internal challans have no external party — capture a free-text
+            // purpose (e.g. production consumption, inter-store transfer).
+            const SizedBox(height: 12),
+            _field(
+              'Purpose (e.g. production consumption, transfer)',
+              _internalPurposeController,
+              enabled: _canEdit,
+            ),
+            const SizedBox(height: 12),
+            _field(
+              'Internal Reference',
+              _sourceReferenceController,
+              enabled: _canEdit,
+            ),
+          ] else if (_maintainStocks) ...[
             if (_isReception) ...[
               const SizedBox(height: 12),
               if (_selectedPurpose == ChallanPurpose.jobWork)
@@ -2823,6 +3002,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     return DeliveryChallanDraftInput(
       type: _selectedType,
       purpose: _selectedPurpose,
+      internalPurpose: _isInternal ? _internalPurposeController.text : '',
       challanNo: _challanNumberController.text.trim(),
       orderId: _selectedType == ChallanType.delivery && maintainStocks
           ? (orderIds.isEmpty ? (_source?.orderId ?? 0) : orderIds.first)
@@ -2961,13 +3141,13 @@ class _ChallanEditorState extends State<_ChallanEditor> {
       });
       return;
     }
-    if (_maintainStocks && !_isReception && _selectedPurpose != ChallanPurpose.jobWork && input.orderIds.isEmpty) {
+    if (_maintainStocks && !_isReception && !_isInternal && _selectedPurpose != ChallanPurpose.jobWork && input.orderIds.isEmpty) {
       setState(() {
         _validationError = 'Select at least one order before saving challan.';
       });
       return;
     }
-    if (_maintainStocks && !_isReception && _selectedPurpose == ChallanPurpose.jobWork && (_selectedClientId ?? _source?.clientId ?? 0) <= 0) {
+    if (_maintainStocks && !_isReception && !_isInternal && _selectedPurpose == ChallanPurpose.jobWork && (_selectedClientId ?? _source?.clientId ?? 0) <= 0) {
       setState(() {
         _validationError = 'Select a customer before saving job work return challan.';
       });
@@ -2983,6 +3163,8 @@ class _ChallanEditorState extends State<_ChallanEditor> {
         context,
         _editingExisting
             ? 'Challan saved'
+            : _isInternal
+            ? 'Internal challan created'
             : _isReception
             ? 'Reception challan created'
             : 'Delivery challan created',

@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/inventory_create_command_provider.dart';
 import '../../../../app/preferences/preferences_provider.dart';
+import '../../../../core/navigation/app_navigation.dart';
 import '../../../../core/services/feature_flags.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -4772,11 +4773,37 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
                         width: widget.metrics.barcodeWidth,
                         metrics: widget.metrics,
                       ),
-                    _DataCell(
-                      widget.entry.aggregateStockLabel ??
-                          _displayStock(widget.record),
-                      width: widget.metrics.stockWidth,
-                      metrics: widget.metrics,
+                    // Tapping an item's stock opens the Challans screen
+                    // pre-filtered to that item (replaces the old movement
+                    // popup). Only for item-linked rows, behind the flag.
+                    Builder(
+                      builder: (context) {
+                        final itemId = widget.record.linkedItemId;
+                        final canBrowseChallans =
+                            FeatureFlags.isEnabled(
+                              FeatureKeys.catalogInventoryEnhancements,
+                            ) &&
+                            itemId != null;
+                        final cell = _DataCell(
+                          widget.entry.aggregateStockLabel ??
+                              _displayStock(widget.record),
+                          width: widget.metrics.stockWidth,
+                          metrics: widget.metrics,
+                        );
+                        if (!canBrowseChallans) {
+                          return cell;
+                        }
+                        return GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => _openItemChallans(
+                            context,
+                            itemId: itemId,
+                            label:
+                                widget.entry.displayName ?? widget.record.name,
+                          ),
+                          child: cell,
+                        );
+                      },
                     ),
                     _DataCell(
                       _activityDate(widget.record),
@@ -4853,6 +4880,21 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
       return '0 $unit';
     }
     return '0';
+  }
+
+  /// Pre-filters the Challans screen to [itemId] and switches to that tab, so
+  /// the user sees every challan that moved this item (and can clear/adjust the
+  /// filter from there). Replaces the former movement audit-trail popup.
+  void _openItemChallans(
+    BuildContext context, {
+    required int itemId,
+    required String label,
+  }) {
+    context.read<DeliveryChallanProvider>().applyInventoryFilter(
+      itemId: itemId,
+      label: label,
+    );
+    context.read<AppNavigation>().select('delivery_challans');
   }
 }
 

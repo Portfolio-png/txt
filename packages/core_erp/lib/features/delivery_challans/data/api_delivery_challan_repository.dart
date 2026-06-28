@@ -126,12 +126,17 @@ class ApiChallanRepository implements ChallanRepository {
     DateTime? dateFrom,
     DateTime? dateTo,
     int? orderId,
+    int? itemId,
   }) async {
     if (useMockResponses) {
       final query = search.trim().toLowerCase();
       return _mockChallans
           .where((challan) {
             if (orderId != null && challan.orderId != orderId) {
+              return false;
+            }
+            if (itemId != null &&
+                !challan.items.any((item) => item.itemId == itemId)) {
               return false;
             }
             if (type != null && challan.type != type) {
@@ -160,6 +165,7 @@ class ApiChallanRepository implements ChallanRepository {
         if (dateFrom != null) 'date_from': _dateOnly(dateFrom),
         if (dateTo != null) 'date_to': _dateOnly(dateTo),
         if (orderId != null) 'order_id': '$orderId',
+        if (itemId != null) 'item_id': '$itemId',
       },
     );
     final response = await _sendRequest(method: 'GET', uri: uri);

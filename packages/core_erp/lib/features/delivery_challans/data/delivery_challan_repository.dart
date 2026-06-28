@@ -20,6 +20,7 @@ abstract class ChallanRepository {
     DateTime? dateFrom,
     DateTime? dateTo,
     int? orderId,
+    int? itemId,
   });
 
   Future<List<DeliveryChallan>> getOrderChallans(int orderId);
@@ -142,6 +143,7 @@ class ChallanDraftInput {
   const ChallanDraftInput({
     required this.type,
     this.purpose = ChallanPurpose.trading,
+    this.internalPurpose = '',
     required this.challanNo,
     required this.orderId,
     required this.orderIds,
@@ -162,6 +164,9 @@ class ChallanDraftInput {
 
   final ChallanType type;
   final ChallanPurpose purpose;
+
+  /// Free-text purpose for internal challans; ignored for delivery/reception.
+  final String internalPurpose;
   final String challanNo;
   final int orderId;
   final List<int> orderIds;
@@ -183,6 +188,8 @@ class ChallanDraftInput {
     return {
       'type': type.name,
       'purpose': purpose.name,
+      if (internalPurpose.trim().isNotEmpty)
+        'internal_purpose': internalPurpose.trim(),
       'challan_no': challanNo.trim(),
       if (orderId > 0) 'order_id': orderId,
       if (orderIds.isNotEmpty) 'order_ids': orderIds,

@@ -1,6 +1,8 @@
 enum DeliveryChallanStatus { draft, issued, cancelled }
 
-enum ChallanType { delivery, reception }
+/// `internal` documents assets moving within the company (production
+/// consumption, transfers); it needs neither a customer nor a vendor.
+enum ChallanType { delivery, reception, internal }
 
 enum ChallanPurpose { trading, manufacturing, jobWork }
 
@@ -270,6 +272,7 @@ class DeliveryChallan {
     required this.id,
     required this.type,
     this.purpose = ChallanPurpose.trading,
+    this.internalPurpose = '',
     required this.orderId,
     required this.orderIds,
     this.reportGroupCodes = const <String>[],
@@ -299,6 +302,9 @@ class DeliveryChallan {
   final int id;
   final ChallanType type;
   final ChallanPurpose purpose;
+
+  /// Free-text purpose for internal challans; empty for delivery/reception.
+  final String internalPurpose;
   final int? orderId;
   final List<int> orderIds;
   final List<String> reportGroupCodes;
@@ -329,6 +335,7 @@ class DeliveryChallan {
   bool get isCancelled => status == DeliveryChallanStatus.cancelled;
   bool get isReception => type == ChallanType.reception;
   bool get isDelivery => type == ChallanType.delivery;
+  bool get isInternal => type == ChallanType.internal;
   bool get isJobWork => purpose == ChallanPurpose.jobWork;
 
   factory DeliveryChallan.fromJson(Map<String, dynamic> json) {
@@ -354,6 +361,8 @@ class DeliveryChallan {
             json['challan_purpose'] as String? ??
             'trading',
       ),
+      internalPurpose:
+          (json['internalPurpose'] ?? json['internal_purpose']) as String? ?? '',
       orderId: json['orderId'] as int? ?? json['order_id'] as int?,
       orderIds:
           (json['orderIds'] as List<dynamic>? ??

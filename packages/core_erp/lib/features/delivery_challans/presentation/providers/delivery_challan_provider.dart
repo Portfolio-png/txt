@@ -17,6 +17,8 @@ class ChallanProvider extends ChangeNotifier {
   ChallanType? _typeFilter;
   DeliveryChallanStatus? _statusFilter;
   int? _orderFilterId;
+  int? _itemFilterId;
+  String _itemFilterLabel = '';
   bool _isLoading = false;
   bool _isSaving = false;
   String? _errorMessage;
@@ -29,6 +31,15 @@ class ChallanProvider extends ChangeNotifier {
   ChallanType? get typeFilter => _typeFilter;
   DeliveryChallanStatus? get statusFilter => _statusFilter;
   int? get orderFilterId => _orderFilterId;
+
+  /// Active item filter (e.g. set when navigating from the inventory screen).
+  int? get itemFilterId => _itemFilterId;
+
+  /// Human-readable label for the item filter chip ("ABC-123"); falls back to
+  /// the raw id (prefixed with #) when no label was provided.
+  String get itemFilterLabel => _itemFilterLabel.trim().isNotEmpty
+      ? _itemFilterLabel.trim()
+      : (_itemFilterId == null ? '' : '#$_itemFilterId');
   bool get isLoading => _isLoading;
   bool get isSaving => _isSaving;
   String? get errorMessage => _errorMessage;
@@ -56,6 +67,7 @@ class ChallanProvider extends ChangeNotifier {
           status: _statusFilter,
           search: _searchQuery,
           orderId: _orderFilterId,
+          itemId: _itemFilterId,
         ),
       ]);
       _companyProfile = results[0] as CompanyProfile;
@@ -97,6 +109,27 @@ class ChallanProvider extends ChangeNotifier {
 
   Future<void> setOrderFilter(int? value) async {
     _orderFilterId = value;
+    await refresh();
+  }
+
+  /// Sets (or clears) the item filter. [label] is shown on the filter chip.
+  Future<void> setItemFilter(int? itemId, {String label = ''}) async {
+    _itemFilterId = itemId;
+    _itemFilterLabel = itemId == null ? '' : label;
+    await refresh();
+  }
+
+  /// Applies the filters carried over when navigating from the inventory
+  /// screen: an item filter (with display label) and an optional type. Updates
+  /// state without firing a refresh per setter, then loads once.
+  Future<void> applyInventoryFilter({
+    required int itemId,
+    String label = '',
+    ChallanType? type,
+  }) async {
+    _itemFilterId = itemId;
+    _itemFilterLabel = label;
+    _typeFilter = type;
     await refresh();
   }
 

@@ -3398,6 +3398,8 @@ async function initDb() {
   await ensureColumnExists('delivery_challans', 'maintain_stocks', 'INTEGER NOT NULL DEFAULT 1');
   await ensureColumnExists('delivery_challans', 'used_in_report', 'INTEGER NOT NULL DEFAULT 0');
   await ensureColumnExists('delivery_challans', 'purpose', "TEXT NOT NULL DEFAULT 'trading'");
+  // Internal challans — free-text purpose (production consumption / transfers).
+  await ensureColumnExists('delivery_challans', 'internal_purpose', "TEXT NOT NULL DEFAULT ''");
   await ensureColumnExists('delivery_challan_items', 'order_item_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'production_run_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'item_id', 'INTEGER');
@@ -6933,7 +6935,9 @@ async function saveCompanyProfile(input = {}) {
 }
 
 const DELIVERY_CHALLAN_STATUSES = new Set(['draft', 'issued', 'cancelled']);
-const CHALLAN_TYPES = new Set(['delivery', 'reception']);
+// 'internal' documents assets moving within the company (production
+// consumption, transfers) — it needs neither a customer nor a vendor.
+const CHALLAN_TYPES = new Set(['delivery', 'reception', 'internal']);
 
 function parseJsonObject(value, fallback = null) {
   if (!value) {
@@ -7266,6 +7270,9 @@ async function rowToDeliveryChallanDto(row, { includeItems = true } = {}) {
     purpose: row.purpose || 'trading',
     challanPurpose: row.purpose || 'trading',
     challan_purpose: row.purpose || 'trading',
+    // Free-text purpose for internal challans (empty for delivery/reception).
+    internal_purpose: row.internal_purpose || '',
+    internalPurpose: row.internal_purpose || '',
     order_id: row.order_id || null,
     order_ids: orderIds,
     report_group_codes: reportGroupCodes,
@@ -7302,7 +7309,9 @@ async function rowToDeliveryChallanDto(row, { includeItems = true } = {}) {
 
 async function generateChallanNumber(type = 'delivery') {
   const normalizedType = normalizeChallanType(type);
-  const prefix = normalizedType === 'reception' ? 'RC' : 'DC';
+  const prefix = normalizedType === 'reception'
+    ? 'RC'
+    : (normalizedType === 'internal' ? 'IC' : 'DC');
   const row = await get(
     `
     SELECT challan_no
@@ -8798,6 +8807,7 @@ async function listDeliveryChallans({
   dateTo,
   orderId,
   vendorId,
+  itemId,
 } = {}) {
   const where = [];
   const params = [];
@@ -8805,6 +8815,20 @@ async function listDeliveryChallans({
   if (normalizedType) {
     where.push('dc.type = ?');
     params.push(normalizedType);
+  }
+  // Item filter — only challans whose lines reference this item. Combines with
+  // every other filter via AND.
+  const normalizedItemId = Number(itemId || 0);
+  if (Number.isInteger(normalizedItemId) && normalizedItemId > 0) {
+    where.push(`
+      EXISTS (
+        SELECT 1
+        FROM delivery_challan_items dci_item
+        WHERE dci_item.challan_id = dc.id
+          AND dci_item.item_id = ?
+      )
+    `);
+    params.push(normalizedItemId);
   }
   const normalizedOrderId = Number(orderId || 0);
   if (Number.isInteger(normalizedOrderId) && normalizedOrderId > 0) {
@@ -9270,6 +9294,13 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
         orders.map((order) => [Number(order.id), orderItemSnapshotFromOrder(order)]),
       );
     }
+  } else if (challanType === 'internal') {
+    // Internal movements (production consumption / transfers) belong to no
+    // external party, so neither an order nor a vendor is required. A vendor
+    // may still be linked optionally if the caller supplies one.
+    if (Number.isInteger(vendorId) && vendorId > 0) {
+      vendor = await getVendorForChallan(vendorId);
+    }
   } else {
     if (maintainStocks && (!Number.isInteger(vendorId) || vendorId <= 0)) {
       const error = new Error('Select a vendor before saving reception challan.');
@@ -9301,6 +9332,11 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
   const purpose = ['trading', 'manufacturing', 'jobWork'].includes(inputPurpose)
     ? inputPurpose
     : (inputPurpose === 'job_work' ? 'jobWork' : 'trading');
+  // Free-text purpose for internal challans (kept separate from the enum
+  // `purpose` above so delivery/reception behaviour is untouched).
+  const internalPurpose = String(
+    input.internalPurpose ?? input.internal_purpose ?? existing?.internal_purpose ?? '',
+  ).trim();
   const customerName = challanType === 'delivery'
     ? (maintainStocks
       ? String(firstOrder?.client_name || '').trim()
@@ -9455,7 +9491,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
         SET type = ?, order_id = ?, order_no = ?, challan_no = ?, date = ?, location = ?,
             customer_name = ?, customer_gstin = ?, vendor_id = ?, vendor_name = ?, vendor_gstin = ?,
             material_owner_client_id = ?, material_owner_client_name = ?, material_owner_gstin = ?,
-            source_reference = ?, notes = ?, maintain_stocks = ?, purpose = ?, updated_by = ?, updated_at = ?
+            source_reference = ?, notes = ?, maintain_stocks = ?, purpose = ?, internal_purpose = ?, updated_by = ?, updated_at = ?
         WHERE id = ?
         `,
         [
@@ -9477,6 +9513,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
           notes,
           maintainStocks ? 1 : 0,
           purpose,
+          internalPurpose,
           actor?.id || null,
           now,
           challanId,
@@ -9491,9 +9528,9 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
           type, order_id, order_no, challan_no, date, location, customer_name, customer_gstin,
           vendor_id, vendor_name, vendor_gstin, material_owner_client_id, material_owner_client_name,
           material_owner_gstin, source_reference, notes, status,
-          maintain_stocks, purpose, created_by, updated_by, created_at, updated_at
+          maintain_stocks, purpose, internal_purpose, created_by, updated_by, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           challanType,
@@ -9514,6 +9551,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
           notes,
           maintainStocks ? 1 : 0,
           purpose,
+          internalPurpose,
           actor?.id || null,
           actor?.id || null,
           now,
@@ -18347,6 +18385,7 @@ const handleListChallans = async (req, res) => {
       dateTo: String(req.query.date_to || req.query.dateTo || '').trim(),
       orderId: req.query.order_id || req.query.orderId,
       vendorId: req.query.vendor_id || req.query.vendorId,
+      itemId: req.query.item_id || req.query.itemId,
     });
     res.json({ success: true, data: challans, error: null });
   } catch (error) {
