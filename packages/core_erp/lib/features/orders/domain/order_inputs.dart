@@ -12,6 +12,7 @@ class CreateOrderInput {
     required this.variationLeafNodeId,
     required this.variationPathLabel,
     required this.variationPathNodeIds,
+    this.customVariationValues = const <String, String>{},
     required this.quantity,
     this.unitId,
     this.unitName = 'Pieces',
@@ -34,6 +35,7 @@ class CreateOrderInput {
   final int variationLeafNodeId;
   final String variationPathLabel;
   final List<int> variationPathNodeIds;
+  final Map<String, String> customVariationValues;
   final int quantity;
   final int? unitId;
   final String unitName;

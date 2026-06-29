@@ -62,6 +62,7 @@ class OrderDto {
     required this.variationLeafNodeId,
     required this.variationPathLabel,
     required this.variationPathNodeIds,
+    this.customVariationValues = const <String, String>{},
     required this.quantity,
     required this.unitId,
     required this.unitName,
@@ -86,6 +87,7 @@ class OrderDto {
   final int variationLeafNodeId;
   final String variationPathLabel;
   final List<int> variationPathNodeIds;
+  final Map<String, String> customVariationValues;
   final int quantity;
   final int? unitId;
   final String unitName;
@@ -114,6 +116,9 @@ class OrderDto {
           (json['variationPathNodeIds'] as List<dynamic>? ?? const [])
               .map((entry) => entry as int)
               .toList(growable: false),
+      customVariationValues: (json['customVariationValues'] as Map<String, dynamic>? ?? const {}).map(
+        (key, value) => MapEntry(key, value.toString()),
+      ),
       quantity: json['quantity'] as int? ?? 0,
       unitId: (json['unitId'] as num? ?? json['unit_id'] as num?)?.toInt(),
       unitName:
@@ -154,6 +159,7 @@ class OrderDto {
       variationLeafNodeId: variationLeafNodeId,
       variationPathLabel: variationPathLabel,
       variationPathNodeIds: variationPathNodeIds,
+      customVariationValues: customVariationValues,
       quantity: quantity,
       unitId: unitId,
       unitName: unitName,
@@ -215,6 +221,7 @@ class CreateOrderRequest {
     required this.variationLeafNodeId,
     required this.variationPathLabel,
     required this.variationPathNodeIds,
+    this.customVariationValues = const <String, String>{},
     required this.quantity,
     required this.unitId,
     required this.unitName,
@@ -237,6 +244,7 @@ class CreateOrderRequest {
   final int variationLeafNodeId;
   final String variationPathLabel;
   final List<int> variationPathNodeIds;
+  final Map<String, String> customVariationValues;
   final int quantity;
   final int? unitId;
   final String unitName;
@@ -260,6 +268,7 @@ class CreateOrderRequest {
       variationLeafNodeId: input.variationLeafNodeId,
       variationPathLabel: input.variationPathLabel,
       variationPathNodeIds: input.variationPathNodeIds,
+      customVariationValues: input.customVariationValues,
       quantity: input.quantity,
       unitId: input.unitId,
       unitName: input.unitName,
@@ -285,6 +294,7 @@ class CreateOrderRequest {
       'variationLeafNodeId': variationLeafNodeId,
       'variationPathLabel': variationPathLabel,
       'variationPathNodeIds': variationPathNodeIds,
+      'customVariationValues': customVariationValues,
       'quantity': quantity,
       'unitId': unitId,
       'unitName': unitName,

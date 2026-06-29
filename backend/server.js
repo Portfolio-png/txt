@@ -1581,6 +1581,7 @@ function rowToOrderDto(row) {
     variationLeafNodeId: row.variation_leaf_node_id || 0,
     variationPathLabel: row.variation_path_label || '',
     variationPathNodeIds: parseJson(row.variation_path_node_ids_json, []),
+    customVariationValues: parseJson(row.custom_variation_values_json, {}),
     quantity: Number(row.quantity || 0),
     unitId: row.unit_id || null,
     unitName: row.unit_name || '',
@@ -5907,7 +5908,7 @@ async function getItemVariationNodeRows(itemId) {
     `
     SELECT *
     FROM item_variation_nodes
-    WHERE item_id = ?
+    WHERE item_id = ? AND is_archived = 0
     ORDER BY parent_node_id ASC, position ASC, LOWER(name) ASC
     `,
     [itemId],
@@ -7119,6 +7120,7 @@ function rowToDeliveryChallanItemDto(row) {
     hsn_code: row.hsn_code || '',
     note: row.note || '',
     variation_path_label: row.variation_path_label || '',
+    custom_variation_values: parseJson(row.custom_variation_values_json, {}),
     quantity_pcs: formatMeasure(row.quantity_pcs),
     weight: formatMeasure(row.weight),
     created_at: row.created_at || null,
@@ -9593,8 +9595,8 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
         `
         INSERT INTO delivery_challan_items (
           challan_id, order_item_id, production_run_id, item_id, variation_leaf_node_id,
-          line_no, particulars, hsn_code, note, quantity_pcs, weight, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          line_no, particulars, hsn_code, note, quantity_pcs, weight, custom_variation_values_json, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           challanId,
@@ -9608,6 +9610,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
           item.note,
           normalizeDeliveryChallanMeasure(item.quantityPcs, 'challan quantity'),
           normalizeDeliveryChallanMeasure(item.weight, 'challan weight'),
+          JSON.stringify(item.customVariationValues || {}),
           now,
           now,
         ],
@@ -12318,6 +12321,7 @@ async function saveOrder({
   variationLeafNodeId = 0,
   variationPathLabel = '',
   variationPathNodeIds = [],
+  customVariationValues = {},
   quantity,
   unitId = null,
   unitName = '',
@@ -12422,6 +12426,7 @@ async function saveOrder({
   const normalizedLeafId = variationSelection.variationLeafNodeId;
   const normalizedVariationPathJson = variationSelection.variationPathNodeIdsJson;
   const canonicalVariationPathLabel = variationSelection.variationPathLabel;
+  const normalizedCustomVariationValuesJson = JSON.stringify(customVariationValues || {});
   await assertPoDocumentsUploaded(poDocumentIds);
 
   const now = new Date().toISOString();
@@ -12485,6 +12490,7 @@ async function saveOrder({
             status = ?,
             start_date = ?,
             end_date = ?,
+            custom_variation_values_json = ?,
             updated_at = ?
         WHERE id = ?
         `,
@@ -12505,6 +12511,7 @@ async function saveOrder({
           mergedStatus,
           normalizedStartDate,
           normalizedEndDate,
+          normalizedCustomVariationValuesJson,
           now,
           existing.id,
         ],
@@ -12539,9 +12546,10 @@ async function saveOrder({
           order_no, client_id, client_name, po_number, client_code, item_id, item_name,
           variation_leaf_node_id, variation_path_label, variation_path_node_ids_json, quantity,
           unit_id, unit_name, unit_symbol, unit_price, total_invoiced_qty, status,
+          custom_variation_values_json,
           created_at, updated_at, start_date, end_date
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           trimmedOrderNo,
@@ -12561,6 +12569,7 @@ async function saveOrder({
           normalizedUnitPrice,
           hasInvoicedQtyInput ? normalizedTotalInvoicedQty : 0,
           normalizedStatus,
+          normalizedCustomVariationValuesJson,
           now,
           now,
           normalizedStartDate,

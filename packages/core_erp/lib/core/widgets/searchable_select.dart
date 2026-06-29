@@ -35,6 +35,8 @@ Future<SearchableSelectOption<T>?> showSearchableSelectDialog<T>({
   SearchableSelectCanCreateOption<T>? canCreateOption,
   SearchableSelectCreateOption<T>? onCreateOption,
   SearchableSelectCreateLabelBuilder? createOptionLabelBuilder,
+  SearchableSelectCreateOption<T>? onSecondaryCreateOption,
+  SearchableSelectCreateLabelBuilder? secondaryCreateOptionLabelBuilder,
   Rect? anchorRect,
 }) {
   final overlayState = Overlay.maybeOf(context, rootOverlay: true);
@@ -63,6 +65,8 @@ Future<SearchableSelectOption<T>?> showSearchableSelectDialog<T>({
           canCreateOption: canCreateOption,
           onCreateOption: onCreateOption,
           createOptionLabelBuilder: createOptionLabelBuilder,
+          onSecondaryCreateOption: onSecondaryCreateOption,
+          secondaryCreateOptionLabelBuilder: secondaryCreateOptionLabelBuilder,
         ),
     transitionBuilder: (dialogContext, animation, secondaryAnimation, child) {
       final curvedAnimation = CurvedAnimation(
@@ -95,6 +99,8 @@ class SearchableSelectField<T> extends FormField<T> {
     this.canCreateOption,
     this.onCreateOption,
     this.createOptionLabelBuilder,
+    this.onSecondaryCreateOption,
+    this.secondaryCreateOptionLabelBuilder,
     super.validator,
   }) : super(
          initialValue: value,
@@ -178,6 +184,8 @@ class SearchableSelectField<T> extends FormField<T> {
   final SearchableSelectCanCreateOption<T>? canCreateOption;
   final SearchableSelectCreateOption<T>? onCreateOption;
   final SearchableSelectCreateLabelBuilder? createOptionLabelBuilder;
+  final SearchableSelectCreateOption<T>? onSecondaryCreateOption;
+  final SearchableSelectCreateLabelBuilder? secondaryCreateOptionLabelBuilder;
 
   @override
   FormFieldState<T> createState() => _SearchableSelectFieldState<T>();
@@ -215,6 +223,8 @@ class _SearchableSelectFieldState<T> extends FormFieldState<T> {
       canCreateOption: widget.canCreateOption,
       onCreateOption: widget.onCreateOption,
       createOptionLabelBuilder: widget.createOptionLabelBuilder,
+      onSecondaryCreateOption: widget.onSecondaryCreateOption,
+      secondaryCreateOptionLabelBuilder: widget.secondaryCreateOptionLabelBuilder,
     );
     if (selected == null) {
       return;
@@ -234,6 +244,8 @@ class _SearchableSelectDialog<T> extends StatefulWidget {
     required this.canCreateOption,
     required this.onCreateOption,
     required this.createOptionLabelBuilder,
+    this.onSecondaryCreateOption,
+    this.secondaryCreateOptionLabelBuilder,
     this.title,
   });
 
@@ -246,6 +258,8 @@ class _SearchableSelectDialog<T> extends StatefulWidget {
   final SearchableSelectCanCreateOption<T>? canCreateOption;
   final SearchableSelectCreateOption<T>? onCreateOption;
   final SearchableSelectCreateLabelBuilder? createOptionLabelBuilder;
+  final SearchableSelectCreateOption<T>? onSecondaryCreateOption;
+  final SearchableSelectCreateLabelBuilder? secondaryCreateOptionLabelBuilder;
 
   @override
   State<_SearchableSelectDialog<T>> createState() =>
@@ -295,6 +309,8 @@ class _SearchableSelectDialogState<T>
             canCreateOption: widget.canCreateOption,
             onCreateOption: widget.onCreateOption,
             createOptionLabelBuilder: widget.createOptionLabelBuilder,
+            onSecondaryCreateOption: widget.onSecondaryCreateOption,
+            secondaryCreateOptionLabelBuilder: widget.secondaryCreateOptionLabelBuilder,
           );
 
           if (layout.centered) {
@@ -381,6 +397,8 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
     required this.canCreateOption,
     required this.onCreateOption,
     required this.createOptionLabelBuilder,
+    this.onSecondaryCreateOption,
+    this.secondaryCreateOptionLabelBuilder,
     this.title,
   });
 
@@ -396,6 +414,8 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
   final SearchableSelectCanCreateOption<T>? canCreateOption;
   final SearchableSelectCreateOption<T>? onCreateOption;
   final SearchableSelectCreateLabelBuilder? createOptionLabelBuilder;
+  final SearchableSelectCreateOption<T>? onSecondaryCreateOption;
+  final SearchableSelectCreateLabelBuilder? secondaryCreateOptionLabelBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -409,6 +429,12 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
         query.isNotEmpty &&
         !exactMatchExists &&
         (canCreateOption?.call(query, allOptions) ?? true);
+    final showSecondaryCreateOption =
+        onSecondaryCreateOption != null &&
+        query.isNotEmpty &&
+        !exactMatchExists &&
+        (canCreateOption?.call(query, allOptions) ?? true);
+    final createOptionsCount = (showCreateOption ? 1 : 0) + (showSecondaryCreateOption ? 1 : 0);
 
     return FocusTraversalGroup(
       child: Material(
@@ -501,21 +527,36 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
                     : ListView.separated(
                         shrinkWrap: true,
                         padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                        itemCount: options.length + (showCreateOption ? 1 : 0),
+                        itemCount: options.length + createOptionsCount,
                         separatorBuilder: (context, index) =>
                             const SizedBox(height: 2),
                         itemBuilder: (context, index) {
-                          if (showCreateOption && index == 0) {
+                          var currentCreateCount = 0;
+                          if (showCreateOption && index == currentCreateCount) {
                             return _SearchableSelectCreateTile<T>(
                               query: query,
                               label:
                                   createOptionLabelBuilder?.call(query) ??
                                   'Create "$query"',
                               onCreateOption: onCreateOption!,
+                              icon: Icons.add_circle_outline_rounded,
                             );
                           }
-                          final optionIndex =
-                              index - (showCreateOption ? 1 : 0);
+                          if (showCreateOption) currentCreateCount++;
+
+                          if (showSecondaryCreateOption && index == currentCreateCount) {
+                            return _SearchableSelectCreateTile<T>(
+                              query: query,
+                              label:
+                                  secondaryCreateOptionLabelBuilder?.call(query) ??
+                                  'Create secondary "$query"',
+                              onCreateOption: onSecondaryCreateOption!,
+                              icon: Icons.add_task_rounded,
+                            );
+                          }
+                          if (showSecondaryCreateOption) currentCreateCount++;
+
+                          final optionIndex = index - createOptionsCount;
                           final option = options[optionIndex];
                           return _SearchableSelectOptionTile<T>(
                             option: option,
@@ -654,11 +695,13 @@ class _SearchableSelectCreateTile<T> extends StatefulWidget {
     required this.query,
     required this.label,
     required this.onCreateOption,
+    this.icon = Icons.add_circle_outline_rounded,
   });
 
   final String query;
   final String label;
   final SearchableSelectCreateOption<T> onCreateOption;
+  final IconData icon;
 
   @override
   State<_SearchableSelectCreateTile<T>> createState() =>
@@ -732,10 +775,10 @@ class _SearchableSelectCreateTileState<T>
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(
-                        Icons.add_circle_outline_rounded,
+                    : Icon(
+                        widget.icon,
                         size: 18,
-                        color: Color(0xFF7C6BFF),
+                        color: const Color(0xFF7C6BFF),
                       ),
                 const SizedBox(width: 10),
                 Expanded(

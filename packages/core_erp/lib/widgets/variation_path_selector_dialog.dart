@@ -27,11 +27,13 @@ class VariationPathSelectionResult {
     required this.rootPropertyId,
     required this.valueNodeIds,
     required this.leaf,
+    this.customVariationValues = const {},
   });
 
   final ItemDefinition item;
   final int? rootPropertyId;
   final List<int> valueNodeIds;
+  final Map<int, String> customVariationValues;
   final ItemVariationNodeDefinition? leaf;
 }
 
@@ -50,6 +52,7 @@ class VariationPathSelectorDialog extends StatefulWidget {
     required this.item,
     required this.initialRootPropertyId,
     required this.initialValueNodeIds,
+    this.initialCustomVariationValues = const {},
     this.onCreateValue,
     this.readOnly = false,
   });
@@ -57,6 +60,7 @@ class VariationPathSelectorDialog extends StatefulWidget {
   final ItemDefinition item;
   final int? initialRootPropertyId;
   final List<int> initialValueNodeIds;
+  final Map<int, String> initialCustomVariationValues;
   final VariationValueCreator? onCreateValue;
   final bool readOnly;
 
@@ -70,6 +74,7 @@ class _VariationPathSelectorDialogState
   late ItemDefinition _item;
   late int? _selectedRootPropertyId;
   late List<int> _selectedValueNodeIds;
+  final Map<int, String> _customVariationValues = {};
 
   @override
   void initState() {
@@ -77,6 +82,7 @@ class _VariationPathSelectorDialogState
     _item = widget.item;
     _selectedRootPropertyId = widget.initialRootPropertyId;
     _selectedValueNodeIds = List<int>.from(widget.initialValueNodeIds);
+    _customVariationValues.addAll(widget.initialCustomVariationValues);
     if (_selectedRootPropertyId == null &&
         _item.topLevelProperties.length == 1) {
       _selectedRootPropertyId = _item.topLevelProperties.first.id;
@@ -244,6 +250,35 @@ class _VariationPathSelectorDialogState
       createOptionLabelBuilder: widget.readOnly || widget.onCreateValue == null
           ? null
           : (query) => 'Create value "$query"',
+      onSecondaryCreateOption: widget.readOnly || widget.onCreateValue == null
+          ? null
+          : (query) async {
+              var valueName = query;
+              int? unitId;
+              if (step.property.isMeasurable) {
+                final measured = await _promptMeasurableValue(step, query);
+                if (!mounted || measured == null) {
+                  return null;
+                }
+                valueName = measured.name;
+                unitId = measured.unitId;
+              }
+              final tempId = -step.property.id;
+              setState(() {
+                _customVariationValues[step.property.id] = valueName;
+                _replaceSelectionUnderProperty(
+                  step.property,
+                  <int>[tempId],
+                );
+              });
+              return SearchableSelectOption<int>(
+                value: tempId,
+                label: valueName,
+              );
+            },
+      secondaryCreateOptionLabelBuilder: widget.readOnly || widget.onCreateValue == null
+          ? null
+          : (query) => query,
       onCreateOption: widget.readOnly || widget.onCreateValue == null
           ? null
           : (query) async {
@@ -289,16 +324,21 @@ class _VariationPathSelectorDialogState
                     : result.createdValueNode.name.trim(),
               );
             },
-      options: step.values
-          .map(
-            (value) => SearchableSelectOption<int>(
-              value: value.id,
-              label: value.name.trim().isEmpty
-                  ? value.displayName
-                  : value.name.trim(),
-            ),
-          )
-          .toList(growable: false),
+      options: [
+        ...step.values.map(
+          (value) => SearchableSelectOption<int>(
+            value: value.id,
+            label: value.name.trim().isEmpty
+                ? value.displayName
+                : value.name.trim(),
+          ),
+        ),
+        if (step.selectedValueId != null && step.selectedValueId! < 0 && step.selectedValueId == -step.property.id)
+          SearchableSelectOption<int>(
+            value: -step.property.id,
+            label: _customVariationValues[step.property.id] ?? 'Custom',
+          ),
+      ],
       onChanged: (value) {
         setState(() {
           _replaceSelectionUnderProperty(
@@ -408,13 +448,23 @@ class _VariationPathSelectorDialogState
       final selectedValue = values
           .where((node) => _selectedValueNodeIds.contains(node.id))
           .firstOrNull;
+      
+      final tempId = -currentProperty.id;
+      final hasTempSelection = _selectedValueNodeIds.contains(tempId);
+      final activeSelectedId = selectedValue?.id ?? (hasTempSelection ? tempId : null);
+
       steps.add(
         VariationStep(
           property: currentProperty,
           values: values,
-          selectedValueId: selectedValue?.id,
+          selectedValueId: activeSelectedId,
         ),
       );
+      
+      if (hasTempSelection && selectedValue == null) {
+        break; // A temporary custom value doesn't have child properties
+      }
+
       final nextProperty = selectedValue?.activeChildren
           .where((node) => node.kind == ItemVariationNodeKind.property)
           .firstOrNull;
@@ -438,10 +488,21 @@ class _VariationPathSelectorDialogState
             .where((node) => node.kind == ItemVariationNodeKind.value)
             .where((node) => _selectedValueNodeIds.contains(node.id))
             .firstOrNull;
-        if (currentValue == null) {
+        
+        final tempId = -currentProperty.id;
+        final hasTempSelection = _selectedValueNodeIds.contains(tempId);
+        
+        if (currentValue == null && !hasTempSelection) {
           return null;
         }
-        final nextProperty = currentValue.activeChildren
+
+        if (hasTempSelection && currentValue == null) {
+          // It's a leaf because a temporary value cannot have children properties
+          terminalValues.add(currentProperty);
+          break;
+        }
+
+        final nextProperty = currentValue!.activeChildren
             .where((node) => node.kind == ItemVariationNodeKind.property)
             .firstOrNull;
         if (nextProperty == null) {
@@ -512,6 +573,14 @@ class _VariationPathSelectorDialogState
           .where((value) => value.id == step.selectedValueId)
           .firstOrNull;
       if (selectedValue == null) {
+        final tempId = -step.property.id;
+        if (step.selectedValueId == tempId) {
+          final val = _customVariationValues[step.property.id] ?? 'Custom';
+          final propertyName = step.property.name.trim();
+          segments.add(
+            propertyName.isEmpty ? val : '$propertyName: $val',
+          );
+        }
         continue;
       }
       final propertyName = step.property.name.trim();
@@ -535,6 +604,7 @@ class _VariationPathSelectorDialogState
         item: _item,
         rootPropertyId: null,
         valueNodeIds: List<int>.from(_selectedValueNodeIds),
+        customVariationValues: Map.from(_customVariationValues),
         leaf: leaf,
       ),
     );

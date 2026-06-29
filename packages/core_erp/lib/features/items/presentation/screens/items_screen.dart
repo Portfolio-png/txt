@@ -3077,81 +3077,146 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
 
 /// Enhancement 3 — inline configurator under a property node: marks it
 /// measurable and picks the units allowed for its value leaves.
-class _MeasurablePropertyConfig extends StatelessWidget {
-  const _MeasurablePropertyConfig({required this.draft, this.onChanged});
+/// The "M" badge that toggles a property's measurable flag. Tap flips it on/off;
+/// hovering shows the current state. When on, the allowed-units picker is shown
+/// separately (beside the code field / in place of the "Item local" tag) via
+/// [_AllowedUnitsButton].
+class _MeasurableToggleBadge extends StatelessWidget {
+  const _MeasurableToggleBadge({required this.draft, this.onChanged});
 
   final _NodeDraft draft;
   final VoidCallback? onChanged;
 
   @override
   Widget build(BuildContext context) {
-    final units = context.watch<UnitsProvider>().activeUnits;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              height: 24,
-              width: 24,
-              child: Checkbox(
-                visualDensity: VisualDensity.compact,
-                value: draft.isMeasurable,
-                onChanged: (value) {
-                  draft.isMeasurable = value ?? false;
-                  if (!draft.isMeasurable) {
-                    draft.allowedUnitIds.clear();
-                  }
-                  onChanged?.call();
-                },
-              ),
+    final theme = Theme.of(context);
+    final isMeasurable = draft.isMeasurable;
+    final badgeColor = isMeasurable
+        ? theme.colorScheme.primary
+        : theme.disabledColor;
+
+    return Tooltip(
+      message: isMeasurable
+          ? 'Measurable (value = number + unit) · tap to disable'
+          : 'Mark measurable (value = number + unit)',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: () {
+          draft.isMeasurable = !draft.isMeasurable;
+          if (!draft.isMeasurable) {
+            draft.allowedUnitIds.clear();
+          }
+          onChanged?.call();
+        },
+        child: Container(
+          width: 24,
+          height: 24,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: isMeasurable
+                ? theme.colorScheme.primary.withValues(alpha: 0.12)
+                : Colors.transparent,
+            border: Border.all(color: badgeColor),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            'M',
+            style: TextStyle(
+              fontSize: 13,
+              height: 1,
+              fontWeight: FontWeight.w700,
+              color: badgeColor,
             ),
-            const SizedBox(width: 8),
-            Text(
-              'Measurable (value = number + unit)',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
+          ),
         ),
-        if (draft.isMeasurable)
-          Padding(
-            padding: const EdgeInsets.only(left: 32, top: 2, bottom: 2),
-            child: units.isEmpty
-                ? Text(
-                    'No units defined yet — create units first.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  )
-                : Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    children: [
-                      for (final unit in units)
-                        FilterChip(
-                          visualDensity: VisualDensity.compact,
-                          label: Text(
-                            unit.symbol.trim().isEmpty
-                                ? unit.name
-                                : '${unit.name} (${unit.symbol})',
-                          ),
-                          selected: draft.allowedUnitIds.contains(unit.id),
-                          onSelected: (selected) {
-                            if (selected) {
-                              if (!draft.allowedUnitIds.contains(unit.id)) {
-                                draft.allowedUnitIds.add(unit.id);
-                              }
-                            } else {
-                              draft.allowedUnitIds.remove(unit.id);
-                            }
-                            onChanged?.call();
-                          },
-                        ),
-                    ],
-                  ),
+      ),
+    );
+  }
+}
+
+/// Compact "units ▾" dropdown for a measurable property: summarises the allowed
+/// units and opens a [CheckedPopupMenuItem] checklist to toggle each. Empty
+/// selection means every unit is offered on the property's values.
+class _AllowedUnitsButton extends StatelessWidget {
+  const _AllowedUnitsButton({
+    required this.units,
+    required this.selectedUnitIds,
+    this.onChanged,
+  });
+
+  final List<UnitDefinition> units;
+  final List<int> selectedUnitIds;
+  final VoidCallback? onChanged;
+
+  String _shortLabel(UnitDefinition unit) =>
+      unit.symbol.trim().isEmpty ? unit.name : unit.symbol.trim();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    if (units.isEmpty) {
+      return Text(
+        'add units',
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.error,
+        ),
+      );
+    }
+    final selected = units
+        .where((unit) => selectedUnitIds.contains(unit.id))
+        .map(_shortLabel)
+        .toList(growable: false);
+    final label = selected.isEmpty ? 'All units' : selected.join(', ');
+    return PopupMenuButton<int>(
+      tooltip: 'Allowed units',
+      position: PopupMenuPosition.under,
+      padding: EdgeInsets.zero,
+      itemBuilder: (context) => [
+        for (final unit in units)
+          CheckedPopupMenuItem<int>(
+            value: unit.id,
+            checked: selectedUnitIds.contains(unit.id),
+            child: Text(
+              unit.symbol.trim().isEmpty
+                  ? unit.name
+                  : '${unit.name} (${unit.symbol.trim()})',
+            ),
           ),
       ],
+      onSelected: (unitId) {
+        if (selectedUnitIds.contains(unitId)) {
+          selectedUnitIds.remove(unitId);
+        } else {
+          selectedUnitIds.add(unitId);
+        }
+        onChanged?.call();
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primary.withValues(alpha: 0.06),
+          border: Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.4)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 150),
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+            ),
+            Icon(Icons.arrow_drop_down, size: 18, color: theme.colorScheme.primary),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -3205,9 +3270,52 @@ class _TreeNodeEditor extends StatelessWidget {
     final icon = isProperty ? Icons.tune : Icons.circle;
     final iconSize = isProperty ? 18.0 : 10.0;
     final branchColor = theme.dividerColor.withValues(alpha: 0.55);
+
+    // Property scope from the meta pills: item-local (manual) vs global
+    // (inherited from a group / seed). Drives the row background tint so the two
+    // are distinguishable at a glance.
+    final isItemLocalProperty =
+        isProperty &&
+        metaPills.any((pill) => pill.tone == _TreeMetaPillTone.manual);
+    final isGlobalProperty =
+        isProperty &&
+        metaPills.any(
+          (pill) =>
+              pill.tone == _TreeMetaPillTone.inherited ||
+              pill.tone == _TreeMetaPillTone.seeded,
+        );
+    // Item-local: light slate; global: light green (matches the pill tones).
+    final scopeColor = isItemLocalProperty
+        ? const Color(0xFFF4F6F9)
+        : isGlobalProperty
+        ? const Color(0xFFECFDF5)
+        : null;
     final rowHighlight = draft.detailsExpanded
         ? theme.colorScheme.primary.withValues(alpha: 0.08)
-        : Colors.transparent;
+        : (scopeColor ?? Colors.transparent);
+
+    // Measurable controls (behind the flag, properties only): the inline units
+    // dropdown shown when the property is measurable.
+    final measurableEnabled =
+        isProperty &&
+        !readOnly &&
+        FeatureFlags.isEnabled(FeatureKeys.catalogInventoryEnhancements);
+    final showUnitsDropdown = measurableEnabled && draft.isMeasurable;
+    _AllowedUnitsButton? buildUnitsButton() => showUnitsDropdown
+        ? _AllowedUnitsButton(
+            units: context.watch<UnitsProvider>().activeUnits,
+            selectedUnitIds: draft.allowedUnitIds,
+            onChanged: onMeasurableConfigChanged,
+          )
+        : null;
+    // While editing the name the dropdown sits beside the code field; in the
+    // collapsed summary it stands in for the "Item local" tag.
+    final codeUnitsButton = draft.isNameEditing ? buildUnitsButton() : null;
+    final summaryUnitsButton = draft.isNameEditing ? null : buildUnitsButton();
+    final visiblePills = showUnitsDropdown
+        ? metaPills.where((pill) => pill.label != 'Item local').toList()
+        : metaPills;
+
     final textColor = draft.nameController.text.trim().isEmpty
         ? theme.colorScheme.error
         : null;
@@ -3287,6 +3395,11 @@ class _TreeNodeEditor extends StatelessWidget {
                                 ),
                               ),
                             ),
+                            // Measurable: unit picker sits beside the code field.
+                            if (codeUnitsButton != null) ...[
+                              const SizedBox(width: 8),
+                              codeUnitsButton,
+                            ],
                           ],
                         ),
                       )
@@ -3315,7 +3428,7 @@ class _TreeNodeEditor extends StatelessWidget {
                           ),
                         ),
                       ),
-                    if (metaPills.isNotEmpty) ...[
+                    if (visiblePills.isNotEmpty || summaryUnitsButton != null) ...[
                       const SizedBox(width: 8),
                       Flexible(
                         child: Wrap(
@@ -3324,8 +3437,11 @@ class _TreeNodeEditor extends StatelessWidget {
                           alignment: WrapAlignment.end,
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            for (final pill in metaPills)
+                            for (final pill in visiblePills)
                               _TreeMetaPill(label: pill.label, tone: pill.tone),
+                            // Units dropdown stands in for the "Item local" tag
+                            // when the property is measurable.
+                            ?summaryUnitsButton,
                           ],
                         ),
                       ),
@@ -3375,22 +3491,21 @@ class _TreeNodeEditor extends StatelessWidget {
                           onPressed: onRemove,
                         ),
                     ],
+                    // Measurable toggle sits at the end of the property row,
+                    // beside the delete button, to keep the node compact.
+                    if (measurableEnabled) ...[
+                      const SizedBox(width: 8),
+                      _MeasurableToggleBadge(
+                        draft: draft,
+                        onChanged: onMeasurableConfigChanged,
+                      ),
+                    ],
                   ],
                 ),
               ),
             ),
           ),
         ),
-        if (isProperty &&
-            !readOnly &&
-            FeatureFlags.isEnabled(FeatureKeys.catalogInventoryEnhancements))
-          Padding(
-            padding: EdgeInsets.only(left: depth * 20.0 + 28, top: 2, bottom: 2),
-            child: _MeasurablePropertyConfig(
-              draft: draft,
-              onChanged: onMeasurableConfigChanged,
-            ),
-          ),
         if (hasChildren && draft.detailsExpanded)
           Padding(
             padding: EdgeInsets.only(left: depth * 20.0 + 10),

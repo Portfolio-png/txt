@@ -2751,6 +2751,9 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
         draft.selectedItemId = item.itemId;
         draft.selectedVariationValueNodeIds = item.variationPathNodeIds;
         draft.selectedVariationLeafId = item.variationLeafNodeId;
+        draft.customVariationValues = item.customVariationValues.map(
+          (k, v) => MapEntry(int.parse(k), v),
+        );
         draft.selectedUnitId = item.unitId;
         draft.quantityController.text = item.quantity.toString();
         draft.clientCodeController.text = item.clientCode;
@@ -4001,6 +4004,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
             item: item,
             initialRootPropertyId: line.selectedRootPropertyId,
             initialValueNodeIds: line.selectedVariationValueNodeIds,
+            initialCustomVariationValues: line.customVariationValues,
             onCreateValue:
                 ({
                   required item,
@@ -4031,6 +4035,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
         line,
         result.item,
         valueNodeIds: result.valueNodeIds,
+        customVariationValues: result.customVariationValues,
         leaf: result.leaf,
       );
     });
@@ -4317,6 +4322,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
               : _variationSelectionLabel(
                   item,
                   line.selectedVariationValueNodeIds,
+                  line.customVariationValues,
                 ),
           variationPathNodeIds: line.selectedVariationValueNodeIds.isEmpty
               ? const <int>[]
@@ -4324,6 +4330,8 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                   item,
                   line.selectedVariationValueNodeIds,
                 ),
+          customVariationValues: line.customVariationValues.map(
+              (k, v) => MapEntry(k.toString(), v)),
           quantity: int.tryParse(line.quantityController.text.trim()) ?? 1,
           unitId: selectedUnit.id,
           unitName: selectedUnit.name,
@@ -4362,6 +4370,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
             variationLeafNodeId: input.variationLeafNodeId,
             variationPathLabel: input.variationPathLabel,
             variationPathNodeIds: input.variationPathNodeIds,
+            customVariationValues: input.customVariationValues,
             quantity: input.quantity,
             unitId: input.unitId,
             unitName: input.unitName,
@@ -4723,6 +4732,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     _OrderLineDraft line,
     ItemDefinition? item, {
     List<int>? valueNodeIds,
+    Map<int, String>? customVariationValues,
     ItemVariationNodeDefinition? leaf,
   }) {
     if (item == null) {
@@ -4731,6 +4741,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       line.selectedVariationLeafId = null;
       line.selectedUnitId = null;
       line.variationPathError = null;
+      line.customVariationValues = const <int, String>{};
       return;
     }
     final activeUnits = context.read<UnitsProvider>().activeUnits;
@@ -4744,6 +4755,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     if (valueNodeIds != null) {
       final selectedValues = List<int>.from(valueNodeIds);
       line.selectedVariationValueNodeIds = selectedValues;
+      line.customVariationValues = customVariationValues ?? const <int, String>{};
       line.selectedVariationLeafId =
           leaf?.id ?? _selectedTerminalLeafForValues(item, selectedValues)?.id;
       line.variationPathError = null;
@@ -4761,6 +4773,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
 
     line.selectedRootPropertyId = null;
     line.selectedVariationValueNodeIds = nextValueNodeIds;
+    line.customVariationValues = const <int, String>{};
     line.selectedVariationLeafId = nextLeaf?.id;
     line.variationPathError = null;
     _tryAutoFillClientCode(line);
@@ -4906,13 +4919,13 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     return nodeIds;
   }
 
-  String _variationSelectionLabel(ItemDefinition item, List<int> valueNodeIds) {
-    return _buildNamingFormatLabel(item, valueNodeIds);
+  String _variationSelectionLabel(ItemDefinition item, List<int> valueNodeIds, [Map<int, String> customVariationValues = const {}]) {
+    return _buildNamingFormatLabel(item, valueNodeIds, customVariationValues);
   }
 
   /// Builds a display label using the item's naming format order.
   /// Format tokens: 'name' = item base name, 'prop_N' = Nth top-level property's selected value.
-  String _buildNamingFormatLabel(ItemDefinition item, List<int> valueNodeIds) {
+  String _buildNamingFormatLabel(ItemDefinition item, List<int> valueNodeIds, [Map<int, String> customVariationValues = const {}]) {
     final itemName = item.displayName.trim().isEmpty
         ? item.name
         : item.displayName;
@@ -4931,7 +4944,16 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
             .where((n) => n.kind == ItemVariationNodeKind.value)
             .where((n) => selectedValueIds.contains(n.id))
             .firstOrNull;
-        if (selectedValue == null) break;
+        if (selectedValue == null) {
+          final tempId = -currentProperty.id;
+          if (selectedValueIds.contains(tempId)) {
+            final valName = customVariationValues[currentProperty.id];
+            if (valName != null) {
+              propIdToValue[currentProperty.id] = valName;
+            }
+          }
+          break;
+        }
         final valName = selectedValue.name.trim().isEmpty
             ? selectedValue.displayName.trim()
             : selectedValue.name.trim();
@@ -6818,6 +6840,7 @@ class _OrderLineDraft {
   int? selectedRootPropertyId;
   List<int> selectedVariationValueNodeIds = const <int>[];
   int? selectedVariationLeafId;
+  Map<int, String> customVariationValues = const <int, String>{};
   int? selectedUnitId;
   DateTime? completionDate;
   String? completionDateError;
