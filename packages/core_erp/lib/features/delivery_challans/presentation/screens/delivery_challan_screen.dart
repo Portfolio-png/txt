@@ -27,7 +27,6 @@ import '../../../../widgets/variation_path_selector_dialog.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
 import '../../../inventory/presentation/providers/inventory_provider.dart';
 import '../../../items/domain/item_definition.dart';
-import '../../../items/presentation/widgets/item_finder_selector.dart';
 import '../../../units/domain/unit_inputs.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../../items/presentation/providers/items_provider.dart';
@@ -4268,7 +4267,6 @@ class _ItemsEditor extends StatelessWidget {
     List<ItemDefinition> availableItems,
   ) {
     final unitsProvider = context.watch<UnitsProvider>();
-    final groupsProvider = context.watch<GroupsProvider>();
     final selectedItem = availableItems
         .where((item) => item.id == draft.itemId)
         .firstOrNull;
@@ -4289,53 +4287,126 @@ class _ItemsEditor extends StatelessWidget {
               SizedBox(width: 28, child: Text('${index + 1}.')),
               Expanded(
                 flex: 6,
-                child: FormField<int>(
-                  key: ValueKey<String>('challan-reception-item-$index'),
-                  initialValue: draft.itemId,
-                  builder: (state) {
-                    final item = availableItems.where((candidate) => candidate.id == draft.itemId).firstOrNull;
-                    final fullVariationName = item != null ? (item.displayName.isNotEmpty ? item.displayName : item.name) : null;
-                    return InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: enabled
-                          ? () async {
-                              final itemId = await showDialog<int>(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SearchableSelectField<int>(
+                      key: ValueKey<String>('challan-reception-item-$index'),
+                      value: draft.itemId,
+                      fieldEnabled: enabled,
+                      decoration: InputDecoration(
+                        labelText: 'Item',
+                        isDense: true,
+                        filled: true,
+                        fillColor: Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: SoftErpTheme.border),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: SoftErpTheme.border),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: SoftErpTheme.accent, width: 1.5),
+                        ),
+                      ),
+                      dialogTitle: 'Select Item',
+                      searchHintText: 'Search items',
+                      options: availableItems.map((item) {
+                        final fullVariationName = item.displayName.isNotEmpty ? item.displayName : item.name;
+                        return SearchableSelectOption<int>(
+                          value: item.id,
+                          label: fullVariationName,
+                          searchText: fullVariationName,
+                        );
+                      }).toList(growable: false),
+                      onChanged: (value) async {
+                        final candidate = availableItems.where((c) => c.id == value).firstOrNull;
+                        draft.applyReceptionItem(candidate);
+                        onChanged();
+                        if (candidate != null && candidate.topLevelProperties.isNotEmpty && context.mounted) {
+                          final result = await showDialog<VariationPathSelectionResult>(
+                            context: context,
+                            builder: (ctx) => Dialog(
+                              backgroundColor: Colors.transparent,
+                              insetPadding: const EdgeInsets.all(16),
+                              child: VariationPathSelectorDialog(
+                                item: candidate,
+                                initialRootPropertyId: null,
+                                initialValueNodeIds: draft.variationPathNodeIds,
+                              ),
+                            ),
+                          );
+                          if (result != null && context.mounted) {
+                            draft.applyReceptionVariationSelection(
+                              result.item,
+                              result.valueNodeIds,
+                              result.leaf,
+                              _variationSelectionLabel(result.item, result.valueNodeIds),
+                            );
+                            onChanged();
+                          }
+                        }
+                      },
+                    ),
+                    if (selectedItem != null && selectedItem.topLevelProperties.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              draft.variationPathLabel.isEmpty ? 'Select properties' : draft.variationPathLabel,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: draft.variationPathLabel.isEmpty ? Colors.red.shade700 : SoftErpTheme.textSecondary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed: enabled ? () async {
+                              final result = await showDialog<VariationPathSelectionResult>(
                                 context: context,
-                                builder: (ctx) => const ItemFinderSelectorDialog(),
+                                builder: (ctx) => Dialog(
+                                  backgroundColor: Colors.transparent,
+                                  insetPadding: const EdgeInsets.all(16),
+                                  child: VariationPathSelectorDialog(
+                                    item: selectedItem,
+                                    initialRootPropertyId: null,
+                                    initialValueNodeIds: draft.variationPathNodeIds,
+                                  ),
+                                ),
                               );
-                              if (itemId != null) {
-                                final candidate = availableItems.where((c) => c.id == itemId).firstOrNull;
-                                draft.applyReceptionItem(candidate);
-                                state.didChange(itemId);
+                              if (result != null && context.mounted) {
+                                draft.applyReceptionVariationSelection(
+                                  result.item,
+                                  result.valueNodeIds,
+                                  result.leaf,
+                                  _variationSelectionLabel(result.item, result.valueNodeIds),
+                                );
                                 onChanged();
                               }
-                            }
-                          : null,
-                      child: InputDecorator(
-                        decoration: InputDecoration(
-                          labelText: 'Item',
-                          isDense: true,
-                          filled: true,
-                          fillColor: Colors.white,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          suffixIcon: const Icon(Icons.search, size: 20),
-                        ),
-                        isEmpty: fullVariationName == null,
-                        child: fullVariationName == null
-                            ? null
-                            : Text(
-                                fullVariationName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: SoftErpTheme.textPrimary,
-                                ),
+                            } : null,
+                            icon: const Icon(Icons.edit, size: 14),
+                            label: const Text('Apply path'),
+                            style: TextButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              minimumSize: const Size(0, 24),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              foregroundColor: SoftErpTheme.accentDark,
+                              textStyle: const TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
                               ),
+                            ),
+                          ),
+                        ],
                       ),
-                    );
-                  },
+                    ],
+                  ],
                 ),
               ),
               const SizedBox(width: 8),
@@ -4564,6 +4635,63 @@ class _ItemsEditor extends StatelessWidget {
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
+  }
+
+  String _variationSelectionLabel(ItemDefinition item, List<int> valueNodeIds) {
+    return _buildNamingFormatLabel(item, valueNodeIds);
+  }
+
+  String _buildNamingFormatLabel(ItemDefinition item, List<int> valueNodeIds) {
+    final itemName = item.displayName.trim().isEmpty ? item.name : item.displayName;
+    if (valueNodeIds.isEmpty) {
+      return itemName;
+    }
+    final selectedValueIds = valueNodeIds.toSet();
+    final propIdToValue = <int, String>{};
+    for (final root in item.topLevelProperties) {
+      ItemVariationNodeDefinition currentProperty = root;
+      while (true) {
+        final selectedValue = currentProperty.activeChildren
+            .where((n) => n.kind == ItemVariationNodeKind.value)
+            .where((n) => selectedValueIds.contains(n.id))
+            .firstOrNull;
+        if (selectedValue == null) break;
+        
+        final valName = selectedValue.name.trim().isEmpty
+            ? selectedValue.displayName.trim()
+            : selectedValue.name.trim();
+        propIdToValue[currentProperty.id] = valName;
+        
+        final nextProp = selectedValue.activeChildren
+            .where((n) => n.kind == ItemVariationNodeKind.property)
+            .firstOrNull;
+        if (nextProp == null) break;
+        currentProperty = nextProp;
+      }
+    }
+
+    final topProps = item.topLevelProperties;
+    final parts = <String>[];
+    if (item.namingFormat.isNotEmpty) {
+      for (final token in item.namingFormat) {
+        if (token == 'name') {
+          parts.add(itemName);
+        } else if (token.startsWith('prop_')) {
+          final idx = int.tryParse(token.substring(5));
+          if (idx != null && idx >= 0 && idx < topProps.length) {
+            final value = propIdToValue[topProps[idx].id];
+            if (value != null && value.isNotEmpty) {
+              parts.add(value);
+            }
+          }
+        }
+      }
+    }
+    if (parts.isEmpty) {
+      parts.add(itemName);
+      parts.addAll(propIdToValue.values.where((v) => v.isNotEmpty));
+    }
+    return parts.join(' ');
   }
 }
 
@@ -4875,6 +5003,7 @@ class _ItemDraft {
     hsnCode = '';
     variationLeafNodeId = 0;
     variationPathLabel = '';
+    variationPathNodeIds = const <int>[];
     productionRunLabel = '';
     particulars = item?.displayName ?? '';
     selectedUnitId = null;
@@ -4891,6 +5020,7 @@ class _ItemDraft {
     orderItemId = null;
     productionRunId = null;
     variationLeafNodeId = leaf?.id ?? 0;
+    variationPathNodeIds = valueNodeIds;
     variationPathLabel = label;
     productionRunLabel = '';
     particulars = label.trim().isEmpty
