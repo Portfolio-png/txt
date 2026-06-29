@@ -473,6 +473,24 @@ class _InventoryScreenState extends State<InventoryScreen> {
                             ? _InventoryCardGrid(
                                 rows: rows,
                                 onOpenDetails: _openDetails,
+                                onOpenChallans: (record) {
+                                  final canBrowseChallans =
+                                      record.linkedItemId != null &&
+                                      record.linkedItemId! > 0;
+                                  if (!canBrowseChallans) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content: Text(
+                                              'Challans require an assigned item.')),
+                                    );
+                                    return;
+                                  }
+                                  context.read<DeliveryChallanProvider>().applyInventoryFilter(
+                                    itemId: record.linkedItemId!,
+                                    label: record.name,
+                                  );
+                                  context.read<AppNavigation>().select('delivery_challans');
+                                },
                               )
                             : _InventoryTable(
                                 rows: rows,
@@ -485,6 +503,24 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                 pinnedBarcodes: _pinnedBarcodes,
                                 expandedParents: _expandedParents,
                                 isRequestDelete: isRequestDelete,
+                                onOpenChallans: (record) {
+                                  final canBrowseChallans =
+                                      record.linkedItemId != null &&
+                                      record.linkedItemId! > 0;
+                                  if (!canBrowseChallans) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content: Text(
+                                              'Challans require an assigned item.')),
+                                    );
+                                    return;
+                                  }
+                                  context.read<DeliveryChallanProvider>().applyInventoryFilter(
+                                    itemId: record.linkedItemId!,
+                                    label: record.name,
+                                  );
+                                  context.read<AppNavigation>().select('delivery_challans');
+                                },
                                 onToggleSelection: (barcode) {
                                   setState(() {
                                     if (_selectedBarcodes.contains(barcode)) {
@@ -3814,10 +3850,15 @@ class _InventoryActiveSetFilterBar extends StatelessWidget {
 
 /// Card/grid layout for the items view — a lighter alternative to the table.
 class _InventoryCardGrid extends StatelessWidget {
-  const _InventoryCardGrid({required this.rows, required this.onOpenDetails});
+  const _InventoryCardGrid({
+    required this.rows,
+    required this.onOpenDetails,
+    required this.onOpenChallans,
+  });
 
   final List<_InventoryRowEntry> rows;
   final ValueChanged<MaterialRecord> onOpenDetails;
+  final ValueChanged<MaterialRecord> onOpenChallans;
 
   @override
   Widget build(BuildContext context) {
@@ -3842,7 +3883,8 @@ class _InventoryCardGrid extends StatelessWidget {
         final entry = rows[index];
         return _InventoryItemCard(
           entry: entry,
-          onTap: () => onOpenDetails(entry.record),
+          onTap: () => onOpenChallans(entry.record),
+          onDetailsTap: () => onOpenDetails(entry.record),
         );
       },
     );
@@ -3850,10 +3892,15 @@ class _InventoryCardGrid extends StatelessWidget {
 }
 
 class _InventoryItemCard extends StatefulWidget {
-  const _InventoryItemCard({required this.entry, required this.onTap});
+  const _InventoryItemCard({
+    required this.entry,
+    required this.onTap,
+    required this.onDetailsTap,
+  });
 
   final _InventoryRowEntry entry;
   final VoidCallback onTap;
+  final VoidCallback onDetailsTap;
 
   @override
   State<_InventoryItemCard> createState() => _InventoryItemCardState();
@@ -3997,6 +4044,22 @@ class _InventoryItemCardState extends State<_InventoryItemCard> {
                               color: scheme.text,
                               fontSize: 10.5,
                               fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: widget.onDetailsTap,
+                            borderRadius: BorderRadius.circular(20),
+                            child: const Padding(
+                              padding: EdgeInsets.all(4.0),
+                              child: Icon(
+                                Icons.more_vert_rounded,
+                                size: 18,
+                                color: SoftErpTheme.textSecondary,
+                              ),
                             ),
                           ),
                         ),
@@ -4196,6 +4259,7 @@ class _InventoryTable extends StatefulWidget {
     required this.onTogglePinned,
     required this.onHeaderSortRequested,
     required this.onOpenDetails,
+    required this.onOpenChallans,
     required this.onOpenGroupItems,
     required this.onOpenSetItems,
     required this.onReceive,
@@ -4224,6 +4288,7 @@ class _InventoryTable extends StatefulWidget {
   final ValueChanged<String> onTogglePinned;
   final void Function(_InventorySortColumn?, bool) onHeaderSortRequested;
   final ValueChanged<MaterialRecord> onOpenDetails;
+  final ValueChanged<MaterialRecord> onOpenChallans;
   final ValueChanged<MaterialRecord> onOpenGroupItems;
   final ValueChanged<InventorySetDefinition> onOpenSetItems;
   final ValueChanged<MaterialRecord> onReceive;
@@ -4345,8 +4410,9 @@ class _InventoryTableState extends State<_InventoryTable> {
                                   ? () =>
                                         widget.onToggleExpanded(record.barcode)
                                   : () {})
-                            : () => widget.onOpenDetails(record);
+                            : () => widget.onOpenChallans(record);
                         return _InventoryMainDataRow(
+                          onOpenDetails: () => widget.onOpenDetails(record),
                           record: record,
                           entry: entry,
                           viewMode: widget.viewMode,
@@ -4680,6 +4746,7 @@ class _InventoryMainDataRow extends StatefulWidget {
     required this.onLinkGroup,
     required this.onLinkItem,
     required this.onUnlink,
+    required this.onOpenDetails,
     this.onExpandToggle,
   });
 
@@ -4702,6 +4769,7 @@ class _InventoryMainDataRow extends StatefulWidget {
   final VoidCallback onLinkGroup;
   final VoidCallback onLinkItem;
   final VoidCallback onUnlink;
+  final VoidCallback onOpenDetails;
   final VoidCallback? onExpandToggle;
 
   @override
@@ -4845,6 +4913,7 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
                         onLinkGroup: widget.onLinkGroup,
                         onLinkItem: widget.onLinkItem,
                         onUnlink: widget.onUnlink,
+                        onOpenDetails: widget.onOpenDetails,
                       ),
                     ),
                   ],
@@ -4915,6 +4984,7 @@ class _InventoryActionsCell extends StatelessWidget {
     required this.onLinkGroup,
     required this.onLinkItem,
     required this.onUnlink,
+    required this.onOpenDetails,
   });
 
   final MaterialRecord record;
@@ -4932,6 +5002,7 @@ class _InventoryActionsCell extends StatelessWidget {
   final VoidCallback onLinkGroup;
   final VoidCallback onLinkItem;
   final VoidCallback onUnlink;
+  final VoidCallback onOpenDetails;
 
   @override
   Widget build(BuildContext context) {
@@ -4955,6 +5026,7 @@ class _InventoryActionsCell extends StatelessWidget {
           onAddSubGroup: onAddSubGroup,
           onEdit: onEdit,
           onDelete: onDelete,
+          onOpenDetails: onOpenDetails,
         ),
       ),
     );
@@ -6680,6 +6752,7 @@ class _InventoryActionsOverlayAnchor extends StatefulWidget {
     required this.onAddSubGroup,
     required this.onEdit,
     required this.onDelete,
+    required this.onOpenDetails,
   });
 
   final Key? triggerKey;
@@ -6690,6 +6763,7 @@ class _InventoryActionsOverlayAnchor extends StatefulWidget {
   final VoidCallback onAddSubGroup;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final VoidCallback onOpenDetails;
 
   @override
   State<_InventoryActionsOverlayAnchor> createState() =>
@@ -6779,6 +6853,14 @@ class _InventoryActionsOverlayAnchorState
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            _InventoryActionMenuButton(
+                              icon: Icons.info_outline_rounded,
+                              label: 'Open Details',
+                              onPressed: () {
+                                _removeOverlay();
+                                widget.onOpenDetails();
+                              },
+                            ),
                             if (widget.canAddSubGroup)
                               _InventoryActionMenuButton(
                                 icon: Icons.add_rounded,
