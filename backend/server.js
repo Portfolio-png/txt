@@ -3348,6 +3348,7 @@ async function initDb() {
       line_no INTEGER NOT NULL DEFAULT 1,
       particulars TEXT NOT NULL DEFAULT '',
       hsn_code TEXT DEFAULT '',
+      custom_variation_values_json TEXT DEFAULT '{}',
       quantity_pcs TEXT DEFAULT '',
       weight TEXT DEFAULT '',
       created_at TEXT NOT NULL,
@@ -3410,6 +3411,7 @@ async function initDb() {
   await ensureColumnExists('delivery_challan_items', 'production_run_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'variation_leaf_node_id', 'INTEGER NOT NULL DEFAULT 0');
   await ensureColumnExists('delivery_challan_items', 'note', "TEXT DEFAULT ''");
+  await ensureColumnExists('delivery_challan_items', 'custom_variation_values_json', "TEXT DEFAULT '{}'");
   await run(`
     CREATE TABLE IF NOT EXISTS delivery_challan_order_items (
       challan_id INTEGER NOT NULL REFERENCES delivery_challans(id) ON DELETE CASCADE,
@@ -5166,6 +5168,7 @@ async function ensureDeliveryChallanItemNumericColumns() {
   const hasProductionRunId = columns.some((column) => column.name === 'production_run_id');
   const hasVariationLeafNodeId = columns.some((column) => column.name === 'variation_leaf_node_id');
   const hasNote = columns.some((column) => column.name === 'note');
+  const hasCustomVariationValuesJson = columns.some((column) => column.name === 'custom_variation_values_json');
   const normalizedType = (column) => String(column?.type || '').trim().toUpperCase();
   if (normalizedType(quantityColumn) === 'REAL' && normalizedType(weightColumn) === 'REAL') {
     return;
@@ -5187,6 +5190,7 @@ async function ensureDeliveryChallanItemNumericColumns() {
         particulars TEXT NOT NULL DEFAULT '',
         hsn_code TEXT DEFAULT '',
         note TEXT DEFAULT '',
+        custom_variation_values_json TEXT DEFAULT '{}',
         quantity_pcs REAL NOT NULL DEFAULT 0,
         weight REAL NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
@@ -5196,7 +5200,7 @@ async function ensureDeliveryChallanItemNumericColumns() {
     await run(`
       INSERT INTO delivery_challan_items (
         id, challan_id, order_item_id, production_run_id, item_id, variation_leaf_node_id, line_no, particulars, hsn_code,
-        note, quantity_pcs, weight, created_at, updated_at
+        note, custom_variation_values_json, quantity_pcs, weight, created_at, updated_at
       )
       SELECT
         id,
@@ -5209,6 +5213,7 @@ async function ensureDeliveryChallanItemNumericColumns() {
         particulars,
         hsn_code,
         ${hasNote ? 'note' : "''"},
+        ${hasCustomVariationValuesJson ? 'custom_variation_values_json' : "'{}'"},
         CASE
           WHEN TRIM(COALESCE(quantity_pcs, '')) = '' THEN 0
           ELSE CAST(quantity_pcs AS REAL)
