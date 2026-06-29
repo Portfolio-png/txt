@@ -47,6 +47,12 @@ class FeatureKeys {
   /// OFF by default so every client keeps the current behaviour until enabled.
   @FeatureFlag(category: 'Catalog & Inventory', displayName: 'Catalog & Inventory Enhancements', desc: 'Group-scoped item picker, combination groups, measurable units, inventory audit trail')
   static const String catalogInventoryEnhancements = 'enhancements.catalogInventory';
+
+  /// When ON, the Challans screen shows a type selector (All / Reception /
+  /// Delivery) and picking a single type collapses the split Reception|Delivery
+  /// view to that one type, full-width. OFF keeps the side-by-side layout.
+  @FeatureFlag(category: 'Challans Screen', displayName: 'Single-type Challan View', desc: 'Show one challan type full-width instead of the split Reception/Delivery view')
+  static const String challansSingleTypeView = 'challans.singleTypeView';
 }
 
 class FeatureFlags {

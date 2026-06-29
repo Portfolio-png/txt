@@ -45,4 +45,8 @@ const Map<String, dynamic> devConfig = {
   'enhancements': {
     'catalogInventory': true,
   },
+  'challans': {
+    // Single-type Challan view: type selector + collapse split to one column.
+    'singleTypeView': true,
+  },
 };

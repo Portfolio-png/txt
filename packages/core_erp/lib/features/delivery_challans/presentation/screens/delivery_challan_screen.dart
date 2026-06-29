@@ -40,6 +40,7 @@ import '../../domain/challan_template.dart';
 import '../../domain/delivery_challan.dart';
 import '../providers/challan_editor_command_provider.dart';
 import '../providers/delivery_challan_provider.dart';
+import '../widgets/challan_excel_view.dart';
 import 'challan_template_mapping_screen.dart';
 
 const MethodChannel _nativePrintingChannel = MethodChannel(
@@ -185,6 +186,12 @@ class _ChallanScreenState extends State<ChallanScreen> {
     // Internal challans (Enhancement) are not scoped to report groups.
     final enhancementsEnabled =
         FeatureFlags.isEnabled(FeatureKeys.catalogInventoryEnhancements);
+    final unifiedView =
+        FeatureFlags.isEnabled(FeatureKeys.challansSingleTypeView);
+    // Unified view: when a single type is picked, collapse the split
+    // Reception|Delivery layout to just that type's column (full-width).
+    final soloType =
+        (unifiedView && provider.typeFilter != null) ? provider.typeFilter : null;
     final internalChallans = provider.challans
         .where((challan) => challan.isInternal)
         .toList(growable: false);
@@ -238,7 +245,8 @@ class _ChallanScreenState extends State<ChallanScreen> {
               onClearItemFilter: () => provider.setItemFilter(null),
               typeFilter: provider.typeFilter,
               onTypeChanged: provider.setTypeFilter,
-              showTypeSelector: enhancementsEnabled,
+              showTypeSelector: enhancementsEnabled || unifiedView,
+              includeInternalType: enhancementsEnabled,
               reportGroups: reportGroups,
               selectedReportGroupCode: activeReportGroupCode,
               selectedDeliveryCount: _selectedDeliveryChallanNos.length,
@@ -256,6 +264,7 @@ class _ChallanScreenState extends State<ChallanScreen> {
                     )
                   : _ChallanWorkspace(
                       activeReportGroupCode: activeReportGroupCode,
+                      soloType: soloType,
                       deliveryChallans: deliveryChallans,
                       receptionChallans: receptionChallans,
                       internalChallans: internalChallans,
@@ -746,6 +755,7 @@ class _Filters extends StatelessWidget {
     required this.typeFilter,
     required this.onTypeChanged,
     required this.showTypeSelector,
+    this.includeInternalType = false,
     required this.reportGroups,
     required this.selectedReportGroupCode,
     required this.selectedDeliveryCount,
@@ -768,6 +778,10 @@ class _Filters extends StatelessWidget {
   final ChallanType? typeFilter;
   final ValueChanged<ChallanType?> onTypeChanged;
   final bool showTypeSelector;
+
+  /// Whether to include the "Internal" segment in the type selector. Internal
+  /// challans are an enhancement, so this is off unless that bundle is enabled.
+  final bool includeInternalType;
   final List<String> reportGroups;
   final String? selectedReportGroupCode;
   final int selectedDeliveryCount;
@@ -863,11 +877,21 @@ class _Filters extends StatelessWidget {
     // Type selector (All / Reception / Delivery / Internal). Drives the
     // server-side type filter so the user can see how the list is scoped.
     final typeSelector = SegmentedButton<ChallanType?>(
-      segments: const [
-        ButtonSegment(value: null, label: Text('All')),
-        ButtonSegment(value: ChallanType.reception, label: Text('Reception')),
-        ButtonSegment(value: ChallanType.delivery, label: Text('Delivery')),
-        ButtonSegment(value: ChallanType.internal, label: Text('Internal')),
+      segments: [
+        const ButtonSegment(value: null, label: Text('All')),
+        const ButtonSegment(
+          value: ChallanType.reception,
+          label: Text('Reception'),
+        ),
+        const ButtonSegment(
+          value: ChallanType.delivery,
+          label: Text('Delivery'),
+        ),
+        if (includeInternalType)
+          const ButtonSegment(
+            value: ChallanType.internal,
+            label: Text('Internal'),
+          ),
       ],
       selected: {typeFilter},
       onSelectionChanged: (value) => onTypeChanged(value.first),
@@ -923,6 +947,7 @@ class _Filters extends StatelessWidget {
 class _ChallanWorkspace extends StatelessWidget {
   const _ChallanWorkspace({
     required this.activeReportGroupCode,
+    this.soloType,
     required this.deliveryChallans,
     required this.receptionChallans,
     this.internalChallans = const <DeliveryChallan>[],
@@ -942,6 +967,10 @@ class _ChallanWorkspace extends StatelessWidget {
   });
 
   final String? activeReportGroupCode;
+
+  /// When non-null, the split Reception|Delivery layout collapses to a single
+  /// full-width column for this type (unified single-type view).
+  final ChallanType? soloType;
   final List<DeliveryChallan> deliveryChallans;
   final List<DeliveryChallan> receptionChallans;
 
@@ -972,67 +1001,25 @@ class _ChallanWorkspace extends StatelessWidget {
           child: SoftSurface(
             clipContent: true,
             padding: EdgeInsets.zero,
-            child: Row(
-              children: [
-                Expanded(
-                  child: _ChallanColumn(
-                    title: 'Reception',
-                    subtitle: 'Material received and linked manually',
-                    challans: receptionChallans,
-                    activeReportGroupCode: activeReportGroupCode,
-                    selectedChallanNos: selectedReceptionChallanNos,
-                    focusedChallanId: focusedChallan?.id,
-                    onFocus: onFocus,
-                    onToggle: onToggleReception,
-                    onOpen: onOpen,
-                    onPrint: onPrint,
-                    onDuplicate: onDuplicate,
-                    onCancel: onCancel,
-                    onDelete: onDelete,
+            child: soloType != null
+                ? _column(context, soloType!)
+                : Row(
+                    children: [
+                      Expanded(child: _column(context, ChallanType.reception)),
+                      const VerticalDivider(
+                        width: 1,
+                        color: SoftErpTheme.border,
+                      ),
+                      Expanded(child: _column(context, ChallanType.delivery)),
+                      if (showInternalColumn) ...[
+                        const VerticalDivider(
+                          width: 1,
+                          color: SoftErpTheme.border,
+                        ),
+                        Expanded(child: _column(context, ChallanType.internal)),
+                      ],
+                    ],
                   ),
-                ),
-                const VerticalDivider(width: 1, color: SoftErpTheme.border),
-                Expanded(
-                  child: _ChallanColumn(
-                    title: 'Delivery',
-                    subtitle: 'Output challans in this report group',
-                    challans: deliveryChallans,
-                    activeReportGroupCode: activeReportGroupCode,
-                    selectedChallanNos: selectedDeliveryChallanNos,
-                    focusedChallanId: focusedChallan?.id,
-                    onFocus: onFocus,
-                    onToggle: onToggleDelivery,
-                    onOpen: onOpen,
-                    onPrint: onPrint,
-                    onDuplicate: onDuplicate,
-                    onCancel: onCancel,
-                    onDelete: onDelete,
-                  ),
-                ),
-                if (showInternalColumn) ...[
-                  const VerticalDivider(width: 1, color: SoftErpTheme.border),
-                  Expanded(
-                    child: _ChallanColumn(
-                      title: 'Internal',
-                      subtitle: 'Movements within the company',
-                      challans: internalChallans,
-                      activeReportGroupCode: activeReportGroupCode,
-                      // Internal challans are not part of report-group
-                      // generation, so they have no selection state.
-                      selectedChallanNos: const <String>{},
-                      focusedChallanId: focusedChallan?.id,
-                      onFocus: onFocus,
-                      onToggle: (_, _) {},
-                      onOpen: onOpen,
-                      onPrint: onPrint,
-                      onDuplicate: onDuplicate,
-                      onCancel: onCancel,
-                      onDelete: onDelete,
-                    ),
-                  ),
-                ],
-              ],
-            ),
           ),
         ),
         AnimatedContainer(
@@ -1056,6 +1043,75 @@ class _ChallanWorkspace extends StatelessWidget {
       ],
     );
   }
+
+  /// Builds the column for a single challan type. Used both by the split layout
+  /// and the unified single-type ([soloType]) layout.
+  Widget _column(BuildContext context, ChallanType type) {
+    switch (type) {
+      case ChallanType.reception:
+        return _ChallanColumn(
+          title: 'Reception',
+          subtitle: 'Material received and linked manually',
+          challans: receptionChallans,
+          activeReportGroupCode: activeReportGroupCode,
+          selectedChallanNos: selectedReceptionChallanNos,
+          focusedChallanId: focusedChallan?.id,
+          onFocus: onFocus,
+          onToggle: onToggleReception,
+          onOpen: onOpen,
+          onPrint: onPrint,
+          onDuplicate: onDuplicate,
+          onCancel: onCancel,
+          onDelete: onDelete,
+          onOpenExcelView: () => _openExcelView(context, type, receptionChallans),
+        );
+      case ChallanType.delivery:
+        return _ChallanColumn(
+          title: 'Delivery',
+          subtitle: 'Output challans in this report group',
+          challans: deliveryChallans,
+          activeReportGroupCode: activeReportGroupCode,
+          selectedChallanNos: selectedDeliveryChallanNos,
+          focusedChallanId: focusedChallan?.id,
+          onFocus: onFocus,
+          onToggle: onToggleDelivery,
+          onOpen: onOpen,
+          onPrint: onPrint,
+          onDuplicate: onDuplicate,
+          onCancel: onCancel,
+          onDelete: onDelete,
+          onOpenExcelView: () => _openExcelView(context, type, deliveryChallans),
+        );
+      case ChallanType.internal:
+        return _ChallanColumn(
+          title: 'Internal',
+          subtitle: 'Movements within the company',
+          challans: internalChallans,
+          activeReportGroupCode: activeReportGroupCode,
+          // Internal challans are not part of report-group generation, so they
+          // have no selection state.
+          selectedChallanNos: const <String>{},
+          focusedChallanId: focusedChallan?.id,
+          onFocus: onFocus,
+          onToggle: (_, _) {},
+          onOpen: onOpen,
+          onPrint: onPrint,
+          onDuplicate: onDuplicate,
+          onCancel: onCancel,
+          onDelete: onDelete,
+          onOpenExcelView: () => _openExcelView(context, type, internalChallans),
+        );
+    }
+  }
+
+  void _openExcelView(BuildContext context, ChallanType type, List<DeliveryChallan> challans) {
+    final title = switch (type) {
+      ChallanType.reception => 'Reception Challans',
+      ChallanType.delivery => 'Delivery Challans',
+      ChallanType.internal => 'Internal Challans',
+    };
+    ChallanExcelView.show(context, challans: challans, title: title);
+  }
 }
 
 class _ChallanColumn extends StatelessWidget {
@@ -1073,6 +1129,7 @@ class _ChallanColumn extends StatelessWidget {
     required this.onDuplicate,
     required this.onCancel,
     required this.onDelete,
+    this.onOpenExcelView,
   });
 
   final String title;
@@ -1088,6 +1145,7 @@ class _ChallanColumn extends StatelessWidget {
   final ValueChanged<DeliveryChallan> onDuplicate;
   final ValueChanged<DeliveryChallan> onCancel;
   final ValueChanged<DeliveryChallan> onDelete;
+  final VoidCallback? onOpenExcelView;
 
   @override
   Widget build(BuildContext context) {
@@ -1123,6 +1181,16 @@ class _ChallanColumn extends StatelessWidget {
                 background: SoftErpTheme.cardSurfaceAlt,
                 foreground: SoftErpTheme.textPrimary,
               ),
+              if (onOpenExcelView != null) ...[
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.north_east_rounded),
+                  tooltip: 'View in Excel style',
+                  onPressed: onOpenExcelView,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
             ],
           ),
         ),

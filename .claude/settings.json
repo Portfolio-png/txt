@@ -38,7 +38,9 @@
       "PowerShell($f = \"$env:TEMP\\\\orders_old.dart\"; Get-Content $f | Select-Object -Skip 3127 -First 100)",
       "Bash(curl -s -o /dev/null -w \"status=%{http_code}\\\\n\" http://localhost:18080/api/inventory/6/movements)",
       "Bash(curl -s http://localhost:18080/api/inventory/6/movements)",
-      "PowerShell(flutter test test/features/production/pipeline_stage_numbering_test.dart)"
+      "PowerShell(flutter test test/features/production/pipeline_stage_numbering_test.dart)",
+      "PowerShell(dart run bin/generate_registry.dart)",
+      "PowerShell(flutter analyze packages/core_erp/lib/features/delivery_challans/presentation/screens/delivery_challan_screen.dart packages/core_erp/lib/core/services/feature_flags.dart 2>&1)"
     ]
   }
 }

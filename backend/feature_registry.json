@@ -64,5 +64,11 @@
     "displayName": "Catalog & Inventory Enhancements",
     "category": "Catalog & Inventory",
     "description": "Group-scoped item picker, combination groups, measurable units, inventory audit trail"
+  },
+  {
+    "key": "challans.singleTypeView",
+    "displayName": "Single-type Challan View",
+    "category": "Challans Screen",
+    "description": "Show one challan type full-width instead of the split Reception/Delivery view"
   }
 ]
