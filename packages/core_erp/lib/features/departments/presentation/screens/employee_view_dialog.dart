@@ -5,6 +5,7 @@ import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/soft_primitives.dart';
 import '../../domain/employee_definition.dart';
+import '../../../payroll/salary_structure_designer.dart';
 import 'employee_editor_dialog.dart';
 
 class EmployeeViewDialog extends StatelessWidget {
@@ -139,6 +140,22 @@ class EmployeeViewDialog extends StatelessWidget {
                 : SoftErpTheme.border,
           ),
           const SizedBox(width: 16),
+          if (employee.employmentType == 'in-house') ...[
+            AppButton(
+              label: 'Salary',
+              icon: Icons.payments_outlined,
+              variant: AppButtonVariant.primary,
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => SalaryStructureDesigner(employeeId: employee.id),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(width: 8),
+          ],
           AppButton(
             label: 'Edit',
             icon: Icons.edit_outlined,
