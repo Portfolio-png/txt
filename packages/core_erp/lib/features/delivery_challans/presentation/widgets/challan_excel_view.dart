@@ -165,17 +165,10 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
             DataColumn(label: Text('Date')),
             DataColumn(label: Text('Challan No')),
             DataColumn(label: Text('Party Name')),
-            DataColumn(label: Text('Party GSTIN')),
-            DataColumn(label: Text('Order/Ref')),
-            DataColumn(label: Text('Status')),
             DataColumn(label: Text('Item Particulars')),
-            DataColumn(label: Text('Variation')),
-            DataColumn(label: Text('HSN Code')),
             DataColumn(label: Text('Qty')),
             DataColumn(label: Text('Weight')),
-            DataColumn(label: Text('Location')),
             DataColumn(label: Text('Purpose')),
-            DataColumn(label: Text('Notes')),
           ],
           rows: rows.map((row) {
             final date = row.challan.date;
@@ -193,29 +186,10 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
                             : 'Internal'),
                   ),
                 ),
-                DataCell(
-                  Text(
-                    row.challan.isDelivery
-                        ? row.challan.customerGstin
-                        : row.challan.vendorGstin,
-                  ),
-                ),
-                DataCell(
-                  Text(
-                    row.challan.isDelivery
-                        ? row.challan.orderNo
-                        : row.challan.sourceReference,
-                  ),
-                ),
-                DataCell(Text(row.challan.status.name.toUpperCase())),
                 DataCell(Text(row.item?.particulars ?? '-')),
-                DataCell(Text(row.item?.variationPathLabel ?? '-')),
-                DataCell(Text(row.item?.hsnCode ?? '-')),
                 DataCell(Text(row.item?.quantityPcs ?? '-')),
                 DataCell(Text(row.item?.weight ?? '-')),
-                DataCell(Text(row.challan.location)),
                 DataCell(Text(row.challan.purpose.name)),
-                DataCell(Text(row.challan.notes)),
               ],
             );
           }).toList(),

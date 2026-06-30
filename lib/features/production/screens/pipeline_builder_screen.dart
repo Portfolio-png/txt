@@ -114,9 +114,11 @@ class _PipelineBuilderScreenState extends State<PipelineBuilderScreen> {
     final repo = context.read<PipelineRunRepository>();
     try {
       if (provider.template.status == PipelineTemplateStatus.draft) {
-        await repo.createTemplate(provider.template);
+        final saved = await repo.createTemplate(provider.template);
+        if (context.mounted) provider.loadTemplate(saved);
       } else {
-        await repo.updateTemplate(provider.template);
+        final saved = await repo.updateTemplate(provider.template);
+        if (context.mounted) provider.loadTemplate(saved);
       }
       if (context.mounted) {
         final isNew =

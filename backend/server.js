@@ -9822,12 +9822,56 @@ async function deleteDraftDeliveryChallan(id, actor = null) {
     error.statusCode = 400;
     throw error;
   }
-  await run('UPDATE invoice_lines SET challan_id = NULL, challan_item_id = NULL WHERE challan_id = ?', [id]);
-  await run('UPDATE reconciliation_waste_audit SET challan_id = NULL WHERE challan_id = ?', [id]);
+  await run('BEGIN TRANSACTION');
+  try {
+    // Issued challans moved stock (reception = receive, delivery = issue); reverse
+    // it before deleting so on_hand_qty stays correct, same as cancellation does.
+    if (existing.status === 'issued') {
+      const movementRows = await all(
+        `
+        SELECT *
+        FROM inventory_movements
+        WHERE source_challan_id = ? AND source_challan_type = ?
+        ORDER BY created_at ASC, id ASC
+        `,
+        [existing.id, normalizeChallanType(existing.type)],
+      );
+      for (const movement of movementRows) {
+        const reverseType = movement.movement_type === 'receive' ? 'issue' : 'receive';
+        await applyInventoryMovementCore(
+          {
+            barcode: movement.material_barcode,
+            movementType: reverseType,
+            qty: Number(movement.qty || 0),
+            primaryQty: Number(movement.primary_qty || movement.qty || 0),
+            uom: String(movement.uom || '').trim() || 'units',
+            toLocationId: movement.to_location_id || existing.location || 'MAIN',
+            fromLocationId: movement.from_location_id || null,
+            reasonCode: 'challan_delete_reversal',
+            referenceType: 'challan-deletion',
+            referenceId: String(existing.id),
+            sourceChallanId: existing.id,
+            sourceChallanType: normalizeChallanType(existing.type),
+            sourceChallanLineId: movement.source_challan_line_id || null,
+            reversesMovementId: movement.id,
+            actor,
+            lotCode: movement.lot_code || movement.material_barcode,
+          },
+          { useTransaction: false },
+        );
+      }
+    }
+    await run('UPDATE invoice_lines SET challan_id = NULL, challan_item_id = NULL WHERE challan_id = ?', [id]);
+    await run('UPDATE reconciliation_waste_audit SET challan_id = NULL WHERE challan_id = ?', [id]);
+    await run('DELETE FROM delivery_challans WHERE id = ?', [id]);
+    await run('COMMIT');
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  }
   await logDeliveryChallanActivity(id, 'challan_deleted', actor, {
     challanNo: existing.challan_no,
   });
-  await run('DELETE FROM delivery_challans WHERE id = ?', [id]);
 }
 
 function rowToInvoiceLineDto(row) {
@@ -18728,11 +18772,18 @@ app.post('/api/reports/client-statement', requirePermission('config.read'), asyn
 
 app.get('/api/production/pipeline-templates', requirePermission('config.read'), async (req, res) => {
   try {
-    const factoryId = req.query.factoryId || '';
-    const rows = await all(
-      'SELECT * FROM pipeline_templates WHERE factory_id = ? OR factory_id = "" ORDER BY created_at DESC',
-      [factoryId]
-    );
+    const factoryId = req.query.factoryId;
+    let rows;
+    if (factoryId) {
+      rows = await all(
+        'SELECT * FROM pipeline_templates WHERE factory_id = ? OR factory_id = "" ORDER BY created_at DESC',
+        [factoryId]
+      );
+    } else {
+      rows = await all(
+        'SELECT * FROM pipeline_templates ORDER BY created_at DESC'
+      );
+    }
     res.json({ success: true, templates: rows.map(rowToTemplate), error: null });
   } catch (error) {
     res.status(500).json({ success: false, templates: [], error: error.message });

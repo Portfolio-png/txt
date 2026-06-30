@@ -545,13 +545,14 @@ class _PaperShortcutManagerState extends State<PaperShortcutManager> {
   }
 }
 
-Future<void> _handleCreatePipeline(BuildContext context) async {
+Future<String?> _handleCreatePipeline(BuildContext context) async {
   final template = await PipelinesScreen.openCreateDialog(context);
   if (template != null && context.mounted) {
-    Navigator.of(context).push(
+    final provider = PipelineEditorProvider(template: template);
+    await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (builderContext) => ChangeNotifierProvider(
-          create: (_) => PipelineEditorProvider(template: template),
+        builder: (builderContext) => ChangeNotifierProvider.value(
+          value: provider,
           child: PipelineBuilderScreen(
             factoryId: defaultProductionFactoryId,
             shopFloorId: defaultProductionShopFloorId,
@@ -560,7 +561,11 @@ Future<void> _handleCreatePipeline(BuildContext context) async {
         ),
       ),
     );
+    final savedId = provider.template.id.toString();
+    provider.dispose();
+    return savedId;
   }
+  return null;
 }
 
 class GlobalMouseTracker {

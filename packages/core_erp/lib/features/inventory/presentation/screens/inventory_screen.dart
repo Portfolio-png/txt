@@ -10,7 +10,6 @@ import 'package:provider/provider.dart';
 
 import '../providers/inventory_create_command_provider.dart';
 import '../../../../app/preferences/preferences_provider.dart';
-import '../../../../core/navigation/app_navigation.dart';
 import '../../../../core/services/feature_flags.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -32,6 +31,7 @@ import '../../../clients/presentation/providers/clients_provider.dart';
 import '../../../delivery_challans/domain/delivery_challan.dart';
 import '../../../delivery_challans/presentation/providers/delivery_challan_provider.dart';
 import '../../../delivery_challans/presentation/screens/delivery_challan_screen.dart';
+import '../../../delivery_challans/presentation/widgets/challan_excel_view.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../items/presentation/screens/items_screen.dart';
@@ -485,11 +485,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                     );
                                     return;
                                   }
-                                  context.read<DeliveryChallanProvider>().applyInventoryFilter(
+                                  _openItemChallansExcel(
+                                    context,
                                     itemId: record.linkedItemId!,
                                     label: record.name,
                                   );
-                                  context.read<AppNavigation>().select('delivery_challans');
                                 },
                               )
                             : _InventoryTable(
@@ -515,11 +515,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                     );
                                     return;
                                   }
-                                  context.read<DeliveryChallanProvider>().applyInventoryFilter(
+                                  _openItemChallansExcel(
+                                    context,
                                     itemId: record.linkedItemId!,
                                     label: record.name,
                                   );
-                                  context.read<AppNavigation>().select('delivery_challans');
                                 },
                                 onToggleSelection: (barcode) {
                                   setState(() {
@@ -4951,20 +4951,33 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
     return '0';
   }
 
-  /// Pre-filters the Challans screen to [itemId] and switches to that tab, so
-  /// the user sees every challan that moved this item (and can clear/adjust the
-  /// filter from there). Replaces the former movement audit-trail popup.
   void _openItemChallans(
     BuildContext context, {
     required int itemId,
     required String label,
-  }) {
-    context.read<DeliveryChallanProvider>().applyInventoryFilter(
-      itemId: itemId,
-      label: label,
-    );
-    context.read<AppNavigation>().select('delivery_challans');
+  }) =>
+      _openItemChallansExcel(context, itemId: itemId, label: label);
+}
+
+/// Opens the Excel-style in/out sheet for every challan that moved [itemId],
+/// instead of navigating to the split Reception|Delivery challan screen.
+Future<void> _openItemChallansExcel(
+  BuildContext context, {
+  required int itemId,
+  required String label,
+}) async {
+  final challans = await context
+      .read<DeliveryChallanProvider>()
+      .repository
+      .getChallans(itemId: itemId);
+  if (!context.mounted) {
+    return;
   }
+  await ChallanExcelView.show(
+    context,
+    challans: challans,
+    title: label.trim().isEmpty ? 'In / Out' : '$label — In / Out',
+  );
 }
 
 class _InventoryActionsCell extends StatelessWidget {

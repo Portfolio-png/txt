@@ -44,14 +44,14 @@ class ItemsScreen extends StatefulWidget {
   });
 
   final int initialTab;
-  final VoidCallback? onCreatePipeline;
+  final Future<String?> Function()? onCreatePipeline;
 
   static Future<ItemDefinition?> openEditor(
     BuildContext context, {
     ItemDefinition? item,
     String initialName = '',
     int? initialGroupId,
-    VoidCallback? onCreatePipeline,
+    Future<String?> Function()? onCreatePipeline,
   }) {
     final isNarrow = MediaQuery.of(context).size.width < 980;
     final body = SubmitFormShortcuts(
@@ -445,7 +445,7 @@ class _ItemsTable extends StatefulWidget {
   const _ItemsTable({required this.items, this.onCreatePipeline});
 
   final List<ItemDefinition> items;
-  final VoidCallback? onCreatePipeline;
+  final Future<String?> Function()? onCreatePipeline;
 
   @override
   State<_ItemsTable> createState() => _ItemsTableState();
@@ -513,7 +513,7 @@ class _ItemsGrid extends StatelessWidget {
   final List<ItemDefinition> items;
   final double cardWidth;
   final double cardHeight;
-  final VoidCallback? onCreatePipeline;
+  final Future<String?> Function()? onCreatePipeline;
 
   @override
   Widget build(BuildContext context) {
@@ -548,7 +548,7 @@ class _GridItemCard extends StatelessWidget {
   const _GridItemCard({required this.item, this.onCreatePipeline});
 
   final ItemDefinition item;
-  final VoidCallback? onCreatePipeline;
+  final Future<String?> Function()? onCreatePipeline;
 
   @override
   Widget build(BuildContext context) {
@@ -576,7 +576,7 @@ class _ItemRow extends StatelessWidget {
   });
 
   final ItemDefinition item;
-  final VoidCallback? onCreatePipeline;
+  final Future<String?> Function()? onCreatePipeline;
   final bool isVariant;
   final VoidCallback? onDoubleTap;
 
@@ -790,7 +790,7 @@ class _ItemEditorSheet extends StatefulWidget {
   final ItemDefinition? item;
   final String initialName;
   final int? initialGroupId;
-  final VoidCallback? onCreatePipeline;
+  final Future<String?> Function()? onCreatePipeline;
 
   @override
   State<_ItemEditorSheet> createState() => _ItemEditorSheetState();
@@ -1978,7 +1978,20 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                             if (!_isReadOnly && widget.onCreatePipeline != null) ...[
                               const SizedBox(height: 12),
                               OutlinedButton.icon(
-                                onPressed: widget.onCreatePipeline,
+                                onPressed: () async {
+                                  if (widget.onCreatePipeline != null) {
+                                    final newPipelineId = await widget.onCreatePipeline!();
+                                    if (mounted) {
+                                      await _fetchPipelines();
+                                      if (newPipelineId != null) {
+                                        setState(() {
+                                          _defaultPipelineId = newPipelineId;
+                                          _handleChange();
+                                        });
+                                      }
+                                    }
+                                  }
+                                },
                                 icon: const Icon(Icons.add, size: 16),
                                 label: const Text('Create New Pipeline'),
                               ),
