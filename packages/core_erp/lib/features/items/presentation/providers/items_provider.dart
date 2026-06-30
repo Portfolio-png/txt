@@ -321,7 +321,6 @@ class ItemsProvider extends ChangeNotifier {
     required int itemId,
     required int propertyNodeId,
     required String valueName,
-    int? unitId,
   }) async {
     final current = _items.where((item) => item.id == itemId).firstOrNull;
     final trimmedValueName = valueName.trim();
@@ -350,7 +349,6 @@ class ItemsProvider extends ChangeNotifier {
       propertyNodeId: propertyNodeId,
       valueName: trimmedValueName,
       valuePath: const <String>[],
-      unitId: unitId,
     );
     if (!mutation.inserted) {
       _errorMessage = 'Variation property not found.';
@@ -678,10 +676,6 @@ class ItemsProvider extends ChangeNotifier {
       name: node.name,
       code: node.code,
       displayName: node.displayName,
-      // Enhancement 3 — preserve measurable metadata across tree rewrites.
-      isMeasurable: node.isMeasurable,
-      unitId: node.unitId,
-      allowedUnitIds: List<int>.from(node.allowedUnitIds),
       children: node.children.map(_toInput).toList(growable: false),
     );
   }
@@ -691,7 +685,6 @@ class ItemsProvider extends ChangeNotifier {
     required int propertyNodeId,
     required String valueName,
     required List<String> valuePath,
-    int? unitId,
   }) {
     var inserted = false;
     final nextNodes = <ItemVariationNodeInput>[];
@@ -730,17 +723,12 @@ class ItemsProvider extends ChangeNotifier {
             kind: node.kind,
             name: node.name,
             displayName: '',
-            // Preserve the measurable property's own config.
-            isMeasurable: node.isMeasurable,
-            allowedUnitIds: List<int>.from(node.allowedUnitIds),
             children: <ItemVariationNodeInput>[
               ...node.children,
               ItemVariationNodeInput(
                 kind: ItemVariationNodeKind.value,
                 name: valueName,
                 displayName: _generateLeafDisplayName(nextPath),
-                // Enhancement 3 — store the intrinsic unit on the new leaf.
-                unitId: unitId,
                 children: clonedChildren,
               ),
             ],
@@ -755,7 +743,6 @@ class ItemsProvider extends ChangeNotifier {
         propertyNodeId: propertyNodeId,
         valueName: valueName,
         valuePath: nextValuePath,
-        unitId: unitId,
       );
       if (mutation.inserted) {
         inserted = true;
@@ -767,10 +754,6 @@ class ItemsProvider extends ChangeNotifier {
           kind: node.kind,
           name: node.name,
           displayName: node.displayName,
-          // Preserve measurable metadata on untouched nodes.
-          isMeasurable: node.isMeasurable,
-          unitId: node.unitId,
-          allowedUnitIds: List<int>.from(node.allowedUnitIds),
           children: mutation.nodes,
         ),
       );

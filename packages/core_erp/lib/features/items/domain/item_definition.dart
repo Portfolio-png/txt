@@ -14,9 +14,6 @@ class ItemVariationNodeDefinition {
     required this.createdAt,
     required this.updatedAt,
     required this.children,
-    this.isMeasurable = false,
-    this.unitId,
-    this.allowedUnitIds = const <int>[],
   });
 
   final int id;
@@ -32,16 +29,7 @@ class ItemVariationNodeDefinition {
   final DateTime updatedAt;
   final List<ItemVariationNodeDefinition> children;
 
-  /// Enhancement 3 — set on PROPERTY nodes: the property holds physical
-  /// quantities, so its value leaves carry a number + unit (e.g. "100 g").
-  final bool isMeasurable;
 
-  /// Set on VALUE leaves under a measurable property: the unit intrinsic to this
-  /// variation value. Null otherwise.
-  final int? unitId;
-
-  /// Set on measurable PROPERTY nodes: the units offered in the unit dropdown.
-  final List<int> allowedUnitIds;
 
   bool get isLeafValue =>
       kind == ItemVariationNodeKind.value && children.isEmpty;

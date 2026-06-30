@@ -1,14 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../core/theme/soft_erp_theme.dart';
 import '../core/widgets/app_button.dart';
 import '../core/widgets/searchable_select.dart';
 import '../features/items/domain/item_definition.dart';
 import '../features/items/presentation/providers/items_provider.dart';
-import '../features/units/domain/unit_definition.dart';
-import '../features/units/presentation/providers/units_provider.dart';
-import 'measurable_value_input.dart';
-
 class VariationStep {
   const VariationStep({
     required this.property,
@@ -43,7 +38,6 @@ typedef VariationValueCreator =
       required int propertyNodeId,
       required String propertyLabel,
       required String valueName,
-      int? unitId,
     });
 
 class VariationPathSelectorDialog extends StatefulWidget {
@@ -254,15 +248,6 @@ class _VariationPathSelectorDialogState
           ? null
           : (query) async {
               var valueName = query;
-              int? unitId;
-              if (step.property.isMeasurable) {
-                final measured = await _promptMeasurableValue(step, query);
-                if (!mounted || measured == null) {
-                  return null;
-                }
-                valueName = measured.name;
-                unitId = measured.unitId;
-              }
               final tempId = -step.property.id;
               setState(() {
                 _customVariationValues[step.property.id] = valueName;
@@ -283,17 +268,6 @@ class _VariationPathSelectorDialogState
           ? null
           : (query) async {
               var valueName = query;
-              int? unitId;
-              // Enhancement 3 — measurable properties capture a quantity + unit
-              // before the value is created (stored as e.g. "100 g").
-              if (step.property.isMeasurable) {
-                final measured = await _promptMeasurableValue(step, query);
-                if (!mounted || measured == null) {
-                  return null;
-                }
-                valueName = measured.name;
-                unitId = measured.unitId;
-              }
               final result = await widget.onCreateValue!(
                 item: _item,
                 propertyNodeId: step.property.id,
@@ -301,7 +275,6 @@ class _VariationPathSelectorDialogState
                     ? 'Property ${step.property.id}'
                     : step.property.name.trim(),
                 valueName: valueName,
-                unitId: unitId,
               );
               if (!mounted || result == null) {
                 return null;
@@ -350,30 +323,7 @@ class _VariationPathSelectorDialogState
     );
   }
 
-  /// Prompts for a quantity + unit for a measurable property and returns the
-  /// composed value name (e.g. "100 g") with the chosen unit id.
-  Future<({String name, int? unitId})?> _promptMeasurableValue(
-    VariationStep step,
-    String initialQuery,
-  ) async {
-    final allUnits = context.read<UnitsProvider>().activeUnits;
-    final allowed = step.property.allowedUnitIds;
-    final units = allowed.isEmpty
-        ? allUnits
-        : allUnits
-              .where((unit) => allowed.contains(unit.id))
-              .toList(growable: false);
-    return showDialog<({String name, int? unitId})>(
-      context: context,
-      builder: (dialogContext) => _MeasurableValuePrompt(
-        propertyLabel: step.property.name.trim().isEmpty
-            ? 'value'
-            : step.property.name.trim(),
-        initialQuantity: initialQuery,
-        units: units,
-      ),
-    );
-  }
+
 
   List<VariationStep> _allVariationSteps() {
     return _item.topLevelProperties
@@ -611,110 +561,4 @@ class _VariationPathSelectorDialogState
   }
 }
 
-/// Quantity + unit capture for a measurable property value (Enhancement 3).
-class _MeasurableValuePrompt extends StatefulWidget {
-  const _MeasurableValuePrompt({
-    required this.propertyLabel,
-    required this.initialQuantity,
-    required this.units,
-  });
 
-  final String propertyLabel;
-  final String initialQuantity;
-  final List<UnitDefinition> units;
-
-  @override
-  State<_MeasurableValuePrompt> createState() => _MeasurableValuePromptState();
-}
-
-class _MeasurableValuePromptState extends State<_MeasurableValuePrompt> {
-  late final TextEditingController _quantityController;
-  int? _unitId;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    // Pre-fill the quantity if the user already typed a number.
-    final trimmed = widget.initialQuantity.trim();
-    _quantityController = TextEditingController(
-      text: double.tryParse(trimmed) != null ? trimmed : '',
-    );
-    if (widget.units.length == 1) {
-      _unitId = widget.units.first.id;
-    }
-  }
-
-  @override
-  void dispose() {
-    _quantityController.dispose();
-    super.dispose();
-  }
-
-  void _confirm() {
-    final quantity = _quantityController.text.trim();
-    if (quantity.isEmpty) {
-      setState(() => _error = 'Enter a quantity.');
-      return;
-    }
-    if (_unitId == null) {
-      setState(() => _error = 'Select a unit.');
-      return;
-    }
-    final unit = widget.units.where((u) => u.id == _unitId).firstOrNull;
-    final symbol = unit == null || unit.symbol.trim().isEmpty
-        ? (unit?.name ?? '')
-        : unit.symbol.trim();
-    final name = symbol.isEmpty ? quantity : '$quantity $symbol';
-    Navigator.of(context).pop((name: name, unitId: _unitId));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text('Add ${widget.propertyLabel}'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Compact quantity + unit control: the unit lives in the field's
-          // suffix as a tappable popup instead of a separate dropdown row.
-          MeasurableValueInput(
-            controller: _quantityController,
-            autofocus: true,
-            allowedUnits: widget.units,
-            selectedUnitId: _unitId,
-            onUnitChanged: (value) => setState(() {
-              _unitId = value;
-              _error = null;
-            }),
-            decoration: const InputDecoration(
-              labelText: 'Quantity',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            onSubmitted: (_) => _confirm(),
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              _error!,
-              style: const TextStyle(color: Color(0xFFDC2626), fontSize: 13),
-            ),
-          ],
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(onPressed: _confirm, child: const Text('Add')),
-      ],
-    );
-  }
-}
-
-extension _FirstOrNullUnits on Iterable<UnitDefinition> {
-  UnitDefinition? get firstOrNull => isEmpty ? null : first;
-}

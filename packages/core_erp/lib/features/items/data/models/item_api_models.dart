@@ -25,9 +25,6 @@ class ItemVariationNodeDto {
     required this.createdAt,
     required this.updatedAt,
     required this.children,
-    this.isMeasurable = false,
-    this.unitId,
-    this.allowedUnitIds = const <int>[],
   });
 
   final int id;
@@ -42,9 +39,6 @@ class ItemVariationNodeDto {
   final DateTime createdAt;
   final DateTime updatedAt;
   final List<ItemVariationNodeDto> children;
-  final bool isMeasurable;
-  final int? unitId;
-  final List<int> allowedUnitIds;
 
   factory ItemVariationNodeDto.fromJson(Map<String, dynamic> json) {
     return ItemVariationNodeDto(
@@ -69,11 +63,6 @@ class ItemVariationNodeDto {
                 ItemVariationNodeDto.fromJson(item as Map<String, dynamic>),
           )
           .toList(growable: false),
-      isMeasurable: json['isMeasurable'] as bool? ?? false,
-      unitId: json['unitId'] as int?,
-      allowedUnitIds: (json['allowedUnitIds'] as List<dynamic>? ?? const [])
-          .map((e) => e as int)
-          .toList(growable: false),
     );
   }
 
@@ -93,9 +82,6 @@ class ItemVariationNodeDto {
       children: children
           .map((entry) => entry.toDomain())
           .toList(growable: false),
-      isMeasurable: isMeasurable,
-      unitId: unitId,
-      allowedUnitIds: allowedUnitIds,
     );
   }
 }
@@ -368,9 +354,6 @@ class ItemVariationNodeRequest {
     required this.code,
     required this.displayName,
     required this.children,
-    this.isMeasurable = false,
-    this.unitId,
-    this.allowedUnitIds = const <int>[],
   });
 
   final int? id;
@@ -380,9 +363,6 @@ class ItemVariationNodeRequest {
   final String code;
   final String displayName;
   final List<ItemVariationNodeRequest> children;
-  final bool isMeasurable;
-  final int? unitId;
-  final List<int> allowedUnitIds;
 
   factory ItemVariationNodeRequest.fromInput(ItemVariationNodeInput input) {
     return ItemVariationNodeRequest(
@@ -395,9 +375,6 @@ class ItemVariationNodeRequest {
       children: input.children
           .map(ItemVariationNodeRequest.fromInput)
           .toList(growable: false),
-      isMeasurable: input.isMeasurable,
-      unitId: input.unitId,
-      allowedUnitIds: input.allowedUnitIds,
     );
   }
 
@@ -412,9 +389,6 @@ class ItemVariationNodeRequest {
       'children': children
           .map((entry) => entry.toJson())
           .toList(growable: false),
-      'isMeasurable': isMeasurable,
-      'unitId': unitId,
-      'allowedUnitIds': allowedUnitIds,
     };
   }
 }

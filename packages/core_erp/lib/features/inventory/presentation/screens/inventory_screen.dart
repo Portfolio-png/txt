@@ -7772,7 +7772,6 @@ class _LinkItemSheet extends StatelessWidget {
                                         required propertyNodeId,
                                         required propertyLabel,
                                         required valueName,
-                                        int? unitId,
                                       }) async {
                                         final itemsProvider = context
                                             .read<ItemsProvider>();
@@ -7781,7 +7780,6 @@ class _LinkItemSheet extends StatelessWidget {
                                               itemId: item.id,
                                               propertyNodeId: propertyNodeId,
                                               valueName: valueName,
-                                              unitId: unitId,
                                             );
                                         if (!context.mounted) return null;
                                         if (result == null) {

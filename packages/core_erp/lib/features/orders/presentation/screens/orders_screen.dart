@@ -4011,7 +4011,6 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                   required propertyNodeId,
                   required propertyLabel,
                   required valueName,
-                  int? unitId,
                 }) {
                   return _appendVariationValue(
                     context,
@@ -4019,7 +4018,6 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                     propertyNodeId: propertyNodeId,
                     propertyLabel: propertyLabel,
                     valueName: valueName,
-                    unitId: unitId,
                   );
                 },
           ),
@@ -4047,14 +4045,12 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     required int propertyNodeId,
     required String propertyLabel,
     required String valueName,
-    int? unitId,
   }) async {
     final itemsProvider = context.read<ItemsProvider>();
     final result = await itemsProvider.appendVariationValue(
       itemId: item.id,
       propertyNodeId: propertyNodeId,
       valueName: valueName,
-      unitId: unitId,
     );
     if (!mounted) {
       return null;
