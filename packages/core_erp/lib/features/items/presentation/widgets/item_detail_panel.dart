@@ -10,6 +10,8 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/soft_primitives.dart';
+import '../../../../core/widgets/soft_entrance_animation.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../domain/item_asset.dart';
@@ -723,9 +725,12 @@ class _VariationTreeNodeWidget extends StatelessWidget {
     
     final activeChildren = node.activeChildren;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+    return SoftEntranceAnimation(
+      direction: EntranceDirection.up,
+      delay: Duration(milliseconds: 150 + (50 * depth)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -819,6 +824,7 @@ class _VariationTreeNodeWidget extends StatelessWidget {
             }),
           ),
       ],
+      ),
     );
   }
 }

@@ -2723,6 +2723,10 @@ async function initDb() {
     )
   `);
 
+  try { await run("ALTER TABLE freelancer_jobs ADD COLUMN batch_id INTEGER REFERENCES freelancer_job_batches(id) ON DELETE SET NULL"); } catch(e){}
+  try { await run("ALTER TABLE freelancer_jobs ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1"); } catch(e){}
+
+
   await run(`
     CREATE TABLE IF NOT EXISTS freelancer_job_tasks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -9813,7 +9817,7 @@ async function cancelDeliveryChallan(id, actor = null) {
 async function deleteDraftDeliveryChallan(id, actor = null) {
   const existing = await getDeliveryChallanRowById(id);
   if (!existing) {
-    const error = new Error('Delivery challan not found.');
+    const error = new Error('Challan not found.');
     error.statusCode = 404;
     throw error;
   }
@@ -9863,15 +9867,20 @@ async function deleteDraftDeliveryChallan(id, actor = null) {
     }
     await run('UPDATE invoice_lines SET challan_id = NULL, challan_item_id = NULL WHERE challan_id = ?', [id]);
     await run('UPDATE reconciliation_waste_audit SET challan_id = NULL WHERE challan_id = ?', [id]);
+    // Explicitly clean up child tables (handles cases where ON DELETE CASCADE may not fire)
+    await run('DELETE FROM delivery_challan_activity_log WHERE challan_id = ?', [id]);
+    await run('DELETE FROM delivery_challan_report_groups WHERE challan_id = ?', [id]);
+    await run('DELETE FROM delivery_challan_order_items WHERE challan_id = ?', [id]);
+    await run('DELETE FROM delivery_challan_items WHERE challan_id = ?', [id]);
     await run('DELETE FROM delivery_challans WHERE id = ?', [id]);
     await run('COMMIT');
   } catch (error) {
     await run('ROLLBACK');
     throw error;
   }
-  await logDeliveryChallanActivity(id, 'challan_deleted', actor, {
-    challanNo: existing.challan_no,
-  });
+  // No post-delete activity log: delivery_challan_activity_log.challan_id has an
+  // ON DELETE CASCADE FK, so logging the deletion after the challan is gone fails
+  // with a FOREIGN KEY violation (and the row would be cascade-deleted anyway).
 }
 
 function rowToInvoiceLineDto(row) {
@@ -12480,6 +12489,17 @@ async function saveOrder({
     if (existing) {
       merged = true;
       quantityBefore = Number(existing.quantity || 0);
+      const newTotalQty = normalizedQuantity;
+      const currentInvoiced = hasInvoicedQtyInput 
+        ? normalizedTotalInvoicedQty 
+        : Number(existing.total_invoiced_qty || 0);
+        
+      if (currentInvoiced > newTotalQty) {
+        const error = new Error(`Cannot merge: Invoiced quantity (${currentInvoiced}) exceeds new requested quantity (${newTotalQty}).`);
+        error.statusCode = 400;
+        throw error;
+      }
+
       // C-1 fix: never downgrade an order's status during a quantity-merge.
       // The lifecycle priority order is: draft < notStarted < inProgress < delayed < completed.
       // Merging additional quantity should not reset a running/completed order.
@@ -12491,7 +12511,7 @@ async function saveOrder({
       await run(
         `
         UPDATE order_items
-        SET quantity = quantity + ?,
+        SET quantity = ?,
             client_name = ?,
             client_code = ?,
             item_name = ?,
@@ -17489,6 +17509,54 @@ app.post('/api/users', requireRoles('super_admin', 'admin'), requirePermission('
   }
 });
 
+app.delete('/api/users/:id', requireRoles('super_admin', 'admin'), requirePermission('users.manage_permissions'), async (req, res) => {
+  try {
+    const targetId = Number(req.params.id);
+    const override = req.query.override === 'true';
+    if (!override) {
+       return res.status(400).json({ success: false, error: 'User deletion requires override flag for compliance reasons.' });
+    }
+    const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
+    if (!target) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+    
+    const fs = require('fs');
+    const path = require('path');
+    const backupDir = path.join(__dirname, 'backups');
+    if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir);
+    fs.writeFileSync(path.join(backupDir, `user_${targetId}_backup.json`), JSON.stringify(target, null, 2));
+
+    await run('BEGIN TRANSACTION');
+    try {
+      await run('DELETE FROM auth_sessions WHERE user_id = ?', [targetId]);
+      await run('DELETE FROM user_permission_overrides WHERE user_id = ?', [targetId]);
+      await run('DELETE FROM user_permission_templates WHERE user_id = ?', [targetId]);
+      await run('UPDATE auth_events SET actor_user_id = NULL WHERE actor_user_id = ?', [targetId]);
+      await run('UPDATE auth_events SET target_user_id = NULL WHERE target_user_id = ?', [targetId]);
+      
+      await run('DELETE FROM users WHERE id = ?', [targetId]);
+      await run('COMMIT');
+    } catch (e) {
+      await run('ROLLBACK');
+      throw e;
+    }
+    
+    await logAuthEvent({
+      eventType: 'user_deleted',
+      actorUserId: req.user.id,
+      targetUserId: targetId,
+      ipAddress: getRequestIp(req),
+      userAgent: getRequestUserAgent(req),
+      metadata: { note: 'compliance override delete with backup' },
+    });
+    
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.patch('/api/users/:id/password', requirePermission('users.reset_password'), async (req, res) => {
   try {
     const targetId = Number(req.params.id);
@@ -18511,9 +18579,75 @@ const handleIssueChallan = async (req, res) => {
 app.post('/api/challans/:id/issue', requirePermission('config.write'), handleIssueChallan);
 app.post('/api/delivery-challans/:id/issue', requirePermission('config.write'), handleIssueChallan);
 
+const handleGetCancelOptions = async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const invoices = await all(
+      `SELECT DISTINCT ih.id, ih.status 
+       FROM invoice_headers ih 
+       JOIN invoice_lines il ON ih.id = il.invoice_id 
+       WHERE il.challan_id = ?`, [id]
+    );
+    const actions = [];
+    actions.push({
+      key: 'block',
+      label: 'Cancel linked invoices manually',
+      description: 'You must handle each linked invoice first, then cancel the challan.',
+      requiresConfirmation: false
+    });
+    const drafts = invoices.filter(i => i.status === 'draft');
+    const issued = invoices.filter(i => i.status !== 'draft');
+    if (drafts.length > 0 && issued.length === 0) {
+      actions.push({
+        key: 'cascade_delete_drafts_only',
+        label: `Delete ${drafts.length} draft invoice(s) and cancel challan`,
+        description: 'Draft invoices will be permanently deleted. No issued invoices are affected.',
+        requiresConfirmation: true
+      });
+    }
+    res.json({ success: true, challanId: id, linkedInvoices: invoices, availableActions: actions, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, data: null, message: error.message, error: error.message });
+  }
+};
+
 const handleCancelChallan = async (req, res) => {
   try {
-    const challan = await cancelDeliveryChallan(Number(req.params.id), actorFromRequest(req));
+    const id = Number(req.params.id);
+    const { action } = req.body;
+    
+    const invoices = await all(
+      `SELECT DISTINCT ih.id, ih.status 
+       FROM invoice_headers ih 
+       JOIN invoice_lines il ON ih.id = il.invoice_id 
+       WHERE il.challan_id = ?`, [id]
+    );
+
+    if (invoices.length > 0) {
+      if (!action || action === 'block') {
+        const err = new Error('Please handle linked invoices manually before cancelling.');
+        err.statusCode = 400;
+        throw err;
+      }
+      if (action === 'cascade_delete_drafts_only') {
+        const issued = invoices.filter(i => i.status !== 'draft');
+        if (issued.length > 0) {
+          const err = new Error('Issued invoices present; cannot auto-delete.');
+          err.statusCode = 400;
+          throw err;
+        }
+        for (const draft of invoices) {
+          await run('DELETE FROM invoice_lines WHERE invoice_id = ?', [draft.id]);
+          await run('DELETE FROM invoice_headers WHERE id = ?', [draft.id]);
+        }
+      } else {
+        const err = new Error('Invalid cancel action.');
+        err.statusCode = 400;
+        throw err;
+      }
+    }
+
+    const challan = await cancelDeliveryChallan(id, actorFromRequest(req));
     res.json({ success: true, data: await rowToDeliveryChallanDto(challan), error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({
@@ -18527,6 +18661,8 @@ const handleCancelChallan = async (req, res) => {
 
 app.post('/api/challans/:id/cancel', requirePermission('config.write'), handleCancelChallan);
 app.post('/api/delivery-challans/:id/cancel', requirePermission('config.write'), handleCancelChallan);
+app.get('/api/challans/:id/cancel-options', requirePermission('config.write'), handleGetCancelOptions);
+app.get('/api/delivery-challans/:id/cancel-options', requirePermission('config.write'), handleGetCancelOptions);
 
 const handleUpdateChallanReportGroups = async (req, res) => {
   try {
@@ -18687,6 +18823,112 @@ app.patch('/api/invoices/:id/status', requirePermission('config.write'), async (
       message: error.message,
       error: error.message,
     });
+  }
+});
+
+app.put('/api/invoices/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const input = req.body || {};
+    const linesInput = Array.isArray(input.lines) ? input.lines : [];
+    if (linesInput.length === 0) {
+      throw new Error('Add at least one invoice line.');
+    }
+    const invoiceNo = String(input.invoiceNo ?? input.invoice_no ?? '').trim();
+    if (invoiceNo) {
+      const duplicate = await get('SELECT id FROM invoice_headers WHERE LOWER(TRIM(invoice_no)) = LOWER(TRIM(?)) AND id != ?', [invoiceNo, id]);
+      if (duplicate) throw new Error(`Invoice number [${invoiceNo}] is already in use.`);
+    }
+
+    const now = new Date().toISOString();
+    const invoiceDate = input.invoiceDate ?? input.invoice_date ?? now;
+
+    let totalQuantity = 0, taxableValue = 0, cgstAmount = 0, sgstAmount = 0;
+    const normalizedLines = [];
+    for (const rawLine of linesInput) {
+      const qty = Number(rawLine.quantity ?? rawLine.qty ?? 0) || 0;
+      const unitP = Number(rawLine.unitPrice ?? rawLine.unit_price ?? 0) || 0;
+      const cRate = Number(rawLine.cgstRate ?? rawLine.cgst_rate ?? 0) || 0;
+      const sRate = Number(rawLine.sgstRate ?? rawLine.sgst_rate ?? 0) || 0;
+      const taxVal = qty * unitP;
+      const cgst = taxVal * cRate / 100;
+      const sgst = taxVal * sRate / 100;
+
+      totalQuantity += qty;
+      taxableValue += taxVal;
+      cgstAmount += cgst;
+      sgstAmount += sgst;
+
+      normalizedLines.push({
+        orderId: Number(rawLine.orderId ?? rawLine.order_id ?? 0) || null,
+        challanId: Number(rawLine.challanId ?? rawLine.challan_id ?? 0) || null,
+        challanItemId: Number(rawLine.challanItemId ?? rawLine.challan_item_id ?? 0) || null,
+        itemId: Number(rawLine.itemId ?? rawLine.item_id ?? 0) || null,
+        variationLeafNodeId: Number(rawLine.variationLeafNodeId ?? rawLine.variation_leaf_node_id ?? 0) || 0,
+        itemName: String(rawLine.itemName ?? rawLine.item_name ?? '').trim(),
+        hsnCode: String(rawLine.hsnCode ?? rawLine.hsn_code ?? '').trim(),
+        quantity: qty, unitPrice: unitP, taxableValue: taxVal, cgstRate: cRate, sgstRate: sRate, cgstAmount: cgst, sgstAmount: sgst
+      });
+    }
+
+    await run('BEGIN TRANSACTION');
+    try {
+      await run(
+        `UPDATE invoice_headers SET 
+          client_id = ?, client_name = ?, gstin = ?, status = ?, invoice_date = ?,
+          total_quantity = ?, taxable_value = ?, cgst_amount = ?, sgst_amount = ?, total_amount = ?, updated_at = ?
+         WHERE id = ?`,
+        [
+          Number(input.clientId ?? input.client_id ?? 0) || null,
+          String(input.clientName ?? input.client_name ?? '').trim(),
+          String(input.gstin ?? input.customerGstin ?? input.customer_gstin ?? '').trim(),
+          String(input.status || 'draft').trim() || 'draft',
+          invoiceDate, totalQuantity, taxableValue, cgstAmount, sgstAmount, taxableValue + cgstAmount + sgstAmount, now, id
+        ]
+      );
+      if (invoiceNo) {
+        await run(`UPDATE invoice_headers SET invoice_no = ? WHERE id = ?`, [invoiceNo, id]);
+      }
+
+      await run('DELETE FROM invoice_lines WHERE invoice_id = ?', [id]);
+      
+      const insertLine = await prepare(`
+        INSERT INTO invoice_lines (
+          invoice_id, order_id, challan_id, challan_item_id, item_id, variation_leaf_node_id,
+          item_name, hsn_code, quantity, unit_price, taxable_value, cgst_rate, sgst_rate, cgst_amount, sgst_amount, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const line of normalizedLines) {
+        await insertLine.run([
+          id, line.orderId, line.challanId, line.challanItemId, line.itemId, line.variationLeafNodeId,
+          line.itemName, line.hsnCode, line.quantity, line.unitPrice, line.taxableValue, line.cgstRate, line.sgstRate, line.cgstAmount, line.sgstAmount, now, now
+        ]);
+      }
+      await insertLine.finalize();
+      await run('COMMIT');
+      
+      const invoice = await getInvoiceDtoById(id);
+      res.json({ success: true, data: invoice, error: null });
+    } catch (e) {
+      await run('ROLLBACK');
+      throw e;
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, data: null, error: error.message });
+  }
+});
+
+app.delete('/api/invoices/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    const id = req.params.id;
+    await run('BEGIN TRANSACTION');
+    await run('DELETE FROM invoice_lines WHERE invoice_id = ?', [id]);
+    await run('DELETE FROM invoice_headers WHERE id = ?', [id]);
+    await run('COMMIT');
+    res.json({ success: true, error: null });
+  } catch (error) {
+    await run('ROLLBACK');
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -22171,6 +22413,20 @@ app.put('/api/freelancer-jobs/:id', requirePermission('config.write'), async (re
   }
 });
 
+app.delete('/api/freelancer-jobs/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    const id = req.params.id;
+    await run('BEGIN TRANSACTION');
+    await run('DELETE FROM freelancer_job_tasks WHERE job_id = ?', [id]);
+    await run('DELETE FROM freelancer_jobs WHERE id = ?', [id]);
+    await run('COMMIT');
+    res.json({ success: true, error: null });
+  } catch (error) {
+    await run('ROLLBACK');
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.get('/api/freelancer-portal/data', async (req, res) => {
   try {
     const token = req.query.token;
@@ -22333,6 +22589,230 @@ app.delete('/api/employees/:id', requirePermission('config.write'), async (req, 
     await run('UPDATE employees SET is_archived = 1, updated_at = ? WHERE id = ?', [new Date().toISOString(), id]);
     res.json({ success: true, error: null });
   } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ==========================================
+// PAYROLL APIs
+// ==========================================
+
+app.get('/api/payroll/components', requirePermission('config.read'), async (req, res) => {
+  try {
+    const components = await all('SELECT * FROM payroll_components ORDER BY name ASC');
+    res.json({ success: true, components });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/payroll/components', requirePermission('config.write'), async (req, res) => {
+  try {
+    const { name, type, calculation_method, is_statutory, config_json } = req.body;
+    if (!name || !type || !calculation_method) {
+      return res.status(400).json({ success: false, error: 'Missing required fields' });
+    }
+    
+    const result = await run(`
+      INSERT INTO payroll_components (name, type, calculation_method, is_statutory, config_json)
+      VALUES (?, ?, ?, ?, ?)
+    `, [name, type, calculation_method, is_statutory ? 1 : 0, config_json || '{}']);
+    
+    res.json({ success: true, id: result.lastID });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/payroll/employees/:id/salary-structure', requirePermission('config.read'), async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    const structure = await get('SELECT * FROM employee_salary_structures WHERE user_id = ?', [userId]);
+    if (!structure) {
+      return res.json({ success: true, structure: null, lines: [] });
+    }
+    const lines = await all('SELECT * FROM employee_salary_structure_lines WHERE structure_id = ?', [structure.id]);
+    res.json({ success: true, structure, lines });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.put('/api/payroll/employees/:id/salary-structure', requirePermission('config.write'), async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    const { base_salary, effective_date, lines } = req.body;
+    
+    await run('BEGIN TRANSACTION');
+    let structure = await get('SELECT * FROM employee_salary_structures WHERE user_id = ?', [userId]);
+    if (structure) {
+      await run('UPDATE employee_salary_structures SET effective_from = ? WHERE id = ?', 
+        [effective_date, structure.id]);
+    } else {
+      const resStruct = await run('INSERT INTO employee_salary_structures (user_id, effective_from) VALUES (?, ?)',
+        [userId, effective_date]);
+      structure = { id: resStruct.lastID };
+    }
+    
+    await run('DELETE FROM employee_salary_structure_lines WHERE structure_id = ?', [structure.id]);
+    if (lines && lines.length > 0) {
+      for (const line of lines) {
+        await run(`
+          INSERT INTO employee_salary_structure_lines (structure_id, component_id, amount_or_formula, sequence)
+          VALUES (?, ?, ?, ?)
+        `, [structure.id, line.component_id, line.amount_or_formula, 1]);
+      }
+    }
+    
+    await run('COMMIT');
+    res.json({ success: true });
+  } catch (error) {
+    await run('ROLLBACK').catch(() => {});
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/payroll/runs', requirePermission('config.read'), async (req, res) => {
+  try {
+    const runs = await all('SELECT * FROM payroll_runs ORDER BY created_at DESC');
+    res.json({ success: true, runs });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/payroll/runs', requirePermission('config.write'), async (req, res) => {
+  try {
+    const { period_start, period_end, remarks } = req.body;
+    if (!period_start || !period_end) {
+      return res.status(400).json({ success: false, error: 'Missing period start/end' });
+    }
+    const result = await run(`
+      INSERT INTO payroll_runs (period_start, period_end, status, total_gross, total_net, created_by, remarks, created_at, updated_at)
+      VALUES (?, ?, 'draft', 0, 0, ?, ?, ?, ?)
+    `, [period_start, period_end, req.user?.id || null, remarks || '', new Date().toISOString(), new Date().toISOString()]);
+    
+    res.json({ success: true, id: result.lastID });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/payroll/runs/:id', requirePermission('config.read'), async (req, res) => {
+  try {
+    const runId = Number(req.params.id);
+    const payrollRun = await get('SELECT * FROM payroll_runs WHERE id = ?', [runId]);
+    if (!payrollRun) return res.status(404).json({ success: false, error: 'Not found' });
+    
+    const details = await all('SELECT * FROM payroll_run_details WHERE run_id = ?', [runId]);
+    res.json({ success: true, run: payrollRun, details });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/payroll/runs/:id/finalize', requirePermission('config.write'), async (req, res) => {
+  try {
+    const runId = Number(req.params.id);
+    await run('UPDATE payroll_runs SET status = "finalized", updated_at = ? WHERE id = ?', [new Date().toISOString(), runId]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/payroll/runs/:id/summary', requirePermission('config.read'), async (req, res) => {
+  try {
+    const runId = Number(req.params.id);
+    const payrollRun = await get('SELECT * FROM payroll_runs WHERE id = ?', [runId]);
+    if (!payrollRun) return res.status(404).send('Not found');
+    
+    const details = await all('SELECT * FROM payroll_run_details WHERE run_id = ?', [runId]);
+    
+    let csv = 'Employee ID,Gross Pay,Deductions,Net Pay\\n';
+    details.forEach(d => {
+      csv += `${d.user_id},${d.gross_pay},${d.deductions},${d.net_pay}\\n`;
+    });
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="payroll_summary_' + runId + '.csv"');
+    res.send(csv);
+  } catch (error) {
+    res.status(500).send('Error generating summary');
+  }
+});
+
+// ==========================================
+// B2B PORTAL APIs
+// ==========================================
+
+app.get('/api/portal/catalog', async (req, res) => {
+  try {
+    // Only return items that aren't archived
+    const items = await all('SELECT id, name, display_name, alias, quantity, naming_format FROM items WHERE is_archived = 0 ORDER BY display_name ASC');
+    res.json({ success: true, items });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/portal/cart', async (req, res) => {
+  try {
+    const { portal_user_id, item_id, quantity } = req.body;
+    if (!portal_user_id || !item_id) {
+      return res.status(400).json({ success: false, error: 'Missing required fields' });
+    }
+    
+    const existing = await get('SELECT * FROM portal_carts WHERE portal_user_id = ? AND item_id = ?', [portal_user_id, item_id]);
+    if (existing) {
+      await run('UPDATE portal_carts SET quantity = quantity + ? WHERE id = ?', [quantity, existing.id]);
+    } else {
+      await run('INSERT INTO portal_carts (portal_user_id, item_id, quantity) VALUES (?, ?, ?)', 
+        [portal_user_id, item_id, quantity]);
+    }
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/portal/orders', async (req, res) => {
+  try {
+    const { portal_user_id, items, notes } = req.body;
+    if (!portal_user_id || !items || !items.length) {
+      return res.status(400).json({ success: false, error: 'Missing required fields' });
+    }
+    
+    const pUser = await get('SELECT * FROM portal_users WHERE id = ?', [portal_user_id]);
+    if (!pUser) return res.status(404).json({ success: false, error: 'Portal user not found' });
+    
+    await run('BEGIN TRANSACTION');
+    
+    const orderNo = 'B2B-ORD-' + Date.now();
+    
+    // Create header
+    await run('INSERT INTO order_headers (order_no, client_id, created_at, updated_at) VALUES (?, ?, ?, ?)', 
+      [orderNo, pUser.client_id, new Date().toISOString(), new Date().toISOString()]);
+      
+    // Save items
+    for (const item of items) {
+      await saveOrder({
+        orderNo,
+        clientId: pUser.client_id,
+        itemId: item.item_id,
+        quantity: item.quantity,
+        status: 'draft',
+        createdByPortalUserId: portal_user_id,
+      }, { returnMeta: false });
+    }
+    
+    // Clear cart
+    await run('DELETE FROM portal_carts WHERE portal_user_id = ?', [portal_user_id]);
+    
+    await run('COMMIT');
+    res.json({ success: true, orderNo });
+  } catch (error) {
+    await run('ROLLBACK').catch(() => {});
     res.status(500).json({ success: false, error: error.message });
   }
 });

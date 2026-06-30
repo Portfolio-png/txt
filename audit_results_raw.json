@@ -1,0 +1,293 @@
+{
+  "auth": [
+    "POST /api/auth/login",
+    "GET /api/auth/me",
+    "POST /api/auth/logout",
+    "GET /api/auth/sessions",
+    "DELETE /api/auth/sessions/:id",
+    "GET /api/auth/events",
+    "GET /api/auth/events/export"
+  ],
+  "delivery-challans": [
+    "GET /api/delivery-challans/health",
+    "GET /api/delivery-challans",
+    "POST /api/delivery-challans",
+    "GET /api/delivery-challans/:id",
+    "PUT /api/delivery-challans/:id",
+    "POST /api/delivery-challans/:id/issue",
+    "POST /api/delivery-challans/:id/cancel",
+    "PATCH /api/delivery-challans/:id/report-groups",
+    "POST /api/delivery-challans/:id/print",
+    "DELETE /api/delivery-challans/:id"
+  ],
+  "users": [
+    "GET /api/users/:id/sessions",
+    "POST /api/users/:id/sessions/revoke",
+    "GET /api/users",
+    "GET /api/users/:id/permission-templates",
+    "PATCH /api/users/:id/permission-templates",
+    "GET /api/users/:id/permissions",
+    "PATCH /api/users/:id/permissions",
+    "POST /api/users",
+    "PATCH /api/users/:id/password",
+    "PATCH /api/users/:id/status"
+  ],
+  "me": [
+    "PATCH /api/me/password"
+  ],
+  "permissions": [
+    "GET /api/permissions"
+  ],
+  "permission-templates": [
+    "GET /api/permission-templates"
+  ],
+  "admins": [
+    "POST /api/admins"
+  ],
+  "delete-requests": [
+    "POST /api/delete-requests",
+    "GET /api/delete-requests",
+    "POST /api/delete-requests/:id/approve",
+    "POST /api/delete-requests/:id/reject",
+    "GET /api/delete-requests/export"
+  ],
+  "machines": [
+    "GET /api/machines",
+    "GET /api/machines/:id",
+    "POST /api/machines",
+    "DELETE /api/machines/:id",
+    "GET /api/machines/:id/assets",
+    "POST /api/machines/:id/assets/upload-intent",
+    "POST /api/machines/:id/assets/upload-complete"
+  ],
+  "dies": [
+    "GET /api/dies",
+    "GET /api/dies/:id",
+    "POST /api/dies",
+    "DELETE /api/dies/:id",
+    "GET /api/dies/:id/assets",
+    "POST /api/dies/:id/assets/upload-intent",
+    "POST /api/dies/:id/assets/upload-complete"
+  ],
+  "materials": [
+    "GET /api/materials",
+    "GET /api/materials/:barcode",
+    "GET /api/materials/:barcode/detail",
+    "POST /api/materials/parent",
+    "POST /api/materials/:barcode/child",
+    "PATCH /api/materials/:barcode",
+    "PATCH /api/materials/:barcode/group-config",
+    "DELETE /api/materials/:barcode",
+    "PATCH /api/materials/:barcode/link-group",
+    "PATCH /api/materials/:barcode/link-item",
+    "PATCH /api/materials/:barcode/unlink",
+    "PATCH /api/materials/:barcode/scan",
+    "PATCH /api/materials/:barcode/scan/reset",
+    "GET /api/materials/:barcode/activity"
+  ],
+  "inventory": [
+    "GET /api/inventory/health",
+    "GET /api/inventory/sets",
+    "POST /api/inventory/sets",
+    "PATCH /api/inventory/sets/:id",
+    "DELETE /api/inventory/sets/:id",
+    "POST /api/inventory/movements"
+  ],
+  "units": [
+    "GET /api/units",
+    "POST /api/units",
+    "PATCH /api/units/:id",
+    "PATCH /api/units/:id/archive",
+    "PATCH /api/units/:id/restore"
+  ],
+  "groups": [
+    "GET /api/groups",
+    "POST /api/groups",
+    "POST /api/groups/:groupId/items",
+    "GET /api/groups/:groupId/items",
+    "PATCH /api/groups/:id",
+    "PATCH /api/groups/:id/archive",
+    "PATCH /api/groups/:id/restore",
+    "DELETE /api/groups/:id",
+    "GET /api/groups/:id/effective-schema"
+  ],
+  "clients": [
+    "GET /api/clients",
+    "POST /api/clients",
+    "DELETE /api/clients/:id",
+    "PATCH /api/clients/:id",
+    "PATCH /api/clients/:id/archive",
+    "PATCH /api/clients/:id/restore"
+  ],
+  "company-profile": [
+    "GET /api/company-profile",
+    "PUT /api/company-profile"
+  ],
+  "admin": [
+    "POST /api/admin/reset-demo-data",
+    "POST /api/admin/clear-data",
+    "POST /api/admin/reseed-data"
+  ],
+  "challans": [
+    "GET /api/challans",
+    "POST /api/challans",
+    "GET /api/challans/:id",
+    "PUT /api/challans/:id",
+    "POST /api/challans/:id/issue",
+    "POST /api/challans/:id/cancel",
+    "PATCH /api/challans/:id/report-groups",
+    "POST /api/challans/:id/print",
+    "DELETE /api/challans/:id",
+    "GET /api/challans/:id/print-template-preview"
+  ],
+  "orders": [
+    "GET /api/orders/:orderId/delivery-challans",
+    "GET /api/orders",
+    "POST /api/orders",
+    "GET /api/orders/:id/po-documents",
+    "POST /api/orders/:id/po-documents",
+    "GET /api/orders/:id/material-requirements",
+    "GET /api/orders/:id/activity",
+    "GET /api/orders/:id/status-history",
+    "GET /api/orders/:orderNo/pipeline-runs",
+    "PATCH /api/orders/:id/lifecycle",
+    "PUT /api/orders/:id",
+    "DELETE /api/orders/:id"
+  ],
+  "invoices": [
+    "GET /api/invoices",
+    "GET /api/invoices/:id",
+    "GET /api/invoices/:id/pdf",
+    "PATCH /api/invoices/:id/status",
+    "POST /api/invoices"
+  ],
+  "reconciliation": [
+    "GET /api/reconciliation/report",
+    "GET /api/reconciliation/conversion-overrides",
+    "PATCH /api/reconciliation/conversion-overrides",
+    "GET /api/reconciliation/waste-audit"
+  ],
+  "reports": [
+    "POST /api/reports/client-statement"
+  ],
+  "production": [
+    "GET /api/production/pipeline-templates",
+    "POST /api/production/pipeline-templates",
+    "PUT /api/production/pipeline-templates/:id",
+    "DELETE /api/production/pipeline-templates/:id"
+  ],
+  "production-runs": [
+    "GET /api/production-runs/completed"
+  ],
+  "challan-templates": [
+    "GET /api/challan-templates",
+    "GET /api/challan-templates/scans",
+    "GET /api/challan-templates/:id",
+    "POST /api/challan-templates",
+    "PATCH /api/challan-templates/:id",
+    "DELETE /api/challan-templates/:id",
+    "POST /api/challan-templates/upload-intent",
+    "POST /api/challan-templates/upload-complete",
+    "POST /api/challan-templates/stamp-upload-intent",
+    "POST /api/challan-templates/stamp-upload-complete",
+    "POST /api/challan-templates/test-print",
+    "GET /api/challan-templates/test-print"
+  ],
+  "templates": [
+    "GET /api/templates/:id/test-print"
+  ],
+  "order-po-uploads": [
+    "POST /api/order-po-uploads/intent",
+    "POST /api/order-po-uploads/complete"
+  ],
+  "upload": [
+    "POST /api/upload/generic"
+  ],
+  "assets": [
+    "POST /api/assets/upload-intent",
+    "POST /api/assets/upload-complete",
+    "POST /api/assets/:id/read-url",
+    "PATCH /api/assets/:id/primary",
+    "DELETE /api/assets/:id"
+  ],
+  "items": [
+    "POST /api/items/:id/assets/upload-intent",
+    "POST /api/items/:id/assets/upload-complete",
+    "GET /api/items/:id/assets",
+    "GET /api/items/:id/usage",
+    "GET /api/items",
+    "POST /api/items",
+    "PATCH /api/items/:id",
+    "PATCH /api/items/:id/archive",
+    "PATCH /api/items/:id/restore",
+    "DELETE /api/items/:id",
+    "PATCH /api/items/:id/group"
+  ],
+  "order-po-documents": [
+    "POST /api/order-po-documents/:id/read-url"
+  ],
+  "vendors": [
+    "GET /api/vendors",
+    "POST /api/vendors",
+    "DELETE /api/vendors/:id",
+    "PATCH /api/vendors/:id",
+    "PATCH /api/vendors/:id/archive",
+    "PATCH /api/vendors/:id/restore"
+  ],
+  "production-scrap": [
+    "POST /api/production-scrap",
+    "GET /api/production-scrap"
+  ],
+  "appcast": [
+    "GET /api/appcast/:clientId.xml"
+  ],
+  "sandbox-dashboard": [
+    "GET /api/sandbox-dashboard/feature-registry",
+    "GET /api/sandbox-dashboard/clients",
+    "GET /api/sandbox-dashboard/client/:clientId",
+    "POST /api/sandbox-dashboard/client/:clientId/config",
+    "POST /api/sandbox-dashboard/client/:clientId/users",
+    "DELETE /api/sandbox-dashboard/client/:clientId/user/:email",
+    "GET /api/sandbox-dashboard/client/:clientId/replays",
+    "GET /api/sandbox-dashboard/replay/:id"
+  ],
+  "sandbox-sync": [
+    "POST /api/sandbox-sync/:clientId"
+  ],
+  "session-replay": [
+    "POST /api/session-replay/:clientId"
+  ],
+  "activation": [
+    "POST /api/activation/activate"
+  ],
+  "activate": [
+    "DELETE /api/activate/:clientId/:fingerprint"
+  ],
+  "build": [
+    "POST /api/build/global"
+  ],
+  "departments": [
+    "GET /api/departments",
+    "POST /api/departments",
+    "PATCH /api/departments/:id",
+    "DELETE /api/departments/:id"
+  ],
+  "freelancer-jobs": [
+    "GET /api/freelancer-jobs",
+    "POST /api/freelancer-jobs/batches",
+    "POST /api/freelancer-jobs",
+    "PUT /api/freelancer-jobs/:id"
+  ],
+  "freelancer-portal": [
+    "GET /api/freelancer-portal/data"
+  ],
+  "employees": [
+    "GET /api/employees",
+    "POST /api/employees",
+    "PATCH /api/employees/:id",
+    "DELETE /api/employees/:id"
+  ],
+  "delete-s3-object": [
+    "POST /api/delete-s3-object"
+  ]
+}

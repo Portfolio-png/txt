@@ -4,6 +4,8 @@ import 'package:core_erp/core/widgets/app_empty_state.dart';
 import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:core_erp/core/widgets/soft_master_data.dart';
 import 'package:core_erp/core/widgets/soft_primitives.dart';
+import 'dart:math' as math;
+
 import 'package:core_erp/features/departments/domain/employee_definition.dart';
 import 'package:core_erp/features/departments/presentation/providers/departments_provider.dart';
 import 'package:core_erp/shared/widgets/exact_item_variation_select_field.dart';
@@ -138,6 +140,32 @@ class _JobsScreenState extends State<JobsScreen> {
       }
     } catch (error) {
       if (mounted) _showMessage('Could not update job: $error', isError: true);
+    }
+  }
+
+  Future<void> _deleteJob(FreelancerJob job) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Delete Job'),
+        content: Text('Are you sure you want to delete Job #${job.id}?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(c, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    try {
+      await context.read<JobsProvider>().deleteJob(job.id);
+      if (mounted) {
+        _showMessage('Job #${job.id} deleted successfully.');
+      }
+    } catch (error) {
+      if (mounted) _showMessage('Could not delete job: $error', isError: true);
     }
   }
 
@@ -684,6 +712,7 @@ class _AssignmentBar extends StatelessWidget {
             height: 44,
             child: DropdownButtonFormField<int>(
               key: ValueKey<int?>(selectedFreelancerId),
+              isExpanded: true,
               initialValue:
                   freelancers.any((item) => item.id == selectedFreelancerId)
                   ? selectedFreelancerId
@@ -1485,6 +1514,11 @@ class _FreelancerColumnBrowserState extends State<_FreelancerColumnBrowser> {
   int? _selectedFreelancerId;
   _BrowserWorkSelection? _selectedWork;
   int? _selectedTaskId;
+  
+  double _col1Width = 290;
+  double _col2Width = 350;
+  double _col3Width = 350;
+  double _col4Width = 340;
 
   @override
   void dispose() {
@@ -1548,7 +1582,7 @@ class _FreelancerColumnBrowserState extends State<_FreelancerColumnBrowser> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _BoardColumn(
-                width: 290,
+                width: _col1Width,
                 title: 'Freelancers',
                 subtitle: '${widget.freelancers.length} barcode identities',
                 icon: Icons.people_alt_outlined,
@@ -1567,9 +1601,9 @@ class _FreelancerColumnBrowserState extends State<_FreelancerColumnBrowser> {
                   },
                 ),
               ),
-              _BrowserDivider(),
+              _BrowserDivider(onResize: (d) => setState(() => _col1Width = math.max(200, _col1Width + d))),
               _BoardColumn(
-                width: 350,
+                width: _col2Width,
                 title: selectedFreelancer.name,
                 subtitle: _freelancerBoardSubtitle(
                   selectedFreelancer,
@@ -1593,9 +1627,9 @@ class _FreelancerColumnBrowserState extends State<_FreelancerColumnBrowser> {
                   onStatusChanged: widget.onStatusChanged,
                 ),
               ),
-              _BrowserDivider(),
+              _BrowserDivider(onResize: (d) => setState(() => _col2Width = math.max(200, _col2Width + d))),
               _BoardColumn(
-                width: 350,
+                width: _col3Width,
                 title: 'Inventory picks',
                 subtitle: selectedWork == null
                     ? 'Select a batch or job'
@@ -1611,9 +1645,9 @@ class _FreelancerColumnBrowserState extends State<_FreelancerColumnBrowser> {
                       setState(() => _selectedTaskId = task.id),
                 ),
               ),
-              _BrowserDivider(),
+              _BrowserDivider(onResize: (d) => setState(() => _col3Width = math.max(200, _col3Width + d))),
               _BoardColumn(
-                width: 340,
+                width: _col4Width,
                 title: 'Inspector',
                 subtitle: selectedTask == null
                     ? 'Work summary'
@@ -2268,11 +2302,34 @@ class _BrowserSectionLabel extends StatelessWidget {
 }
 
 class _BrowserDivider extends StatelessWidget {
+  const _BrowserDivider({this.onResize});
+
+  final ValueChanged<double>? onResize;
+
   @override
   Widget build(BuildContext context) {
-    return const SizedBox(
-      width: 1,
-      child: ColoredBox(color: SoftErpTheme.border),
+    if (onResize == null) {
+      return const SizedBox(
+        width: 1,
+        child: ColoredBox(color: SoftErpTheme.border),
+      );
+    }
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragUpdate: (details) => onResize!(details.delta.dx),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.resizeLeftRight,
+        child: Container(
+          width: 11,
+          color: Colors.transparent,
+          alignment: Alignment.center,
+          child: const SizedBox(
+            width: 1,
+            height: double.infinity,
+            child: ColoredBox(color: SoftErpTheme.border),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -2536,6 +2593,33 @@ class _JobBoardCard extends StatelessWidget {
                   ),
                 ),
                 _StatusMenu(job: job, onChanged: onStatusChanged),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                  splashRadius: 20,
+                  onPressed: () async {
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (c) => AlertDialog(
+                        title: const Text('Delete Job'),
+                        content: Text('Are you sure you want to delete Job #${job.id}?'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+                          TextButton(
+                            onPressed: () => Navigator.pop(c, true),
+                            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirm != true) return;
+                    try {
+                      await context.read<JobsProvider>().deleteJob(job.id);
+                    } catch (error) {
+                      String err = error.toString().replaceFirst(RegExp(r'^(Exception:\s*)+'), '');
+                      showAppToast(context, 'Could not delete job: $err', kind: AppToastKind.error);
+                    }
+                  },
+                ),
               ],
             ),
             const SizedBox(height: 10),

@@ -271,6 +271,31 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> deleteUser({
+    required int userId,
+    bool override = false,
+  }) async {
+    if (!can('users.manage_permissions')) {
+      _errorMessage = 'You do not have permission to delete users.';
+      notifyListeners();
+      return false;
+    }
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      await _api.deleteUser(userId: userId, override: override);
+      await loadManagementData();
+      return true;
+    } catch (error) {
+      _errorMessage = _friendly(error, fallback: 'Failed to delete user.');
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<bool> resetPassword({
     required int userId,
     required String password,

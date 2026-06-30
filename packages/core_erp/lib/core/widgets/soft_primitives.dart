@@ -62,6 +62,7 @@ class SoftSectionCard extends StatelessWidget {
     required this.child,
     this.title,
     this.subtitle,
+    this.headerAction,
     this.padding = const EdgeInsets.all(16),
     this.radius = SoftErpTheme.radiusLg,
   });
@@ -69,6 +70,7 @@ class SoftSectionCard extends StatelessWidget {
   final Widget child;
   final String? title;
   final String? subtitle;
+  final Widget? headerAction;
   final EdgeInsetsGeometry padding;
   final double radius;
 
@@ -84,25 +86,41 @@ class SoftSectionCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (title != null) ...[
-            Text(
-              title!,
-              style: const TextStyle(
-                color: SoftErpTheme.textPrimary,
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            if (subtitle != null) ...[
-              const SizedBox(height: 6),
-              Text(
-                subtitle!,
-                style: const TextStyle(
-                  color: SoftErpTheme.textSecondary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title!,
+                        style: const TextStyle(
+                          color: SoftErpTheme.textPrimary,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (subtitle != null) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          subtitle!,
+                          style: const TextStyle(
+                            color: SoftErpTheme.textSecondary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
+                if (headerAction != null) ...[
+                  const SizedBox(width: 12),
+                  headerAction!,
+                ],
+              ],
+            ),
             const SizedBox(height: 14),
           ],
           child,
@@ -366,9 +384,53 @@ class SoftRowCard extends StatefulWidget {
   State<SoftRowCard> createState() => _SoftRowCardState();
 }
 
-class _SoftRowCardState extends State<SoftRowCard> {
+class _SoftRowCardState extends State<SoftRowCard> with SingleTickerProviderStateMixin {
   bool _hovered = false;
   bool _pressed = false;
+  late AnimationController _entranceController;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
+
+  static int _staggerCounter = 0;
+  static bool _resetScheduled = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    final myIndex = _staggerCounter++;
+    if (!_resetScheduled) {
+      _resetScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _staggerCounter = 0;
+        _resetScheduled = false;
+      });
+    }
+
+    _entranceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _entranceController, curve: Curves.easeOut),
+    );
+    _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(
+      CurvedAnimation(parent: _entranceController, curve: Curves.easeOutCubic),
+    );
+    
+    final delayMs = 150 + (myIndex * 50);
+    Future.delayed(Duration(milliseconds: delayMs), () {
+      if (mounted) {
+        _entranceController.forward();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _entranceController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -383,37 +445,43 @@ class _SoftRowCardState extends State<SoftRowCard> {
     final baseColor = widget.baseColor ?? SoftErpTheme.cardSurface;
     final hoverColor = widget.hoverColor ?? const Color(0xFFFDFDFF);
     final selectedColor = widget.selectedColor ?? const Color(0xFFF2EFFF);
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() {
-        _hovered = false;
-        _pressed = false;
-      }),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 140),
-        curve: Curves.easeOutCubic,
-        transform: Matrix4.translationValues(0, lift, 0),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: widget.onTap,
-            onDoubleTap: widget.onDoubleTap,
-            onHighlightChanged: (pressed) => setState(() => _pressed = pressed),
-            borderRadius: BorderRadius.circular(22),
-            child: Ink(
-              decoration: BoxDecoration(
-                color: selected
-                    ? selectedColor
-                    : (_hovered ? hoverColor : baseColor),
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: SlideTransition(
+        position: _slideAnimation,
+        child: MouseRegion(
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() {
+            _hovered = false;
+            _pressed = false;
+          }),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            curve: Curves.easeOutCubic,
+            transform: Matrix4.translationValues(0, lift, 0),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: widget.onTap,
+                onDoubleTap: widget.onDoubleTap,
+                onHighlightChanged: (pressed) => setState(() => _pressed = pressed),
                 borderRadius: BorderRadius.circular(22),
-                border: Border.all(
-                  color: selected || _hovered
-                      ? SoftErpTheme.borderStrong
-                      : SoftErpTheme.border,
+                child: Ink(
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? selectedColor
+                        : (_hovered ? hoverColor : baseColor),
+                    borderRadius: BorderRadius.circular(22),
+                    border: Border.all(
+                      color: selected || _hovered
+                          ? SoftErpTheme.borderStrong
+                          : SoftErpTheme.border,
+                    ),
+                    boxShadow: shadow,
+                  ),
+                  child: widget.child,
                 ),
-                boxShadow: shadow,
               ),
-              child: widget.child,
             ),
           ),
         ),

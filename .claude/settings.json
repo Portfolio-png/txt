@@ -40,7 +40,14 @@
       "Bash(curl -s http://localhost:18080/api/inventory/6/movements)",
       "PowerShell(flutter test test/features/production/pipeline_stage_numbering_test.dart)",
       "PowerShell(dart run bin/generate_registry.dart)",
-      "PowerShell(flutter analyze packages/core_erp/lib/features/delivery_challans/presentation/screens/delivery_challan_screen.dart packages/core_erp/lib/core/services/feature_flags.dart 2>&1)"
+      "PowerShell(flutter analyze packages/core_erp/lib/features/delivery_challans/presentation/screens/delivery_challan_screen.dart packages/core_erp/lib/core/services/feature_flags.dart 2>&1)",
+      "Bash(node -e ' *)",
+      "Bash(DB_PATH=C:/Users/ADMIN/AppData/Local/Temp/claude/f--Rutu-txt/653940a2-351d-4951-b2c1-e39751146b8e/scratchpad/paper_copy.db PORT=18099 NODE_ENV=development node server.js)",
+      "Bash(echo \"started pid $!\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:18099/health)",
+      "Bash(curl -s -c C:/Users/ADMIN/AppData/Local/Temp/claude/f--Rutu-txt/653940a2-351d-4951-b2c1-e39751146b8e/scratchpad/cookies.txt -H 'Content-Type: application/json' -d '{\"email\":\"super@paper.local\",\"password\":\"Test@12345\"}' http://localhost:18099/api/auth/login)",
+      "Bash(curl -s -b C:/Users/ADMIN/AppData/Local/Temp/claude/f--Rutu-txt/653940a2-351d-4951-b2c1-e39751146b8e/scratchpad/cookies.txt http://localhost:18099/api/me)",
+      "Bash(echo \"pid $!\")"
     ]
   }
 }

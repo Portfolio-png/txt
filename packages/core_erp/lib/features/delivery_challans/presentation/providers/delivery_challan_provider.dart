@@ -4,6 +4,7 @@ import '../../data/delivery_challan_repository.dart';
 import 'package:core_erp/app/reports/domain/reconciliation_report.dart';
 import '../../domain/challan_template.dart';
 import '../../domain/delivery_challan.dart';
+import '../../domain/models/cancel_challan_options.dart';
 
 class ChallanProvider extends ChangeNotifier {
   ChallanProvider({required ChallanRepository repository})
@@ -162,8 +163,25 @@ class ChallanProvider extends ChangeNotifier {
     return _saveChallan(() => _repository.issueChallan(id));
   }
 
-  Future<DeliveryChallan?> cancelChallan(int id) async {
-    return _saveChallan(() => _repository.cancelChallan(id));
+  Future<DeliveryChallan?> cancelChallan(int id, {String? actionType}) async {
+    return _saveChallan(() => _repository.cancelChallan(id, actionType: actionType));
+  }
+
+  Future<CancelChallanOptions?> getCancelOptions(int id) async {
+    try {
+      _isLoading = true;
+      _errorMessage = null;
+      notifyListeners();
+      final options = await _repository.getCancelOptions(id);
+      _isLoading = false;
+      notifyListeners();
+      return options;
+    } catch (e) {
+      _isLoading = false;
+      _errorMessage = e.toString();
+      notifyListeners();
+      return null;
+    }
   }
 
   Future<void> deleteChallan(int id) async {
@@ -191,6 +209,17 @@ class ChallanProvider extends ChangeNotifier {
 
   Future<InvoiceHeader?> updateInvoiceStatus(int id, String status) async {
     return _save(() => _repository.updateInvoiceStatus(id, status));
+  }
+
+  Future<InvoiceHeader?> updateInvoice(int id, InvoiceDraftInput input) async {
+    return _save(() => _repository.updateInvoice(id, input));
+  }
+
+  Future<void> deleteInvoice(int id) async {
+    return _save(() async {
+      await _repository.deleteInvoice(id);
+      return null;
+    });
   }
 
   Future<List<CompletedProductionRun>> loadCompletedProductionRuns({

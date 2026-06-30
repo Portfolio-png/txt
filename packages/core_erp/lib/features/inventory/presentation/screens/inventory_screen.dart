@@ -4966,16 +4966,12 @@ Future<void> _openItemChallansExcel(
   required int itemId,
   required String label,
 }) async {
-  final challans = await context
-      .read<DeliveryChallanProvider>()
-      .repository
-      .getChallans(itemId: itemId);
   if (!context.mounted) {
     return;
   }
   await ChallanExcelView.show(
     context,
-    challans: challans,
+    filterItemId: itemId,
     title: label.trim().isEmpty ? 'In / Out' : '$label — In / Out',
   );
 }

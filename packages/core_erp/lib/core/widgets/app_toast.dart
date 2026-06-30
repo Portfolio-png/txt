@@ -79,11 +79,37 @@ AppToastKind _snackKind(SnackBar bar, String message) {
 
 void _insertToast(
   OverlayState? overlay,
-  String message,
+  String rawMessage,
   AppToastKind kind,
   Duration duration,
 ) {
   if (overlay == null) return;
+
+  var message = rawMessage;
+  if (message.startsWith('Exception: ')) {
+    message = message.substring(11).trim();
+  }
+  
+  if (message.contains('SQLITE_CONSTRAINT') || message.contains('FOREIGN KEY')) {
+    String recordName = 'record';
+    final match = RegExp(r'failed:\s*([a-zA-Z0-9_]+)\.').firstMatch(message);
+    if (match != null) {
+      final table = match.group(1)!;
+      final words = table.split('_');
+      if (words.isNotEmpty) {
+        var lastWord = words.last;
+        if (lastWord.endsWith('ies')) {
+          lastWord = '${lastWord.substring(0, lastWord.length - 3)}y';
+        } else if (lastWord.endsWith('s') && !lastWord.endsWith('ss') && !lastWord.endsWith('us')) {
+          lastWord = lastWord.substring(0, lastWord.length - 1);
+        }
+        words[words.length - 1] = lastWord;
+        words[0] = words[0].substring(0, 1).toUpperCase() + words[0].substring(1);
+        recordName = words.join(' ');
+      }
+    }
+    message = 'This $recordName is currently in use or referenced elsewhere in the system. It cannot be deleted or modified until those connections are removed.';
+  }
   late OverlayEntry entry;
   var removed = false;
   void remove() {

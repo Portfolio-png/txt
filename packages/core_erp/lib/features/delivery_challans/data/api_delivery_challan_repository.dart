@@ -5,6 +5,8 @@ import 'package:http/http.dart' as http;
 import '../../../app/reports/domain/reconciliation_report.dart';
 import '../domain/challan_template.dart';
 import '../domain/delivery_challan.dart';
+
+import 'package:core_erp/features/delivery_challans/domain/models/cancel_challan_options.dart';
 import 'delivery_challan_repository.dart';
 
 class ApiChallanRepository implements ChallanRepository {
@@ -328,8 +330,21 @@ class ApiChallanRepository implements ChallanRepository {
       _statusAction(id, 'issue', 'Failed to issue challan.');
 
   @override
-  Future<DeliveryChallan> cancelChallan(int id) =>
-      _statusAction(id, 'cancel', 'Failed to cancel challan.');
+  Future<DeliveryChallan> cancelChallan(int id, {String? actionType}) =>
+      _statusAction(id, 'cancel', 'Failed to cancel challan.', actionType: actionType);
+
+  @override
+  Future<CancelChallanOptions> getCancelOptions(int id) async {
+    final uri = Uri.parse('$baseUrl/api/challans/$id/cancel-options');
+    final response = await _sendRequest(method: 'GET', uri: uri);
+    final payload = _decodeApiResponse(
+      method: 'GET',
+      uri: uri,
+      response: response,
+      fallback: 'Failed to fetch cancel options.',
+    );
+    return CancelChallanOptions.fromJson(payload);
+  }
 
   @override
   Future<void> deleteChallan(int id) async {
@@ -573,6 +588,49 @@ class ApiChallanRepository implements ChallanRepository {
       fallback: 'Failed to create invoice.',
     );
     return InvoiceHeader.fromJson(_dataObject(payload, 'invoice'));
+  }
+
+  @override
+  Future<InvoiceHeader> updateInvoice(int id, InvoiceDraftInput input) async {
+    if (useMockResponses) {
+      final idx = _mockInvoices.indexWhere((i) => i.id == id);
+      if (idx == -1) throw Exception('Invoice not found');
+      // Mock logic omitted for brevity
+      return _mockInvoices[idx];
+    }
+    final uri = Uri.parse('$baseUrl/api/invoices/$id');
+    final response = await _sendRequest(
+      method: 'PUT',
+      uri: uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode(input.toJson()),
+    );
+    final payload = _decodeApiResponse(
+      method: 'PUT',
+      uri: uri,
+      response: response,
+      fallback: 'Failed to update invoice.',
+    );
+    return InvoiceHeader.fromJson(_dataObject(payload, 'data'));
+  }
+
+  @override
+  Future<void> deleteInvoice(int id) async {
+    if (useMockResponses) {
+      _mockInvoices.removeWhere((i) => i.id == id);
+      return;
+    }
+    final uri = Uri.parse('$baseUrl/api/invoices/$id');
+    final response = await _sendRequest(
+      method: 'DELETE',
+      uri: uri,
+    );
+    _decodeApiResponse(
+      method: 'DELETE',
+      uri: uri,
+      response: response,
+      fallback: 'Failed to delete invoice.',
+    );
   }
 
   @override
@@ -1278,8 +1336,9 @@ class ApiChallanRepository implements ChallanRepository {
   Future<DeliveryChallan> _statusAction(
     int id,
     String action,
-    String fallback,
-  ) async {
+    String fallback, {
+    String? actionType,
+  }) async {
     if (useMockResponses) {
       final index = _mockChallans.indexWhere((challan) => challan.id == id);
       final current = _mockChallans[index];
@@ -1320,7 +1379,12 @@ class ApiChallanRepository implements ChallanRepository {
       return updated;
     }
     final uri = Uri.parse('$baseUrl/api/challans/$id/$action');
-    final response = await _sendRequest(method: 'POST', uri: uri);
+    final response = await _sendRequest(
+      method: 'POST', 
+      uri: uri,
+      headers: actionType != null ? const {'Content-Type': 'application/json'} : const {},
+      body: actionType != null ? jsonEncode({'action': actionType}) : null,
+    );
     final payload = _decodeApiResponse(
       method: 'POST',
       uri: uri,

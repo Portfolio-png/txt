@@ -12,6 +12,7 @@ import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../../core/widgets/soft_master_data.dart';
 import '../../../../core/widgets/soft_primitives.dart';
+import '../../../../core/widgets/soft_entrance_animation.dart';
 import '../../../../core/services/feature_flags.dart';
 import '../../../groups/domain/group_definition.dart';
 import '../../../groups/domain/group_inputs.dart';
@@ -3143,10 +3144,13 @@ class _TreeNodeEditor extends StatelessWidget {
         ? theme.colorScheme.error
         : null;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
+    return SoftEntranceAnimation(
+      direction: EntranceDirection.up,
+      delay: Duration(milliseconds: 150 + (50 * depth)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
           padding: EdgeInsets.only(left: depth * 20.0),
           child: Material(
             color: rowHighlight,
@@ -3344,6 +3348,7 @@ class _TreeNodeEditor extends StatelessWidget {
             ),
           ),
       ],
+      ),
     );
   }
 }

@@ -89,6 +89,17 @@ class JobsRepository {
     }
   }
 
+  Future<void> deleteJob(int id) async {
+    final response = await _client.delete(
+      Uri.parse('$baseUrl/api/freelancer-jobs/$id'),
+      headers: {'Content-Type': 'application/json'},
+    );
+
+    if (response.statusCode != 200) {
+      throw JobsApiException('Failed to delete job: ${_parseError(response.body)}');
+    }
+  }
+
   String _parseError(String body) {
     try {
       final decoded = jsonDecode(body);

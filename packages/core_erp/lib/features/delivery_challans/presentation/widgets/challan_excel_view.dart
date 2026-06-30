@@ -5,25 +5,35 @@ import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/soft_primitives.dart';
 import '../../domain/delivery_challan.dart';
 import '../providers/delivery_challan_provider.dart';
+import '../utils/challan_item_labels.dart';
+import '../../../items/presentation/providers/items_provider.dart';
+import '../../../units/presentation/providers/units_provider.dart';
 
 class ChallanExcelView extends StatefulWidget {
   const ChallanExcelView({
     super.key,
-    required this.challans,
+    this.challans,
+    this.filterItemId,
     required this.title,
   });
 
-  final List<DeliveryChallan> challans;
+  final List<DeliveryChallan>? challans;
+  final int? filterItemId;
   final String title;
 
   static Future<void> show(
     BuildContext context, {
-    required List<DeliveryChallan> challans,
+    List<DeliveryChallan>? challans,
+    int? filterItemId,
     required String title,
   }) {
     return showDialog<void>(
       context: context,
-      builder: (context) => ChallanExcelView(challans: challans, title: title),
+      builder: (context) => ChallanExcelView(
+        challans: challans,
+        filterItemId: filterItemId,
+        title: title,
+      ),
     );
   }
 
@@ -35,6 +45,8 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
   final List<DeliveryChallan> _fullChallans = [];
   bool _isLoading = true;
   String? _errorMessage;
+  String _qtyHeader = 'Qty';
+  String _wtHeader = 'Weight';
 
   @override
   void initState() {
@@ -45,7 +57,15 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
   Future<void> _loadFullDetails() async {
     try {
       final provider = context.read<DeliveryChallanProvider>();
-      final futures = widget.challans.map((c) async {
+      final initialChallans = widget.challans ?? [];
+      
+      // If we only have filterItemId, we should fetch challans for it
+      List<DeliveryChallan> challansToLoad = List.from(initialChallans);
+      if (initialChallans.isEmpty && widget.filterItemId != null) {
+        challansToLoad = await provider.repository.getChallans(itemId: widget.filterItemId);
+      }
+
+      final futures = challansToLoad.map((c) async {
         if (c.items.isNotEmpty && c.items.length == c.itemsCount) {
           return c;
         }
@@ -55,6 +75,29 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
 
       final results = await Future.wait(futures);
       if (mounted) {
+        final itemsProv = context.read<ItemsProvider>();
+        final unitsProv = context.read<UnitsProvider>();
+
+        final Set<int> itemIds = {};
+        for (final challan in results) {
+          for (final item in challan.items) {
+            if (item.itemId != null) {
+              itemIds.add(item.itemId!);
+            }
+          }
+        }
+
+        if (widget.filterItemId != null || itemIds.length == 1) {
+          final targetItemId = widget.filterItemId ?? itemIds.first;
+          final labels = ChallanItemLabels.getDynamicLabels(
+            itemId: targetItemId,
+            itemsProv: itemsProv,
+            unitsProv: unitsProv,
+          );
+          _qtyHeader = labels.$1;
+          _wtHeader = labels.$2;
+        }
+
         setState(() {
           _fullChallans.addAll(results);
           _isLoading = false;
@@ -72,6 +115,24 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
 
   @override
   Widget build(BuildContext context) {
+    // Real-time listener
+    final provider = context.watch<DeliveryChallanProvider>();
+    for (int i = 0; i < _fullChallans.length; i++) {
+      final updated = provider.challans.where((c) => c.id == _fullChallans[i].id).firstOrNull;
+      if (updated != null && updated.itemsCount == updated.items.length) {
+        _fullChallans[i] = updated;
+      }
+    }
+    if (widget.filterItemId != null) {
+      for (final c in provider.challans) {
+        if (c.items.any((item) => item.itemId == widget.filterItemId) && c.itemsCount == c.items.length) {
+          if (!_fullChallans.any((existing) => existing.id == c.id)) {
+            _fullChallans.add(c);
+          }
+        }
+      }
+    }
+
     return Dialog(
       insetPadding: const EdgeInsets.all(24),
       clipBehavior: Clip.antiAlias,
@@ -113,7 +174,7 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
           ),
           const Spacer(),
           SoftPill(
-            label: '${widget.challans.length} Challans',
+            label: '${_fullChallans.length} Challans',
             background: SoftErpTheme.accent.withValues(alpha: 0.1),
             foreground: SoftErpTheme.accent,
           ),
@@ -137,12 +198,34 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
     final rows = <_FlattenedRow>[];
     for (final challan in _fullChallans) {
       if (challan.items.isEmpty) {
-        rows.add(_FlattenedRow(challan: challan));
+        if (widget.filterItemId == null) {
+          rows.add(_FlattenedRow(challan: challan));
+        }
       } else {
         for (final item in challan.items) {
-          rows.add(_FlattenedRow(challan: challan, item: item));
+          if (widget.filterItemId == null || item.itemId == widget.filterItemId) {
+            rows.add(_FlattenedRow(challan: challan, item: item));
+          }
         }
       }
+    }
+
+    rows.sort((a, b) => a.challan.date.compareTo(b.challan.date));
+
+    double balanceQty = 0;
+    double balanceWt = 0;
+    for (var row in rows) {
+      final qty = double.tryParse(row.item?.quantityPcs ?? '') ?? 0;
+      final wt = double.tryParse(row.item?.weight ?? '') ?? 0;
+      if (row.challan.isReception) {
+        balanceQty += qty;
+        balanceWt += wt;
+      } else if (row.challan.isDelivery) {
+        balanceQty -= qty;
+        balanceWt -= wt;
+      }
+      row.balanceQty = balanceQty;
+      row.balanceWt = balanceWt;
     }
 
     return SingleChildScrollView(
@@ -161,18 +244,24 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
             color: SoftErpTheme.border.withValues(alpha: 0.5),
             width: 1,
           ),
-          columns: const [
-            DataColumn(label: Text('Date')),
-            DataColumn(label: Text('Challan No')),
-            DataColumn(label: Text('Party Name')),
-            DataColumn(label: Text('Item Particulars')),
-            DataColumn(label: Text('Qty')),
-            DataColumn(label: Text('Weight')),
-            DataColumn(label: Text('Purpose')),
+          columns: [
+            const DataColumn(label: Text('Date')),
+            const DataColumn(label: Text('Challan No')),
+            const DataColumn(label: Text('Party Name')),
+            const DataColumn(label: Text('Item Particulars')),
+            DataColumn(label: Text(_qtyHeader)),
+            DataColumn(label: Text(_wtHeader)),
+            DataColumn(label: Text('Balance Qty')),
+            DataColumn(label: Text('Balance Wt')),
           ],
           rows: rows.map((row) {
             final date = row.challan.date;
             final dateStr = '${date.day.toString().padLeft(2, '0')} ${const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][date.month - 1]} ${date.year}';
+            
+            // Format balances nicely
+            final bQtyStr = row.balanceQty == row.balanceQty.truncateToDouble() ? row.balanceQty.toInt().toString() : row.balanceQty.toStringAsFixed(2);
+            final bWtStr = row.balanceWt == row.balanceWt.truncateToDouble() ? row.balanceWt.toInt().toString() : row.balanceWt.toStringAsFixed(3);
+
             return DataRow(
               cells: [
                 DataCell(Text(dateStr)),
@@ -189,7 +278,8 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
                 DataCell(Text(row.item?.particulars ?? '-')),
                 DataCell(Text(row.item?.quantityPcs ?? '-')),
                 DataCell(Text(row.item?.weight ?? '-')),
-                DataCell(Text(row.challan.purpose.name)),
+                DataCell(Text(bQtyStr, style: TextStyle(color: row.balanceQty < 0 ? Colors.red : Colors.green.shade700, fontWeight: FontWeight.bold))),
+                DataCell(Text(bWtStr, style: TextStyle(color: row.balanceWt < 0 ? Colors.red : Colors.green.shade700, fontWeight: FontWeight.bold))),
               ],
             );
           }).toList(),
@@ -203,4 +293,6 @@ class _FlattenedRow {
   _FlattenedRow({required this.challan, this.item});
   final DeliveryChallan challan;
   final DeliveryChallanItem? item;
+  double balanceQty = 0;
+  double balanceWt = 0;
 }

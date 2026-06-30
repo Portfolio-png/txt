@@ -384,6 +384,13 @@ class _UserRow extends StatelessWidget {
                 : null,
             child: Text(user.isActive ? 'Deactivate' : 'Activate'),
           ),
+          OutlinedButton(
+            onPressed: canEditPermissions
+                ? () => _confirmDelete(context, user)
+                : null,
+            style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
         ],
       ),
     );
@@ -430,6 +437,49 @@ class _UserRow extends StatelessWidget {
       ),
     );
     controller.dispose();
+  }
+
+  Future<void> _confirmDelete(BuildContext context, AuthUser user) async {
+    bool override = false;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (c, setState) => AlertDialog(
+          title: Text('Delete ${user.name}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Are you sure you want to permanently delete this user? A backup will be taken. This will break any dependencies in the system.'),
+              const SizedBox(height: 16),
+              CheckboxListTile(
+                title: const Text('Override compliance and force delete'),
+                value: override,
+                onChanged: (v) => setState(() => override = v ?? false),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: override ? () async {
+                final ok = await context.read<AuthProvider>().deleteUser(
+                  userId: user.id,
+                  override: override,
+                );
+                if (ok && dialogContext.mounted) {
+                  Navigator.of(dialogContext).pop();
+                }
+              } : null,
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text('Delete Permanently'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _openSessions(BuildContext context, AuthUser user) async {

@@ -219,6 +219,24 @@ class AuthApi {
     }
   }
 
+  Future<void> deleteUser({
+    required int userId,
+    bool override = false,
+  }) async {
+    final response = await _client.delete(
+      Uri.parse('$baseUrl/api/users/$userId?override=$override'),
+      headers: _jsonHeaders,
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to delete user.',
+      );
+    }
+  }
+
   Future<void> requestDelete({
     required String entityType,
     required String entityId,

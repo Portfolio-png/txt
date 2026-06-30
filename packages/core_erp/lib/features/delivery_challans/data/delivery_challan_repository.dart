@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+
+import 'package:core_erp/features/delivery_challans/domain/models/cancel_challan_options.dart';
 import '../../../app/reports/domain/reconciliation_report.dart';
 import '../domain/delivery_challan.dart';
 import '../domain/challan_template.dart';
@@ -36,7 +38,8 @@ abstract class ChallanRepository {
 
   Future<DeliveryChallan> issueChallan(int id);
 
-  Future<DeliveryChallan> cancelChallan(int id);
+  Future<DeliveryChallan> cancelChallan(int id, {String? actionType});
+  Future<CancelChallanOptions> getCancelOptions(int id);
 
   Future<void> deleteChallan(int id);
 
@@ -56,6 +59,10 @@ abstract class ChallanRepository {
   Future<InvoiceHeader> updateInvoiceStatus(int id, String status);
 
   Future<InvoiceHeader> createInvoice(InvoiceDraftInput input);
+
+  Future<InvoiceHeader> updateInvoice(int id, InvoiceDraftInput input);
+
+  Future<void> deleteInvoice(int id);
 
   Future<Uint8List> fetchInvoicePdf(int invoiceId);
 

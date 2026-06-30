@@ -252,10 +252,12 @@ class ErpDialogSectionCard extends StatelessWidget {
     required this.title,
     required this.child,
     this.subtitle,
+    this.headerAction,
   });
 
   final String title;
   final String? subtitle;
+  final Widget? headerAction;
   final Widget child;
 
   @override
@@ -263,6 +265,7 @@ class ErpDialogSectionCard extends StatelessWidget {
     return SoftSectionCard(
       title: title,
       subtitle: subtitle,
+      headerAction: headerAction,
       padding: const EdgeInsets.all(18),
       child: child,
     );

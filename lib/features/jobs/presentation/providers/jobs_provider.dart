@@ -81,4 +81,16 @@ class JobsProvider extends ChangeNotifier {
       rethrow;
     }
   }
+
+  Future<void> deleteJob(int id) async {
+    try {
+      await repository.deleteJob(id);
+      _jobs.removeWhere((j) => j.id == id);
+      notifyListeners();
+    } catch (e) {
+      _error = e.toString().replaceAll(RegExp(r'^(Exception:\s*)+'), '');
+      notifyListeners();
+      rethrow;
+    }
+  }
 }

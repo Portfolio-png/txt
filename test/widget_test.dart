@@ -1039,6 +1039,14 @@ class FakeGroupRepository extends GroupRepository {
   Future<void> init() async {}
 
   @override
+  Future<void> assignItemsToGroup({
+    required int groupId,
+    required List<int> itemIds,
+  }) async {
+    // Stub
+  }
+
+  @override
   Future<List<GroupDefinition>> getGroups() async =>
       List<GroupDefinition>.from(_groups);
 
@@ -2772,6 +2780,7 @@ class FakeDeliveryChallanRepository extends DeliveryChallanRepository {
     DateTime? dateFrom,
     DateTime? dateTo,
     int? orderId,
+    int? itemId,
   }) async {
     getChallansCalls += 1;
     final query = search.trim().toLowerCase();

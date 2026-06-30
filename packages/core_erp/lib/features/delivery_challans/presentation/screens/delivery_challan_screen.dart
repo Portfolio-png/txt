@@ -26,6 +26,7 @@ import '../../../../core/widgets/soft_primitives.dart';
 import '../../../../widgets/variation_path_selector_dialog.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
 import '../../../inventory/presentation/providers/inventory_provider.dart';
+import '../utils/challan_item_labels.dart';
 import '../../../items/domain/item_definition.dart';
 import '../../../units/domain/unit_inputs.dart';
 import '../../../units/presentation/providers/units_provider.dart';
@@ -37,6 +38,7 @@ import '../../../vendors/presentation/providers/vendors_provider.dart';
 import '../../data/delivery_challan_repository.dart';
 import '../../domain/challan_template.dart';
 import '../../domain/delivery_challan.dart';
+import '../../domain/models/cancel_challan_options.dart';
 import '../providers/challan_editor_command_provider.dart';
 import '../providers/delivery_challan_provider.dart';
 import '../widgets/challan_excel_view.dart';
@@ -345,7 +347,28 @@ class _ChallanScreenState extends State<ChallanScreen> {
 
   Future<void> _cancel(BuildContext context, DeliveryChallan challan) async {
     final provider = context.read<DeliveryChallanProvider>();
-    final cancelled = await provider.cancelChallan(challan.id);
+    
+    final options = await provider.getCancelOptions(challan.id);
+    if (!context.mounted) return;
+    
+    String? chosenAction;
+    if (options != null && options.linkedInvoices.isNotEmpty) {
+      if (options.availableActions.length == 1 && options.availableActions.first.key == 'block') {
+        showAppSnack(
+          SnackBar(content: Text('Cannot cancel: ${options.availableActions.first.description}')),
+        );
+        return;
+      }
+      
+      chosenAction = await showDialog<String>(
+        context: context,
+        builder: (ctx) => CancelChallanOptionsDialog(actions: options.availableActions),
+      );
+      
+      if (chosenAction == null) return;
+    }
+
+    final cancelled = await provider.cancelChallan(challan.id, actionType: chosenAction);
     if (!context.mounted) return;
     if (cancelled != null) {
       await context.read<InventoryProvider>().refresh();
@@ -1604,6 +1627,9 @@ class _LineItemsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final itemsProv = context.watch<ItemsProvider>();
+    final unitsProv = context.watch<UnitsProvider>();
+
     return SoftSurface(
       padding: const EdgeInsets.all(12),
       elevated: false,
@@ -1619,8 +1645,19 @@ class _LineItemsPanel extends StatelessWidget {
               style: TextStyle(color: SoftErpTheme.textSecondary),
             )
           else
-            ...challan.items.map(
-              (item) => Padding(
+            ...challan.items.map((item) {
+              final labels = ChallanItemLabels.getDynamicLabels(
+                itemId: item.itemId,
+                itemsProv: itemsProv,
+                unitsProv: unitsProv,
+              );
+              final qtyLabel = labels.$1;
+              final wtLabel = labels.$2;
+
+              final qtyStr = item.quantityPcs.isEmpty ? '0' : item.quantityPcs;
+              final wtStr = item.weight.isEmpty ? '0' : item.weight;
+
+              return Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1635,7 +1672,7 @@ class _LineItemsPanel extends StatelessWidget {
                     ),
                     const SizedBox(width: 12),
                     Text(
-                      'Qty ${item.quantityPcs.isEmpty ? '0' : item.quantityPcs}\nWt ${item.weight.isEmpty ? '0' : item.weight}',
+                      '$qtyLabel $qtyStr\n$wtLabel $wtStr',
                       textAlign: TextAlign.right,
                       style: const TextStyle(
                         color: SoftErpTheme.textSecondary,
@@ -1644,8 +1681,8 @@ class _LineItemsPanel extends StatelessWidget {
                     ),
                   ],
                 ),
-              ),
-            ),
+              );
+            }),
         ],
       ),
     );
@@ -2488,6 +2525,9 @@ class _ChallanEditorState extends State<_ChallanEditor> {
           subtitle: _isReception
               ? 'Lock each row to an exact item variation and quantity before issuing stock into the warehouse.'
               : 'Review the selected order-linked dispatch rows and quantities before issuing the challan.',
+          headerAction: (!_isReception && !_isInternal && _maintainStocks && _selectedPurpose != ChallanPurpose.jobWork)
+              ? _ordersHeaderButton()
+              : null,
           child: _ItemsEditor(
             isReception: _isReception,
             maintainStocks: _maintainStocks,
@@ -2561,7 +2601,6 @@ class _ChallanEditorState extends State<_ChallanEditor> {
               ),
               if (!_isReception && !_isInternal && _maintainStocks && _selectedPurpose != ChallanPurpose.jobWork) ...[
                 const SizedBox(width: 12),
-                _ordersHeaderButton(),
               ],
             ],
           ),
@@ -3032,15 +3071,10 @@ class _ChallanEditorState extends State<_ChallanEditor> {
       onChanged: !_canEdit
           ? null
           : (value) {
-        if (value != null) {
+        if (value != null && _selectedPurpose != value) {
           setState(() {
             _selectedPurpose = value;
             _validationError = null;
-            _selectedVendorId = null;
-            _selectedClientId = null;
-            _selectedOrders = [];
-            _customerController.clear();
-            _gstinController.clear();
           });
         }
       },
@@ -3982,7 +4016,7 @@ class _ItemsEditor extends StatelessWidget {
           ],
           for (final entry in items.asMap().entries) ...[
             !maintainStocks
-                ? _buildTypewriterRow(entry.key, entry.value)
+                ? _buildTypewriterRow(context, entry.key, entry.value)
                 : (isReception || purpose == ChallanPurpose.jobWork)
                 ? _buildReceptionRow(
                     context,
@@ -3998,7 +4032,15 @@ class _ItemsEditor extends StatelessWidget {
     );
   }
 
-  Widget _buildTypewriterRow(int index, _ItemDraft draft) {
+  Widget _buildTypewriterRow(BuildContext context, int index, _ItemDraft draft) {
+    final labels = ChallanItemLabels.getDynamicLabels(
+      itemId: draft.itemId,
+      itemsProv: context.read<ItemsProvider>(),
+      unitsProv: context.read<UnitsProvider>(),
+    );
+    final qtyLabel = labels.$1;
+    final wtLabel = labels.$2;
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -4035,7 +4077,7 @@ class _ItemsEditor extends StatelessWidget {
                 flex: 2,
                 child: _itemField(
                   draft.quantityPcs,
-                  'Qty / Pcs',
+                  qtyLabel,
                   enabled,
                   (value) => draft.quantityPcs = value,
                 ),
@@ -4045,7 +4087,7 @@ class _ItemsEditor extends StatelessWidget {
                 flex: 2,
                 child: _itemField(
                   draft.weight,
-                  'Weight',
+                  wtLabel,
                   enabled,
                   (value) => draft.weight = value,
                 ),
@@ -4088,6 +4130,14 @@ class _ItemsEditor extends StatelessWidget {
       draft.initializeConversionFields(selectedItem, unitsProvider);
     }
     
+    final labels = ChallanItemLabels.getDynamicLabels(
+      itemId: draft.itemId,
+      itemsProv: context.read<ItemsProvider>(),
+      unitsProv: unitsProvider,
+    );
+    final qtyLabel = labels.$1;
+    final wtLabel = labels.$2;
+
     return Column(
       children: [
         Row(
@@ -4202,7 +4252,7 @@ class _ItemsEditor extends StatelessWidget {
                 flex: 2,
                 child: _itemField(
                   draft.quantityPcs,
-                  'Qty / Pcs',
+                  qtyLabel,
                   enabled && orderOptions.isNotEmpty,
                   (value) => draft.quantityPcs = value,
                 ),
@@ -4212,7 +4262,7 @@ class _ItemsEditor extends StatelessWidget {
                 flex: 2,
                 child: _itemField(
                   draft.weight,
-                  'Weight',
+                  wtLabel,
                   enabled && orderOptions.isNotEmpty,
                   (value) => draft.weight = value,
                 ),
@@ -4229,7 +4279,7 @@ class _ItemsEditor extends StatelessWidget {
                 flex: 2,
                 child: _itemField(
                   draft.quantityPcs,
-                  'Qty / Pcs',
+                  qtyLabel,
                   enabled && orderOptions.isNotEmpty,
                   (value) => draft.quantityPcs = value,
                 ),
@@ -4239,7 +4289,7 @@ class _ItemsEditor extends StatelessWidget {
                 flex: 2,
                 child: _itemField(
                   draft.weight,
-                  'Weight',
+                  wtLabel,
                   enabled && orderOptions.isNotEmpty,
                   (value) => draft.weight = value,
                 ),
@@ -4273,6 +4323,14 @@ class _ItemsEditor extends StatelessWidget {
     if (selectedItem != null) {
       draft.initializeConversionFields(selectedItem, unitsProvider);
     }
+    final labels = ChallanItemLabels.getDynamicLabels(
+      itemId: draft.itemId,
+      itemsProv: context.read<ItemsProvider>(),
+      unitsProv: unitsProvider,
+    );
+    final qtyLabel = labels.$1;
+    final wtLabel = labels.$2;
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -4337,6 +4395,18 @@ class _ItemsEditor extends StatelessWidget {
                                 item: candidate,
                                 initialRootPropertyId: null,
                                 initialValueNodeIds: draft.variationPathNodeIds,
+                                onCreateValue: ({
+                                  required item,
+                                  required propertyNodeId,
+                                  required propertyLabel,
+                                  required valueName,
+                                }) async {
+                                  return await context.read<ItemsProvider>().appendVariationValue(
+                                    itemId: item.id,
+                                    propertyNodeId: propertyNodeId,
+                                    valueName: valueName,
+                                  );
+                                },
                               ),
                             ),
                           );
@@ -4377,6 +4447,18 @@ class _ItemsEditor extends StatelessWidget {
                                     item: selectedItem,
                                     initialRootPropertyId: null,
                                     initialValueNodeIds: draft.variationPathNodeIds,
+                                    onCreateValue: ({
+                                      required item,
+                                      required propertyNodeId,
+                                      required propertyLabel,
+                                      required valueName,
+                                    }) async {
+                                      return await context.read<ItemsProvider>().appendVariationValue(
+                                        itemId: item.id,
+                                        propertyNodeId: propertyNodeId,
+                                        valueName: valueName,
+                                      );
+                                    },
                                   ),
                                 ),
                               );
@@ -4415,7 +4497,7 @@ class _ItemsEditor extends StatelessWidget {
                   flex: 2,
                   child: _itemField(
                     draft.quantityPcs,
-                    'Qty',
+                    qtyLabel,
                     enabled,
                     (value) => draft.quantityPcs = value,
                   ),
@@ -4425,7 +4507,7 @@ class _ItemsEditor extends StatelessWidget {
                   flex: 2,
                   child: _itemField(
                     draft.weight,
-                    'Weight (Kg)',
+                    wtLabel,
                     enabled,
                     (value) => draft.weight = value,
                   ),
@@ -6296,4 +6378,61 @@ String _friendlyError(String message) {
     return 'Could not save challan. Server returned an invalid response.';
   }
   return message;
+}
+
+class CancelChallanOptionsDialog extends StatefulWidget {
+  final List<CancelActionOption> actions;
+  const CancelChallanOptionsDialog({Key? key, required this.actions}) : super(key: key);
+
+  @override
+  State<CancelChallanOptionsDialog> createState() => _CancelChallanOptionsDialogState();
+}
+
+class _CancelChallanOptionsDialogState extends State<CancelChallanOptionsDialog> {
+  String? _selectedAction;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.actions.isNotEmpty) {
+      _selectedAction = widget.actions.firstWhere(
+        (a) => a.key != 'block',
+        orElse: () => widget.actions.first,
+      ).key;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Challan has linked invoices'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: widget.actions.map((action) {
+            final isBlock = action.key == 'block';
+            return RadioListTile<String>(
+              title: Text(action.label),
+              subtitle: Text(action.description),
+              value: action.key,
+              groupValue: _selectedAction,
+              onChanged: isBlock ? null : (val) => setState(() => _selectedAction = val),
+            );
+          }).toList(),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _selectedAction == null || _selectedAction == 'block'
+              ? null
+              : () => Navigator.pop(context, _selectedAction),
+          child: const Text('Proceed'),
+        ),
+      ],
+    );
+  }
 }

@@ -4328,6 +4328,51 @@ class _InvoiceDetailCard extends StatelessWidget {
                 ),
               ),
               _StatusBadge(invoice.status),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                splashRadius: 20,
+                onPressed: () {
+                  // Show edit dialog
+                  showDialog(
+                    context: context,
+                    builder: (c) => _InvoiceEditDialog(invoice: invoice),
+                  );
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                splashRadius: 20,
+                onPressed: () async {
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (c) => AlertDialog(
+                      title: const Text('Delete Invoice'),
+                      content: Text('Are you sure you want to delete Invoice ${invoice.invoiceNo}? This breaks compliance trails.'),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+                        TextButton(
+                          onPressed: () => Navigator.pop(c, true),
+                          child: const Text('Delete', style: TextStyle(color: Colors.red)),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirm != true) return;
+                  try {
+                    await context.read<ChallanProvider>().deleteInvoice(invoice.id);
+                    if (context.mounted) {
+                      showAppToast(context, 'Invoice deleted successfully', kind: AppToastKind.success);
+                      Navigator.pop(context); // close sidebar
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      String err = e.toString().replaceFirst(RegExp(r'^(Exception:\s*)+'), '');
+                      showAppToast(context, 'Failed to delete invoice: $err', kind: AppToastKind.error);
+                    }
+                  }
+                },
+              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -4422,3 +4467,112 @@ String _lineValue(String value) {
   }
   return _fmt(parsed);
 }
+
+class _InvoiceEditDialog extends StatefulWidget {
+  const _InvoiceEditDialog({required this.invoice});
+  final InvoiceHeader invoice;
+
+  @override
+  State<_InvoiceEditDialog> createState() => _InvoiceEditDialogState();
+}
+
+class _InvoiceEditDialogState extends State<_InvoiceEditDialog> {
+  late final TextEditingController _noCtrl;
+  late DateTime _date;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _noCtrl = TextEditingController(text: widget.invoice.invoiceNo);
+    _date = widget.invoice.invoiceDate ?? DateTime.now();
+  }
+
+  @override
+  void dispose() {
+    _noCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      final input = InvoiceDraftInput(
+        invoiceNo: _noCtrl.text,
+        clientId: widget.invoice.clientId,
+        clientName: widget.invoice.clientName,
+        gstin: widget.invoice.gstin,
+        invoiceDate: _date,
+        lines: widget.invoice.lines.map((l) => InvoiceDraftLineInput(
+          orderId: null,
+          challanId: null,
+          challanItemId: null,
+          itemId: l.itemId,
+          variationLeafNodeId: l.variationLeafNodeId,
+          itemName: l.itemName,
+          hsnCode: l.hsnCode,
+          quantity: l.quantity,
+          unitPrice: l.unitPrice,
+          cgstRate: l.cgstRate,
+          sgstRate: l.sgstRate,
+        )).toList(),
+      );
+      await context.read<ChallanProvider>().updateInvoice(widget.invoice.id, input);
+      if (mounted) {
+        showAppToast(context, 'Invoice updated successfully', kind: AppToastKind.success);
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        String err = e.toString().replaceFirst(RegExp(r'^(Exception:\s*)+'), '');
+        showAppToast(context, 'Could not update invoice: $err', kind: AppToastKind.error);
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Edit Invoice'),
+      content: SizedBox(
+        width: 300,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _noCtrl,
+              decoration: const InputDecoration(labelText: 'Invoice No', border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 16),
+            InkWell(
+              onTap: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: _date,
+                  firstDate: DateTime(2000),
+                  lastDate: DateTime(2100),
+                );
+                if (picked != null) setState(() => _date = picked);
+              },
+              child: InputDecorator(
+                decoration: const InputDecoration(labelText: 'Date', border: OutlineInputBorder()),
+                child: Text('${_date.year}-${_date.month.toString().padLeft(2, '0')}-${_date.day.toString().padLeft(2, '0')}'),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        AppButton(
+          label: _saving ? 'Saving...' : 'Save',
+          onPressed: _saving ? () {} : _save,
+        ),
+      ],
+    );
+  }
+}
+
