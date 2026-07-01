@@ -14,24 +14,29 @@ class ChallanExcelView extends StatefulWidget {
     super.key,
     this.challans,
     this.filterItemId,
+    this.filterVariationLeafNodeId,
     required this.title,
   });
 
   final List<DeliveryChallan>? challans;
   final int? filterItemId;
+  final int? filterVariationLeafNodeId;
   final String title;
 
   static Future<void> show(
     BuildContext context, {
     List<DeliveryChallan>? challans,
     int? filterItemId,
+    int? filterVariationLeafNodeId,
     required String title,
-  }) {
-    return showDialog<void>(
+  }) async {
+    await showDialog<void>(
       context: context,
+      barrierColor: const Color(0x66100D1F),
       builder: (context) => ChallanExcelView(
         challans: challans,
         filterItemId: filterItemId,
+        filterVariationLeafNodeId: filterVariationLeafNodeId,
         title: title,
       ),
     );
@@ -99,7 +104,11 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
         }
 
         setState(() {
-          _fullChallans.addAll(results);
+          for (final r in results) {
+            if (!_fullChallans.any((existing) => existing.id == r.id)) {
+              _fullChallans.add(r);
+            }
+          }
           _isLoading = false;
         });
       }
@@ -123,9 +132,13 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
         _fullChallans[i] = updated;
       }
     }
-    if (widget.filterItemId != null) {
+    if (widget.filterItemId != null || widget.filterVariationLeafNodeId != null) {
       for (final c in provider.challans) {
-        if (c.items.any((item) => item.itemId == widget.filterItemId) && c.itemsCount == c.items.length) {
+        if (c.items.any((item) {
+          final itemMatch = widget.filterItemId == null || item.itemId == widget.filterItemId;
+          final varMatch = widget.filterVariationLeafNodeId == null || item.variationLeafNodeId == widget.filterVariationLeafNodeId;
+          return itemMatch && varMatch;
+        }) && c.itemsCount == c.items.length) {
           if (!_fullChallans.any((existing) => existing.id == c.id)) {
             _fullChallans.add(c);
           }
@@ -203,7 +216,9 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
         }
       } else {
         for (final item in challan.items) {
-          if (widget.filterItemId == null || item.itemId == widget.filterItemId) {
+          final itemMatch = widget.filterItemId == null || item.itemId == widget.filterItemId;
+          final varMatch = widget.filterVariationLeafNodeId == null || item.variationLeafNodeId == widget.filterVariationLeafNodeId;
+          if (itemMatch && varMatch) {
             rows.add(_FlattenedRow(challan: challan, item: item));
           }
         }

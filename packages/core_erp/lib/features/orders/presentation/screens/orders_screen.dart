@@ -3510,15 +3510,60 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
   }
 
   Widget _buildItemSelectForLine(List<ItemDefinition> items, int index) {
+    final line = _lines[index];
+    final selectedItem = _selectedItemForLine(items, line.selectedItemId);
+    final hasVariations = selectedItem != null && selectedItem.topLevelProperties.isNotEmpty;
+
+    Widget child = _buildItemAutocompleteForLine(items, index);
+
+    if (hasVariations) {
+      final label = _variationSelectionLabel(
+        selectedItem,
+        line.selectedVariationValueNodeIds,
+        line.customVariationValues,
+      );
+      final displayLabel = label.isEmpty ? 'Select properties' : label;
+
+      child = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          child,
+          const SizedBox(height: 6),
+          InkWell(
+            onTap: () async {
+              await _openVariationPathSelectorForLine(
+                context,
+                items: items,
+                lineIndex: index,
+              );
+            },
+            borderRadius: BorderRadius.circular(4),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+              child: Text(
+                displayLabel,
+                style: const TextStyle(
+                  color: SoftErpTheme.accent,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     if (!_groupScopedItemPickerEnabled) {
-      return _buildItemAutocompleteForLine(items, index);
+      return child;
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildGroupFilterForLine(items, index),
         const SizedBox(height: 8),
-        _buildItemAutocompleteForLine(items, index),
+        child,
       ],
     );
   }

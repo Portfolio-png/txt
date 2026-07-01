@@ -4415,7 +4415,8 @@ class _ItemsEditor extends StatelessWidget {
                               result.item,
                               result.valueNodeIds,
                               result.leaf,
-                              _variationSelectionLabel(result.item, result.valueNodeIds),
+                              _variationSelectionLabel(result.item, result.valueNodeIds, result.customVariationValues),
+                              result.customVariationValues,
                             );
                             onChanged();
                           }
@@ -4424,68 +4425,57 @@ class _ItemsEditor extends StatelessWidget {
                     ),
                     if (selectedItem != null && selectedItem.topLevelProperties.isNotEmpty) ...[
                       const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              draft.variationPathLabel.isEmpty ? 'Select properties' : draft.variationPathLabel,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: draft.variationPathLabel.isEmpty ? Colors.red.shade700 : SoftErpTheme.textSecondary,
-                                fontWeight: FontWeight.w600,
+                      InkWell(
+                        onTap: enabled ? () async {
+                          final result = await showDialog<VariationPathSelectionResult>(
+                            context: context,
+                            builder: (ctx) => Dialog(
+                              backgroundColor: Colors.transparent,
+                              insetPadding: const EdgeInsets.all(16),
+                              child: VariationPathSelectorDialog(
+                                item: selectedItem,
+                                initialRootPropertyId: null,
+                                initialValueNodeIds: draft.variationPathNodeIds,
+                                initialCustomVariationValues: draft.customVariationValues,
+                                onCreateValue: ({
+                                  required item,
+                                  required propertyNodeId,
+                                  required propertyLabel,
+                                  required valueName,
+                                }) async {
+                                  return await context.read<ItemsProvider>().appendVariationValue(
+                                    itemId: item.id,
+                                    propertyNodeId: propertyNodeId,
+                                    valueName: valueName,
+                                  );
+                                },
                               ),
                             ),
-                          ),
-                          TextButton.icon(
-                            onPressed: enabled ? () async {
-                              final result = await showDialog<VariationPathSelectionResult>(
-                                context: context,
-                                builder: (ctx) => Dialog(
-                                  backgroundColor: Colors.transparent,
-                                  insetPadding: const EdgeInsets.all(16),
-                                  child: VariationPathSelectorDialog(
-                                    item: selectedItem,
-                                    initialRootPropertyId: null,
-                                    initialValueNodeIds: draft.variationPathNodeIds,
-                                    onCreateValue: ({
-                                      required item,
-                                      required propertyNodeId,
-                                      required propertyLabel,
-                                      required valueName,
-                                    }) async {
-                                      return await context.read<ItemsProvider>().appendVariationValue(
-                                        itemId: item.id,
-                                        propertyNodeId: propertyNodeId,
-                                        valueName: valueName,
-                                      );
-                                    },
-                                  ),
-                                ),
-                              );
-                              if (result != null && context.mounted) {
-                                draft.applyReceptionVariationSelection(
-                                  result.item,
-                                  result.valueNodeIds,
-                                  result.leaf,
-                                  _variationSelectionLabel(result.item, result.valueNodeIds),
-                                );
-                                onChanged();
-                              }
-                            } : null,
-                            icon: const Icon(Icons.edit, size: 14),
-                            label: const Text('Apply path'),
-                            style: TextButton.styleFrom(
-                              padding: EdgeInsets.zero,
-                              minimumSize: const Size(0, 24),
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              foregroundColor: SoftErpTheme.accentDark,
-                              textStyle: const TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w700,
-                              ),
+                          );
+                          if (result != null && context.mounted) {
+                            draft.applyReceptionVariationSelection(
+                              result.item,
+                              result.valueNodeIds,
+                              result.leaf,
+                              _variationSelectionLabel(result.item, result.valueNodeIds, result.customVariationValues),
+                              result.customVariationValues,
+                            );
+                            onChanged();
+                          }
+                        } : null,
+                        borderRadius: BorderRadius.circular(4),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+                          child: Text(
+                            draft.variationPathLabel.isEmpty ? 'Select properties' : draft.variationPathLabel,
+                            style: TextStyle(
+                              color: draft.variationPathLabel.isEmpty ? Colors.red.shade700 : SoftErpTheme.accent,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              decoration: TextDecoration.underline,
                             ),
                           ),
-                        ],
+                        ),
                       ),
                     ],
                   ],
@@ -4719,11 +4709,11 @@ class _ItemsEditor extends StatelessWidget {
     );
   }
 
-  String _variationSelectionLabel(ItemDefinition item, List<int> valueNodeIds) {
-    return _buildNamingFormatLabel(item, valueNodeIds);
+  String _variationSelectionLabel(ItemDefinition item, List<int> valueNodeIds, [Map<int, String> customVariationValues = const {}]) {
+    return _buildNamingFormatLabel(item, valueNodeIds, customVariationValues);
   }
 
-  String _buildNamingFormatLabel(ItemDefinition item, List<int> valueNodeIds) {
+  String _buildNamingFormatLabel(ItemDefinition item, List<int> valueNodeIds, [Map<int, String> customVariationValues = const {}]) {
     final itemName = item.displayName.trim().isEmpty ? item.name : item.displayName;
     if (valueNodeIds.isEmpty) {
       return itemName;
@@ -4737,7 +4727,16 @@ class _ItemsEditor extends StatelessWidget {
             .where((n) => n.kind == ItemVariationNodeKind.value)
             .where((n) => selectedValueIds.contains(n.id))
             .firstOrNull;
-        if (selectedValue == null) break;
+        if (selectedValue == null) {
+          final tempId = -currentProperty.id;
+          if (selectedValueIds.contains(tempId)) {
+            final valName = customVariationValues[currentProperty.id];
+            if (valName != null) {
+              propIdToValue[currentProperty.id] = valName;
+            }
+          }
+          break;
+        }
         
         final valName = selectedValue.name.trim().isEmpty
             ? selectedValue.displayName.trim()
@@ -4841,6 +4840,7 @@ class _ItemDraft {
     this.particulars = '',
     this.hsnCode = '',
     this.variationPathLabel = '',
+    this.customVariationValues = const <int, String>{},
     this.productionRunLabel = '',
     this.note = '',
     this.quantityPcs = '',
@@ -4857,6 +4857,7 @@ class _ItemDraft {
   String particulars;
   String hsnCode;
   String variationPathLabel;
+  Map<int, String> customVariationValues;
   String productionRunLabel;
   String note;
   String quantityPcs;
@@ -4887,6 +4888,7 @@ class _ItemDraft {
       particulars: option?.particulars ?? '',
       hsnCode: option?.hsnCode ?? '',
       variationPathLabel: option?.variationPathLabel ?? '',
+      customVariationValues: option?.customVariationValues?.map((k, v) => MapEntry(int.tryParse(k) ?? 0, v)) ?? const <int, String>{},
       selectedUnitId: option?.unitId,
       enteredValue: (option != null && option.quantity > 0) ? option.quantity.toString() : '',
     );
@@ -4905,6 +4907,7 @@ class _ItemDraft {
       particulars: item.particulars,
       hsnCode: item.hsnCode,
       variationPathLabel: item.variationPathLabel,
+      customVariationValues: item.customVariationValues,
       productionRunLabel: item.productionRunId == null
           ? ''
           : 'Run #${item.productionRunId}',
@@ -5097,6 +5100,7 @@ class _ItemDraft {
     List<int> valueNodeIds,
     ItemVariationNodeDefinition? leaf,
     String label,
+    Map<int, String> customValues,
   ) {
     itemId = item.id;
     orderItemId = null;
@@ -5104,6 +5108,7 @@ class _ItemDraft {
     variationLeafNodeId = leaf?.id ?? 0;
     variationPathNodeIds = valueNodeIds;
     variationPathLabel = label;
+    customVariationValues = customValues;
     productionRunLabel = '';
     particulars = label.trim().isEmpty
         ? item.displayName
@@ -5151,6 +5156,7 @@ class _ItemDraft {
       particulars: particulars,
       hsnCode: hsnCode,
       variationPathLabel: variationPathLabel,
+      customVariationValues: customVariationValues,
       note: note,
       quantityPcs: quantityPcs,
       weight: weight,
@@ -5168,6 +5174,7 @@ class _OrderItemOption {
     required this.particulars,
     required this.hsnCode,
     required this.variationPathLabel,
+    this.customVariationValues,
     required this.quantity,
     this.unitId,
   });
@@ -5180,6 +5187,7 @@ class _OrderItemOption {
   final String particulars;
   final String hsnCode;
   final String variationPathLabel;
+  final Map<String, String>? customVariationValues;
   final int quantity;
   final int? unitId;
 
@@ -5197,6 +5205,7 @@ class _OrderItemOption {
       particulars: particulars,
       hsnCode: '',
       variationPathLabel: variation,
+      customVariationValues: order.customVariationValues,
       quantity: order.quantity,
       unitId: order.unitId,
     );

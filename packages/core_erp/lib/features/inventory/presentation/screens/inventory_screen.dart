@@ -4954,9 +4954,10 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
   void _openItemChallans(
     BuildContext context, {
     required int itemId,
+    int? variationLeafNodeId,
     required String label,
   }) =>
-      _openItemChallansExcel(context, itemId: itemId, label: label);
+      _openItemChallansExcel(context, itemId: itemId, variationLeafNodeId: variationLeafNodeId, label: label);
 }
 
 /// Opens the Excel-style in/out sheet for every challan that moved [itemId],
@@ -4964,6 +4965,7 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
 Future<void> _openItemChallansExcel(
   BuildContext context, {
   required int itemId,
+  int? variationLeafNodeId,
   required String label,
 }) async {
   if (!context.mounted) {
@@ -4972,6 +4974,7 @@ Future<void> _openItemChallansExcel(
   await ChallanExcelView.show(
     context,
     filterItemId: itemId,
+    filterVariationLeafNodeId: variationLeafNodeId,
     title: label.trim().isEmpty ? 'In / Out' : '$label — In / Out',
   );
 }

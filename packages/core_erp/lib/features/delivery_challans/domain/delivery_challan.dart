@@ -120,6 +120,7 @@ class DeliveryChallanItem {
     required this.particulars,
     required this.hsnCode,
     required this.variationPathLabel,
+    this.customVariationValues = const <int, String>{},
     required this.note,
     required this.quantityPcs,
     required this.weight,
@@ -134,6 +135,7 @@ class DeliveryChallanItem {
   final String particulars;
   final String hsnCode;
   final String variationPathLabel;
+  final Map<int, String> customVariationValues;
   final String note;
   final String quantityPcs;
   final String weight;
@@ -149,6 +151,7 @@ class DeliveryChallanItem {
       particulars: '',
       hsnCode: '',
       variationPathLabel: '',
+      customVariationValues: const <int, String>{},
       note: '',
       quantityPcs: '',
       weight: '',
@@ -173,6 +176,13 @@ class DeliveryChallanItem {
           json['variationPathLabel'] as String? ??
           json['variation_path_label'] as String? ??
           '',
+      customVariationValues:
+          (json['customVariationValues'] as Map<String, dynamic>? ??
+                  json['custom_variation_values'] as Map<String, dynamic>? ??
+                  const {})
+              .map(
+        (key, value) => MapEntry(int.parse(key), value.toString()),
+      ),
       note:
           json['note'] as String? ??
           json['lineNote'] as String? ??
@@ -196,6 +206,9 @@ class DeliveryChallanItem {
       'particulars': particulars,
       'hsn_code': hsnCode,
       'variation_path_label': variationPathLabel,
+      'customVariationValues': customVariationValues.map(
+        (key, value) => MapEntry(key.toString(), value),
+      ),
       'note': note,
       'quantity_pcs': quantityPcs,
       'weight': weight,

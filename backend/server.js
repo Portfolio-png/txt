@@ -3166,6 +3166,7 @@ async function initDb() {
       variation_leaf_node_id INTEGER NOT NULL DEFAULT 0,
       variation_path_label TEXT DEFAULT '',
       variation_path_node_ids_json TEXT NOT NULL DEFAULT '[]',
+      custom_variation_values_json TEXT DEFAULT '{}',
       quantity INTEGER NOT NULL DEFAULT 0,
       unit_id INTEGER REFERENCES units(id),
       unit_name TEXT NOT NULL DEFAULT 'Pieces',
@@ -3502,6 +3503,7 @@ async function initDb() {
   await ensureColumnExists('order_items', 'unit_name', "TEXT NOT NULL DEFAULT 'Pieces'");
   await ensureColumnExists('order_items', 'unit_symbol', "TEXT NOT NULL DEFAULT 'Pieces'");
   await ensureColumnExists('order_items', 'unit_price', 'REAL NOT NULL DEFAULT 0');
+  await ensureColumnExists('order_items', 'custom_variation_values_json', "TEXT DEFAULT '{}'");
   await ensureColumnExists(
     'order_items',
     'total_invoiced_qty',
@@ -22192,76 +22194,25 @@ app.use('/api', (error, req, res, _next) => {
 
 
 async function clearAllData() {
-  // FK enforcement off for the wipe: every data table is deleted anyway, and
-  // legacy databases can hold tables whose foreign keys point at since-renamed
-  // tables (orders, groups_old_migration), which would abort the transaction.
-  // Must be set outside the transaction — the pragma is a no-op inside one.
   await run('PRAGMA foreign_keys = OFF');
   await run('BEGIN TRANSACTION');
   try {
-    await run('DELETE FROM invoice_lines');
-    await run('DELETE FROM invoice_headers');
-    await run('DELETE FROM order_pipeline_assignments');
-    await run('DELETE FROM delivery_challan_report_groups');
-    await run('DELETE FROM report_groups');
-    await run('DELETE FROM procurement_activity_log');
-    await run('DELETE FROM procurement_request_line_sources');
-    await run('DELETE FROM procurement_request_lines');
-    await run('DELETE FROM procurement_requests');
-    await run('DELETE FROM item_bom_lines');
-    await run('DELETE FROM dies');
-    await run('DELETE FROM machines');
-    await run('DELETE FROM reconciliation_waste_audit');
-    await run('DELETE FROM reconciliation_conversion_overrides');
-    await run('DELETE FROM delivery_challan_order_items');
-    await run('DELETE FROM delivery_challan_activity_log');
-    await run('DELETE FROM delivery_challan_items');
-    await run('DELETE FROM delivery_challans');
-    await run('DELETE FROM challan_template_mappings');
-    await run('DELETE FROM challan_templates');
-    await run('DELETE FROM challan_template_upload_sessions');
-    await run('DELETE FROM order_po_documents');
-    await run('DELETE FROM order_material_requirements');
-    await run('DELETE FROM order_status_history');
-    await run('DELETE FROM order_activity_log');
-    await run('DELETE FROM po_upload_sessions');
-    await run('DELETE FROM po_documents');
-    await run('DELETE FROM asset_upload_sessions');
-    await run('DELETE FROM uploaded_assets');
-    await run('DELETE FROM production_scrap');
-    await run('DELETE FROM run_barcode_inputs');
-    await run('DELETE FROM pipeline_runs');
-    await run('DELETE FROM pipeline_templates');
-    await run('DELETE FROM production_runs');
-    await run('DELETE FROM inventory_set_lines');
-    await run('DELETE FROM inventory_sets');
-    await run('DELETE FROM order_items');
-    await run('DELETE FROM order_headers');
-    await run('DELETE FROM item_variation_values');
-    await run('DELETE FROM item_variations');
-    await run('DELETE FROM item_variation_dimensions');
-    await run('DELETE FROM item_variation_nodes');
-    await run('DELETE FROM material_group_item_links');
-    await run('DELETE FROM material_group_properties');
-    await run('DELETE FROM material_group_units');
-    await run('DELETE FROM material_group_preferences');
-    await run('DELETE FROM item_property_schema');
-    await run('DELETE FROM inventory_stock_positions');
-    await run('DELETE FROM inventory_movements');
-    await run('DELETE FROM inventory_reservations');
-    await run('DELETE FROM inventory_alerts');
-    await run('DELETE FROM scan_history');
-    await run('DELETE FROM material_activity');
-    await run('DELETE FROM materials');
-    await run('DELETE FROM item_unit_conversions');
-    await run('DELETE FROM items');
-    await run('DELETE FROM vendors');
-    await run('DELETE FROM clients');
-    await run('DELETE FROM company_profiles');
-    await run('DELETE FROM groups');
-    await run('DELETE FROM units');
-    await run('DELETE FROM unit_groups');
-
+    const allTables = await all("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'");
+    const preserveTables = [
+      'users',
+      'auth_sessions',
+      'auth_events',
+      'role_permissions',
+      'user_permission_overrides',
+      'permission_templates',
+      'permission_template_permissions',
+      'user_permission_templates'
+    ];
+    for (const table of allTables) {
+      if (!preserveTables.includes(table.name)) {
+        await run("DELETE FROM " + table.name + "");
+      }
+    }
     await ensurePrimaryGroupAndUnit();
     await run('COMMIT');
   } catch (error) {
@@ -22271,7 +22222,6 @@ async function clearAllData() {
     await run('PRAGMA foreign_keys = ON').catch(() => {});
   }
 }
-
 async function reseedDemoData() {
   await seedMaterialsIfEmpty();
   await seedUnitsIfEmpty();
@@ -23062,3 +23012,5 @@ module.exports = {
   rowToItemDto,
   resolveOrderVariationSelection,
 };
+
+
