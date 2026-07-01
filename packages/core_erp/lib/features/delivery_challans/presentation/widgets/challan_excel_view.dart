@@ -15,12 +15,14 @@ class ChallanExcelView extends StatefulWidget {
     this.challans,
     this.filterItemId,
     this.filterVariationLeafNodeId,
+    this.filterCustomVariationValues,
     required this.title,
   });
 
   final List<DeliveryChallan>? challans;
   final int? filterItemId;
   final int? filterVariationLeafNodeId;
+  final Map<String, String>? filterCustomVariationValues;
   final String title;
 
   static Future<void> show(
@@ -28,6 +30,7 @@ class ChallanExcelView extends StatefulWidget {
     List<DeliveryChallan>? challans,
     int? filterItemId,
     int? filterVariationLeafNodeId,
+    Map<String, String>? filterCustomVariationValues,
     required String title,
   }) async {
     await showDialog<void>(
@@ -37,6 +40,7 @@ class ChallanExcelView extends StatefulWidget {
         challans: challans,
         filterItemId: filterItemId,
         filterVariationLeafNodeId: filterVariationLeafNodeId,
+        filterCustomVariationValues: filterCustomVariationValues,
         title: title,
       ),
     );
@@ -132,12 +136,29 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
         _fullChallans[i] = updated;
       }
     }
-    if (widget.filterItemId != null || widget.filterVariationLeafNodeId != null) {
+    if (widget.filterItemId != null || widget.filterVariationLeafNodeId != null || widget.filterCustomVariationValues != null) {
       for (final c in provider.challans) {
         if (c.items.any((item) {
           final itemMatch = widget.filterItemId == null || item.itemId == widget.filterItemId;
           final varMatch = widget.filterVariationLeafNodeId == null || item.variationLeafNodeId == widget.filterVariationLeafNodeId;
-          return itemMatch && varMatch;
+          
+          bool customMatch = true;
+          if (widget.filterCustomVariationValues != null) {
+            final iv = item.customVariationValues ?? {};
+            final fv = widget.filterCustomVariationValues!;
+            if (iv.length != fv.length) {
+               customMatch = false;
+            } else {
+               for (final k in fv.keys) {
+                  if (iv[k] != fv[k]) {
+                     customMatch = false;
+                     break;
+                  }
+               }
+            }
+          }
+          
+          return itemMatch && varMatch && customMatch;
         }) && c.itemsCount == c.items.length) {
           if (!_fullChallans.any((existing) => existing.id == c.id)) {
             _fullChallans.add(c);
@@ -218,7 +239,22 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
         for (final item in challan.items) {
           final itemMatch = widget.filterItemId == null || item.itemId == widget.filterItemId;
           final varMatch = widget.filterVariationLeafNodeId == null || item.variationLeafNodeId == widget.filterVariationLeafNodeId;
-          if (itemMatch && varMatch) {
+          bool customMatch = true;
+          if (widget.filterCustomVariationValues != null) {
+            final iv = item.customVariationValues ?? {};
+            final fv = widget.filterCustomVariationValues!;
+            if (iv.length != fv.length) {
+               customMatch = false;
+            } else {
+               for (final k in fv.keys) {
+                  if (iv[k] != fv[k]) {
+                     customMatch = false;
+                     break;
+                  }
+               }
+            }
+          }
+          if (itemMatch && varMatch && customMatch) {
             rows.add(_FlattenedRow(challan: challan, item: item));
           }
         }

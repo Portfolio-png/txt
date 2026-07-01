@@ -34,6 +34,7 @@ class MaterialDto {
     required this.linkedGroupId,
     required this.linkedItemId,
     this.linkedVariationLeafNodeId,
+    this.customVariationValues,
     required this.displayStock,
     required this.createdBy,
     required this.workflowStatus,
@@ -74,6 +75,7 @@ class MaterialDto {
   final int? linkedGroupId;
   final int? linkedItemId;
   final int? linkedVariationLeafNodeId;
+  final Map<String, String>? customVariationValues;
   final String displayStock;
   final String createdBy;
   final String workflowStatus;
@@ -96,6 +98,13 @@ class MaterialDto {
     final parsedChildren = rawChildren is String
         ? List<String>.from(jsonDecode(rawChildren) as List<dynamic>)
         : List<String>.from((rawChildren as List<dynamic>? ?? const []));
+    
+    final rawCustomVars = json['customVariationValues'];
+    final parsedCustomVars = rawCustomVars is String
+        ? Map<String, String>.from(jsonDecode(rawCustomVars) as Map)
+        : rawCustomVars != null
+            ? Map<String, String>.from(rawCustomVars as Map)
+            : null;
 
     return MaterialDto(
       id: json['id'] as int?,
@@ -122,6 +131,7 @@ class MaterialDto {
       linkedGroupId: json['linkedGroupId'] as int?,
       linkedItemId: json['linkedItemId'] as int?,
       linkedVariationLeafNodeId: json['linkedVariationLeafNodeId'] as int?,
+      customVariationValues: parsedCustomVars,
       displayStock: json['displayStock'] as String? ?? '',
       createdBy: json['createdBy'] as String? ?? '',
       workflowStatus: json['workflowStatus'] as String? ?? 'notStarted',
@@ -176,6 +186,7 @@ class MaterialDto {
       'linkedGroupId': linkedGroupId,
       'linkedItemId': linkedItemId,
       'linkedVariationLeafNodeId': linkedVariationLeafNodeId,
+      'customVariationValues': customVariationValues != null ? jsonEncode(customVariationValues) : null,
       'displayStock': displayStock,
       'createdBy': createdBy,
       'workflowStatus': workflowStatus,
@@ -219,6 +230,7 @@ class MaterialDto {
       linkedGroupId: linkedGroupId,
       linkedItemId: linkedItemId,
       linkedVariationLeafNodeId: linkedVariationLeafNodeId,
+      customVariationValues: customVariationValues,
       displayStock: displayStock,
       createdBy: createdBy,
       workflowStatus: workflowStatus,

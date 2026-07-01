@@ -488,6 +488,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                   _openItemChallansExcel(
                                     context,
                                     itemId: record.linkedItemId!,
+                                    variationLeafNodeId: record.linkedVariationLeafNodeId,
+                                    customVariationValues: record.customVariationValues,
                                     label: record.name,
                                   );
                                 },
@@ -518,6 +520,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                   _openItemChallansExcel(
                                     context,
                                     itemId: record.linkedItemId!,
+                                    variationLeafNodeId: record.linkedVariationLeafNodeId,
+                                    customVariationValues: record.customVariationValues,
                                     label: record.name,
                                   );
                                 },
@@ -4955,9 +4959,10 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
     BuildContext context, {
     required int itemId,
     int? variationLeafNodeId,
+    Map<String, String>? customVariationValues,
     required String label,
   }) =>
-      _openItemChallansExcel(context, itemId: itemId, variationLeafNodeId: variationLeafNodeId, label: label);
+      _openItemChallansExcel(context, itemId: itemId, variationLeafNodeId: variationLeafNodeId, customVariationValues: customVariationValues, label: label);
 }
 
 /// Opens the Excel-style in/out sheet for every challan that moved [itemId],
@@ -4966,6 +4971,7 @@ Future<void> _openItemChallansExcel(
   BuildContext context, {
   required int itemId,
   int? variationLeafNodeId,
+  Map<String, String>? customVariationValues,
   required String label,
 }) async {
   if (!context.mounted) {
@@ -4975,6 +4981,7 @@ Future<void> _openItemChallansExcel(
     context,
     filterItemId: itemId,
     filterVariationLeafNodeId: variationLeafNodeId,
+    filterCustomVariationValues: customVariationValues,
     title: label.trim().isEmpty ? 'In / Out' : '$label — In / Out',
   );
 }

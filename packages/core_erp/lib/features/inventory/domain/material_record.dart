@@ -24,6 +24,7 @@ class MaterialRecord {
     this.linkedGroupId,
     this.linkedItemId,
     this.linkedVariationLeafNodeId,
+    this.customVariationValues,
     this.displayStock = '',
     this.createdBy = '',
     this.workflowStatus = 'notStarted',
@@ -64,6 +65,7 @@ class MaterialRecord {
   final int? linkedGroupId;
   final int? linkedItemId;
   final int? linkedVariationLeafNodeId;
+  final Map<String, String>? customVariationValues;
   final String displayStock;
   final String createdBy;
   final String workflowStatus;

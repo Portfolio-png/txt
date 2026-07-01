@@ -25,9 +25,10 @@ class InventoryMaterialModel {
     required this.linkedChildBarcodes,
     required this.scanCount,
     required this.linkedGroupId,
-    required this.linkedItemId,
+    this.linkedItemId,
     this.linkedVariationLeafNodeId,
-    required this.displayStock,
+    this.customVariationValues,
+    this.displayStock = '',
     required this.createdBy,
     required this.workflowStatus,
     this.materialClass = MaterialClass.rawMaterial,
@@ -67,6 +68,7 @@ class InventoryMaterialModel {
   final int? linkedGroupId;
   final int? linkedItemId;
   final int? linkedVariationLeafNodeId;
+  final Map<String, String>? customVariationValues;
   final String displayStock;
   final String createdBy;
   final String workflowStatus;
@@ -86,6 +88,7 @@ class InventoryMaterialModel {
 
   factory InventoryMaterialModel.fromMap(Map<String, Object?> map) {
     final rawLinked = map['linked_child_barcodes'] as String?;
+    final rawCustomVars = map['custom_variation_values_json'] as String?;
     return InventoryMaterialModel(
       id: map['id'] as int?,
       barcode: map['barcode'] as String,
@@ -111,6 +114,9 @@ class InventoryMaterialModel {
       linkedGroupId: map['linked_group_id'] as int?,
       linkedItemId: map['linked_item_id'] as int?,
       linkedVariationLeafNodeId: map['linked_variation_leaf_node_id'] as int?,
+      customVariationValues: rawCustomVars == null || rawCustomVars.isEmpty
+          ? null
+          : Map<String, String>.from(jsonDecode(rawCustomVars) as Map),
       displayStock: map['display_stock'] as String? ?? '',
       createdBy: map['created_by'] as String? ?? '',
       workflowStatus: map['workflow_status'] as String? ?? 'notStarted',
@@ -165,6 +171,7 @@ class InventoryMaterialModel {
       'linked_group_id': linkedGroupId,
       'linked_item_id': linkedItemId,
       'linked_variation_leaf_node_id': linkedVariationLeafNodeId,
+      'custom_variation_values_json': customVariationValues != null ? jsonEncode(customVariationValues) : null,
       'display_stock': displayStock,
       'created_by': createdBy,
       'workflow_status': workflowStatus,
@@ -208,6 +215,7 @@ class InventoryMaterialModel {
       linkedGroupId: linkedGroupId,
       linkedItemId: linkedItemId,
       linkedVariationLeafNodeId: linkedVariationLeafNodeId,
+      customVariationValues: customVariationValues,
       displayStock: displayStock,
       createdBy: createdBy,
       workflowStatus: workflowStatus,

@@ -9107,18 +9107,26 @@ async function validateProductionRunForChallanLine(runId, item) {
   return run;
 }
 
-async function findMaterialByItemSelection(itemId, variationLeafNodeId) {
-  if (Number(variationLeafNodeId || 0) > 0) {
+async function findMaterialByItemSelection(itemId, variationLeafNodeId, customVariationValues = null) {
+  let customJson = null;
+  if (customVariationValues && Object.keys(customVariationValues).length > 0) {
+    const ordered = {};
+    Object.keys(customVariationValues).sort().forEach(k => ordered[k] = customVariationValues[k]);
+    customJson = JSON.stringify(ordered);
+  }
+
+  if (Number(variationLeafNodeId || 0) > 0 || customJson) {
     const exact = await get(
       `
       SELECT *
       FROM materials
       WHERE linked_item_id = ?
-        AND linked_variation_leaf_node_id = ?
+        AND COALESCE(linked_variation_leaf_node_id, 0) = ?
+        AND COALESCE(custom_variation_values_json, '') = COALESCE(?, '')
       ORDER BY id ASC
       LIMIT 1
       `,
-      [itemId, variationLeafNodeId],
+      [itemId, Number(variationLeafNodeId || 0), customJson],
     );
     if (exact) {
       return exact;
@@ -9130,6 +9138,7 @@ async function findMaterialByItemSelection(itemId, variationLeafNodeId) {
     FROM materials
     WHERE linked_item_id = ?
       AND COALESCE(linked_variation_leaf_node_id, 0) = 0
+      AND COALESCE(custom_variation_values_json, '') = ''
     ORDER BY id ASC
     LIMIT 1
     `,
@@ -9690,11 +9699,13 @@ async function issueDeliveryChallan(id, actor = null) {
         ? await ensureMaterialForItemSelection({
             itemId: Number(item.item_id || 0),
             variationLeafNodeId: Number(item.variation_leaf_node_id || 0),
+            customVariationValues: item.custom_variation_values_json ? JSON.parse(item.custom_variation_values_json) : null,
             actor,
           })
         : await findMaterialByItemSelection(
             Number(item.item_id || 0),
             Number(item.variation_leaf_node_id || 0),
+            item.custom_variation_values_json ? JSON.parse(item.custom_variation_values_json) : null,
           );
       if (!material) {
         const error = new Error('No inventory material is linked to one or more challan items.');
