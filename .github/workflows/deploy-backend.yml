@@ -22,6 +22,19 @@ jobs:
         with:
           sdk: stable
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install Backend Dependencies
+        working-directory: ./backend
+        run: npm install
+
+      - name: Run Backend Tests
+        working-directory: ./backend
+        run: npm test
+
       - name: Export Feature Registry
         run: dart bin/generate_registry.dart
 

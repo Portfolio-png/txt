@@ -117,13 +117,16 @@ class _CatalogViewState extends State<CatalogView> {
 
   Future<void> _fetchCatalog() async {
     try {
-      final res = await http.get(Uri.parse('http://localhost:3000/api/portal/catalog'));
+      final auth = context.read<AuthProvider>();
+      final clientId = auth.clientId;
+      if (clientId == null) return;
+      
+      final res = await http.get(Uri.parse('http://localhost:3000/api/portal/catalog?client_id=$clientId'));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         setState(() { _items = data['items']; _loading = false; });
       }
     } catch (e) {
-      // Mock data for dev
       setState(() {
         _items = [
           {'id': 1, 'display_name': 'Widget A', 'alias': 'WA', 'quantity': 100},

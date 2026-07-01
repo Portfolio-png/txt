@@ -1011,3 +1011,9 @@ CREATE TABLE IF NOT EXISTS portal_messages (
 ALTER TABLE orders ADD COLUMN created_by_portal_user_id INTEGER REFERENCES portal_users(id);
 ALTER TABLE delivery_challans ADD COLUMN created_by_portal_user_id INTEGER REFERENCES portal_users(id);
 ALTER TABLE invoice_headers ADD COLUMN created_by_portal_user_id INTEGER REFERENCES portal_users(id);
+
+CREATE TABLE IF NOT EXISTS client_portal_catalog (
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    PRIMARY KEY (client_id, item_id)
+);

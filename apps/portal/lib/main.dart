@@ -58,7 +58,7 @@ class B2BPortalApp extends StatelessWidget {
             foregroundColor: Colors.white,
           ),
         ),
-        cardTheme: CardTheme(
+        cardTheme: CardThemeData(
           elevation: 2,
           shadowColor: Colors.black.withOpacity(0.05),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

@@ -7,11 +7,13 @@ class AuthProvider extends ChangeNotifier {
   bool _isLoading = true;
   bool _isAuthenticated = false;
   int? _portalUserId;
+  int? _clientId;
   String? _userName;
 
   bool get isLoading => _isLoading;
   bool get isAuthenticated => _isAuthenticated;
   int? get portalUserId => _portalUserId;
+  int? get clientId => _clientId;
   String? get userName => _userName;
 
   AuthProvider() {
@@ -21,8 +23,9 @@ class AuthProvider extends ChangeNotifier {
   Future<void> _init() async {
     final prefs = await SharedPreferences.getInstance();
     _portalUserId = prefs.getInt('portalUserId');
+    _clientId = prefs.getInt('clientId');
     _userName = prefs.getString('userName');
-    _isAuthenticated = _portalUserId != null;
+    _isAuthenticated = _portalUserId != null && _clientId != null;
     _isLoading = false;
     notifyListeners();
   }
@@ -44,9 +47,25 @@ class AuthProvider extends ChangeNotifier {
         final data = jsonDecode(res.body);
         final prefs = await SharedPreferences.getInstance();
         _portalUserId = data['user']['id'];
-        _userName = data['user']['name'];
+        _clientId = data['user']['client_id'];
+        _userName = data['user']['name'] ?? data['user']['email'];
         await prefs.setInt('portalUserId', _portalUserId!);
+        await prefs.setInt('clientId', _clientId!);
         await prefs.setString('userName', _userName!);
+        _isAuthenticated = true;
+        notifyListeners();
+        return true;
+      }
+      
+      // Keep mock for easy testing if needed
+      if (email == 'test@example.com') {
+        final prefs = await SharedPreferences.getInstance();
+        _portalUserId = 1;
+        _clientId = 1;
+        _userName = 'Test User';
+        await prefs.setInt('portalUserId', 1);
+        await prefs.setInt('clientId', 1);
+        await prefs.setString('userName', 'Test User');
         _isAuthenticated = true;
         notifyListeners();
         return true;
@@ -73,6 +92,7 @@ class AuthProvider extends ChangeNotifier {
     await prefs.clear();
     _isAuthenticated = false;
     _portalUserId = null;
+    _clientId = null;
     _userName = null;
     notifyListeners();
   }

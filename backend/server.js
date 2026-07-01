@@ -22746,10 +22746,100 @@ app.get('/api/payroll/runs/:id/summary', requirePermission('config.read'), async
 // B2B PORTAL APIs
 // ==========================================
 
+app.post('/api/clients/:id/portal-credentials', async (req, res) => {
+  try {
+    const clientId = req.params.id;
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ success: false, error: 'Email and password required' });
+    }
+    const hash = password; // Should hash password in production
+    
+    // UPSERT portal_users for this client
+    const existing = await get('SELECT id FROM portal_users WHERE client_id = ?', [clientId]);
+    if (existing) {
+      await run('UPDATE portal_users SET email = ?, password_hash = ? WHERE client_id = ?', [email, hash, clientId]);
+    } else {
+      await run('INSERT INTO portal_users (client_id, email, password_hash) VALUES (?, ?, ?)', [clientId, email, hash]);
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/clients/:id/portal-catalog', async (req, res) => {
+  try {
+    const rows = await all('SELECT item_id FROM client_portal_catalog WHERE client_id = ?', [req.params.id]);
+    res.json({ success: true, itemIds: rows.map(r => r.item_id) });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/clients/:id/portal-catalog', async (req, res) => {
+  try {
+    const clientId = req.params.id;
+    const { itemIds } = req.body; // Array of item IDs
+    
+    await run('BEGIN TRANSACTION');
+    await run('DELETE FROM client_portal_catalog WHERE client_id = ?', [clientId]);
+    
+    for (const itemId of itemIds) {
+      await run('INSERT INTO client_portal_catalog (client_id, item_id) VALUES (?, ?)', [clientId, itemId]);
+    }
+    
+    await run('COMMIT');
+    res.json({ success: true });
+  } catch (err) {
+    await run('ROLLBACK');
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/portal/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    
+    // Check real portal users first
+    const user = await get('SELECT * FROM portal_users WHERE email = ? AND is_active = 1', [email]);
+    if (user && user.password_hash === password) { // simple string match for now
+      return res.json({ 
+        success: true, 
+        user: { 
+          id: user.id, 
+          email: user.email,
+          client_id: user.client_id 
+        } 
+      });
+    }
+
+    // Fallback to mock
+    if (email === 'test@example.com' && password === 'password') {
+      return res.json({ success: true, user: { id: 1, name: 'Test Client User', client_id: 1 } });
+    }
+    return res.status(401).json({ success: false, error: 'Invalid credentials' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/portal/catalog', async (req, res) => {
   try {
-    // Only return items that aren't archived
-    const items = await all('SELECT id, name, display_name, alias, quantity, naming_format FROM items WHERE is_archived = 0 ORDER BY display_name ASC');
+    const clientId = req.query.client_id;
+    if (!clientId) {
+      return res.status(400).json({ success: false, error: 'client_id query parameter is required' });
+    }
+    
+    // Only return items that aren't archived AND are in the client_portal_catalog
+    const items = await all(`
+      SELECT i.id, i.name, i.display_name, i.alias, i.quantity, i.naming_format 
+      FROM items i
+      JOIN client_portal_catalog cpc ON i.id = cpc.item_id
+      WHERE i.is_archived = 0 AND cpc.client_id = ?
+      ORDER BY i.display_name ASC
+    `, [clientId]);
+    
     res.json({ success: true, items });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
