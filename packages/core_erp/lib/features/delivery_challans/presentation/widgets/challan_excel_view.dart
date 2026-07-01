@@ -25,7 +25,7 @@ class ChallanExcelView extends StatefulWidget {
   final Map<String, String>? filterCustomVariationValues;
   final String title;
 
-  static Future<void> show(
+  static Future<DeliveryChallan?> show(
     BuildContext context, {
     List<DeliveryChallan>? challans,
     int? filterItemId,
@@ -33,7 +33,7 @@ class ChallanExcelView extends StatefulWidget {
     Map<String, String>? filterCustomVariationValues,
     required String title,
   }) async {
-    await showDialog<void>(
+    return await showDialog<DeliveryChallan>(
       context: context,
       barrierColor: const Color(0x66100D1F),
       builder: (context) => ChallanExcelView(
@@ -263,20 +263,29 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
 
     rows.sort((a, b) => a.challan.date.compareTo(b.challan.date));
 
-    double balanceQty = 0;
-    double balanceWt = 0;
+    final balanceQtyMap = <String, double>{};
+    final balanceWtMap = <String, double>{};
     for (var row in rows) {
+      final key = row.item?.particulars ?? '-';
       final qty = double.tryParse(row.item?.quantityPcs ?? '') ?? 0;
       final wt = double.tryParse(row.item?.weight ?? '') ?? 0;
+      
+      double bQty = balanceQtyMap[key] ?? 0.0;
+      double bWt = balanceWtMap[key] ?? 0.0;
+
       if (row.challan.isReception) {
-        balanceQty += qty;
-        balanceWt += wt;
+        bQty += qty;
+        bWt += wt;
       } else if (row.challan.isDelivery) {
-        balanceQty -= qty;
-        balanceWt -= wt;
+        bQty -= qty;
+        bWt -= wt;
       }
-      row.balanceQty = balanceQty;
-      row.balanceWt = balanceWt;
+      
+      balanceQtyMap[key] = bQty;
+      balanceWtMap[key] = bWt;
+      
+      row.balanceQty = bQty;
+      row.balanceWt = bWt;
     }
 
     return SingleChildScrollView(
@@ -284,6 +293,7 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: DataTable(
+          showCheckboxColumn: false,
           headingRowColor: WidgetStateProperty.all(SoftErpTheme.cardSurfaceAlt),
           dataRowMinHeight: 48,
           dataRowMaxHeight: 56,
@@ -301,7 +311,8 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
             const DataColumn(label: Text('Party Name')),
             const DataColumn(label: Text('Item Particulars')),
             DataColumn(label: Text(_qtyHeader)),
-            DataColumn(label: Text(_wtHeader)),
+            DataColumn(label: Text('In ($_wtHeader)')),
+            DataColumn(label: Text('Out ($_wtHeader)')),
             DataColumn(label: Text('Balance Qty')),
             DataColumn(label: Text('Balance Wt')),
           ],
@@ -314,6 +325,9 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
             final bWtStr = row.balanceWt == row.balanceWt.truncateToDouble() ? row.balanceWt.toInt().toString() : row.balanceWt.toStringAsFixed(3);
 
             return DataRow(
+              onSelectChanged: (_) {
+                Navigator.of(context).pop(row.challan);
+              },
               cells: [
                 DataCell(Text(dateStr)),
                 DataCell(Text(row.challan.challanNo)),
@@ -328,7 +342,8 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
                 ),
                 DataCell(Text(row.item?.particulars ?? '-')),
                 DataCell(Text(row.item?.quantityPcs ?? '-')),
-                DataCell(Text(row.item?.weight ?? '-')),
+                DataCell(Text(row.challan.isReception ? (row.item?.weight ?? '-') : '')),
+                DataCell(Text(row.challan.isDelivery ? (row.item?.weight ?? '-') : '')),
                 DataCell(Text(bQtyStr, style: TextStyle(color: row.balanceQty < 0 ? Colors.red : Colors.green.shade700, fontWeight: FontWeight.bold))),
                 DataCell(Text(bWtStr, style: TextStyle(color: row.balanceWt < 0 ? Colors.red : Colors.green.shade700, fontWeight: FontWeight.bold))),
               ],

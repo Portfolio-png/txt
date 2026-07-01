@@ -81,6 +81,13 @@ class ChallanScreen extends StatefulWidget {
     );
   }
 
+  static Future<void> openPrintPreview(
+    BuildContext context,
+    DeliveryChallan challan,
+  ) {
+    return _openPrintPreviewFromContext(context, challan);
+  }
+
   static Future<void> openReceptionEditor(
     BuildContext context, {
     String? initialLocation,
@@ -4389,9 +4396,10 @@ class _ItemsEditor extends StatelessWidget {
                           final result = await showDialog<VariationPathSelectionResult>(
                             context: context,
                             builder: (ctx) => Dialog(
-                              backgroundColor: Colors.transparent,
-                              insetPadding: const EdgeInsets.all(16),
-                              child: VariationPathSelectorDialog(
+                              insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 680, maxHeight: 760),
+                                child: VariationPathSelectorDialog(
                                 item: candidate,
                                 initialRootPropertyId: null,
                                 initialValueNodeIds: draft.variationPathNodeIds,
@@ -4409,6 +4417,7 @@ class _ItemsEditor extends StatelessWidget {
                                 },
                               ),
                             ),
+                           ),
                           );
                           if (result != null && context.mounted) {
                             draft.applyReceptionVariationSelection(
@@ -4430,9 +4439,10 @@ class _ItemsEditor extends StatelessWidget {
                           final result = await showDialog<VariationPathSelectionResult>(
                             context: context,
                             builder: (ctx) => Dialog(
-                              backgroundColor: Colors.transparent,
-                              insetPadding: const EdgeInsets.all(16),
-                              child: VariationPathSelectorDialog(
+                              insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 680, maxHeight: 760),
+                                child: VariationPathSelectorDialog(
                                 item: selectedItem,
                                 initialRootPropertyId: null,
                                 initialValueNodeIds: draft.variationPathNodeIds,
@@ -4451,6 +4461,7 @@ class _ItemsEditor extends StatelessWidget {
                                 },
                               ),
                             ),
+                           ),
                           );
                           if (result != null && context.mounted) {
                             draft.applyReceptionVariationSelection(
@@ -5437,6 +5448,16 @@ class _PrintPreviewState extends State<_PrintPreview> {
                       ),
                     ),
                   ),
+                  AppButton(
+                    label: 'Edit',
+                    icon: Icons.edit_outlined,
+                    variant: AppButtonVariant.secondary,
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      ChallanScreen.openEditor(context, challan: widget.challan);
+                    },
+                  ),
+                  const SizedBox(width: 8),
                   if (template != null) ...[
                     AppButton(
                       label: 'Digital Preview',

@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import '../providers/inventory_create_command_provider.dart';
 import '../../../../app/preferences/preferences_provider.dart';
 import '../../../../core/services/feature_flags.dart';
+import '../../../../core/navigation/app_navigation.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_empty_state.dart';
@@ -1120,16 +1121,19 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     resolvedVariationPathLabel.isEmpty) &&
                 record.name.contains(' - ')) {
               resolvedVariationPathLabel = record.name.substring(
-                record.name.lastIndexOf(' - ') + 3,
+                record.name.indexOf(' - ') + 3,
               );
+            }
+            String finalDisplayName = record.name;
+            if (record.customVariationValues != null && record.customVariationValues!.isNotEmpty) {
+              final customValsStr = record.customVariationValues!.values.join(' - ');
+              if (!finalDisplayName.contains(customValsStr)) {
+                 finalDisplayName = '$finalDisplayName - $customValsStr';
+              }
             }
             return _InventoryRowEntry(
               record: record,
-              displayName: linkedItem == null
-                  ? record.name
-                  : linkedItem.displayName.trim().isEmpty
-                  ? linkedItem.name
-                  : linkedItem.displayName,
+              displayName: finalDisplayName,
               displayId: record.barcode,
               displayMetadata: _itemMetadataText(
                 record,
@@ -1200,7 +1204,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
           rows.add(
             _InventoryRowEntry(
               record: masterRecord,
-              displayName: itemLabel,
+              displayName: line.variationPathLabel.trim().isEmpty 
+                  ? itemLabel 
+                  : '$itemLabel - ${line.variationPathLabel.trim()}',
               displayId: masterRecord.barcode,
               displayMetadata: _itemMetadataText(
                 masterRecord,
@@ -1451,36 +1457,53 @@ class _InventoryScreenState extends State<InventoryScreen> {
       childRecords.sort(
         (a, b) => _compareRowLike(
           aRecord: a,
-          aName: (() {
-            final linkedItem = itemById[a.linkedItemId];
-            if (linkedItem == null) {
-              return a.name;
-            }
-            return linkedItem.displayName.trim().isEmpty
-                ? linkedItem.name
-                : linkedItem.displayName;
-          })(),
+          aName: a.name.trim().isNotEmpty
+              ? a.name
+              : (() {
+                  final linkedItem = itemById[a.linkedItemId];
+                  if (linkedItem == null) {
+                    return a.name;
+                  }
+                  return linkedItem.displayName.trim().isEmpty
+                      ? linkedItem.name
+                      : linkedItem.displayName;
+                })(),
           aId: a.linkedItemId?.toString() ?? a.barcode,
           bRecord: b,
-          bName: (() {
-            final linkedItem = itemById[b.linkedItemId];
-            if (linkedItem == null) {
-              return b.name;
-            }
-            return linkedItem.displayName.trim().isEmpty
-                ? linkedItem.name
-                : linkedItem.displayName;
-          })(),
+          bName: b.name.trim().isNotEmpty
+              ? b.name
+              : (() {
+                  final linkedItem = itemById[b.linkedItemId];
+                  if (linkedItem == null) {
+                    return b.name;
+                  }
+                  return linkedItem.displayName.trim().isEmpty
+                      ? linkedItem.name
+                      : linkedItem.displayName;
+                })(),
           bId: b.linkedItemId?.toString() ?? b.barcode,
         ),
       );
       for (final childRecord in childRecords) {
         final linkedItem = itemById[childRecord.linkedItemId];
-        final childName = linkedItem == null
+        // ponytail: prefer the record's own name — it carries the variation
+        // suffix (e.g. "sheetmetal - brass"); linkedItem.displayName is the
+        // base item name and would drop it. Matches the Items view.
+        String childName = childRecord.name.trim().isNotEmpty
+            ? childRecord.name
+            : linkedItem == null
             ? childRecord.name
             : linkedItem.displayName.trim().isEmpty
             ? linkedItem.name
             : linkedItem.displayName;
+            
+        if (childRecord.customVariationValues != null && childRecord.customVariationValues!.isNotEmpty) {
+          final customValsStr = childRecord.customVariationValues!.values.join(' - ');
+          if (!childName.contains(customValsStr)) {
+             childName = '$childName - $customValsStr';
+          }
+        }
+
         rows.add(
           _InventoryRowEntry(
             record: childRecord,
@@ -1538,10 +1561,17 @@ class _InventoryScreenState extends State<InventoryScreen> {
             ),
           );
     for (final record in standaloneParentRecords) {
+      String finalDisplayName = record.name;
+      if (record.customVariationValues != null && record.customVariationValues!.isNotEmpty) {
+        final customValsStr = record.customVariationValues!.values.join(' - ');
+        if (!finalDisplayName.contains(customValsStr)) {
+           finalDisplayName = '$finalDisplayName - $customValsStr';
+        }
+      }
       rows.add(
         _InventoryRowEntry(
           record: record,
-          displayName: record.name,
+          displayName: finalDisplayName,
           displayId: record.barcode,
           displayMetadata: _itemMetadataText(record, null),
           groupId: _resolveGroupForInventoryRecord(record)?.id,
@@ -4430,6 +4460,7 @@ class _InventoryTableState extends State<_InventoryTable> {
                           isStriped: index.isOdd,
                           isRequestDelete: widget.isRequestDelete,
                           onTap: rowTap,
+                          onDoubleTap: () => widget.onOpenDetails(record),
                           onLongPress: isSelectable
                               ? () => widget.onToggleSelection(record.barcode)
                               : null,
@@ -4740,6 +4771,7 @@ class _InventoryMainDataRow extends StatefulWidget {
     required this.isStriped,
     required this.isRequestDelete,
     required this.onTap,
+    this.onDoubleTap,
     required this.onLongPress,
     required this.onSecondaryTapDown,
     required this.onReceive,
@@ -4763,6 +4795,7 @@ class _InventoryMainDataRow extends StatefulWidget {
   final bool isStriped;
   final bool isRequestDelete;
   final VoidCallback onTap;
+  final VoidCallback? onDoubleTap;
   final VoidCallback? onLongPress;
   final ValueChanged<TapDownDetails> onSecondaryTapDown;
   final VoidCallback onReceive;
@@ -4807,6 +4840,7 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
         behavior: HitTestBehavior.opaque,
         onLongPress: widget.onLongPress,
         onSecondaryTapDown: widget.onSecondaryTapDown,
+        onDoubleTap: widget.onDoubleTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOutCubic,
@@ -4815,6 +4849,7 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
                 widget.isSelected ||
                 (widget.entry.depth == 0 && widget.entry.isExpanded),
             onTap: widget.onTap,
+            onDoubleTap: widget.onDoubleTap,
             baseColor: baseColor,
             hoverColor: hoverColor,
             selectedColor: selectedColor,
@@ -4966,7 +5001,7 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
 }
 
 /// Opens the Excel-style in/out sheet for every challan that moved [itemId],
-/// instead of navigating to the split Reception|Delivery challan screen.
+/// instead of navigating to the split Reception|Delivery
 Future<void> _openItemChallansExcel(
   BuildContext context, {
   required int itemId,
@@ -4977,13 +5012,23 @@ Future<void> _openItemChallansExcel(
   if (!context.mounted) {
     return;
   }
-  await ChallanExcelView.show(
+  final selectedChallan = await ChallanExcelView.show(
     context,
     filterItemId: itemId,
     filterVariationLeafNodeId: variationLeafNodeId,
     filterCustomVariationValues: customVariationValues,
-    title: label.trim().isEmpty ? 'In / Out' : '$label — In / Out',
+    title: label.trim().isEmpty ? 'In / Out' : '$label - In / Out',
   );
+
+  if (selectedChallan != null && context.mounted) {
+    context.read<AppNavigation>().select('delivery_challans');
+    // We need to wait a frame for the tab to switch before opening the dialog
+    Future.microtask(() {
+      if (context.mounted) {
+         ChallanScreen.openPrintPreview(context, selectedChallan);
+      }
+    });
+  }
 }
 
 class _InventoryActionsCell extends StatelessWidget {
