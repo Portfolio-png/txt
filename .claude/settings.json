@@ -47,7 +47,8 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:18099/health)",
       "Bash(curl -s -c C:/Users/ADMIN/AppData/Local/Temp/claude/f--Rutu-txt/653940a2-351d-4951-b2c1-e39751146b8e/scratchpad/cookies.txt -H 'Content-Type: application/json' -d '{\"email\":\"super@paper.local\",\"password\":\"Test@12345\"}' http://localhost:18099/api/auth/login)",
       "Bash(curl -s -b C:/Users/ADMIN/AppData/Local/Temp/claude/f--Rutu-txt/653940a2-351d-4951-b2c1-e39751146b8e/scratchpad/cookies.txt http://localhost:18099/api/me)",
-      "Bash(echo \"pid $!\")"
+      "Bash(echo \"pid $!\")",
+      "Bash(node -e \"require\\('./server.js'\\)\" --check)"
     ]
   }
 }

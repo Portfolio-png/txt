@@ -9165,8 +9165,8 @@ function generateStandaloneMaterialBarcode() {
     .padStart(5, '0')}`;
 }
 
-async function ensureMaterialForItemSelection({ itemId, variationLeafNodeId = 0, actor = null }) {
-  const existing = await findMaterialByItemSelection(itemId, variationLeafNodeId);
+async function ensureMaterialForItemSelection({ itemId, variationLeafNodeId = 0, customVariationValues = null, actor = null }) {
+  const existing = await findMaterialByItemSelection(itemId, variationLeafNodeId, customVariationValues);
   if (existing) {
     return existing;
   }
@@ -9174,25 +9174,43 @@ async function ensureMaterialForItemSelection({ itemId, variationLeafNodeId = 0,
   const unit = snapshot.item.unit_id ? await getUnitRowById(snapshot.item.unit_id) : null;
   const now = new Date().toISOString();
   const barcode = generateStandaloneMaterialBarcode();
+
+  // Custom variation values (e.g. {color: "Copper"}) distinguish materials that
+  // share an item + leaf node. Persist them (canonical key order, matching
+  // findMaterialByItemSelection) and fold the values into the name so each
+  // variation gets its own card instead of piling onto the base material.
+  let customJson = null;
+  let name = snapshot.particulars || snapshot.item.display_name || snapshot.item.name;
+  if (customVariationValues && Object.keys(customVariationValues).length > 0) {
+    const ordered = {};
+    Object.keys(customVariationValues).sort().forEach((k) => { ordered[k] = customVariationValues[k]; });
+    customJson = JSON.stringify(ordered);
+    const suffix = Object.values(ordered).join(' - ');
+    if (suffix && !name.includes(suffix)) {
+      name = `${name} - ${suffix}`;
+    }
+  }
+
   await run(
     `
     INSERT INTO materials (
       barcode, name, type, grade, thickness, supplier, location, unit_id, unit, notes,
       group_mode, inheritance_enabled, created_at, kind, parent_barcode, number_of_children,
       linked_child_barcodes, scan_count, linked_group_id, linked_item_id, linked_variation_leaf_node_id,
-      display_stock, created_by, workflow_status, material_class, inventory_state, procurement_state,
+      custom_variation_values_json, display_stock, created_by, workflow_status, material_class, inventory_state, procurement_state,
       traceability_mode, on_hand_qty, reserved_qty, available_to_promise_qty, incoming_qty,
       linked_order_count, linked_pipeline_count, pending_alert_count, updated_at, last_scanned_at
-    ) VALUES (?, ?, 'Item', '', '', '', '', ?, ?, '', NULL, 0, ?, 'standalone', NULL, 0, '[]', 0, NULL, ?, ?, ?, ?, 'notStarted', 'finished_good', 'available', 'not_ordered', 'bulk', 0, 0, 0, 0, 0, 0, 0, ?, NULL)
+    ) VALUES (?, ?, 'Item', '', '', '', '', ?, ?, '', NULL, 0, ?, 'standalone', NULL, 0, '[]', 0, NULL, ?, ?, ?, ?, ?, 'notStarted', 'finished_good', 'available', 'not_ordered', 'bulk', 0, 0, 0, 0, 0, 0, 0, ?, NULL)
     `,
     [
       barcode,
-      snapshot.particulars || snapshot.item.display_name || snapshot.item.name,
+      name,
       unit?.id || snapshot.item.unit_id || null,
       unit?.symbol || '',
       now,
       snapshot.item.id,
       snapshot.variationLeafNodeId > 0 ? snapshot.variationLeafNodeId : null,
+      customJson,
       unit?.symbol ? `0 ${unit.symbol}` : '0',
       actor?.name || actor || 'System',
       now,
