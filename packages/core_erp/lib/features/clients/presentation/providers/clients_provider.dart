@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 
 import '../../data/repositories/client_repository.dart';
@@ -231,8 +233,51 @@ class ClientsProvider extends ChangeNotifier {
   static String _normalizeGstNumber(String value) {
     return value.trim().replaceAll(RegExp(r'\s+'), '').toUpperCase();
   }
+  Future<void> updatePortalCredentials(int clientId, String email, String password) async {
+    try {
+      final res = await http.post(
+        Uri.parse('http://localhost:3000/api/clients/${clientId}/portal-credentials'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'email': email, 'password': password}),
+      );
+      if (res.statusCode != 200) {
+        throw Exception('Failed to update credentials');
+      }
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Future<List<int>> getPortalCatalog(int clientId) async {
+    try {
+      final res = await http.get(Uri.parse('http://localhost:3000/api/clients/${clientId}/portal-catalog'));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        return List<int>.from(data['itemIds'] ?? []);
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<void> updatePortalCatalog(int clientId, List<int> itemIds) async {
+    try {
+      final res = await http.post(
+        Uri.parse('http://localhost:3000/api/clients/${clientId}/portal-catalog'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'itemIds': itemIds}),
+      );
+      if (res.statusCode != 200) {
+        throw Exception('Failed to update catalog');
+      }
+    } catch (e) {
+      rethrow;
+    }
+  }
 }
 
 extension<T> on Iterable<T> {
   T? get firstOrNull => isEmpty ? null : first;
 }
+

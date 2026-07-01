@@ -16,6 +16,7 @@ import '../../domain/client_definition.dart';
 import '../../domain/client_inputs.dart';
 import '../providers/clients_provider.dart';
 import '../../../orders/presentation/providers/orders_provider.dart';
+import '../../../items/presentation/providers/items_provider.dart';
 import '../../../../core/services/generic_asset_service.dart';
 import '../../../../core/widgets/export_preview_dialog.dart';
 
@@ -234,7 +235,17 @@ class _ClientRow extends StatelessWidget {
                 },
               ),
               SoftActionLink(
-                label: 'Edit',
+                  label: 'Portal Access',
+                  onTap: () {
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (context) => _PortalSettingsSheet(client: client),
+                    );
+                  },
+                ),
+                SoftActionLink(label: 'Edit',
                 onTap: () => ClientsScreen.openEditor(context, client: client),
               ),
               SoftActionLink(
@@ -978,6 +989,147 @@ class _ClientImagePickerFieldState extends State<_ClientImagePickerField> {
           ],
         ),
       ],
+    );
+  }
+}
+
+class _PortalSettingsSheet extends StatefulWidget {
+  const _PortalSettingsSheet({required this.client});
+  final ClientDefinition client;
+  @override
+  State<_PortalSettingsSheet> createState() => _PortalSettingsSheetState();
+}
+
+class _PortalSettingsSheetState extends State<_PortalSettingsSheet> {
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _isLoading = true;
+  bool _isSaving = false;
+  Set<int> _selectedItemIds = {};
+  
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+  
+  Future<void> _loadData() async {
+    try {
+      await context.read<ItemsProvider>().initialize();
+      final itemIds = await context.read<ClientsProvider>().getPortalCatalog(widget.client.id);
+      if (mounted) {
+        setState(() {
+          _selectedItemIds = itemIds.toSet();
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _save() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+    if (email.isEmpty || password.isEmpty) {
+      showAppToast(context, 'Email and password required', kind: AppToastKind.error);
+      return;
+    }
+    
+    setState(() => _isSaving = true);
+    try {
+      final clientsProvider = context.read<ClientsProvider>();
+      await clientsProvider.updatePortalCredentials(widget.client.id, email, password);
+      await clientsProvider.updatePortalCatalog(widget.client.id, _selectedItemIds.toList());
+      if (mounted) {
+        showAppToast(context, 'Portal settings saved', kind: AppToastKind.success);
+        Navigator.of(context).maybePop();
+      }
+    } catch (e) {
+      if (mounted) {
+        showAppToast(context, 'Error saving settings: $e', kind: AppToastKind.error);
+        setState(() => _isSaving = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final itemsProvider = context.watch<ItemsProvider>();
+    final activeItems = itemsProvider.items.where((i) => !i.isArchived).toList();
+
+    return ErpFormScaffold(
+      title: 'Portal Access',
+      subtitle: widget.client.name,
+      onClose: () => Navigator.of(context).maybePop(),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('Portal Login Credentials', style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          _ClientTextField(
+            controller: _emailController,
+            label: 'Email',
+            helper: 'Client will use this to login to B2B portal',
+          ),
+          const SizedBox(height: 12),
+          _ClientTextField(
+            controller: _passwordController,
+            label: 'New Password',
+            helper: 'Set a new password for this client',
+          ),
+          const SizedBox(height: 24),
+          const Text('Custom Catalog Items', style: TextStyle(fontWeight: FontWeight.w600)),
+          const Text('Select which items this client is allowed to see and order.', style: TextStyle(color: Colors.grey, fontSize: 12)),
+          const SizedBox(height: 12),
+          Container(
+            height: 300,
+            decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(8)),
+            child: ListView.builder(
+              itemCount: activeItems.length,
+              itemBuilder: (context, index) {
+                final item = activeItems[index];
+                return CheckboxListTile(
+                  title: Text(item.displayName),
+                  subtitle: Text('Qty Available: ${item.quantity}'),
+                  value: _selectedItemIds.contains(item.id),
+                  onChanged: (val) {
+                    setState(() {
+                      if (val == true) {
+                        _selectedItemIds.add(item.id);
+                      } else {
+                        _selectedItemIds.remove(item.id);
+                      }
+                    });
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+      footer: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          AppButton(
+            label: 'Cancel',
+            variant: AppButtonVariant.secondary,
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+          const SizedBox(width: 12),
+          AppButton(
+            label: 'Save Settings',
+            isLoading: _isSaving,
+            onPressed: _save,
+          ),
+        ],
+      ),
     );
   }
 }
