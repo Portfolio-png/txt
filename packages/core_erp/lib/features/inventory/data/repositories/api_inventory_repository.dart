@@ -531,15 +531,47 @@ class ApiInventoryRepository implements InventoryRepository {
           // ignore parsing error
         }
       }
+      final rawPathNodeIds = map['variation_path_node_ids'];
+      final pathNodeIds = rawPathNodeIds is List
+          ? rawPathNodeIds
+                .map(
+                  (value) =>
+                      value is num ? value.toInt() : int.tryParse('$value'),
+                )
+                .whereType<int>()
+                .toList(growable: false)
+          : const <int>[];
+      final rawPath = map['variation_path'];
+      final pathValues = rawPath is List
+          ? rawPath
+                .map((value) {
+                  if (value is Map<String, dynamic>) {
+                    return value['value']?.toString() ?? '';
+                  }
+                  if (value is Map) {
+                    return value['value']?.toString() ?? '';
+                  }
+                  return value.toString();
+                })
+                .where((value) => value.trim().isNotEmpty)
+                .toList(growable: false)
+          : const <String>[];
       return VariationStockRecord(
         stockId: map['stock_id'] as int,
         itemId: map['item_id'] as int,
         variationLeafNodeId: map['variation_leaf_node_id'] as int,
         quantity: (map['quantity'] as num).toDouble(),
         locationId: map['location_id'] as String? ?? 'MAIN',
-        updatedAt: map['updated_at'] != null ? DateTime.parse(map['updated_at']) : DateTime.now(),
+        updatedAt: map['updated_at'] != null
+            ? DateTime.parse(map['updated_at'])
+            : DateTime.now(),
         itemName: map['item_name'] as String? ?? '',
+        unitId: map['unit_id'] is num
+            ? (map['unit_id'] as num).toInt()
+            : int.tryParse('${map['unit_id'] ?? ''}'),
         namingFormat: formatTokens,
+        variationPathNodeIds: pathNodeIds,
+        variationPathValues: pathValues,
       );
     }).toList();
   }

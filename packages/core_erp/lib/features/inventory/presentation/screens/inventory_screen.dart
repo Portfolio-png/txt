@@ -55,6 +55,7 @@ import '../../domain/material_control_tower_detail.dart';
 import '../../domain/material_group_configuration.dart' as groupcfg;
 import '../../domain/material_inputs.dart';
 import '../../domain/material_record.dart';
+import '../../domain/variation_stock_record.dart';
 import '../providers/inventory_provider.dart';
 import '../widgets/inventory_set_editor_dialog.dart';
 
@@ -212,43 +213,34 @@ class _InventoryScreenState extends State<InventoryScreen> {
     );
     return Consumer3<InventoryProvider, GroupsProvider, ItemsProvider>(
       builder: (context, inventory, groups, items, _) {
-        if (inventory.isLoading && inventory.materials.isEmpty) {
+        if (inventory.isLoading &&
+            inventory.materials.isEmpty &&
+            inventory.variationStock.isEmpty) {
           return const _InventoryLoadingSkeleton();
         }
 
         final itemById = <int, ItemDefinition>{
           for (final item in items.items) item.id: item,
         };
+        final unitSymbolById = <int, String>{
+          for (final unit in context.watch<UnitsProvider>().activeUnits)
+            unit.id: _effectiveUnitSymbol(
+              unit.symbol.trim().isNotEmpty ? unit.symbol : unit.name,
+            ),
+        };
 
-        final records = _viewMode == _InventoryViewMode.items
-            ? inventory.variationStock.map((stock) {
-                final item = itemById[stock.itemId];
-                final label = item != null
-                    ? NamingFormatHelper.buildNamingFormatLabel(item, [stock.variationLeafNodeId])
-                    : stock.itemName;
-                return MaterialRecord(
-                  id: stock.stockId,
-                  barcode: 'VAR-${stock.stockId}',
-                  name: label,
-                  type: '',
-                  grade: '',
-                  thickness: '',
-                  supplier: '',
-                  location: stock.locationId,
-                  unitId: item?.unitId,
-                  unit: '',
-                  notes: '',
-                  createdAt: stock.updatedAt,
-                  kind: 'child',
-                  parentBarcode: null,
-                  numberOfChildren: 0,
-                  linkedChildBarcodes: const [],
-                  scanCount: 0,
-                  linkedItemId: stock.itemId,
-                  linkedVariationLeafNodeId: stock.variationLeafNodeId,
-                  displayStock: stock.quantity.toStringAsFixed(2),
-                );
-              }).toList()
+        final records =
+            _viewMode == _InventoryViewMode.items ||
+                _viewMode == _InventoryViewMode.groups
+            ? inventory.variationStock
+                  .map(
+                    (stock) => _variationStockMaterialRecord(
+                      stock,
+                      itemById[stock.itemId],
+                      unitSymbolById,
+                    ),
+                  )
+                  .toList()
             : inventory.materials;
 
         final sets = inventory.sets;
@@ -310,6 +302,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
           groupNameById: groupNameById,
           groupsById: groupsById,
           itemById: itemById,
+          unitSymbolById: unitSymbolById,
           expandedParents: _expandedParents,
           searchQuery: inventory.searchQuery,
         );
@@ -332,6 +325,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
           for (final record in records) record.barcode,
           for (final group in groupsById.values)
             _masterGroupInventoryBarcode(group.id),
+          for (final item in itemById.values)
+            _masterItemInventoryBarcode(item.id),
         };
         _expandedParents.removeWhere(
           (barcode) => !validExpandedBarcodes.contains(barcode),
@@ -513,16 +508,20 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                   if (!canBrowseChallans) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
-                                          content: Text(
-                                              'Challans require an assigned item.')),
+                                        content: Text(
+                                          'Challans require an assigned item.',
+                                        ),
+                                      ),
                                     );
                                     return;
                                   }
                                   _openItemChallansExcel(
                                     context,
                                     itemId: record.linkedItemId!,
-                                    variationLeafNodeId: record.linkedVariationLeafNodeId,
-                                    customVariationValues: record.customVariationValues,
+                                    variationLeafNodeId:
+                                        record.linkedVariationLeafNodeId,
+                                    customVariationValues:
+                                        record.customVariationValues,
                                     label: record.name,
                                   );
                                 },
@@ -545,16 +544,20 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                   if (!canBrowseChallans) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
-                                          content: Text(
-                                              'Challans require an assigned item.')),
+                                        content: Text(
+                                          'Challans require an assigned item.',
+                                        ),
+                                      ),
                                     );
                                     return;
                                   }
                                   _openItemChallansExcel(
                                     context,
                                     itemId: record.linkedItemId!,
-                                    variationLeafNodeId: record.linkedVariationLeafNodeId,
-                                    customVariationValues: record.customVariationValues,
+                                    variationLeafNodeId:
+                                        record.linkedVariationLeafNodeId,
+                                    customVariationValues:
+                                        record.customVariationValues,
                                     label: record.name,
                                   );
                                 },
@@ -1096,12 +1099,122 @@ class _InventoryScreenState extends State<InventoryScreen> {
     return scoped;
   }
 
+  MaterialRecord _variationStockMaterialRecord(
+    VariationStockRecord stock,
+    ItemDefinition? item,
+    Map<int, String> unitSymbolById,
+  ) {
+    final unitId = stock.unitId ?? item?.unitId;
+    final unitSymbol = unitId == null ? '' : unitSymbolById[unitId] ?? '';
+    final label = _variationStockLabel(stock, item);
+    return MaterialRecord(
+      id: stock.stockId,
+      barcode: 'VAR-${stock.stockId}',
+      name: label,
+      type: 'Variant',
+      grade: '',
+      thickness: '',
+      supplier: '',
+      location: stock.locationId,
+      unitId: unitId,
+      unit: unitSymbol,
+      notes: stock.variationPathValues.join(' > '),
+      createdAt: stock.updatedAt,
+      updatedAt: stock.updatedAt,
+      kind: 'child',
+      parentBarcode: item == null ? null : _masterItemInventoryBarcode(item.id),
+      numberOfChildren: 0,
+      linkedChildBarcodes: const <String>[],
+      scanCount: 0,
+      linkedItemId: stock.itemId,
+      linkedVariationLeafNodeId: stock.variationLeafNodeId,
+      displayStock: _stockLabel(stock.quantity, unitSymbol),
+      onHand: stock.quantity,
+      createdBy: 'System',
+      workflowStatus: stock.quantity > 0 ? 'completed' : 'notStarted',
+    );
+  }
+
+  String _variationStockLabel(
+    VariationStockRecord stock,
+    ItemDefinition? item,
+  ) {
+    final fallbackItemName = stock.itemName.trim();
+    final fallbackPath = stock.variationPathValues
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .join(' ');
+    final fallback = [
+      if (fallbackItemName.isNotEmpty) fallbackItemName,
+      if (fallbackPath.isNotEmpty) fallbackPath,
+    ].join(' ').trim();
+    if (item == null) {
+      return fallback.isEmpty ? 'Item #${stock.itemId}' : fallback;
+    }
+
+    final computed = NamingFormatHelper.buildLabelForLeaf(
+      item,
+      stock.variationLeafNodeId,
+    ).trim();
+    final itemLabel = item.displayName.trim().isEmpty
+        ? item.name.trim()
+        : item.displayName.trim();
+    if (computed.isNotEmpty &&
+        (computed != itemLabel || stock.variationPathValues.isEmpty)) {
+      return computed;
+    }
+    return fallback.isEmpty ? computed.ifEmpty(itemLabel) : fallback;
+  }
+
+  String _unitSymbolForItem(
+    ItemDefinition item,
+    Map<int, String> unitSymbolById,
+  ) {
+    return unitSymbolById[item.unitId] ?? '';
+  }
+
+  String _stockLabel(double quantity, String unit) {
+    final qty = _formatQty(quantity);
+    final effectiveUnit = _effectiveUnitSymbol(unit);
+    return effectiveUnit.isEmpty ? qty : '$qty $effectiveUnit';
+  }
+
+  Map<String, double> _stockTotalsForRecords(Iterable<MaterialRecord> records) {
+    final totals = <String, double>{};
+    for (final record in records) {
+      final unit = _effectiveUnitSymbol(record.unit);
+      totals[unit] = (totals[unit] ?? 0) + record.onHand;
+    }
+    return totals;
+  }
+
+  void _mergeStockTotals(Map<String, double> target, Map<String, double> from) {
+    for (final entry in from.entries) {
+      target[entry.key] = (target[entry.key] ?? 0) + entry.value;
+    }
+  }
+
+  String _stockTotalsLabel(Map<String, double> totals) {
+    final entries =
+        totals.entries
+            .where((entry) => entry.value.abs() > 0.0001)
+            .toList(growable: false)
+          ..sort((a, b) => a.key.compareTo(b.key));
+    if (entries.isEmpty) {
+      return '0';
+    }
+    return entries
+        .map((entry) => _stockLabel(entry.value, entry.key))
+        .join(' + ');
+  }
+
   List<_InventoryRowEntry> _buildRows(
     List<MaterialRecord> scopedRecords, {
     required InventorySetDefinition? activeSet,
     required Map<int, String> groupNameById,
     required Map<int, GroupDefinition> groupsById,
     required Map<int, ItemDefinition> itemById,
+    required Map<int, String> unitSymbolById,
     required Set<String> expandedParents,
     required String searchQuery,
   }) {
@@ -1157,10 +1270,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
               );
             }
             String finalDisplayName = record.name;
-            if (record.customVariationValues != null && record.customVariationValues!.isNotEmpty) {
-              final customValsStr = record.customVariationValues!.values.join(' - ');
+            if (record.customVariationValues != null &&
+                record.customVariationValues!.isNotEmpty) {
+              final customValsStr = record.customVariationValues!.values.join(
+                ' - ',
+              );
               if (!finalDisplayName.contains(customValsStr)) {
-                 finalDisplayName = '$finalDisplayName - $customValsStr';
+                finalDisplayName = '$finalDisplayName - $customValsStr';
               }
             }
             return _InventoryRowEntry(
@@ -1232,12 +1348,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
           final masterRecord = _masterItemRecord(
             item,
             variationLeafNodeId: line.variationLeafNodeId,
+            unitSymbol: _unitSymbolForItem(item, unitSymbolById),
           );
           rows.add(
             _InventoryRowEntry(
               record: masterRecord,
-              displayName: line.variationPathLabel.trim().isEmpty 
-                  ? itemLabel 
+              displayName: line.variationPathLabel.trim().isEmpty
+                  ? itemLabel
                   : '$itemLabel - ${line.variationPathLabel.trim()}',
               displayId: masterRecord.barcode,
               displayMetadata: _itemMetadataText(
@@ -1292,77 +1409,158 @@ class _InventoryScreenState extends State<InventoryScreen> {
         ..sort(_compareRowEntries);
     }
 
-    final itemRecordsByGroupId = <int, List<MaterialRecord>>{};
-    // Collect items that already have inventory records.
+    final normalizedQuery = _normalize(searchQuery);
+    final variantRecordsByItemId = <int, List<MaterialRecord>>{};
     final coveredItemIds = <int>{};
     for (final record in scopedRecords.where(
       (record) => record.linkedItemId != null,
     )) {
       final linkedItem = itemById[record.linkedItemId];
-      if (linkedItem == null) {
+      if (linkedItem == null || linkedItem.isArchived) {
         continue;
       }
       coveredItemIds.add(linkedItem.id);
-      itemRecordsByGroupId
-          .putIfAbsent(linkedItem.groupId, () => <MaterialRecord>[])
+      variantRecordsByItemId
+          .putIfAbsent(linkedItem.id, () => <MaterialRecord>[])
           .add(record);
     }
 
-    final groupRecordsByGroupId = <int, MaterialRecord>{
-      for (final record in scopedRecords.where(
-        (record) => record.linkedGroupId != null,
-      ))
-        record.linkedGroupId!: record,
-    };
+    final requiredGroupIds = <int>{};
+    void requireGroupWithAncestors(int? groupId) {
+      var currentId = groupId;
+      final seen = <int>{};
+      while (currentId != null && seen.add(currentId)) {
+        final group = groupsById[currentId];
+        if (group == null || group.isArchived) {
+          break;
+        }
+        requiredGroupIds.add(currentId);
+        currentId = group.parentGroupId;
+      }
+    }
+
+    for (final itemId in variantRecordsByItemId.keys) {
+      requireGroupWithAncestors(itemById[itemId]?.groupId);
+    }
     if (_shouldIncludeMasterOnlyGroups()) {
-      final normalizedQuery = _normalize(searchQuery);
       for (final group in groupsById.values.where(
         (group) => !group.isArchived,
       )) {
-        if (groupRecordsByGroupId.containsKey(group.id)) {
-          continue;
-        }
         final parentName = groupNameById[group.parentGroupId] ?? '';
         final matchesQuery =
             normalizedQuery.isEmpty ||
             _normalize(group.name).contains(normalizedQuery) ||
             _normalize(parentName).contains(normalizedQuery);
-        if (!matchesQuery) {
-          continue;
+        if (matchesQuery) {
+          requireGroupWithAncestors(group.id);
         }
-        groupRecordsByGroupId[group.id] = _masterGroupRecord(
-          group,
-          parentName: parentName,
-        );
       }
     }
-    // Also inject master-only items (no stock record yet) so their group shows
-    // them as children and the group's expand chevron is visible.
-    // Always run this in groups view mode regardless of filter state.
-    if (_viewMode == _InventoryViewMode.groups) {
-      final normalizedQuery = _normalize(searchQuery);
-      for (final item in itemById.values.where((i) => !i.isArchived)) {
-        if (coveredItemIds.contains(item.id)) {
-          continue;
-        }
-        if (!groupRecordsByGroupId.containsKey(item.groupId)) {
-          continue;
-        }
-        final itemLabel = item.displayName.trim().isEmpty
-            ? item.name
-            : item.displayName;
-        final groupName = groupNameById[item.groupId] ?? '';
-        if (normalizedQuery.isNotEmpty &&
-            !_normalize(itemLabel).contains(normalizedQuery) &&
-            !_normalize(item.name).contains(normalizedQuery) &&
-            !_normalize(groupName).contains(normalizedQuery)) {
-          continue;
-        }
-        itemRecordsByGroupId
-            .putIfAbsent(item.groupId, () => <MaterialRecord>[])
-            .add(_masterItemRecord(item));
+
+    final itemRecordsByGroupId = <int, List<MaterialRecord>>{};
+    final itemVariantRecordsByItemId = <int, List<MaterialRecord>>{};
+    final itemTotalsByItemId = <int, Map<String, double>>{};
+
+    bool itemMatchesQuery(
+      ItemDefinition item,
+      Iterable<MaterialRecord> variants,
+    ) {
+      if (normalizedQuery.isEmpty) {
+        return true;
       }
+      final itemLabel = item.displayName.trim().isEmpty
+          ? item.name
+          : item.displayName;
+      final groupName = groupNameById[item.groupId] ?? '';
+      if (_normalize(itemLabel).contains(normalizedQuery) ||
+          _normalize(item.name).contains(normalizedQuery) ||
+          _normalize(groupName).contains(normalizedQuery)) {
+        return true;
+      }
+      return variants.any(
+        (variant) =>
+            _normalize(variant.name).contains(normalizedQuery) ||
+            _normalize(variant.notes).contains(normalizedQuery) ||
+            _normalize(variant.displayStock).contains(normalizedQuery) ||
+            _normalize(variant.location).contains(normalizedQuery),
+      );
     }
+
+    for (final item in itemById.values.where((item) => !item.isArchived)) {
+      if (!requiredGroupIds.contains(item.groupId) &&
+          !variantRecordsByItemId.containsKey(item.id)) {
+        continue;
+      }
+      final variants =
+          (variantRecordsByItemId[item.id] ?? const <MaterialRecord>[]).toList(
+            growable: false,
+          )..sort(
+            (a, b) => _compareRowLike(
+              aRecord: a,
+              aName: a.name,
+              aId: a.barcode,
+              bRecord: b,
+              bName: b.name,
+              bId: b.barcode,
+            ),
+          );
+      if (!itemMatchesQuery(item, variants)) {
+        continue;
+      }
+      requireGroupWithAncestors(item.groupId);
+      final itemLabel = item.displayName.trim().isEmpty
+          ? item.name
+          : item.displayName;
+      final totals = _stockTotalsForRecords(variants);
+      final latestUpdatedAt = variants.isEmpty
+          ? item.updatedAt
+          : variants
+                .map((record) => record.updatedAt)
+                .reduce((a, b) => a.isAfter(b) ? a : b);
+      final unitSymbol = _unitSymbolForItem(item, unitSymbolById);
+      final itemRecord = MaterialRecord(
+        id: null,
+        barcode: _masterItemInventoryBarcode(item.id),
+        name: itemLabel,
+        type: 'Item',
+        grade: '',
+        thickness: '',
+        supplier: '',
+        location: 'Master Items',
+        unitId: item.unitId,
+        unit: unitSymbol,
+        notes: variants.isEmpty
+            ? 'Master item without inventory stock record.'
+            : '${variants.length} stocked ${variants.length == 1 ? 'variant' : 'variants'}',
+        createdAt: item.createdAt,
+        updatedAt: latestUpdatedAt,
+        kind: 'parent',
+        parentBarcode: _masterGroupInventoryBarcode(item.groupId),
+        numberOfChildren: variants.length,
+        linkedChildBarcodes: variants
+            .map((variant) => variant.barcode)
+            .toList(growable: false),
+        scanCount: 0,
+        linkedItemId: item.id,
+        displayStock: _stockTotalsLabel(totals),
+        createdBy: variants.isEmpty ? 'Configurator' : 'System',
+        workflowStatus: variants.isEmpty ? 'notStarted' : 'completed',
+      );
+      itemRecordsByGroupId
+          .putIfAbsent(item.groupId, () => <MaterialRecord>[])
+          .add(itemRecord);
+      itemVariantRecordsByItemId[item.id] = variants;
+      itemTotalsByItemId[item.id] = totals;
+    }
+
+    final groupRecordsByGroupId = <int, MaterialRecord>{
+      for (final groupId in requiredGroupIds)
+        if (groupsById[groupId] != null)
+          groupId: _masterGroupRecord(
+            groupsById[groupId]!,
+            parentName: groupNameById[groupsById[groupId]!.parentGroupId] ?? '',
+          ),
+    };
     final childGroupIdsByParentId = <int, List<int>>{};
     for (final group in groupsById.values) {
       final parentId = group.parentGroupId;
@@ -1390,57 +1588,25 @@ class _InventoryScreenState extends State<InventoryScreen> {
       );
     }
 
-    // Realtime rolled-up stock per group: sum of contained items' on-hand
-    // plus all descendant child groups. Recomputed each build, so it tracks
-    // movements / pipeline consumption live like the rest of the screen.
-    final aggregateQtyCache = <int, double>{};
-    double aggregateGroupQty(int groupId) {
-      final cached = aggregateQtyCache[groupId];
+    final aggregateTotalsCache = <int, Map<String, double>>{};
+    Map<String, double> aggregateGroupTotals(int groupId) {
+      final cached = aggregateTotalsCache[groupId];
       if (cached != null) {
         return cached;
       }
-      aggregateQtyCache[groupId] = 0; // cycle guard
-      var total = 0.0;
+      final totals = <String, double>{};
+      aggregateTotalsCache[groupId] = totals; // cycle guard
       for (final record
           in itemRecordsByGroupId[groupId] ?? const <MaterialRecord>[]) {
-        total += record.onHand;
+        _mergeStockTotals(
+          totals,
+          itemTotalsByItemId[record.linkedItemId] ?? const <String, double>{},
+        );
       }
       for (final childId in childGroupIdsByParentId[groupId] ?? const <int>[]) {
-        total += aggregateGroupQty(childId);
+        _mergeStockTotals(totals, aggregateGroupTotals(childId));
       }
-      aggregateQtyCache[groupId] = total;
-      return total;
-    }
-
-    String aggregateGroupUnit(int groupId) {
-      for (final record
-          in itemRecordsByGroupId[groupId] ?? const <MaterialRecord>[]) {
-        // Skip the primary-unit placeholder so a real descendant unit wins.
-        final unit = _effectiveUnitSymbol(record.unit);
-        if (unit.isNotEmpty) {
-          return unit;
-        }
-      }
-      for (final childId in childGroupIdsByParentId[groupId] ?? const <int>[]) {
-        final unit = aggregateGroupUnit(childId);
-        if (unit.isNotEmpty) {
-          return unit;
-        }
-      }
-      return '';
-    }
-
-    String aggregateGroupStockLabel(int groupId, MaterialRecord groupRecord) {
-      final qty = aggregateGroupQty(groupId);
-      final rounded = qty.roundToDouble();
-      final qtyText = qty == rounded
-          ? rounded.toInt().toString()
-          : qty.toStringAsFixed(2);
-      final groupUnit = _effectiveUnitSymbol(groupRecord.unit);
-      final unit = groupUnit.isNotEmpty
-          ? groupUnit
-          : aggregateGroupUnit(groupId);
-      return unit.isEmpty ? qtyText : '$qtyText $unit';
+      return totals;
     }
 
     void appendGroupRows(
@@ -1476,7 +1642,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
           canExpand: hasChildren,
           isExpanded: isExpanded,
           opensDetails: false,
-          aggregateStockLabel: aggregateGroupStockLabel(groupId, groupRecord),
+          aggregateStockLabel: _stockTotalsLabel(aggregateGroupTotals(groupId)),
         ),
       );
       if (!isExpanded) {
@@ -1485,7 +1651,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
       for (final childGroupId in childGroupIds) {
         appendGroupRows(childGroupId, depth + 1, rows);
       }
-      // Render child items in groups mode too (including master-only items)
       childRecords.sort(
         (a, b) => _compareRowLike(
           aRecord: a,
@@ -1518,23 +1683,18 @@ class _InventoryScreenState extends State<InventoryScreen> {
       );
       for (final childRecord in childRecords) {
         final linkedItem = itemById[childRecord.linkedItemId];
-        // ponytail: prefer the record's own name — it carries the variation
-        // suffix (e.g. "sheetmetal - brass"); linkedItem.displayName is the
-        // base item name and would drop it. Matches the Items view.
-        String childName = childRecord.name.trim().isNotEmpty
+        final childName = childRecord.name.trim().isNotEmpty
             ? childRecord.name
             : linkedItem == null
             ? childRecord.name
             : linkedItem.displayName.trim().isEmpty
             ? linkedItem.name
             : linkedItem.displayName;
-            
-        if (childRecord.customVariationValues != null && childRecord.customVariationValues!.isNotEmpty) {
-          final customValsStr = childRecord.customVariationValues!.values.join(' - ');
-          if (!childName.contains(customValsStr)) {
-             childName = '$childName - $customValsStr';
-          }
-        }
+        final variants = childRecord.linkedItemId == null
+            ? const <MaterialRecord>[]
+            : itemVariantRecordsByItemId[childRecord.linkedItemId] ??
+                  const <MaterialRecord>[];
+        final isItemExpanded = expandedParents.contains(childRecord.barcode);
 
         rows.add(
           _InventoryRowEntry(
@@ -1545,8 +1705,38 @@ class _InventoryScreenState extends State<InventoryScreen> {
             displayMetadata: _itemMetadataText(childRecord, linkedGroupName),
             itemGroupId: linkedItem?.groupId,
             depth: depth + 1,
+            canExpand: variants.isNotEmpty,
+            isExpanded: isItemExpanded,
+            opensDetails: false,
+            aggregateStockLabel:
+                itemTotalsByItemId[childRecord.linkedItemId] == null
+                ? null
+                : _stockTotalsLabel(
+                    itemTotalsByItemId[childRecord.linkedItemId]!,
+                  ),
           ),
         );
+        if (!isItemExpanded) {
+          continue;
+        }
+        for (final variant in variants) {
+          rows.add(
+            _InventoryRowEntry(
+              record: variant,
+              displayName: variant.name,
+              displayId:
+                  variant.linkedVariationLeafNodeId?.toString() ??
+                  variant.barcode,
+              displayMetadata: _itemMetadataText(
+                variant,
+                linkedGroupName,
+                variationPathLabel: variant.notes,
+              ),
+              itemGroupId: linkedItem?.groupId,
+              depth: depth + 2,
+            ),
+          );
+        }
       }
     }
 
@@ -1572,45 +1762,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
     final rows = <_InventoryRowEntry>[];
     for (final groupId in rootGroupIds) {
       appendGroupRows(groupId, 0, rows);
-    }
-    final standaloneParentRecords =
-        scopedRecords
-            .where(
-              (record) =>
-                  record.linkedGroupId == null &&
-                  record.linkedItemId == null &&
-                  record.parentBarcode == null,
-            )
-            .toList(growable: false)
-          ..sort(
-            (a, b) => _compareRowLike(
-              aRecord: a,
-              aName: a.name,
-              aId: a.barcode,
-              bRecord: b,
-              bName: b.name,
-              bId: b.barcode,
-            ),
-          );
-    for (final record in standaloneParentRecords) {
-      String finalDisplayName = record.name;
-      if (record.customVariationValues != null && record.customVariationValues!.isNotEmpty) {
-        final customValsStr = record.customVariationValues!.values.join(' - ');
-        if (!finalDisplayName.contains(customValsStr)) {
-           finalDisplayName = '$finalDisplayName - $customValsStr';
-        }
-      }
-      rows.add(
-        _InventoryRowEntry(
-          record: record,
-          displayName: finalDisplayName,
-          displayId: record.barcode,
-          displayMetadata: _itemMetadataText(record, null),
-          groupId: _resolveGroupForInventoryRecord(record)?.id,
-          canExpand: record.linkedChildBarcodes.isNotEmpty,
-          isExpanded: expandedParents.contains(record.barcode),
-        ),
-      );
     }
     return rows;
   }
@@ -1667,6 +1818,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   MaterialRecord _masterItemRecord(
     ItemDefinition item, {
     int variationLeafNodeId = 0,
+    String unitSymbol = '',
   }) {
     return MaterialRecord(
       id: null,
@@ -1678,6 +1830,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
       supplier: '',
       location: 'Master Items',
       notes: 'Master item without inventory stock record.',
+      unitId: item.unitId,
+      unit: unitSymbol,
       kind: 'child',
       parentBarcode: null,
       numberOfChildren: 0,
@@ -4194,9 +4348,9 @@ class _InventoryItemCardState extends State<_InventoryItemCard> {
 /// short decimals, and surrounding text/units untouched. Tames float noise like
 /// "0.7999999999" → "0.80" in stock displays.
 String _round2Decimals(String text) => text.replaceAllMapped(
-      RegExp(r'\d+\.\d{3,}'),
-      (m) => double.parse(m[0]!).toStringAsFixed(2),
-    );
+  RegExp(r'\d+\.\d{3,}'),
+  (m) => double.parse(m[0]!).toStringAsFixed(2),
+);
 
 /// Enhancement 4 — the "Primary Unit" catch-all uses '-' as its symbol. It only
 /// exists so items are never unassigned, so it should read as "no unit". These
@@ -4211,8 +4365,7 @@ bool get _primaryUnitCleanupEnabled =>
 /// case the empty string is returned (i.e. "treat as no unit assigned").
 String _effectiveUnitSymbol(String symbol) {
   final trimmed = symbol.trim();
-  if (_primaryUnitCleanupEnabled &&
-      trimmed == _primaryUnitPlaceholderSymbol) {
+  if (_primaryUnitCleanupEnabled && trimmed == _primaryUnitPlaceholderSymbol) {
     return '';
   }
   return trimmed;
@@ -4463,22 +4616,28 @@ class _InventoryTableState extends State<_InventoryTable> {
                         final record = entry.record;
                         final inventorySet = entry.inventorySet;
                         final isSelectable = record.id != null;
+                        final opensChallanSheet =
+                            entry.opensDetails && record.linkedItemId != null;
                         final rowTap =
                             widget.viewMode == _InventoryViewMode.sets
                             ? (inventorySet == null
                                   ? () {}
                                   : () => widget.onOpenSetItems(inventorySet))
                             : widget.viewMode == _InventoryViewMode.groups &&
-                                  !entry.opensDetails
-                            ? () => widget.onOpenGroupItems(record)
+                                  entry.canExpand
+                            ? () => widget.onToggleExpanded(record.barcode)
                             : !entry.opensDetails
                             ? (entry.canExpand
                                   ? () =>
                                         widget.onToggleExpanded(record.barcode)
                                   : () {})
-                            : () => widget.onOpenChallans(record);
+                            : opensChallanSheet
+                            ? () => widget.onOpenChallans(record)
+                            : () => widget.onOpenDetails(record);
                         return _InventoryMainDataRow(
-                          onOpenDetails: () => widget.onOpenDetails(record),
+                          onOpenDetails: opensChallanSheet
+                              ? () => widget.onOpenChallans(record)
+                              : () => widget.onOpenDetails(record),
                           record: record,
                           entry: entry,
                           viewMode: widget.viewMode,
@@ -4492,7 +4651,9 @@ class _InventoryTableState extends State<_InventoryTable> {
                           isStriped: index.isOdd,
                           isRequestDelete: widget.isRequestDelete,
                           onTap: rowTap,
-                          onDoubleTap: () => widget.onOpenDetails(record),
+                          onDoubleTap: opensChallanSheet
+                              ? () => widget.onOpenChallans(record)
+                              : () => widget.onOpenDetails(record),
                           onLongPress: isSelectable
                               ? () => widget.onToggleSelection(record.barcode)
                               : null,
@@ -4918,11 +5079,7 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
                     Builder(
                       builder: (context) {
                         final itemId = widget.record.linkedItemId;
-                        final canBrowseChallans =
-                            FeatureFlags.isEnabled(
-                              FeatureKeys.catalogInventoryEnhancements,
-                            ) &&
-                            itemId != null;
+                        final canBrowseChallans = itemId != null;
                         final cell = _DataCell(
                           widget.entry.aggregateStockLabel ??
                               _displayStock(widget.record),
@@ -4937,6 +5094,10 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
                           onTap: () => _openItemChallans(
                             context,
                             itemId: itemId,
+                            variationLeafNodeId:
+                                widget.record.linkedVariationLeafNodeId,
+                            customVariationValues:
+                                widget.record.customVariationValues,
                             label:
                                 widget.entry.displayName ?? widget.record.name,
                           ),
@@ -5028,8 +5189,13 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
     int? variationLeafNodeId,
     Map<String, String>? customVariationValues,
     required String label,
-  }) =>
-      _openItemChallansExcel(context, itemId: itemId, variationLeafNodeId: variationLeafNodeId, customVariationValues: customVariationValues, label: label);
+  }) => _openItemChallansExcel(
+    context,
+    itemId: itemId,
+    variationLeafNodeId: variationLeafNodeId,
+    customVariationValues: customVariationValues,
+    label: label,
+  );
 }
 
 /// Opens the Excel-style in/out sheet for every challan that moved [itemId],
@@ -5057,7 +5223,7 @@ Future<void> _openItemChallansExcel(
     // We need to wait a frame for the tab to switch before opening the dialog
     Future.microtask(() {
       if (context.mounted) {
-         ChallanScreen.openPrintPreview(context, selectedChallan);
+        ChallanScreen.openPrintPreview(context, selectedChallan);
       }
     });
   }
@@ -7219,8 +7385,11 @@ class _AddChildMaterialSheetState extends State<_AddChildMaterialSheet> {
                             null) {
                       return;
                     }
-                    showAppToast(context, 'Material created',
-                        kind: AppToastKind.success);
+                    showAppToast(
+                      context,
+                      'Material created',
+                      kind: AppToastKind.success,
+                    );
                     Navigator.of(context).pop();
                   },
                 ),
@@ -7346,8 +7515,11 @@ class _EditMaterialSheetState extends State<_EditMaterialSheet> {
                             null) {
                       return;
                     }
-                    showAppToast(context, 'Material saved',
-                        kind: AppToastKind.success);
+                    showAppToast(
+                      context,
+                      'Material saved',
+                      kind: AppToastKind.success,
+                    );
                     Navigator.of(context).pop();
                   },
                 ),

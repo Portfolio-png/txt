@@ -166,6 +166,75 @@ test('delivery challans create issue and preserve company profile snapshot', asy
       actor,
       { user: actor },
     );
+    assert.ok(
+      Number(order.variation_leaf_node_id || 0) > 0,
+      'expected seeded order to reference a concrete variation leaf',
+    );
+    const alternateLeaf = await backend.get(
+      `
+      SELECT node.id
+      FROM item_variation_nodes node
+      WHERE node.item_id = ?
+        AND node.kind = 'value'
+        AND node.is_archived = 0
+        AND node.id <> ?
+        AND NOT EXISTS (
+          SELECT 1
+          FROM item_variation_nodes child
+          WHERE child.parent_node_id = node.id
+            AND child.is_archived = 0
+        )
+      ORDER BY node.id ASC
+      LIMIT 1
+      `,
+      [order.item_id, order.variation_leaf_node_id || 0],
+    );
+    const alternateReception = await backend.saveDeliveryChallan(
+      {
+        type: 'reception',
+        date: '2026-05-05',
+        location: 'Dispatch Bay',
+        vendor_id: vendor.id,
+        source_reference: 'GRN-ALT-101',
+        items: [
+          {
+            item_id: order.item_id,
+            variation_leaf_node_id: alternateLeaf?.id || 0,
+            quantity_pcs: '5',
+            weight: '5',
+          },
+        ],
+      },
+      actor,
+      { user: actor },
+    );
+    const itemFilteredChallans = await backend.listDeliveryChallans({
+      itemId: order.item_id,
+    });
+    assert.ok(
+      itemFilteredChallans.some((challan) => challan.id === reception.id),
+      'item-only challan filter should include matching variation',
+    );
+    assert.ok(
+      itemFilteredChallans.some(
+        (challan) => challan.id === alternateReception.id,
+      ),
+      'item-only challan filter should include alternate variation lines',
+    );
+    const variantFilteredChallans = await backend.listDeliveryChallans({
+      itemId: order.item_id,
+      variationLeafNodeId: order.variation_leaf_node_id || 0,
+    });
+    assert.ok(
+      variantFilteredChallans.some((challan) => challan.id === reception.id),
+      'item+variant challan filter should include the selected variation',
+    );
+    assert.ok(
+      !variantFilteredChallans.some(
+        (challan) => challan.id === alternateReception.id,
+      ),
+      'item+variant challan filter should exclude other variation lines',
+    );
     const issuedReception = await backend.issueDeliveryChallan(reception.id, actor);
 
     const clientStatement = await backend.buildClientStatementReport({
@@ -405,7 +474,11 @@ test('reception challans issue and cancel with vendor-linked stock provenance', 
       FROM variation_stock
       WHERE item_id = ? AND variation_leaf_node_id = ? AND location_id = ?
       `,
-      [material.linked_item_id, material.linked_variation_leaf_node_id, location],
+      [
+        materialBeforeIssue.linked_item_id,
+        materialBeforeIssue.linked_variation_leaf_node_id,
+        location,
+      ],
     );
     assert.equal(Number(issuedPosition?.on_hand_qty || 0), 25);
 
@@ -418,7 +491,11 @@ test('reception challans issue and cancel with vendor-linked stock provenance', 
       FROM variation_stock
       WHERE item_id = ? AND variation_leaf_node_id = ? AND location_id = ?
       `,
-      [material.linked_item_id, material.linked_variation_leaf_node_id, location],
+      [
+        materialBeforeIssue.linked_item_id,
+        materialBeforeIssue.linked_variation_leaf_node_id,
+        location,
+      ],
     );
     assert.equal(Number(reversedPosition?.on_hand_qty || 0), 0);
 
@@ -435,7 +512,7 @@ test('reception challans issue and cancel with vendor-linked stock provenance', 
     await assert.rejects(
       () =>
         backend.applyInventoryMovement({
-          barcode: material.barcode,
+          barcode: materialBeforeIssue.barcode,
           movementType: 'receive',
           qty: 5,
           toLocationId: location,

@@ -3,11 +3,10 @@ import 'package:provider/provider.dart';
 
 import '../../data/repositories/inventory_repository.dart';
 import '../../domain/variation_stock_entry.dart';
+import '../../domain/variation_stock_record.dart';
 
-/// v2 inventory view: the aggregated per-item/variation stock tree from
-/// `GET /api/inventory/stock`. Gated behind `inventory.variationStockV2`; the
-/// legacy materials screen is untouched. The backend delivers exactly the
-/// grouping shown here — no client-side MaterialRecord grouping.
+/// v2 inventory view: groups the flat per-item/variation stock rows returned by
+/// `GET /api/inventory/stock`.
 class VariationStockView extends StatefulWidget {
   const VariationStockView({super.key});
 
@@ -24,8 +23,12 @@ class _VariationStockViewState extends State<VariationStockView> {
     _future = _load();
   }
 
-  Future<List<VariationStockEntry>> _load() =>
-      context.read<InventoryRepository>().getVariationStock();
+  Future<List<VariationStockEntry>> _load() async {
+    final records = await context
+        .read<InventoryRepository>()
+        .getVariationStock();
+    return _groupVariationStock(records);
+  }
 
   void _refresh() {
     // Block body (not an arrow): the setState callback must return void, not the
@@ -55,7 +58,9 @@ class _VariationStockViewState extends State<VariationStockView> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return Center(child: Text('Failed to load stock: ${snapshot.error}'));
+            return Center(
+              child: Text('Failed to load stock: ${snapshot.error}'),
+            );
           }
           final items = snapshot.data ?? const [];
           if (items.isEmpty) {
@@ -110,3 +115,38 @@ class _ItemTile extends StatelessWidget {
 String _fmtQty(double quantity) => quantity == quantity.roundToDouble()
     ? quantity.toInt().toString()
     : quantity.toStringAsFixed(2);
+
+List<VariationStockEntry> _groupVariationStock(
+  List<VariationStockRecord> records,
+) {
+  final grouped = <int, List<VariationStockRecord>>{};
+  for (final record in records) {
+    grouped
+        .putIfAbsent(record.itemId, () => <VariationStockRecord>[])
+        .add(record);
+  }
+
+  final entries = <VariationStockEntry>[];
+  for (final itemRecords in grouped.values) {
+    itemRecords.sort(
+      (a, b) => a.variationLeafNodeId.compareTo(b.variationLeafNodeId),
+    );
+    final first = itemRecords.first;
+    entries.add(
+      VariationStockEntry(
+        itemId: first.itemId,
+        itemName: first.itemName,
+        variations: [
+          for (final record in itemRecords)
+            VariationStockLeaf(
+              leafNodeId: record.variationLeafNodeId,
+              label: record.variationPathValues.join(' > '),
+              totalQuantity: record.quantity,
+            ),
+        ],
+      ),
+    );
+  }
+  entries.sort((a, b) => a.itemName.compareTo(b.itemName));
+  return entries;
+}

@@ -57,6 +57,24 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
   String _qtyHeader = 'Qty';
   String _wtHeader = 'Weight';
 
+  bool _customVariationMatches(DeliveryChallanItem item) {
+    final filterValues = widget.filterCustomVariationValues;
+    if (filterValues == null) {
+      return true;
+    }
+    final itemValues = item.customVariationValues;
+    if (itemValues.length != filterValues.length) {
+      return false;
+    }
+    for (final entry in filterValues.entries) {
+      final propertyId = int.tryParse(entry.key);
+      if (propertyId == null || itemValues[propertyId] != entry.value) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -67,11 +85,14 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
     try {
       final provider = context.read<DeliveryChallanProvider>();
       final initialChallans = widget.challans ?? [];
-      
+
       // If we only have filterItemId, we should fetch challans for it
       List<DeliveryChallan> challansToLoad = List.from(initialChallans);
       if (initialChallans.isEmpty && widget.filterItemId != null) {
-        challansToLoad = await provider.repository.getChallans(itemId: widget.filterItemId);
+        challansToLoad = await provider.repository.getChallans(
+          itemId: widget.filterItemId,
+          variationLeafNodeId: widget.filterVariationLeafNodeId,
+        );
       }
 
       final futures = challansToLoad.map((c) async {
@@ -131,35 +152,30 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
     // Real-time listener
     final provider = context.watch<DeliveryChallanProvider>();
     for (int i = 0; i < _fullChallans.length; i++) {
-      final updated = provider.challans.where((c) => c.id == _fullChallans[i].id).firstOrNull;
+      final updated = provider.challans
+          .where((c) => c.id == _fullChallans[i].id)
+          .firstOrNull;
       if (updated != null && updated.itemsCount == updated.items.length) {
         _fullChallans[i] = updated;
       }
     }
-    if (widget.filterItemId != null || widget.filterVariationLeafNodeId != null || widget.filterCustomVariationValues != null) {
+    if (widget.filterItemId != null ||
+        widget.filterVariationLeafNodeId != null ||
+        widget.filterCustomVariationValues != null) {
       for (final c in provider.challans) {
         if (c.items.any((item) {
-          final itemMatch = widget.filterItemId == null || item.itemId == widget.filterItemId;
-          final varMatch = widget.filterVariationLeafNodeId == null || item.variationLeafNodeId == widget.filterVariationLeafNodeId;
-          
-          bool customMatch = true;
-          if (widget.filterCustomVariationValues != null) {
-            final iv = item.customVariationValues ?? {};
-            final fv = widget.filterCustomVariationValues!;
-            if (iv.length != fv.length) {
-               customMatch = false;
-            } else {
-               for (final k in fv.keys) {
-                  if (iv[k] != fv[k]) {
-                     customMatch = false;
-                     break;
-                  }
-               }
-            }
-          }
-          
-          return itemMatch && varMatch && customMatch;
-        }) && c.itemsCount == c.items.length) {
+              final itemMatch =
+                  widget.filterItemId == null ||
+                  item.itemId == widget.filterItemId;
+              final varMatch =
+                  widget.filterVariationLeafNodeId == null ||
+                  item.variationLeafNodeId == widget.filterVariationLeafNodeId;
+
+              final customMatch = _customVariationMatches(item);
+
+              return itemMatch && varMatch && customMatch;
+            }) &&
+            c.itemsCount == c.items.length) {
           if (!_fullChallans.any((existing) => existing.id == c.id)) {
             _fullChallans.add(c);
           }
@@ -183,8 +199,8 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : _errorMessage != null
-                      ? Center(child: Text(_errorMessage!))
-                      : _buildTable(),
+                  ? Center(child: Text(_errorMessage!))
+                  : _buildTable(),
             ),
           ],
         ),
@@ -202,9 +218,9 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
           Text(
             widget.title,
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  color: SoftErpTheme.textPrimary,
-                ),
+              fontWeight: FontWeight.w900,
+              color: SoftErpTheme.textPrimary,
+            ),
           ),
           const Spacer(),
           SoftPill(
@@ -237,23 +253,12 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
         }
       } else {
         for (final item in challan.items) {
-          final itemMatch = widget.filterItemId == null || item.itemId == widget.filterItemId;
-          final varMatch = widget.filterVariationLeafNodeId == null || item.variationLeafNodeId == widget.filterVariationLeafNodeId;
-          bool customMatch = true;
-          if (widget.filterCustomVariationValues != null) {
-            final iv = item.customVariationValues ?? {};
-            final fv = widget.filterCustomVariationValues!;
-            if (iv.length != fv.length) {
-               customMatch = false;
-            } else {
-               for (final k in fv.keys) {
-                  if (iv[k] != fv[k]) {
-                     customMatch = false;
-                     break;
-                  }
-               }
-            }
-          }
+          final itemMatch =
+              widget.filterItemId == null || item.itemId == widget.filterItemId;
+          final varMatch =
+              widget.filterVariationLeafNodeId == null ||
+              item.variationLeafNodeId == widget.filterVariationLeafNodeId;
+          final customMatch = _customVariationMatches(item);
           if (itemMatch && varMatch && customMatch) {
             rows.add(_FlattenedRow(challan: challan, item: item));
           }
@@ -269,7 +274,7 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
       final key = row.item?.particulars ?? '-';
       final qty = double.tryParse(row.item?.quantityPcs ?? '') ?? 0;
       final wt = double.tryParse(row.item?.weight ?? '') ?? 0;
-      
+
       double bQty = balanceQtyMap[key] ?? 0.0;
       double bWt = balanceWtMap[key] ?? 0.0;
 
@@ -280,10 +285,10 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
         bQty -= qty;
         bWt -= wt;
       }
-      
+
       balanceQtyMap[key] = bQty;
       balanceWtMap[key] = bWt;
-      
+
       row.balanceQty = bQty;
       row.balanceWt = bWt;
     }
@@ -318,11 +323,16 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
           ],
           rows: rows.map((row) {
             final date = row.challan.date;
-            final dateStr = '${date.day.toString().padLeft(2, '0')} ${const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][date.month - 1]} ${date.year}';
-            
+            final dateStr =
+                '${date.day.toString().padLeft(2, '0')} ${const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][date.month - 1]} ${date.year}';
+
             // Format balances nicely
-            final bQtyStr = row.balanceQty == row.balanceQty.truncateToDouble() ? row.balanceQty.toInt().toString() : row.balanceQty.toStringAsFixed(2);
-            final bWtStr = row.balanceWt == row.balanceWt.truncateToDouble() ? row.balanceWt.toInt().toString() : row.balanceWt.toStringAsFixed(3);
+            final bQtyStr = row.balanceQty == row.balanceQty.truncateToDouble()
+                ? row.balanceQty.toInt().toString()
+                : row.balanceQty.toStringAsFixed(2);
+            final bWtStr = row.balanceWt == row.balanceWt.truncateToDouble()
+                ? row.balanceWt.toInt().toString()
+                : row.balanceWt.toStringAsFixed(3);
 
             return DataRow(
               onSelectChanged: (_) {
@@ -336,16 +346,42 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
                     row.challan.isDelivery
                         ? row.challan.customerName
                         : (row.challan.isReception
-                            ? row.challan.vendorName
-                            : 'Internal'),
+                              ? row.challan.vendorName
+                              : 'Internal'),
                   ),
                 ),
                 DataCell(Text(row.item?.particulars ?? '-')),
                 DataCell(Text(row.item?.quantityPcs ?? '-')),
-                DataCell(Text(row.challan.isReception ? (row.item?.weight ?? '-') : '')),
-                DataCell(Text(row.challan.isDelivery ? (row.item?.weight ?? '-') : '')),
-                DataCell(Text(bQtyStr, style: TextStyle(color: row.balanceQty < 0 ? Colors.red : Colors.green.shade700, fontWeight: FontWeight.bold))),
-                DataCell(Text(bWtStr, style: TextStyle(color: row.balanceWt < 0 ? Colors.red : Colors.green.shade700, fontWeight: FontWeight.bold))),
+                DataCell(
+                  Text(
+                    row.challan.isReception ? (row.item?.weight ?? '-') : '',
+                  ),
+                ),
+                DataCell(
+                  Text(row.challan.isDelivery ? (row.item?.weight ?? '-') : ''),
+                ),
+                DataCell(
+                  Text(
+                    bQtyStr,
+                    style: TextStyle(
+                      color: row.balanceQty < 0
+                          ? Colors.red
+                          : Colors.green.shade700,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                DataCell(
+                  Text(
+                    bWtStr,
+                    style: TextStyle(
+                      color: row.balanceWt < 0
+                          ? Colors.red
+                          : Colors.green.shade700,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
               ],
             );
           }).toList(),

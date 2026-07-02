@@ -31,7 +31,6 @@ import '../../../items/domain/item_definition.dart';
 import '../../../units/domain/unit_inputs.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../../items/presentation/providers/items_provider.dart';
-import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../orders/domain/order_entry.dart';
 import '../../../orders/presentation/providers/orders_provider.dart';
 import '../../../vendors/presentation/providers/vendors_provider.dart';
@@ -192,14 +191,17 @@ class _ChallanScreenState extends State<ChallanScreen> {
         )
         .toList(growable: false);
     // Internal challans (Enhancement) are not scoped to report groups.
-    final enhancementsEnabled =
-        FeatureFlags.isEnabled(FeatureKeys.catalogInventoryEnhancements);
-    final unifiedView =
-        FeatureFlags.isEnabled(FeatureKeys.challansSingleTypeView);
+    final enhancementsEnabled = FeatureFlags.isEnabled(
+      FeatureKeys.catalogInventoryEnhancements,
+    );
+    final unifiedView = FeatureFlags.isEnabled(
+      FeatureKeys.challansSingleTypeView,
+    );
     // Unified view: when a single type is picked, collapse the split
     // Reception|Delivery layout to just that type's column (full-width).
-    final soloType =
-        (unifiedView && provider.typeFilter != null) ? provider.typeFilter : null;
+    final soloType = (unifiedView && provider.typeFilter != null)
+        ? provider.typeFilter
+        : null;
     final internalChallans = provider.challans
         .where((challan) => challan.isInternal)
         .toList(growable: false);
@@ -248,8 +250,9 @@ class _ChallanScreenState extends State<ChallanScreen> {
               searchController: _searchController,
               status: provider.statusFilter,
               orderFilterId: provider.orderFilterId,
-              itemFilterLabel:
-                  itemFilterActive ? provider.itemFilterLabel : null,
+              itemFilterLabel: itemFilterActive
+                  ? provider.itemFilterLabel
+                  : null,
               onClearItemFilter: () => provider.setItemFilter(null),
               typeFilter: provider.typeFilter,
               onTypeChanged: provider.setTypeFilter,
@@ -354,28 +357,37 @@ class _ChallanScreenState extends State<ChallanScreen> {
 
   Future<void> _cancel(BuildContext context, DeliveryChallan challan) async {
     final provider = context.read<DeliveryChallanProvider>();
-    
+
     final options = await provider.getCancelOptions(challan.id);
     if (!context.mounted) return;
-    
+
     String? chosenAction;
     if (options != null && options.linkedInvoices.isNotEmpty) {
-      if (options.availableActions.length == 1 && options.availableActions.first.key == 'block') {
+      if (options.availableActions.length == 1 &&
+          options.availableActions.first.key == 'block') {
         showAppSnack(
-          SnackBar(content: Text('Cannot cancel: ${options.availableActions.first.description}')),
+          SnackBar(
+            content: Text(
+              'Cannot cancel: ${options.availableActions.first.description}',
+            ),
+          ),
         );
         return;
       }
-      
+
       chosenAction = await showDialog<String>(
         context: context,
-        builder: (ctx) => CancelChallanOptionsDialog(actions: options.availableActions),
+        builder: (ctx) =>
+            CancelChallanOptionsDialog(actions: options.availableActions),
       );
-      
+
       if (chosenAction == null) return;
     }
 
-    final cancelled = await provider.cancelChallan(challan.id, actionType: chosenAction);
+    final cancelled = await provider.cancelChallan(
+      challan.id,
+      actionType: chosenAction,
+    );
     if (!context.mounted) return;
     if (cancelled != null) {
       await context.read<InventoryProvider>().refresh();
@@ -385,7 +397,9 @@ class _ChallanScreenState extends State<ChallanScreen> {
       );
     } else {
       showAppSnack(
-        SnackBar(content: Text(provider.errorMessage ?? 'Could not cancel challan.')),
+        SnackBar(
+          content: Text(provider.errorMessage ?? 'Could not cancel challan.'),
+        ),
       );
     }
   }
@@ -395,14 +409,14 @@ class _ChallanScreenState extends State<ChallanScreen> {
     await provider.deleteChallan(challan.id);
     if (!context.mounted) return;
     if (provider.errorMessage != null) {
-      showAppSnack(
-        SnackBar(content: Text(provider.errorMessage!)),
-      );
+      showAppSnack(SnackBar(content: Text(provider.errorMessage!)));
     } else {
       showAppSnack(
         SnackBar(
           content: Text(
-            challan.isReception ? 'Deleted reception challan.' : 'Deleted draft challan.',
+            challan.isReception
+                ? 'Deleted reception challan.'
+                : 'Deleted draft challan.',
           ),
         ),
       );
@@ -462,7 +476,8 @@ class _ChallanScreenState extends State<ChallanScreen> {
       SnackBar(
         content: Text(
           updated == null
-              ? (provider.errorMessage ?? 'Could not update report group links.')
+              ? (provider.errorMessage ??
+                    'Could not update report group links.')
               : 'Updated report links for ${challan.challanNo}.',
         ),
       ),
@@ -859,7 +874,10 @@ class _Filters extends StatelessWidget {
       child: DropdownButtonFormField<String>(
         initialValue: selectedReportGroupCode,
         isExpanded: true,
-        icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
+        icon: const Icon(
+          Icons.keyboard_arrow_down_rounded,
+          color: SoftErpTheme.textSecondary,
+        ),
         dropdownColor: Colors.white,
         borderRadius: BorderRadius.circular(14),
         menuMaxHeight: 300,
@@ -882,9 +900,15 @@ class _Filters extends StatelessWidget {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: SoftErpTheme.accent, width: 1.5),
+            borderSide: const BorderSide(
+              color: SoftErpTheme.accent,
+              width: 1.5,
+            ),
           ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 12,
+          ),
         ),
         items: reportGroups
             .map(
@@ -1092,7 +1116,8 @@ class _ChallanWorkspace extends StatelessWidget {
           onDuplicate: onDuplicate,
           onCancel: onCancel,
           onDelete: onDelete,
-          onOpenExcelView: () => _openExcelView(context, type, receptionChallans),
+          onOpenExcelView: () =>
+              _openExcelView(context, type, receptionChallans),
         );
       case ChallanType.delivery:
         return _ChallanColumn(
@@ -1109,7 +1134,8 @@ class _ChallanWorkspace extends StatelessWidget {
           onDuplicate: onDuplicate,
           onCancel: onCancel,
           onDelete: onDelete,
-          onOpenExcelView: () => _openExcelView(context, type, deliveryChallans),
+          onOpenExcelView: () =>
+              _openExcelView(context, type, deliveryChallans),
         );
       case ChallanType.internal:
         return _ChallanColumn(
@@ -1128,12 +1154,17 @@ class _ChallanWorkspace extends StatelessWidget {
           onDuplicate: onDuplicate,
           onCancel: onCancel,
           onDelete: onDelete,
-          onOpenExcelView: () => _openExcelView(context, type, internalChallans),
+          onOpenExcelView: () =>
+              _openExcelView(context, type, internalChallans),
         );
     }
   }
 
-  void _openExcelView(BuildContext context, ChallanType type, List<DeliveryChallan> challans) {
+  void _openExcelView(
+    BuildContext context,
+    ChallanType type,
+    List<DeliveryChallan> challans,
+  ) {
     final title = switch (type) {
       ChallanType.reception => 'Reception Challans',
       ChallanType.delivery => 'Delivery Challans',
@@ -1851,7 +1882,10 @@ class _ChallanTemplatePreviewPaneState
             DropdownButtonFormField<int>(
               initialValue: _selectedTemplate?.id,
               isExpanded: true,
-              icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
+              icon: const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: SoftErpTheme.textSecondary,
+              ),
               dropdownColor: Colors.white,
               borderRadius: BorderRadius.circular(12),
               menuMaxHeight: 300,
@@ -1874,9 +1908,15 @@ class _ChallanTemplatePreviewPaneState
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: SoftErpTheme.accent, width: 1.5),
+                  borderSide: const BorderSide(
+                    color: SoftErpTheme.accent,
+                    width: 1.5,
+                  ),
                 ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
               ),
               items: _templates
                   .map(
@@ -2532,7 +2572,11 @@ class _ChallanEditorState extends State<_ChallanEditor> {
           subtitle: _isReception
               ? 'Lock each row to an exact item variation and quantity before issuing stock into the warehouse.'
               : 'Review the selected order-linked dispatch rows and quantities before issuing the challan.',
-          headerAction: (!_isReception && !_isInternal && _maintainStocks && _selectedPurpose != ChallanPurpose.jobWork)
+          headerAction:
+              (!_isReception &&
+                  !_isInternal &&
+                  _maintainStocks &&
+                  _selectedPurpose != ChallanPurpose.jobWork)
               ? _ordersHeaderButton()
               : null,
           child: _ItemsEditor(
@@ -2606,7 +2650,10 @@ class _ChallanEditorState extends State<_ChallanEditor> {
                   ],
                 ),
               ),
-              if (!_isReception && !_isInternal && _maintainStocks && _selectedPurpose != ChallanPurpose.jobWork) ...[
+              if (!_isReception &&
+                  !_isInternal &&
+                  _maintainStocks &&
+                  _selectedPurpose != ChallanPurpose.jobWork) ...[
                 const SizedBox(width: 12),
               ],
             ],
@@ -2920,7 +2967,10 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     return DropdownButtonFormField<int>(
       initialValue: _selectedVendorId,
       isExpanded: true,
-      icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
+      icon: const Icon(
+        Icons.keyboard_arrow_down_rounded,
+        color: SoftErpTheme.textSecondary,
+      ),
       dropdownColor: Colors.white,
       borderRadius: BorderRadius.circular(14),
       menuMaxHeight: 300,
@@ -2945,7 +2995,10 @@ class _ChallanEditorState extends State<_ChallanEditor> {
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: SoftErpTheme.accent, width: 1.5),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
       ),
       items: vendors
           .map(
@@ -2978,7 +3031,10 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     return DropdownButtonFormField<int>(
       initialValue: _selectedClientId,
       isExpanded: true,
-      icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
+      icon: const Icon(
+        Icons.keyboard_arrow_down_rounded,
+        color: SoftErpTheme.textSecondary,
+      ),
       dropdownColor: Colors.white,
       borderRadius: BorderRadius.circular(14),
       menuMaxHeight: 300,
@@ -3003,7 +3059,10 @@ class _ChallanEditorState extends State<_ChallanEditor> {
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: SoftErpTheme.accent, width: 1.5),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
       ),
       items: clients
           .map(
@@ -3017,8 +3076,8 @@ class _ChallanEditorState extends State<_ChallanEditor> {
           ? null
           : (value) {
               final client = context.read<ClientsProvider>().clients.firstWhere(
-                    (c) => c.id == value,
-                  );
+                (c) => c.id == value,
+              );
               setState(() {
                 _selectedClientId = value;
                 _customerController.text = client.name;
@@ -3033,7 +3092,10 @@ class _ChallanEditorState extends State<_ChallanEditor> {
     return DropdownButtonFormField<ChallanPurpose>(
       initialValue: _selectedPurpose,
       isExpanded: true,
-      icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
+      icon: const Icon(
+        Icons.keyboard_arrow_down_rounded,
+        color: SoftErpTheme.textSecondary,
+      ),
       dropdownColor: Colors.white,
       borderRadius: BorderRadius.circular(14),
       menuMaxHeight: 300,
@@ -3058,7 +3120,10 @@ class _ChallanEditorState extends State<_ChallanEditor> {
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: SoftErpTheme.accent, width: 1.5),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
       ),
       items: activePurposes
           .map(
@@ -3068,8 +3133,8 @@ class _ChallanEditorState extends State<_ChallanEditor> {
                 purpose == ChallanPurpose.trading
                     ? 'Trading (Own Stock)'
                     : purpose == ChallanPurpose.manufacturing
-                        ? 'Manufacturing (Own Stock)'
-                        : 'Job Work (Customer Owned Stock)',
+                    ? 'Manufacturing (Own Stock)'
+                    : 'Job Work (Customer Owned Stock)',
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -3078,13 +3143,13 @@ class _ChallanEditorState extends State<_ChallanEditor> {
       onChanged: !_canEdit
           ? null
           : (value) {
-        if (value != null && _selectedPurpose != value) {
-          setState(() {
-            _selectedPurpose = value;
-            _validationError = null;
-          });
-        }
-      },
+              if (value != null && _selectedPurpose != value) {
+                setState(() {
+                  _selectedPurpose = value;
+                  _validationError = null;
+                });
+              }
+            },
     );
   }
 
@@ -3116,7 +3181,10 @@ class _ChallanEditorState extends State<_ChallanEditor> {
           ? (orderIds.isEmpty ? (_source?.orderId ?? 0) : orderIds.first)
           : 0,
       orderIds: orderIds,
-      vendorId: _selectedType == ChallanType.reception && maintainStocks && _selectedPurpose != ChallanPurpose.jobWork
+      vendorId:
+          _selectedType == ChallanType.reception &&
+              maintainStocks &&
+              _selectedPurpose != ChallanPurpose.jobWork
           ? (_selectedVendorId ?? _source?.vendorId ?? 0)
           : 0,
       materialOwnerClientId: _selectedPurpose == ChallanPurpose.jobWork
@@ -3245,19 +3313,29 @@ class _ChallanEditorState extends State<_ChallanEditor> {
         _selectedPurpose == ChallanPurpose.jobWork &&
         (_selectedClientId ?? _source?.clientId ?? 0) <= 0) {
       setState(() {
-        _validationError = 'Select a customer before saving job work inward challan.';
+        _validationError =
+            'Select a customer before saving job work inward challan.';
       });
       return;
     }
-    if (_maintainStocks && !_isReception && !_isInternal && _selectedPurpose != ChallanPurpose.jobWork && input.orderIds.isEmpty) {
+    if (_maintainStocks &&
+        !_isReception &&
+        !_isInternal &&
+        _selectedPurpose != ChallanPurpose.jobWork &&
+        input.orderIds.isEmpty) {
       setState(() {
         _validationError = 'Select at least one order before saving challan.';
       });
       return;
     }
-    if (_maintainStocks && !_isReception && !_isInternal && _selectedPurpose == ChallanPurpose.jobWork && (_selectedClientId ?? _source?.clientId ?? 0) <= 0) {
+    if (_maintainStocks &&
+        !_isReception &&
+        !_isInternal &&
+        _selectedPurpose == ChallanPurpose.jobWork &&
+        (_selectedClientId ?? _source?.clientId ?? 0) <= 0) {
       setState(() {
-        _validationError = 'Select a customer before saving job work return challan.';
+        _validationError =
+            'Select a customer before saving job work return challan.';
       });
       return;
     }
@@ -3300,7 +3378,8 @@ class _ChallanEditorState extends State<_ChallanEditor> {
         _selectedPurpose == ChallanPurpose.jobWork &&
         (_selectedClientId ?? _source?.clientId ?? 0) <= 0) {
       setState(() {
-        _validationError = 'Select a customer before issuing job work return challan.';
+        _validationError =
+            'Select a customer before issuing job work return challan.';
       });
       return;
     }
@@ -3318,7 +3397,8 @@ class _ChallanEditorState extends State<_ChallanEditor> {
         _selectedPurpose == ChallanPurpose.jobWork &&
         (_selectedClientId ?? _source?.clientId ?? 0) <= 0) {
       setState(() {
-        _validationError = 'Select a customer before issuing job work inward challan.';
+        _validationError =
+            'Select a customer before issuing job work inward challan.';
       });
       return;
     }
@@ -3339,7 +3419,8 @@ class _ChallanEditorState extends State<_ChallanEditor> {
       return false;
     })) {
       setState(() {
-        _validationError = 'Qty / Pcs must be a whole number. Use Weight for decimals.';
+        _validationError =
+            'Qty / Pcs must be a whole number. Use Weight for decimals.';
       });
       return;
     }
@@ -3416,13 +3497,15 @@ class _ChallanEditorState extends State<_ChallanEditor> {
             final weight = double.tryParse(item.weight.trim());
             final qty = (qtyPcs != null && qtyPcs > 0) ? qtyPcs : (weight ?? 0);
             if (order.totalDeliveredQty + qty > order.quantity) {
-              final orderLabel = order.orderNo.trim().isNotEmpty ? order.orderNo : '#${order.id}';
+              final orderLabel = order.orderNo.trim().isNotEmpty
+                  ? order.orderNo
+                  : '#${order.id}';
               overDeliveries.add(orderLabel);
             }
           }
         }
       }
-      
+
       if (overDeliveries.isNotEmpty) {
         final confirmed = await showDialog<bool>(
           context: context,
@@ -3447,7 +3530,7 @@ class _ChallanEditorState extends State<_ChallanEditor> {
             );
           },
         );
-        
+
         if (confirmed != true) {
           return;
         }
@@ -4012,7 +4095,10 @@ class _ItemsEditor extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          if (maintainStocks && !isReception && purpose != ChallanPurpose.jobWork && orderOptions.isEmpty) ...[
+          if (maintainStocks &&
+              !isReception &&
+              purpose != ChallanPurpose.jobWork &&
+              orderOptions.isEmpty) ...[
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 8),
               child: Text(
@@ -4031,7 +4117,12 @@ class _ItemsEditor extends StatelessWidget {
                     entry.value,
                     availableItems,
                   )
-                : _buildDeliveryRow(context, entry.key, entry.value, availableItems),
+                : _buildDeliveryRow(
+                    context,
+                    entry.key,
+                    entry.value,
+                    availableItems,
+                  ),
             const SizedBox(height: 8),
           ],
         ],
@@ -4039,7 +4130,11 @@ class _ItemsEditor extends StatelessWidget {
     );
   }
 
-  Widget _buildTypewriterRow(BuildContext context, int index, _ItemDraft draft) {
+  Widget _buildTypewriterRow(
+    BuildContext context,
+    int index,
+    _ItemDraft draft,
+  ) {
     final labels = ChallanItemLabels.getDynamicLabels(
       itemId: draft.itemId,
       itemsProv: context.read<ItemsProvider>(),
@@ -4124,8 +4219,8 @@ class _ItemsEditor extends StatelessWidget {
   }
 
   Widget _buildDeliveryRow(
-    BuildContext context, 
-    int index, 
+    BuildContext context,
+    int index,
     _ItemDraft draft,
     List<ItemDefinition> availableItems,
   ) {
@@ -4136,7 +4231,7 @@ class _ItemsEditor extends StatelessWidget {
     if (selectedItem != null) {
       draft.initializeConversionFields(selectedItem, unitsProvider);
     }
-    
+
     final labels = ChallanItemLabels.getDynamicLabels(
       itemId: draft.itemId,
       itemsProv: context.read<ItemsProvider>(),
@@ -4158,7 +4253,10 @@ class _ItemsEditor extends StatelessWidget {
                 ),
                 initialValue: draft.orderItemId,
                 isExpanded: true,
-                icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
+                icon: const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: SoftErpTheme.textSecondary,
+                ),
                 dropdownColor: Colors.white,
                 borderRadius: BorderRadius.circular(12),
                 menuMaxHeight: 300,
@@ -4172,7 +4270,10 @@ class _ItemsEditor extends StatelessWidget {
                   isDense: true,
                   filled: true,
                   fillColor: Colors.white,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: const BorderSide(color: SoftErpTheme.border),
@@ -4183,7 +4284,10 @@ class _ItemsEditor extends StatelessWidget {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: SoftErpTheme.accent, width: 1.5),
+                    borderSide: const BorderSide(
+                      color: SoftErpTheme.accent,
+                      width: 1.5,
+                    ),
                   ),
                 ),
                 items: orderOptions
@@ -4238,7 +4342,12 @@ class _ItemsEditor extends StatelessWidget {
               const SizedBox(width: 28),
               Expanded(
                 flex: 3,
-                child: _buildUnitDropdown(context, draft, selectedItem, unitsProvider),
+                child: _buildUnitDropdown(
+                  context,
+                  draft,
+                  selectedItem,
+                  unitsProvider,
+                ),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -4364,67 +4473,102 @@ class _ItemsEditor extends StatelessWidget {
                         isDense: true,
                         filled: true,
                         fillColor: Colors.white,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: SoftErpTheme.border),
+                          borderSide: const BorderSide(
+                            color: SoftErpTheme.border,
+                          ),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: SoftErpTheme.border),
+                          borderSide: const BorderSide(
+                            color: SoftErpTheme.border,
+                          ),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: SoftErpTheme.accent, width: 1.5),
+                          borderSide: const BorderSide(
+                            color: SoftErpTheme.accent,
+                            width: 1.5,
+                          ),
                         ),
                       ),
                       dialogTitle: 'Select Item',
                       searchHintText: 'Search items',
-                      options: availableItems.map((item) {
-                        final fullVariationName = item.displayName.isNotEmpty ? item.displayName : item.name;
-                        return SearchableSelectOption<int>(
-                          value: item.id,
-                          label: fullVariationName,
-                          searchText: fullVariationName,
-                        );
-                      }).toList(growable: false),
+                      options: availableItems
+                          .map((item) {
+                            final fullVariationName =
+                                item.displayName.isNotEmpty
+                                ? item.displayName
+                                : item.name;
+                            return SearchableSelectOption<int>(
+                              value: item.id,
+                              label: fullVariationName,
+                              searchText: fullVariationName,
+                            );
+                          })
+                          .toList(growable: false),
                       onChanged: (value) async {
-                        final candidate = availableItems.where((c) => c.id == value).firstOrNull;
+                        final candidate = availableItems
+                            .where((c) => c.id == value)
+                            .firstOrNull;
                         draft.applyReceptionItem(candidate);
                         onChanged();
-                        if (candidate != null && candidate.topLevelProperties.isNotEmpty && context.mounted) {
-                          final result = await showDialog<VariationPathSelectionResult>(
-                            context: context,
-                            builder: (ctx) => Dialog(
-                              insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
-                              child: ConstrainedBox(
-                                constraints: const BoxConstraints(maxWidth: 680, maxHeight: 760),
-                                child: VariationPathSelectorDialog(
-                                item: candidate,
-                                initialRootPropertyId: null,
-                                initialValueNodeIds: draft.variationPathNodeIds,
-                                onCreateValue: ({
-                                  required item,
-                                  required propertyNodeId,
-                                  required propertyLabel,
-                                  required valueName,
-                                }) async {
-                                  return await context.read<ItemsProvider>().appendVariationValue(
-                                    itemId: item.id,
-                                    propertyNodeId: propertyNodeId,
-                                    valueName: valueName,
-                                  );
-                                },
-                              ),
-                            ),
-                           ),
-                          );
+                        if (candidate != null &&
+                            candidate.topLevelProperties.isNotEmpty &&
+                            context.mounted) {
+                          final result =
+                              await showDialog<VariationPathSelectionResult>(
+                                context: context,
+                                builder: (ctx) => Dialog(
+                                  insetPadding: const EdgeInsets.symmetric(
+                                    horizontal: 28,
+                                    vertical: 36,
+                                  ),
+                                  child: ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                      maxWidth: 680,
+                                      maxHeight: 760,
+                                    ),
+                                    child: VariationPathSelectorDialog(
+                                      item: candidate,
+                                      initialRootPropertyId: null,
+                                      initialValueNodeIds:
+                                          draft.variationPathNodeIds,
+                                      onCreateValue:
+                                          ({
+                                            required item,
+                                            required propertyNodeId,
+                                            required propertyLabel,
+                                            required valueName,
+                                          }) async {
+                                            return await context
+                                                .read<ItemsProvider>()
+                                                .appendVariationValue(
+                                                  itemId: item.id,
+                                                  propertyNodeId:
+                                                      propertyNodeId,
+                                                  valueName: valueName,
+                                                );
+                                          },
+                                    ),
+                                  ),
+                                ),
+                              );
                           if (result != null && context.mounted) {
                             draft.applyReceptionVariationSelection(
                               result.item,
                               result.valueNodeIds,
                               result.leaf,
-                              _variationSelectionLabel(result.item, result.valueNodeIds, result.customVariationValues),
+                              _variationSelectionLabel(
+                                result.item,
+                                result.valueNodeIds,
+                                result.customVariationValues,
+                              ),
                               result.customVariationValues,
                             );
                             onChanged();
@@ -4432,55 +4576,85 @@ class _ItemsEditor extends StatelessWidget {
                         }
                       },
                     ),
-                    if (selectedItem != null && selectedItem.topLevelProperties.isNotEmpty) ...[
+                    if (selectedItem != null &&
+                        selectedItem.topLevelProperties.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       InkWell(
-                        onTap: enabled ? () async {
-                          final result = await showDialog<VariationPathSelectionResult>(
-                            context: context,
-                            builder: (ctx) => Dialog(
-                              insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
-                              child: ConstrainedBox(
-                                constraints: const BoxConstraints(maxWidth: 680, maxHeight: 760),
-                                child: VariationPathSelectorDialog(
-                                item: selectedItem,
-                                initialRootPropertyId: null,
-                                initialValueNodeIds: draft.variationPathNodeIds,
-                                initialCustomVariationValues: draft.customVariationValues,
-                                onCreateValue: ({
-                                  required item,
-                                  required propertyNodeId,
-                                  required propertyLabel,
-                                  required valueName,
-                                }) async {
-                                  return await context.read<ItemsProvider>().appendVariationValue(
-                                    itemId: item.id,
-                                    propertyNodeId: propertyNodeId,
-                                    valueName: valueName,
+                        onTap: enabled
+                            ? () async {
+                                final result =
+                                    await showDialog<
+                                      VariationPathSelectionResult
+                                    >(
+                                      context: context,
+                                      builder: (ctx) => Dialog(
+                                        insetPadding:
+                                            const EdgeInsets.symmetric(
+                                              horizontal: 28,
+                                              vertical: 36,
+                                            ),
+                                        child: ConstrainedBox(
+                                          constraints: const BoxConstraints(
+                                            maxWidth: 680,
+                                            maxHeight: 760,
+                                          ),
+                                          child: VariationPathSelectorDialog(
+                                            item: selectedItem,
+                                            initialRootPropertyId: null,
+                                            initialValueNodeIds:
+                                                draft.variationPathNodeIds,
+                                            initialCustomVariationValues:
+                                                draft.customVariationValues,
+                                            onCreateValue:
+                                                ({
+                                                  required item,
+                                                  required propertyNodeId,
+                                                  required propertyLabel,
+                                                  required valueName,
+                                                }) async {
+                                                  return await context
+                                                      .read<ItemsProvider>()
+                                                      .appendVariationValue(
+                                                        itemId: item.id,
+                                                        propertyNodeId:
+                                                            propertyNodeId,
+                                                        valueName: valueName,
+                                                      );
+                                                },
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                if (result != null && context.mounted) {
+                                  draft.applyReceptionVariationSelection(
+                                    result.item,
+                                    result.valueNodeIds,
+                                    result.leaf,
+                                    _variationSelectionLabel(
+                                      result.item,
+                                      result.valueNodeIds,
+                                      result.customVariationValues,
+                                    ),
+                                    result.customVariationValues,
                                   );
-                                },
-                              ),
-                            ),
-                           ),
-                          );
-                          if (result != null && context.mounted) {
-                            draft.applyReceptionVariationSelection(
-                              result.item,
-                              result.valueNodeIds,
-                              result.leaf,
-                              _variationSelectionLabel(result.item, result.valueNodeIds, result.customVariationValues),
-                              result.customVariationValues,
-                            );
-                            onChanged();
-                          }
-                        } : null,
+                                  onChanged();
+                                }
+                              }
+                            : null,
                         borderRadius: BorderRadius.circular(4),
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 2,
+                            horizontal: 4,
+                          ),
                           child: Text(
-                            draft.variationPathLabel.isEmpty ? 'Select properties' : draft.variationPathLabel,
+                            draft.variationPathLabel.isEmpty
+                                ? 'Select properties'
+                                : draft.variationPathLabel,
                             style: TextStyle(
-                              color: draft.variationPathLabel.isEmpty ? Colors.red.shade700 : SoftErpTheme.accent,
+                              color: draft.variationPathLabel.isEmpty
+                                  ? Colors.red.shade700
+                                  : SoftErpTheme.accent,
                               fontSize: 13,
                               fontWeight: FontWeight.w500,
                               decoration: TextDecoration.underline,
@@ -4516,21 +4690,23 @@ class _ItemsEditor extends StatelessWidget {
               ] else ...[
                 Expanded(
                   flex: 2,
-                  child: _buildUnitDropdown(context, draft, selectedItem, unitsProvider),
+                  child: _buildUnitDropdown(
+                    context,
+                    draft,
+                    selectedItem,
+                    unitsProvider,
+                  ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   flex: 2,
-                  child: _itemField(
-                    draft.enteredValue,
-                    'Value',
-                    enabled,
-                    (value) {
-                      draft.enteredValue = value;
-                      draft.updateConversions(selectedItem, unitsProvider);
-                      onChanged();
-                    },
-                  ),
+                  child: _itemField(draft.enteredValue, 'Value', enabled, (
+                    value,
+                  ) {
+                    draft.enteredValue = value;
+                    draft.updateConversions(selectedItem, unitsProvider);
+                    onChanged();
+                  }),
                 ),
               ],
               IconButton(
@@ -4547,7 +4723,12 @@ class _ItemsEditor extends StatelessWidget {
           ),
           if (selectedItem != null) ...[
             const SizedBox(height: 10),
-            _buildConversionSummary(context, draft, selectedItem, unitsProvider),
+            _buildConversionSummary(
+              context,
+              draft,
+              selectedItem,
+              unitsProvider,
+            ),
           ],
           const SizedBox(height: 8),
           _itemField(
@@ -4571,14 +4752,16 @@ class _ItemsEditor extends StatelessWidget {
     if (units.isEmpty) {
       return const SizedBox.shrink();
     }
-    
-    final options = unitsProvider.activeUnits.map((u) {
-      return SearchableSelectOption<int>(
-        value: u.id,
-        label: u.symbol,
-        searchText: '${u.symbol} ${u.name}',
-      );
-    }).toList(growable: false);
+
+    final options = unitsProvider.activeUnits
+        .map((u) {
+          return SearchableSelectOption<int>(
+            value: u.id,
+            label: u.symbol,
+            searchText: '${u.symbol} ${u.name}',
+          );
+        })
+        .toList(growable: false);
 
     return SearchableSelectField<int>(
       value: draft.selectedUnitId,
@@ -4588,7 +4771,10 @@ class _ItemsEditor extends StatelessWidget {
         isDense: true,
         filled: true,
         fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: 12,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: SoftErpTheme.border),
@@ -4608,10 +4794,9 @@ class _ItemsEditor extends StatelessWidget {
       canCreateOption: (query, _) => query.trim().isNotEmpty,
       onCreateOption: (query) async {
         final symbol = query.trim();
-        final created = await unitsProvider.createUnit(CreateUnitInput(
-          name: symbol,
-          symbol: symbol,
-        ));
+        final created = await unitsProvider.createUnit(
+          CreateUnitInput(name: symbol, symbol: symbol),
+        );
         if (created == null) return null;
         return SearchableSelectOption<int>(
           value: created.id,
@@ -4637,16 +4822,21 @@ class _ItemsEditor extends StatelessWidget {
     if (units.isEmpty) return const SizedBox.shrink();
 
     // Trigger update conversions if empty to make sure values are in sync
-    if (draft.quantityPcs.isEmpty && draft.weight.isEmpty && draft.enteredValue.isNotEmpty) {
+    if (draft.quantityPcs.isEmpty &&
+        draft.weight.isEmpty &&
+        draft.enteredValue.isNotEmpty) {
       draft.updateConversions(item, unitsProvider);
     }
 
     final parts = <String>[];
     final val = double.tryParse(draft.enteredValue.trim());
     if (val != null && val > 0) {
-      final selectedUnit = units.firstWhere((u) => u.id == draft.selectedUnitId, orElse: () => units.first);
+      final selectedUnit = units.firstWhere(
+        (u) => u.id == draft.selectedUnitId,
+        orElse: () => units.first,
+      );
       final primaryVal = val * selectedUnit.factorToPrimary;
-      
+
       for (final u in units) {
         final converted = primaryVal / u.factorToPrimary;
         parts.add('${draft.formatDouble(converted)} ${u.symbol}');
@@ -4666,11 +4856,7 @@ class _ItemsEditor extends StatelessWidget {
           runSpacing: 4,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            const Icon(
-              Icons.swap_horiz,
-              size: 14,
-              color: Color(0xFF64748B),
-            ),
+            const Icon(Icons.swap_horiz, size: 14, color: Color(0xFF64748B)),
             Text(
               'Converted: ${parts.join("  •  ")}',
               style: const TextStyle(
@@ -4684,7 +4870,6 @@ class _ItemsEditor extends StatelessWidget {
       ),
     );
   }
-
 
   Widget _itemField(
     String initialValue,
@@ -4720,12 +4905,22 @@ class _ItemsEditor extends StatelessWidget {
     );
   }
 
-  String _variationSelectionLabel(ItemDefinition item, List<int> valueNodeIds, [Map<int, String> customVariationValues = const {}]) {
+  String _variationSelectionLabel(
+    ItemDefinition item,
+    List<int> valueNodeIds, [
+    Map<int, String> customVariationValues = const {},
+  ]) {
     return _buildNamingFormatLabel(item, valueNodeIds, customVariationValues);
   }
 
-  String _buildNamingFormatLabel(ItemDefinition item, List<int> valueNodeIds, [Map<int, String> customVariationValues = const {}]) {
-    final itemName = item.displayName.trim().isEmpty ? item.name : item.displayName;
+  String _buildNamingFormatLabel(
+    ItemDefinition item,
+    List<int> valueNodeIds, [
+    Map<int, String> customVariationValues = const {},
+  ]) {
+    final itemName = item.displayName.trim().isEmpty
+        ? item.name
+        : item.displayName;
     if (valueNodeIds.isEmpty) {
       return itemName;
     }
@@ -4748,12 +4943,12 @@ class _ItemsEditor extends StatelessWidget {
           }
           break;
         }
-        
+
         final valName = selectedValue.name.trim().isEmpty
             ? selectedValue.displayName.trim()
             : selectedValue.name.trim();
         propIdToValue[currentProperty.id] = valName;
-        
+
         final nextProp = selectedValue.activeChildren
             .where((n) => n.kind == ItemVariationNodeKind.property)
             .firstOrNull;
@@ -4899,9 +5094,15 @@ class _ItemDraft {
       particulars: option?.particulars ?? '',
       hsnCode: option?.hsnCode ?? '',
       variationPathLabel: option?.variationPathLabel ?? '',
-      customVariationValues: option?.customVariationValues?.map((k, v) => MapEntry(int.tryParse(k) ?? 0, v)) ?? const <int, String>{},
+      customVariationValues:
+          option?.customVariationValues?.map(
+            (k, v) => MapEntry(int.tryParse(k) ?? 0, v),
+          ) ??
+          const <int, String>{},
       selectedUnitId: option?.unitId,
-      enteredValue: (option != null && option.quantity > 0) ? option.quantity.toString() : '',
+      enteredValue: (option != null && option.quantity > 0)
+          ? option.quantity.toString()
+          : '',
     );
     if (option != null) {
       draft.variationPathNodeIds = option.variationPathNodeIds;
@@ -4928,27 +5129,34 @@ class _ItemDraft {
     );
   }
 
-  List<ItemUnitOption> getAvailableUnits(ItemDefinition item, UnitsProvider unitsProvider) {
+  List<ItemUnitOption> getAvailableUnits(
+    ItemDefinition item,
+    UnitsProvider unitsProvider,
+  ) {
     final list = <ItemUnitOption>[];
     final primary = unitsProvider.findById(item.unitId);
     if (primary != null) {
-      list.add(ItemUnitOption(
-        id: primary.id,
-        name: primary.name,
-        symbol: primary.symbol,
-        factorToPrimary: 1.0,
-        isPrimary: true,
-      ));
+      list.add(
+        ItemUnitOption(
+          id: primary.id,
+          name: primary.name,
+          symbol: primary.symbol,
+          factorToPrimary: 1.0,
+          isPrimary: true,
+        ),
+      );
     }
     for (final conv in item.unitConversions) {
       if (conv.unitId == item.unitId) continue;
-      list.add(ItemUnitOption(
-        id: conv.unitId,
-        name: conv.unitName,
-        symbol: conv.unitSymbol,
-        factorToPrimary: conv.factorToPrimary,
-        isPrimary: false,
-      ));
+      list.add(
+        ItemUnitOption(
+          id: conv.unitId,
+          name: conv.unitName,
+          symbol: conv.unitSymbol,
+          factorToPrimary: conv.factorToPrimary,
+          isPrimary: false,
+        ),
+      );
     }
     return list;
   }
@@ -4956,16 +5164,34 @@ class _ItemDraft {
   bool isWeightUnit(ItemUnitOption option) {
     final s = option.symbol.toLowerCase();
     final n = option.name.toLowerCase();
-    return s == 'kg' || s == 'kgs' || s == 'g' || s == 'gms' || s == 'gram' || s == 'grams' || s == 'kilogram' || s == 'kilograms' || n.contains('weight');
+    return s == 'kg' ||
+        s == 'kgs' ||
+        s == 'g' ||
+        s == 'gms' ||
+        s == 'gram' ||
+        s == 'grams' ||
+        s == 'kilogram' ||
+        s == 'kilograms' ||
+        n.contains('weight');
   }
 
   bool isQtyUnit(ItemUnitOption option) {
     final s = option.symbol.toLowerCase();
     final n = option.name.toLowerCase();
-    return s == 'pcs' || s == 'pc' || s == 'piece' || s == 'pieces' || s == 'unit' || s == 'units' || n.contains('quantity') || n.contains('count');
+    return s == 'pcs' ||
+        s == 'pc' ||
+        s == 'piece' ||
+        s == 'pieces' ||
+        s == 'unit' ||
+        s == 'units' ||
+        n.contains('quantity') ||
+        n.contains('count');
   }
 
-  void initializeConversionFields(ItemDefinition? item, UnitsProvider unitsProvider) {
+  void initializeConversionFields(
+    ItemDefinition? item,
+    UnitsProvider unitsProvider,
+  ) {
     if (item == null) return;
     final units = getAvailableUnits(item, unitsProvider);
     if (units.isEmpty) return;
@@ -5014,7 +5240,10 @@ class _ItemDraft {
       return;
     }
 
-    final selectedUnit = units.firstWhere((u) => u.id == selectedUnitId, orElse: () => units.first);
+    final selectedUnit = units.firstWhere(
+      (u) => u.id == selectedUnitId,
+      orElse: () => units.first,
+    );
     final primaryVal = val * selectedUnit.factorToPrimary;
 
     ItemUnitOption? wtOpt;
@@ -5037,7 +5266,16 @@ class _ItemDraft {
       weight = formatDouble(wtVal);
     } else {
       final primaryUnit = unitsProvider.findById(item.unitId);
-      if (primaryUnit != null && isWeightUnit(ItemUnitOption(id: primaryUnit.id, name: primaryUnit.name, symbol: primaryUnit.symbol, factorToPrimary: 1.0, isPrimary: true))) {
+      if (primaryUnit != null &&
+          isWeightUnit(
+            ItemUnitOption(
+              id: primaryUnit.id,
+              name: primaryUnit.name,
+              symbol: primaryUnit.symbol,
+              factorToPrimary: 1.0,
+              isPrimary: true,
+            ),
+          )) {
         weight = formatDouble(primaryVal);
       } else {
         weight = '';
@@ -5049,7 +5287,16 @@ class _ItemDraft {
       quantityPcs = formatDouble(qtyVal);
     } else {
       final primaryUnit = unitsProvider.findById(item.unitId);
-      if (primaryUnit != null && isQtyUnit(ItemUnitOption(id: primaryUnit.id, name: primaryUnit.name, symbol: primaryUnit.symbol, factorToPrimary: 1.0, isPrimary: true))) {
+      if (primaryUnit != null &&
+          isQtyUnit(
+            ItemUnitOption(
+              id: primaryUnit.id,
+              name: primaryUnit.name,
+              symbol: primaryUnit.symbol,
+              factorToPrimary: 1.0,
+              isPrimary: true,
+            ),
+          )) {
         quantityPcs = formatDouble(primaryVal);
       } else if (wtOpt == null) {
         quantityPcs = formatDouble(primaryVal);
@@ -5124,8 +5371,8 @@ class _ItemDraft {
     particulars = label.trim().isEmpty
         ? item.displayName
         : (label.startsWith(item.displayName)
-            ? label
-            : '${item.displayName} - $label');
+              ? label
+              : '${item.displayName} - $label');
     hsnCode = '';
     selectedUnitId = null;
     enteredValue = '';
@@ -5141,8 +5388,8 @@ class _ItemDraft {
     particulars = run.variationPathLabel.trim().isEmpty
         ? run.itemName
         : (run.variationPathLabel.startsWith(run.itemName)
-            ? run.variationPathLabel
-            : '${run.itemName} - ${run.variationPathLabel}');
+              ? run.variationPathLabel
+              : '${run.itemName} - ${run.variationPathLabel}');
     hsnCode = '';
     if (run.outputQuantity > 0) {
       quantityPcs = run.outputQuantity.truncateToDouble() == run.outputQuantity
@@ -5373,7 +5620,11 @@ class _CompanyProfileEditorState extends State<_CompanyProfileEditor> {
           ),
         );
     if (saved != null && mounted) {
-      showAppToast(context, 'Company profile saved', kind: AppToastKind.success);
+      showAppToast(
+        context,
+        'Company profile saved',
+        kind: AppToastKind.success,
+      );
       Navigator.of(context).pop();
     }
   }
@@ -5454,7 +5705,10 @@ class _PrintPreviewState extends State<_PrintPreview> {
                     variant: AppButtonVariant.secondary,
                     onPressed: () {
                       Navigator.of(context).pop();
-                      ChallanScreen.openEditor(context, challan: widget.challan);
+                      ChallanScreen.openEditor(
+                        context,
+                        challan: widget.challan,
+                      );
                     },
                   ),
                   const SizedBox(width: 8),
@@ -5778,7 +6032,10 @@ class _SelectedTemplateStrip extends StatelessWidget {
           DropdownButtonFormField<int>(
             initialValue: selectedTemplate.id,
             isExpanded: true,
-            icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
+            icon: const Icon(
+              Icons.keyboard_arrow_down_rounded,
+              color: SoftErpTheme.textSecondary,
+            ),
             dropdownColor: Colors.white,
             borderRadius: BorderRadius.circular(14),
             menuMaxHeight: 300,
@@ -5801,9 +6058,15 @@ class _SelectedTemplateStrip extends StatelessWidget {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: SoftErpTheme.accent, width: 1.5),
+                borderSide: const BorderSide(
+                  color: SoftErpTheme.accent,
+                  width: 1.5,
+                ),
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 14,
+              ),
             ),
             items: templates
                 .map(
@@ -6412,23 +6675,27 @@ String _friendlyError(String message) {
 
 class CancelChallanOptionsDialog extends StatefulWidget {
   final List<CancelActionOption> actions;
-  const CancelChallanOptionsDialog({Key? key, required this.actions}) : super(key: key);
+  const CancelChallanOptionsDialog({super.key, required this.actions});
 
   @override
-  State<CancelChallanOptionsDialog> createState() => _CancelChallanOptionsDialogState();
+  State<CancelChallanOptionsDialog> createState() =>
+      _CancelChallanOptionsDialogState();
 }
 
-class _CancelChallanOptionsDialogState extends State<CancelChallanOptionsDialog> {
+class _CancelChallanOptionsDialogState
+    extends State<CancelChallanOptionsDialog> {
   String? _selectedAction;
 
   @override
   void initState() {
     super.initState();
     if (widget.actions.isNotEmpty) {
-      _selectedAction = widget.actions.firstWhere(
-        (a) => a.key != 'block',
-        orElse: () => widget.actions.first,
-      ).key;
+      _selectedAction = widget.actions
+          .firstWhere(
+            (a) => a.key != 'block',
+            orElse: () => widget.actions.first,
+          )
+          .key;
     }
   }
 
@@ -6441,12 +6708,19 @@ class _CancelChallanOptionsDialogState extends State<CancelChallanOptionsDialog>
           mainAxisSize: MainAxisSize.min,
           children: widget.actions.map((action) {
             final isBlock = action.key == 'block';
-            return RadioListTile<String>(
+            final isSelected = _selectedAction == action.key;
+            return ListTile(
               title: Text(action.label),
               subtitle: Text(action.description),
-              value: action.key,
-              groupValue: _selectedAction,
-              onChanged: isBlock ? null : (val) => setState(() => _selectedAction = val),
+              enabled: !isBlock,
+              leading: Icon(
+                isSelected
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_unchecked,
+              ),
+              onTap: isBlock
+                  ? null
+                  : () => setState(() => _selectedAction = action.key),
             );
           }).toList(),
         ),

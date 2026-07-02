@@ -1,4 +1,3 @@
-import '../../../../features/items/domain/item_definition.dart';
 import '../../../../features/items/presentation/providers/items_provider.dart';
 import '../../../../features/units/domain/unit_definition.dart';
 import '../../../../features/units/presentation/providers/units_provider.dart';
@@ -7,13 +6,28 @@ class ChallanItemLabels {
   static bool isWeightUnit(UnitDefinition u) {
     final s = u.symbol.toLowerCase();
     final n = u.name.toLowerCase();
-    return s == 'kg' || s == 'kgs' || s == 'g' || s == 'gms' || s == 'gram' || s == 'grams' || s == 'kilogram' || s == 'kilograms' || n.contains('weight');
+    return s == 'kg' ||
+        s == 'kgs' ||
+        s == 'g' ||
+        s == 'gms' ||
+        s == 'gram' ||
+        s == 'grams' ||
+        s == 'kilogram' ||
+        s == 'kilograms' ||
+        n.contains('weight');
   }
 
   static bool isQtyUnit(UnitDefinition u) {
     final s = u.symbol.toLowerCase();
     final n = u.name.toLowerCase();
-    return s == 'pcs' || s == 'pc' || s == 'piece' || s == 'pieces' || s == 'unit' || s == 'units' || n.contains('quantity') || n.contains('count');
+    return s == 'pcs' ||
+        s == 'pc' ||
+        s == 'piece' ||
+        s == 'pieces' ||
+        s == 'unit' ||
+        s == 'units' ||
+        n.contains('quantity') ||
+        n.contains('count');
   }
 
   /// Returns a tuple of (qtyLabel, weightLabel)

@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 
-
 import 'package:core_erp/features/delivery_challans/domain/models/cancel_challan_options.dart';
 import '../../../app/reports/domain/reconciliation_report.dart';
 import '../domain/delivery_challan.dart';
@@ -23,6 +22,7 @@ abstract class ChallanRepository {
     DateTime? dateTo,
     int? orderId,
     int? itemId,
+    int? variationLeafNodeId,
   });
 
   Future<List<DeliveryChallan>> getOrderChallans(int orderId);

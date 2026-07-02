@@ -164,7 +164,9 @@ class ChallanProvider extends ChangeNotifier {
   }
 
   Future<DeliveryChallan?> cancelChallan(int id, {String? actionType}) async {
-    return _saveChallan(() => _repository.cancelChallan(id, actionType: actionType));
+    return _saveChallan(
+      () => _repository.cancelChallan(id, actionType: actionType),
+    );
   }
 
   Future<CancelChallanOptions?> getCancelOptions(int id) async {
@@ -188,7 +190,6 @@ class ChallanProvider extends ChangeNotifier {
     await _save(() async {
       await _repository.deleteChallan(id);
       await refresh();
-      return null;
     });
   }
 
@@ -216,9 +217,8 @@ class ChallanProvider extends ChangeNotifier {
   }
 
   Future<void> deleteInvoice(int id) async {
-    return _save(() async {
+    await _save(() async {
       await _repository.deleteInvoice(id);
-      return null;
     });
   }
 

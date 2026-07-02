@@ -6,7 +6,10 @@ class VariationStockRecord {
   final String locationId;
   final DateTime updatedAt;
   final String itemName;
+  final int? unitId;
   final List<String> namingFormat;
+  final List<int> variationPathNodeIds;
+  final List<String> variationPathValues;
 
   const VariationStockRecord({
     required this.stockId,
@@ -16,6 +19,9 @@ class VariationStockRecord {
     required this.locationId,
     required this.updatedAt,
     required this.itemName,
+    this.unitId,
     required this.namingFormat,
+    this.variationPathNodeIds = const [],
+    this.variationPathValues = const [],
   });
 }

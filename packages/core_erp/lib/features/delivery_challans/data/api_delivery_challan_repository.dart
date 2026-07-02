@@ -129,6 +129,7 @@ class ApiChallanRepository implements ChallanRepository {
     DateTime? dateTo,
     int? orderId,
     int? itemId,
+    int? variationLeafNodeId,
   }) async {
     if (useMockResponses) {
       final query = search.trim().toLowerCase();
@@ -139,6 +140,14 @@ class ApiChallanRepository implements ChallanRepository {
             }
             if (itemId != null &&
                 !challan.items.any((item) => item.itemId == itemId)) {
+              return false;
+            }
+            if (variationLeafNodeId != null &&
+                !challan.items.any(
+                  (item) =>
+                      item.variationLeafNodeId == variationLeafNodeId &&
+                      (itemId == null || item.itemId == itemId),
+                )) {
               return false;
             }
             if (type != null && challan.type != type) {
@@ -168,6 +177,8 @@ class ApiChallanRepository implements ChallanRepository {
         if (dateTo != null) 'date_to': _dateOnly(dateTo),
         if (orderId != null) 'order_id': '$orderId',
         if (itemId != null) 'item_id': '$itemId',
+        if (variationLeafNodeId != null)
+          'variation_leaf_node_id': '$variationLeafNodeId',
       },
     );
     final response = await _sendRequest(method: 'GET', uri: uri);
@@ -331,7 +342,12 @@ class ApiChallanRepository implements ChallanRepository {
 
   @override
   Future<DeliveryChallan> cancelChallan(int id, {String? actionType}) =>
-      _statusAction(id, 'cancel', 'Failed to cancel challan.', actionType: actionType);
+      _statusAction(
+        id,
+        'cancel',
+        'Failed to cancel challan.',
+        actionType: actionType,
+      );
 
   @override
   Future<CancelChallanOptions> getCancelOptions(int id) async {
@@ -621,10 +637,7 @@ class ApiChallanRepository implements ChallanRepository {
       return;
     }
     final uri = Uri.parse('$baseUrl/api/invoices/$id');
-    final response = await _sendRequest(
-      method: 'DELETE',
-      uri: uri,
-    );
+    final response = await _sendRequest(method: 'DELETE', uri: uri);
     _decodeApiResponse(
       method: 'DELETE',
       uri: uri,
@@ -1380,9 +1393,11 @@ class ApiChallanRepository implements ChallanRepository {
     }
     final uri = Uri.parse('$baseUrl/api/challans/$id/$action');
     final response = await _sendRequest(
-      method: 'POST', 
+      method: 'POST',
       uri: uri,
-      headers: actionType != null ? const {'Content-Type': 'application/json'} : const {},
+      headers: actionType != null
+          ? const {'Content-Type': 'application/json'}
+          : const {},
       body: actionType != null ? jsonEncode({'action': actionType}) : null,
     );
     final payload = _decodeApiResponse(

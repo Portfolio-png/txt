@@ -15,6 +15,7 @@ import '../../domain/material_control_tower_detail.dart';
 import '../../domain/material_group_configuration.dart';
 import '../../domain/material_inputs.dart';
 import '../../domain/material_record.dart';
+import '../../domain/variation_stock_record.dart';
 import '../models/material_activity_event_model.dart';
 import '../models/inventory_material_model.dart';
 import '../models/scan_event_model.dart';
@@ -766,6 +767,11 @@ class LocalInventoryRepository implements InventoryRepository {
     });
 
     return models.map((model) => model.toRecord()).toList();
+  }
+
+  @override
+  Future<List<VariationStockRecord>> getVariationStock() async {
+    return const <VariationStockRecord>[];
   }
 
   @override
