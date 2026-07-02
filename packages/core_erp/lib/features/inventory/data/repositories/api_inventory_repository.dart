@@ -13,6 +13,7 @@ import '../../domain/material_control_tower_detail.dart';
 import '../../domain/material_group_configuration.dart';
 import '../../domain/material_inputs.dart';
 import '../../domain/material_record.dart';
+import '../../domain/variation_stock_record.dart';
 import '../models/api_models.dart';
 import 'inventory_repository.dart';
 
@@ -496,6 +497,51 @@ class ApiInventoryRepository implements InventoryRepository {
     return materialsResponse.materials
         .map((material) => material.toRecord())
         .toList(growable: false);
+  }
+
+  @override
+  Future<List<VariationStockRecord>> getVariationStock() async {
+    if (useMockResponses) {
+      // Mock not implemented for new variation stock, fallback to API
+      // Since we want this to work end-to-end, let's just make the real API call.
+    }
+
+    final uri = Uri.parse('$baseUrl/api/inventory/stock');
+    final response = await _client.get(uri);
+    final payload = _decodeJson(response.body) as Map<String, dynamic>;
+
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw InventoryApiException('Failed to fetch variation stock list.');
+    }
+
+    final List<dynamic> rawList = payload['stock'] ?? [];
+    return rawList.map((dynamic row) {
+      final map = row as Map<String, dynamic>;
+      final namingFormatStr = map['naming_format'] as String? ?? '';
+      List<String> formatTokens = [];
+      if (namingFormatStr.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(namingFormatStr);
+          if (decoded is List) {
+            formatTokens = decoded.map((e) => e.toString()).toList();
+          }
+        } catch (_) {
+          // ignore parsing error
+        }
+      }
+      return VariationStockRecord(
+        stockId: map['stock_id'] as int,
+        itemId: map['item_id'] as int,
+        variationLeafNodeId: map['variation_leaf_node_id'] as int,
+        quantity: (map['quantity'] as num).toDouble(),
+        locationId: map['location_id'] as String? ?? 'MAIN',
+        updatedAt: map['updated_at'] != null ? DateTime.parse(map['updated_at']) : DateTime.now(),
+        itemName: map['item_name'] as String? ?? '',
+        namingFormat: formatTokens,
+      );
+    }).toList();
   }
 
   @override

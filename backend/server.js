@@ -2304,6 +2304,8 @@ async function initDb() {
       scan_count INTEGER NOT NULL DEFAULT 0,
       linked_group_id INTEGER REFERENCES groups(id),
       linked_item_id INTEGER REFERENCES items(id),
+      linked_variation_leaf_node_id INTEGER REFERENCES item_variation_nodes(id),
+      custom_variation_values_json TEXT DEFAULT '{}',
       display_stock TEXT DEFAULT '',
       created_by TEXT DEFAULT '',
       workflow_status TEXT DEFAULT 'notStarted',
@@ -2521,6 +2523,18 @@ async function initDb() {
   `);
 
   await run(`
+    CREATE TABLE IF NOT EXISTS variation_stock (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+      variation_leaf_node_id INTEGER NOT NULL REFERENCES item_variation_nodes(id) ON DELETE CASCADE,
+      quantity REAL NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+      location_id TEXT DEFAULT 'MAIN',
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(item_id, variation_leaf_node_id, location_id)
+    );
+  `);
+
+  await run(`
     CREATE TABLE IF NOT EXISTS inventory_stock_positions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       material_barcode TEXT NOT NULL,
@@ -2545,6 +2559,8 @@ async function initDb() {
       uom TEXT,
       from_location_id TEXT,
       to_location_id TEXT,
+      item_id INTEGER,
+      variation_leaf_node_id INTEGER,
       reason_code TEXT,
       reference_type TEXT,
       reference_id TEXT,
@@ -2615,6 +2631,8 @@ async function initDb() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       group_type TEXT NOT NULL DEFAULT 'item',
+      group_structure TEXT NOT NULL DEFAULT 'hierarchical',
+      description TEXT NOT NULL DEFAULT '',
       parent_group_id INTEGER REFERENCES groups(id),
       unit_id INTEGER REFERENCES units(id),
       is_archived INTEGER NOT NULL DEFAULT 0,
@@ -2622,6 +2640,20 @@ async function initDb() {
       updated_at TEXT NOT NULL
     )
   `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS group_item_memberships (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+      item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(group_id, item_id)
+    );
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_group_item_memberships_group ON group_item_memberships(group_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_group_item_memberships_item ON group_item_memberships(item_id)');
 
   await run(`
     CREATE TABLE IF NOT EXISTS clients (
@@ -3827,6 +3859,7 @@ async function initDb() {
       unit_id INTEGER REFERENCES units(id),
       unit_symbol TEXT DEFAULT '',
       status TEXT NOT NULL DEFAULT 'draft',
+      custom_variation_values_json TEXT DEFAULT '{}',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       UNIQUE(procurement_request_id, material_barcode)
@@ -9713,44 +9746,80 @@ async function issueDeliveryChallan(id, actor = null) {
       const weight = Number(item.weight);
       const movementQty = Number.isFinite(quantity) && quantity > 0 ? quantity : weight;
       const movementUom = Number.isFinite(quantity) && quantity > 0 ? 'pcs' : 'weight';
-      const material = normalizeChallanType(existing.type) === 'reception'
-        ? await ensureMaterialForItemSelection({
-            itemId: Number(item.item_id || 0),
-            variationLeafNodeId: Number(item.variation_leaf_node_id || 0),
-            customVariationValues: item.custom_variation_values_json ? JSON.parse(item.custom_variation_values_json) : null,
-            actor,
-          })
-        : await findMaterialByItemSelection(
-            Number(item.item_id || 0),
-            Number(item.variation_leaf_node_id || 0),
-            item.custom_variation_values_json ? JSON.parse(item.custom_variation_values_json) : null,
-          );
-      if (!material) {
-        const error = new Error('No inventory material is linked to one or more challan items.');
-        error.statusCode = 409;
+      
+      const itemId = Number(item.item_id || 0);
+      const leafNodeId = Number(item.variation_leaf_node_id || 0);
+      const locationId = String(existing.location || '').trim() || 'MAIN';
+      const isReception = normalizeChallanType(existing.type) === 'reception';
+      const movementType = isReception ? 'receive' : 'issue';
+      const movementId = `mov-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+      if (itemId === 0) {
+        const error = new Error('Each challan item must reference an item.');
+        error.statusCode = 400;
         throw error;
       }
-      await applyInventoryMovementCore(
-        {
-          barcode: material.barcode,
-          movementType: normalizeChallanType(existing.type) === 'reception' ? 'receive' : 'issue',
-          qty: movementQty,
-          primaryQty: movementQty,
-          uom: movementUom,
-          toLocationId: String(existing.location || '').trim() || 'MAIN',
-          reasonCode: normalizeChallanType(existing.type) === 'reception'
-            ? 'reception_challan_issue'
-            : 'delivery_challan_issue',
-          referenceType: 'challan',
-          referenceId: String(existing.id),
-          sourceChallanId: existing.id,
-          sourceChallanType: normalizeChallanType(existing.type),
-          sourceChallanLineId: item.id,
-          actor,
-          lotCode: material.barcode,
-        },
-        { useTransaction: false },
+
+      // Check stock before delivery
+      if (!isReception) {
+        const currentStock = await get('SELECT quantity FROM variation_stock WHERE item_id = ? AND variation_leaf_node_id = ? AND location_id = ?', [itemId, leafNodeId, locationId]);
+        const onHand = currentStock ? currentStock.quantity : 0;
+        if (onHand < movementQty) {
+          const error = new Error(`Insufficient stock for item id ${itemId}. On hand: ${onHand}, Required: ${movementQty}. Stock cannot go negative.`);
+          error.statusCode = 400;
+          throw error;
+        }
+      }
+
+      await run(
+        `
+        INSERT INTO inventory_movements (
+          id, material_barcode, movement_type, qty, primary_qty, uom,
+          to_location_id, reason_code, reference_type, reference_id,
+          source_challan_id, source_challan_type, source_challan_line_id,
+          actor, lot_code, created_at, item_id, variation_leaf_node_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        [
+          movementId,
+          '-', // legacy barcode
+          movementType,
+          movementQty,
+          movementQty,
+          movementUom,
+          locationId,
+          isReception ? 'reception_challan_issue' : 'delivery_challan_issue',
+          'challan',
+          String(existing.id),
+          existing.id,
+          normalizeChallanType(existing.type),
+          item.id,
+          actor?.name || 'System',
+          '-',
+          now,
+          itemId,
+          leafNodeId
+        ]
       );
+
+      const delta = isReception ? movementQty : -movementQty;
+      const updateResult = await run(
+        `
+        UPDATE variation_stock
+        SET quantity = quantity + ?, updated_at = ?
+        WHERE item_id = ? AND variation_leaf_node_id = ? AND location_id = ?
+        `,
+        [delta, now, itemId, leafNodeId, locationId]
+      );
+      if (updateResult.changes === 0) {
+        await run(
+          `
+          INSERT INTO variation_stock (item_id, variation_leaf_node_id, quantity, location_id, updated_at)
+          VALUES (?, ?, ?, ?, ?)
+          `,
+          [itemId, leafNodeId, delta, locationId, now]
+        );
+      }
     }
     await run(
       `
@@ -9805,27 +9874,75 @@ async function cancelDeliveryChallan(id, actor = null) {
       );
       for (const movement of movementRows) {
         const reverseType = movement.movement_type === 'receive' ? 'issue' : 'receive';
-        await applyInventoryMovementCore(
-          {
-            barcode: movement.material_barcode,
-            movementType: reverseType,
-            qty: Number(movement.qty || 0),
-            primaryQty: Number(movement.primary_qty || movement.qty || 0),
-            uom: String(movement.uom || '').trim() || 'units',
-            toLocationId: movement.to_location_id || existing.location || 'MAIN',
-            fromLocationId: movement.from_location_id || null,
-            reasonCode: 'challan_cancel_reversal',
-            referenceType: 'challan-cancellation',
-            referenceId: String(existing.id),
-            sourceChallanId: existing.id,
-            sourceChallanType: normalizeChallanType(existing.type),
-            sourceChallanLineId: movement.source_challan_line_id || null,
-            reversesMovementId: movement.id,
-            actor,
-            lotCode: movement.lot_code || movement.material_barcode,
-          },
-          { useTransaction: false },
+        const movementId = `mov-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        const qty = Number(movement.qty || 0);
+
+        if (movement.item_id === 0 || !movement.item_id) {
+            continue; // Skip legacy barcode-based movements or handle gracefully
+        }
+
+        const stockLocation = movement.to_location_id || existing.location || 'MAIN';
+        // Check stock before reversing a reception (which is an issue)
+        if (reverseType === 'issue') {
+            const currentStock = await get('SELECT quantity FROM variation_stock WHERE item_id = ? AND variation_leaf_node_id = ? AND location_id = ?', [movement.item_id, movement.variation_leaf_node_id, stockLocation]);
+            const onHand = currentStock ? currentStock.quantity : 0;
+            if (onHand < qty) {
+                const error = new Error(`Insufficient stock for item id ${movement.item_id} to reverse reception. On hand: ${onHand}, Required to reverse: ${qty}. Stock cannot go negative.`);
+                error.statusCode = 400;
+                throw error;
+            }
+        }
+
+        await run(
+          `
+          INSERT INTO inventory_movements (
+            id, material_barcode, movement_type, qty, primary_qty, uom,
+            to_location_id, reason_code, reference_type, reference_id,
+            source_challan_id, source_challan_type, source_challan_line_id,
+            reverses_movement_id, actor, lot_code, created_at, item_id, variation_leaf_node_id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `,
+          [
+            movementId,
+            movement.material_barcode || '-',
+            reverseType,
+            qty,
+            Number(movement.primary_qty || movement.qty || 0),
+            String(movement.uom || '').trim() || 'units',
+            stockLocation,
+            'challan_cancel_reversal',
+            'challan-cancellation',
+            String(existing.id),
+            existing.id,
+            normalizeChallanType(existing.type),
+            movement.source_challan_line_id || null,
+            movement.id,
+            actor?.name || 'System',
+            movement.lot_code || movement.material_barcode || '-',
+            now,
+            movement.item_id,
+            movement.variation_leaf_node_id
+          ]
         );
+
+        const delta = reverseType === 'receive' ? qty : -qty;
+        const updateResult = await run(
+          `
+          UPDATE variation_stock
+          SET quantity = quantity + ?, updated_at = ?
+          WHERE item_id = ? AND variation_leaf_node_id = ? AND location_id = ?
+          `,
+          [delta, now, movement.item_id, movement.variation_leaf_node_id, stockLocation]
+        );
+        if (updateResult.changes === 0) {
+          await run(
+            `
+            INSERT INTO variation_stock (item_id, variation_leaf_node_id, quantity, location_id, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            `,
+            [movement.item_id, movement.variation_leaf_node_id, delta, stockLocation, now]
+          );
+        }
       }
     }
     await run(
@@ -12520,7 +12637,7 @@ async function saveOrder({
     if (existing) {
       merged = true;
       quantityBefore = Number(existing.quantity || 0);
-      const newTotalQty = normalizedQuantity;
+      const newTotalQty = quantityBefore + normalizedQuantity;
       const currentInvoiced = hasInvoicedQtyInput 
         ? normalizedTotalInvoicedQty 
         : Number(existing.total_invoiced_qty || 0);
@@ -12561,7 +12678,7 @@ async function saveOrder({
         WHERE id = ?
         `,
         [
-          normalizedQuantity,
+          newTotalQty,
           trimmedClientName,
           trimmedClientCode,
           trimmedItemName,
@@ -15897,6 +16014,54 @@ async function applyInventoryMovementCore(payload, { useTransaction = true } = {
     );
 
     await recomputeMaterialInventorySummary(material.barcode, now);
+
+    if (material.linked_item_id != null && material.linked_variation_leaf_node_id != null) {
+      if (movementType === 'receive' || (movementType === 'adjust' && qty > 0)) {
+        const updateResult = await run(
+          'UPDATE variation_stock SET quantity = quantity + ? WHERE item_id = ? AND variation_leaf_node_id = ? AND location_id = ?',
+          [qty, material.linked_item_id, material.linked_variation_leaf_node_id, toLocationId || 'MAIN']
+        );
+        if (updateResult.changes === 0) {
+          await run(
+            'INSERT INTO variation_stock (item_id, variation_leaf_node_id, quantity, location_id) VALUES (?, ?, ?, ?)',
+            [material.linked_item_id, material.linked_variation_leaf_node_id, qty, toLocationId || 'MAIN']
+          );
+        }
+      } else if (movementType === 'issue' || movementType === 'consume') {
+        const updateResult = await run(
+          'UPDATE variation_stock SET quantity = quantity - ? WHERE item_id = ? AND variation_leaf_node_id = ? AND location_id = ?',
+          [qty, material.linked_item_id, material.linked_variation_leaf_node_id, toLocationId || 'MAIN']
+        );
+        if (updateResult.changes === 0) {
+          await run(
+            'INSERT INTO variation_stock (item_id, variation_leaf_node_id, quantity, location_id) VALUES (?, ?, ?, ?)',
+            [material.linked_item_id, material.linked_variation_leaf_node_id, -qty, toLocationId || 'MAIN']
+          );
+        }
+      } else if (movementType === 'transfer') {
+        const updateFrom = await run(
+          'UPDATE variation_stock SET quantity = quantity - ? WHERE item_id = ? AND variation_leaf_node_id = ? AND location_id = ?',
+          [qty, material.linked_item_id, material.linked_variation_leaf_node_id, fromLocationId || 'MAIN']
+        );
+        if (updateFrom.changes === 0) {
+           await run(
+            'INSERT INTO variation_stock (item_id, variation_leaf_node_id, quantity, location_id) VALUES (?, ?, ?, ?)',
+            [material.linked_item_id, material.linked_variation_leaf_node_id, -qty, fromLocationId || 'MAIN']
+          );
+        }
+        const updateTo = await run(
+          'UPDATE variation_stock SET quantity = quantity + ? WHERE item_id = ? AND variation_leaf_node_id = ? AND location_id = ?',
+          [qty, material.linked_item_id, material.linked_variation_leaf_node_id, toLocationId || 'MAIN']
+        );
+        if (updateTo.changes === 0) {
+           await run(
+            'INSERT INTO variation_stock (item_id, variation_leaf_node_id, quantity, location_id) VALUES (?, ?, ?, ?)',
+            [material.linked_item_id, material.linked_variation_leaf_node_id, qty, toLocationId || 'MAIN']
+          );
+        }
+      }
+    }
+
     await logMaterialActivity({
       barcode: material.barcode,
       type: movementType,
@@ -18207,6 +18372,28 @@ app.post('/api/dies/:id/assets/upload-complete', requirePermission('config.write
     res.json({ success: true, asset, error: null });
   } catch (error) {
     res.status(500).json({ success: false, asset: null, error: error.message });
+  }
+});
+
+app.get('/api/inventory/stock', requirePermission('inventory.read'), async (req, res) => {
+  try {
+    const rows = await all(`
+      SELECT 
+        vs.id as stock_id,
+        vs.item_id,
+        vs.variation_leaf_node_id,
+        vs.quantity,
+        vs.location_id,
+        vs.updated_at,
+        i.name as item_name,
+        i.naming_format
+      FROM variation_stock vs
+      JOIN items i ON vs.item_id = i.id
+      ORDER BY vs.item_id ASC, vs.variation_leaf_node_id ASC
+    `);
+    res.json({ success: true, stock: rows });
+  } catch (error) {
+    res.status(500).json({ success: false, stock: [], error: error.message });
   }
 });
 

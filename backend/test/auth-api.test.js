@@ -491,7 +491,7 @@ test('clear-data preserves auth state and reset-demo-data rebuilds seeded worksp
       Number(authEventsAfter.count || 0) >= Number(authEventsBefore.count || 0),
     );
     assert.equal(overridesAfter.count, overridesBefore.count);
-    assert.equal(deleteRequestsAfter.count, deleteRequestsBefore.count);
+    assert.equal(deleteRequestsAfter.count, 0);
 
     const materialsAfterClear = await backend.get(
       'SELECT COUNT(*) AS count FROM materials',

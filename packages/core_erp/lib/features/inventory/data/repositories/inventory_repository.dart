@@ -9,9 +9,12 @@ import '../../domain/material_group_configuration.dart';
 import '../../domain/material_inputs.dart';
 import '../../domain/material_record.dart';
 
+import '../../domain/variation_stock_record.dart';
+
 abstract class InventoryRepository {
   Future<void> init();
   Future<void> seedIfEmpty();
+  Future<List<VariationStockRecord>> getVariationStock();
   Future<SaveParentResult> saveParentWithChildren(
     CreateParentMaterialInput input,
   );

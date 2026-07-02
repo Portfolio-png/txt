@@ -92,11 +92,11 @@ test('delivery challans create issue and preserve company profile snapshot', asy
 
     const preIssuePosition = await backend.get(
       `
-      SELECT on_hand_qty
-      FROM inventory_stock_positions
-      WHERE material_barcode = ? AND location_id = ? AND lot_code = ?
+      SELECT quantity AS on_hand_qty
+      FROM variation_stock
+      WHERE item_id = ? AND variation_leaf_node_id = ? AND location_id = ?
       `,
-      [material.barcode, 'Dispatch Bay', material.barcode],
+      [order.item_id, order.variation_leaf_node_id, 'Dispatch Bay'],
     );
     assert.equal(Number(preIssuePosition?.on_hand_qty || 0), 50);
 
@@ -122,11 +122,11 @@ test('delivery challans create issue and preserve company profile snapshot', asy
 
     const issuedPosition = await backend.get(
       `
-      SELECT on_hand_qty
-      FROM inventory_stock_positions
-      WHERE material_barcode = ? AND location_id = ? AND lot_code = ?
+      SELECT quantity AS on_hand_qty
+      FROM variation_stock
+      WHERE item_id = ? AND variation_leaf_node_id = ? AND location_id = ?
       `,
-      [material.barcode, 'Dispatch Bay', material.barcode],
+      [order.item_id, order.variation_leaf_node_id, 'Dispatch Bay'],
     );
     assert.equal(Number(issuedPosition?.on_hand_qty || 0), 40);
 
@@ -205,11 +205,11 @@ test('delivery challans create issue and preserve company profile snapshot', asy
 
     const reversedPosition = await backend.get(
       `
-      SELECT on_hand_qty
-      FROM inventory_stock_positions
-      WHERE material_barcode = ? AND location_id = ? AND lot_code = ?
+      SELECT quantity AS on_hand_qty
+      FROM variation_stock
+      WHERE item_id = ? AND variation_leaf_node_id = ? AND location_id = ?
       `,
-      [material.barcode, 'Dispatch Bay', material.barcode],
+      [order.item_id, order.variation_leaf_node_id, 'Dispatch Bay'],
     );
     assert.equal(Number(reversedPosition?.on_hand_qty || 0), 50);
 
@@ -392,8 +392,7 @@ test('reception challans issue and cancel with vendor-linked stock provenance', 
       `,
       [created.id],
     );
-    const material = await backend.getMaterialRowByBarcode(movement.material_barcode);
-    assert.ok(material, 'expected linked material after reception issue');
+
     assert.equal(movement.movement_type, 'receive');
     assert.equal(movement.reference_type, 'challan');
     assert.equal(movement.reference_id, String(created.id));
@@ -402,11 +401,11 @@ test('reception challans issue and cancel with vendor-linked stock provenance', 
 
     const issuedPosition = await backend.get(
       `
-      SELECT on_hand_qty
-      FROM inventory_stock_positions
-      WHERE material_barcode = ? AND location_id = ? AND lot_code = ?
+      SELECT quantity AS on_hand_qty
+      FROM variation_stock
+      WHERE item_id = ? AND variation_leaf_node_id = ? AND location_id = ?
       `,
-      [material.barcode, location, material.barcode],
+      [material.linked_item_id, material.linked_variation_leaf_node_id, location],
     );
     assert.equal(Number(issuedPosition?.on_hand_qty || 0), 25);
 
@@ -415,11 +414,11 @@ test('reception challans issue and cancel with vendor-linked stock provenance', 
 
     const reversedPosition = await backend.get(
       `
-      SELECT on_hand_qty
-      FROM inventory_stock_positions
-      WHERE material_barcode = ? AND location_id = ? AND lot_code = ?
+      SELECT quantity AS on_hand_qty
+      FROM variation_stock
+      WHERE item_id = ? AND variation_leaf_node_id = ? AND location_id = ?
       `,
-      [material.barcode, location, material.barcode],
+      [material.linked_item_id, material.linked_variation_leaf_node_id, location],
     );
     assert.equal(Number(reversedPosition?.on_hand_qty || 0), 0);
 

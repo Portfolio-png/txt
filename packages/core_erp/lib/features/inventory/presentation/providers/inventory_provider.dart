@@ -12,6 +12,8 @@ import '../../domain/material_group_configuration.dart';
 import '../../domain/material_inputs.dart';
 import '../../domain/material_record.dart';
 
+import '../../domain/variation_stock_record.dart';
+
 class InventoryProvider extends ChangeNotifier {
   InventoryProvider({required InventoryRepository repository})
     : _repository = repository;
@@ -19,6 +21,7 @@ class InventoryProvider extends ChangeNotifier {
   final InventoryRepository _repository;
 
   List<MaterialRecord> _materials = const [];
+  List<VariationStockRecord> _variationStock = const [];
   MaterialRecord? _selectedMaterial;
   bool _isLoading = false;
   bool _isSaving = false;
@@ -35,6 +38,7 @@ class InventoryProvider extends ChangeNotifier {
   List<InventorySetDefinition> _sets = const [];
 
   List<MaterialRecord> get materials => _materials;
+  List<VariationStockRecord> get variationStock => _variationStock;
   List<InventorySetDefinition> get sets => _sets;
   MaterialRecord? get selectedMaterial => _selectedMaterial;
   bool get isLoading => _isLoading;
@@ -64,6 +68,7 @@ class InventoryProvider extends ChangeNotifier {
       await _repository.init();
       await _repository.seedIfEmpty();
       await _reloadMaterials();
+      await _reloadVariationStock();
       await _reloadSets();
       await loadInventoryHealth(silent: true);
       if (_materials.isNotEmpty) {
@@ -88,6 +93,7 @@ class InventoryProvider extends ChangeNotifier {
     try {
       await _repository.init();
       await _reloadMaterials();
+      await _reloadVariationStock();
       await _reloadSets();
       await loadInventoryHealth(silent: true);
       if (_selectedMaterial != null) {
@@ -531,6 +537,10 @@ class InventoryProvider extends ChangeNotifier {
 
   Future<void> _reloadSets() async {
     _sets = await _repository.getSets();
+  }
+
+  Future<void> _reloadVariationStock() async {
+    _variationStock = await _repository.getVariationStock();
   }
 
   void _upsertMaterial(MaterialRecord record) {

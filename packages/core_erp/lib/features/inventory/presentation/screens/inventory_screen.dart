@@ -36,6 +36,7 @@ import '../../../delivery_challans/presentation/widgets/challan_excel_view.dart'
 import '../../../items/domain/item_definition.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../items/presentation/screens/items_screen.dart';
+import '../../../items/presentation/utils/naming_format_helper.dart';
 
 import 'package:core_erp/widgets/variation_path_selector_dialog.dart';
 import 'package:core_erp/core/widgets/material_barcode_toolkit.dart';
@@ -215,7 +216,41 @@ class _InventoryScreenState extends State<InventoryScreen> {
           return const _InventoryLoadingSkeleton();
         }
 
-        final records = inventory.materials;
+        final itemById = <int, ItemDefinition>{
+          for (final item in items.items) item.id: item,
+        };
+
+        final records = _viewMode == _InventoryViewMode.items
+            ? inventory.variationStock.map((stock) {
+                final item = itemById[stock.itemId];
+                final label = item != null
+                    ? NamingFormatHelper.buildNamingFormatLabel(item, [stock.variationLeafNodeId])
+                    : stock.itemName;
+                return MaterialRecord(
+                  id: stock.stockId,
+                  barcode: 'VAR-${stock.stockId}',
+                  name: label,
+                  type: '',
+                  grade: '',
+                  thickness: '',
+                  supplier: '',
+                  location: stock.locationId,
+                  unitId: item?.unitId,
+                  unit: '',
+                  notes: '',
+                  createdAt: stock.updatedAt,
+                  kind: 'child',
+                  parentBarcode: null,
+                  numberOfChildren: 0,
+                  linkedChildBarcodes: const [],
+                  scanCount: 0,
+                  linkedItemId: stock.itemId,
+                  linkedVariationLeafNodeId: stock.variationLeafNodeId,
+                  displayStock: stock.quantity.toStringAsFixed(2),
+                );
+              }).toList()
+            : inventory.materials;
+
         final sets = inventory.sets;
         final groupNameById = <int, String>{
           for (final group in groups.groups) group.id: group.name,
@@ -249,9 +284,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
             });
           });
         }
-        final itemById = <int, ItemDefinition>{
-          for (final item in items.items) item.id: item,
-        };
         if (!_hasInitializedExpandedParents && groupsById.isNotEmpty) {
           _expandedParents.addAll(
             _defaultExpandedGroupBarcodes(
