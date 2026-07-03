@@ -5,9 +5,15 @@ class NamingFormatHelper {
     ItemDefinition item,
     int leafNodeId, [
     Map<int, String> customVariationValues = const {},
+    bool includeMissingPropertyPlaceholders = false,
   ]) {
     final path = _valuePathForLeaf(item.variationTree, leafNodeId);
-    return buildNamingFormatLabel(item, path, customVariationValues);
+    return buildNamingFormatLabel(
+      item,
+      path,
+      customVariationValues,
+      includeMissingPropertyPlaceholders,
+    );
   }
 
   /// Builds a display label using the item's naming format order.
@@ -17,6 +23,7 @@ class NamingFormatHelper {
     ItemDefinition item,
     List<int> valueNodeIds, [
     Map<int, String> customVariationValues = const {},
+    bool includeMissingPropertyPlaceholders = false,
   ]) {
     final itemName = item.displayName.trim().isEmpty
         ? item.name
@@ -77,6 +84,8 @@ class NamingFormatHelper {
             final value = propIdToValue[topProps[idx].id];
             if (value != null && value.isNotEmpty) {
               parts.add(value);
+            } else if (includeMissingPropertyPlaceholders) {
+              parts.add(_missingPropertyLabel(topProps[idx]));
             }
           }
         } else if (token.startsWith('[') && token.endsWith(']')) {
@@ -91,6 +100,8 @@ class NamingFormatHelper {
           final value = property == null ? null : propIdToValue[property.id];
           if (value != null && value.isNotEmpty) {
             parts.add(value);
+          } else if (includeMissingPropertyPlaceholders && property != null) {
+            parts.add(_missingPropertyLabel(property));
           }
         }
       }
@@ -103,6 +114,15 @@ class NamingFormatHelper {
     }
 
     return parts.join(' ');
+  }
+
+  static String _missingPropertyLabel(ItemVariationNodeDefinition property) {
+    final propertyName = property.displayName.trim().isEmpty
+        ? property.name.trim()
+        : property.displayName.trim();
+    return propertyName.isEmpty
+        ? 'variation not recorded'
+        : '$propertyName not recorded';
   }
 
   static List<int> _valuePathForLeaf(

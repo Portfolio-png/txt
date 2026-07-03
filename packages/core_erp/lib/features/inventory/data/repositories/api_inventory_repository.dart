@@ -575,6 +575,7 @@ class ApiInventoryRepository implements InventoryRepository {
         unitId: map['unit_id'] is num
             ? (map['unit_id'] as num).toInt()
             : int.tryParse('${map['unit_id'] ?? ''}'),
+        variationPathLabel: map['variation_path_label'] as String? ?? '',
         namingFormat: formatTokens,
         variationPathNodeIds: pathNodeIds,
         variationPathValues: pathValues,

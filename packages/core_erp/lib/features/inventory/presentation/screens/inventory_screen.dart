@@ -1146,40 +1146,124 @@ class _InventoryScreenState extends State<InventoryScreen> {
         .map((value) => value.trim())
         .where((value) => value.isNotEmpty)
         .join(' ');
+    final fallbackPathLabel = stock.variationPathLabel.trim();
     final fallbackCustom = stock.customVariationValues.values
         .map((value) => value.trim())
         .where((value) => value.isNotEmpty)
         .join(' ');
-    final fallback = [
-      if (fallbackItemName.isNotEmpty) fallbackItemName,
-      if (fallbackPath.isNotEmpty) fallbackPath,
-      if (fallbackCustom.isNotEmpty) fallbackCustom,
-    ].join(' ').trim();
+    final fallback =
+        (fallbackPathLabel.isNotEmpty &&
+            fallbackItemName.isNotEmpty &&
+            _normalize(
+              fallbackPathLabel,
+            ).startsWith(_normalize(fallbackItemName)))
+        ? _appendMissingCustomVariationValues(
+            fallbackPathLabel,
+            stock.customVariationValues,
+          )
+        : [
+            if (fallbackItemName.isNotEmpty) fallbackItemName,
+            if (fallbackPathLabel.isNotEmpty) fallbackPathLabel,
+            if (fallbackPath.isNotEmpty) fallbackPath,
+            if (fallbackCustom.isNotEmpty) fallbackCustom,
+          ].join(' ').trim();
     if (item == null) {
       return fallback.isEmpty ? 'Item #${stock.itemId}' : fallback;
     }
 
-    final computed = NamingFormatHelper.buildLabelForLeaf(
+    final customValues = _customVariationValuesByPropertyId(
+      stock.customVariationValues,
       item,
-      stock.variationLeafNodeId,
-      _customVariationValuesByPropertyId(stock.customVariationValues),
-    ).trim();
+    );
+    final computed =
+        (stock.variationPathNodeIds.isEmpty
+                ? NamingFormatHelper.buildLabelForLeaf(
+                    item,
+                    stock.variationLeafNodeId,
+                    customValues,
+                    true,
+                  )
+                : NamingFormatHelper.buildNamingFormatLabel(
+                    item,
+                    stock.variationPathNodeIds,
+                    customValues,
+                    true,
+                  ))
+            .trim();
     final itemLabel = item.displayName.trim().isEmpty
         ? item.name.trim()
         : item.displayName.trim();
+    final computedWithCustom = _appendMissingCustomVariationValues(
+      computed,
+      stock.customVariationValues,
+    );
     if (computed.isNotEmpty &&
         (computed != itemLabel || stock.variationPathValues.isEmpty)) {
-      return computed;
+      return computedWithCustom;
     }
-    return fallback.isEmpty ? computed.ifEmpty(itemLabel) : fallback;
+    return fallback.isEmpty
+        ? _appendMissingCustomVariationValues(
+            computed.ifEmpty(itemLabel),
+            stock.customVariationValues,
+          )
+        : fallback;
+  }
+
+  String _appendMissingCustomVariationValues(
+    String label,
+    Map<String, String> values,
+  ) {
+    final parts = <String>[label.trim()];
+    final normalizedLabel = _normalize(label);
+    for (final rawValue in values.values) {
+      final value = rawValue.trim();
+      if (value.isEmpty || normalizedLabel.contains(_normalize(value))) {
+        continue;
+      }
+      parts.add(value);
+    }
+    return parts.where((part) => part.isNotEmpty).join(' ');
   }
 
   Map<int, String> _customVariationValuesByPropertyId(
     Map<String, String> values,
+    ItemDefinition item,
   ) {
     final result = <int, String>{};
+    final propertyByName = <String, int>{};
+
+    String normalizePropertyKey(String value) {
+      return _normalize(
+        value
+            .replaceAll('[', '')
+            .replaceAll(']', '')
+            .replaceAll('_', ' ')
+            .replaceAll('-', ' '),
+      );
+    }
+
+    void collectProperties(ItemVariationNodeDefinition node) {
+      if (node.kind == ItemVariationNodeKind.property) {
+        final names = [node.id.toString(), node.name, node.displayName];
+        for (final name in names) {
+          final normalized = normalizePropertyKey(name);
+          if (normalized.isNotEmpty) {
+            propertyByName[normalized] = node.id;
+          }
+        }
+      }
+      for (final child in node.activeChildren) {
+        collectProperties(child);
+      }
+    }
+
+    for (final node in item.activeVariationTree) {
+      collectProperties(node);
+    }
+
     for (final entry in values.entries) {
-      final id = int.tryParse(entry.key);
+      final normalizedKey = normalizePropertyKey(entry.key);
+      final id = int.tryParse(entry.key) ?? propertyByName[normalizedKey];
       final value = entry.value.trim();
       if (id != null && value.isNotEmpty) {
         result[id] = value;

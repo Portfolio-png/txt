@@ -1392,6 +1392,31 @@ function parseJson(value, fallback) {
   }
 }
 
+function parseJsonOrArray(value, fallback = []) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  return parseJson(value, fallback);
+}
+
+function normalizeCustomVariationValues(value = {}) {
+  const parsed = value && typeof value === 'object' && !Array.isArray(value)
+    ? value
+    : parseJson(value, {});
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return {};
+  }
+  const normalized = {};
+  for (const [key, rawValue] of Object.entries(parsed)) {
+    const trimmedKey = String(key || '').trim();
+    const trimmedValue = String(rawValue ?? '').trim();
+    if (trimmedKey && trimmedValue) {
+      normalized[trimmedKey] = trimmedValue;
+    }
+  }
+  return normalized;
+}
+
 function oneDayAgo(daysAgo = 0) {
   return new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString();
 }
@@ -2617,6 +2642,9 @@ async function initDb() {
       variation_leaf_node_id INTEGER NOT NULL REFERENCES item_variation_nodes(id) ON DELETE CASCADE,
       quantity REAL NOT NULL DEFAULT 0 CHECK (quantity >= 0),
       location_id TEXT DEFAULT 'MAIN',
+      variation_path_label TEXT DEFAULT '',
+      variation_path_node_ids_json TEXT NOT NULL DEFAULT '[]',
+      custom_variation_values_json TEXT DEFAULT '{}',
       updated_at TEXT DEFAULT (datetime('now')),
       UNIQUE(item_id, variation_leaf_node_id, location_id)
     );
@@ -3027,6 +3055,9 @@ async function initDb() {
       line_no INTEGER NOT NULL DEFAULT 1,
       particulars TEXT NOT NULL DEFAULT '',
       hsn_code TEXT DEFAULT '',
+      variation_path_label TEXT DEFAULT '',
+      variation_path_node_ids_json TEXT NOT NULL DEFAULT '[]',
+      custom_variation_values_json TEXT DEFAULT '{}',
       note TEXT DEFAULT '',
       quantity_pcs REAL NOT NULL DEFAULT 0,
       weight REAL NOT NULL DEFAULT 0,
@@ -3473,6 +3504,9 @@ async function initDb() {
       line_no INTEGER NOT NULL DEFAULT 1,
       particulars TEXT NOT NULL DEFAULT '',
       hsn_code TEXT DEFAULT '',
+      variation_path_label TEXT DEFAULT '',
+      variation_path_node_ids_json TEXT NOT NULL DEFAULT '[]',
+      note TEXT DEFAULT '',
       custom_variation_values_json TEXT DEFAULT '{}',
       quantity_pcs TEXT DEFAULT '',
       weight TEXT DEFAULT '',
@@ -3531,10 +3565,14 @@ async function initDb() {
   await ensureColumnExists('delivery_challan_items', 'production_run_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'item_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'variation_leaf_node_id', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumnExists('delivery_challan_items', 'variation_path_label', "TEXT DEFAULT ''");
+  await ensureColumnExists('delivery_challan_items', 'variation_path_node_ids_json', "TEXT NOT NULL DEFAULT '[]'");
   await ensureColumnExists('delivery_challan_items', 'note', "TEXT DEFAULT ''");
   await ensureDeliveryChallanItemNumericColumns();
   await ensureColumnExists('delivery_challan_items', 'production_run_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'variation_leaf_node_id', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumnExists('delivery_challan_items', 'variation_path_label', "TEXT DEFAULT ''");
+  await ensureColumnExists('delivery_challan_items', 'variation_path_node_ids_json', "TEXT NOT NULL DEFAULT '[]'");
   await ensureColumnExists('delivery_challan_items', 'note', "TEXT DEFAULT ''");
   await ensureColumnExists('delivery_challan_items', 'custom_variation_values_json', "TEXT DEFAULT '{}'");
   await run(`
@@ -3721,6 +3759,9 @@ async function initDb() {
   await ensureColumnExists('materials', 'linked_group_id', 'INTEGER');
   await ensureColumnExists('materials', 'linked_item_id', 'INTEGER');
   await ensureColumnExists('materials', 'linked_variation_leaf_node_id', 'INTEGER');
+  await ensureColumnExists('variation_stock', 'variation_path_label', "TEXT DEFAULT ''");
+  await ensureColumnExists('variation_stock', 'variation_path_node_ids_json', "TEXT NOT NULL DEFAULT '[]'");
+  await ensureColumnExists('variation_stock', 'custom_variation_values_json', "TEXT DEFAULT '{}'");
   await ensureColumnExists('groups', 'group_type', "TEXT NOT NULL DEFAULT 'item'");
   await run('CREATE INDEX IF NOT EXISTS idx_materials_item_variation_lookup ON materials(linked_item_id, linked_variation_leaf_node_id)');
   await ensureColumnExists('inventory_movements', 'primary_qty', 'REAL');
@@ -5331,6 +5372,8 @@ async function ensureDeliveryChallanItemNumericColumns() {
   const weightColumn = columns.find((column) => column.name === 'weight');
   const hasProductionRunId = columns.some((column) => column.name === 'production_run_id');
   const hasVariationLeafNodeId = columns.some((column) => column.name === 'variation_leaf_node_id');
+  const hasVariationPathLabel = columns.some((column) => column.name === 'variation_path_label');
+  const hasVariationPathNodeIdsJson = columns.some((column) => column.name === 'variation_path_node_ids_json');
   const hasNote = columns.some((column) => column.name === 'note');
   const hasCustomVariationValuesJson = columns.some((column) => column.name === 'custom_variation_values_json');
   const normalizedType = (column) => String(column?.type || '').trim().toUpperCase();
@@ -5353,6 +5396,8 @@ async function ensureDeliveryChallanItemNumericColumns() {
         line_no INTEGER NOT NULL DEFAULT 1,
         particulars TEXT NOT NULL DEFAULT '',
         hsn_code TEXT DEFAULT '',
+        variation_path_label TEXT DEFAULT '',
+        variation_path_node_ids_json TEXT NOT NULL DEFAULT '[]',
         note TEXT DEFAULT '',
         custom_variation_values_json TEXT DEFAULT '{}',
         quantity_pcs REAL NOT NULL DEFAULT 0,
@@ -5364,7 +5409,7 @@ async function ensureDeliveryChallanItemNumericColumns() {
     await run(`
       INSERT INTO delivery_challan_items (
         id, challan_id, order_item_id, production_run_id, item_id, variation_leaf_node_id, line_no, particulars, hsn_code,
-        note, custom_variation_values_json, quantity_pcs, weight, created_at, updated_at
+        variation_path_label, variation_path_node_ids_json, note, custom_variation_values_json, quantity_pcs, weight, created_at, updated_at
       )
       SELECT
         id,
@@ -5376,6 +5421,8 @@ async function ensureDeliveryChallanItemNumericColumns() {
         line_no,
         particulars,
         hsn_code,
+        ${hasVariationPathLabel ? 'variation_path_label' : "''"},
+        ${hasVariationPathNodeIdsJson ? 'variation_path_node_ids_json' : "'[]'"},
         ${hasNote ? 'note' : "''"},
         ${hasCustomVariationValuesJson ? 'custom_variation_values_json' : "'{}'"},
         CASE
@@ -6277,6 +6324,9 @@ async function applyVariationStockDelta({
   itemId,
   variationLeafNodeId,
   locationId = 'MAIN',
+  variationPathLabel = '',
+  variationPathNodeIds = [],
+  customVariationValues = {},
   delta,
   now = new Date().toISOString(),
 }) {
@@ -6284,6 +6334,11 @@ async function applyVariationStockDelta({
   const normalizedLeafNodeId = Number(variationLeafNodeId || 0);
   const normalizedLocationId = String(locationId || '').trim() || 'MAIN';
   const normalizedDelta = Number(delta || 0);
+  const normalizedVariationPathLabel = String(variationPathLabel || '').trim();
+  const normalizedVariationPathNodeIds = Array.isArray(variationPathNodeIds)
+    ? variationPathNodeIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+    : [];
+  const normalizedCustomVariationValues = normalizeCustomVariationValues(customVariationValues || {});
   if (!Number.isFinite(normalizedDelta) || normalizedDelta === 0) {
     return;
   }
@@ -6314,11 +6369,24 @@ async function applyVariationStockDelta({
   await run(
     `
     INSERT INTO variation_stock (
-      item_id, variation_leaf_node_id, quantity, location_id, updated_at
-    ) VALUES (?, ?, ?, ?, ?)
+      item_id, variation_leaf_node_id, quantity, location_id,
+      variation_path_label, variation_path_node_ids_json, custom_variation_values_json, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(item_id, variation_leaf_node_id, location_id)
     DO UPDATE SET
       quantity = variation_stock.quantity + ?,
+      variation_path_label = CASE
+        WHEN TRIM(excluded.variation_path_label) <> '' THEN excluded.variation_path_label
+        ELSE variation_stock.variation_path_label
+      END,
+      variation_path_node_ids_json = CASE
+        WHEN excluded.variation_path_node_ids_json <> '[]' THEN excluded.variation_path_node_ids_json
+        ELSE variation_stock.variation_path_node_ids_json
+      END,
+      custom_variation_values_json = CASE
+        WHEN excluded.custom_variation_values_json <> '{}' THEN excluded.custom_variation_values_json
+        ELSE variation_stock.custom_variation_values_json
+      END,
       updated_at = excluded.updated_at
     `,
     [
@@ -6326,6 +6394,9 @@ async function applyVariationStockDelta({
       normalizedLeafNodeId,
       insertedQuantity,
       normalizedLocationId,
+      normalizedVariationPathLabel,
+      JSON.stringify(normalizedVariationPathNodeIds),
+      JSON.stringify(normalizedCustomVariationValues),
       now,
       normalizedDelta,
     ],
@@ -7349,6 +7420,7 @@ function rowToDeliveryChallanItemDto(row) {
     hsn_code: row.hsn_code || '',
     note: row.note || '',
     variation_path_label: row.variation_path_label || '',
+    variation_path_node_ids: parseJson(row.variation_path_node_ids_json, []),
     custom_variation_values: parseJson(row.custom_variation_values_json, {}),
     quantity_pcs: formatMeasure(row.quantity_pcs),
     weight: formatMeasure(row.weight),
@@ -7624,6 +7696,15 @@ function normalizeDeliveryChallanItems(items = []) {
       variationPathLabel: String(
         item.variationPathLabel ?? item.variation_path_label ?? '',
       ).trim(),
+      variationPathNodeIds: parseJsonOrArray(
+        item.variationPathNodeIds ?? item.variation_path_node_ids ?? item.variation_path_node_ids_json,
+        [],
+      )
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id) && id > 0),
+      customVariationValues: normalizeCustomVariationValues(
+        item.customVariationValues ?? item.custom_variation_values ?? item.custom_variation_values_json ?? {},
+      ),
       quantityPcs: String(item.quantityPcs ?? item.quantity_pcs ?? '').trim(),
       weight: String(item.weight || '').trim(),
     }))
@@ -9236,6 +9317,7 @@ async function getItemSelectionSnapshot(itemId, variationLeafNodeId) {
     itemId: selection.item.id,
     variationLeafNodeId: selection.variationLeafNodeId,
     variationPathLabel: selection.variationPathLabel,
+    variationPathNodeIds: selection.variationPathNodeIds || [],
     particulars: selection.variationPathLabel
       ? `${selection.item.display_name || selection.item.name} - ${selection.variationPathLabel}`
       : (selection.item.display_name || selection.item.name || ''),
@@ -9691,6 +9773,9 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
           variationLeafNodeId: snapshot.variationLeafNodeId,
           particulars: item.particulars || snapshot.particulars,
           variationPathLabel: item.variationPathLabel || snapshot.variationPathLabel,
+          variationPathNodeIds: item.variationPathNodeIds?.length
+            ? item.variationPathNodeIds
+            : snapshot.variationPathNodeIds,
           hsnCode: item.hsnCode,
         });
         continue;
@@ -9734,6 +9819,8 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
         variationLeafNodeId: orderVariationLeafNodeId,
         particulars: orderSnapshot?.particulars || item.particulars,
         variationPathLabel: orderSnapshot?.variationPathLabel || item.variationPathLabel,
+        variationPathNodeIds: orderSnapshot?.variationPathNodeIds || item.variationPathNodeIds || [],
+        customVariationValues: orderSnapshot?.customVariationValues || item.customVariationValues || {},
         hsnCode: orderSnapshot?.hsnCode || item.hsnCode,
       });
     } else {
@@ -9748,8 +9835,11 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
         orderItemId: null,
         itemId: snapshot.itemId,
         variationLeafNodeId: snapshot.variationLeafNodeId,
-        particulars: snapshot.particulars,
-        variationPathLabel: snapshot.variationPathLabel,
+        particulars: item.particulars || snapshot.particulars,
+        variationPathLabel: item.variationPathLabel || snapshot.variationPathLabel,
+        variationPathNodeIds: item.variationPathNodeIds?.length
+          ? item.variationPathNodeIds
+          : snapshot.variationPathNodeIds,
         hsnCode: item.hsnCode,
       });
     }
@@ -9868,8 +9958,9 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
         `
         INSERT INTO delivery_challan_items (
           challan_id, order_item_id, production_run_id, item_id, variation_leaf_node_id,
-          line_no, particulars, hsn_code, note, quantity_pcs, weight, custom_variation_values_json, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          line_no, particulars, hsn_code, variation_path_label, variation_path_node_ids_json,
+          note, quantity_pcs, weight, custom_variation_values_json, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           challanId,
@@ -9880,6 +9971,8 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
           item.lineNo,
           item.particulars,
           item.hsnCode,
+          item.variationPathLabel || '',
+          JSON.stringify(item.variationPathNodeIds || []),
           item.note,
           normalizeDeliveryChallanMeasure(item.quantityPcs, 'challan quantity'),
           normalizeDeliveryChallanMeasure(item.weight, 'challan weight'),
@@ -10033,6 +10126,15 @@ async function issueDeliveryChallan(id, actor = null) {
         itemId,
         variationLeafNodeId: leafNodeId,
         locationId,
+        variationPathLabel: item.variation_path_label || item.variationPathLabel || item.particulars || '',
+        variationPathNodeIds: parseJsonOrArray(
+          item.variation_path_node_ids_json ?? item.variationPathNodeIds,
+          [],
+        ),
+        customVariationValues: parseJsonOrArray(
+          item.custom_variation_values_json ?? item.customVariationValues,
+          {},
+        ),
         delta,
         now,
       });
@@ -18594,6 +18696,9 @@ app.get('/api/inventory/stock', requirePermission('inventory.read'), async (req,
         vs.variation_leaf_node_id,
         vs.quantity,
         vs.location_id,
+        vs.variation_path_label,
+        vs.variation_path_node_ids_json,
+        vs.custom_variation_values_json AS stock_custom_variation_values_json,
         vs.updated_at,
         i.name as item_name,
         i.unit_id,
@@ -18605,8 +18710,14 @@ app.get('/api/inventory/stock', requirePermission('inventory.read'), async (req,
     const stock = [];
     for (const row of rows) {
       const selection = await resolveLeafSelectionFromDb(row.variation_leaf_node_id);
+      const storedPathNodeIds = parseJson(row.variation_path_node_ids_json, []);
+      const effectivePathNodeIds = storedPathNodeIds.length > 0
+        ? storedPathNodeIds
+        : (selection?.nodeIds || []);
       const customVariationRows = await all(
         `
+        SELECT ? AS custom_variation_values_json
+        UNION ALL
         SELECT custom_variation_values_json
         FROM materials
         WHERE linked_item_id = ?
@@ -18626,6 +18737,7 @@ app.get('/api/inventory/stock', requirePermission('inventory.read'), async (req,
           AND TRIM(COALESCE(custom_variation_values_json, '')) NOT IN ('', '{}')
         `,
         [
+          row.stock_custom_variation_values_json || '{}',
           row.item_id,
           row.variation_leaf_node_id,
           row.item_id,
@@ -18637,10 +18749,13 @@ app.get('/api/inventory/stock', requirePermission('inventory.read'), async (req,
       stock.push({
         ...row,
         custom_variation_values: mergeCustomVariationValueJsonRows(customVariationRows),
-        variation_path_node_ids: selection?.nodeIds || [],
-        variation_path: (selection?.nodeIds || []).map((nodeId, index) => ({
+        variation_path_label: row.variation_path_label || '',
+        variation_path_node_ids: effectivePathNodeIds,
+        variation_path: effectivePathNodeIds.map((nodeId, index) => ({
           node_id: nodeId,
-          value: selection?.segments?.[index] || '',
+          value: selection?.nodeIds?.includes(nodeId)
+            ? (selection?.segments?.[selection.nodeIds.indexOf(nodeId)] || '')
+            : '',
         })),
       });
     }

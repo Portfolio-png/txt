@@ -21,6 +21,9 @@ exports.up = async (db) => {
       variation_leaf_node_id INTEGER NOT NULL REFERENCES item_variation_nodes(id) ON DELETE CASCADE,
       quantity REAL NOT NULL DEFAULT 0 CHECK (quantity >= 0),
       location_id TEXT DEFAULT 'MAIN',
+      variation_path_label TEXT DEFAULT '',
+      variation_path_node_ids_json TEXT NOT NULL DEFAULT '[]',
+      custom_variation_values_json TEXT DEFAULT '{}',
       updated_at TEXT DEFAULT (datetime('now')),
       UNIQUE(item_id, variation_leaf_node_id, location_id)
     );

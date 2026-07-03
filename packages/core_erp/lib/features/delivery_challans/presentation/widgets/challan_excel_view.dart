@@ -5,8 +5,8 @@ import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/soft_primitives.dart';
 import '../../domain/delivery_challan.dart';
 import '../providers/delivery_challan_provider.dart';
-import '../utils/challan_item_labels.dart';
 import '../../../items/presentation/providers/items_provider.dart';
+import '../../../units/domain/unit_definition.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 
 class ChallanExcelView extends StatefulWidget {
@@ -54,8 +54,6 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
   final List<DeliveryChallan> _fullChallans = [];
   bool _isLoading = true;
   String? _errorMessage;
-  String _qtyHeader = 'Qty';
-  String _wtHeader = 'Weight';
   DeliveryChallan? _selectedPreviewChallan;
   bool _isPreviewOpen = false;
 
@@ -107,29 +105,6 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
 
       final results = await Future.wait(futures);
       if (mounted) {
-        final itemsProv = context.read<ItemsProvider>();
-        final unitsProv = context.read<UnitsProvider>();
-
-        final Set<int> itemIds = {};
-        for (final challan in results) {
-          for (final item in challan.items) {
-            if (item.itemId != null) {
-              itemIds.add(item.itemId!);
-            }
-          }
-        }
-
-        if (widget.filterItemId != null || itemIds.length == 1) {
-          final targetItemId = widget.filterItemId ?? itemIds.first;
-          final labels = ChallanItemLabels.getDynamicLabels(
-            itemId: targetItemId,
-            itemsProv: itemsProv,
-            unitsProv: unitsProv,
-          );
-          _qtyHeader = labels.$1;
-          _wtHeader = labels.$2;
-        }
-
         setState(() {
           for (final r in results) {
             if (!_fullChallans.any((existing) => existing.id == r.id)) {
@@ -151,8 +126,12 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
 
   @override
   Widget build(BuildContext context) {
-    // Real-time listener
+    // Real-time listeners: rebuild whenever the challans OR the underlying item /
+    // unit definitions change, so edits to the item (units, symbols, naming,
+    // variations) are reflected in this ledger live — without reopening it.
     final provider = context.watch<DeliveryChallanProvider>();
+    context.watch<ItemsProvider>();
+    context.watch<UnitsProvider>();
     for (int i = 0; i < _fullChallans.length; i++) {
       final updated = provider.challans
           .where((c) => c.id == _fullChallans[i].id)
@@ -362,6 +341,11 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
       row.balanceWt = bWt;
     }
 
+    final ledgerUnits = _resolveLedgerUnits(rows);
+    final showSecondary = rows.any(
+      (row) => _hasLedgerValue(row.item?.quantityPcs),
+    );
+
     return Align(
       alignment: Alignment.topLeft,
       child: SingleChildScrollView(
@@ -374,7 +358,8 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
               SoftErpTheme.cardSurfaceAlt,
             ),
             dataRowMinHeight: 48,
-            dataRowMaxHeight: 56,
+            dataRowMaxHeight: showSecondary ? 72 : 56,
+            headingRowHeight: showSecondary ? 74 : 52,
             headingTextStyle: const TextStyle(
               fontWeight: FontWeight.bold,
               color: SoftErpTheme.textPrimary,
@@ -388,11 +373,33 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
               const DataColumn(label: Text('Challan No')),
               const DataColumn(label: Text('Party Name')),
               const DataColumn(label: Text('Item Particulars')),
-              DataColumn(label: Text(_qtyHeader)),
-              DataColumn(label: Text('In ($_wtHeader)')),
-              DataColumn(label: Text('Out ($_wtHeader)')),
-              DataColumn(label: Text('Balance Qty')),
-              DataColumn(label: Text('Balance Wt')),
+              DataColumn(
+                label: _LedgerMeasureHeader(
+                  title: 'In',
+                  primaryLabel: ledgerUnits.primaryLabel,
+                  secondaryLabel: showSecondary
+                      ? ledgerUnits.secondaryLabel
+                      : null,
+                ),
+              ),
+              DataColumn(
+                label: _LedgerMeasureHeader(
+                  title: 'Out',
+                  primaryLabel: ledgerUnits.primaryLabel,
+                  secondaryLabel: showSecondary
+                      ? ledgerUnits.secondaryLabel
+                      : null,
+                ),
+              ),
+              DataColumn(
+                label: _LedgerMeasureHeader(
+                  title: 'Balance',
+                  primaryLabel: ledgerUnits.primaryLabel,
+                  secondaryLabel: showSecondary
+                      ? ledgerUnits.secondaryLabel
+                      : null,
+                ),
+              ),
             ],
             rows: rows.map((row) {
               final date = row.challan.date;
@@ -407,6 +414,8 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
               final bWtStr = row.balanceWt == row.balanceWt.truncateToDouble()
                   ? row.balanceWt.toInt().toString()
                   : row.balanceWt.toStringAsFixed(3);
+              final secondaryValue = row.item?.quantityPcs ?? '';
+              final primaryValue = row.item?.weight ?? '';
 
               return DataRow(
                 selected:
@@ -436,37 +445,52 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
                     ),
                   ),
                   DataCell(Text(row.item?.particulars ?? '-')),
-                  DataCell(Text(row.item?.quantityPcs ?? '-')),
                   DataCell(
-                    Text(
-                      row.challan.isReception ? (row.item?.weight ?? '-') : '',
+                    _LedgerMeasureCell(
+                      primary: row.challan.isReception
+                          ? _formatLedgerAmount(
+                              primaryValue,
+                              ledgerUnits.primarySymbol,
+                            )
+                          : '',
+                      secondary: showSecondary && row.challan.isReception
+                          ? _formatLedgerAmount(
+                              secondaryValue,
+                              ledgerUnits.secondarySymbol,
+                            )
+                          : null,
                     ),
                   ),
                   DataCell(
-                    Text(
-                      row.challan.isDelivery ? (row.item?.weight ?? '-') : '',
+                    _LedgerMeasureCell(
+                      primary: row.challan.isDelivery
+                          ? _formatLedgerAmount(
+                              primaryValue,
+                              ledgerUnits.primarySymbol,
+                            )
+                          : '',
+                      secondary: showSecondary && row.challan.isDelivery
+                          ? _formatLedgerAmount(
+                              secondaryValue,
+                              ledgerUnits.secondarySymbol,
+                            )
+                          : null,
                     ),
                   ),
                   DataCell(
-                    Text(
-                      bQtyStr,
-                      style: TextStyle(
-                        color: row.balanceQty < 0
-                            ? Colors.red
-                            : Colors.green.shade700,
-                        fontWeight: FontWeight.bold,
+                    _LedgerMeasureCell(
+                      primary: _formatLedgerAmount(
+                        bWtStr,
+                        ledgerUnits.primarySymbol,
                       ),
-                    ),
-                  ),
-                  DataCell(
-                    Text(
-                      bWtStr,
-                      style: TextStyle(
-                        color: row.balanceWt < 0
-                            ? Colors.red
-                            : Colors.green.shade700,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      secondary: showSecondary
+                          ? _formatLedgerAmount(
+                              bQtyStr,
+                              ledgerUnits.secondarySymbol,
+                            )
+                          : null,
+                      isBalance: true,
+                      isNegative: row.balanceQty < 0 || row.balanceWt < 0,
                     ),
                   ),
                 ],
@@ -474,6 +498,232 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
             }).toList(),
           ),
         ),
+      ),
+    );
+  }
+
+  _LedgerUnitPresentation _resolveLedgerUnits(List<_FlattenedRow> rows) {
+    final itemIds = <int>{};
+    for (final row in rows) {
+      final itemId = row.item?.itemId;
+      if (itemId != null) {
+        itemIds.add(itemId);
+      }
+    }
+    final targetItemId =
+        widget.filterItemId ?? (itemIds.length == 1 ? itemIds.first : null);
+    if (targetItemId == null) {
+      return const _LedgerUnitPresentation(
+        primaryLabel: 'Primary unit',
+        primarySymbol: '',
+        secondaryLabel: 'Secondary unit',
+        secondarySymbol: '',
+      );
+    }
+
+    final itemsProv = context.watch<ItemsProvider>();
+    final unitsProv = context.watch<UnitsProvider>();
+    final item = itemsProv.items
+        .where((entry) => entry.id == targetItemId)
+        .firstOrNull;
+    if (item == null) {
+      return const _LedgerUnitPresentation(
+        primaryLabel: 'Primary unit',
+        primarySymbol: '',
+        secondaryLabel: 'Secondary unit',
+        secondarySymbol: '',
+      );
+    }
+
+    final primary = unitsProv.findById(item.unitId);
+    final conversions = item.unitConversions
+        .map((conversion) => unitsProv.findById(conversion.unitId))
+        .whereType<UnitDefinition>()
+        .toList(growable: false);
+    final secondary = conversions.firstOrNull;
+    final secondaryInput = item.unitConversions.firstOrNull;
+    final secondaryUnitName = secondaryInput?.unitName.trim() ?? '';
+    final secondaryUnitSymbol = secondaryInput?.unitSymbol.trim() ?? '';
+    return _LedgerUnitPresentation(
+      primaryLabel: _unitFamilyLabel(primary, fallback: 'Primary unit'),
+      primarySymbol: _cleanUnitSymbol(primary?.symbol, fallback: ''),
+      secondaryLabel: _unitFamilyLabel(
+        secondary,
+        fallback: secondaryUnitName.isEmpty
+            ? 'Secondary unit'
+            : secondaryUnitName,
+      ),
+      secondarySymbol: _cleanUnitSymbol(
+        secondary?.symbol,
+        fallback: secondaryUnitSymbol,
+      ),
+    );
+  }
+
+  String _cleanUnitSymbol(String? value, {required String fallback}) {
+    final cleaned = (value ?? '').trim();
+    return cleaned.isEmpty ? fallback : cleaned;
+  }
+
+  String _unitFamilyLabel(UnitDefinition? unit, {required String fallback}) {
+    if (unit == null) {
+      return fallback;
+    }
+    final groupName = unit.unitGroupName?.trim() ?? '';
+    if (groupName.isNotEmpty) {
+      return groupName;
+    }
+    final name = unit.name.trim();
+    if (name.isNotEmpty) {
+      return name;
+    }
+    final symbol = unit.symbol.trim();
+    return symbol.isEmpty ? fallback : symbol;
+  }
+
+  String _formatLedgerAmount(String value, String unitSymbol) {
+    final cleaned = value.trim();
+    if (cleaned.isEmpty || cleaned == '-') {
+      return '';
+    }
+    if (RegExp(r'[A-Za-z]').hasMatch(cleaned) || unitSymbol.trim().isEmpty) {
+      return cleaned;
+    }
+    return '$cleaned ${unitSymbol.trim()}';
+  }
+
+  bool _hasLedgerValue(String? value) {
+    final cleaned = value?.trim() ?? '';
+    return cleaned.isNotEmpty && cleaned != '-';
+  }
+}
+
+class _LedgerUnitPresentation {
+  const _LedgerUnitPresentation({
+    required this.primaryLabel,
+    required this.primarySymbol,
+    required this.secondaryLabel,
+    required this.secondarySymbol,
+  });
+
+  final String primaryLabel;
+  final String primarySymbol;
+  final String secondaryLabel;
+  final String secondarySymbol;
+}
+
+// Unit colour coding: the primary unit (e.g. weight) and the secondary unit
+// use distinct hues so a stacked "primary over secondary" cell reads clearly.
+// Kept separate from the balance sign colours (green/red) to avoid clashing.
+const Color _kLedgerPrimaryUnitColor = SoftErpTheme.infoText; // e.g. weight
+const Color _kLedgerSecondaryUnitColor = SoftErpTheme.warningText; // e.g. pcs
+
+class _LedgerMeasureHeader extends StatelessWidget {
+  const _LedgerMeasureHeader({
+    required this.title,
+    required this.primaryLabel,
+    required this.secondaryLabel,
+  });
+
+  final String title;
+  final String primaryLabel;
+  final String? secondaryLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 132,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            child: Text(
+              title,
+              style: const TextStyle(
+                color: SoftErpTheme.textPrimary,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          _unitLegendLabel(primaryLabel, _kLedgerPrimaryUnitColor),
+          if (secondaryLabel != null)
+            _unitLegendLabel(secondaryLabel!, _kLedgerSecondaryUnitColor),
+        ],
+      ),
+    );
+  }
+
+  Widget _unitLegendLabel(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            margin: const EdgeInsets.only(right: 6),
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontWeight: FontWeight.w800, color: color),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LedgerMeasureCell extends StatelessWidget {
+  const _LedgerMeasureCell({
+    required this.primary,
+    required this.secondary,
+    this.isBalance = false,
+    this.isNegative = false,
+  });
+
+  final String primary;
+  final String? secondary;
+  final bool isBalance;
+  final bool isNegative;
+
+  @override
+  Widget build(BuildContext context) {
+    // Balance keeps its sign semantics (green up / red down). In/Out values are
+    // tinted by unit so the primary (top) and secondary (bottom) lines are
+    // instantly distinguishable and match the colour-coded column headers.
+    final Color primaryColor = isBalance
+        ? (isNegative ? Colors.red : Colors.green.shade700)
+        : _kLedgerPrimaryUnitColor;
+    final Color secondaryColor = isBalance
+        ? (isNegative ? Colors.red : Colors.green.shade700)
+        : _kLedgerSecondaryUnitColor;
+    final weight = isBalance ? FontWeight.w900 : FontWeight.w600;
+    return SizedBox(
+      width: 132,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            primary.isEmpty ? '-' : primary,
+            style: TextStyle(color: primaryColor, fontWeight: weight),
+          ),
+          // Only render the secondary line when it actually carries a value —
+          // no empty "-" placeholder when there's no secondary-unit amount.
+          if (secondary != null && secondary!.trim().isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              secondary!,
+              style: TextStyle(color: secondaryColor, fontWeight: weight),
+            ),
+          ],
+        ],
       ),
     );
   }

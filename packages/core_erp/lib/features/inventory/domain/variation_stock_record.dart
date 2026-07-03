@@ -7,6 +7,7 @@ class VariationStockRecord {
   final DateTime updatedAt;
   final String itemName;
   final int? unitId;
+  final String variationPathLabel;
   final List<String> namingFormat;
   final List<int> variationPathNodeIds;
   final List<String> variationPathValues;
@@ -21,6 +22,7 @@ class VariationStockRecord {
     required this.updatedAt,
     required this.itemName,
     this.unitId,
+    this.variationPathLabel = '',
     required this.namingFormat,
     this.variationPathNodeIds = const [],
     this.variationPathValues = const [],

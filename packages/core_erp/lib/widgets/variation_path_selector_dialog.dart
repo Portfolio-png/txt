@@ -244,26 +244,12 @@ class _VariationPathSelectorDialogState
       createOptionLabelBuilder: widget.readOnly || widget.onCreateValue == null
           ? null
           : (query) => 'Create value "$query"',
-      onSecondaryCreateOption: widget.readOnly || widget.onCreateValue == null
-          ? null
-          : (query) async {
-              var valueName = query;
-              final tempId = -step.property.id;
-              setState(() {
-                _customVariationValues[step.property.id] = valueName;
-                _replaceSelectionUnderProperty(
-                  step.property,
-                  <int>[tempId],
-                );
-              });
-              return SearchableSelectOption<int>(
-                value: tempId,
-                label: valueName,
-              );
-            },
-      secondaryCreateOptionLabelBuilder: widget.readOnly || widget.onCreateValue == null
-          ? null
-          : (query) => query,
+      // The ephemeral "secondary create" path (temp negative id + JSON-only
+      // custom value) is intentionally disabled: a value created that way has
+      // no real leaf node, so stock-managed challan lines fail
+      // assertValidStockVariationLeaf (kind='value') on issue and never reach
+      // variation_stock / inventory. Creating a value now always persists it as
+      // a real variation value node via onCreateValue below.
       onCreateOption: widget.readOnly || widget.onCreateValue == null
           ? null
           : (query) async {

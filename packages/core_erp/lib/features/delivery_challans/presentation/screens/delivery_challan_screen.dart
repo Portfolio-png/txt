@@ -5410,6 +5410,7 @@ class _ItemDraft {
       productionRunId: productionRunId,
       itemId: itemId,
       variationLeafNodeId: variationLeafNodeId,
+      variationPathNodeIds: variationPathNodeIds,
       lineNo: lineNo,
       particulars: particulars,
       hsnCode: hsnCode,
