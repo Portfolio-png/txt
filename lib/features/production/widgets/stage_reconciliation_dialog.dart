@@ -435,6 +435,9 @@ class _StageReconciliationDialogState extends State<StageReconciliationDialog> {
               _firstBarcode ?? widget.node.scrapItemName ?? 'unassigned',
           scrapQty: totalScrap,
           orderNo: _run?.orderNo,
+          // Book the scrap to the item chosen in the node's Scrap field.
+          scrapItemId: widget.node.scrapItemId,
+          scrapItemName: widget.node.scrapItemName,
         );
       }
 

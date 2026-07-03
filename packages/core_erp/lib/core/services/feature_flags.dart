@@ -43,6 +43,12 @@ class FeatureKeys {
   @FeatureFlag(category: 'Machine Form', displayName: 'Disable Machine Custom Fields', desc: 'Hide custom fields on Machine Creation')
   static const String featuresDisableMachineCustomFields = 'features.disableMachineCustomFields';
 
+  @FeatureFlag(category: 'Pipeline Builder', displayName: 'Multiple Scrap Items per Stage', desc: 'Let a stage ship scrap to several items from the Scrap group instead of one')
+  static const String pipelineMultiScrapItems = 'production.multiScrapItems';
+
+  @FeatureFlag(category: 'Pipeline Builder', displayName: 'Material Variation Paths', desc: 'Pick the exact item variation path for stage input/output materials')
+  static const String pipelineMaterialVariationPaths = 'production.materialVariationPaths';
+
   /// Master switch for the 2026 catalog & inventory enhancement bundle:
   /// group-scoped item selection in the order editor, combination groups for
   /// variant sets, measurable property values with unit assignment, the primary

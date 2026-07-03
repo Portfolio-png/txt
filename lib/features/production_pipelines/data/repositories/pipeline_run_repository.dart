@@ -54,6 +54,8 @@ abstract class PipelineRunRepository {
     required String materialBarcode,
     required double scrapQty,
     String? orderNo,
+    int? scrapItemId,
+    String? scrapItemName,
   });
 
   /// Persists the full set of in-flight batches for a run (write-through).
@@ -318,6 +320,8 @@ class ApiPipelineRunRepository implements PipelineRunRepository {
     required String materialBarcode,
     required double scrapQty,
     String? orderNo,
+    int? scrapItemId,
+    String? scrapItemName,
   }) async {
     final uri = Uri.parse('$baseUrl/api/production-scrap');
     final response = await _client.post(
@@ -329,6 +333,8 @@ class ApiPipelineRunRepository implements PipelineRunRepository {
         'materialBarcode': materialBarcode,
         'scrapQty': scrapQty,
         'orderNo': orderNo,
+        'scrapItemId': ?scrapItemId,
+        'scrapItemName': ?scrapItemName,
       }),
     );
     final payload = _decodeJson(response.body) as Map<String, dynamic>;

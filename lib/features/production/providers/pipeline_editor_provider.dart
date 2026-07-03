@@ -1144,20 +1144,16 @@ class PipelineEditorProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void updateNodeScrapItem({
+  void updateNodeScrapItems({
     required String nodeId,
-    int? scrapItemId,
-    String? scrapItemName,
+    required List<ScrapItemRef> scrapItems,
   }) {
     _pushHistory();
     final updatedNodes = _template.nodes.map((node) {
       if (node.id != nodeId) {
         return node;
       }
-      return node.copyWith(
-        scrapItemId: scrapItemId,
-        scrapItemName: scrapItemName,
-      );
+      return node.copyWith(scrapItems: scrapItems);
     }).toList();
     _template = _template.copyWith(nodes: updatedNodes);
     notifyListeners();

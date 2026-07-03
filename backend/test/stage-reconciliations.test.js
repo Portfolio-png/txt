@@ -144,6 +144,39 @@ test('stage reconciliation metrics persist to stage_reconciliations table', asyn
         [orderItem.id],
       );
 
+      // Scrap booked during reconciliation lands on the Scrap-group item
+      // chosen in the pipeline builder, as a per-order lot.
+      await backend.run(
+        `INSERT INTO items (name, display_name, group_id, unit_id, created_at, updated_at)
+         VALUES ('Brass', 'Brass', 1, 1, datetime('now'), datetime('now'))`,
+      );
+      const brass = await backend.get("SELECT id FROM items WHERE name = 'Brass'");
+      const scrapRes = await fetch(`${base}/api/production-scrap`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          pipelineRunId: 'run-recon',
+          nodeId: 'node-b',
+          orderNo: 'ORD-RECON',
+          materialBarcode: 'no-such-barcode',
+          scrapQty: 1.5,
+          scrapItemId: brass.id,
+          scrapItemName: 'Brass',
+        }),
+      });
+      assert.equal((await scrapRes.json()).success, true);
+      const scrapLot = await backend.get(
+        'SELECT * FROM materials WHERE linked_item_id = ? ORDER BY id DESC',
+        [brass.id],
+      );
+      assert.ok(scrapLot, 'scrap lot must be linked to the chosen scrap item');
+      assert.equal(scrapLot.name, 'Brass - ORD-RECON');
+      const scrapPosition = await backend.get(
+        "SELECT * FROM inventory_stock_positions WHERE material_barcode = ? AND location_id = 'SCRAP-BIN'",
+        [scrapLot.barcode],
+      );
+      assert.equal(scrapPosition.on_hand_qty, 1.5);
+
       const reportRes = await fetch(
         `${base}/api/orders/ORD-RECON/production-report`,
         { headers: authHeaders },

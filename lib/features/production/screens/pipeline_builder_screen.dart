@@ -9,8 +9,11 @@ import 'package:core_erp/features/items/presentation/providers/items_provider.da
 import 'package:core_erp/features/units/domain/unit_definition.dart';
 import 'package:core_erp/features/units/domain/unit_inputs.dart';
 import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
+import 'package:core_erp/core/services/feature_flags.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
 import 'package:core_erp/core/widgets/app_button.dart';
+import 'package:core_erp/shared/widgets/exact_item_variation_select_field.dart'
+    show buildExactItemVariationReferences;
 import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:core_erp/core/widgets/searchable_select.dart';
 import 'package:core_erp/features/items/domain/item_inputs.dart';
@@ -1943,6 +1946,8 @@ class _ScrapItemDropdown extends StatelessWidget {
     required this.items,
     required this.units,
     required this.onChanged,
+    this.label = 'Scrap',
+    this.excludeItemIds = const <int>{},
   });
 
   final int? selectedItemId;
@@ -1950,6 +1955,8 @@ class _ScrapItemDropdown extends StatelessWidget {
   final List<ItemDefinition> items;
   final List<UnitDefinition> units;
   final ValueChanged<ItemDefinition?> onChanged;
+  final String label;
+  final Set<int> excludeItemIds;
 
   @override
   Widget build(BuildContext context) {
@@ -1966,6 +1973,7 @@ class _ScrapItemDropdown extends StatelessWidget {
         .toList(growable: false);
 
     final options = scrapItems
+        .where((item) => !excludeItemIds.contains(item.id))
         .map(
           (item) => SearchableSelectOption<int>(
             value: item.id,
@@ -1991,7 +1999,7 @@ class _ScrapItemDropdown extends StatelessWidget {
       tapTargetKey: const ValueKey('pipeline-node-scrap-item'),
       value: selectedItemId,
       decoration: _softSearchDecoration(
-        label: 'Scrap',
+        label: label,
         helper: scrapGroupIds.isEmpty
             ? 'Create a "Scrap" item group with scrap items (brass, aluminium, iron...).'
             : 'Where this stage\'s scrap ships.',
@@ -2048,6 +2056,69 @@ class _ScrapItemDropdown extends StatelessWidget {
       value: created.id,
       label: _materialOptionLabel(created, units),
       searchText: _materialOptionSearchText(created, units),
+    );
+  }
+}
+
+/// Multi-item scrap section: a stage can ship scrap to several items from the
+/// "Scrap" group (e.g. brass + aluminium off the same cut). Chips list the
+/// chosen destinations; the picker below adds another.
+class _ScrapItemsField extends StatelessWidget {
+  const _ScrapItemsField({
+    required this.scrapItems,
+    required this.items,
+    required this.units,
+    required this.onChanged,
+  });
+
+  final List<ScrapItemRef> scrapItems;
+  final List<ItemDefinition> items;
+  final List<UnitDefinition> units;
+  final ValueChanged<List<ScrapItemRef>> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (scrapItems.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final scrap in scrapItems)
+                  InputChip(
+                    key: ValueKey('pipeline-node-scrap-chip-${scrap.id}'),
+                    label: Text(
+                      scrap.name.isEmpty ? 'Item #${scrap.id}' : scrap.name,
+                    ),
+                    onDeleted: () => onChanged([
+                      for (final s in scrapItems)
+                        if (s.id != scrap.id) s,
+                    ]),
+                  ),
+              ],
+            ),
+          ),
+        _ScrapItemDropdown(
+          selectedItemId: null,
+          selectedItemName: null,
+          items: items,
+          units: units,
+          label: scrapItems.isEmpty ? 'Scrap' : 'Add scrap item',
+          excludeItemIds: {for (final s in scrapItems) s.id},
+          onChanged: (item) {
+            if (item == null) return;
+            if (scrapItems.any((s) => s.id == item.id)) return;
+            onChanged([
+              ...scrapItems,
+              ScrapItemRef(id: item.id, name: _itemName(item)),
+            ]);
+          },
+        ),
+      ],
     );
   }
 }
@@ -3146,6 +3217,10 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
   String? _inputGroupName;
   int? _outputGroupId;
   String? _outputGroupName;
+  int _inputLeafNodeId = 0;
+  String _inputPathLabel = '';
+  int _outputLeafNodeId = 0;
+  String _outputPathLabel = '';
   int? _selectedMachineGroupId;
   Timer? _debounce;
   late final TextEditingController _customProcessCodeController;
@@ -3208,6 +3283,10 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
     _inputGroupName = widget.node.inputItem?.groupName;
     _outputGroupId = widget.node.outputItem?.groupId;
     _outputGroupName = widget.node.outputItem?.groupName;
+    _inputLeafNodeId = widget.node.inputItem?.variationLeafNodeId ?? 0;
+    _inputPathLabel = widget.node.inputItem?.variationPathLabel ?? '';
+    _outputLeafNodeId = widget.node.outputItem?.variationLeafNodeId ?? 0;
+    _outputPathLabel = widget.node.outputItem?.variationPathLabel ?? '';
     _selectedMachineGroupId = widget.node.machineGroupId;
     _customProcessCodeController = TextEditingController(
       text: widget.node.outputItem?.itemName ?? '',
@@ -3237,6 +3316,10 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
       _inputGroupName = widget.node.inputItem?.groupName;
       _outputGroupId = widget.node.outputItem?.groupId;
       _outputGroupName = widget.node.outputItem?.groupName;
+      _inputLeafNodeId = widget.node.inputItem?.variationLeafNodeId ?? 0;
+      _inputPathLabel = widget.node.inputItem?.variationPathLabel ?? '';
+      _outputLeafNodeId = widget.node.outputItem?.variationLeafNodeId ?? 0;
+      _outputPathLabel = widget.node.outputItem?.variationPathLabel ?? '';
       _selectedMachineGroupId = widget.node.machineGroupId;
       _customProcessCodeController.text = widget.node.outputItem?.itemName ?? '';
     }
@@ -3311,10 +3394,34 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
                     _inputItemId = pick.itemId;
                     _inputGroupId = pick.groupId;
                     _inputGroupName = pick.groupName;
+                    _inputLeafNodeId = 0;
+                    _inputPathLabel = '';
                     if (_isInputNode) {
                       _outputItemId = pick.itemId;
                       _outputGroupId = pick.groupId;
                       _outputGroupName = pick.groupName;
+                      _outputLeafNodeId = 0;
+                      _outputPathLabel = '';
+                    }
+                  });
+                  _saveItems();
+                },
+              ),
+              _variationPathField(
+                fieldKey: const ValueKey('pipeline-node-input-variation'),
+                itemId: _effectiveVariationItemId(
+                  pickedItemId: _inputItemId,
+                  pickedGroupId: _inputGroupId,
+                  endpoint: widget.node.inputItem ?? _getInheritedInput(),
+                ),
+                leafNodeId: _inputLeafNodeId,
+                onChanged: (leafId, label) {
+                  setState(() {
+                    _inputLeafNodeId = leafId;
+                    _inputPathLabel = label;
+                    if (_isInputNode) {
+                      _outputLeafNodeId = leafId;
+                      _outputPathLabel = label;
                     }
                   });
                   _saveItems();
@@ -3336,10 +3443,34 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
                     _outputItemId = pick.itemId;
                     _outputGroupId = pick.groupId;
                     _outputGroupName = pick.groupName;
+                    _outputLeafNodeId = 0;
+                    _outputPathLabel = '';
                     if (_isOutputNode) {
                       _inputItemId = pick.itemId;
                       _inputGroupId = pick.groupId;
                       _inputGroupName = pick.groupName;
+                      _inputLeafNodeId = 0;
+                      _inputPathLabel = '';
+                    }
+                  });
+                  _saveItems();
+                },
+              ),
+              _variationPathField(
+                fieldKey: const ValueKey('pipeline-node-output-variation'),
+                itemId: _effectiveVariationItemId(
+                  pickedItemId: _outputItemId,
+                  pickedGroupId: _outputGroupId,
+                  endpoint: widget.node.outputItem ?? _getInheritedOutput(),
+                ),
+                leafNodeId: _outputLeafNodeId,
+                onChanged: (leafId, label) {
+                  setState(() {
+                    _outputLeafNodeId = leafId;
+                    _outputPathLabel = label;
+                    if (_isOutputNode) {
+                      _inputLeafNodeId = leafId;
+                      _inputPathLabel = label;
                     }
                   });
                   _saveItems();
@@ -3408,19 +3539,33 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
                 requiredMachineGroupId: _selectedMachineGroupId,
               ),
               const SizedBox(height: 12),
-              _ScrapItemDropdown(
-                selectedItemId: widget.node.scrapItemId,
-                selectedItemName: widget.node.scrapItemName,
-                items: widget.items,
-                units: widget.units,
-                onChanged: (item) {
-                  widget.provider.updateNodeScrapItem(
-                    nodeId: widget.node.id,
-                    scrapItemId: item?.id,
-                    scrapItemName: item == null ? null : _itemName(item),
-                  );
-                },
-              ),
+              if (FeatureFlags.isEnabled(FeatureKeys.pipelineMultiScrapItems))
+                _ScrapItemsField(
+                  scrapItems: widget.node.scrapItems,
+                  items: widget.items,
+                  units: widget.units,
+                  onChanged: (updated) {
+                    widget.provider.updateNodeScrapItems(
+                      nodeId: widget.node.id,
+                      scrapItems: updated,
+                    );
+                  },
+                )
+              else
+                _ScrapItemDropdown(
+                  selectedItemId: widget.node.scrapItemId,
+                  selectedItemName: widget.node.scrapItemName,
+                  items: widget.items,
+                  units: widget.units,
+                  onChanged: (item) {
+                    widget.provider.updateNodeScrapItems(
+                      nodeId: widget.node.id,
+                      scrapItems: item == null
+                          ? const []
+                          : [ScrapItemRef(id: item.id, name: _itemName(item))],
+                    );
+                  },
+                ),
               // Process action & duration removed — production timing is
               // captured live during reconciliation, not at template design.
             ],
@@ -3457,20 +3602,117 @@ class _NodePropertiesPanelState extends State<_NodePropertiesPanel> {
     return null;
   }
 
+  /// Item whose variation tree the path picker offers: the explicit pick wins,
+  /// else the node's own/inherited endpoint. Groups are abstract — no path.
+  int? _effectiveVariationItemId({
+    required int? pickedItemId,
+    required int? pickedGroupId,
+    required PipelineItemEndpoint? endpoint,
+  }) {
+    if (pickedGroupId != null) return null;
+    if (pickedItemId != null && pickedItemId != 0) return pickedItemId;
+    if (endpoint == null || endpoint.isGroup || endpoint.itemId == 0) {
+      return null;
+    }
+    return endpoint.itemId;
+  }
+
+  Widget _variationPathField({
+    required ValueKey<String> fieldKey,
+    required int? itemId,
+    required int leafNodeId,
+    required void Function(int leafId, String label) onChanged,
+  }) {
+    if (!FeatureFlags.isEnabled(FeatureKeys.pipelineMaterialVariationPaths)) {
+      return const SizedBox.shrink();
+    }
+    if (itemId == null) return const SizedBox.shrink();
+    final item = _itemById(itemId);
+    if (item == null) return const SizedBox.shrink();
+    final refs = buildExactItemVariationReferences([item])
+        .where((ref) => ref.variationLeafNodeId != 0)
+        .toList(growable: false);
+    if (refs.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: SearchableSelectField<int?>(
+        tapTargetKey: fieldKey,
+        value: leafNodeId == 0 ? null : leafNodeId,
+        decoration: _softSearchDecoration(
+          label: 'Variation Path',
+          helper: 'Exact variation this stage uses (optional).',
+        ),
+        dialogTitle: 'Variation Path',
+        searchHintText: 'Search variation path',
+        emptyText: 'No variations on this item',
+        options: [
+          const SearchableSelectOption<int?>(
+            value: null,
+            label: 'Any variation',
+            searchText: 'any variation',
+          ),
+          for (final ref in refs)
+            SearchableSelectOption<int?>(
+              value: ref.variationLeafNodeId,
+              label: ref.variationPathLabel,
+              searchText: ref.searchText,
+            ),
+        ],
+        onChanged: (value) {
+          final ref = refs
+              .where((r) => r.variationLeafNodeId == value)
+              .firstOrNull;
+          onChanged(ref?.variationLeafNodeId ?? 0, ref?.variationPathLabel ?? '');
+        },
+      ),
+    );
+  }
+
+  PipelineItemEndpoint? _applyVariation(
+    PipelineItemEndpoint? endpoint,
+    int leafNodeId,
+    String pathLabel,
+  ) {
+    if (endpoint == null || endpoint.isGroup) return endpoint;
+    if (endpoint.variationLeafNodeId == leafNodeId &&
+        endpoint.variationPathLabel == pathLabel) {
+      return endpoint;
+    }
+    return PipelineItemEndpoint(
+      itemId: endpoint.itemId,
+      itemName: endpoint.itemName,
+      unitId: endpoint.unitId,
+      unitName: endpoint.unitName,
+      unitSymbol: endpoint.unitSymbol,
+      groupId: endpoint.groupId,
+      groupName: endpoint.groupName,
+      variationLeafNodeId: leafNodeId,
+      variationPathLabel: pathLabel,
+    );
+  }
+
   void _saveItems() {
     widget.provider.updateNodeItems(
       nodeId: widget.node.id,
-      inputItem: _endpointFor(
-        _inputItemId,
-        groupId: _inputGroupId,
-        groupName: _inputGroupName,
-        fallback: widget.node.inputItem ?? _getInheritedInput(),
+      inputItem: _applyVariation(
+        _endpointFor(
+          _inputItemId,
+          groupId: _inputGroupId,
+          groupName: _inputGroupName,
+          fallback: widget.node.inputItem ?? _getInheritedInput(),
+        ),
+        _inputLeafNodeId,
+        _inputPathLabel,
       ),
-      outputItem: _endpointFor(
-        _outputItemId,
-        groupId: _outputGroupId,
-        groupName: _outputGroupName,
-        fallback: widget.node.outputItem ?? _getInheritedOutput(),
+      outputItem: _applyVariation(
+        _endpointFor(
+          _outputItemId,
+          groupId: _outputGroupId,
+          groupName: _outputGroupName,
+          fallback: widget.node.outputItem ?? _getInheritedOutput(),
+        ),
+        _outputLeafNodeId,
+        _outputPathLabel,
       ),
       units: widget.units,
       propagate: true,
