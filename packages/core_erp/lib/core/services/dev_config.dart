@@ -35,6 +35,12 @@ const Map<String, dynamic> devConfig = {
     'showReport': true,
   },
   'features': {'disableMachineCustomFields': false},
+  'production': {
+    // Multi scrap destinations per stage in the pipeline builder.
+    'multiScrapItems': true,
+    // Variation path picker on stage input/output materials.
+    'materialVariationPaths': true,
+  },
   // 2026 catalog & inventory enhancement bundle (group-scoped item picker,
   // combination groups, measurable units, primary-unit cleanup, movement audit
   // trail). Only honoured in offline dev mode; for a real backend run, enable

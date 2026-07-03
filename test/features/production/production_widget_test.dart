@@ -914,6 +914,8 @@ class _FakePipelineRunRepository implements PipelineRunRepository {
     required String materialBarcode,
     required double scrapQty,
     String? orderNo,
+    int? scrapItemId,
+    String? scrapItemName,
   }) async {}
 
   @override

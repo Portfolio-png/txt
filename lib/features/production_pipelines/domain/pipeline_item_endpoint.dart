@@ -7,6 +7,8 @@ class PipelineItemEndpoint {
     required this.unitSymbol,
     this.groupId,
     this.groupName,
+    this.variationLeafNodeId = 0,
+    this.variationPathLabel = '',
   });
 
   final int itemId;
@@ -21,7 +23,18 @@ class PipelineItemEndpoint {
   final int? groupId;
   final String? groupName;
 
+  /// Exact variation of the item this stage consumes/produces (0 = any).
+  /// The label is the naming-format path, e.g. "Bottle Carton 100 Black Matte".
+  final int variationLeafNodeId;
+  final String variationPathLabel;
+
   bool get isGroup => groupId != null;
+
+  bool get hasVariation => variationLeafNodeId != 0;
+
+  /// Item name including the variation path when one is applied.
+  String get displayLabel =>
+      variationPathLabel.trim().isEmpty ? itemName : variationPathLabel;
 
   factory PipelineItemEndpoint.fromJson(Map<String, dynamic> json) {
     return PipelineItemEndpoint(
@@ -32,6 +45,8 @@ class PipelineItemEndpoint {
       unitSymbol: json['unitSymbol'] as String? ?? '',
       groupId: (json['groupId'] as num?)?.toInt(),
       groupName: json['groupName'] as String?,
+      variationLeafNodeId: (json['variationLeafNodeId'] as num?)?.toInt() ?? 0,
+      variationPathLabel: json['variationPathLabel'] as String? ?? '',
     );
   }
 
@@ -44,6 +59,9 @@ class PipelineItemEndpoint {
       'unitSymbol': unitSymbol,
       if (groupId != null) 'groupId': groupId,
       if (groupName != null) 'groupName': groupName,
+      if (variationLeafNodeId != 0) 'variationLeafNodeId': variationLeafNodeId,
+      if (variationPathLabel.isNotEmpty)
+        'variationPathLabel': variationPathLabel,
     };
   }
 

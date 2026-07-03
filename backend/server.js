@@ -20427,9 +20427,9 @@ app.get('/api/orders/:orderNo/production-report', requirePermission('config.read
             name: node.name || '',
             stageIndex: Number(node.stageIndex || 0),
             processType: node.processType || '',
-            material: node.inputItem?.itemName || '',
+            material: node.inputItem?.variationPathLabel || node.inputItem?.itemName || '',
             materialUnit: node.inputItem?.unitSymbol || '',
-            outputName: node.outputItem?.itemName || '',
+            outputName: node.outputItem?.variationPathLabel || node.outputItem?.itemName || '',
             outputUnit: node.outputItem?.unitSymbol || '',
             quantityPerUnit: Number.isFinite(quantityPerUnit) ? quantityPerUnit : null,
             plannedMaterialQty,
@@ -22280,11 +22280,11 @@ app.put('/runs/:id/batches', async (req, res) => {
 
 app.post('/api/production-scrap', requirePermission('config.write'), async (req, res) => {
   try {
-    const { pipelineRunId, nodeId, orderNo, materialBarcode, scrapQty } = req.body;
+    const { pipelineRunId, nodeId, orderNo, materialBarcode, scrapQty, scrapItemId, scrapItemName } = req.body;
     if (!pipelineRunId || !nodeId || !materialBarcode) {
       return res.status(400).json({ success: false, error: 'pipelineRunId, nodeId, and materialBarcode are required.' });
     }
-    
+
     // First log to legacy production_scrap table
     await run(`
       INSERT INTO production_scrap (pipeline_run_id, node_id, order_no, material_barcode, scrap_qty, logged_by)
@@ -22294,40 +22294,55 @@ app.post('/api/production-scrap', requirePermission('config.write'), async (req,
     // Check pipeline for targeted scrap routing group
     const runRow = await get('SELECT scrap_routing FROM pipeline_runs WHERE id = ?', [pipelineRunId]);
     const scrapRoutingGroupId = runRow?.scrap_routing && runRow.scrap_routing !== 'inventory' ? runRow.scrap_routing : null;
-    
-    // Bridge to actual inventory
+
+    // Bridge to actual inventory. The stage's chosen Scrap-group item (set in
+    // the pipeline builder) wins: the lot is linked to that item and named per
+    // order, so each order's scrap shows as its own entry under the item.
+    // Without a scrap item we fall back to the legacy source-material link.
+    const scrapItem = scrapItemId
+      ? await get(`
+          SELECT i.id, i.name, i.display_name, i.unit_id, u.symbol AS unit_symbol
+          FROM items i
+          LEFT JOIN units u ON u.id = i.unit_id
+          WHERE i.id = ?
+        `, [Number(scrapItemId)])
+      : null;
     const sourceMaterial = await getMaterialRowByBarcode(materialBarcode);
-    if (sourceMaterial && Number(scrapQty) > 0) {
+    if ((scrapItem || sourceMaterial) && Number(scrapQty) > 0) {
       const actor = actorFromRequest(req);
       const newLotBarcode = `LOT-SCRAP-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-      
+      const lotName = scrapItem
+        ? `${scrapItemName || scrapItem.display_name || scrapItem.name} - ${orderNo || pipelineRunId}`
+        : `Scrap - ${sourceMaterial.name}`;
+      const lotUnit = sourceMaterial?.unit || scrapItem?.unit_symbol || 'pcs';
+
       await run(`
         INSERT INTO materials (
-          barcode, name, type, kind, group_mode, 
+          barcode, name, type, kind, group_mode,
           linked_group_id, linked_item_id, linked_variation_leaf_node_id,
           unit, unit_id, inventory_state, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         newLotBarcode,
-        `Scrap - ${sourceMaterial.name}`,
-        sourceMaterial.type,
+        lotName,
+        sourceMaterial?.type ?? 'Scrap',
         'lot',
         'tracked',
         scrapRoutingGroupId ? Number(scrapRoutingGroupId) : null,
-        sourceMaterial.linked_item_id,
-        sourceMaterial.linked_variation_leaf_node_id,
-        sourceMaterial.unit,
-        sourceMaterial.unit_id,
+        scrapItem ? scrapItem.id : sourceMaterial.linked_item_id,
+        scrapItem ? null : sourceMaterial.linked_variation_leaf_node_id,
+        lotUnit,
+        sourceMaterial?.unit_id ?? scrapItem?.unit_id ?? null,
         'available',
         new Date().toISOString()
       ]);
-      
+
       await applyInventoryMovementCore({
         barcode: newLotBarcode,
         movementType: 'receive',
         qty: Number(scrapQty),
         primaryQty: Number(scrapQty),
-        uom: sourceMaterial.unit || 'pcs',
+        uom: lotUnit,
         toLocationId: 'SCRAP-BIN',
         reasonCode: 'production_scrap',
         referenceType: 'pipeline_scrap',

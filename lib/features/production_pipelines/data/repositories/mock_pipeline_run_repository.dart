@@ -399,6 +399,8 @@ class MockPipelineRunRepository implements PipelineRunRepository {
     required String materialBarcode,
     required double scrapQty,
     String? orderNo,
+    int? scrapItemId,
+    String? scrapItemName,
   }) async {
     _ensureSeeded();
     final index = _runs.indexWhere((run) => run.id == runId);

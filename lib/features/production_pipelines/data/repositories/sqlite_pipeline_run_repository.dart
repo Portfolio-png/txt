@@ -482,6 +482,8 @@ class SqlitePipelineRunRepository implements PipelineRunRepository {
     required String materialBarcode,
     required double scrapQty,
     String? orderNo,
+    int? scrapItemId,
+    String? scrapItemName,
   }) async {
     throw UnimplementedError('Sqlite mock not implemented for logProductionScrap');
   }

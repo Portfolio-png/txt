@@ -66,6 +66,18 @@
     "description": "Hide custom fields on Machine Creation"
   },
   {
+    "key": "production.multiScrapItems",
+    "displayName": "Multiple Scrap Items per Stage",
+    "category": "Pipeline Builder",
+    "description": "Let a stage ship scrap to several items from the Scrap group instead of one"
+  },
+  {
+    "key": "production.materialVariationPaths",
+    "displayName": "Material Variation Paths",
+    "category": "Pipeline Builder",
+    "description": "Pick the exact item variation path for stage input/output materials"
+  },
+  {
     "key": "enhancements.catalogInventory",
     "displayName": "Catalog & Inventory Enhancements",
     "category": "Catalog & Inventory",

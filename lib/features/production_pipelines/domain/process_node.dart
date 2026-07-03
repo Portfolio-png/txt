@@ -5,6 +5,21 @@ import 'pipeline_item_endpoint.dart';
 
 const Object _unset = Object();
 
+/// A scrap destination item (from the "Scrap" item group) for a stage.
+class ScrapItemRef {
+  const ScrapItemRef({required this.id, required this.name});
+
+  final int id;
+  final String name;
+
+  factory ScrapItemRef.fromJson(Map<String, dynamic> json) => ScrapItemRef(
+        id: (json['id'] as num?)?.toInt() ?? 0,
+        name: json['name'] as String? ?? '',
+      );
+
+  Map<String, dynamic> toJson() => {'id': id, 'name': name};
+}
+
 class ProcessNode {
   const ProcessNode({
     required this.id,
@@ -25,8 +40,7 @@ class ProcessNode {
     this.inputItem,
     this.outputItem,
     this.unitConversionMultiplier,
-    this.scrapItemId,
-    this.scrapItemName,
+    this.scrapItems = const [],
   });
 
   final String id;
@@ -48,10 +62,19 @@ class ProcessNode {
   final PipelineItemEndpoint? outputItem;
   final double? unitConversionMultiplier;
 
-  /// Item from the "Scrap" item group that this stage's scrap ships to
-  /// (e.g. brass, aluminium, iron).
-  final int? scrapItemId;
-  final String? scrapItemName;
+  /// Items from the "Scrap" item group that this stage's scrap ships to
+  /// (e.g. brass + aluminium off the same cut).
+  final List<ScrapItemRef> scrapItems;
+
+  // ponytail: reconciliation still routes all scrap to the first item; per-item
+  // scrap split in the reconcile dialog is the upgrade path.
+  int? get scrapItemId => scrapItems.isEmpty ? null : scrapItems.first.id;
+
+  String? get scrapItemName {
+    if (scrapItems.isEmpty) return null;
+    final name = scrapItems.first.name;
+    return name.isEmpty ? null : name;
+  }
 
   String get machineId => machine;
 
@@ -96,9 +119,24 @@ class ProcessNode {
       outputItem: _endpointFromJson(json['outputItem']),
       unitConversionMultiplier: (json['unitConversionMultiplier'] as num?)
           ?.toDouble(),
-      scrapItemId: (json['scrapItemId'] as num?)?.toInt(),
-      scrapItemName: json['scrapItemName'] as String?,
+      scrapItems: _scrapItemsFromJson(json),
     );
+  }
+
+  static List<ScrapItemRef> _scrapItemsFromJson(Map<String, dynamic> json) {
+    final list = json['scrapItems'] as List<dynamic>?;
+    if (list != null) {
+      return list
+          .whereType<Map>()
+          .map((e) => ScrapItemRef.fromJson(Map<String, dynamic>.from(e)))
+          .toList(growable: false);
+    }
+    // Legacy templates stored a single scrap destination.
+    final legacyId = (json['scrapItemId'] as num?)?.toInt();
+    if (legacyId == null) return const [];
+    return [
+      ScrapItemRef(id: legacyId, name: json['scrapItemName'] as String? ?? ''),
+    ];
   }
 
   ProcessNode copyWith({
@@ -120,8 +158,7 @@ class ProcessNode {
     Object? inputItem = _unset,
     Object? outputItem = _unset,
     Object? unitConversionMultiplier = _unset,
-    Object? scrapItemId = _unset,
-    Object? scrapItemName = _unset,
+    Object? scrapItems = _unset,
   }) {
     return ProcessNode(
       id: id ?? this.id,
@@ -152,12 +189,9 @@ class ProcessNode {
       unitConversionMultiplier: identical(unitConversionMultiplier, _unset)
           ? this.unitConversionMultiplier
           : (unitConversionMultiplier as num?)?.toDouble(),
-      scrapItemId: identical(scrapItemId, _unset)
-          ? this.scrapItemId
-          : scrapItemId as int?,
-      scrapItemName: identical(scrapItemName, _unset)
-          ? this.scrapItemName
-          : scrapItemName as String?,
+      scrapItems: identical(scrapItems, _unset)
+          ? this.scrapItems
+          : (scrapItems as List<ScrapItemRef>?) ?? const [],
     );
   }
 
@@ -201,6 +235,8 @@ class ProcessNode {
       'inputItem': inputItem?.toJson(),
       'outputItem': outputItem?.toJson(),
       'unitConversionMultiplier': unitConversionMultiplier,
+      'scrapItems': scrapItems.map((e) => e.toJson()).toList(growable: false),
+      // Legacy single-scrap keys so older readers keep working.
       'scrapItemId': scrapItemId,
       'scrapItemName': scrapItemName,
     };
