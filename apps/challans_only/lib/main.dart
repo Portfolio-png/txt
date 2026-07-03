@@ -34,6 +34,9 @@ import 'package:core_erp/features/units/presentation/providers/units_provider.da
 import 'package:core_erp/features/vendors/data/repositories/api_vendor_repository.dart';
 import 'package:core_erp/features/vendors/data/repositories/vendor_repository.dart';
 import 'package:core_erp/features/vendors/presentation/providers/vendors_provider.dart';
+import 'package:core_erp/features/search/data/repositories/api_search_repository.dart';
+import 'package:core_erp/features/search/data/repositories/search_repository.dart';
+import 'package:core_erp/features/search/presentation/providers/search_provider.dart';
 
 import 'shell/app_shell.dart';
 import 'shell/navigation_provider.dart';
@@ -103,6 +106,7 @@ class MyApp extends StatelessWidget {
   final VendorRepository? vendorRepository;
   final ItemRepository? itemRepository;
   final OrderRepository? orderRepository;
+  final SearchRepository? searchRepository;
   final bool? demoModeOverride;
 
   bool get _effectiveDemoMode => demoModeOverride ?? _isDemoMode;
@@ -270,6 +274,11 @@ class MyApp extends StatelessWidget {
               deliveryChallanRepository ??
               _buildDeliveryChallanRepository(context.read<AuthProvider>()),
         ),
+        Provider<SearchRepository>(
+          create: (context) =>
+              searchRepository ??
+              _buildSearchRepository(context.read<AuthProvider>()),
+        ),
         ChangeNotifierProvider(create: (_) => PreferencesProvider()),
         ChangeNotifierProvider(create: (_) => NavigationProvider()),
         Provider<AppNavigation>(create: (context) => AppNavigationWrapper(context.read<NavigationProvider>())),
@@ -337,6 +346,12 @@ class MyApp extends StatelessWidget {
           update: (context, repository, previous) =>
               previous ?? ChallanProvider(repository: repository)
                 ..initialize(),
+        ),
+        ChangeNotifierProxyProvider<SearchRepository, SearchProvider>(
+          create: (context) =>
+              SearchProvider(repository: context.read<SearchRepository>()),
+          update: (context, repository, previous) =>
+              previous ?? SearchProvider(repository: repository),
         ),
       ],
       child: MaterialApp(
@@ -419,6 +434,13 @@ class MyApp extends StatelessWidget {
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
       useMockResponses: _effectiveDemoMode,
+    );
+  }
+
+  SearchRepository _buildSearchRepository(AuthProvider auth) {
+    return ApiSearchRepository(
+      client: _authClient(auth),
+      baseUrl: _apiBaseUrl,
     );
   }
 }

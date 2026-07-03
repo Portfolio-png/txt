@@ -8,6 +8,8 @@ import 'package:core_erp/core/navigation/app_navigation.dart';
 import 'package:core_erp/core/services/config_service.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:core_erp/features/search/presentation/widgets/global_search_overlay.dart';
+import 'package:core_erp/features/search/presentation/providers/search_provider.dart';
 
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
 import 'package:core_erp/core/widgets/soft_primitives.dart';
@@ -111,7 +113,7 @@ class _AppShellState extends State<AppShell> {
         final totalSidebarSpace =
             actualSidebarWidth + actualLeftInset + actualRightGap;
 
-        return FreelancerBarcodeListener(
+        final shell = FreelancerBarcodeListener(
           child: PaperShortcutManager(
             child: MouseRegion(
             onHover: (e) => GlobalMouseTracker.position.value = e.position,
@@ -238,6 +240,12 @@ class _AppShellState extends State<AppShell> {
             ),
           ),
         )));
+        return Stack(
+          children: [
+            shell,
+            const GlobalSearchOverlay(),
+          ],
+        );
       },
     );
       },
@@ -279,6 +287,12 @@ class _PaperShortcutManagerState extends State<PaperShortcutManager> {
 
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.keyK, control: true): () {
+          context.read<SearchProvider>().toggleOverlay();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () {
+          context.read<SearchProvider>().toggleOverlay();
+        },
         const SingleActivator(LogicalKeyboardKey.digit1, control: true): () =>
             navProvider.setTab(0),
         const SingleActivator(LogicalKeyboardKey.digit2, control: true): () =>

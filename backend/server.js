@@ -3013,6 +3013,29 @@ async function initDb() {
   );
 
   await run(`
+    CREATE TABLE IF NOT EXISTS search_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER REFERENCES users(id),
+      query TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `);
+  await run(
+    'CREATE INDEX IF NOT EXISTS idx_search_history_user_id ON search_history(user_id)',
+  );
+  await run(`
+    CREATE TABLE IF NOT EXISTS search_clicks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER REFERENCES users(id),
+      query TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      entity_label TEXT,
+      created_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
     CREATE TABLE IF NOT EXISTS delivery_challans (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       type TEXT NOT NULL DEFAULT 'delivery',
@@ -18762,6 +18785,142 @@ app.get('/api/inventory/stock', requirePermission('inventory.read'), async (req,
     res.json({ success: true, stock });
   } catch (error) {
     res.status(500).json({ success: false, stock: [], error: error.message });
+  }
+});
+
+app.get('/api/search', requirePermission('inventory.read'), async (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    if (!q) {
+      return res.json({ success: true, results: [] });
+    }
+    
+    const likeQ = `%${q}%`;
+    
+    const items = await all(
+      `SELECT i.id, i.name, i.display_name, i.quantity as base_quantity, g.name as category_name,
+              v.variation_leaf_node_id, v.variation_path_label, v.quantity as var_quantity,
+              i.naming_format
+       FROM items i
+       LEFT JOIN groups g ON i.group_id = g.id
+       LEFT JOIN variation_stock v ON i.id = v.item_id
+       WHERE i.name LIKE ? OR i.display_name LIKE ? OR i.alias LIKE ? OR v.variation_path_label LIKE ?
+       LIMIT 50`,
+      [likeQ, likeQ, likeQ, likeQ]
+    );
+    
+    const materials = await all(
+      `SELECT barcode, name, type, on_hand_qty 
+       FROM materials 
+       WHERE name LIKE ? OR barcode LIKE ? OR supplier LIKE ? 
+       LIMIT 50`,
+      [likeQ, likeQ, likeQ]
+    );
+
+    const clicks = await all(
+      `SELECT entity_type, entity_id, COUNT(*) as click_count 
+       FROM search_clicks 
+       WHERE user_id = ? 
+       GROUP BY entity_type, entity_id`,
+      [req.user.id]
+    );
+    const clickMap = {};
+    for (const c of clicks) {
+      clickMap[`${c.entity_type}_${c.entity_id}`] = c.click_count;
+    }
+    const results = [
+      ...items.map(item => {
+        const id = String(item.id);
+        const isVariation = item.variation_leaf_node_id != null;
+        let label = item.display_name || item.name;
+        if (isVariation && item.variation_path_label) {
+          label = `${label} - ${item.variation_path_label}`;
+        }
+        
+        const qty = isVariation ? (item.var_quantity || 0) : (item.base_quantity || 0);
+        
+        return {
+          type: 'item',
+          id: isVariation ? `${id}_${item.variation_leaf_node_id}` : id,
+          label: label,
+          subLabel: `Item #${item.id} • Stock: ${qty}`,
+          metadata: {
+            stock: qty,
+            category: item.category_name || 'Item',
+            baseItemId: id,
+            variationId: item.variation_leaf_node_id,
+          },
+          score: clickMap[`item_${id}`] || 0
+        };
+      }),
+      ...materials.map(mat => {
+        return {
+          type: 'material',
+          id: mat.barcode,
+          label: mat.name,
+          subLabel: `Material (${mat.type}) • Stock: ${mat.on_hand_qty || 0}`,
+          metadata: {
+            stock: mat.on_hand_qty,
+            category: mat.type || 'Material',
+          },
+          score: clickMap[`material_${mat.barcode}`] || 0
+        };
+      })
+    ];
+    
+    results.sort((a, b) => b.score - a.score);
+    
+    res.json({ success: true, results });
+  } catch (error) {
+    res.status(500).json({ success: false, results: [], error: error.message });
+  }
+});
+
+app.get('/api/search/history', requirePermission('inventory.read'), async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.json({ success: true, history: [] });
+    }
+    const history = await all(
+      'SELECT query, MAX(created_at) as last_searched FROM search_history WHERE user_id = ? GROUP BY query ORDER BY last_searched DESC LIMIT 10',
+      [userId]
+    );
+    res.json({ success: true, history: history.map(h => h.query) });
+  } catch (error) {
+    res.status(500).json({ success: false, history: [], error: error.message });
+  }
+});
+
+app.post('/api/search/history', requirePermission('inventory.read'), async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const { query } = req.body;
+    if (userId && query) {
+      await run(
+        'INSERT INTO search_history (user_id, query, created_at) VALUES (?, ?, ?)',
+        [userId, String(query).trim(), new Date().toISOString()]
+      );
+    }
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/search/clicks', requirePermission('inventory.read'), async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const { query, entityType, entityId, entityLabel } = req.body;
+    if (userId && entityType && entityId) {
+      await run(
+        'INSERT INTO search_clicks (user_id, query, entity_type, entity_id, entity_label, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+        [userId, query || '', entityType, String(entityId), entityLabel || '', new Date().toISOString()]
+      );
+    }
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

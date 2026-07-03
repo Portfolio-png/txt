@@ -59,7 +59,9 @@ import 'features/production/providers/production_provider.dart';
 import 'features/production/providers/production_run_provider.dart';
 import 'features/production/providers/batch_flow_provider.dart';
 import 'features/production_pipelines/domain/node_run_status.dart';
-
+import 'package:core_erp/features/search/data/repositories/search_repository.dart';
+import 'package:core_erp/features/search/data/repositories/api_search_repository.dart';
+import 'package:core_erp/features/search/presentation/providers/search_provider.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'core/services/auto_updater_service.dart';
 import 'core/services/data_sync_service.dart';
@@ -360,6 +362,9 @@ class MyApp extends StatelessWidget {
               pipelineRunRepository ??
               _buildPipelineRunRepository(context.read<AuthProvider>()),
         ),
+        Provider<SearchRepository>(
+          create: (context) => _buildSearchRepository(context.read<AuthProvider>()),
+        ),
         Provider<ProductionRepository>(
           create: (_) => SqliteProductionRepository(),
         ),
@@ -479,6 +484,10 @@ class MyApp extends StatelessWidget {
           update: (context, repository, previous) =>
               previous ?? DepartmentsProvider(repository: repository)
                 ..load(),
+        ),
+        ChangeNotifierProxyProvider<SearchRepository, SearchProvider>(
+          create: (context) => SearchProvider(repository: context.read<SearchRepository>()),
+          update: (context, repository, previous) => previous ?? SearchProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<JobsRepository, JobsProvider>(
           create: (context) =>
@@ -668,6 +677,13 @@ class MyApp extends StatelessWidget {
       client: _authClient(auth),
       baseUrl: _apiBaseUrl,
       useMockResponses: _effectiveDemoMode,
+    );
+  }
+
+  SearchRepository _buildSearchRepository(AuthProvider auth) {
+    return ApiSearchRepository(
+      client: _authClient(auth),
+      baseUrl: _apiBaseUrl,
     );
   }
 }

@@ -14,6 +14,7 @@ import 'package:core_erp/features/inventory/presentation/providers/inventory_pro
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 import 'package:core_erp/features/orders/presentation/providers/orders_provider.dart';
 import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
+import 'package:core_erp/features/search/presentation/providers/search_provider.dart';
 import 'navigation_provider.dart';
 
 enum ShellTopStripSearchLayoutMode { centered, leading, expanded }
@@ -332,9 +333,12 @@ class _ShellTopStripSearchFieldState extends State<ShellTopStripSearchField> {
       key: const ValueKey<String>('shell_top_strip_search_field'),
       focusNode: _focusNode,
       controller: _controller,
-      onChanged: widget.search.onChanged,
+      readOnly: true,
+      onTap: () {
+        context.read<SearchProvider>().toggleOverlay();
+      },
       decoration: InputDecoration(
-        hintText: widget.search.placeholder,
+        hintText: 'Search inventory, materials... (Cmd+K)',
         prefixIcon: const Icon(
           Icons.search_rounded,
           size: 18,

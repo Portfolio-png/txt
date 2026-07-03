@@ -19,6 +19,8 @@ import 'package:core_erp/features/clients/presentation/screens/clients_screen.da
 import 'package:core_erp/features/orders/presentation/screens/orders_screen.dart';
 import 'package:core_erp/features/units/presentation/screens/units_screen.dart';
 import 'package:core_erp/features/vendors/presentation/screens/vendors_screen.dart';
+import 'package:core_erp/features/search/presentation/providers/search_provider.dart';
+import 'package:core_erp/features/search/presentation/widgets/global_search_overlay.dart';
 import 'app_sidebar.dart';
 import 'app_topbar.dart';
 import 'navigation_provider.dart';
@@ -41,7 +43,7 @@ class AppShell extends StatelessWidget {
             ? _ShellLayoutMetrics.compactSidebarWidth
             : _ShellLayoutMetrics.sidebarWidth;
 
-        return PaperShortcutManager(
+        final shell = PaperShortcutManager(
           child: Scaffold(
             backgroundColor: Colors.transparent,
             drawer: isMobile
@@ -154,6 +156,12 @@ class AppShell extends StatelessWidget {
             ),
           ),
         );
+        return Stack(
+          children: [
+            shell,
+            const GlobalSearchOverlay(),
+          ],
+        );
       },
     );
   }
@@ -213,6 +221,12 @@ class _PaperShortcutManagerState extends State<PaperShortcutManager> {
             navProvider.selectRelativeSidebarItem(reverse: true),
         const SingleActivator(LogicalKeyboardKey.keyF, control: true):
             navProvider.focusTopStripSearch,
+        const SingleActivator(LogicalKeyboardKey.keyK, control: true): () {
+          context.read<SearchProvider>().toggleOverlay();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () {
+          context.read<SearchProvider>().toggleOverlay();
+        },
         const SingleActivator(LogicalKeyboardKey.keyN, control: true): () {
           if (currentTab == 1) {
             _handleCreateOrder(context);
