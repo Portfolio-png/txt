@@ -96,9 +96,25 @@ class OrderReportStage {
     required this.stageIndex,
     required this.material,
     required this.materialUnit,
+    required this.outputName,
+    required this.outputUnit,
     required this.machine,
+    required this.machineAssetId,
     required this.dieId,
+    required this.dieToolCode,
     required this.plannedHours,
+    this.quantityPerUnit,
+    this.plannedMaterialQty,
+    this.machineOutputPerHour,
+    this.machineSetupMinutes,
+    this.machineLaborCount,
+    this.machinePowerKw,
+    this.machineReportNotes = '',
+    this.dieCavities,
+    this.dieMaxStrokes,
+    this.dieStrokesPerPiece,
+    this.dieSetupMinutes,
+    this.dieReportNotes = '',
     this.allotted,
     this.output,
     this.leftover,
@@ -112,9 +128,25 @@ class OrderReportStage {
   final int stageIndex;
   final String material;
   final String materialUnit;
+  final String outputName;
+  final String outputUnit;
   final String machine;
+  final String machineAssetId;
   final String dieId;
+  final String dieToolCode;
   final double plannedHours;
+  final double? quantityPerUnit;
+  final double? plannedMaterialQty;
+  final double? machineOutputPerHour;
+  final double? machineSetupMinutes;
+  final double? machineLaborCount;
+  final double? machinePowerKw;
+  final String machineReportNotes;
+  final int? dieCavities;
+  final int? dieMaxStrokes;
+  final double? dieStrokesPerPiece;
+  final double? dieSetupMinutes;
+  final String dieReportNotes;
   final double? allotted;
   final double? output;
   final double? leftover;
@@ -138,9 +170,25 @@ class OrderReportStage {
       stageIndex: (json['stageIndex'] as num?)?.toInt() ?? 0,
       material: json['material'] as String? ?? '',
       materialUnit: json['materialUnit'] as String? ?? '',
+      outputName: json['outputName'] as String? ?? '',
+      outputUnit: json['outputUnit'] as String? ?? '',
       machine: json['machine'] as String? ?? '',
+      machineAssetId: json['machineAssetId'] as String? ?? '',
       dieId: json['dieId'] as String? ?? '',
+      dieToolCode: json['dieToolCode'] as String? ?? '',
       plannedHours: (json['plannedHours'] as num?)?.toDouble() ?? 0,
+      quantityPerUnit: (json['quantityPerUnit'] as num?)?.toDouble(),
+      plannedMaterialQty: (json['plannedMaterialQty'] as num?)?.toDouble(),
+      machineOutputPerHour: (json['machineOutputPerHour'] as num?)?.toDouble(),
+      machineSetupMinutes: (json['machineSetupMinutes'] as num?)?.toDouble(),
+      machineLaborCount: (json['machineLaborCount'] as num?)?.toDouble(),
+      machinePowerKw: (json['machinePowerKw'] as num?)?.toDouble(),
+      machineReportNotes: json['machineReportNotes'] as String? ?? '',
+      dieCavities: (json['dieCavities'] as num?)?.toInt(),
+      dieMaxStrokes: (json['dieMaxStrokes'] as num?)?.toInt(),
+      dieStrokesPerPiece: (json['dieStrokesPerPiece'] as num?)?.toDouble(),
+      dieSetupMinutes: (json['dieSetupMinutes'] as num?)?.toDouble(),
+      dieReportNotes: json['dieReportNotes'] as String? ?? '',
       allotted: (json['allotted'] as num?)?.toDouble(),
       output: (json['output'] as num?)?.toDouble(),
       leftover: (json['leftover'] as num?)?.toDouble(),

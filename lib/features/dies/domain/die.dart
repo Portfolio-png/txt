@@ -1,6 +1,7 @@
 import 'package:paper/features/machines/domain/machine.dart';
 
 enum DieStatus { ready, inProduction, needsRepair, obsolete }
+
 enum DieOwnership { inHouse, customerOwned }
 
 const Object _dieAbsent = Object();
@@ -17,6 +18,9 @@ class Die {
     this.numberOfCavities,
     this.strokeCount,
     this.maxStrokes,
+    this.strokesPerPiece,
+    this.setupMinutes,
+    this.reportNotes = '',
     this.physicalSpecs = const [],
     required this.status,
     required this.ownership,
@@ -34,6 +38,9 @@ class Die {
   final int? numberOfCavities;
   final int? strokeCount;
   final int? maxStrokes;
+  final double? strokesPerPiece;
+  final double? setupMinutes;
+  final String reportNotes;
   final List<CustomProperty> physicalSpecs;
   final DieStatus status;
   final DieOwnership ownership;
@@ -51,6 +58,9 @@ class Die {
     int? numberOfCavities,
     int? strokeCount,
     int? maxStrokes,
+    Object? strokesPerPiece = _dieAbsent,
+    Object? setupMinutes = _dieAbsent,
+    String? reportNotes,
     List<CustomProperty>? physicalSpecs,
     DieStatus? status,
     DieOwnership? ownership,
@@ -63,11 +73,21 @@ class Die {
       toolCode: toolCode ?? this.toolCode,
       photoUrls: photoUrls ?? this.photoUrls,
       operationalNotes: operationalNotes ?? this.operationalNotes,
-      compatibleMachineGroupIds: compatibleMachineGroupIds ?? this.compatibleMachineGroupIds,
-      storageLocation: storageLocation == _dieAbsent ? this.storageLocation : storageLocation as String?,
+      compatibleMachineGroupIds:
+          compatibleMachineGroupIds ?? this.compatibleMachineGroupIds,
+      storageLocation: storageLocation == _dieAbsent
+          ? this.storageLocation
+          : storageLocation as String?,
       numberOfCavities: numberOfCavities ?? this.numberOfCavities,
       strokeCount: strokeCount ?? this.strokeCount,
       maxStrokes: maxStrokes ?? this.maxStrokes,
+      strokesPerPiece: strokesPerPiece == _dieAbsent
+          ? this.strokesPerPiece
+          : strokesPerPiece as double?,
+      setupMinutes: setupMinutes == _dieAbsent
+          ? this.setupMinutes
+          : setupMinutes as double?,
+      reportNotes: reportNotes ?? this.reportNotes,
       physicalSpecs: physicalSpecs ?? this.physicalSpecs,
       status: status ?? this.status,
       ownership: ownership ?? this.ownership,

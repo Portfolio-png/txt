@@ -1128,6 +1128,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
       scanCount: 0,
       linkedItemId: stock.itemId,
       linkedVariationLeafNodeId: stock.variationLeafNodeId,
+      customVariationValues: stock.customVariationValues.isEmpty
+          ? null
+          : stock.customVariationValues,
       displayStock: _stockLabel(stock.quantity, unitSymbol),
       onHand: stock.quantity,
       createdBy: 'System',
@@ -1144,9 +1147,14 @@ class _InventoryScreenState extends State<InventoryScreen> {
         .map((value) => value.trim())
         .where((value) => value.isNotEmpty)
         .join(' ');
+    final fallbackCustom = stock.customVariationValues.values
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .join(' ');
     final fallback = [
       if (fallbackItemName.isNotEmpty) fallbackItemName,
       if (fallbackPath.isNotEmpty) fallbackPath,
+      if (fallbackCustom.isNotEmpty) fallbackCustom,
     ].join(' ').trim();
     if (item == null) {
       return fallback.isEmpty ? 'Item #${stock.itemId}' : fallback;
@@ -1155,6 +1163,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
     final computed = NamingFormatHelper.buildLabelForLeaf(
       item,
       stock.variationLeafNodeId,
+      _customVariationValuesByPropertyId(stock.customVariationValues),
     ).trim();
     final itemLabel = item.displayName.trim().isEmpty
         ? item.name.trim()
@@ -1164,6 +1173,20 @@ class _InventoryScreenState extends State<InventoryScreen> {
       return computed;
     }
     return fallback.isEmpty ? computed.ifEmpty(itemLabel) : fallback;
+  }
+
+  Map<int, String> _customVariationValuesByPropertyId(
+    Map<String, String> values,
+  ) {
+    final result = <int, String>{};
+    for (final entry in values.entries) {
+      final id = int.tryParse(entry.key);
+      final value = entry.value.trim();
+      if (id != null && value.isNotEmpty) {
+        result[id] = value;
+      }
+    }
+    return result;
   }
 
   String _unitSymbolForItem(

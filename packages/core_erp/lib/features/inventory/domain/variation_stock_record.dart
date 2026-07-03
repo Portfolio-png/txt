@@ -10,6 +10,7 @@ class VariationStockRecord {
   final List<String> namingFormat;
   final List<int> variationPathNodeIds;
   final List<String> variationPathValues;
+  final Map<String, String> customVariationValues;
 
   const VariationStockRecord({
     required this.stockId,
@@ -23,5 +24,6 @@ class VariationStockRecord {
     required this.namingFormat,
     this.variationPathNodeIds = const [],
     this.variationPathValues = const [],
+    this.customVariationValues = const {},
   });
 }

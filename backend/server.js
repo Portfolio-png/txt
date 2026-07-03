@@ -4044,6 +4044,11 @@ async function initDb() {
       location TEXT,
       installation_date TEXT,
       status TEXT NOT NULL,
+      report_output_per_hour REAL,
+      setup_minutes REAL,
+      labor_count REAL,
+      power_kw REAL,
+      report_notes TEXT NOT NULL DEFAULT '',
       custom_properties TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -4068,6 +4073,9 @@ async function initDb() {
       number_of_cavities INTEGER,
       stroke_count INTEGER NOT NULL DEFAULT 0,
       max_strokes INTEGER NOT NULL DEFAULT 0,
+      strokes_per_piece REAL,
+      setup_minutes REAL,
+      report_notes TEXT NOT NULL DEFAULT '',
       physical_specs TEXT NOT NULL DEFAULT '{}',
       status TEXT NOT NULL,
       ownership TEXT NOT NULL,
@@ -4075,6 +4083,15 @@ async function initDb() {
       updated_at TEXT NOT NULL
     )
   `);
+
+  await ensureColumnExists('machines', 'report_output_per_hour', 'REAL');
+  await ensureColumnExists('machines', 'setup_minutes', 'REAL');
+  await ensureColumnExists('machines', 'labor_count', 'REAL');
+  await ensureColumnExists('machines', 'power_kw', 'REAL');
+  await ensureColumnExists('machines', 'report_notes', "TEXT NOT NULL DEFAULT ''");
+  await ensureColumnExists('dies', 'strokes_per_piece', 'REAL');
+  await ensureColumnExists('dies', 'setup_minutes', 'REAL');
+  await ensureColumnExists('dies', 'report_notes', "TEXT NOT NULL DEFAULT ''");
 
   if (SEED_DEMO_DATA_ON_BOOT) {
     await seedMachinesAndDiesIfEmpty();
@@ -18243,25 +18260,57 @@ app.get('/api/delete-requests/export', requirePermission('audit.read'), async (_
   }
 });
 
+function machineRowToDto(r) {
+  return {
+    id: String(r.id),
+    name: r.name,
+    assetId: r.asset_id,
+    primaryPhotoUrl: r.primary_photo_url,
+    groupId: r.group_id,
+    makeModel: r.make_model,
+    serialNumber: r.serial_number,
+    location: r.location,
+    installationDate: r.installation_date ? new Date(r.installation_date).toISOString() : null,
+    status: r.status,
+    reportOutputPerHour: r.report_output_per_hour,
+    setupMinutes: r.setup_minutes,
+    laborCount: r.labor_count,
+    powerKw: r.power_kw,
+    reportNotes: r.report_notes || '',
+    customProperties: JSON.parse(r.custom_properties || '[]'),
+    createdAt: new Date(r.created_at).toISOString(),
+    updatedAt: new Date(r.updated_at).toISOString(),
+  };
+}
+
+function dieRowToDto(r) {
+  return {
+    id: String(r.id),
+    toolCode: r.tool_code,
+    producedPartNumbers: JSON.parse(r.produced_part_numbers || '[]'),
+    photoUrls: JSON.parse(r.photo_urls || '[]'),
+    operationalNotes: r.operational_notes,
+    compatibleMachineGroupIds: JSON.parse(r.compatible_machine_group_ids || '[]'),
+    storageLocation: r.storage_location,
+    numberOfCavities: r.number_of_cavities,
+    strokeCount: r.stroke_count,
+    maxStrokes: r.max_strokes,
+    strokesPerPiece: r.strokes_per_piece,
+    setupMinutes: r.setup_minutes,
+    reportNotes: r.report_notes || '',
+    physicalSpecs: JSON.parse(r.physical_specs || '{}'),
+    status: r.status,
+    ownership: r.ownership,
+    createdAt: new Date(r.created_at).toISOString(),
+    updatedAt: new Date(r.updated_at).toISOString(),
+  };
+}
+
 // Machines CRUD Endpoints
 app.get('/api/machines', requirePermission('config.read'), async (req, res) => {
   try {
     const rows = await all('SELECT * FROM machines ORDER BY created_at DESC');
-    const machines = rows.map((r) => ({
-      id: String(r.id),
-      name: r.name,
-      assetId: r.asset_id,
-      primaryPhotoUrl: r.primary_photo_url,
-      groupId: r.group_id,
-      makeModel: r.make_model,
-      serialNumber: r.serial_number,
-      location: r.location,
-      installationDate: r.installation_date ? new Date(r.installation_date).toISOString() : null,
-      status: r.status,
-      customProperties: JSON.parse(r.custom_properties || '[]'),
-      createdAt: new Date(r.created_at).toISOString(),
-      updatedAt: new Date(r.updated_at).toISOString(),
-    }));
+    const machines = rows.map(machineRowToDto);
     res.json({ success: true, machines, error: null });
   } catch (error) {
     res.status(500).json({ success: false, machines: [], error: error.message });
@@ -18274,21 +18323,7 @@ app.get('/api/machines/:id', requirePermission('config.read'), async (req, res) 
     if (!r) {
       return res.status(404).json({ success: false, machine: null, error: 'Machine not found' });
     }
-    const machine = {
-      id: String(r.id),
-      name: r.name,
-      assetId: r.asset_id,
-      primaryPhotoUrl: r.primary_photo_url,
-      groupId: r.group_id,
-      makeModel: r.make_model,
-      serialNumber: r.serial_number,
-      location: r.location,
-      installationDate: r.installation_date ? new Date(r.installation_date).toISOString() : null,
-      status: r.status,
-      customProperties: JSON.parse(r.custom_properties || '[]'),
-      createdAt: new Date(r.created_at).toISOString(),
-      updatedAt: new Date(r.updated_at).toISOString(),
-    };
+    const machine = machineRowToDto(r);
     res.json({ success: true, machine, error: null });
   } catch (error) {
     res.status(500).json({ success: false, machine: null, error: error.message });
@@ -18297,7 +18332,24 @@ app.get('/api/machines/:id', requirePermission('config.read'), async (req, res) 
 
 app.post('/api/machines', requirePermission('config.write'), async (req, res) => {
   try {
-    const { id, name, assetId, primaryPhotoUrl, groupId, makeModel, serialNumber, location, installationDate, status, customProperties } = req.body || {};
+    const {
+      id,
+      name,
+      assetId,
+      primaryPhotoUrl,
+      groupId,
+      makeModel,
+      serialNumber,
+      location,
+      installationDate,
+      status,
+      reportOutputPerHour,
+      setupMinutes,
+      laborCount,
+      powerKw,
+      reportNotes,
+      customProperties,
+    } = req.body || {};
     const now = new Date().toISOString();
     let finalAssetId = assetId;
     if (!finalAssetId || finalAssetId.trim() === '') {
@@ -18307,33 +18359,19 @@ app.post('/api/machines', requirePermission('config.write'), async (req, res) =>
     if (id && id.trim() !== '' && !id.startsWith('temp_') && isNaN(Number(id)) === false) {
       // Update
       await run(
-        `UPDATE machines SET name = ?, asset_id = ?, primary_photo_url = ?, group_id = ?, make_model = ?, serial_number = ?, location = ?, installation_date = ?, status = ?, custom_properties = ?, updated_at = ? WHERE id = ?`,
-        [name, finalAssetId, primaryPhotoUrl, groupId, makeModel, serialNumber, location, installationDate, status, JSON.stringify(customProperties || []), now, Number(id)]
+        `UPDATE machines SET name = ?, asset_id = ?, primary_photo_url = ?, group_id = ?, make_model = ?, serial_number = ?, location = ?, installation_date = ?, status = ?, report_output_per_hour = ?, setup_minutes = ?, labor_count = ?, power_kw = ?, report_notes = ?, custom_properties = ?, updated_at = ? WHERE id = ?`,
+        [name, finalAssetId, primaryPhotoUrl, groupId, makeModel, serialNumber, location, installationDate, status, reportOutputPerHour ?? null, setupMinutes ?? null, laborCount ?? null, powerKw ?? null, reportNotes || '', JSON.stringify(customProperties || []), now, Number(id)]
       );
     } else {
       // Create
       const info = await run(
-        `INSERT INTO machines (name, asset_id, primary_photo_url, group_id, make_model, serial_number, location, installation_date, status, custom_properties, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [name, finalAssetId, primaryPhotoUrl, groupId, makeModel, serialNumber, location, installationDate, status, JSON.stringify(customProperties || []), now, now]
+        `INSERT INTO machines (name, asset_id, primary_photo_url, group_id, make_model, serial_number, location, installation_date, status, report_output_per_hour, setup_minutes, labor_count, power_kw, report_notes, custom_properties, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [name, finalAssetId, primaryPhotoUrl, groupId, makeModel, serialNumber, location, installationDate, status, reportOutputPerHour ?? null, setupMinutes ?? null, laborCount ?? null, powerKw ?? null, reportNotes || '', JSON.stringify(customProperties || []), now, now]
       );
       resultId = String(info.lastID);
     }
     const r = await get('SELECT * FROM machines WHERE id = ?', [resultId]);
-    const machine = {
-      id: String(r.id),
-      name: r.name,
-      assetId: r.asset_id,
-      primaryPhotoUrl: r.primary_photo_url,
-      groupId: r.group_id,
-      makeModel: r.make_model,
-      serialNumber: r.serial_number,
-      location: r.location,
-      installationDate: r.installation_date ? new Date(r.installation_date).toISOString() : null,
-      status: r.status,
-      customProperties: JSON.parse(r.custom_properties || '[]'),
-      createdAt: new Date(r.created_at).toISOString(),
-      updatedAt: new Date(r.updated_at).toISOString(),
-    };
+    const machine = machineRowToDto(r);
     res.json({ success: true, machine, error: null });
   } catch (error) {
     res.status(500).json({ success: false, machine: null, error: error.message });
@@ -18397,23 +18435,7 @@ app.post('/api/machines/:id/assets/upload-complete', requirePermission('config.w
 app.get('/api/dies', requirePermission('config.read'), async (req, res) => {
   try {
     const rows = await all('SELECT * FROM dies ORDER BY created_at DESC');
-    const dies = rows.map((r) => ({
-      id: String(r.id),
-      toolCode: r.tool_code,
-      producedPartNumbers: JSON.parse(r.produced_part_numbers || '[]'),
-      photoUrls: JSON.parse(r.photo_urls || '[]'),
-      operationalNotes: r.operational_notes,
-      compatibleMachineGroupIds: JSON.parse(r.compatible_machine_group_ids || '[]'),
-      storageLocation: r.storage_location,
-      numberOfCavities: r.number_of_cavities,
-      strokeCount: r.stroke_count,
-      maxStrokes: r.max_strokes,
-      physicalSpecs: JSON.parse(r.physical_specs || '{}'),
-      status: r.status,
-      ownership: r.ownership,
-      createdAt: new Date(r.created_at).toISOString(),
-      updatedAt: new Date(r.updated_at).toISOString(),
-    }));
+    const dies = rows.map(dieRowToDto);
     res.json({ success: true, dies, error: null });
   } catch (error) {
     res.status(500).json({ success: false, dies: [], error: error.message });
@@ -18426,23 +18448,7 @@ app.get('/api/dies/:id', requirePermission('config.read'), async (req, res) => {
     if (!r) {
       return res.status(404).json({ success: false, die: null, error: 'Die not found' });
     }
-    const die = {
-      id: String(r.id),
-      toolCode: r.tool_code,
-      producedPartNumbers: JSON.parse(r.produced_part_numbers || '[]'),
-      photoUrls: JSON.parse(r.photo_urls || '[]'),
-      operationalNotes: r.operational_notes,
-      compatibleMachineGroupIds: JSON.parse(r.compatible_machine_group_ids || '[]'),
-      storageLocation: r.storage_location,
-      numberOfCavities: r.number_of_cavities,
-      strokeCount: r.stroke_count,
-      maxStrokes: r.max_strokes,
-      physicalSpecs: JSON.parse(r.physical_specs || '{}'),
-      status: r.status,
-      ownership: r.ownership,
-      createdAt: new Date(r.created_at).toISOString(),
-      updatedAt: new Date(r.updated_at).toISOString(),
-    };
+    const die = dieRowToDto(r);
     res.json({ success: true, die, error: null });
   } catch (error) {
     res.status(500).json({ success: false, die: null, error: error.message });
@@ -18451,7 +18457,24 @@ app.get('/api/dies/:id', requirePermission('config.read'), async (req, res) => {
 
 app.post('/api/dies', requirePermission('config.write'), async (req, res) => {
   try {
-    const { id, toolCode, producedPartNumbers, photoUrls, operationalNotes, compatibleMachineGroupIds, storageLocation, numberOfCavities, strokeCount, maxStrokes, physicalSpecs, status, ownership } = req.body || {};
+    const {
+      id,
+      toolCode,
+      producedPartNumbers,
+      photoUrls,
+      operationalNotes,
+      compatibleMachineGroupIds,
+      storageLocation,
+      numberOfCavities,
+      strokeCount,
+      maxStrokes,
+      strokesPerPiece,
+      setupMinutes,
+      reportNotes,
+      physicalSpecs,
+      status,
+      ownership,
+    } = req.body || {};
     const now = new Date().toISOString();
     let finalToolCode = toolCode;
     if (!finalToolCode || finalToolCode.trim() === '') {
@@ -18461,35 +18484,19 @@ app.post('/api/dies', requirePermission('config.write'), async (req, res) => {
     if (id && id.trim() !== '' && !id.startsWith('temp_') && isNaN(Number(id)) === false) {
       // Update
       await run(
-        `UPDATE dies SET tool_code = ?, produced_part_numbers = ?, photo_urls = ?, operational_notes = ?, compatible_machine_group_ids = ?, storage_location = ?, number_of_cavities = ?, stroke_count = ?, max_strokes = ?, physical_specs = ?, status = ?, ownership = ?, updated_at = ? WHERE id = ?`,
-        [finalToolCode, JSON.stringify(producedPartNumbers || []), JSON.stringify(photoUrls || []), operationalNotes, JSON.stringify(compatibleMachineGroupIds || []), storageLocation, numberOfCavities, strokeCount || 0, maxStrokes || 0, JSON.stringify(physicalSpecs || {}), status, ownership, now, Number(id)]
+        `UPDATE dies SET tool_code = ?, produced_part_numbers = ?, photo_urls = ?, operational_notes = ?, compatible_machine_group_ids = ?, storage_location = ?, number_of_cavities = ?, stroke_count = ?, max_strokes = ?, strokes_per_piece = ?, setup_minutes = ?, report_notes = ?, physical_specs = ?, status = ?, ownership = ?, updated_at = ? WHERE id = ?`,
+        [finalToolCode, JSON.stringify(producedPartNumbers || []), JSON.stringify(photoUrls || []), operationalNotes, JSON.stringify(compatibleMachineGroupIds || []), storageLocation, numberOfCavities, strokeCount || 0, maxStrokes || 0, strokesPerPiece ?? null, setupMinutes ?? null, reportNotes || '', JSON.stringify(physicalSpecs || {}), status, ownership, now, Number(id)]
       );
     } else {
       // Create
       const info = await run(
-        `INSERT INTO dies (tool_code, produced_part_numbers, photo_urls, operational_notes, compatible_machine_group_ids, storage_location, number_of_cavities, stroke_count, max_strokes, physical_specs, status, ownership, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [finalToolCode, JSON.stringify(producedPartNumbers || []), JSON.stringify(photoUrls || []), operationalNotes, JSON.stringify(compatibleMachineGroupIds || []), storageLocation, numberOfCavities, strokeCount || 0, maxStrokes || 0, JSON.stringify(physicalSpecs || {}), status, ownership, now, now]
+        `INSERT INTO dies (tool_code, produced_part_numbers, photo_urls, operational_notes, compatible_machine_group_ids, storage_location, number_of_cavities, stroke_count, max_strokes, strokes_per_piece, setup_minutes, report_notes, physical_specs, status, ownership, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [finalToolCode, JSON.stringify(producedPartNumbers || []), JSON.stringify(photoUrls || []), operationalNotes, JSON.stringify(compatibleMachineGroupIds || []), storageLocation, numberOfCavities, strokeCount || 0, maxStrokes || 0, strokesPerPiece ?? null, setupMinutes ?? null, reportNotes || '', JSON.stringify(physicalSpecs || {}), status, ownership, now, now]
       );
       resultId = String(info.lastID);
     }
     const r = await get('SELECT * FROM dies WHERE id = ?', [resultId]);
-    const die = {
-      id: String(r.id),
-      toolCode: r.tool_code,
-      producedPartNumbers: JSON.parse(r.produced_part_numbers || '[]'),
-      photoUrls: JSON.parse(r.photo_urls || '[]'),
-      operationalNotes: r.operational_notes,
-      compatibleMachineGroupIds: JSON.parse(r.compatible_machine_group_ids || '[]'),
-      storageLocation: r.storage_location,
-      numberOfCavities: r.number_of_cavities,
-      strokeCount: r.stroke_count,
-      maxStrokes: r.max_strokes,
-      physicalSpecs: JSON.parse(r.physical_specs || '{}'),
-      status: r.status,
-      ownership: r.ownership,
-      createdAt: new Date(r.created_at).toISOString(),
-      updatedAt: new Date(r.updated_at).toISOString(),
-    };
+    const die = dieRowToDto(r);
     res.json({ success: true, die, error: null });
   } catch (error) {
     res.status(500).json({ success: false, die: null, error: error.message });
@@ -18548,6 +18555,36 @@ app.post('/api/dies/:id/assets/upload-complete', requirePermission('config.write
   }
 });
 
+function mergeCustomVariationValueJsonRows(rows) {
+  const valuesByKey = new Map();
+  for (const row of rows || []) {
+    const parsed = parseJson(row.custom_variation_values_json, {});
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      continue;
+    }
+    for (const [key, rawValue] of Object.entries(parsed)) {
+      const value = String(rawValue || '').trim();
+      if (!key || !value) {
+        continue;
+      }
+      if (!valuesByKey.has(key)) {
+        valuesByKey.set(key, []);
+      }
+      const values = valuesByKey.get(key);
+      if (!values.includes(value)) {
+        values.push(value);
+      }
+    }
+  }
+  const merged = {};
+  for (const [key, values] of valuesByKey.entries()) {
+    if (values.length > 0) {
+      merged[key] = values.join(' / ');
+    }
+  }
+  return merged;
+}
+
 app.get('/api/inventory/stock', requirePermission('inventory.read'), async (req, res) => {
   try {
     const rows = await all(`
@@ -18568,8 +18605,38 @@ app.get('/api/inventory/stock', requirePermission('inventory.read'), async (req,
     const stock = [];
     for (const row of rows) {
       const selection = await resolveLeafSelectionFromDb(row.variation_leaf_node_id);
+      const customVariationRows = await all(
+        `
+        SELECT custom_variation_values_json
+        FROM materials
+        WHERE linked_item_id = ?
+          AND COALESCE(linked_variation_leaf_node_id, 0) = ?
+          AND TRIM(COALESCE(custom_variation_values_json, '')) NOT IN ('', '{}')
+        UNION ALL
+        SELECT custom_variation_values_json
+        FROM order_items
+        WHERE item_id = ?
+          AND COALESCE(variation_leaf_node_id, 0) = ?
+          AND TRIM(COALESCE(custom_variation_values_json, '')) NOT IN ('', '{}')
+        UNION ALL
+        SELECT custom_variation_values_json
+        FROM delivery_challan_items
+        WHERE item_id = ?
+          AND COALESCE(variation_leaf_node_id, 0) = ?
+          AND TRIM(COALESCE(custom_variation_values_json, '')) NOT IN ('', '{}')
+        `,
+        [
+          row.item_id,
+          row.variation_leaf_node_id,
+          row.item_id,
+          row.variation_leaf_node_id,
+          row.item_id,
+          row.variation_leaf_node_id,
+        ],
+      );
       stock.push({
         ...row,
+        custom_variation_values: mergeCustomVariationValueJsonRows(customVariationRows),
         variation_path_node_ids: selection?.nodeIds || [],
         variation_path: (selection?.nodeIds || []).map((nodeId, index) => ({
           node_id: nodeId,
@@ -20301,6 +20368,23 @@ app.get('/api/orders/:orderNo/production-report', requirePermission('config.read
       WHERE i.order_no = ?
       ORDER BY pr.created_at DESC
     `, [orderNo]);
+    const itemById = new Map(items.map((item) => [item.id, item]));
+    const machineRows = await all('SELECT * FROM machines');
+    const machineByKey = new Map();
+    for (const row of machineRows) {
+      const dto = machineRowToDto(row);
+      [String(row.id), row.asset_id, row.name].forEach((key) => {
+        if (key) machineByKey.set(String(key).trim(), dto);
+      });
+    }
+    const dieRows = await all('SELECT * FROM dies');
+    const dieByKey = new Map();
+    for (const row of dieRows) {
+      const dto = dieRowToDto(row);
+      [String(row.id), row.tool_code].forEach((key) => {
+        if (key) dieByKey.set(String(key).trim(), dto);
+      });
+    }
 
     const templateCache = new Map();
     const runs = [];
@@ -20314,11 +20398,30 @@ app.get('/api/orders/:orderNo/production-report', requirePermission('config.read
       const template = templateCache.get(runRow.template_id);
       const nodes = template ? parseJson(template.nodes_json, []) : [];
       const metricsByNode = await getMergedNodeMetrics(runRow);
+      const orderItem = itemById.get(runRow.order_item_id);
+      const orderQty = Number(orderItem?.quantity || 0);
       const stages = nodes
         .slice()
         .sort((a, b) => (a.stageIndex || 0) - (b.stageIndex || 0))
         .map((node) => {
           const metrics = metricsByNode[node.id] || {};
+          const machineKey = String(
+            node.machineId || node.machine_id || node.machineAssetId || node.machine || node.machineName || ''
+          ).trim();
+          const dieKey = String(node.dieId || node.die_id || '').trim();
+          const machine = machineByKey.get(machineKey) || null;
+          const die = dieByKey.get(dieKey) || null;
+          const quantityPerUnit = Number(
+            node.quantityPerUnit ??
+            node.quantity_per_unit ??
+            node.inputItem?.quantityPerUnit ??
+            node.inputItem?.quantity_per_unit ??
+            node.inputItem?.perUnitQty ??
+            NaN
+          );
+          const plannedMaterialQty = Number.isFinite(quantityPerUnit) && orderQty > 0
+            ? quantityPerUnit * orderQty
+            : null;
           return {
             nodeId: node.id,
             name: node.name || '',
@@ -20328,8 +20431,22 @@ app.get('/api/orders/:orderNo/production-report', requirePermission('config.read
             materialUnit: node.inputItem?.unitSymbol || '',
             outputName: node.outputItem?.variationPathLabel || node.outputItem?.itemName || '',
             outputUnit: node.outputItem?.unitSymbol || '',
-            machine: node.machine || node.machineGroupName || '',
-            dieId: node.dieId || '',
+            quantityPerUnit: Number.isFinite(quantityPerUnit) ? quantityPerUnit : null,
+            plannedMaterialQty,
+            machine: machine?.name || node.machine || node.machineGroupName || '',
+            machineAssetId: machine?.assetId || machineKey,
+            machineOutputPerHour: machine?.reportOutputPerHour ?? null,
+            machineSetupMinutes: machine?.setupMinutes ?? null,
+            machineLaborCount: machine?.laborCount ?? null,
+            machinePowerKw: machine?.powerKw ?? null,
+            machineReportNotes: machine?.reportNotes || '',
+            dieId: dieKey,
+            dieToolCode: die?.toolCode || dieKey,
+            dieCavities: die?.numberOfCavities ?? null,
+            dieMaxStrokes: die?.maxStrokes ?? null,
+            dieStrokesPerPiece: die?.strokesPerPiece ?? null,
+            dieSetupMinutes: die?.setupMinutes ?? null,
+            dieReportNotes: die?.reportNotes || '',
             plannedHours: Number(node.durationHours || 0),
             allotted: metrics.allotted ?? null,
             output: metrics.output ?? metrics.goodYield ?? null,

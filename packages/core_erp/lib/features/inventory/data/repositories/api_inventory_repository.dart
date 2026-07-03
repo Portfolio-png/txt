@@ -556,6 +556,12 @@ class ApiInventoryRepository implements InventoryRepository {
                 .where((value) => value.trim().isNotEmpty)
                 .toList(growable: false)
           : const <String>[];
+      final rawCustomValues = map['custom_variation_values'];
+      final customVariationValues = rawCustomValues is Map
+          ? rawCustomValues.map(
+              (key, value) => MapEntry(key.toString(), value.toString()),
+            )
+          : const <String, String>{};
       return VariationStockRecord(
         stockId: map['stock_id'] as int,
         itemId: map['item_id'] as int,
@@ -572,6 +578,7 @@ class ApiInventoryRepository implements InventoryRepository {
         namingFormat: formatTokens,
         variationPathNodeIds: pathNodeIds,
         variationPathValues: pathValues,
+        customVariationValues: customVariationValues,
       );
     }).toList();
   }
