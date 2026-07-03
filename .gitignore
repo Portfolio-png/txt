@@ -60,6 +60,9 @@ app.*.map.json
 *.pem
 backend/package-lock.json
 
+# Sentry native runtime crash-handler locks (never commit)
+.sentry-native/
+
 # Dumped diffs / logs / scratch
 full_diff.txt
 analyze.txt
