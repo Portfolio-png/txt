@@ -1,6 +1,7 @@
 import '../../domain/order_entry.dart';
 import '../../domain/order_history.dart';
 import '../../domain/order_inputs.dart';
+import '../../domain/order_production_report.dart';
 import '../../domain/po_document.dart';
 import '../models/order_api_models.dart';
 
@@ -18,4 +19,5 @@ abstract class OrderRepository {
   Future<List<OrderStatusHistoryEntry>> getOrderStatusHistory(int orderId);
   Future<void> linkPoDocuments(int orderId, List<int> documentIds);
   Future<Uri> createPoDocumentReadUrl(int documentId);
+  Future<OrderProductionReport> getProductionReport(String orderNo);
 }

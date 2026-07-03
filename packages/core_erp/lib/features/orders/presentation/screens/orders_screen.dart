@@ -40,6 +40,7 @@ import '../../domain/order_inputs.dart';
 import '../../domain/po_document.dart';
 import '../../data/models/order_api_models.dart';
 import '../providers/orders_provider.dart';
+import '../widgets/order_report_dialog.dart';
 
 enum OrderSortColumn { orderDate, partyItem, poNumber, qty, startDate, endDate, status }
 
@@ -1753,6 +1754,8 @@ class _OrderDataRowState extends State<_OrderDataRow> {
                                     OrdersScreen.openEditor(context, group),
                                 onDelete: () => _handleDelete(context, group),
                                 onChangeStatus: (status) => _performCustomStatusChange(status),
+                                onShowReport: () =>
+                                    OrderReportDialog.show(context, group),
                               ),
                             ),
                           ),
@@ -2212,6 +2215,7 @@ class _InlineRowActions extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onChangeStatus,
+    required this.onShowReport,
   });
 
   final bool hovered;
@@ -2222,6 +2226,7 @@ class _InlineRowActions extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final ValueChanged<OrderStatus> onChangeStatus;
+  final VoidCallback onShowReport;
 
   @override
   Widget build(BuildContext context) {
@@ -2269,6 +2274,7 @@ class _InlineRowActions extends StatelessWidget {
                 if (value == 'view') onView();
                 if (value == 'edit') onEdit();
                 if (value == 'delete') onDelete();
+                if (value == 'report') onShowReport();
                 if (value == 'status_pending') onChangeStatus(OrderStatus.notStarted);
                 if (value == 'status_inprogress') onChangeStatus(OrderStatus.inProgress);
                 if (value == 'status_completed') onChangeStatus(OrderStatus.completed);
@@ -2307,6 +2313,17 @@ class _InlineRowActions extends StatelessWidget {
                   ),
                   const PopupMenuDivider(),
                 ],
+                if (FeatureFlags.isEnabled(FeatureKeys.ordersShowReport))
+                  const PopupMenuItem(
+                    value: 'report',
+                    child: Row(
+                      children: [
+                        Icon(Icons.receipt_long_outlined, size: 20),
+                        SizedBox(width: 12),
+                        Text('Show Report'),
+                      ],
+                    ),
+                  ),
                 const PopupMenuItem(
                   value: 'view',
                   child: Row(

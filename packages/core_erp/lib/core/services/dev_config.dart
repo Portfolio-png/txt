@@ -1,4 +1,3 @@
-
 import 'package:flutter/foundation.dart' show kDebugMode;
 
 // Offline dev mode: ignore the backend and drive config from devConfig below.
@@ -7,7 +6,8 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 //   flutter run --dart-define=PAPER_OFFLINE_CONFIG=true
 // Always false in release (kDebugMode guard → tree-shaken out).
 const bool useDevConfig =
-    kDebugMode && bool.fromEnvironment('PAPER_OFFLINE_CONFIG', defaultValue: false);
+    kDebugMode &&
+    bool.fromEnvironment('PAPER_OFFLINE_CONFIG', defaultValue: true);
 
 // Local overrides, applied ONLY when useDevConfig is true.
 //
@@ -29,22 +29,17 @@ const Map<String, dynamic> devConfig = {
   },
   'orders': {
     // Change this and save — the orders board recolors live. Proof it works.
-    'statusColors': {
-      'pending': '#FF00AA',
-    },
+    'statusColors': {'pending': '#FF00AA'},
     'allowCustomActions': true,
     'allowOrdersCreation': true,
+    'showReport': true,
   },
-  'features': {
-    'disableMachineCustomFields': false,
-  },
+  'features': {'disableMachineCustomFields': false},
   // 2026 catalog & inventory enhancement bundle (group-scoped item picker,
   // combination groups, measurable units, primary-unit cleanup, movement audit
   // trail). Only honoured in offline dev mode; for a real backend run, enable
   // "Catalog & Inventory Enhancements" for the client in the dashboard instead.
-  'enhancements': {
-    'catalogInventory': true,
-  },
+  'enhancements': {'catalogInventory': true},
   'challans': {
     // Single-type Challan view: type selector + collapse split to one column.
     'singleTypeView': true,

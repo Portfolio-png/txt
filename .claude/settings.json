@@ -48,7 +48,13 @@
       "Bash(curl -s -c C:/Users/ADMIN/AppData/Local/Temp/claude/f--Rutu-txt/653940a2-351d-4951-b2c1-e39751146b8e/scratchpad/cookies.txt -H 'Content-Type: application/json' -d '{\"email\":\"super@paper.local\",\"password\":\"Test@12345\"}' http://localhost:18099/api/auth/login)",
       "Bash(curl -s -b C:/Users/ADMIN/AppData/Local/Temp/claude/f--Rutu-txt/653940a2-351d-4951-b2c1-e39751146b8e/scratchpad/cookies.txt http://localhost:18099/api/me)",
       "Bash(echo \"pid $!\")",
-      "Bash(node -e \"require\\('./server.js'\\)\" --check)"
+      "Bash(node -e \"require\\('./server.js'\\)\" --check)",
+      "PowerShell(node --check backend/server.js)",
+      "PowerShell(if \\($?\\) { \"SYNTAX OK\" })",
+      "PowerShell(node --test ./test/stage-reconciliations.test.js)",
+      "PowerShell(npm test)",
+      "PowerShell(node --check f:\\\\Rutu\\\\txt\\\\backend\\\\server.js)",
+      "PowerShell(try { $r = Invoke-RestMethod -Uri 'http://localhost:18080/api/sandbox-dashboard/clients' -TimeoutSec 3; $r | ConvertTo-Json -Depth 4 } catch { \"BACKEND NOT REACHABLE: $\\($_.Exception.Message\\)\" })"
     ]
   }
 }

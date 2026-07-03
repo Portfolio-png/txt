@@ -54,6 +54,12 @@
     "description": "Allow creating new orders"
   },
   {
+    "key": "orders.showReport",
+    "displayName": "Show Report",
+    "category": "Orders Screen",
+    "description": "Production report (quantities only, rates left blank) with print, on the order row menu"
+  },
+  {
     "key": "features.disableMachineCustomFields",
     "displayName": "Disable Machine Custom Fields",
     "category": "Machine Form",

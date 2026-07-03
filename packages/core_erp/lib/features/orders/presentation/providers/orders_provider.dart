@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../domain/order_entry.dart';
 import '../../domain/order_history.dart';
 import '../../domain/order_inputs.dart';
+import '../../domain/order_production_report.dart';
 import '../../domain/po_document.dart';
 import '../../data/repositories/order_repository.dart';
 
@@ -22,6 +23,9 @@ class OrdersProvider extends ChangeNotifier {
   String? _lastCreateOutcomeMessage;
   bool _lastCreateWasMerged = false;
   bool _initialized = false;
+
+  Future<OrderProductionReport> loadProductionReport(String orderNo) =>
+      _repository.getProductionReport(orderNo);
 
   List<OrderEntry> get orders => List<OrderEntry>.unmodifiable(_orders);
   String get searchQuery => _searchQuery;

@@ -27,10 +27,12 @@ To add a feature, also add its flag — in the same change:
    dart run bin/generate_registry.dart   # writes backend/feature_registry.json
    ```
 
-Defaults: `FeatureFlags.isEnabled` returns **true** for unknown keys, so a new
-flag is ON until enabled in a client's config. Per-client config lives in the
-`sandbox_client_configs` table, edited via the dashboard at
-`http://localhost:18080/dashboard`, served to the app by `GET /sandbox-config/:clientId`.
+Defaults: `FeatureFlags.isEnabled` returns **false** for keys missing from the
+client's config, so a new flag is OFF (invisible) until enabled per client —
+flip it in the dashboard, or in `dev_config.dart` for offline dev runs.
+Per-client config lives in the `sandbox_client_configs` table, edited via the
+dashboard at `http://localhost:18080/dashboard`, served to the app by
+`GET /sandbox-config/:clientId`.
 
 ## Replacing a working flow (selector flags)
 

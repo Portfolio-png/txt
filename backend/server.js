@@ -1766,6 +1766,92 @@ function rowToTemplate(row) {
   };
 }
 
+// Metric key (API/blob) → stage_reconciliations column. One row per run+node;
+// the API keeps exposing these as `nodeMetrics` so the app needs no changes.
+const STAGE_RECON_COLUMNS = {
+  allotted: 'allotted',
+  output: 'output',
+  remaining: 'leftover',
+  scrap: 'scrap',
+  goodYield: 'good_yield',
+  actualHours: 'actual_hours',
+  scrapItemId: 'scrap_item_id',
+  scrapItem: 'scrap_item_name',
+  leftoverAction: 'leftover_action',
+  inputTime: 'input_time',
+  outputTime: 'output_time',
+};
+
+async function upsertStageReconciliation(runId, nodeId, metrics) {
+  const cols = [];
+  const vals = [];
+  for (const [key, col] of Object.entries(STAGE_RECON_COLUMNS)) {
+    if (metrics[key] !== undefined) {
+      cols.push(col);
+      vals.push(metrics[key]);
+    }
+  }
+  if (!cols.length) return;
+  await run(
+    `INSERT INTO stage_reconciliations (run_id, node_id, ${cols.join(', ')}, updated_at)
+     VALUES (?, ?, ${cols.map(() => '?').join(', ')}, datetime('now'))
+     ON CONFLICT(run_id, node_id) DO UPDATE SET
+       ${cols.map((c) => `${c} = excluded.${c}`).join(', ')},
+       updated_at = excluded.updated_at`,
+    [runId, nodeId, ...vals],
+  );
+}
+
+// One-time copy of legacy pipeline_runs.node_metrics_json into the table so
+// reports can query reconciliation data with plain SQL. INSERT OR IGNORE keeps
+// rows already written through the endpoint authoritative; idempotent per boot.
+async function backfillStageReconciliations() {
+  const rows = await all(
+    `SELECT id, node_metrics_json FROM pipeline_runs
+     WHERE node_metrics_json IS NOT NULL AND node_metrics_json NOT IN ('', '{}')`,
+  );
+  for (const row of rows) {
+    const nodeMetrics = parseJson(row.node_metrics_json, {});
+    for (const [nodeId, metrics] of Object.entries(nodeMetrics)) {
+      const cols = [];
+      const vals = [];
+      for (const [key, col] of Object.entries(STAGE_RECON_COLUMNS)) {
+        if (metrics[key] !== undefined) {
+          cols.push(col);
+          vals.push(metrics[key]);
+        }
+      }
+      if (!cols.length) continue;
+      await run(
+        `INSERT OR IGNORE INTO stage_reconciliations (run_id, node_id, ${cols.join(', ')}, updated_at)
+         VALUES (?, ?, ${cols.map(() => '?').join(', ')}, datetime('now'))`,
+        [row.id, nodeId, ...vals],
+      );
+    }
+  }
+}
+
+// nodeMetrics for a pipeline_runs row: stage_reconciliations is the source of
+// truth; the legacy blob sits underneath so pre-migration and demo-seeded runs
+// still render.
+async function getMergedNodeMetrics(row) {
+  const nodeMetrics = parseJson(row.node_metrics_json, {});
+  const reconRows = await all(
+    'SELECT * FROM stage_reconciliations WHERE run_id = ?',
+    [row.id],
+  );
+  for (const recon of reconRows) {
+    const merged = { ...(nodeMetrics[recon.node_id] || {}) };
+    for (const [key, col] of Object.entries(STAGE_RECON_COLUMNS)) {
+      if (recon[col] !== null && recon[col] !== undefined) {
+        merged[key] = recon[col];
+      }
+    }
+    nodeMetrics[recon.node_id] = merged;
+  }
+  return nodeMetrics;
+}
+
 async function rowToRun(row) {
   if (!row) {
     return null;
@@ -1788,13 +1874,15 @@ async function rowToRun(row) {
 
   const orderAssignment = await get(`
     SELECT h.order_no, c.name as client_name, opa.order_item_id
-    FROM order_pipeline_assignments opa 
-    JOIN order_items i ON opa.order_item_id = i.id 
-    JOIN order_headers h ON i.order_no = h.order_no 
-    LEFT JOIN clients c ON h.client_id = c.id 
+    FROM order_pipeline_assignments opa
+    JOIN order_items i ON opa.order_item_id = i.id
+    JOIN order_headers h ON i.order_no = h.order_no
+    LEFT JOIN clients c ON h.client_id = c.id
     WHERE opa.pipeline_run_id = ?
     LIMIT 1
   `, [row.id]);
+
+  const nodeMetrics = await getMergedNodeMetrics(row);
 
   return {
     id: row.id,
@@ -1805,7 +1893,7 @@ async function rowToRun(row) {
     overrides: parseJson(row.overrides_json, {}),
     nodeStatuses: parseJson(row.node_status_json, {}),
     scrapRouting: row.scrap_routing || 'inventory',
-    nodeMetrics: parseJson(row.node_metrics_json, {}),
+    nodeMetrics,
     batches: parseJson(row.batches_json, []),
     attachedBarcodeInputs,
     startedAt: row.started_at,
@@ -3780,6 +3868,27 @@ async function initDb() {
   await ensureColumnExists('pipeline_runs', 'scrap_routing', "TEXT DEFAULT 'inventory'");
   await ensureColumnExists('pipeline_runs', 'node_metrics_json', "TEXT DEFAULT '{}'");
   await ensureColumnExists('pipeline_runs', 'batches_json', "TEXT DEFAULT '[]'");
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS stage_reconciliations (
+      run_id TEXT NOT NULL REFERENCES pipeline_runs(id),
+      node_id TEXT NOT NULL,
+      allotted REAL,
+      output REAL,
+      leftover REAL,
+      scrap REAL,
+      good_yield REAL,
+      actual_hours REAL,
+      scrap_item_id INTEGER,
+      scrap_item_name TEXT,
+      leftover_action TEXT,
+      input_time TEXT,
+      output_time TEXT,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (run_id, node_id)
+    )
+  `);
+  await backfillStageReconciliations();
 
   await run(`
     CREATE TABLE IF NOT EXISTS production_scrap (
@@ -20165,6 +20274,107 @@ app.get('/api/orders/:orderNo/pipeline-runs', requirePermission('config.read'), 
   }
 });
 
+// Quantities-only production report for an order: pipeline stages with actual
+// consumption/output/waste from stage_reconciliations. No costs by design —
+// rates are filled in on paper.
+app.get('/api/orders/:orderNo/production-report', requirePermission('config.read'), async (req, res) => {
+  try {
+    const orderNo = req.params.orderNo;
+    const header = await get(`
+      SELECT h.order_no, h.po_number, c.name AS client_name
+      FROM order_headers h
+      LEFT JOIN clients c ON h.client_id = c.id
+      WHERE h.order_no = ?
+    `, [orderNo]);
+    if (!header) {
+      return res.status(404).json({ success: false, report: null, error: 'Order not found.' });
+    }
+    const items = await all(`
+      SELECT id, item_name, variation_path_label, quantity, unit_name, unit_symbol, unit_price
+      FROM order_items WHERE order_no = ? ORDER BY id ASC
+    `, [orderNo]);
+    const runRows = await all(`
+      SELECT pr.*, opa.order_item_id
+      FROM pipeline_runs pr
+      JOIN order_pipeline_assignments opa ON pr.id = opa.pipeline_run_id
+      JOIN order_items i ON opa.order_item_id = i.id
+      WHERE i.order_no = ?
+      ORDER BY pr.created_at DESC
+    `, [orderNo]);
+
+    const templateCache = new Map();
+    const runs = [];
+    for (const runRow of runRows) {
+      if (!templateCache.has(runRow.template_id)) {
+        templateCache.set(runRow.template_id, await get(
+          'SELECT id, name, nodes_json FROM pipeline_templates WHERE id = ?',
+          [runRow.template_id],
+        ));
+      }
+      const template = templateCache.get(runRow.template_id);
+      const nodes = template ? parseJson(template.nodes_json, []) : [];
+      const metricsByNode = await getMergedNodeMetrics(runRow);
+      const stages = nodes
+        .slice()
+        .sort((a, b) => (a.stageIndex || 0) - (b.stageIndex || 0))
+        .map((node) => {
+          const metrics = metricsByNode[node.id] || {};
+          return {
+            nodeId: node.id,
+            name: node.name || '',
+            stageIndex: Number(node.stageIndex || 0),
+            processType: node.processType || '',
+            material: node.inputItem?.itemName || '',
+            materialUnit: node.inputItem?.unitSymbol || '',
+            outputName: node.outputItem?.itemName || '',
+            outputUnit: node.outputItem?.unitSymbol || '',
+            machine: node.machine || node.machineGroupName || '',
+            dieId: node.dieId || '',
+            plannedHours: Number(node.durationHours || 0),
+            allotted: metrics.allotted ?? null,
+            output: metrics.output ?? metrics.goodYield ?? null,
+            leftover: metrics.remaining ?? null,
+            scrap: metrics.scrap ?? null,
+            inputTime: metrics.inputTime ?? null,
+            outputTime: metrics.outputTime ?? null,
+            actualHours: metrics.actualHours ?? null,
+          };
+        });
+      runs.push({
+        runId: runRow.id,
+        runName: runRow.name || '',
+        status: runRow.status || 'planned',
+        orderItemId: runRow.order_item_id,
+        templateName: template?.name || '',
+        startedAt: runRow.started_at,
+        completedAt: runRow.completed_at,
+        stages,
+      });
+    }
+
+    res.json({
+      success: true,
+      report: {
+        orderNo,
+        clientName: header.client_name || '',
+        poNumber: header.po_number || '',
+        items: items.map((item) => ({
+          orderItemId: item.id,
+          itemName: item.item_name || '',
+          variationPathLabel: item.variation_path_label || '',
+          quantity: Number(item.quantity || 0),
+          unitSymbol: item.unit_symbol || item.unit_name || 'pcs',
+          unitPrice: Number(item.unit_price || 0),
+        })),
+        runs,
+      },
+      error: null,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, report: null, error: error.message });
+  }
+});
+
 app.post('/api/order-po-documents/:id/read-url', requirePermission('config.read'), async (req, res) => {
   try {
     const result = await createPoDocumentReadUrl(Number(req.params.id));
@@ -21921,17 +22131,10 @@ app.put('/runs/:id/node-metrics', async (req, res) => {
     if (!runRow) {
       return res.status(404).json({ success: false, run: null, error: 'Run not found.' });
     }
-    
-    const nodeMetrics = parseJson(runRow.node_metrics_json, {});
-    nodeMetrics[nodeId] = { ...(nodeMetrics[nodeId] || {}), ...metrics };
-    
-    await run('UPDATE pipeline_runs SET node_metrics_json = ? WHERE id = ?', [
-      JSON.stringify(nodeMetrics),
-      req.params.id,
-    ]);
-    
-    const updatedRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [req.params.id]);
-    res.json({ success: true, run: await rowToRun(updatedRow) });
+
+    await upsertStageReconciliation(req.params.id, nodeId, metrics);
+
+    res.json({ success: true, run: await rowToRun(runRow) });
   } catch (error) {
     res.status(500).json({ success: false, run: null, error: error.message });
   }
@@ -23236,6 +23439,7 @@ module.exports = {
   all,
   get,
   run,
+  backfillStageReconciliations,
   saveUnit,
   saveClient,
   saveGroup,

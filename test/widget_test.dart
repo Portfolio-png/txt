@@ -42,6 +42,7 @@ import 'package:core_erp/features/orders/data/repositories/order_repository.dart
 import 'package:core_erp/features/orders/domain/order_entry.dart';
 import 'package:core_erp/features/orders/domain/order_history.dart';
 import 'package:core_erp/features/orders/domain/order_inputs.dart';
+import 'package:core_erp/features/orders/domain/order_production_report.dart';
 import 'package:core_erp/features/orders/domain/po_document.dart';
 import 'package:core_erp/features/units/data/repositories/unit_repository.dart';
 import 'package:core_erp/features/units/domain/unit_definition.dart';
@@ -2417,6 +2418,16 @@ class FakeOrderRepository extends OrderRepository {
 
   @override
   Future<List<OrderEntry>> getOrders() async => List<OrderEntry>.from(_orders);
+
+  @override
+  Future<OrderProductionReport> getProductionReport(String orderNo) async =>
+      OrderProductionReport(
+        orderNo: orderNo,
+        clientName: '',
+        poNumber: '',
+        items: const [],
+        runs: const [],
+      );
 
   @override
   Future<OrderEntry> createOrder(CreateOrderInput input) async {

@@ -37,6 +37,9 @@ class FeatureKeys {
   @FeatureFlag(category: 'Orders Screen', displayName: 'Allow Order Creation', desc: 'Allow creating new orders')
   static const String ordersAllowOrdersCreation = 'orders.allowOrdersCreation';
 
+  @FeatureFlag(category: 'Orders Screen', displayName: 'Show Report', desc: 'Production report (quantities only, rates left blank) with print, on the order row menu')
+  static const String ordersShowReport = 'orders.showReport';
+
   @FeatureFlag(category: 'Machine Form', displayName: 'Disable Machine Custom Fields', desc: 'Hide custom fields on Machine Creation')
   static const String featuresDisableMachineCustomFields = 'features.disableMachineCustomFields';
 

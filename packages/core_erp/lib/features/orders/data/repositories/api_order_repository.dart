@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../../domain/order_entry.dart';
 import '../../domain/order_history.dart';
 import '../../domain/order_inputs.dart';
+import '../../domain/order_production_report.dart';
 import '../../domain/po_document.dart';
 import '../models/order_api_models.dart';
 import 'order_repository.dart';
@@ -502,6 +503,36 @@ class ApiOrderRepository implements OrderRepository {
       throw OrderApiException(parsed.error ?? 'Failed to open PO document.');
     }
     return parsed.readUrl!;
+  }
+
+  @override
+  Future<OrderProductionReport> getProductionReport(String orderNo) async {
+    if (useMockResponses) {
+      return OrderProductionReport(
+        orderNo: orderNo,
+        clientName: '',
+        poNumber: '',
+        items: const [],
+        runs: const [],
+      );
+    }
+
+    final uri = Uri.parse(
+      '$baseUrl/api/orders/${Uri.encodeComponent(orderNo)}/production-report',
+    );
+    final response = await _client.get(uri);
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true ||
+        payload['report'] == null) {
+      throw OrderApiException(
+        payload['error'] as String? ?? 'Failed to fetch production report.',
+      );
+    }
+    return OrderProductionReport.fromJson(
+      payload['report'] as Map<String, dynamic>,
+    );
   }
 
   @override
