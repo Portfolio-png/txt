@@ -11,7 +11,6 @@ import 'package:provider/provider.dart';
 import '../providers/inventory_create_command_provider.dart';
 import '../../../../app/preferences/preferences_provider.dart';
 import '../../../../core/services/feature_flags.dart';
-import '../../../../core/navigation/app_navigation.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_empty_state.dart';
@@ -5233,23 +5232,13 @@ Future<void> _openItemChallansExcel(
   if (!context.mounted) {
     return;
   }
-  final selectedChallan = await ChallanExcelView.show(
+  await ChallanExcelView.show(
     context,
     filterItemId: itemId,
     filterVariationLeafNodeId: variationLeafNodeId,
     filterCustomVariationValues: customVariationValues,
     title: label.trim().isEmpty ? 'In / Out' : '$label - In / Out',
   );
-
-  if (selectedChallan != null && context.mounted) {
-    context.read<AppNavigation>().select('delivery_challans');
-    // We need to wait a frame for the tab to switch before opening the dialog
-    Future.microtask(() {
-      if (context.mounted) {
-        ChallanScreen.openPrintPreview(context, selectedChallan);
-      }
-    });
-  }
 }
 
 class _InventoryActionsCell extends StatelessWidget {
