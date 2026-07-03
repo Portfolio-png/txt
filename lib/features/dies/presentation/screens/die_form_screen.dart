@@ -51,16 +51,21 @@ class DieEditorSheet extends StatefulWidget {
 
 class _DieEditorSheetState extends State<DieEditorSheet> {
   final _formKey = GlobalKey<FormState>();
-  
+
   late final TextEditingController _toolCodeController;
   late final TextEditingController _nameController;
   late final TextEditingController _operationalNotesController;
   late final TextEditingController _storageLocationController;
-  
+  late final TextEditingController _numberOfCavitiesController;
+  late final TextEditingController _maxStrokesController;
+  late final TextEditingController _strokesPerPieceController;
+  late final TextEditingController _setupMinutesController;
+  late final TextEditingController _reportNotesController;
+
   DieStatus _status = DieStatus.ready;
   DieOwnership _ownership = DieOwnership.inHouse;
   bool _isUploading = false;
-  
+
   // Custom properties as a list of mutable objects for editing
   final List<_MutableProperty> _customProperties = [];
 
@@ -73,30 +78,53 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
   @override
   void initState() {
     super.initState();
-    _toolCodeController = TextEditingController(text: widget.die?.toolCode ?? '');
+    _toolCodeController = TextEditingController(
+      text: widget.die?.toolCode ?? '',
+    );
     _nameController = TextEditingController(text: widget.die?.name ?? '');
-    _operationalNotesController = TextEditingController(text: widget.die?.operationalNotes ?? '');
-    _storageLocationController = TextEditingController(text: widget.die?.storageLocation ?? '');
-    
+    _operationalNotesController = TextEditingController(
+      text: widget.die?.operationalNotes ?? '',
+    );
+    _storageLocationController = TextEditingController(
+      text: widget.die?.storageLocation ?? '',
+    );
+    _numberOfCavitiesController = TextEditingController(
+      text: widget.die?.numberOfCavities?.toString() ?? '',
+    );
+    _maxStrokesController = TextEditingController(
+      text: widget.die?.maxStrokes?.toString() ?? '',
+    );
+    _strokesPerPieceController = TextEditingController(
+      text: _formatOptionalNumber(widget.die?.strokesPerPiece),
+    );
+    _setupMinutesController = TextEditingController(
+      text: _formatOptionalNumber(widget.die?.setupMinutes),
+    );
+    _reportNotesController = TextEditingController(
+      text: widget.die?.reportNotes ?? '',
+    );
+
     if (widget.die != null) {
       _status = widget.die!.status;
       _ownership = widget.die!.ownership;
       _photoUrls.addAll(widget.die!.photoUrls);
       _compatibleMachineGroupIds.addAll(widget.die!.compatibleMachineGroupIds);
-      
+
       for (var prop in widget.die!.physicalSpecs) {
         String key = prop.key;
         if (key == 'bedSize') key = 'Bed Size';
         if (key == 'tonnage') key = 'Tonnage Req.';
         if (key == 'shutHeight') key = 'Shut Height';
 
-        _customProperties.add(_MutableProperty(
-          key: key,
-          value: prop.value,
-          type: prop.type,
-          unitId: prop.unitId,
-          options: List.from(prop.options),
-        ));
+        _customProperties.add(
+          _MutableProperty(
+            key: key,
+            value: prop.value,
+            type: prop.type,
+            unitId: prop.unitId,
+            options: List.from(prop.options),
+          ),
+        );
       }
     }
   }
@@ -107,7 +135,30 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
     _nameController.dispose();
     _operationalNotesController.dispose();
     _storageLocationController.dispose();
+    _numberOfCavitiesController.dispose();
+    _maxStrokesController.dispose();
+    _strokesPerPieceController.dispose();
+    _setupMinutesController.dispose();
+    _reportNotesController.dispose();
     super.dispose();
+  }
+
+  String _formatOptionalNumber(double? value) {
+    if (value == null) return '';
+    if (value == value.roundToDouble()) return value.toInt().toString();
+    return value.toString();
+  }
+
+  double? _optionalDouble(TextEditingController controller) {
+    final value = controller.text.trim();
+    if (value.isEmpty) return null;
+    return double.tryParse(value);
+  }
+
+  int? _optionalInt(TextEditingController controller) {
+    final value = controller.text.trim();
+    if (value.isEmpty) return null;
+    return int.tryParse(value);
   }
 
   void _addCustomProperty() {
@@ -158,7 +209,9 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
           .where((e) => e.isNotEmpty)
           .toList();
       if (_customProperties[index].value.isNotEmpty &&
-          !_customProperties[index].options.contains(_customProperties[index].value)) {
+          !_customProperties[index].options.contains(
+            _customProperties[index].value,
+          )) {
         _customProperties[index].value = '';
       }
     });
@@ -167,16 +220,21 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
   String _contentTypeFromExtension(String fileName) {
     final ext = fileName.split('.').last.toLowerCase();
     switch (ext) {
-      case 'png': return 'image/png';
+      case 'png':
+        return 'image/png';
       case 'jpg':
-      case 'jpeg': return 'image/jpeg';
-      case 'webp': return 'image/webp';
-      default: return 'application/octet-stream';
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'webp':
+        return 'image/webp';
+      default:
+        return 'application/octet-stream';
     }
   }
 
   Future<void> _pickAndUploadImage() async {
-    final dieId = widget.die?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
+    final dieId =
+        widget.die?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
 
     final file = await openFile(
       acceptedTypeGroups: const [
@@ -200,7 +258,7 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
           file.mimeType ??
           lookupMimeType(file.name, headerBytes: bytes.take(24).toList()) ??
           _contentTypeFromExtension(file.name);
-      
+
       final intent = await provider.createAssetUploadIntent(
         DieAssetUploadIntentInput(
           dieId: dieId,
@@ -218,9 +276,7 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
         setState(() {
           _photoUrls.add(intent.photoUrl!);
         });
-        showAppSnack(
-          const SnackBar(content: Text('Image already uploaded.')),
-        );
+        showAppSnack(const SnackBar(content: Text('Image already uploaded.')));
         return;
       }
       final upload = intent.upload;
@@ -252,13 +308,9 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
       setState(() {
         _photoUrls.add(finalUrl);
       });
-      showAppSnack(
-        const SnackBar(content: Text('Die photo uploaded.')),
-      );
+      showAppSnack(const SnackBar(content: Text('Die photo uploaded.')));
     } catch (error) {
-      showAppSnack(
-        SnackBar(content: Text('Image upload failed: $error')),
-      );
+      showAppSnack(SnackBar(content: Text('Image upload failed: $error')));
     } finally {
       if (mounted) {
         setState(() => _isUploading = false);
@@ -272,7 +324,6 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
     });
   }
 
-
   @override
   Widget build(BuildContext context) {
     final title = widget.die == null ? 'Create Die' : 'Edit Die';
@@ -283,7 +334,8 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
       key: _formKey,
       child: ErpFormScaffold(
         title: title,
-        subtitle: 'Manage die/tooling details, machine compatibilities, and photos.',
+        subtitle:
+            'Manage die/tooling details, machine compatibilities, and photos.',
         body: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -294,7 +346,8 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                 children: [
                   ErpDialogSectionCard(
                     title: 'Identity & Production',
-                    subtitle: 'Core information for tracking the tool and the parts it produces.',
+                    subtitle:
+                        'Core information for tracking the tool and the parts it produces.',
                     child: Column(
                       children: [
                         Row(
@@ -334,15 +387,20 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         SearchableSelectField<int>(
-                          tapTargetKey: const ValueKey<String>('die-add-machine-group-field'),
+                          tapTargetKey: const ValueKey<String>(
+                            'die-add-machine-group-field',
+                          ),
                           decoration: InputDecoration(
                             labelText: 'Add Compatible Machine Group',
-                            helperText: 'Select group to add compatible machine groups',
+                            helperText:
+                                'Select group to add compatible machine groups',
                             suffixIcon: TextButton(
                               onPressed: () {
                                 Navigator.of(context).pop();
                                 try {
-                                  context.read<AppNavigation>().select('configurator_machine_groups');
+                                  context.read<AppNavigation>().select(
+                                    'configurator_machine_groups',
+                                  );
                                 } catch (_) {}
                               },
                               child: const Text('Manage'),
@@ -350,12 +408,17 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                           ),
                           dialogTitle: 'Select Machine Group',
                           options: groups
-                              .where((g) => !_compatibleMachineGroupIds.contains(g.id))
-                              .map((g) => SearchableSelectOption<int>(
-                                    value: g.id,
-                                    label: g.name,
-                                    highlightColor: const Color(0xFFE4C17C),
-                                  ))
+                              .where(
+                                (g) =>
+                                    !_compatibleMachineGroupIds.contains(g.id),
+                              )
+                              .map(
+                                (g) => SearchableSelectOption<int>(
+                                  value: g.id,
+                                  label: g.name,
+                                  highlightColor: const Color(0xFFE4C17C),
+                                ),
+                              )
                               .toList(),
                           onChanged: (val) {
                             if (val != null) {
@@ -377,6 +440,7 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                                 }
                                 return 'Group $id';
                               }
+
                               return InputChip(
                                 label: Text(getGroupName(id)),
                                 onDeleted: () {
@@ -399,6 +463,70 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                   ),
                   const SizedBox(height: 16),
                   ErpDialogSectionCard(
+                    title: 'Report Defaults',
+                    subtitle:
+                        'Non-financial tooling assumptions used to print order reports.',
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _DieTextField(
+                                controller: _numberOfCavitiesController,
+                                label: 'Cavities',
+                                helper: 'Pieces produced per stroke',
+                                required: false,
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _DieTextField(
+                                controller: _strokesPerPieceController,
+                                label: 'Strokes / Piece',
+                                helper: 'Formula multiplier',
+                                required: false,
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _DieTextField(
+                                controller: _maxStrokesController,
+                                label: 'Expected Life',
+                                helper: 'Total rated strokes',
+                                required: false,
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _DieTextField(
+                                controller: _setupMinutesController,
+                                label: 'Setup Minutes',
+                                helper: 'Default mounting time',
+                                required: false,
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        _DieTextField(
+                          controller: _reportNotesController,
+                          label: 'Report Notes',
+                          helper: 'Setup notes printed with formulas',
+                          required: false,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ErpDialogSectionCard(
                     title: 'Properties',
                     subtitle: 'Define custom properties and their values.',
                     child: Column(
@@ -409,7 +537,10 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                             padding: const EdgeInsets.symmetric(vertical: 8.0),
                             child: Text(
                               'No custom fields added yet.',
-                              style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 13,
+                              ),
                             ),
                           )
                         else
@@ -429,46 +560,83 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                                           initialValue: prop.key,
                                           decoration: InputDecoration(
                                             labelText: 'Field Name',
-                                            hintText: 'e.g. Tonnage, Location, etc.',
+                                            hintText:
+                                                'e.g. Tonnage, Location, etc.',
                                             filled: true,
                                             fillColor: const Color(0xFFF9FAFB),
                                             border: OutlineInputBorder(
-                                              borderRadius: BorderRadius.circular(8),
-                                              borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              borderSide: const BorderSide(
+                                                color: Color(0xFFD7DBE7),
+                                              ),
                                             ),
                                             enabledBorder: OutlineInputBorder(
-                                              borderRadius: BorderRadius.circular(8),
-                                              borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              borderSide: const BorderSide(
+                                                color: Color(0xFFD7DBE7),
+                                              ),
                                             ),
                                           ),
-                                          onChanged: (val) => _updateCustomPropertyKey(index, val),
+                                          onChanged: (val) =>
+                                              _updateCustomPropertyKey(
+                                                index,
+                                                val,
+                                              ),
                                         ),
                                       ),
                                       const SizedBox(width: 12),
                                       Expanded(
                                         flex: 3,
-                                        child: SearchableSelectField<CustomPropertyType>(
-                                          tapTargetKey: ValueKey<String>('die-custom-property-type-$index'),
-                                          value: prop.type,
-                                          decoration: const InputDecoration(
-                                            labelText: 'Field Type',
-                                            filled: true,
-                                            fillColor: Color(0xFFF9FAFB),
-                                          ),
-                                          dialogTitle: 'Field Type',
-                                          options: const [
-                                            SearchableSelectOption(value: CustomPropertyType.text, label: 'Text'),
-                                            SearchableSelectOption(value: CustomPropertyType.numeric, label: 'Numeric'),
-                                            SearchableSelectOption(value: CustomPropertyType.dropdown, label: 'Dropdown'),
-                                          ],
-                                          onChanged: (val) {
-                                            if (val != null) _updateCustomPropertyType(index, val);
-                                          },
-                                        ),
+                                        child:
+                                            SearchableSelectField<
+                                              CustomPropertyType
+                                            >(
+                                              tapTargetKey: ValueKey<String>(
+                                                'die-custom-property-type-$index',
+                                              ),
+                                              value: prop.type,
+                                              decoration: const InputDecoration(
+                                                labelText: 'Field Type',
+                                                filled: true,
+                                                fillColor: Color(0xFFF9FAFB),
+                                              ),
+                                              dialogTitle: 'Field Type',
+                                              options: const [
+                                                SearchableSelectOption(
+                                                  value:
+                                                      CustomPropertyType.text,
+                                                  label: 'Text',
+                                                ),
+                                                SearchableSelectOption(
+                                                  value: CustomPropertyType
+                                                      .numeric,
+                                                  label: 'Numeric',
+                                                ),
+                                                SearchableSelectOption(
+                                                  value: CustomPropertyType
+                                                      .dropdown,
+                                                  label: 'Dropdown',
+                                                ),
+                                              ],
+                                              onChanged: (val) {
+                                                if (val != null) {
+                                                  _updateCustomPropertyType(
+                                                    index,
+                                                    val,
+                                                  );
+                                                }
+                                              },
+                                            ),
                                       ),
                                       IconButton(
-                                        icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                                        onPressed: () => _removeCustomProperty(index),
+                                        icon: const Icon(
+                                          Icons.delete_outline,
+                                          color: Colors.redAccent,
+                                        ),
+                                        onPressed: () =>
+                                            _removeCustomProperty(index),
                                       ),
                                     ],
                                   ),
@@ -483,29 +651,44 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                                               labelText: 'Value',
                                               hintText: 'Enter text value...',
                                               filled: true,
-                                              fillColor: const Color(0xFFF9FAFB),
+                                              fillColor: const Color(
+                                                0xFFF9FAFB,
+                                              ),
                                               border: OutlineInputBorder(
-                                                borderRadius: BorderRadius.circular(8),
-                                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                                borderSide: const BorderSide(
+                                                  color: Color(0xFFD7DBE7),
+                                                ),
                                               ),
                                               enabledBorder: OutlineInputBorder(
-                                                borderRadius: BorderRadius.circular(8),
-                                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                                borderSide: const BorderSide(
+                                                  color: Color(0xFFD7DBE7),
+                                                ),
                                               ),
                                             ),
-                                            onChanged: (val) => _updateCustomPropertyValue(index, val),
+                                            onChanged: (val) =>
+                                                _updateCustomPropertyValue(
+                                                  index,
+                                                  val,
+                                                ),
                                           ),
                                         ),
                                         const SizedBox(width: 48),
                                       ],
                                     )
-                                  else if (prop.type == CustomPropertyType.numeric)
+                                  else if (prop.type ==
+                                      CustomPropertyType.numeric)
                                     Row(
                                       children: [
                                         Expanded(
                                           flex: 2,
                                           child: SearchableSelectField<int?>(
-                                            tapTargetKey: ValueKey<String>('die-custom-property-unit-$index'),
+                                            tapTargetKey: ValueKey<String>(
+                                              'die-custom-property-unit-$index',
+                                            ),
                                             value: prop.unitId,
                                             decoration: const InputDecoration(
                                               labelText: 'Unit (Optional)',
@@ -514,15 +697,26 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                                             ),
                                             dialogTitle: 'Select Unit',
                                             options: [
-                                              const SearchableSelectOption<int?>(value: null, label: 'None'),
-                                              ...context.watch<UnitsProvider>().activeUnits.map((u) {
-                                                return SearchableSelectOption<int?>(
-                                                  value: u.id,
-                                                  label: u.symbol,
-                                                );
-                                              }),
+                                              const SearchableSelectOption<
+                                                int?
+                                              >(value: null, label: 'None'),
+                                              ...context
+                                                  .watch<UnitsProvider>()
+                                                  .activeUnits
+                                                  .map((u) {
+                                                    return SearchableSelectOption<
+                                                      int?
+                                                    >(
+                                                      value: u.id,
+                                                      label: u.symbol,
+                                                    );
+                                                  }),
                                             ],
-                                            onChanged: (val) => _updateCustomPropertyUnit(index, val),
+                                            onChanged: (val) =>
+                                                _updateCustomPropertyUnit(
+                                                  index,
+                                                  val,
+                                                ),
                                           ),
                                         ),
                                         const SizedBox(width: 12),
@@ -533,54 +727,90 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                                             keyboardType: TextInputType.number,
                                             decoration: InputDecoration(
                                               labelText: 'Value',
-                                              hintText: 'Enter numeric value...',
+                                              hintText:
+                                                  'Enter numeric value...',
                                               filled: true,
-                                              fillColor: const Color(0xFFF9FAFB),
+                                              fillColor: const Color(
+                                                0xFFF9FAFB,
+                                              ),
                                               border: OutlineInputBorder(
-                                                borderRadius: BorderRadius.circular(8),
-                                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                                borderSide: const BorderSide(
+                                                  color: Color(0xFFD7DBE7),
+                                                ),
                                               ),
                                               enabledBorder: OutlineInputBorder(
-                                                borderRadius: BorderRadius.circular(8),
-                                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                                borderSide: const BorderSide(
+                                                  color: Color(0xFFD7DBE7),
+                                                ),
                                               ),
                                             ),
-                                            onChanged: (val) => _updateCustomPropertyValue(index, val),
+                                            onChanged: (val) =>
+                                                _updateCustomPropertyValue(
+                                                  index,
+                                                  val,
+                                                ),
                                           ),
                                         ),
                                         const SizedBox(width: 48),
                                       ],
                                     )
-                                  else if (prop.type == CustomPropertyType.dropdown)
+                                  else if (prop.type ==
+                                      CustomPropertyType.dropdown)
                                     Row(
                                       children: [
                                         Expanded(
                                           flex: 2,
                                           child: TextFormField(
-                                            initialValue: prop.options.join(', '),
+                                            initialValue: prop.options.join(
+                                              ', ',
+                                            ),
                                             decoration: InputDecoration(
                                               labelText: 'Dropdown Options',
-                                              hintText: 'A, B, C (comma separated)',
+                                              hintText:
+                                                  'A, B, C (comma separated)',
                                               filled: true,
-                                              fillColor: const Color(0xFFF9FAFB),
+                                              fillColor: const Color(
+                                                0xFFF9FAFB,
+                                              ),
                                               border: OutlineInputBorder(
-                                                borderRadius: BorderRadius.circular(8),
-                                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                                borderSide: const BorderSide(
+                                                  color: Color(0xFFD7DBE7),
+                                                ),
                                               ),
                                               enabledBorder: OutlineInputBorder(
-                                                borderRadius: BorderRadius.circular(8),
-                                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                                borderSide: const BorderSide(
+                                                  color: Color(0xFFD7DBE7),
+                                                ),
                                               ),
                                             ),
-                                            onChanged: (val) => _updateCustomPropertyOptions(index, val),
+                                            onChanged: (val) =>
+                                                _updateCustomPropertyOptions(
+                                                  index,
+                                                  val,
+                                                ),
                                           ),
                                         ),
                                         const SizedBox(width: 12),
                                         Expanded(
                                           flex: 3,
                                           child: SearchableSelectField<String>(
-                                            tapTargetKey: ValueKey<String>('die-custom-property-value-$index'),
-                                            value: prop.options.contains(prop.value) ? prop.value : null,
+                                            tapTargetKey: ValueKey<String>(
+                                              'die-custom-property-value-$index',
+                                            ),
+                                            value:
+                                                prop.options.contains(
+                                                  prop.value,
+                                                )
+                                                ? prop.value
+                                                : null,
                                             decoration: const InputDecoration(
                                               labelText: 'Select Value',
                                               filled: true,
@@ -588,13 +818,17 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                                             ),
                                             dialogTitle: 'Select Value',
                                             options: prop.options.map((opt) {
-                                              return SearchableSelectOption<String>(
-                                                value: opt,
-                                                label: opt,
-                                              );
+                                              return SearchableSelectOption<
+                                                String
+                                              >(value: opt, label: opt);
                                             }).toList(),
                                             onChanged: (val) {
-                                              if (val != null) _updateCustomPropertyValue(index, val);
+                                              if (val != null) {
+                                                _updateCustomPropertyValue(
+                                                  index,
+                                                  val,
+                                                );
+                                              }
                                             },
                                           ),
                                         ),
@@ -627,7 +861,8 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                 children: [
                   ErpDialogSectionCard(
                     title: 'Photos',
-                    subtitle: 'Multiple images of the die, setup conditions, or parts.',
+                    subtitle:
+                        'Multiple images of the die, setup conditions, or parts.',
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -636,12 +871,19 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
                             color: const Color(0xFFF8FAFC),
-                            border: Border.all(color: const Color(0xFFE2E8F0), style: BorderStyle.solid),
+                            border: Border.all(
+                              color: const Color(0xFFE2E8F0),
+                              style: BorderStyle.solid,
+                            ),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Column(
                             children: [
-                              const Icon(Icons.collections_outlined, size: 32, color: Color(0xFF94A3B8)),
+                              const Icon(
+                                Icons.collections_outlined,
+                                size: 32,
+                                color: Color(0xFF94A3B8),
+                              ),
                               const SizedBox(height: 8),
                               AppButton(
                                 label: 'Upload New Photo',
@@ -665,14 +907,20 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                                   height: 64,
                                   decoration: BoxDecoration(
                                     borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                                    border: Border.all(
+                                      color: const Color(0xFFE2E8F0),
+                                    ),
                                   ),
                                   child: ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
                                     child: Image.network(
                                       url,
                                       fit: BoxFit.cover,
-                                      errorBuilder: (_, _, _) => const Icon(Icons.broken_image, size: 24, color: Colors.grey),
+                                      errorBuilder: (_, _, _) => const Icon(
+                                        Icons.broken_image,
+                                        size: 24,
+                                        color: Colors.grey,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -692,7 +940,10 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
                                 ),
                                 const SizedBox(width: 8),
                                 IconButton(
-                                  icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
+                                  icon: const Icon(
+                                    Icons.remove_circle_outline,
+                                    color: Colors.red,
+                                  ),
                                   onPressed: () => _removePhoto(index),
                                 ),
                               ],
@@ -742,18 +993,20 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
 
   void _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     // Construct Custom Properties list
     final customPropsList = <CustomProperty>[];
     for (var prop in _customProperties) {
       if (prop.key.trim().isNotEmpty) {
-        customPropsList.add(CustomProperty(
-          key: prop.key.trim(), 
-          value: prop.value.trim(),
-          type: prop.type,
-          unitId: prop.unitId,
-          options: prop.options,
-        ));
+        customPropsList.add(
+          CustomProperty(
+            key: prop.key.trim(),
+            value: prop.value.trim(),
+            type: prop.type,
+            unitId: prop.unitId,
+            options: prop.options,
+          ),
+        );
       }
     }
 
@@ -768,30 +1021,32 @@ class _DieEditorSheetState extends State<DieEditorSheet> {
       compatibleMachineGroupIds: _compatibleMachineGroupIds,
       strokeCount: widget.die?.strokeCount ?? 0,
       storageLocation: _storageLocationController.text.trim(),
-      numberOfCavities: widget.die?.numberOfCavities,
+      numberOfCavities: _optionalInt(_numberOfCavitiesController),
+      maxStrokes: _optionalInt(_maxStrokesController),
+      strokesPerPiece: _optionalDouble(_strokesPerPieceController),
+      setupMinutes: _optionalDouble(_setupMinutesController),
+      reportNotes: _reportNotesController.text.trim(),
       physicalSpecs: customPropsList,
       status: _status,
       ownership: _ownership,
       createdAt: widget.die?.createdAt ?? DateTime.now(),
       updatedAt: DateTime.now(),
     );
-    
+
     Die? savedDie;
     if (widget.die == null) {
       savedDie = await context.read<DiesProvider>().createDie(newDie);
     } else {
       savedDie = await context.read<DiesProvider>().updateDie(newDie);
     }
-    
+
     if (savedDie == null && mounted) {
-      final error = context.read<DiesProvider>().errorMessage ?? 'Failed to save die';
-      showAppSnack(SnackBar(
-        content: Text(error),
-        backgroundColor: Colors.red,
-      ));
+      final error =
+          context.read<DiesProvider>().errorMessage ?? 'Failed to save die';
+      showAppSnack(SnackBar(content: Text(error), backgroundColor: Colors.red));
       return;
     }
-    
+
     if (mounted) {
       showAppToast(
         context,
@@ -810,6 +1065,7 @@ class _DieTextField extends StatelessWidget {
     required this.helper,
     this.required = true,
     this.maxLines = 1,
+    this.keyboardType,
   });
 
   final TextEditingController controller;
@@ -817,12 +1073,14 @@ class _DieTextField extends StatelessWidget {
   final String helper;
   final bool required;
   final int maxLines;
+  final TextInputType? keyboardType;
 
   @override
   Widget build(BuildContext context) {
     return TextFormField(
       controller: controller,
       maxLines: maxLines,
+      keyboardType: keyboardType,
       decoration: InputDecoration(
         labelText: label,
         helperText: helper,

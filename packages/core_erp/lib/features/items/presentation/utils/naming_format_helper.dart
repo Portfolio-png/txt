@@ -39,11 +39,12 @@ class NamingFormatHelper {
 
         if (selectedValue == null) {
           final tempId = -currentProperty.id;
-          if (selectedValueIds.contains(tempId)) {
-            final valName = customVariationValues[currentProperty.id];
-            if (valName != null) {
-              propIdToValue[currentProperty.id] = valName;
-            }
+          final valName = customVariationValues[currentProperty.id];
+          if (valName != null &&
+              valName.trim().isNotEmpty &&
+              (selectedValueIds.contains(tempId) ||
+                  !propIdToValue.containsKey(currentProperty.id))) {
+            propIdToValue[currentProperty.id] = valName.trim();
           }
           break;
         }

@@ -27,7 +27,7 @@ class OrderReportDialog extends StatefulWidget {
       builder: (_) => Dialog(
         insetPadding: const EdgeInsets.all(20),
         child: SizedBox(
-          width: 860,
+          width: 1020,
           height: math.min(MediaQuery.of(context).size.height - 40, 820),
           child: OrderReportDialog(group: group),
         ),
@@ -49,7 +49,6 @@ class _OrderReportDialogState extends State<OrderReportDialog> {
   void initState() {
     super.initState();
     _fetch();
-    // ponytail: 5s poll = "realtime enough" for floor reconciliation commits.
     _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) => _fetch());
   }
 
@@ -207,7 +206,7 @@ class _OrderReportDialogState extends State<OrderReportDialog> {
     final widgets = <Widget>[];
 
     widgets.add(_headerBlock(report));
-    widgets.add(const SizedBox(height: 18));
+    widgets.add(const SizedBox(height: 16));
 
     if (report.runs.isEmpty) {
       widgets.add(
@@ -224,64 +223,50 @@ class _OrderReportDialogState extends State<OrderReportDialog> {
 
     for (final run in report.runs) {
       final item = _itemForRun(report, run);
-      final orderQty = item?.quantity ?? 0;
 
-      widgets.add(_sectionTitle(
-        report.runs.length > 1
-            ? 'MATERIALS — ${run.runName.isEmpty ? run.runId : run.runName}'
-            : 'MATERIALS',
-      ));
-      var hasMaterialLine = false;
-      for (final stage in run.stages) {
-        if (stage.material.isEmpty) continue;
-        hasMaterialLine = true;
-        widgets.add(_materialLine(stage, orderQty));
-      }
-      if (!hasMaterialLine) {
-        widgets.add(_mutedLine('No material stages on this pipeline.'));
-      }
-      widgets.add(_blankSubtotal('Subtotal Materials'));
-      widgets.add(const SizedBox(height: 14));
+      widgets.add(_runHeader(run, item));
+      widgets.add(const SizedBox(height: 10));
 
-      widgets.add(_sectionTitle('PROCESS'));
-      var hasProcessLine = false;
-      for (final stage in run.stages) {
-        if (stage.machine.isNotEmpty) {
-          hasProcessLine = true;
-          widgets.add(_processLine(
-            '${stage.machine} (${stage.name})',
-            _fmtHours(stage.workedHours ?? stage.plannedHours),
-            'hr',
-          ));
-        }
-        if (stage.dieId.isNotEmpty) {
-          hasProcessLine = true;
-          widgets.add(_processLine(
-            'Die ${stage.dieId}',
-            stage.output != null ? _fmtQty(stage.output!) : '____',
-            'strk',
-          ));
-        }
-      }
-      widgets.add(_processLine('Labor', '____', 'hr'));
-      if (!hasProcessLine) {
-        widgets.add(_mutedLine('No machines or dies on this pipeline.'));
-      }
-      widgets.add(_blankSubtotal('Subtotal Process'));
-      widgets.add(const SizedBox(height: 14));
+      widgets.add(
+        _sectionCard(
+          title: 'Materials',
+          children: [
+            _tableHeader(),
+            ..._materialRows(run, item),
+            _blankSubtotal('Subtotal Materials'),
+          ],
+        ),
+      );
+      widgets.add(const SizedBox(height: 12));
 
-      widgets.add(_sectionTitle('WASTE'));
-      var hasWasteLine = false;
-      for (final stage in run.stages) {
-        final scrap = stage.scrap ?? 0;
-        if (scrap <= 0) continue;
-        hasWasteLine = true;
-        widgets.add(_wasteLine(stage, scrap));
-      }
-      if (!hasWasteLine) {
-        widgets.add(_mutedLine('No scrap reconciled yet.'));
-      }
-      widgets.add(_blankSubtotal('Subtotal Waste'));
+      widgets.add(
+        _sectionCard(
+          title: 'Process',
+          children: [
+            _tableHeader(),
+            ..._processRows(run),
+            _blankSubtotal('Subtotal Process'),
+          ],
+        ),
+      );
+      widgets.add(const SizedBox(height: 12));
+
+      widgets.add(
+        _sectionCard(
+          title: 'Waste & Adjustments',
+          children: [
+            _tableHeader(),
+            ..._wasteRows(run),
+            _reportRow(
+              label: 'Waste Adjustment',
+              qty: '____',
+              detail: 'manual',
+              rateUnit: '',
+            ),
+            _blankSubtotal('Subtotal Waste'),
+          ],
+        ),
+      );
       widgets.add(const SizedBox(height: 18));
     }
 
@@ -301,25 +286,203 @@ class _OrderReportDialogState extends State<OrderReportDialog> {
   }
 
   Widget _headerBlock(OrderProductionReport report) {
-    final lines = <String>[
-      if (report.clientName.isNotEmpty) report.clientName,
-      for (final item in report.items)
-        '${_fmtQty(item.quantity)} ${item.unitSymbol}  '
-            '${item.itemName}'
-            '${item.variationPathLabel.isEmpty ? '' : ' · ${item.variationPathLabel}'}',
-    ];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final totalQtyByUnit = <String, double>{};
+    for (final item in report.items) {
+      totalQtyByUnit.update(
+        item.unitSymbol,
+        (value) => value + item.quantity,
+        ifAbsent: () => item.quantity,
+      );
+    }
+    final totalQty = totalQtyByUnit.entries
+        .map((entry) => '${_fmtQty(entry.value)} ${entry.key}')
+        .join(' + ');
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'ORDER ${report.orderNo}',
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    if (report.clientName.isNotEmpty)
+                      Text(
+                        report.clientName,
+                        style: const TextStyle(
+                          color: SoftErpTheme.textSecondary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              _summaryPill(
+                'PO',
+                report.poNumber.isEmpty ? '-' : report.poNumber,
+              ),
+              const SizedBox(width: 8),
+              _summaryPill('Qty', totalQty.isEmpty ? '-' : totalQty),
+              const SizedBox(width: 8),
+              _summaryPill('Runs', report.runs.length.toString()),
+            ],
+          ),
+          if (report.items.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final item in report.items)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${_fmtQty(item.quantity)} ${item.unitSymbol} · ${item.itemName}'
+                      '${item.variationPathLabel.isEmpty ? '' : ' · ${item.variationPathLabel}'}',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryPill(String label, String value) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 86),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: SoftErpTheme.textSecondary,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w900)),
+        ],
+      ),
+    );
+  }
+
+  Widget _runHeader(OrderReportRun run, OrderReportItem? item) {
+    final runName = run.runName.isEmpty ? run.runId : run.runName;
+    final itemName = item == null
+        ? ''
+        : '${item.itemName}${item.variationPathLabel.isEmpty ? '' : ' · ${item.variationPathLabel}'}';
+    return Row(
       children: [
-        for (final line in lines)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 2),
+        Expanded(
+          child: Text(
+            runName.isEmpty ? 'Production Run' : runName,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+          ),
+        ),
+        if (itemName.isNotEmpty)
+          Flexible(
             child: Text(
-              line,
-              style: const TextStyle(fontWeight: FontWeight.w700),
+              itemName,
+              textAlign: TextAlign.right,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: SoftErpTheme.textSecondary,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
       ],
+    );
+  }
+
+  Widget _sectionCard({required String title, required List<Widget> children}) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [_sectionTitle(title), ...children],
+      ),
+    );
+  }
+
+  Widget _tableHeader() {
+    return Padding(
+      padding: const EdgeInsets.only(left: 12, bottom: 8),
+      child: Row(
+        children: const [
+          Expanded(child: Text('Line', style: _tableHeaderStyle)),
+          SizedBox(
+            width: 116,
+            child: Text(
+              'Total Qty',
+              textAlign: TextAlign.right,
+              style: _tableHeaderStyle,
+            ),
+          ),
+          SizedBox(
+            width: 126,
+            child: Text(
+              'Basis',
+              textAlign: TextAlign.right,
+              style: _tableHeaderStyle,
+            ),
+          ),
+          SizedBox(
+            width: 132,
+            child: Text(
+              'Rate',
+              textAlign: TextAlign.right,
+              style: _tableHeaderStyle,
+            ),
+          ),
+          SizedBox(
+            width: 118,
+            child: Text(
+              'Amount',
+              textAlign: TextAlign.right,
+              style: _tableHeaderStyle,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -348,26 +511,126 @@ class _OrderReportDialogState extends State<OrderReportDialog> {
     );
   }
 
-  /// `Stage · Material    23.5 kg   (0.047/pc)   × ₹____ = ₹______`
-  Widget _materialLine(OrderReportStage stage, double orderQty) {
+  List<Widget> _materialRows(OrderReportRun run, OrderReportItem? item) {
+    final rows = <Widget>[];
+    final orderQty = item?.quantity ?? 0;
+    final orderUnit = item?.unitSymbol ?? 'pc';
+    for (final stage in run.stages) {
+      if (stage.material.isEmpty) continue;
+      rows.add(_materialLine(stage, orderQty, orderUnit));
+    }
+    if (rows.isEmpty) {
+      rows.add(_mutedLine('No material stages on this pipeline.'));
+    }
+    return rows;
+  }
+
+  List<Widget> _processRows(OrderReportRun run) {
+    final rows = <Widget>[];
+    for (final stage in run.stages) {
+      if (stage.machine.isNotEmpty) {
+        final detailParts = <String>[
+          if ((stage.machineSetupMinutes ?? 0) > 0)
+            '${_fmtQty(stage.machineSetupMinutes!)} min setup',
+          if ((stage.machineOutputPerHour ?? 0) > 0)
+            '${_fmtQty(stage.machineOutputPerHour!)} output/hr',
+          if ((stage.machineLaborCount ?? 0) > 0)
+            '${_fmtQty(stage.machineLaborCount!)} labor',
+          if ((stage.machinePowerKw ?? 0) > 0)
+            '${_fmtQty(stage.machinePowerKw!)} kW',
+        ];
+        rows.add(
+          _processLine(
+            '${stage.machine} (${stage.name})',
+            _fmtHours(stage.workedHours ?? stage.plannedHours),
+            'hr',
+            detail: detailParts.join(' · '),
+          ),
+        );
+        if (stage.machineReportNotes.trim().isNotEmpty) {
+          rows.add(_mutedLine(stage.machineReportNotes.trim()));
+        }
+      }
+      if (stage.dieId.isNotEmpty || stage.dieToolCode.isNotEmpty) {
+        final strokes = _dieStrokeQty(stage);
+        final detailParts = <String>[
+          if ((stage.dieStrokesPerPiece ?? 0) > 0)
+            '${_fmtQty(stage.dieStrokesPerPiece!)} strk/pc',
+          if ((stage.dieCavities ?? 0) > 0) '${stage.dieCavities} cavities',
+          if ((stage.dieMaxStrokes ?? 0) > 0)
+            'life ${_fmtQty(stage.dieMaxStrokes!.toDouble())}',
+          if ((stage.dieSetupMinutes ?? 0) > 0)
+            '${_fmtQty(stage.dieSetupMinutes!)} min setup',
+        ];
+        rows.add(
+          _processLine(
+            'Die ${stage.dieToolCode.isEmpty ? stage.dieId : stage.dieToolCode}',
+            strokes == null ? '____' : _fmtQty(strokes),
+            'strk',
+            detail: detailParts.join(' · '),
+          ),
+        );
+        if (stage.dieReportNotes.trim().isNotEmpty) {
+          rows.add(_mutedLine(stage.dieReportNotes.trim()));
+        }
+      }
+    }
+    rows.add(_processLine('Labor', '____', 'hr', detail: 'manual'));
+    rows.add(
+      _processLine('Process Cost', '____', '', detail: 'machine + labor + die'),
+    );
+    if (rows.length == 2) {
+      rows.insert(0, _mutedLine('No machines or dies on this pipeline.'));
+    }
+    return rows;
+  }
+
+  List<Widget> _wasteRows(OrderReportRun run) {
+    final rows = <Widget>[];
+    for (final stage in run.stages) {
+      final scrap = stage.scrap ?? 0;
+      if (scrap <= 0) continue;
+      rows.add(_wasteLine(stage, scrap));
+    }
+    if (rows.isEmpty) {
+      rows.add(_mutedLine('No scrap reconciled yet.'));
+    }
+    return rows;
+  }
+
+  Widget _materialLine(
+    OrderReportStage stage,
+    double orderQty,
+    String orderUnit,
+  ) {
     final unit = stage.materialUnit;
-    final qty = stage.allotted;
-    final perUnit = (qty != null && orderQty > 0) ? qty / orderQty : null;
+    final qty = _materialTotalQty(stage, orderQty);
+    final perUnit =
+        stage.quantityPerUnit ??
+        ((qty != null && orderQty > 0) ? qty / orderQty : null);
     return _reportRow(
-      label: 'Stage ${stage.stageIndex + 1} · ${stage.name} — ${stage.material}',
+      label:
+          'Stage ${stage.stageIndex + 1} · ${stage.name} — ${stage.material}',
       qty: qty != null ? '${_fmtQty(qty)} $unit' : '____ $unit',
-      detail: perUnit != null ? '${_fmtQty(perUnit)} $unit/pc' : null,
+      detail: perUnit != null ? '${_fmtQty(perUnit)} $unit/$orderUnit' : null,
       rateUnit: '/$unit',
     );
   }
 
-  Widget _processLine(String label, String qty, String unit) {
-    return _reportRow(label: label, qty: '$qty $unit', rateUnit: '/$unit');
+  Widget _processLine(String label, String qty, String unit, {String? detail}) {
+    final displayQty = unit.isEmpty ? qty : '$qty $unit';
+    return _reportRow(
+      label: label,
+      qty: displayQty,
+      detail: detail?.isEmpty ?? true ? null : detail,
+      rateUnit: unit.isEmpty ? '' : '/$unit',
+    );
   }
 
   Widget _wasteLine(OrderReportStage stage, double scrap) {
     return _reportRow(
-      label: '${stage.name} — ${stage.material.isEmpty ? 'scrap' : '${stage.material} scrap'}',
+      label:
+          '${stage.name} — ${stage.material.isEmpty ? 'scrap' : '${stage.material} scrap'}',
       qty: '${_fmtQty(scrap)} ${stage.materialUnit}',
       rateUnit: '/${stage.materialUnit}',
     );
@@ -383,11 +646,9 @@ class _OrderReportDialogState extends State<OrderReportDialog> {
       padding: const EdgeInsets.only(left: 12, bottom: 5),
       child: Row(
         children: [
-          Expanded(
-            child: Text(label, overflow: TextOverflow.ellipsis),
-          ),
+          Expanded(child: Text(label, overflow: TextOverflow.ellipsis)),
           SizedBox(
-            width: 110,
+            width: 116,
             child: Text(
               qty,
               textAlign: TextAlign.right,
@@ -395,7 +656,7 @@ class _OrderReportDialogState extends State<OrderReportDialog> {
             ),
           ),
           SizedBox(
-            width: 100,
+            width: 126,
             child: Text(
               detail ?? '',
               textAlign: TextAlign.right,
@@ -406,11 +667,11 @@ class _OrderReportDialogState extends State<OrderReportDialog> {
             ),
           ),
           SizedBox(
-            width: 130,
+            width: 132,
             child: Text('× ₹______$rateUnit', textAlign: TextAlign.right),
           ),
           const SizedBox(
-            width: 110,
+            width: 118,
             child: Text('= ₹________', textAlign: TextAlign.right),
           ),
         ],
@@ -424,7 +685,10 @@ class _OrderReportDialogState extends State<OrderReportDialog> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          Text('$label:  ', style: const TextStyle(fontWeight: FontWeight.w700)),
+          Text(
+            '$label:  ',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
           const Text('₹__________'),
         ],
       ),
@@ -439,37 +703,34 @@ class _OrderReportDialogState extends State<OrderReportDialog> {
       (sum, i) => sum + i.unitPrice * i.quantity,
     );
     Widget row(String label, String value, {bool bold = false}) => Padding(
-          padding: const EdgeInsets.only(top: 5),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Text(
-                '$label:  ',
-                style: TextStyle(
-                  fontWeight: bold ? FontWeight.w900 : FontWeight.w700,
-                ),
-              ),
-              SizedBox(
-                width: 140,
-                child: Text(
-                  value,
-                  textAlign: TextAlign.right,
-                  style: TextStyle(
-                    fontWeight: bold ? FontWeight.w900 : FontWeight.w400,
-                  ),
-                ),
-              ),
-            ],
+      padding: const EdgeInsets.only(top: 5),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Text(
+            '$label:  ',
+            style: TextStyle(
+              fontWeight: bold ? FontWeight.w900 : FontWeight.w700,
+            ),
           ),
-        );
+          SizedBox(
+            width: 140,
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontWeight: bold ? FontWeight.w900 : FontWeight.w400,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         row('GRAND TOTAL', '₹__________', bold: true),
-        row(
-          'COST PER UNIT (÷ ${_fmtQty(totalQty)})',
-          '₹__________',
-        ),
+        row('COST PER UNIT (÷ ${_fmtQty(totalQty)})', '₹__________'),
         row(
           'SELLING PRICE (from order)',
           knownPrice && sellingTotal > 0
@@ -481,7 +742,35 @@ class _OrderReportDialogState extends State<OrderReportDialog> {
       ],
     );
   }
+
+  double? _materialTotalQty(OrderReportStage stage, double orderQty) {
+    if (stage.allotted != null) return stage.allotted;
+    if (stage.plannedMaterialQty != null) return stage.plannedMaterialQty;
+    if (stage.quantityPerUnit != null && orderQty > 0) {
+      return stage.quantityPerUnit! * orderQty;
+    }
+    return null;
+  }
+
+  double? _dieStrokeQty(OrderReportStage stage) {
+    if (stage.output != null && stage.output! > 0) {
+      if ((stage.dieStrokesPerPiece ?? 0) > 0) {
+        return stage.output! * stage.dieStrokesPerPiece!;
+      }
+      if ((stage.dieCavities ?? 0) > 0) {
+        return stage.output! / stage.dieCavities!;
+      }
+      return stage.output;
+    }
+    return null;
+  }
 }
+
+const TextStyle _tableHeaderStyle = TextStyle(
+  color: SoftErpTheme.textSecondary,
+  fontSize: 11,
+  fontWeight: FontWeight.w900,
+);
 
 class _LiveDot extends StatelessWidget {
   const _LiveDot();
@@ -519,6 +808,54 @@ String _fmtQty(double value) {
 String _fmtHours(double? hours) {
   if (hours == null || hours <= 0) return '____';
   return _fmtQty(double.parse(hours.toStringAsFixed(2)));
+}
+
+double? _pdfMaterialTotalQty(OrderReportStage stage, double orderQty) {
+  if (stage.allotted != null) return stage.allotted;
+  if (stage.plannedMaterialQty != null) return stage.plannedMaterialQty;
+  if (stage.quantityPerUnit != null && orderQty > 0) {
+    return stage.quantityPerUnit! * orderQty;
+  }
+  return null;
+}
+
+double? _pdfDieStrokeQty(OrderReportStage stage) {
+  if (stage.output != null && stage.output! > 0) {
+    if ((stage.dieStrokesPerPiece ?? 0) > 0) {
+      return stage.output! * stage.dieStrokesPerPiece!;
+    }
+    if ((stage.dieCavities ?? 0) > 0) {
+      return stage.output! / stage.dieCavities!;
+    }
+    return stage.output;
+  }
+  return null;
+}
+
+String _pdfMachineDetail(OrderReportStage stage) {
+  final parts = <String>[
+    if ((stage.machineSetupMinutes ?? 0) > 0)
+      '${_fmtQty(stage.machineSetupMinutes!)} min setup',
+    if ((stage.machineOutputPerHour ?? 0) > 0)
+      '${_fmtQty(stage.machineOutputPerHour!)} output/hr',
+    if ((stage.machineLaborCount ?? 0) > 0)
+      '${_fmtQty(stage.machineLaborCount!)} labor',
+    if ((stage.machinePowerKw ?? 0) > 0) '${_fmtQty(stage.machinePowerKw!)} kW',
+  ];
+  return parts.join(' | ');
+}
+
+String _pdfDieDetail(OrderReportStage stage) {
+  final parts = <String>[
+    if ((stage.dieStrokesPerPiece ?? 0) > 0)
+      '${_fmtQty(stage.dieStrokesPerPiece!)} strk/pc',
+    if ((stage.dieCavities ?? 0) > 0) '${stage.dieCavities} cavities',
+    if ((stage.dieMaxStrokes ?? 0) > 0)
+      'life ${_fmtQty(stage.dieMaxStrokes!.toDouble())}',
+    if ((stage.dieSetupMinutes ?? 0) > 0)
+      '${_fmtQty(stage.dieSetupMinutes!)} min setup',
+  ];
+  return parts.join(' | ');
 }
 
 /// PDF mirror of the on-screen sheet. Uses "Rs." because the built-in PDF
@@ -566,26 +903,26 @@ Future<Uint8List> _buildReportPdf(OrderProductionReport report) {
   }
 
   pw.Widget sectionTitle(String title) => pw.Padding(
-        padding: const pw.EdgeInsets.only(top: 10, bottom: 4),
-        child: pw.Text(
-          title,
-          style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
-        ),
-      );
+    padding: const pw.EdgeInsets.only(top: 10, bottom: 4),
+    child: pw.Text(
+      title,
+      style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+    ),
+  );
 
   pw.Widget subtotal(String label) => pw.Padding(
-        padding: const pw.EdgeInsets.only(top: 2),
-        child: pw.Row(
-          mainAxisAlignment: pw.MainAxisAlignment.end,
-          children: [
-            pw.Text(
-              '$label:  ',
-              style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-            ),
-            pw.Text('Rs.__________'),
-          ],
+    padding: const pw.EdgeInsets.only(top: 2),
+    child: pw.Row(
+      mainAxisAlignment: pw.MainAxisAlignment.end,
+      children: [
+        pw.Text(
+          '$label:  ',
+          style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
         ),
-      );
+        pw.Text('Rs.__________'),
+      ],
+    ),
+  );
 
   final totalQty = report.items.fold<double>(0, (sum, i) => sum + i.quantity);
   final knownPrice = report.items.every((i) => i.unitPrice > 0);
@@ -603,6 +940,7 @@ Future<Uint8List> _buildReportPdf(OrderProductionReport report) {
             style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14),
           ),
           if (report.clientName.isNotEmpty) pw.Text(report.clientName),
+          if (report.poNumber.isNotEmpty) pw.Text('PO: ${report.poNumber}'),
           for (final item in report.items)
             pw.Text(
               '${_fmtQty(item.quantity)} ${item.unitSymbol}  ${item.itemName}'
@@ -619,85 +957,118 @@ Future<Uint8List> _buildReportPdf(OrderProductionReport report) {
           item ??= report.items.isEmpty ? null : report.items.first;
           final orderQty = item?.quantity ?? 0;
 
-          content.add(sectionTitle(
-            report.runs.length > 1
-                ? 'MATERIALS — ${run.runName.isEmpty ? run.runId : run.runName}'
-                : 'MATERIALS',
-          ));
+          content.add(
+            sectionTitle(
+              report.runs.length > 1
+                  ? 'MATERIALS — ${run.runName.isEmpty ? run.runId : run.runName}'
+                  : 'MATERIALS',
+            ),
+          );
           for (final stage in run.stages) {
             if (stage.material.isEmpty) continue;
-            final qty = stage.allotted;
+            final qty = _pdfMaterialTotalQty(stage, orderQty);
             final perUnit =
-                (qty != null && orderQty > 0) ? qty / orderQty : null;
-            content.add(line(
-              label:
-                  'Stage ${stage.stageIndex + 1} - ${stage.name} — ${stage.material}',
-              qty: qty != null
-                  ? '${_fmtQty(qty)} ${stage.materialUnit}'
-                  : '____ ${stage.materialUnit}',
-              detail: perUnit != null
-                  ? '${_fmtQty(perUnit)} ${stage.materialUnit}/pc'
-                  : '',
-              rateUnit: '/${stage.materialUnit}',
-            ));
+                stage.quantityPerUnit ??
+                ((qty != null && orderQty > 0) ? qty / orderQty : null);
+            content.add(
+              line(
+                label:
+                    'Stage ${stage.stageIndex + 1} - ${stage.name} — ${stage.material}',
+                qty: qty != null
+                    ? '${_fmtQty(qty)} ${stage.materialUnit}'
+                    : '____ ${stage.materialUnit}',
+                detail: perUnit != null
+                    ? '${_fmtQty(perUnit)} ${stage.materialUnit}/${item?.unitSymbol ?? 'pc'}'
+                    : '',
+                rateUnit: '/${stage.materialUnit}',
+              ),
+            );
           }
           content.add(subtotal('Subtotal Materials'));
 
           content.add(sectionTitle('PROCESS'));
           for (final stage in run.stages) {
             if (stage.machine.isNotEmpty) {
-              content.add(line(
-                label: '${stage.machine} (${stage.name})',
-                qty: '${_fmtHours(stage.workedHours ?? stage.plannedHours)} hr',
-                rateUnit: '/hr',
-              ));
+              content.add(
+                line(
+                  label: '${stage.machine} (${stage.name})',
+                  qty:
+                      '${_fmtHours(stage.workedHours ?? stage.plannedHours)} hr',
+                  detail: _pdfMachineDetail(stage),
+                  rateUnit: '/hr',
+                ),
+              );
             }
             if (stage.dieId.isNotEmpty) {
-              content.add(line(
-                label: 'Die ${stage.dieId}',
-                qty:
-                    '${stage.output != null ? _fmtQty(stage.output!) : '____'} strk',
-                rateUnit: '/strk',
-              ));
+              final strokes = _pdfDieStrokeQty(stage);
+              content.add(
+                line(
+                  label:
+                      'Die ${stage.dieToolCode.isEmpty ? stage.dieId : stage.dieToolCode}',
+                  qty: '${strokes == null ? '____' : _fmtQty(strokes)} strk',
+                  detail: _pdfDieDetail(stage),
+                  rateUnit: '/strk',
+                ),
+              );
             }
           }
           content.add(line(label: 'Labor', qty: '____ hr', rateUnit: '/hr'));
+          content.add(
+            line(
+              label: 'Process Cost',
+              qty: '____',
+              detail: 'machine + labor + die',
+              rateUnit: '',
+            ),
+          );
           content.add(subtotal('Subtotal Process'));
 
           content.add(sectionTitle('WASTE'));
           for (final stage in run.stages) {
             final scrap = stage.scrap ?? 0;
             if (scrap <= 0) continue;
-            content.add(line(
-              label:
-                  '${stage.name} — ${stage.material.isEmpty ? 'scrap' : '${stage.material} scrap'}',
-              qty: '${_fmtQty(scrap)} ${stage.materialUnit}',
-              rateUnit: '/${stage.materialUnit}',
-            ));
+            content.add(
+              line(
+                label:
+                    '${stage.name} — ${stage.material.isEmpty ? 'scrap' : '${stage.material} scrap'}',
+                qty: '${_fmtQty(scrap)} ${stage.materialUnit}',
+                rateUnit: '/${stage.materialUnit}',
+              ),
+            );
           }
+          content.add(
+            line(
+              label: 'Waste Adjustment',
+              qty: '____',
+              detail: 'manual',
+              rateUnit: '',
+            ),
+          );
           content.add(subtotal('Subtotal Waste'));
         }
 
         content.add(pw.Divider());
         content.add(subtotal('GRAND TOTAL'));
         content.add(subtotal('COST PER UNIT (/ ${_fmtQty(totalQty)})'));
-        content.add(pw.Padding(
-          padding: const pw.EdgeInsets.only(top: 2),
-          child: pw.Row(
-            mainAxisAlignment: pw.MainAxisAlignment.end,
-            children: [
-              pw.Text(
-                'SELLING PRICE (from order):  ',
-                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-              ),
-              pw.Text(
-                knownPrice && sellingTotal > 0
-                    ? 'Rs.${_fmtQty(sellingTotal)}'
-                    : 'Rs.__________',
-              ),
-            ],
+        content.add(
+          pw.Padding(
+            padding: const pw.EdgeInsets.only(top: 2),
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.end,
+              children: [
+                pw.Text(
+                  'SELLING PRICE (from order):  ',
+                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                ),
+                pw.Text(
+                  knownPrice && sellingTotal > 0
+                      ? 'Rs.${_fmtQty(sellingTotal)}'
+                      : 'Rs.__________',
+                ),
+              ],
+            ),
           ),
-        ));
+        );
         content.add(subtotal('MARGIN PER UNIT'));
         content.add(subtotal('MARGIN %'));
         return content;

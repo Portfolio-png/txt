@@ -22,14 +22,17 @@ class ApiDieRepository implements DieRepository {
       toolCode: 'TL-890-A',
       photoUrls: const [
         'https://images.unsplash.com/photo-1590494165264-1ebe3602eb80?auto=format&fit=crop&q=80',
-        'https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&q=80'
+        'https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&q=80',
       ],
-      operationalNotes: 'Requires heavy lubrication on the guide pins. Watch out for scrap buildup on the left exit chute.',
+      operationalNotes:
+          'Requires heavy lubrication on the guide pins. Watch out for scrap buildup on the left exit chute.',
       compatibleMachineGroupIds: const [],
       storageLocation: 'Rack B, Shelf 3',
       numberOfCavities: 2,
       strokeCount: 45000,
       maxStrokes: 100000,
+      strokesPerPiece: 1,
+      setupMinutes: 15,
       physicalSpecs: const [
         CustomProperty(key: 'Weight', value: '1250 kg'),
         CustomProperty(key: 'Shut Height', value: '350 mm'),
@@ -45,17 +48,18 @@ class ApiDieRepository implements DieRepository {
       name: 'Haas CNC Cutter Head',
       toolCode: 'TL-102-B',
       photoUrls: const [
-        'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=80'
+        'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=80',
       ],
-      operationalNotes: 'Customer owned. Handle with care. Clean thoroughly before returning to storage.',
+      operationalNotes:
+          'Customer owned. Handle with care. Clean thoroughly before returning to storage.',
       compatibleMachineGroupIds: const [],
       storageLocation: 'Rack A, Shelf 1',
       numberOfCavities: 1,
       strokeCount: 98000,
       maxStrokes: 100000,
-      physicalSpecs: const [
-        CustomProperty(key: 'Weight', value: '2100 kg'),
-      ],
+      strokesPerPiece: 1,
+      setupMinutes: 25,
+      physicalSpecs: const [CustomProperty(key: 'Weight', value: '2100 kg')],
       status: DieStatus.needsRepair,
       ownership: DieOwnership.customerOwned,
       createdAt: DateTime.now().subtract(const Duration(days: 800)),
@@ -76,12 +80,16 @@ class ApiDieRepository implements DieRepository {
     final uri = Uri.parse('$baseUrl/api/dies');
     final response = await _client.get(uri);
     final payload = _decodeJsonObject(response.body);
-    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] != true) {
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
       throw Exception(payload['error'] as String? ?? 'Failed to fetch dies');
     }
 
     final list = payload['dies'] as List<dynamic>? ?? [];
-    return list.map((item) => _dieFromJson(item as Map<String, dynamic>)).toList();
+    return list
+        .map((item) => _dieFromJson(item as Map<String, dynamic>))
+        .toList();
   }
 
   @override
@@ -94,7 +102,9 @@ class ApiDieRepository implements DieRepository {
     final uri = Uri.parse('$baseUrl/api/dies/$id');
     final response = await _client.get(uri);
     final payload = _decodeJsonObject(response.body);
-    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] != true) {
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
       throw Exception(payload['error'] as String? ?? 'Failed to get die');
     }
 
@@ -129,7 +139,9 @@ class ApiDieRepository implements DieRepository {
       body: body,
     );
     final payload = _decodeJsonObject(response.body);
-    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] != true) {
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
       throw Exception(payload['error'] as String? ?? 'Failed to save die');
     }
     return _dieFromJson(payload['die'] as Map<String, dynamic>);
@@ -146,23 +158,30 @@ class ApiDieRepository implements DieRepository {
     final uri = Uri.parse('$baseUrl/api/dies/$id');
     final response = await _client.delete(uri);
     final payload = _decodeJsonObject(response.body);
-    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] != true) {
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
       throw Exception(payload['error'] as String? ?? 'Failed to delete die');
     }
   }
 
   @override
-  Future<DieAssetUploadIntent?> createAssetUploadIntent(DieAssetUploadIntentInput input) async {
+  Future<DieAssetUploadIntent?> createAssetUploadIntent(
+    DieAssetUploadIntentInput input,
+  ) async {
     if (useMockResponses) {
       await Future.delayed(const Duration(milliseconds: 300));
       return DieAssetUploadIntent(
         alreadyUploaded: true,
-        photoUrl: 'https://images.unsplash.com/photo-1590494165264-1ebe3602eb80?auto=format&fit=crop&q=80',
+        photoUrl:
+            'https://images.unsplash.com/photo-1590494165264-1ebe3602eb80?auto=format&fit=crop&q=80',
         upload: null,
       );
     }
-    
-    final uri = Uri.parse('$baseUrl/api/dies/${input.dieId}/assets/upload-intent');
+
+    final uri = Uri.parse(
+      '$baseUrl/api/dies/${input.dieId}/assets/upload-intent',
+    );
     final response = await _client.post(
       uri,
       headers: const {'Content-Type': 'application/json'},
@@ -174,15 +193,19 @@ class ApiDieRepository implements DieRepository {
         'isPrimary': input.isPrimary,
       }),
     );
-    
+
     final payload = _decodeJsonObject(response.body);
-    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] != true) {
-      throw Exception(payload['error'] as String? ?? 'Failed to create upload intent');
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw Exception(
+        payload['error'] as String? ?? 'Failed to create upload intent',
+      );
     }
-    
+
     final data = payload['intent'] as Map<String, dynamic>;
     final alreadyUploaded = data['alreadyUploaded'] as bool? ?? false;
-    
+
     DieAssetUploadTarget? uploadTarget;
     if (data['upload'] != null) {
       final uploadMap = data['upload'] as Map<String, dynamic>;
@@ -192,16 +215,18 @@ class ApiDieRepository implements DieRepository {
         objectKey: uploadMap['objectKey'] as String? ?? '',
         uploadUrl: Uri.parse(uploadMap['uploadUrl'] as String? ?? ''),
         headers: headersMap.map((k, v) => MapEntry(k, v.toString())),
-        expiresAt: uploadMap['expiresAt'] != null ? DateTime.tryParse(uploadMap['expiresAt'] as String) : null,
+        expiresAt: uploadMap['expiresAt'] != null
+            ? DateTime.tryParse(uploadMap['expiresAt'] as String)
+            : null,
       );
     }
-    
+
     String? finalUrl;
     if (alreadyUploaded && data['asset'] != null) {
       final assetMap = data['asset'] as Map<String, dynamic>;
       finalUrl = assetMap['readUrl'] as String?;
     }
-    
+
     return DieAssetUploadIntent(
       alreadyUploaded: alreadyUploaded,
       photoUrl: finalUrl,
@@ -215,8 +240,10 @@ class ApiDieRepository implements DieRepository {
       await Future.delayed(const Duration(milliseconds: 300));
       return 'https://images.unsplash.com/photo-1590494165264-1ebe3602eb80?auto=format&fit=crop&q=80';
     }
-    
-    final uri = Uri.parse('$baseUrl/api/dies/${input.dieId}/assets/upload-complete');
+
+    final uri = Uri.parse(
+      '$baseUrl/api/dies/${input.dieId}/assets/upload-complete',
+    );
     final response = await _client.post(
       uri,
       headers: const {'Content-Type': 'application/json'},
@@ -225,12 +252,16 @@ class ApiDieRepository implements DieRepository {
         'objectKey': input.objectKey,
       }),
     );
-    
+
     final payload = _decodeJsonObject(response.body);
-    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] != true) {
-      throw Exception(payload['error'] as String? ?? 'Failed to complete upload');
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw Exception(
+        payload['error'] as String? ?? 'Failed to complete upload',
+      );
     }
-    
+
     final asset = payload['asset'] as Map<String, dynamic>?;
     return asset?['readUrl'] as String?;
   }
@@ -310,7 +341,11 @@ class ApiDieRepository implements DieRepository {
       value: json['value'] as String? ?? '',
       type: _parsePropertyType(json['type'] as String? ?? 'text'),
       unitId: json['unitId'] as int?,
-      options: (json['options'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
+      options:
+          (json['options'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
     );
   }
 
@@ -324,38 +359,61 @@ class ApiDieRepository implements DieRepository {
     };
   }
 
+  double? _doubleFromJson(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+
   Die _dieFromJson(Map<String, dynamic> json) {
     return Die(
       id: json['id'] as String? ?? '',
-      name: json['name'] as String? ?? (json['producedPartNumbers'] as List<dynamic>?)?.join(', ') ?? '',
+      name:
+          json['name'] as String? ??
+          (json['producedPartNumbers'] as List<dynamic>?)?.join(', ') ??
+          '',
       toolCode: json['toolCode'] as String? ?? '',
       photoUrls: (json['photoUrls'] as List<dynamic>? ?? [])
           .map((e) => e as String)
           .toList(),
       operationalNotes: json['operationalNotes'] as String? ?? '',
-      compatibleMachineGroupIds: (json['compatibleMachineGroupIds'] as List<dynamic>? ?? [])
-          .map((e) => e as int)
-          .toList(),
+      compatibleMachineGroupIds:
+          (json['compatibleMachineGroupIds'] as List<dynamic>? ?? [])
+              .map((e) => e as int)
+              .toList(),
       storageLocation: json['storageLocation'] as String?,
       numberOfCavities: json['numberOfCavities'] as int?,
       strokeCount: json['strokeCount'] as int?,
       maxStrokes: json['maxStrokes'] as int?,
+      strokesPerPiece: _doubleFromJson(json['strokesPerPiece']),
+      setupMinutes: _doubleFromJson(json['setupMinutes']),
+      reportNotes: json['reportNotes'] as String? ?? '',
       physicalSpecs: () {
         final raw = json['physicalSpecs'];
         if (raw is List) {
-          return raw.map((p) => _propertyFromJson(p as Map<String, dynamic>)).toList();
+          return raw
+              .map((p) => _propertyFromJson(p as Map<String, dynamic>))
+              .toList();
         } else if (raw is Map) {
-          return raw.entries.map((e) => CustomProperty(
-            key: e.key.toString(),
-            value: e.value.toString(),
-          )).toList();
+          return raw.entries
+              .map(
+                (e) => CustomProperty(
+                  key: e.key.toString(),
+                  value: e.value.toString(),
+                ),
+              )
+              .toList();
         }
         return const <CustomProperty>[];
       }(),
       status: _parseStatus(json['status'] as String? ?? ''),
       ownership: _parseOwnership(json['ownership'] as String? ?? ''),
-      createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt'] as String) ?? DateTime.now() : DateTime.now(),
-      updatedAt: json['updatedAt'] != null ? DateTime.tryParse(json['updatedAt'] as String) ?? DateTime.now() : DateTime.now(),
+      createdAt: json['createdAt'] != null
+          ? DateTime.tryParse(json['createdAt'] as String) ?? DateTime.now()
+          : DateTime.now(),
+      updatedAt: json['updatedAt'] != null
+          ? DateTime.tryParse(json['updatedAt'] as String) ?? DateTime.now()
+          : DateTime.now(),
     );
   }
 
@@ -364,7 +422,11 @@ class ApiDieRepository implements DieRepository {
       'id': d.id,
       'name': d.name,
       'toolCode': d.toolCode,
-      'producedPartNumbers': d.name.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList(),
+      'producedPartNumbers': d.name
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList(),
       'photoUrls': d.photoUrls,
       'operationalNotes': d.operationalNotes,
       'compatibleMachineGroupIds': d.compatibleMachineGroupIds,
@@ -372,6 +434,9 @@ class ApiDieRepository implements DieRepository {
       'numberOfCavities': d.numberOfCavities,
       'strokeCount': d.strokeCount,
       'maxStrokes': d.maxStrokes,
+      'strokesPerPiece': d.strokesPerPiece,
+      'setupMinutes': d.setupMinutes,
+      'reportNotes': d.reportNotes,
       'physicalSpecs': d.physicalSpecs.map(_propertyToJson).toList(),
       'status': _statusToString(d.status),
       'ownership': _ownershipToString(d.ownership),

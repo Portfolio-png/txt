@@ -66,7 +66,10 @@ class _MutableProperty {
   List<String> options;
 }
 
-Future<Machine?> showMachineFormDialog(BuildContext context, {Machine? machine}) {
+Future<Machine?> showMachineFormDialog(
+  BuildContext context, {
+  Machine? machine,
+}) {
   return showErpFormDialog<Machine?>(
     context,
     maxWidth: 1380,
@@ -86,15 +89,20 @@ class MachineEditorSheet extends StatefulWidget {
 
 class _MachineEditorSheetState extends State<MachineEditorSheet> {
   final _formKey = GlobalKey<FormState>();
-  
+
   late final TextEditingController _nameController;
   late final TextEditingController _assetIdController;
   late final TextEditingController _photoUrlController;
-  
+  late final TextEditingController _reportOutputPerHourController;
+  late final TextEditingController _setupMinutesController;
+  late final TextEditingController _laborCountController;
+  late final TextEditingController _powerKwController;
+  late final TextEditingController _reportNotesController;
+
   int? _groupId;
   MachineStatus _status = MachineStatus.active;
   bool _isUploading = false;
-  
+
   // Custom properties as a list of mutable objects for editing
   final List<_MutableProperty> _customProperties = [];
 
@@ -105,71 +113,101 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.machine?.name ?? '');
-    _assetIdController = TextEditingController(text: widget.machine?.assetId ?? '');
-    _photoUrlController = TextEditingController(text: widget.machine?.primaryPhotoUrl ?? '');
-    
+    _assetIdController = TextEditingController(
+      text: widget.machine?.assetId ?? '',
+    );
+    _photoUrlController = TextEditingController(
+      text: widget.machine?.primaryPhotoUrl ?? '',
+    );
+    _reportOutputPerHourController = TextEditingController(
+      text: _formatOptionalNumber(widget.machine?.reportOutputPerHour),
+    );
+    _setupMinutesController = TextEditingController(
+      text: _formatOptionalNumber(widget.machine?.setupMinutes),
+    );
+    _laborCountController = TextEditingController(
+      text: _formatOptionalNumber(widget.machine?.laborCount),
+    );
+    _powerKwController = TextEditingController(
+      text: _formatOptionalNumber(widget.machine?.powerKw),
+    );
+    _reportNotesController = TextEditingController(
+      text: widget.machine?.reportNotes ?? '',
+    );
+
     _groupId = widget.machine?.groupId;
-    
+
     if (widget.machine != null) {
       _status = widget.machine!.status;
-      
+
       // Convert legacy fields to custom fields dynamically to preserve data
       if (widget.machine!.makeModel.trim().isNotEmpty) {
-        _customProperties.add(_MutableProperty(
-          key: 'Make/Model',
-          value: widget.machine!.makeModel.trim(),
-        ));
+        _customProperties.add(
+          _MutableProperty(
+            key: 'Make/Model',
+            value: widget.machine!.makeModel.trim(),
+          ),
+        );
       }
       if (widget.machine!.serialNumber.trim().isNotEmpty) {
-        _customProperties.add(_MutableProperty(
-          key: 'Serial Number',
-          value: widget.machine!.serialNumber.trim(),
-        ));
+        _customProperties.add(
+          _MutableProperty(
+            key: 'Serial Number',
+            value: widget.machine!.serialNumber.trim(),
+          ),
+        );
       }
-      if (widget.machine!.location != null && widget.machine!.location!.trim().isNotEmpty) {
-        _customProperties.add(_MutableProperty(
-          key: 'Location',
-          value: widget.machine!.location!.trim(),
-        ));
+      if (widget.machine!.location != null &&
+          widget.machine!.location!.trim().isNotEmpty) {
+        _customProperties.add(
+          _MutableProperty(
+            key: 'Location',
+            value: widget.machine!.location!.trim(),
+          ),
+        );
       }
       if (widget.machine!.installationDate != null) {
         final d = widget.machine!.installationDate!;
-        final dateStr = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-        _customProperties.add(_MutableProperty(
-          key: 'Installation Date',
-          value: dateStr,
-        ));
+        final dateStr =
+            '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+        _customProperties.add(
+          _MutableProperty(key: 'Installation Date', value: dateStr),
+        );
       }
 
       for (var prop in widget.machine!.customProperties) {
-        _customProperties.add(_MutableProperty(
-          key: prop.key,
-          value: prop.value,
-          type: prop.type,
-          unitId: prop.unitId,
-          options: List.from(prop.options),
-        ));
+        _customProperties.add(
+          _MutableProperty(
+            key: prop.key,
+            value: prop.value,
+            type: prop.type,
+            unitId: prop.unitId,
+            options: List.from(prop.options),
+          ),
+        );
       }
 
       for (var cap in widget.machine!.capabilities) {
-        _capabilities.add(_MutableCapability(
-          id: cap.id,
-          processType: cap.processType,
-          inputMaterialBarcode: cap.inputMaterialBarcode,
-          inputMaterialName: cap.inputMaterialName,
-          inputUnitId: cap.inputUnitId,
-          outputMaterialBarcode: cap.outputMaterialBarcode,
-          outputMaterialName: cap.outputMaterialName,
-          outputUnitId: cap.outputUnitId,
-          dieId: cap.dieId,
-          dieName: cap.dieName,
-          expectedYieldRatio: cap.expectedYieldRatio,
-          conversionFactor: cap.conversionFactor,
-          durationPerUnit: cap.durationPerUnit,
-        ));
+        _capabilities.add(
+          _MutableCapability(
+            id: cap.id,
+            processType: cap.processType,
+            inputMaterialBarcode: cap.inputMaterialBarcode,
+            inputMaterialName: cap.inputMaterialName,
+            inputUnitId: cap.inputUnitId,
+            outputMaterialBarcode: cap.outputMaterialBarcode,
+            outputMaterialName: cap.outputMaterialName,
+            outputUnitId: cap.outputUnitId,
+            dieId: cap.dieId,
+            dieName: cap.dieName,
+            expectedYieldRatio: cap.expectedYieldRatio,
+            conversionFactor: cap.conversionFactor,
+            durationPerUnit: cap.durationPerUnit,
+          ),
+        );
       }
     }
-    
+
     _photoUrlController.addListener(() {
       if (mounted) setState(() {});
     });
@@ -180,7 +218,24 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
     _nameController.dispose();
     _assetIdController.dispose();
     _photoUrlController.dispose();
+    _reportOutputPerHourController.dispose();
+    _setupMinutesController.dispose();
+    _laborCountController.dispose();
+    _powerKwController.dispose();
+    _reportNotesController.dispose();
     super.dispose();
+  }
+
+  String _formatOptionalNumber(double? value) {
+    if (value == null) return '';
+    if (value == value.roundToDouble()) return value.toInt().toString();
+    return value.toString();
+  }
+
+  double? _optionalDouble(TextEditingController controller) {
+    final value = controller.text.trim();
+    if (value.isEmpty) return null;
+    return double.tryParse(value);
   }
 
   void _addCustomProperty() {
@@ -231,7 +286,9 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
           .where((e) => e.isNotEmpty)
           .toList();
       if (_customProperties[index].value.isNotEmpty &&
-          !_customProperties[index].options.contains(_customProperties[index].value)) {
+          !_customProperties[index].options.contains(
+            _customProperties[index].value,
+          )) {
         _customProperties[index].value = '';
       }
     });
@@ -252,11 +309,15 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
   String _contentTypeFromExtension(String fileName) {
     final ext = fileName.split('.').last.toLowerCase();
     switch (ext) {
-      case 'png': return 'image/png';
+      case 'png':
+        return 'image/png';
       case 'jpg':
-      case 'jpeg': return 'image/jpeg';
-      case 'webp': return 'image/webp';
-      default: return 'application/octet-stream';
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'webp':
+        return 'image/webp';
+      default:
+        return 'application/octet-stream';
     }
   }
 
@@ -265,7 +326,8 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
     // So we can only upload photos for existing machines right now,
     // or we'd have to pre-generate an ID.
     // Let's use the ID if we have it, else generate one that will be used for creation.
-    final machineId = widget.machine?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
+    final machineId =
+        widget.machine?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
 
     final file = await openFile(
       acceptedTypeGroups: const [
@@ -289,7 +351,7 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
           file.mimeType ??
           lookupMimeType(file.name, headerBytes: bytes.take(24).toList()) ??
           _contentTypeFromExtension(file.name);
-      
+
       final intent = await provider.createAssetUploadIntent(
         MachineAssetUploadIntentInput(
           machineId: machineId,
@@ -305,9 +367,7 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
       }
       if (intent.alreadyUploaded && intent.photoUrl != null) {
         _photoUrlController.text = intent.photoUrl!;
-        showAppSnack(
-          const SnackBar(content: Text('Image already uploaded.')),
-        );
+        showAppSnack(const SnackBar(content: Text('Image already uploaded.')));
         return;
       }
       final upload = intent.upload;
@@ -337,13 +397,9 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
         throw Exception(provider.errorMessage ?? 'Failed to finish upload.');
       }
       _photoUrlController.text = finalUrl;
-      showAppSnack(
-        const SnackBar(content: Text('Machine photo uploaded.')),
-      );
+      showAppSnack(const SnackBar(content: Text('Machine photo uploaded.')));
     } catch (error) {
-      showAppSnack(
-        SnackBar(content: Text('Image upload failed: $error')),
-      );
+      showAppSnack(SnackBar(content: Text('Image upload failed: $error')));
     } finally {
       if (mounted) {
         setState(() => _isUploading = false);
@@ -355,13 +411,18 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
   Widget build(BuildContext context) {
     final title = widget.machine == null ? 'Create Machine' : 'Edit Machine';
     final isLoading = context.watch<MachinesProvider>().isLoading;
-    final groups = context.watch<GroupsProvider>().machineGroups.where((g) => !g.isArchived).toList(growable: false);
+    final groups = context
+        .watch<GroupsProvider>()
+        .machineGroups
+        .where((g) => !g.isArchived)
+        .toList(growable: false);
 
     return Form(
       key: _formKey,
       child: ErpFormScaffold(
         title: title,
-        subtitle: 'Define machine identity, properties, and current operational status.',
+        subtitle:
+            'Define machine identity, properties, and current operational status.',
         body: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -372,7 +433,8 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                 children: [
                   ErpDialogSectionCard(
                     title: 'Identity & Details',
-                    subtitle: 'Core information for identifying the machine on the floor.',
+                    subtitle:
+                        'Core information for identifying the machine on the floor.',
                     child: Column(
                       children: [
                         Row(
@@ -400,16 +462,21 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                           children: [
                             Expanded(
                               child: SearchableSelectField<int>(
-                                tapTargetKey: const ValueKey<String>('machine-group-field'),
+                                tapTargetKey: const ValueKey<String>(
+                                  'machine-group-field',
+                                ),
                                 value: _groupId,
                                 decoration: InputDecoration(
                                   labelText: 'Machine Group',
-                                  helperText: 'Categorization from Group Master',
+                                  helperText:
+                                      'Categorization from Group Master',
                                   suffixIcon: TextButton(
                                     onPressed: () {
                                       Navigator.of(context).pop();
                                       try {
-                                        context.read<AppNavigation>().select('configurator_machine_groups');
+                                        context.read<AppNavigation>().select(
+                                          'configurator_machine_groups',
+                                        );
                                       } catch (_) {}
                                     },
                                     child: const Text('Manage'),
@@ -417,13 +484,19 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                                 ),
                                 dialogTitle: 'Machine Group',
                                 searchHintText: 'Search machine groups',
-                                options: groups.map((g) => SearchableSelectOption<int>(
-                                  value: g.id,
-                                  label: g.name,
-                                  highlightColor: const Color(0xFFE4C17C),
-                                )).toList(),
-                                onChanged: (val) => setState(() => _groupId = val),
-                                validator: (val) => val == null ? 'Required' : null,
+                                options: groups
+                                    .map(
+                                      (g) => SearchableSelectOption<int>(
+                                        value: g.id,
+                                        label: g.name,
+                                        highlightColor: const Color(0xFFE4C17C),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (val) =>
+                                    setState(() => _groupId = val),
+                                validator: (val) =>
+                                    val == null ? 'Required' : null,
                                 onCreateOption: (query) async {
                                   final created = await GroupsScreen.openEditor(
                                     context,
@@ -433,19 +506,24 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                                   if (!context.mounted || created == null) {
                                     return null;
                                   }
-                                  await context.read<GroupsProvider>().refresh();
+                                  await context
+                                      .read<GroupsProvider>()
+                                      .refresh();
                                   return SearchableSelectOption<int>(
                                     value: created.id,
                                     label: created.name,
                                   );
                                 },
-                                createOptionLabelBuilder: (query) => 'Create group "$query"',
+                                createOptionLabelBuilder: (query) =>
+                                    'Create group "$query"',
                               ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: SearchableSelectField<MachineStatus>(
-                                tapTargetKey: const ValueKey<String>('machine-status-field'),
+                                tapTargetKey: const ValueKey<String>(
+                                  'machine-status-field',
+                                ),
                                 value: _status,
                                 decoration: const InputDecoration(
                                   labelText: 'Status',
@@ -459,7 +537,9 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                                   );
                                 }).toList(),
                                 onChanged: (val) {
-                                  if (val != null) setState(() => _status = val);
+                                  if (val != null) {
+                                    setState(() => _status = val);
+                                  }
                                 },
                               ),
                             ),
@@ -468,20 +548,90 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 16),
+                  ErpDialogSectionCard(
+                    title: 'Report Defaults',
+                    subtitle:
+                        'Non-financial assumptions used to print order reports.',
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _MachineTextField(
+                                controller: _reportOutputPerHourController,
+                                label: 'Output / Hour',
+                                helper: 'Typical production speed',
+                                required: false,
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _MachineTextField(
+                                controller: _setupMinutesController,
+                                label: 'Setup Minutes',
+                                helper: 'Default setup time',
+                                required: false,
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _MachineTextField(
+                                controller: _laborCountController,
+                                label: 'Labor Count',
+                                helper: 'Operators normally required',
+                                required: false,
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _MachineTextField(
+                                controller: _powerKwController,
+                                label: 'Power kW',
+                                helper: 'Connected load or estimate',
+                                required: false,
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        _MachineTextField(
+                          controller: _reportNotesController,
+                          label: 'Report Notes',
+                          helper: 'Setup notes printed with formulas',
+                          required: false,
+                        ),
+                      ],
+                    ),
+                  ),
                   if (!ConfigService.instance.disableMachineCustomFields) ...[
                     const SizedBox(height: 16),
                     ErpDialogSectionCard(
                       title: 'Custom Fields',
-                      subtitle: 'Define any text field name and its corresponding value.',
+                      subtitle:
+                          'Define any text field name and its corresponding value.',
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           if (_customProperties.isEmpty)
                             Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 8.0),
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 8.0,
+                              ),
                               child: Text(
                                 'No custom fields added yet.',
-                                style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 13,
+                                ),
                               ),
                             )
                           else
@@ -501,46 +651,88 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                                             initialValue: prop.key,
                                             decoration: InputDecoration(
                                               labelText: 'Field Name',
-                                              hintText: 'e.g. Tonnage, Location, etc.',
+                                              hintText:
+                                                  'e.g. Tonnage, Location, etc.',
                                               filled: true,
-                                              fillColor: const Color(0xFFF9FAFB),
+                                              fillColor: const Color(
+                                                0xFFF9FAFB,
+                                              ),
                                               border: OutlineInputBorder(
-                                                borderRadius: BorderRadius.circular(8),
-                                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                                borderSide: const BorderSide(
+                                                  color: Color(0xFFD7DBE7),
+                                                ),
                                               ),
                                               enabledBorder: OutlineInputBorder(
-                                                borderRadius: BorderRadius.circular(8),
-                                                borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                                borderSide: const BorderSide(
+                                                  color: Color(0xFFD7DBE7),
+                                                ),
                                               ),
                                             ),
-                                            onChanged: (val) => _updateCustomPropertyKey(index, val),
+                                            onChanged: (val) =>
+                                                _updateCustomPropertyKey(
+                                                  index,
+                                                  val,
+                                                ),
                                           ),
                                         ),
                                         const SizedBox(width: 12),
                                         Expanded(
                                           flex: 3,
-                                          child: SearchableSelectField<CustomPropertyType>(
-                                            tapTargetKey: ValueKey<String>('machine-custom-property-type-$index'),
-                                            value: prop.type,
-                                            decoration: const InputDecoration(
-                                              labelText: 'Field Type',
-                                              filled: true,
-                                              fillColor: Color(0xFFF9FAFB),
-                                            ),
-                                            dialogTitle: 'Field Type',
-                                            options: const [
-                                              SearchableSelectOption(value: CustomPropertyType.text, label: 'Text'),
-                                              SearchableSelectOption(value: CustomPropertyType.numeric, label: 'Numeric'),
-                                              SearchableSelectOption(value: CustomPropertyType.dropdown, label: 'Dropdown'),
-                                            ],
-                                            onChanged: (val) {
-                                              if (val != null) _updateCustomPropertyType(index, val);
-                                            },
-                                          ),
+                                          child:
+                                              SearchableSelectField<
+                                                CustomPropertyType
+                                              >(
+                                                tapTargetKey: ValueKey<String>(
+                                                  'machine-custom-property-type-$index',
+                                                ),
+                                                value: prop.type,
+                                                decoration:
+                                                    const InputDecoration(
+                                                      labelText: 'Field Type',
+                                                      filled: true,
+                                                      fillColor: Color(
+                                                        0xFFF9FAFB,
+                                                      ),
+                                                    ),
+                                                dialogTitle: 'Field Type',
+                                                options: const [
+                                                  SearchableSelectOption(
+                                                    value:
+                                                        CustomPropertyType.text,
+                                                    label: 'Text',
+                                                  ),
+                                                  SearchableSelectOption(
+                                                    value: CustomPropertyType
+                                                        .numeric,
+                                                    label: 'Numeric',
+                                                  ),
+                                                  SearchableSelectOption(
+                                                    value: CustomPropertyType
+                                                        .dropdown,
+                                                    label: 'Dropdown',
+                                                  ),
+                                                ],
+                                                onChanged: (val) {
+                                                  if (val != null) {
+                                                    _updateCustomPropertyType(
+                                                      index,
+                                                      val,
+                                                    );
+                                                  }
+                                                },
+                                              ),
                                         ),
                                         IconButton(
-                                          icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                                          onPressed: () => _removeCustomProperty(index),
+                                          icon: const Icon(
+                                            Icons.delete_outline,
+                                            color: Colors.redAccent,
+                                          ),
+                                          onPressed: () =>
+                                              _removeCustomProperty(index),
                                         ),
                                       ],
                                     ),
@@ -555,29 +747,50 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                                                 labelText: 'Value',
                                                 hintText: 'Enter text value...',
                                                 filled: true,
-                                                fillColor: const Color(0xFFF9FAFB),
+                                                fillColor: const Color(
+                                                  0xFFF9FAFB,
+                                                ),
                                                 border: OutlineInputBorder(
-                                                  borderRadius: BorderRadius.circular(8),
-                                                  borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                  borderSide: const BorderSide(
+                                                    color: Color(0xFFD7DBE7),
+                                                  ),
                                                 ),
-                                                enabledBorder: OutlineInputBorder(
-                                                  borderRadius: BorderRadius.circular(8),
-                                                  borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
-                                                ),
+                                                enabledBorder:
+                                                    OutlineInputBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            8,
+                                                          ),
+                                                      borderSide:
+                                                          const BorderSide(
+                                                            color: Color(
+                                                              0xFFD7DBE7,
+                                                            ),
+                                                          ),
+                                                    ),
                                               ),
-                                              onChanged: (val) => _updateCustomPropertyValue(index, val),
+                                              onChanged: (val) =>
+                                                  _updateCustomPropertyValue(
+                                                    index,
+                                                    val,
+                                                  ),
                                             ),
                                           ),
                                           const SizedBox(width: 48),
                                         ],
                                       )
-                                    else if (prop.type == CustomPropertyType.numeric)
+                                    else if (prop.type ==
+                                        CustomPropertyType.numeric)
                                       Row(
                                         children: [
                                           Expanded(
                                             flex: 2,
                                             child: SearchableSelectField<int?>(
-                                              tapTargetKey: ValueKey<String>('machine-custom-property-unit-$index'),
+                                              tapTargetKey: ValueKey<String>(
+                                                'machine-custom-property-unit-$index',
+                                              ),
                                               value: prop.unitId,
                                               decoration: const InputDecoration(
                                                 labelText: 'Unit (Optional)',
@@ -586,15 +799,26 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                                               ),
                                               dialogTitle: 'Select Unit',
                                               options: [
-                                                const SearchableSelectOption<int?>(value: null, label: 'None'),
-                                                ...context.watch<UnitsProvider>().activeUnits.map((u) {
-                                                  return SearchableSelectOption<int?>(
-                                                    value: u.id,
-                                                    label: u.symbol,
-                                                  );
-                                                }),
+                                                const SearchableSelectOption<
+                                                  int?
+                                                >(value: null, label: 'None'),
+                                                ...context
+                                                    .watch<UnitsProvider>()
+                                                    .activeUnits
+                                                    .map((u) {
+                                                      return SearchableSelectOption<
+                                                        int?
+                                                      >(
+                                                        value: u.id,
+                                                        label: u.symbol,
+                                                      );
+                                                    }),
                                               ],
-                                              onChanged: (val) => _updateCustomPropertyUnit(index, val),
+                                              onChanged: (val) =>
+                                                  _updateCustomPropertyUnit(
+                                                    index,
+                                                    val,
+                                                  ),
                                             ),
                                           ),
                                           const SizedBox(width: 12),
@@ -602,57 +826,106 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                                             flex: 3,
                                             child: TextFormField(
                                               initialValue: prop.value,
-                                              keyboardType: TextInputType.number,
+                                              keyboardType:
+                                                  TextInputType.number,
                                               decoration: InputDecoration(
                                                 labelText: 'Value',
-                                                hintText: 'Enter numeric value...',
+                                                hintText:
+                                                    'Enter numeric value...',
                                                 filled: true,
-                                                fillColor: const Color(0xFFF9FAFB),
+                                                fillColor: const Color(
+                                                  0xFFF9FAFB,
+                                                ),
                                                 border: OutlineInputBorder(
-                                                  borderRadius: BorderRadius.circular(8),
-                                                  borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                  borderSide: const BorderSide(
+                                                    color: Color(0xFFD7DBE7),
+                                                  ),
                                                 ),
-                                                enabledBorder: OutlineInputBorder(
-                                                  borderRadius: BorderRadius.circular(8),
-                                                  borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
-                                                ),
+                                                enabledBorder:
+                                                    OutlineInputBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            8,
+                                                          ),
+                                                      borderSide:
+                                                          const BorderSide(
+                                                            color: Color(
+                                                              0xFFD7DBE7,
+                                                            ),
+                                                          ),
+                                                    ),
                                               ),
-                                              onChanged: (val) => _updateCustomPropertyValue(index, val),
+                                              onChanged: (val) =>
+                                                  _updateCustomPropertyValue(
+                                                    index,
+                                                    val,
+                                                  ),
                                             ),
                                           ),
                                           const SizedBox(width: 48),
                                         ],
                                       )
-                                    else if (prop.type == CustomPropertyType.dropdown)
+                                    else if (prop.type ==
+                                        CustomPropertyType.dropdown)
                                       Row(
                                         children: [
                                           Expanded(
                                             flex: 2,
                                             child: TextFormField(
-                                              initialValue: prop.options.join(', '),
+                                              initialValue: prop.options.join(
+                                                ', ',
+                                              ),
                                               decoration: InputDecoration(
                                                 labelText: 'Dropdown Options',
-                                                hintText: 'A, B, C (comma separated)',
+                                                hintText:
+                                                    'A, B, C (comma separated)',
                                                 filled: true,
-                                                fillColor: const Color(0xFFF9FAFB),
+                                                fillColor: const Color(
+                                                  0xFFF9FAFB,
+                                                ),
                                                 border: OutlineInputBorder(
-                                                  borderRadius: BorderRadius.circular(8),
-                                                  borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                  borderSide: const BorderSide(
+                                                    color: Color(0xFFD7DBE7),
+                                                  ),
                                                 ),
-                                                enabledBorder: OutlineInputBorder(
-                                                  borderRadius: BorderRadius.circular(8),
-                                                  borderSide: const BorderSide(color: Color(0xFFD7DBE7)),
-                                                ),
+                                                enabledBorder:
+                                                    OutlineInputBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            8,
+                                                          ),
+                                                      borderSide:
+                                                          const BorderSide(
+                                                            color: Color(
+                                                              0xFFD7DBE7,
+                                                            ),
+                                                          ),
+                                                    ),
                                               ),
-                                              onChanged: (val) => _updateCustomPropertyOptions(index, val),
+                                              onChanged: (val) =>
+                                                  _updateCustomPropertyOptions(
+                                                    index,
+                                                    val,
+                                                  ),
                                             ),
                                           ),
                                           const SizedBox(width: 12),
                                           Expanded(
                                             flex: 3,
                                             child: SearchableSelectField<String>(
-                                              tapTargetKey: ValueKey<String>('machine-custom-property-value-$index'),
-                                              value: prop.options.contains(prop.value) ? prop.value : null,
+                                              tapTargetKey: ValueKey<String>(
+                                                'machine-custom-property-value-$index',
+                                              ),
+                                              value:
+                                                  prop.options.contains(
+                                                    prop.value,
+                                                  )
+                                                  ? prop.value
+                                                  : null,
                                               decoration: const InputDecoration(
                                                 labelText: 'Select Value',
                                                 filled: true,
@@ -660,13 +933,17 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                                               ),
                                               dialogTitle: 'Select Value',
                                               options: prop.options.map((opt) {
-                                                return SearchableSelectOption<String>(
-                                                  value: opt,
-                                                  label: opt,
-                                                );
+                                                return SearchableSelectOption<
+                                                  String
+                                                >(value: opt, label: opt);
                                               }).toList(),
                                               onChanged: (val) {
-                                                if (val != null) _updateCustomPropertyValue(index, val);
+                                                if (val != null) {
+                                                  _updateCustomPropertyValue(
+                                                    index,
+                                                    val,
+                                                  );
+                                                }
                                               },
                                             ),
                                           ),
@@ -776,10 +1053,19 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Capability #${index + 1}',
-                            style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF475569))),
+                        Text(
+                          'Capability #${index + 1}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF475569),
+                          ),
+                        ),
                         IconButton(
-                          icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            color: Colors.redAccent,
+                            size: 20,
+                          ),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
                           onPressed: () => _removeCapability(index),
@@ -798,10 +1084,21 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                               hintText: 'e.g. Slitting, Punching',
                               filled: true,
                               fillColor: const Color(0xFFF9FAFB),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFD7DBE7))),
-                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFD7DBE7))),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFFD7DBE7),
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFFD7DBE7),
+                                ),
+                              ),
                             ),
-                            onChanged: (val) => setState(() => cap.processType = val),
+                            onChanged: (val) =>
+                                setState(() => cap.processType = val),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -814,10 +1111,21 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                               hintText: 'e.g. Die-A',
                               filled: true,
                               fillColor: const Color(0xFFF9FAFB),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFD7DBE7))),
-                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFD7DBE7))),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFFD7DBE7),
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFFD7DBE7),
+                                ),
+                              ),
                             ),
-                            onChanged: (val) => setState(() => cap.dieName = val),
+                            onChanged: (val) =>
+                                setState(() => cap.dieName = val),
                           ),
                         ),
                       ],
@@ -832,78 +1140,163 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('INPUT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF64748B))),
+                              const Text(
+                                'INPUT',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                  color: Color(0xFF64748B),
+                                ),
+                              ),
                               const SizedBox(height: 8),
                               SearchableSelectField<String>(
-                                tapTargetKey: ValueKey<String>('machine-cap-input-mat-$index'),
-                                value: cap.inputMaterialBarcode.isEmpty ? null : cap.inputMaterialBarcode,
-                                decoration: const InputDecoration(labelText: 'Material', filled: true, fillColor: Color(0xFFF9FAFB)),
+                                tapTargetKey: ValueKey<String>(
+                                  'machine-cap-input-mat-$index',
+                                ),
+                                value: cap.inputMaterialBarcode.isEmpty
+                                    ? null
+                                    : cap.inputMaterialBarcode,
+                                decoration: const InputDecoration(
+                                  labelText: 'Material',
+                                  filled: true,
+                                  fillColor: Color(0xFFF9FAFB),
+                                ),
                                 dialogTitle: 'Select Input Material',
-                                options: context.watch<InventoryProvider>().materials.map((m) {
-                                  return SearchableSelectOption<String>(value: m.barcode, label: '${m.name} (${m.barcode})');
-                                }).toList(),
+                                options: context
+                                    .watch<InventoryProvider>()
+                                    .materials
+                                    .map((m) {
+                                      return SearchableSelectOption<String>(
+                                        value: m.barcode,
+                                        label: '${m.name} (${m.barcode})',
+                                      );
+                                    })
+                                    .toList(),
                                 onChanged: (val) {
                                   if (val != null) {
                                     setState(() {
                                       cap.inputMaterialBarcode = val;
-                                      cap.inputMaterialName = context.read<InventoryProvider>().materials.firstWhere((m) => m.barcode == val).name;
+                                      cap.inputMaterialName = context
+                                          .read<InventoryProvider>()
+                                          .materials
+                                          .firstWhere((m) => m.barcode == val)
+                                          .name;
                                     });
                                   }
                                 },
                               ),
                               const SizedBox(height: 8),
                               SearchableSelectField<int>(
-                                tapTargetKey: ValueKey<String>('machine-cap-input-unit-$index'),
+                                tapTargetKey: ValueKey<String>(
+                                  'machine-cap-input-unit-$index',
+                                ),
                                 value: cap.inputUnitId,
-                                decoration: const InputDecoration(labelText: 'Unit', filled: true, fillColor: Color(0xFFF9FAFB)),
+                                decoration: const InputDecoration(
+                                  labelText: 'Unit',
+                                  filled: true,
+                                  fillColor: Color(0xFFF9FAFB),
+                                ),
                                 dialogTitle: 'Select Input Unit',
-                                options: context.watch<UnitsProvider>().activeUnits.map((u) {
-                                  return SearchableSelectOption<int>(value: u.id, label: u.symbol);
-                                }).toList(),
+                                options: context
+                                    .watch<UnitsProvider>()
+                                    .activeUnits
+                                    .map((u) {
+                                      return SearchableSelectOption<int>(
+                                        value: u.id,
+                                        label: u.symbol,
+                                      );
+                                    })
+                                    .toList(),
                                 onChanged: (val) {
-                                  if (val != null) setState(() => cap.inputUnitId = val);
+                                  if (val != null) {
+                                    setState(() => cap.inputUnitId = val);
+                                  }
                                 },
                               ),
                             ],
                           ),
                         ),
                         const SizedBox(width: 16),
-                        const Icon(Icons.arrow_forward, color: Color(0xFF94A3B8)),
+                        const Icon(
+                          Icons.arrow_forward,
+                          color: Color(0xFF94A3B8),
+                        ),
                         const SizedBox(width: 16),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('OUTPUT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF64748B))),
+                              const Text(
+                                'OUTPUT',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                  color: Color(0xFF64748B),
+                                ),
+                              ),
                               const SizedBox(height: 8),
                               SearchableSelectField<String>(
-                                tapTargetKey: ValueKey<String>('machine-cap-output-mat-$index'),
-                                value: cap.outputMaterialBarcode.isEmpty ? null : cap.outputMaterialBarcode,
-                                decoration: const InputDecoration(labelText: 'Material', filled: true, fillColor: Color(0xFFF9FAFB)),
+                                tapTargetKey: ValueKey<String>(
+                                  'machine-cap-output-mat-$index',
+                                ),
+                                value: cap.outputMaterialBarcode.isEmpty
+                                    ? null
+                                    : cap.outputMaterialBarcode,
+                                decoration: const InputDecoration(
+                                  labelText: 'Material',
+                                  filled: true,
+                                  fillColor: Color(0xFFF9FAFB),
+                                ),
                                 dialogTitle: 'Select Output Material',
-                                options: context.watch<InventoryProvider>().materials.map((m) {
-                                  return SearchableSelectOption<String>(value: m.barcode, label: '${m.name} (${m.barcode})');
-                                }).toList(),
+                                options: context
+                                    .watch<InventoryProvider>()
+                                    .materials
+                                    .map((m) {
+                                      return SearchableSelectOption<String>(
+                                        value: m.barcode,
+                                        label: '${m.name} (${m.barcode})',
+                                      );
+                                    })
+                                    .toList(),
                                 onChanged: (val) {
                                   if (val != null) {
                                     setState(() {
                                       cap.outputMaterialBarcode = val;
-                                      cap.outputMaterialName = context.read<InventoryProvider>().materials.firstWhere((m) => m.barcode == val).name;
+                                      cap.outputMaterialName = context
+                                          .read<InventoryProvider>()
+                                          .materials
+                                          .firstWhere((m) => m.barcode == val)
+                                          .name;
                                     });
                                   }
                                 },
                               ),
                               const SizedBox(height: 8),
                               SearchableSelectField<int>(
-                                tapTargetKey: ValueKey<String>('machine-cap-output-unit-$index'),
+                                tapTargetKey: ValueKey<String>(
+                                  'machine-cap-output-unit-$index',
+                                ),
                                 value: cap.outputUnitId,
-                                decoration: const InputDecoration(labelText: 'Unit', filled: true, fillColor: Color(0xFFF9FAFB)),
+                                decoration: const InputDecoration(
+                                  labelText: 'Unit',
+                                  filled: true,
+                                  fillColor: Color(0xFFF9FAFB),
+                                ),
                                 dialogTitle: 'Select Output Unit',
-                                options: context.watch<UnitsProvider>().activeUnits.map((u) {
-                                  return SearchableSelectOption<int>(value: u.id, label: u.symbol);
-                                }).toList(),
+                                options: context
+                                    .watch<UnitsProvider>()
+                                    .activeUnits
+                                    .map((u) {
+                                      return SearchableSelectOption<int>(
+                                        value: u.id,
+                                        label: u.symbol,
+                                      );
+                                    })
+                                    .toList(),
                                 onChanged: (val) {
-                                  if (val != null) setState(() => cap.outputUnitId = val);
+                                  if (val != null) {
+                                    setState(() => cap.outputUnitId = val);
+                                  }
                                 },
                               ),
                             ],
@@ -926,10 +1319,23 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                               hintText: 'e.g. 0.95',
                               filled: true,
                               fillColor: const Color(0xFFF9FAFB),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFD7DBE7))),
-                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFD7DBE7))),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFFD7DBE7),
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFFD7DBE7),
+                                ),
+                              ),
                             ),
-                            onChanged: (val) => setState(() => cap.expectedYieldRatio = double.tryParse(val)),
+                            onChanged: (val) => setState(
+                              () =>
+                                  cap.expectedYieldRatio = double.tryParse(val),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -942,10 +1348,22 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                               hintText: 'e.g. 150',
                               filled: true,
                               fillColor: const Color(0xFFF9FAFB),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFD7DBE7))),
-                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFD7DBE7))),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFFD7DBE7),
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFFD7DBE7),
+                                ),
+                              ),
                             ),
-                            onChanged: (val) => setState(() => cap.conversionFactor = double.tryParse(val)),
+                            onChanged: (val) => setState(
+                              () => cap.conversionFactor = double.tryParse(val),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -958,10 +1376,22 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
                               hintText: 'e.g. 0.05',
                               filled: true,
                               fillColor: const Color(0xFFF9FAFB),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFD7DBE7))),
-                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFD7DBE7))),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFFD7DBE7),
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFFD7DBE7),
+                                ),
+                              ),
                             ),
-                            onChanged: (val) => setState(() => cap.durationPerUnit = double.tryParse(val)),
+                            onChanged: (val) => setState(
+                              () => cap.durationPerUnit = double.tryParse(val),
+                            ),
                           ),
                         ),
                       ],
@@ -984,41 +1414,59 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
 
   void _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     // Construct Custom Properties list
     final customPropsList = <CustomProperty>[];
     for (var prop in _customProperties) {
       if (prop.key.trim().isNotEmpty) {
-        customPropsList.add(CustomProperty(
-          key: prop.key.trim(), 
-          value: prop.value.trim(),
-          type: prop.type,
-          unitId: prop.unitId,
-          options: prop.options,
-        ));
+        customPropsList.add(
+          CustomProperty(
+            key: prop.key.trim(),
+            value: prop.value.trim(),
+            type: prop.type,
+            unitId: prop.unitId,
+            options: prop.options,
+          ),
+        );
       }
     }
 
     final capabilitiesList = <MachineCapability>[];
     for (var cap in _capabilities) {
-      if (cap.processType.trim().isNotEmpty && cap.inputUnitId != null && cap.outputUnitId != null) {
-        capabilitiesList.add(MachineCapability(
-          id: cap.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
-          processType: cap.processType.trim(),
-          inputMaterialBarcode: cap.inputMaterialBarcode.trim(),
-          inputMaterialName: cap.inputMaterialName.trim(),
-          inputUnitId: cap.inputUnitId!,
-          inputUnitLabel: context.read<UnitsProvider>().findById(cap.inputUnitId)?.symbol ?? '',
-          outputMaterialBarcode: cap.outputMaterialBarcode.trim(),
-          outputMaterialName: cap.outputMaterialName.trim(),
-          outputUnitId: cap.outputUnitId!,
-          outputUnitLabel: context.read<UnitsProvider>().findById(cap.outputUnitId)?.symbol ?? '',
-          dieId: cap.dieId?.trim().isEmpty ?? true ? null : cap.dieId?.trim(),
-          dieName: cap.dieName?.trim().isEmpty ?? true ? null : cap.dieName?.trim(),
-          expectedYieldRatio: cap.expectedYieldRatio,
-          conversionFactor: cap.conversionFactor,
-          durationPerUnit: cap.durationPerUnit,
-        ));
+      if (cap.processType.trim().isNotEmpty &&
+          cap.inputUnitId != null &&
+          cap.outputUnitId != null) {
+        capabilitiesList.add(
+          MachineCapability(
+            id: cap.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+            processType: cap.processType.trim(),
+            inputMaterialBarcode: cap.inputMaterialBarcode.trim(),
+            inputMaterialName: cap.inputMaterialName.trim(),
+            inputUnitId: cap.inputUnitId!,
+            inputUnitLabel:
+                context
+                    .read<UnitsProvider>()
+                    .findById(cap.inputUnitId)
+                    ?.symbol ??
+                '',
+            outputMaterialBarcode: cap.outputMaterialBarcode.trim(),
+            outputMaterialName: cap.outputMaterialName.trim(),
+            outputUnitId: cap.outputUnitId!,
+            outputUnitLabel:
+                context
+                    .read<UnitsProvider>()
+                    .findById(cap.outputUnitId)
+                    ?.symbol ??
+                '',
+            dieId: cap.dieId?.trim().isEmpty ?? true ? null : cap.dieId?.trim(),
+            dieName: cap.dieName?.trim().isEmpty ?? true
+                ? null
+                : cap.dieName?.trim(),
+            expectedYieldRatio: cap.expectedYieldRatio,
+            conversionFactor: cap.conversionFactor,
+            durationPerUnit: cap.durationPerUnit,
+          ),
+        );
       }
     }
 
@@ -1026,7 +1474,7 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
     // If _photoUrlController has text and we generated an ID, let's just use a timestamp if we didn't store it.
     // Wait, the id generation should be consistent.
     final id = widget.machine?.id ?? '';
-    
+
     final newMachine = Machine(
       id: id,
       name: _nameController.text.trim(),
@@ -1038,28 +1486,36 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
       location: null,
       installationDate: null,
       status: _status,
+      reportOutputPerHour: _optionalDouble(_reportOutputPerHourController),
+      setupMinutes: _optionalDouble(_setupMinutesController),
+      laborCount: _optionalDouble(_laborCountController),
+      powerKw: _optionalDouble(_powerKwController),
+      reportNotes: _reportNotesController.text.trim(),
       customProperties: customPropsList,
       capabilities: capabilitiesList,
       createdAt: widget.machine?.createdAt ?? DateTime.now(),
       updatedAt: DateTime.now(),
     );
-    
+
     Machine? savedMachine;
     if (widget.machine == null) {
-      savedMachine = await context.read<MachinesProvider>().createMachine(newMachine);
+      savedMachine = await context.read<MachinesProvider>().createMachine(
+        newMachine,
+      );
     } else {
-      savedMachine = await context.read<MachinesProvider>().updateMachine(newMachine);
+      savedMachine = await context.read<MachinesProvider>().updateMachine(
+        newMachine,
+      );
     }
-    
+
     if (savedMachine == null && mounted) {
-      final error = context.read<MachinesProvider>().errorMessage ?? 'Failed to save machine';
-      showAppSnack(SnackBar(
-        content: Text(error),
-        backgroundColor: Colors.red,
-      ));
+      final error =
+          context.read<MachinesProvider>().errorMessage ??
+          'Failed to save machine';
+      showAppSnack(SnackBar(content: Text(error), backgroundColor: Colors.red));
       return;
     }
-    
+
     if (mounted) {
       showAppToast(
         context,
@@ -1101,12 +1557,19 @@ class _MachineEditorSheetState extends State<MachineEditorSheet> {
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
-        border: Border.all(color: const Color(0xFFE2E8F0), style: BorderStyle.solid),
+        border: Border.all(
+          color: const Color(0xFFE2E8F0),
+          style: BorderStyle.solid,
+        ),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         children: [
-          const Icon(Icons.cloud_upload_outlined, size: 48, color: Color(0xFF94A3B8)),
+          const Icon(
+            Icons.cloud_upload_outlined,
+            size: 48,
+            color: Color(0xFF94A3B8),
+          ),
           const SizedBox(height: 12),
           const Text('Upload Photo'),
           const SizedBox(height: 8),
@@ -1128,17 +1591,20 @@ class _MachineTextField extends StatelessWidget {
     required this.label,
     required this.helper,
     this.required = true,
+    this.keyboardType,
   });
 
   final TextEditingController controller;
   final String label;
   final String helper;
   final bool required;
+  final TextInputType? keyboardType;
 
   @override
   Widget build(BuildContext context) {
     return TextFormField(
       controller: controller,
+      keyboardType: keyboardType,
       decoration: InputDecoration(
         labelText: label,
         helperText: helper,

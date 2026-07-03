@@ -18,7 +18,7 @@ class CustomProperty {
   final CustomPropertyType type;
   final int? unitId;
   final List<String> options;
-  
+
   CustomProperty copyWith({
     String? key,
     String? value,
@@ -50,6 +50,11 @@ class Machine {
     this.location,
     this.installationDate,
     required this.status,
+    this.reportOutputPerHour,
+    this.setupMinutes,
+    this.laborCount,
+    this.powerKw,
+    this.reportNotes = '',
     this.customProperties = const [],
     this.capabilities = const [],
     required this.createdAt,
@@ -66,6 +71,11 @@ class Machine {
   final String? location;
   final DateTime? installationDate;
   final MachineStatus status;
+  final double? reportOutputPerHour;
+  final double? setupMinutes;
+  final double? laborCount;
+  final double? powerKw;
+  final String reportNotes;
   final List<CustomProperty> customProperties;
   final List<MachineCapability> capabilities;
   final DateTime createdAt;
@@ -82,6 +92,11 @@ class Machine {
     Object? location = _absent,
     DateTime? installationDate,
     MachineStatus? status,
+    Object? reportOutputPerHour = _absent,
+    Object? setupMinutes = _absent,
+    Object? laborCount = _absent,
+    Object? powerKw = _absent,
+    String? reportNotes,
     List<CustomProperty>? customProperties,
     List<MachineCapability>? capabilities,
     DateTime? createdAt,
@@ -98,6 +113,17 @@ class Machine {
       location: location == _absent ? this.location : location as String?,
       installationDate: installationDate ?? this.installationDate,
       status: status ?? this.status,
+      reportOutputPerHour: reportOutputPerHour == _absent
+          ? this.reportOutputPerHour
+          : reportOutputPerHour as double?,
+      setupMinutes: setupMinutes == _absent
+          ? this.setupMinutes
+          : setupMinutes as double?,
+      laborCount: laborCount == _absent
+          ? this.laborCount
+          : laborCount as double?,
+      powerKw: powerKw == _absent ? this.powerKw : powerKw as double?,
+      reportNotes: reportNotes ?? this.reportNotes,
       customProperties: customProperties ?? this.customProperties,
       capabilities: capabilities ?? this.capabilities,
       createdAt: createdAt ?? this.createdAt,

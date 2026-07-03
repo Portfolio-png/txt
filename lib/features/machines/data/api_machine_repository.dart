@@ -21,13 +21,18 @@ class ApiMachineRepository implements MachineRepository {
       id: 'm1',
       name: 'Amada CNC Press Brake',
       assetId: 'MAC-1001',
-      primaryPhotoUrl: 'https://images.unsplash.com/photo-1565439390237-db561c2ba24e?auto=format&fit=crop&q=80',
+      primaryPhotoUrl:
+          'https://images.unsplash.com/photo-1565439390237-db561c2ba24e?auto=format&fit=crop&q=80',
       groupId: null,
       makeModel: 'Amada HDS-8025NT',
       serialNumber: 'AMD-909283',
       location: 'Press Shop A',
       installationDate: DateTime(2022, 5, 10),
       status: MachineStatus.active,
+      reportOutputPerHour: 450,
+      setupMinutes: 20,
+      laborCount: 1,
+      powerKw: 7.5,
       customProperties: const [
         CustomProperty(key: 'Tonnage', value: '80T'),
         CustomProperty(key: 'Bed Length', value: '2500mm'),
@@ -39,13 +44,18 @@ class ApiMachineRepository implements MachineRepository {
       id: 'm2',
       name: 'Haas VF-2SS CNC Mill',
       assetId: 'MAC-1002',
-      primaryPhotoUrl: 'https://images.unsplash.com/photo-1610484557978-56961cf3d623?auto=format&fit=crop&q=80',
+      primaryPhotoUrl:
+          'https://images.unsplash.com/photo-1610484557978-56961cf3d623?auto=format&fit=crop&q=80',
       groupId: null,
       makeModel: 'Haas VF-2SS',
       serialNumber: 'HSS-10020',
       location: 'CNC Line 2',
       installationDate: DateTime(2023, 1, 15),
       status: MachineStatus.maintenance,
+      reportOutputPerHour: 120,
+      setupMinutes: 35,
+      laborCount: 1,
+      powerKw: 11,
       customProperties: const [
         CustomProperty(key: 'Spindle Speed', value: '12000 RPM'),
         CustomProperty(key: 'Axis', value: '3-Axis'),
@@ -68,12 +78,18 @@ class ApiMachineRepository implements MachineRepository {
     final uri = Uri.parse('$baseUrl/api/machines');
     final response = await _client.get(uri);
     final payload = _decodeJsonObject(response.body);
-    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] != true) {
-      throw Exception(payload['error'] as String? ?? 'Failed to fetch machines');
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw Exception(
+        payload['error'] as String? ?? 'Failed to fetch machines',
+      );
     }
 
     final list = payload['machines'] as List<dynamic>? ?? [];
-    return list.map((item) => _machineFromJson(item as Map<String, dynamic>)).toList();
+    return list
+        .map((item) => _machineFromJson(item as Map<String, dynamic>))
+        .toList();
   }
 
   @override
@@ -86,7 +102,9 @@ class ApiMachineRepository implements MachineRepository {
     final uri = Uri.parse('$baseUrl/api/machines/$id');
     final response = await _client.get(uri);
     final payload = _decodeJsonObject(response.body);
-    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] != true) {
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
       throw Exception(payload['error'] as String? ?? 'Failed to get machine');
     }
 
@@ -124,10 +142,12 @@ class ApiMachineRepository implements MachineRepository {
       body: body,
     );
     final payload = _decodeJsonObject(response.body);
-    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] != true) {
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
       throw Exception(payload['error'] as String? ?? 'Failed to save machine');
     }
-    
+
     return _machineFromJson(payload['machine'] as Map<String, dynamic>);
   }
 
@@ -142,23 +162,32 @@ class ApiMachineRepository implements MachineRepository {
     final uri = Uri.parse('$baseUrl/api/machines/$id');
     final response = await _client.delete(uri);
     final payload = _decodeJsonObject(response.body);
-    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] != true) {
-      throw Exception(payload['error'] as String? ?? 'Failed to delete machine');
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw Exception(
+        payload['error'] as String? ?? 'Failed to delete machine',
+      );
     }
   }
 
   @override
-  Future<MachineAssetUploadIntent?> createAssetUploadIntent(MachineAssetUploadIntentInput input) async {
+  Future<MachineAssetUploadIntent?> createAssetUploadIntent(
+    MachineAssetUploadIntentInput input,
+  ) async {
     if (useMockResponses) {
       await Future.delayed(const Duration(milliseconds: 300));
       return MachineAssetUploadIntent(
         alreadyUploaded: true,
-        photoUrl: 'https://images.unsplash.com/photo-1590494165264-1ebe3602eb80?auto=format&fit=crop&q=80',
+        photoUrl:
+            'https://images.unsplash.com/photo-1590494165264-1ebe3602eb80?auto=format&fit=crop&q=80',
         upload: null,
       );
     }
-    
-    final uri = Uri.parse('$baseUrl/api/machines/${input.machineId}/assets/upload-intent');
+
+    final uri = Uri.parse(
+      '$baseUrl/api/machines/${input.machineId}/assets/upload-intent',
+    );
     final response = await _client.post(
       uri,
       headers: const {'Content-Type': 'application/json'},
@@ -170,15 +199,19 @@ class ApiMachineRepository implements MachineRepository {
         'isPrimary': input.isPrimary,
       }),
     );
-    
+
     final payload = _decodeJsonObject(response.body);
-    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] != true) {
-      throw Exception(payload['error'] as String? ?? 'Failed to create upload intent');
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw Exception(
+        payload['error'] as String? ?? 'Failed to create upload intent',
+      );
     }
-    
+
     final data = payload['intent'] as Map<String, dynamic>;
     final alreadyUploaded = data['alreadyUploaded'] as bool? ?? false;
-    
+
     MachineAssetUploadTarget? uploadTarget;
     if (data['upload'] != null) {
       final uploadMap = data['upload'] as Map<String, dynamic>;
@@ -188,16 +221,18 @@ class ApiMachineRepository implements MachineRepository {
         objectKey: uploadMap['objectKey'] as String? ?? '',
         uploadUrl: Uri.parse(uploadMap['uploadUrl'] as String? ?? ''),
         headers: headersMap.map((k, v) => MapEntry(k, v.toString())),
-        expiresAt: uploadMap['expiresAt'] != null ? DateTime.tryParse(uploadMap['expiresAt'] as String) : null,
+        expiresAt: uploadMap['expiresAt'] != null
+            ? DateTime.tryParse(uploadMap['expiresAt'] as String)
+            : null,
       );
     }
-    
+
     String? finalUrl;
     if (alreadyUploaded && data['asset'] != null) {
       final assetMap = data['asset'] as Map<String, dynamic>;
       finalUrl = assetMap['readUrl'] as String?;
     }
-    
+
     return MachineAssetUploadIntent(
       alreadyUploaded: alreadyUploaded,
       photoUrl: finalUrl,
@@ -206,13 +241,17 @@ class ApiMachineRepository implements MachineRepository {
   }
 
   @override
-  Future<String?> completeAssetUpload(CompleteMachineAssetUploadInput input) async {
+  Future<String?> completeAssetUpload(
+    CompleteMachineAssetUploadInput input,
+  ) async {
     if (useMockResponses) {
       await Future.delayed(const Duration(milliseconds: 300));
       return 'https://images.unsplash.com/photo-1590494165264-1ebe3602eb80?auto=format&fit=crop&q=80';
     }
-    
-    final uri = Uri.parse('$baseUrl/api/machines/${input.machineId}/assets/upload-complete');
+
+    final uri = Uri.parse(
+      '$baseUrl/api/machines/${input.machineId}/assets/upload-complete',
+    );
     final response = await _client.post(
       uri,
       headers: const {'Content-Type': 'application/json'},
@@ -221,12 +260,16 @@ class ApiMachineRepository implements MachineRepository {
         'objectKey': input.objectKey,
       }),
     );
-    
+
     final payload = _decodeJsonObject(response.body);
-    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] != true) {
-      throw Exception(payload['error'] as String? ?? 'Failed to complete upload');
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw Exception(
+        payload['error'] as String? ?? 'Failed to complete upload',
+      );
     }
-    
+
     final asset = payload['asset'] as Map<String, dynamic>?;
     return asset?['readUrl'] as String?;
   }
@@ -288,7 +331,11 @@ class ApiMachineRepository implements MachineRepository {
       value: json['value'] as String? ?? '',
       type: _parsePropertyType(json['type'] as String? ?? 'text'),
       unitId: json['unitId'] as int?,
-      options: (json['options'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
+      options:
+          (json['options'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
     );
   }
 
@@ -302,6 +349,12 @@ class ApiMachineRepository implements MachineRepository {
     };
   }
 
+  double? _doubleFromJson(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+
   Machine _machineFromJson(Map<String, dynamic> json) {
     return Machine(
       id: json['id'] as String? ?? '',
@@ -312,18 +365,29 @@ class ApiMachineRepository implements MachineRepository {
       makeModel: json['makeModel'] as String? ?? '',
       serialNumber: json['serialNumber'] as String? ?? '',
       location: json['location'] as String?,
-      installationDate: json['installationDate'] != null ? DateTime.tryParse(json['installationDate'] as String) : null,
+      installationDate: json['installationDate'] != null
+          ? DateTime.tryParse(json['installationDate'] as String)
+          : null,
       status: _parseStatus(json['status'] as String? ?? ''),
+      reportOutputPerHour: _doubleFromJson(json['reportOutputPerHour']),
+      setupMinutes: _doubleFromJson(json['setupMinutes']),
+      laborCount: _doubleFromJson(json['laborCount']),
+      powerKw: _doubleFromJson(json['powerKw']),
+      reportNotes: json['reportNotes'] as String? ?? '',
       customProperties: ConfigService.instance.disableMachineCustomFields
           ? const []
           : (json['customProperties'] as List<dynamic>? ?? [])
-              .map((p) => _propertyFromJson(p as Map<String, dynamic>))
-              .toList(),
+                .map((p) => _propertyFromJson(p as Map<String, dynamic>))
+                .toList(),
       capabilities: (json['capabilities'] as List<dynamic>? ?? [])
           .map((c) => MachineCapability.fromJson(c as Map<String, dynamic>))
           .toList(),
-      createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt'] as String) ?? DateTime.now() : DateTime.now(),
-      updatedAt: json['updatedAt'] != null ? DateTime.tryParse(json['updatedAt'] as String) ?? DateTime.now() : DateTime.now(),
+      createdAt: json['createdAt'] != null
+          ? DateTime.tryParse(json['createdAt'] as String) ?? DateTime.now()
+          : DateTime.now(),
+      updatedAt: json['updatedAt'] != null
+          ? DateTime.tryParse(json['updatedAt'] as String) ?? DateTime.now()
+          : DateTime.now(),
     );
   }
 
@@ -339,6 +403,11 @@ class ApiMachineRepository implements MachineRepository {
       'location': m.location,
       'installationDate': m.installationDate?.toIso8601String(),
       'status': _statusToString(m.status),
+      'reportOutputPerHour': m.reportOutputPerHour,
+      'setupMinutes': m.setupMinutes,
+      'laborCount': m.laborCount,
+      'powerKw': m.powerKw,
+      'reportNotes': m.reportNotes,
       'customProperties': ConfigService.instance.disableMachineCustomFields
           ? const []
           : m.customProperties.map(_propertyToJson).toList(),
