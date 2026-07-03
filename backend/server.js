@@ -18795,7 +18795,12 @@ app.get('/api/search', requirePermission('inventory.read'), async (req, res) => 
       return res.json({ success: true, results: [] });
     }
     
-    const likeQ = `%${q}%`;
+    const tokens = q.split(/\s+/).filter(Boolean);
+    const itemConditions = tokens.map(() => '(i.name LIKE ? OR i.display_name LIKE ? OR i.alias LIKE ? OR v.variation_path_label LIKE ?)').join(' AND ');
+    const itemParams = tokens.flatMap(t => {
+      const l = `%${t}%`;
+      return [l, l, l, l];
+    });
     
     const items = await all(
       `SELECT i.id, i.name, i.display_name, i.quantity as base_quantity, g.name as category_name,
@@ -18804,17 +18809,23 @@ app.get('/api/search', requirePermission('inventory.read'), async (req, res) => 
        FROM items i
        LEFT JOIN groups g ON i.group_id = g.id
        LEFT JOIN variation_stock v ON i.id = v.item_id
-       WHERE i.name LIKE ? OR i.display_name LIKE ? OR i.alias LIKE ? OR v.variation_path_label LIKE ?
+       WHERE ${itemConditions || '1=1'}
        LIMIT 50`,
-      [likeQ, likeQ, likeQ, likeQ]
+      itemParams
     );
     
+    const materialConditions = tokens.map(() => '(name LIKE ? OR barcode LIKE ? OR supplier LIKE ?)').join(' AND ');
+    const materialParams = tokens.flatMap(t => {
+      const l = `%${t}%`;
+      return [l, l, l];
+    });
+
     const materials = await all(
       `SELECT barcode, name, type, on_hand_qty 
        FROM materials 
-       WHERE name LIKE ? OR barcode LIKE ? OR supplier LIKE ? 
+       WHERE ${materialConditions || '1=1'} 
        LIMIT 50`,
-      [likeQ, likeQ, likeQ]
+      materialParams
     );
 
     const clicks = await all(
@@ -18828,6 +18839,90 @@ app.get('/api/search', requirePermission('inventory.read'), async (req, res) => 
     for (const c of clicks) {
       clickMap[`${c.entity_type}_${c.entity_id}`] = c.click_count;
     }
+
+    // Fetch configurations for items
+    const itemConfigs = {};
+    const itemIds = [...new Set(items.map(i => i.id))];
+    if (itemIds.length > 0) {
+      const qs = itemIds.map(() => '?').join(',');
+      const props = await all(`SELECT item_id, property_key, display_name FROM item_property_schema WHERE item_id IN (${qs}) ORDER BY sort_order ASC`, itemIds);
+      const allNodes = await all(`SELECT id, item_id, parent_node_id, name, display_name FROM item_variation_nodes WHERE item_id IN (${qs}) AND is_archived = 0 ORDER BY position ASC`, itemIds);
+      const stockRows = await all(`SELECT item_id, custom_variation_values_json, variation_path_node_ids_json FROM variation_stock WHERE item_id IN (${qs})`, itemIds);
+      
+      const nodeMap = {};
+      allNodes.forEach(n => nodeMap[n.id] = n);
+      
+      const schemaMap = {};
+      props.forEach(p => {
+        if (!schemaMap[p.item_id]) schemaMap[p.item_id] = {};
+        schemaMap[p.item_id][p.property_key] = p.display_name;
+      });
+
+      const configsMap = {};
+      for (const id of itemIds) {
+        configsMap[id] = new Map();
+      }
+
+      // Initialize with base configs to preserve order
+      allNodes.forEach(n => {
+        if (!n.parent_node_id) {
+          configsMap[n.item_id].set(n.display_name || n.name, new Set());
+        }
+      });
+      props.forEach(p => {
+        configsMap[p.item_id].set(p.display_name, new Set());
+      });
+
+      for (const row of stockRows) {
+        const itemId = row.item_id;
+        
+        try {
+          const pathIds = row.variation_path_node_ids_json ? JSON.parse(row.variation_path_node_ids_json) : [];
+          for (const id of pathIds) {
+            let curr = nodeMap[id];
+            let value = curr ? (curr.display_name || curr.name) : null;
+            let rootName = null;
+            while (curr) {
+              if (!curr.parent_node_id) {
+                rootName = curr.display_name || curr.name;
+                break;
+              }
+              curr = nodeMap[curr.parent_node_id];
+            }
+            if (rootName && value) {
+              if (!configsMap[itemId].has(rootName)) configsMap[itemId].set(rootName, new Set());
+              configsMap[itemId].get(rootName).add(value);
+            }
+          }
+        } catch(e) {}
+        
+        try {
+          if (row.custom_variation_values_json) {
+            const customVals = typeof row.custom_variation_values_json === 'string' ? JSON.parse(row.custom_variation_values_json) : row.custom_variation_values_json;
+            if (customVals && typeof customVals === 'object' && !Array.isArray(customVals)) {
+              for (const [key, val] of Object.entries(customVals)) {
+                if (!val) continue;
+                const dispName = schemaMap[itemId]?.[key] || key;
+                if (!configsMap[itemId].has(dispName)) configsMap[itemId].set(dispName, new Set());
+                configsMap[itemId].get(dispName).add(String(val));
+              }
+            }
+          }
+        } catch(e) {}
+      }
+      
+      for (const itemId of itemIds) {
+        const arr = [];
+        for (const [k, vSet] of configsMap[itemId].entries()) {
+          arr.push({
+            name: k,
+            values: Array.from(vSet)
+          });
+        }
+        itemConfigs[itemId] = arr;
+      }
+    }
+
     const results = [
       ...items.map(item => {
         const id = String(item.id);
@@ -18849,6 +18944,7 @@ app.get('/api/search', requirePermission('inventory.read'), async (req, res) => 
             category: item.category_name || 'Item',
             baseItemId: id,
             variationId: item.variation_leaf_node_id,
+            configurations: itemConfigs[item.id] || [],
           },
           score: clickMap[`item_${id}`] || 0
         };

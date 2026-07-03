@@ -17,6 +17,8 @@ class ChallanExcelView extends StatefulWidget {
     this.filterVariationLeafNodeId,
     this.filterCustomVariationValues,
     required this.title,
+    this.isEmbedded = false,
+    this.onClose,
   });
 
   final List<DeliveryChallan>? challans;
@@ -24,6 +26,8 @@ class ChallanExcelView extends StatefulWidget {
   final int? filterVariationLeafNodeId;
   final Map<String, String>? filterCustomVariationValues;
   final String title;
+  final bool isEmbedded;
+  final VoidCallback? onClose;
 
   static Future<DeliveryChallan?> show(
     BuildContext context, {
@@ -56,6 +60,12 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
   String? _errorMessage;
   DeliveryChallan? _selectedPreviewChallan;
   bool _isPreviewOpen = false;
+
+  // Navigation State
+  final FocusNode _focusNode = FocusNode();
+  final ScrollController _scrollController = ScrollController();
+  List<_FlattenedRow> _currentRows = [];
+  int _selectedIndex = -1;
 
   bool _customVariationMatches(DeliveryChallanItem item) {
     final filterValues = widget.filterCustomVariationValues;
@@ -164,13 +174,58 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
       }
     }
 
-    return Dialog(
-      insetPadding: const EdgeInsets.all(24),
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    _buildRows(); // Rebuild rows dynamically on every build
+
+    final content = Focus(
+      focusNode: _focusNode,
+      autofocus: true,
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent) {
+          if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+            if (_currentRows.isNotEmpty) {
+              setState(() {
+                _selectedIndex = (_selectedIndex + 1).clamp(
+                  0,
+                  _currentRows.length - 1,
+                );
+                _selectedPreviewChallan = _currentRows[_selectedIndex].challan;
+                _isPreviewOpen = true;
+              });
+              _scrollToSelectedIndex();
+            }
+            return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+            if (_currentRows.isNotEmpty) {
+              setState(() {
+                _selectedIndex = (_selectedIndex - 1).clamp(
+                  0,
+                  _currentRows.length - 1,
+                );
+                _selectedPreviewChallan = _currentRows[_selectedIndex].challan;
+                _isPreviewOpen = true;
+              });
+              _scrollToSelectedIndex();
+            }
+            return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.enter) {
+            if (_selectedIndex >= 0 && _selectedIndex < _currentRows.length) {
+              setState(() {
+                _selectedPreviewChallan = _currentRows[_selectedIndex].challan;
+                _isPreviewOpen = !_isPreviewOpen;
+              });
+            }
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      },
       child: Container(
-        width: MediaQuery.of(context).size.width * 0.95,
-        height: MediaQuery.of(context).size.height * 0.95,
+        width: widget.isEmbedded
+            ? null
+            : MediaQuery.of(context).size.width * 0.95,
+        height: widget.isEmbedded
+            ? null
+            : MediaQuery.of(context).size.height * 0.95,
         color: SoftErpTheme.cardSurface,
         child: Column(
           children: [
@@ -181,12 +236,96 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
                   ? const Center(child: CircularProgressIndicator())
                   : _errorMessage != null
                   ? Center(child: Text(_errorMessage!))
-                  : _buildTableWithPreview(),
+                  : GestureDetector(
+                      onTap: () {
+                        if (!_focusNode.hasFocus) _focusNode.requestFocus();
+                      },
+                      child: _buildTableWithPreview(),
+                    ),
             ),
           ],
         ),
       ),
     );
+
+    if (widget.isEmbedded) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_focusNode.hasFocus) {
+          _focusNode.requestFocus();
+        }
+      });
+      return content;
+    }
+
+    return Dialog(
+      insetPadding: const EdgeInsets.all(24),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: content,
+    );
+  }
+
+  void _scrollToSelectedIndex() {
+    if (!_scrollController.hasClients || _selectedIndex < 0) return;
+    // Estimate row height (approx 48-72px, header is 56px)
+    final offset = _selectedIndex * 60.0;
+    _scrollController.animateTo(
+      offset,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  void _buildRows() {
+    final rows = <_FlattenedRow>[];
+    for (final challan in _fullChallans) {
+      if (challan.items.isEmpty) {
+        if (widget.filterItemId == null) {
+          rows.add(_FlattenedRow(challan: challan));
+        }
+      } else {
+        for (final item in challan.items) {
+          final itemMatch =
+              widget.filterItemId == null || item.itemId == widget.filterItemId;
+          final varMatch =
+              widget.filterVariationLeafNodeId == null ||
+              item.variationLeafNodeId == widget.filterVariationLeafNodeId;
+          final customMatch = _customVariationMatches(item);
+          if (itemMatch && varMatch && customMatch) {
+            rows.add(_FlattenedRow(challan: challan, item: item));
+          }
+        }
+      }
+    }
+
+    rows.sort((a, b) => a.challan.date.compareTo(b.challan.date));
+
+    final balanceQtyMap = <String, double>{};
+    final balanceWtMap = <String, double>{};
+    for (var row in rows) {
+      final key = row.item?.particulars ?? '-';
+      final qty = double.tryParse(row.item?.quantityPcs ?? '') ?? 0;
+      final wt = double.tryParse(row.item?.weight ?? '') ?? 0;
+
+      double bQty = balanceQtyMap[key] ?? 0.0;
+      double bWt = balanceWtMap[key] ?? 0.0;
+
+      if (row.challan.isReception) {
+        bQty += qty;
+        bWt += wt;
+      } else if (row.challan.isDelivery) {
+        bQty -= qty;
+        bWt -= wt;
+      }
+
+      balanceQtyMap[key] = bQty;
+      balanceWtMap[key] = bWt;
+
+      row.balanceQty = bQty;
+      row.balanceWt = bWt;
+    }
+
+    _currentRows = rows;
   }
 
   Widget _buildTableWithPreview() {
@@ -279,7 +418,7 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
           const SizedBox(width: 16),
           IconButton(
             icon: const Icon(Icons.close_rounded),
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: widget.onClose ?? () => Navigator.of(context).pop(),
             tooltip: 'Close',
           ),
         ],
@@ -292,63 +431,15 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
       return const Center(child: Text('No data available'));
     }
 
-    // Flatten challans into rows based on items
-    final rows = <_FlattenedRow>[];
-    for (final challan in _fullChallans) {
-      if (challan.items.isEmpty) {
-        if (widget.filterItemId == null) {
-          rows.add(_FlattenedRow(challan: challan));
-        }
-      } else {
-        for (final item in challan.items) {
-          final itemMatch =
-              widget.filterItemId == null || item.itemId == widget.filterItemId;
-          final varMatch =
-              widget.filterVariationLeafNodeId == null ||
-              item.variationLeafNodeId == widget.filterVariationLeafNodeId;
-          final customMatch = _customVariationMatches(item);
-          if (itemMatch && varMatch && customMatch) {
-            rows.add(_FlattenedRow(challan: challan, item: item));
-          }
-        }
-      }
-    }
-
-    rows.sort((a, b) => a.challan.date.compareTo(b.challan.date));
-
-    final balanceQtyMap = <String, double>{};
-    final balanceWtMap = <String, double>{};
-    for (var row in rows) {
-      final key = row.item?.particulars ?? '-';
-      final qty = double.tryParse(row.item?.quantityPcs ?? '') ?? 0;
-      final wt = double.tryParse(row.item?.weight ?? '') ?? 0;
-
-      double bQty = balanceQtyMap[key] ?? 0.0;
-      double bWt = balanceWtMap[key] ?? 0.0;
-
-      if (row.challan.isReception) {
-        bQty += qty;
-        bWt += wt;
-      } else if (row.challan.isDelivery) {
-        bQty -= qty;
-        bWt -= wt;
-      }
-
-      balanceQtyMap[key] = bQty;
-      balanceWtMap[key] = bWt;
-
-      row.balanceQty = bQty;
-      row.balanceWt = bWt;
-    }
-
-    final ledgerUnits = _resolveLedgerUnits(rows);
-    final showSecondary = rows.any(
+    final ledgerUnits = _resolveLedgerUnits(_currentRows);
+    final showSecondary = _currentRows.any(
       (row) => _hasLedgerValue(row.item?.quantityPcs),
     );
 
     return Align(
       alignment: Alignment.topLeft,
       child: SingleChildScrollView(
+        controller: _scrollController,
         scrollDirection: Axis.vertical,
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
@@ -401,7 +492,9 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
                 ),
               ),
             ],
-            rows: rows.map((row) {
+            rows: _currentRows.asMap().entries.map((entry) {
+              final index = entry.key;
+              final row = entry.value;
               final date = row.challan.date;
               final dateStr =
                   '${date.day.toString().padLeft(2, '0')} ${const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][date.month - 1]} ${date.year}';
@@ -419,10 +512,13 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
 
               return DataRow(
                 selected:
-                    _isPreviewOpen &&
-                    _selectedPreviewChallan?.id == row.challan.id,
+                    index == _selectedIndex ||
+                    (_isPreviewOpen &&
+                        _selectedPreviewChallan?.id == row.challan.id),
                 onSelectChanged: (_) {
+                  if (!_focusNode.hasFocus) _focusNode.requestFocus();
                   setState(() {
+                    _selectedIndex = index;
                     if (_isPreviewOpen &&
                         _selectedPreviewChallan?.id == row.challan.id) {
                       _isPreviewOpen = false;
@@ -785,8 +881,9 @@ class _ChallanPrintPreviewPanel extends StatelessWidget {
               padding: const EdgeInsets.all(18),
               child: Align(
                 alignment: Alignment.topCenter,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
+                child: FittedBox(
+                  fit: BoxFit.fitWidth,
+                  alignment: Alignment.topCenter,
                   child: DecoratedBox(
                     decoration: const BoxDecoration(
                       boxShadow: [
