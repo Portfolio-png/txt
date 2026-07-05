@@ -1,5 +1,7 @@
 require('dotenv').config();
 const express = require('express');
+const { Server } = require('socket.io');
+const { Bonjour } = require('bonjour-service');
 const {
   GetObjectCommand,
   HeadObjectCommand,
@@ -23902,11 +23904,56 @@ app.use((error, req, res, _next) => {
   });
 });
 
+let io = null;
+let bonjour = null;
+
 function startServer() {
   console.log(`Booting Paper backend on port ${PORT} using ${DB_PATH}`);
   return new Promise((resolve, reject) => {
     const server = app.listen(PORT, '0.0.0.0', async () => {
       console.log(`Paper backend listening on port ${PORT}`);
+      
+      // Initialize Bonjour mDNS
+      try {
+        bonjour = new Bonjour();
+        bonjour.publish({ name: 'Paper Local Server', type: 'paper_erp', protocol: 'tcp', port: PORT });
+        console.log('mDNS service _paper_erp._tcp published.');
+      } catch (e) {
+        console.warn('Failed to publish mDNS service:', e);
+      }
+
+      // Initialize Socket.io
+      io = new Server(server, {
+        cors: buildCorsOptions()
+      });
+      
+      io.on('connection', (socket) => {
+        console.log(`Socket connected: ${socket.id}`);
+        
+        // Mobile staging workflow events
+        socket.on('stage_item', (data) => {
+          console.log(`Item staged by mobile:`, data);
+          // Broadcast to Desktop apps
+          socket.broadcast.emit('item_staged', data);
+        });
+
+        socket.on('remove_staged_item', (data) => {
+          socket.broadcast.emit('item_removed', data);
+        });
+        
+        socket.on('lock_inventory', (data) => {
+          socket.broadcast.emit('inventory_locked', data);
+        });
+        
+        socket.on('challan_generated', (data) => {
+          socket.broadcast.emit('challan_generated_ok', data);
+        });
+
+        socket.on('disconnect', () => {
+          console.log(`Socket disconnected: ${socket.id}`);
+        });
+      });
+
       try {
         console.log('Running migrations...');
         await runMigrations();
