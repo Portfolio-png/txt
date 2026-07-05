@@ -130,7 +130,7 @@ jobs:
 
       - name: Build (Windows)
         if: matrix.target == 'windows'
-        run: flutter build windows --release ${{ steps.flags.outputs.dart_defines }}
+        run: flutter build windows --release --build-name=1.0.${{ github.run_number }} --build-number=${{ github.run_number }} ${{ steps.flags.outputs.dart_defines }}
 
       - name: Package (Windows)
         if: matrix.target == 'windows'
@@ -195,7 +195,7 @@ jobs:
 
       - name: Build (macOS)
         if: matrix.target == 'macos'
-        run: flutter build macos --release ${{ steps.flags.outputs.dart_defines }}
+        run: flutter build macos --release --build-name=1.0.${{ github.run_number }} --build-number=${{ github.run_number }} ${{ steps.flags.outputs.dart_defines }}
 
       - name: Package (macOS DMG)
         if: matrix.target == 'macos'
@@ -221,3 +221,11 @@ jobs:
         with:
           name: paper-macos-${{ steps.flags.outputs.label }}
           path: dist/*.dmg
+
+      - name: Publish to GitHub Releases
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "build-${{ github.sha }}"
+          name: "Build (${{ github.sha }})"
+          files: dist/*

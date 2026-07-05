@@ -62,9 +62,9 @@ jobs:
           fi
           
           if [ "$DEMO" == "true" ]; then
-            flutter build apk --release --dart-define=PAPER_DEMO_MODE=true
+            flutter build apk --release --dart-define=PAPER_DEMO_MODE=true --build-name=1.0.${{ github.run_number }} --build-number=${{ github.run_number }}
           else
-            flutter build apk --release
+            flutter build apk --release --build-name=1.0.${{ github.run_number }} --build-number=${{ github.run_number }}
           fi
 
       - name: Upload APK Artifact
@@ -72,6 +72,17 @@ jobs:
         with:
           name: app-release-apk
           path: |
+            apps/challan_mobile/build/app/outputs/flutter-apk/app-release.apk
+            apps/challans_only/build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Publish to GitHub Releases
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "build-${{ github.sha }}"
+          name: "Build (${{ github.sha }})"
+          files: |
             apps/challan_mobile/build/app/outputs/flutter-apk/app-release.apk
             apps/challans_only/build/app/outputs/flutter-apk/app-release.apk
             build/app/outputs/flutter-apk/app-release.apk
