@@ -1,0 +1,77 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_path:
+        description: "The path of the app to build"
+        required: true
+        default: "apps/challan_mobile"
+        type: choice
+        options:
+          - "apps/challan_mobile"
+          - "apps/challans_only"
+          - "."
+      demo_mode:
+        description: "Build with PAPER_DEMO_MODE=true (ignores login)"
+        required: false
+        default: true
+        type: boolean
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            cd ${{ inputs.app_path }}
+          else
+            cd apps/challan_mobile
+          fi
+          flutter pub get
+          cd -
+
+      - name: Build APK
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            cd ${{ inputs.app_path }}
+            DEMO="${{ inputs.demo_mode }}"
+          else
+            cd apps/challan_mobile
+            DEMO="true"
+          fi
+          
+          if [ "$DEMO" == "true" ]; then
+            flutter build apk --release --dart-define=PAPER_DEMO_MODE=true
+          else
+            flutter build apk --release
+          fi
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: |
+            apps/challan_mobile/build/app/outputs/flutter-apk/app-release.apk
+            apps/challans_only/build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/flutter-apk/app-release.apk
