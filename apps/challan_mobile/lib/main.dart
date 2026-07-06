@@ -215,6 +215,8 @@ class MyApp extends StatelessWidget {
   final String apiUrl;
   const MyApp({super.key, required this.apiUrl});
 
+  static const _isDemoMode = bool.fromEnvironment('PAPER_DEMO_MODE', defaultValue: false);
+
   AuthenticatedHttpClient _authClient(AuthProvider auth) {
     return AuthenticatedHttpClient(tokenResolver: () => auth.token);
   }
@@ -227,14 +229,16 @@ class MyApp extends StatelessWidget {
           create: (_) {
             final provider = AuthProvider(
               baseUrl: apiUrl,
-              demoMode: false,
+              demoMode: _isDemoMode,
             )..initialize();
             
-            // Auto-login for mobile dev
-            provider.login(
-              email: 'super@paper.local',
-              password: 'Paper@12345',
-            );
+            if (!_isDemoMode) {
+              // Auto-login for mobile dev if not in demo mode
+              provider.login(
+                email: 'super@paper.local',
+                password: 'Paper@12345',
+              );
+            }
             return provider;
           },
         ),
