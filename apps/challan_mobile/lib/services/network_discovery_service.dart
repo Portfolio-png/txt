@@ -15,7 +15,11 @@ class NetworkDiscoveryService extends ChangeNotifier {
   bool get hasTimedOut => _hasTimedOut;
 
   void manualConnect(String ipAddress) {
-    _discoveredUrl = 'http://$ipAddress:18080';
+    if (ipAddress.startsWith('http://') || ipAddress.startsWith('https://')) {
+      _discoveredUrl = ipAddress;
+    } else {
+      _discoveredUrl = 'http://$ipAddress:18080';
+    }
     _isSearching = false;
     notifyListeners();
   }

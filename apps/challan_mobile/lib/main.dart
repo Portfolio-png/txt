@@ -63,6 +63,7 @@ class BootstrapGate extends StatefulWidget {
 
 class _BootstrapGateState extends State<BootstrapGate> {
   final TextEditingController _ipController = TextEditingController();
+  static const _configuredApiUrl = String.fromEnvironment('PAPER_API_BASE_URL');
 
   @override
   void dispose() {
@@ -72,6 +73,10 @@ class _BootstrapGateState extends State<BootstrapGate> {
 
   @override
   Widget build(BuildContext context) {
+    if (_configuredApiUrl.isNotEmpty) {
+      return MyApp(apiUrl: _configuredApiUrl);
+    }
+
     final discovery = context.watch<NetworkDiscoveryService>();
     
     if (discovery.discoveredUrl == null) {
@@ -140,11 +145,11 @@ class _BootstrapGateState extends State<BootstrapGate> {
                     TextField(
                       controller: _ipController,
                       decoration: const InputDecoration(
-                        labelText: 'Owner Mac IP Address',
-                        hintText: 'e.g. 192.168.1.100',
+                        labelText: 'IP Address or AWS URL',
+                        hintText: 'e.g. 192.168.1.100 or https://api...',
                         border: OutlineInputBorder(),
                       ),
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType: TextInputType.url,
                     ),
                     const SizedBox(height: 16),
                     ElevatedButton(
@@ -173,11 +178,11 @@ class _BootstrapGateState extends State<BootstrapGate> {
                     TextField(
                       controller: _ipController,
                       decoration: const InputDecoration(
-                        labelText: 'Owner Mac IP Address',
-                        hintText: 'e.g. 192.168.1.100',
+                        labelText: 'IP Address or AWS URL',
+                        hintText: 'e.g. 192.168.1.100 or https://api...',
                         border: OutlineInputBorder(),
                       ),
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType: TextInputType.url,
                     ),
                     const SizedBox(height: 16),
                     ElevatedButton(
