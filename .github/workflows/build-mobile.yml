@@ -12,10 +12,14 @@ on:
           - "apps/challan_mobile"
           - "apps/challans_only"
           - "."
+      api_base_url:
+        description: "Backend base URL (e.g. http://16.171.150.193:18080). Leave empty to use secret or default."
+        required: false
+        type: string
       demo_mode:
         description: "Build with PAPER_DEMO_MODE=true (ignores login)"
         required: false
-        default: true
+        default: false
         type: boolean
   push:
     branches: [ "main" ]
@@ -24,6 +28,10 @@ jobs:
   build:
     name: Build Android APK
     runs-on: ubuntu-latest
+    env:
+      INPUT_API_BASE_URL: ${{ inputs.api_base_url }}
+      INPUT_DEMO_MODE: ${{ inputs.demo_mode }}
+      SECRET_API_BASE_URL: ${{ secrets.PAPER_API_BASE_URL }}
 
     steps:
       - name: Checkout repository
@@ -55,17 +63,30 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             cd ${{ inputs.app_path }}
-            DEMO="${{ inputs.demo_mode }}"
+            DEMO="${{ env.INPUT_DEMO_MODE }}"
+            API_URL="${{ env.INPUT_API_BASE_URL }}"
           else
             cd apps/challan_mobile
-            DEMO="true"
+            DEMO="false"
+            API_URL=""
           fi
           
-          if [ "$DEMO" == "true" ]; then
-            flutter build apk --release --dart-define=PAPER_DEMO_MODE=true --build-name=1.0.${{ github.run_number }} --build-number=${{ github.run_number }}
-          else
-            flutter build apk --release --build-name=1.0.${{ github.run_number }} --build-number=${{ github.run_number }}
+          if [ -z "$API_URL" ]; then
+            API_URL="${{ env.SECRET_API_BASE_URL }}"
           fi
+          if [ -z "$API_URL" ]; then
+            API_URL="http://16.171.150.193:18080"
+          fi
+          
+          DEFINES=""
+          if [ "$DEMO" == "true" ]; then
+            DEFINES="--dart-define=PAPER_DEMO_MODE=true"
+          else
+            DEFINES="--dart-define=PAPER_DEMO_MODE=false --dart-define=PAPER_API_BASE_URL=${API_URL}"
+          fi
+          
+          echo "Building with defines: $DEFINES"
+          flutter build apk --release $DEFINES --build-name=1.0.${{ github.run_number }} --build-number=${{ github.run_number }}
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
