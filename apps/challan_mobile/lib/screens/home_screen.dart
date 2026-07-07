@@ -39,7 +39,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           NavigationDestination(
             icon: Icon(Icons.edit_document),
-            label: 'Full Editor',
+            label: 'Challan',
           ),
         ],
       ),

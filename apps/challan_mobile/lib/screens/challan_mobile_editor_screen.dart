@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:ui';
 
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
 import 'package:core_erp/features/delivery_challans/domain/delivery_challan.dart';
@@ -18,7 +19,7 @@ class ChallanMobileEditorScreen extends StatefulWidget {
   State<ChallanMobileEditorScreen> createState() => _ChallanMobileEditorScreenState();
 }
 
-class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> {
+class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> with TickerProviderStateMixin {
   ChallanType _type = ChallanType.delivery;
   final _formKey = GlobalKey<FormState>();
   
@@ -28,7 +29,27 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> {
   final _notesController = TextEditingController();
   
   final List<DeliveryChallanItem> _items = [];
+  final GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
   bool _isSaving = false;
+
+  late AnimationController _fabAnimController;
+
+  @override
+  void initState() {
+    super.initState();
+    _fabAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _fabAnimController.dispose();
+    _locationController.dispose();
+    _notesController.dispose();
+    super.dispose();
+  }
 
   void _showQuantityBottomSheet(
     BuildContext context, 
@@ -37,79 +58,106 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> {
   ) {
     int qty = int.tryParse(existingItem?.quantityPcs ?? '1') ?? 1;
     double weight = double.tryParse(existingItem?.weight ?? '0.0') ?? 0.0;
-    
     final isTablet = MediaQuery.of(context).size.width >= 600;
 
     showModalBottomSheet(
       context: context,
+      backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      constraints: BoxConstraints(
-        maxWidth: isTablet ? 500.0 : double.infinity,
-      ),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) {
         return StatefulBuilder(
           builder: (ctx, setModalState) {
-            final isTabletModal = MediaQuery.of(ctx).size.width >= 600;
-            return Padding(
+            return Container(
+              margin: EdgeInsets.only(top: MediaQuery.of(ctx).padding.top + 40),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+                boxShadow: [
+                  BoxShadow(color: Colors.black26, blurRadius: 20, spreadRadius: 5)
+                ]
+              ),
               padding: EdgeInsets.only(
-                bottom: MediaQuery.of(ctx).viewInsets.bottom,
-                left: 24, right: 24, top: 24,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+                left: 24, right: 24, top: 16,
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    existingItem == null ? 'Set Quantity' : 'Edit Quantity',
-                    style: TextStyle(
-                      fontSize: isTabletModal ? 24.0 : 20.0, 
-                      fontWeight: FontWeight.bold
+                  Center(
+                    child: Container(
+                      width: 50,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   ),
-                  SizedBox(height: isTabletModal ? 32.0 : 24.0),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Quantity (Pcs)', 
-                        style: TextStyle(fontSize: isTabletModal ? 18.0 : 16.0)
-                      ),
-                      Row(
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
-                            iconSize: isTabletModal ? 36.0 : 28.0,
-                            onPressed: qty > 1 ? () => setModalState(() => qty--) : null,
-                          ),
-                          Text(
-                            '$qty', 
-                            style: TextStyle(
-                              fontSize: isTabletModal ? 24.0 : 18.0, 
-                              fontWeight: FontWeight.bold
-                            )
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.add_circle_outline, color: Colors.green),
-                            iconSize: isTabletModal ? 36.0 : 28.0,
-                            onPressed: () => setModalState(() => qty++),
-                          ),
-                        ],
-                      ),
-                    ],
+                  const SizedBox(height: 24),
+                  Text(
+                    existingItem == null ? 'Set Quantity' : 'Edit Quantity',
+                    style: const TextStyle(
+                      fontSize: 24.0, 
+                      fontWeight: FontWeight.w900,
+                      color: SoftErpTheme.textPrimary,
+                    ),
                   ),
-                  SizedBox(height: isTabletModal ? 24.0 : 16.0),
+                  const SizedBox(height: 24),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                    decoration: BoxDecoration(
+                      color: SoftErpTheme.shellSurface,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Quantity (Pcs)', 
+                          style: TextStyle(
+                            fontSize: 16.0,
+                            fontWeight: FontWeight.w700,
+                            color: SoftErpTheme.textSecondary,
+                          )
+                        ),
+                        Row(
+                          children: [
+                            _buildCounterButton(Icons.remove, Colors.red, () {
+                              if (qty > 1) setModalState(() => qty--);
+                            }),
+                            const SizedBox(width: 20),
+                            Text(
+                              '$qty', 
+                              style: const TextStyle(
+                                fontSize: 24.0, 
+                                fontWeight: FontWeight.bold,
+                                color: SoftErpTheme.textPrimary,
+                              )
+                            ),
+                            const SizedBox(width: 20),
+                            _buildCounterButton(Icons.add, Colors.green, () {
+                              setModalState(() => qty++);
+                            }),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   TextField(
-                    style: TextStyle(fontSize: isTabletModal ? 18.0 : 14.0),
+                    style: const TextStyle(fontSize: 18.0, fontWeight: FontWeight.w600, color: SoftErpTheme.textPrimary),
                     decoration: InputDecoration(
                       labelText: 'Weight (kg)',
-                      labelStyle: TextStyle(fontSize: isTabletModal ? 18.0 : 14.0),
-                      border: const OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.scale, size: isTabletModal ? 28.0 : 24.0),
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: isTabletModal ? 20.0 : 12.0,
-                        vertical: isTabletModal ? 20.0 : 12.0,
+                      labelStyle: const TextStyle(color: SoftErpTheme.textSecondary, fontWeight: FontWeight.normal),
+                      filled: true,
+                      fillColor: SoftErpTheme.shellSurface,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: BorderSide.none,
                       ),
+                      prefixIcon: const Icon(Icons.scale, color: SoftErpTheme.accent),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20.0),
                     ),
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     controller: TextEditingController(text: weight.toString())..selection = TextSelection.collapsed(offset: weight.toString().length),
@@ -117,31 +165,52 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> {
                       weight = double.tryParse(v) ?? 0.0;
                     },
                   ),
-                  SizedBox(height: isTabletModal ? 32.0 : 24.0),
+                  const SizedBox(height: 32),
                   SizedBox(
                     width: double.infinity,
-                    height: isTabletModal ? 60.0 : 50.0,
+                    height: 60.0,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        backgroundColor: SoftErpTheme.accent,
+                        foregroundColor: Colors.white,
+                        elevation: 4,
+                        shadowColor: SoftErpTheme.accent.withOpacity(0.5),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                       ),
                       onPressed: () {
                         Navigator.pop(ctx);
                         onConfirm(qty.toString(), weight.toString());
                       },
-                      child: Text(
-                        'Confirm', 
-                        style: TextStyle(fontSize: isTabletModal ? 18.0 : 16.0)
+                      child: const Text(
+                        'Confirm Details', 
+                        style: TextStyle(fontSize: 18.0, fontWeight: FontWeight.bold, letterSpacing: 1.1)
                       ),
                     ),
                   ),
-                  const SizedBox(height: 24),
                 ],
               ),
             );
           },
         );
       }
+    );
+  }
+
+  Widget _buildCounterButton(IconData icon, Color color, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2))
+          ]
+        ),
+        child: Icon(icon, color: color, size: 24),
+      ),
     );
   }
 
@@ -152,83 +221,100 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> {
       return;
     }
 
-    final isTablet = MediaQuery.of(context).size.width >= 600;
-
-    // 1. Pick Item using BottomSheet
     final selectedItem = await showModalBottomSheet<ItemDefinition>(
       context: context,
-      constraints: BoxConstraints(
-        maxWidth: isTablet ? 500.0 : double.infinity,
-      ),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (ctx) {
-        final isTabletModal = MediaQuery.of(ctx).size.width >= 600;
-        return Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                'Select Item', 
-                style: TextStyle(
-                  fontSize: isTabletModal ? 24.0 : 20.0, 
-                  fontWeight: FontWeight.bold
-                )
+        return Container(
+          margin: EdgeInsets.only(top: MediaQuery.of(ctx).padding.top + 40),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 16),
+              Center(
+                child: Container(
+                  width: 50,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
               ),
-            ),
-            Expanded(
-              child: ListView.separated(
-                itemCount: itemsProvider.items.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemBuilder: (ctx, i) {
-                  final item = itemsProvider.items[i];
-                  return ListTile(
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: isTabletModal ? 24.0 : 16.0, 
-                      vertical: isTabletModal ? 8.0 : 4.0
-                    ),
-                    leading: CircleAvatar(
-                      radius: isTabletModal ? 28.0 : 20.0,
-                      backgroundColor: Theme.of(context).primaryColor.withValues(alpha: 0.1),
-                      child: Icon(Icons.inventory_2, size: isTabletModal ? 28.0 : 20.0),
-                    ),
-                    title: Text(
-                      item.displayName, 
-                      style: TextStyle(
-                        fontWeight: FontWeight.w500, 
-                        fontSize: isTabletModal ? 18.0 : 15.0
-                      )
-                    ),
-                    subtitle: Text(
-                      'ID: ${item.id}', 
-                      style: TextStyle(fontSize: isTabletModal ? 14.0 : 12.0)
-                    ),
-                    onTap: () => Navigator.of(ctx).pop(item),
-                  );
-                },
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24.0),
+                child: Text(
+                  'Select Product', 
+                  style: TextStyle(
+                    fontSize: 24.0, 
+                    fontWeight: FontWeight.w900,
+                    color: SoftErpTheme.textPrimary,
+                  )
+                ),
               ),
-            ),
-          ],
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: itemsProvider.items.length,
+                  itemBuilder: (ctx, i) {
+                    final item = itemsProvider.items[i];
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: SoftErpTheme.shellSurface,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                        leading: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: SoftErpTheme.accent.withOpacity(0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.inventory_2_rounded, color: SoftErpTheme.accent),
+                        ),
+                        title: Text(
+                          item.displayName, 
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16.0)
+                        ),
+                        subtitle: Text('ID: ${item.id}', style: const TextStyle(color: SoftErpTheme.textSecondary)),
+                        trailing: const Icon(Icons.chevron_right, color: SoftErpTheme.textSecondary),
+                        onTap: () => Navigator.of(ctx).pop(item),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
         );
       }
     );
 
     if (selectedItem == null || !mounted) return;
 
-    // 2. Pick Variation
     final variationResult = await showDialog<VariationPathSelectionResult>(
       context: context,
       builder: (ctx) {
-        final isTabletDialog = MediaQuery.of(ctx).size.width >= 600;
         return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          insetPadding: EdgeInsets.all(isTabletDialog ? 32.0 : 16.0),
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          insetPadding: const EdgeInsets.all(24),
           child: SizedBox(
-            width: isTabletDialog ? 700.0 : 500.0,
-            height: MediaQuery.of(context).size.height * (isTabletDialog ? 0.75 : 0.8),
-            child: VariationPathSelectorDialog(
-              item: selectedItem,
-              initialRootPropertyId: null,
-              initialValueNodeIds: const [],
+            height: MediaQuery.of(context).size.height * 0.7,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: VariationPathSelectorDialog(
+                item: selectedItem,
+                initialRootPropertyId: null,
+                initialValueNodeIds: const [],
+              ),
             ),
           ),
         );
@@ -237,35 +323,40 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> {
 
     if (variationResult == null || !mounted) return;
 
-    // 3. Set Quantity & Weight
     _showQuantityBottomSheet(context, null, (qty, weight) {
-      setState(() {
-        _items.add(
-          DeliveryChallanItem(
-            id: 0,
-            orderItemId: null,
-            productionRunId: null,
-            itemId: selectedItem.id,
-            variationLeafNodeId: variationResult.leaf?.id ?? 0,
-            variationPathLabel: variationResult.leaf?.displayName ?? '',
-            variationPathNodeIds: variationResult.valueNodeIds,
-            customVariationValues: variationResult.customVariationValues,
-            particulars: selectedItem.displayName,
-            quantityPcs: qty,
-            weight: weight,
-            lineNo: _items.length + 1,
-            hsnCode: '',
-            note: '',
-          )
-        );
-      });
+      final newItem = DeliveryChallanItem(
+        id: 0,
+        orderItemId: null,
+        productionRunId: null,
+        itemId: selectedItem.id,
+        variationLeafNodeId: variationResult.leaf?.id ?? 0,
+        variationPathLabel: variationResult.leaf?.displayName ?? '',
+        variationPathNodeIds: variationResult.valueNodeIds,
+        customVariationValues: variationResult.customVariationValues,
+        particulars: selectedItem.displayName,
+        quantityPcs: qty,
+        weight: weight,
+        lineNo: _items.length + 1,
+        hsnCode: '',
+        note: '',
+      );
+      
+      _items.add(newItem);
+      _listKey.currentState?.insertItem(_items.length - 1, duration: const Duration(milliseconds: 400));
+      setState(() {});
     });
   }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     if (_items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Add at least one item.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please add at least one item.'),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        )
+      );
       return;
     }
 
@@ -298,41 +389,183 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> {
     if (mounted) {
       setState(() => _isSaving = false);
       if (result != null) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ Created Challan: ${result.challanNo}')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 12),
+                Text('Created Challan: ${result.challanNo}', style: const TextStyle(fontWeight: FontWeight.bold)),
+              ],
+            ),
+            backgroundColor: Colors.green.shade600,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          )
+        );
         setState(() {
+          final count = _items.length;
           _items.clear();
+          for (var i = 0; i < count; i++) {
+            _listKey.currentState?.removeItem(0, (context, animation) => const SizedBox.shrink());
+          }
           _notesController.clear();
         });
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(provider.errorMessage ?? 'Failed to create challan')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(provider.errorMessage ?? 'Failed to create challan'),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+          )
+        );
       }
     }
   }
 
   int get _totalQty {
-    int t = 0;
-    for (var i in _items) {
-      t += int.tryParse(i.quantityPcs) ?? 0;
-    }
-    return t;
+    return _items.fold(0, (t, i) => t + (int.tryParse(i.quantityPcs) ?? 0));
   }
 
-  InputDecoration _responsiveDecoration({
-    required BuildContext context,
-    required String label,
-    required IconData prefixIcon,
-    required bool isTablet,
-  }) {
+  InputDecoration _glassInputDecoration(String label, IconData icon) {
     return InputDecoration(
       labelText: label,
-      labelStyle: TextStyle(fontSize: isTablet ? 18.0 : 14.0),
-      prefixIcon: Icon(prefixIcon, size: isTablet ? 28.0 : 24.0),
-      contentPadding: EdgeInsets.symmetric(
-        horizontal: isTablet ? 20.0 : 12.0,
-        vertical: isTablet ? 20.0 : 12.0,
+      labelStyle: const TextStyle(color: SoftErpTheme.textSecondary, fontWeight: FontWeight.w600),
+      prefixIcon: Icon(icon, color: SoftErpTheme.accent),
+      filled: true,
+      fillColor: SoftErpTheme.shellSurface,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
       ),
-      border: const OutlineInputBorder(
-        borderRadius: BorderRadius.all(Radius.circular(12)),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: SoftErpTheme.accent, width: 2),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+    );
+  }
+
+  Widget _buildItemTile(DeliveryChallanItem item, int idx, Animation<double> animation) {
+    return SizeTransition(
+      sizeFactor: animation,
+      child: FadeTransition(
+        opacity: animation,
+        child: Dismissible(
+          key: ValueKey('${item.itemId}_${item.variationLeafNodeId}_${idx}_${DateTime.now().millisecondsSinceEpoch}'),
+          direction: DismissDirection.endToStart,
+          background: Container(
+            alignment: Alignment.centerRight,
+            padding: const EdgeInsets.only(right: 24),
+            decoration: BoxDecoration(
+              color: Colors.red.shade400,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            margin: const EdgeInsets.symmetric(vertical: 8),
+            child: const Icon(Icons.delete_sweep_rounded, color: Colors.white, size: 32),
+          ),
+          onDismissed: (_) {
+            final removedItem = _items.removeAt(idx);
+            _listKey.currentState?.removeItem(
+              idx, 
+              (context, anim) => _buildItemTile(removedItem, idx, anim),
+              duration: const Duration(milliseconds: 300)
+            );
+            setState(() {});
+          },
+          child: Container(
+            margin: const EdgeInsets.symmetric(vertical: 8.0),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 15, offset: const Offset(0, 4))
+              ]
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(20),
+                onTap: () {
+                  _showQuantityBottomSheet(context, item, (qty, weight) {
+                    setState(() {
+                      _items[idx] = DeliveryChallanItem(
+                        id: item.id,
+                        orderItemId: item.orderItemId,
+                        productionRunId: item.productionRunId,
+                        itemId: item.itemId,
+                        variationLeafNodeId: item.variationLeafNodeId,
+                        variationPathLabel: item.variationPathLabel,
+                        variationPathNodeIds: item.variationPathNodeIds,
+                        customVariationValues: item.customVariationValues,
+                        particulars: item.particulars,
+                        quantityPcs: qty,
+                        weight: weight,
+                        lineNo: item.lineNo,
+                        hsnCode: item.hsnCode,
+                        note: item.note,
+                      );
+                    });
+                  });
+                },
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF5E49E6), Color(0xFF8B5CF6)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Icon(Icons.inventory_2_rounded, color: Colors.white, size: 24),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.particulars, 
+                              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16.0, color: SoftErpTheme.textPrimary)
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              item.variationPathLabel, 
+                              style: const TextStyle(color: SoftErpTheme.textSecondary, fontSize: 13.0)
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(10)),
+                                  child: Text('Qty: ${item.quantityPcs}', style: TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.bold, fontSize: 13)),
+                                ),
+                                const SizedBox(width: 8),
+                                if (item.weight != '0' && item.weight != '0.0')
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(10)),
+                                    child: Text('Wt: ${item.weight} kg', style: TextStyle(color: Colors.orange.shade800, fontWeight: FontWeight.bold, fontSize: 13)),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.edit_outlined, color: SoftErpTheme.border, size: 20),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -341,384 +574,266 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> {
   Widget build(BuildContext context) {
     final clients = context.watch<ClientsProvider>().clients;
     final vendors = context.watch<VendorsProvider>().vendors;
-    final isTablet = MediaQuery.of(context).size.width >= 600;
 
     return Scaffold(
-      backgroundColor: Colors.grey[100],
-      appBar: AppBar(
-        title: Text(
-          'New Challan', 
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: isTablet ? 24.0 : 20.0,
-          )
-        ),
-        centerTitle: true,
-        elevation: 0,
-        actions: [
-          if (_items.isNotEmpty)
-            Padding(
-              padding: EdgeInsets.only(right: isTablet ? 16.0 : 8.0),
-              child: _isSaving
-                ? const SizedBox.shrink()
-                : TextButton.icon(
-                    style: TextButton.styleFrom(
-                      foregroundColor: SoftErpTheme.accent,
-                      textStyle: TextStyle(
-                        fontSize: isTablet ? 18.0 : 14.0,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    icon: Icon(Icons.check, size: isTablet ? 24.0 : 20.0),
-                    label: const Text('Submit'),
-                    onPressed: _submit,
-                  ),
-            )
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _addItem,
-        icon: Icon(Icons.add, size: isTablet ? 28.0 : 24.0),
-        label: Text(
-          'Add Item', 
-          style: TextStyle(
-            fontSize: isTablet ? 18.0 : 14.0, 
-            fontWeight: FontWeight.bold
-          )
-        ),
-        extendedPadding: EdgeInsets.symmetric(
-          horizontal: isTablet ? 24.0 : 16.0, 
-        ),
+      backgroundColor: const Color(0xFFF8F9FA),
+      floatingActionButton: AnimatedBuilder(
+        animation: _fabAnimController,
+        builder: (context, child) {
+          return Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(30),
+              boxShadow: [
+                BoxShadow(
+                  color: SoftErpTheme.accent.withOpacity(0.3 + (_fabAnimController.value * 0.3)),
+                  blurRadius: 15 + (_fabAnimController.value * 10),
+                  spreadRadius: 2 + (_fabAnimController.value * 4),
+                )
+              ]
+            ),
+            child: FloatingActionButton.extended(
+              onPressed: _addItem,
+              backgroundColor: SoftErpTheme.accent,
+              foregroundColor: Colors.white,
+              elevation: 0, // Handled by container
+              icon: const Icon(Icons.add_rounded, size: 24),
+              label: const Text('Add Item', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+            ),
+          );
+        }
       ),
       body: _isSaving 
-        ? const Center(child: CircularProgressIndicator())
+        ? const Center(child: CircularProgressIndicator(color: SoftErpTheme.accent))
         : Form(
             key: _formKey,
-            child: Center(
-              child: Container(
-                constraints: BoxConstraints(maxWidth: isTablet ? 720.0 : double.infinity),
-                child: ListView(
-                  padding: EdgeInsets.only(
-                    bottom: isTablet ? 120.0 : 100.0,
-                    left: isTablet ? 24.0 : 0,
-                    right: isTablet ? 24.0 : 0,
-                  ),
-                  children: [
-                    // 1. Details Card
-                    Card(
-                      margin: EdgeInsets.all(isTablet ? 8.0 : 16.0),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      elevation: 2,
-                      child: Padding(
-                        padding: EdgeInsets.all(isTablet ? 24.0 : 16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Party Details', 
-                              style: TextStyle(
-                                fontSize: isTablet ? 22.0 : 18.0, 
-                                fontWeight: FontWeight.bold, 
-                                color: Colors.black87
-                              )
-                            ),
-                            SizedBox(height: isTablet ? 24.0 : 16.0),
-                            DropdownButtonFormField<ChallanType>(
-                              value: _type,
-                              style: TextStyle(
-                                fontSize: isTablet ? 18.0 : 15.0,
-                                color: Colors.black87,
-                              ),
-                              decoration: _responsiveDecoration(
-                                context: context, 
-                                label: 'Type', 
-                                prefixIcon: Icons.local_shipping_outlined, 
-                                isTablet: isTablet
-                              ),
-                              items: [
-                                DropdownMenuItem(
-                                  value: ChallanType.delivery, 
-                                  child: Text('DELIVERY', style: TextStyle(fontSize: isTablet ? 18.0 : 15.0))
-                                ),
-                                DropdownMenuItem(
-                                  value: ChallanType.reception, 
-                                  child: Text('RECEPTION', style: TextStyle(fontSize: isTablet ? 18.0 : 15.0))
-                                ),
-                              ],
-                              onChanged: (v) {
-                                if (v != null) setState(() => _type = v);
-                              },
-                            ),
-                            SizedBox(height: isTablet ? 24.0 : 16.0),
-                            if (_type == ChallanType.delivery)
-                              DropdownButtonFormField<int>(
-                                value: _selectedClientId,
-                                style: TextStyle(
-                                  fontSize: isTablet ? 18.0 : 15.0,
-                                  color: Colors.black87,
-                                ),
-                                decoration: _responsiveDecoration(
-                                  context: context, 
-                                  label: 'Client', 
-                                  prefixIcon: Icons.person_outline, 
-                                  isTablet: isTablet
-                                ),
-                                items: clients.map((c) => DropdownMenuItem(
-                                  value: c.id, 
-                                  child: Text(c.name, style: TextStyle(fontSize: isTablet ? 18.0 : 15.0))
-                                )).toList(),
-                                onChanged: (v) => setState(() => _selectedClientId = v),
-                                validator: (v) => v == null ? 'Select Client' : null,
-                              )
-                            else
-                              DropdownButtonFormField<int>(
-                                value: _selectedVendorId,
-                                style: TextStyle(
-                                  fontSize: isTablet ? 18.0 : 15.0,
-                                  color: Colors.black87,
-                                ),
-                                decoration: _responsiveDecoration(
-                                  context: context, 
-                                  label: 'Vendor', 
-                                  prefixIcon: Icons.business_outlined, 
-                                  isTablet: isTablet
-                                ),
-                                items: vendors.map((v) => DropdownMenuItem(
-                                  value: v.id, 
-                                  child: Text(v.name, style: TextStyle(fontSize: isTablet ? 18.0 : 15.0))
-                                )).toList(),
-                                onChanged: (v) => setState(() => _selectedVendorId = v),
-                                validator: (v) => v == null ? 'Select Vendor' : null,
-                              ),
-                            SizedBox(height: isTablet ? 24.0 : 16.0),
-                            TextFormField(
-                              controller: _locationController,
-                              style: TextStyle(fontSize: isTablet ? 18.0 : 15.0),
-                              decoration: _responsiveDecoration(
-                                context: context, 
-                                label: 'Location', 
-                                prefixIcon: Icons.location_on_outlined, 
-                                isTablet: isTablet
-                              ),
-                            ),
-                          ],
-                        ),
+            child: CustomScrollView(
+              slivers: [
+                SliverAppBar(
+                  expandedHeight: 180.0,
+                  floating: false,
+                  pinned: true,
+                  backgroundColor: SoftErpTheme.accent,
+                  flexibleSpace: FlexibleSpaceBar(
+                    titlePadding: const EdgeInsets.only(left: 24, bottom: 16),
+                    title: const Text(
+                      'Create Challan',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                        letterSpacing: -0.5,
                       ),
                     ),
-
-                    // 2. Items List
-                    if (_items.isNotEmpty)
-                      Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: isTablet ? 12.0 : 20.0, 
-                          vertical: isTablet ? 16.0 : 8.0
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Added Items (${_items.length})', 
-                              style: TextStyle(
-                                fontSize: isTablet ? 18.0 : 16.0, 
-                                fontWeight: FontWeight.bold, 
-                                color: Colors.black54
-                              )
-                            ),
-                            Text(
-                              'Total Qty: $_totalQty', 
-                              style: TextStyle(
-                                fontSize: isTablet ? 18.0 : 16.0, 
-                                fontWeight: FontWeight.bold, 
-                                color: Colors.blue
-                              )
-                            ),
-                          ],
+                    background: Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF3B2DB0), Color(0xFF7C3AED)],
+                          begin: Alignment.bottomLeft,
+                          end: Alignment.topRight,
                         ),
                       ),
-
-                    if (_items.isEmpty)
+                      child: Stack(
+                        children: [
+                          Positioned(
+                            right: -50, top: -50,
+                            child: CircleAvatar(radius: 100, backgroundColor: Colors.white.withOpacity(0.05)),
+                          ),
+                          Positioned(
+                            left: -30, bottom: -20,
+                            child: CircleAvatar(radius: 60, backgroundColor: Colors.white.withOpacity(0.05)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  actions: [
+                    if (_items.isNotEmpty)
                       Padding(
-                        padding: EdgeInsets.all(isTablet ? 48.0 : 32.0),
+                        padding: const EdgeInsets.only(right: 16.0),
                         child: Center(
-                          child: Column(
-                            children: [
-                              Icon(Icons.inventory_2_outlined, size: isTablet ? 96.0 : 64.0, color: Colors.grey[400]),
-                              SizedBox(height: isTablet ? 24.0 : 16.0),
-                              Text(
-                                'No items added yet', 
-                                style: TextStyle(
-                                  color: Colors.grey[600], 
-                                  fontSize: isTablet ? 18.0 : 16.0
-                                )
+                          child: InkWell(
+                            onTap: _submit,
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10)]
                               ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Tap the + button to add items', 
-                                style: TextStyle(
-                                  color: Colors.grey,
-                                  fontSize: isTablet ? 15.0 : 14.0
+                              child: const Row(
+                                children: [
+                                  Icon(Icons.check_circle_rounded, color: SoftErpTheme.accent, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Submit', style: TextStyle(color: SoftErpTheme.accent, fontWeight: FontWeight.w800)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Party Details Glass Card
+                        Container(
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(24),
+                            boxShadow: [
+                              BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 20, offset: const Offset(0, 10))
+                            ]
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: SoftErpTheme.accent.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Icon(Icons.business_center_rounded, color: SoftErpTheme.accent, size: 20),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  const Text('Party Details', style: TextStyle(fontSize: 20.0, fontWeight: FontWeight.w900, color: SoftErpTheme.textPrimary)),
+                                ],
+                              ),
+                              const SizedBox(height: 24),
+                              DropdownButtonFormField<ChallanType>(
+                                value: _type,
+                                icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.accent),
+                                decoration: _glassInputDecoration('Document Type', Icons.document_scanner_rounded),
+                                items: const [
+                                  DropdownMenuItem(value: ChallanType.delivery, child: Text('DELIVERY CHALLAN', style: TextStyle(fontWeight: FontWeight.w700))),
+                                  DropdownMenuItem(value: ChallanType.reception, child: Text('RECEPTION CHALLAN', style: TextStyle(fontWeight: FontWeight.w700))),
+                                ],
+                                onChanged: (v) { if (v != null) setState(() => _type = v); },
+                              ),
+                              const SizedBox(height: 16),
+                              if (_type == ChallanType.delivery)
+                                DropdownButtonFormField<int>(
+                                  value: _selectedClientId,
+                                  icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.accent),
+                                  decoration: _glassInputDecoration('Select Client', Icons.person_rounded),
+                                  items: clients.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name, style: const TextStyle(fontWeight: FontWeight.w600)))).toList(),
+                                  onChanged: (v) => setState(() => _selectedClientId = v),
+                                  validator: (v) => v == null ? 'Client is required' : null,
                                 )
+                              else
+                                DropdownButtonFormField<int>(
+                                  value: _selectedVendorId,
+                                  icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.accent),
+                                  decoration: _glassInputDecoration('Select Vendor', Icons.storefront_rounded),
+                                  items: vendors.map((v) => DropdownMenuItem(value: v.id, child: Text(v.name, style: const TextStyle(fontWeight: FontWeight.w600)))).toList(),
+                                  onChanged: (v) => setState(() => _selectedVendorId = v),
+                                  validator: (v) => v == null ? 'Vendor is required' : null,
+                                ),
+                              const SizedBox(height: 16),
+                              TextFormField(
+                                controller: _locationController,
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                                decoration: _glassInputDecoration('Delivery Location', Icons.location_on_rounded),
                               ),
                             ],
                           ),
                         ),
-                      ),
-
-                    ..._items.asMap().entries.map((entry) {
-                      final idx = entry.key;
-                      final item = entry.value;
-                      return Dismissible(
-                        key: ValueKey('${item.itemId}_${item.variationLeafNodeId}_$idx'),
-                        direction: DismissDirection.endToStart,
-                        background: Container(
-                          alignment: Alignment.centerRight,
-                          padding: const EdgeInsets.only(right: 20),
-                          color: Colors.red,
-                          margin: EdgeInsets.symmetric(
-                            horizontal: isTablet ? 8.0 : 16.0, 
-                            vertical: 4
-                          ),
-                          child: Icon(Icons.delete, color: Colors.white, size: isTablet ? 28.0 : 24.0),
-                        ),
-                        onDismissed: (_) {
-                          setState(() => _items.removeAt(idx));
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: Text('${item.particulars} removed'),
-                            duration: const Duration(seconds: 2),
-                          ));
-                        },
-                        child: Card(
-                          margin: EdgeInsets.symmetric(
-                            horizontal: isTablet ? 8.0 : 16.0, 
-                            vertical: isTablet ? 8.0 : 6.0
-                          ),
-                          elevation: 1,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          child: ListTile(
-                            contentPadding: EdgeInsets.all(isTablet ? 18.0 : 12.0),
-                            leading: CircleAvatar(
-                              radius: isTablet ? 28.0 : 20.0,
-                              backgroundColor: Colors.blue.withValues(alpha: 0.1),
-                              child: Icon(Icons.category, color: Colors.blue, size: isTablet ? 28.0 : 20.0),
-                            ),
-                            title: Text(
-                              item.particulars, 
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: isTablet ? 18.0 : 15.0
-                              )
-                            ),
-                            subtitle: Padding(
-                              padding: const EdgeInsets.only(top: 8.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Variation: ${item.variationPathLabel}', 
-                                    style: TextStyle(
-                                      color: Colors.grey[700],
-                                      fontSize: isTablet ? 15.0 : 13.0
-                                    )
+                        
+                        const SizedBox(height: 32),
+                        
+                        // Items Header
+                        if (_items.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 16.0, left: 8, right: 8),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('Items (${_items.length})', style: const TextStyle(fontSize: 20.0, fontWeight: FontWeight.w900, color: SoftErpTheme.textPrimary)),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: SoftErpTheme.accent,
+                                    borderRadius: BorderRadius.circular(20),
+                                    boxShadow: [BoxShadow(color: SoftErpTheme.accent.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))]
                                   ),
-                                  SizedBox(height: isTablet ? 8.0 : 4.0),
-                                  Row(
-                                    children: [
-                                      Container(
-                                        padding: EdgeInsets.symmetric(
-                                          horizontal: isTablet ? 12.0 : 8.0, 
-                                          vertical: isTablet ? 6.0 : 4.0
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.green.withValues(alpha: 0.1), 
-                                          borderRadius: BorderRadius.circular(8)
-                                        ),
-                                        child: Text(
-                                          'Qty: ${item.quantityPcs}', 
-                                          style: TextStyle(
-                                            color: Colors.green, 
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: isTablet ? 15.0 : 13.0
-                                          )
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      if (item.weight != '0' && item.weight != '0.0')
-                                        Container(
-                                          padding: EdgeInsets.symmetric(
-                                            horizontal: isTablet ? 12.0 : 8.0, 
-                                            vertical: isTablet ? 6.0 : 4.0
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.orange.withValues(alpha: 0.1), 
-                                            borderRadius: BorderRadius.circular(8)
-                                          ),
-                                          child: Text(
-                                            'Wt: ${item.weight} kg', 
-                                            style: TextStyle(
-                                              color: Colors.orange, 
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: isTablet ? 15.0 : 13.0
-                                            )
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ],
-                              ),
+                                  child: Text('Total Qty: $_totalQty', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                ),
+                              ],
                             ),
-                            onTap: () {
-                              // Edit existing item
-                              _showQuantityBottomSheet(context, item, (qty, weight) {
-                                setState(() {
-                                  _items[idx] = DeliveryChallanItem(
-                                    id: item.id,
-                                    orderItemId: item.orderItemId,
-                                    productionRunId: item.productionRunId,
-                                    itemId: item.itemId,
-                                    variationLeafNodeId: item.variationLeafNodeId,
-                                    variationPathLabel: item.variationPathLabel,
-                                    variationPathNodeIds: item.variationPathNodeIds,
-                                    customVariationValues: item.customVariationValues,
-                                    particulars: item.particulars,
-                                    quantityPcs: qty,
-                                    weight: weight,
-                                    lineNo: item.lineNo,
-                                    hsnCode: item.hsnCode,
-                                    note: item.note,
-                                  );
-                                });
-                              });
-                            },
                           ),
+                          
+                        // Items List (Animated)
+                        AnimatedList(
+                          key: _listKey,
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          initialItemCount: _items.length,
+                          itemBuilder: (context, index, animation) {
+                            return _buildItemTile(_items[index], index, animation);
+                          },
                         ),
-                      );
-                    }),
+                        
+                        if (_items.isEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(vertical: 60),
+                            alignment: Alignment.center,
+                            child: Column(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(24),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    shape: BoxShape.circle,
+                                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 30)]
+                                  ),
+                                  child: Icon(Icons.add_shopping_cart_rounded, size: 64, color: Colors.grey.shade300),
+                                ),
+                                const SizedBox(height: 24),
+                                const Text('Cart is empty', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.grey)),
+                                const SizedBox(height: 8),
+                                Text('Tap the plus button to add items', style: TextStyle(color: Colors.grey.shade500, fontWeight: FontWeight.w500)),
+                              ],
+                            ),
+                          ),
 
-                    // 3. Notes Card
-                    Card(
-                      margin: EdgeInsets.all(isTablet ? 8.0 : 16.0),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      elevation: 2,
-                      child: Padding(
-                        padding: EdgeInsets.all(isTablet ? 20.0 : 16.0),
-                        child: TextFormField(
-                          controller: _notesController,
-                          style: TextStyle(fontSize: isTablet ? 18.0 : 14.0),
-                          decoration: InputDecoration(
-                            labelText: 'Additional Notes',
-                            labelStyle: TextStyle(fontSize: isTablet ? 18.0 : 14.0),
-                            prefixIcon: Icon(Icons.note_alt_outlined, size: isTablet ? 28.0 : 24.0),
-                            border: InputBorder.none,
+                        const SizedBox(height: 24),
+                        
+                        // Additional Notes Card
+                        Container(
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(24),
+                            boxShadow: [
+                              BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 20, offset: const Offset(0, 10))
+                            ]
                           ),
-                          maxLines: 3,
+                          child: TextFormField(
+                            controller: _notesController,
+                            maxLines: 3,
+                            style: const TextStyle(fontWeight: FontWeight.w500),
+                            decoration: const InputDecoration(
+                              labelText: 'Additional Notes (Optional)',
+                              labelStyle: TextStyle(color: SoftErpTheme.textSecondary, fontWeight: FontWeight.w600),
+                              alignLabelWithHint: true,
+                              border: InputBorder.none,
+                            ),
+                          ),
                         ),
-                      ),
+                        
+                        const SizedBox(height: 100), // Padding for FAB
+                      ],
                     ),
-                    
-                    const SizedBox(height: 20),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
     );

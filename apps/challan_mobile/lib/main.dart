@@ -83,123 +83,229 @@ class _BootstrapGateState extends State<BootstrapGate> {
       return MaterialApp(
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: SoftErpTheme.accent,
-            surface: SoftErpTheme.canvas,
-            primary: SoftErpTheme.accent,
-            onPrimary: Colors.white,
-            secondary: SoftErpTheme.accentDark,
-          ),
-          scaffoldBackgroundColor: SoftErpTheme.canvas,
-          cardTheme: CardThemeData(
-            color: SoftErpTheme.cardSurface,
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(SoftErpTheme.radiusMd),
-              side: const BorderSide(color: SoftErpTheme.border),
-            ),
-          ),
-          appBarTheme: const AppBarTheme(
-            backgroundColor: SoftErpTheme.cardSurface,
-            foregroundColor: SoftErpTheme.textPrimary,
-            elevation: 0,
-            centerTitle: true,
-            iconTheme: IconThemeData(color: SoftErpTheme.textPrimary),
-          ),
-          navigationBarTheme: NavigationBarThemeData(
-            backgroundColor: SoftErpTheme.cardSurface,
-            indicatorColor: SoftErpTheme.accentSoft,
-            labelTextStyle: WidgetStateProperty.resolveWith((states) {
-              if (states.contains(WidgetState.selected)) {
-                return const TextStyle(color: SoftErpTheme.accent, fontWeight: FontWeight.bold);
-              }
-              return const TextStyle(color: SoftErpTheme.textSecondary);
-            }),
-            iconTheme: WidgetStateProperty.resolveWith((states) {
-              if (states.contains(WidgetState.selected)) {
-                return const IconThemeData(color: SoftErpTheme.accent);
-              }
-              return const IconThemeData(color: SoftErpTheme.textSecondary);
-            }),
-          ),
           useMaterial3: true,
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF6366F1),
+            brightness: Brightness.dark,
+          ),
         ),
         home: Scaffold(
-          body: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(32.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (discovery.isSearching) ...[
-                    const CircularProgressIndicator(),
-                    const SizedBox(height: 24),
-                    const Text('Scanning factory Wi-Fi for Desktop...', style: TextStyle(fontSize: 18)),
-                  ] else if (discovery.hasTimedOut) ...[
-                    const Icon(Icons.wifi_off, size: 64, color: Colors.red),
-                    const SizedBox(height: 16),
-                    const Text('No Local Server found via mDNS.', style: TextStyle(fontSize: 18, color: Colors.red)),
-                    const SizedBox(height: 8),
-                    const Text('Your Wi-Fi router might be blocking discovery.', textAlign: TextAlign.center),
-                    const SizedBox(height: 32),
-                    TextField(
-                      controller: _ipController,
-                      decoration: const InputDecoration(
-                        labelText: 'IP Address or AWS URL',
-                        hintText: 'e.g. 192.168.1.100 or https://api...',
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.url,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () {
-                        if (_ipController.text.trim().isNotEmpty) {
-                          discovery.manualConnect(_ipController.text.trim());
-                        }
-                      },
-                      child: const Text('Connect Manually'),
-                    ),
-                    const SizedBox(height: 24),
-                    TextButton(
-                      onPressed: () => discovery.manualConnect('localhost'),
-                      child: const Text('Use USB Debugging (localhost)'),
-                    ),
-                    const SizedBox(height: 24),
-                    TextButton(
-                      onPressed: () => discovery.discoverServer(),
-                      child: const Text('Scan Again'),
-                    ),
-                  ] else ...[
-                    const Icon(Icons.error_outline, size: 64, color: Colors.orange),
-                    const SizedBox(height: 16),
-                    const Text('Discovery failed to start.', style: TextStyle(fontSize: 18, color: Colors.orange)),
-                    const SizedBox(height: 32),
-                    TextField(
-                      controller: _ipController,
-                      decoration: const InputDecoration(
-                        labelText: 'IP Address or AWS URL',
-                        hintText: 'e.g. 192.168.1.100 or https://api...',
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.url,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () {
-                        if (_ipController.text.trim().isNotEmpty) {
-                          discovery.manualConnect(_ipController.text.trim());
-                        }
-                      },
-                      child: const Text('Connect Manually'),
-                    ),
-                    const SizedBox(height: 24),
-                    TextButton(
-                      onPressed: () => discovery.manualConnect('localhost'),
-                      child: const Text('Use USB Debugging (localhost)'),
-                    ),
-                  ],
+          body: Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF0F172A),
+                  Color(0xFF1E1B4B),
                 ],
+              ),
+            ),
+            child: SafeArea(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B).withValues(alpha: 0.8),
+                      borderRadius: BorderRadius.circular(28),
+                      border: Border.all(
+                        color: const Color(0xFF334155).withValues(alpha: 0.5),
+                        width: 1.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.3),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    padding: const EdgeInsets.all(32.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF312E81),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF6366F1).withValues(alpha: 0.4),
+                                blurRadius: 16,
+                                spreadRadius: 2,
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.settings_input_component,
+                            size: 40,
+                            color: Color(0xFF818CF8),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        const Text(
+                          'Setup Connection',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Connect your mobile app to the factory server',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Color(0xFF94A3B8),
+                          ),
+                        ),
+                        const SizedBox(height: 32),
+
+                        if (discovery.isSearching) ...[
+                          const SizedBox(
+                            height: 60,
+                            width: 60,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 3,
+                              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          const Text(
+                            'Scanning factory Wi-Fi...',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white70,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Looking for active Desktop server via mDNS',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF64748B),
+                            ),
+                          ),
+                        ] else ...[
+                          if (discovery.hasTimedOut) ...[
+                            const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.wifi_off, size: 20, color: Color(0xFFEF4444)),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Local discovery timed out',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFFEF4444),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ] else ...[
+                            const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.warning_amber_rounded, size: 20, color: Color(0xFFF59E0B)),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Discovery failed to start',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFFF59E0B),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                          const SizedBox(height: 20),
+                          TextField(
+                            controller: _ipController,
+                            style: const TextStyle(color: Colors.white, fontSize: 15),
+                            decoration: InputDecoration(
+                              labelText: 'IP Address or AWS URL',
+                              labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
+                              hintText: 'e.g. 192.168.1.100 or https://api...',
+                              hintStyle: const TextStyle(color: Color(0xFF475569)),
+                              prefixIcon: const Icon(Icons.link, color: Color(0xFF818CF8)),
+                              filled: true,
+                              fillColor: const Color(0xFF0F172A).withValues(alpha: 0.5),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: const BorderSide(color: Color(0xFF334155)),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: const BorderSide(color: Color(0xFF6366F1), width: 2),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                            ),
+                            keyboardType: TextInputType.url,
+                          ),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 52,
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF6366F1),
+                                foregroundColor: Colors.white,
+                                elevation: 4,
+                                shadowColor: const Color(0xFF6366F1).withValues(alpha: 0.4),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              onPressed: () {
+                                if (_ipController.text.trim().isNotEmpty) {
+                                  discovery.manualConnect(_ipController.text.trim());
+                                }
+                              },
+                              child: const Text(
+                                'Connect Manually',
+                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          const Divider(color: Color(0xFF334155)),
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              TextButton.icon(
+                                style: TextButton.styleFrom(
+                                  foregroundColor: const Color(0xFF94A3B8),
+                                ),
+                                icon: const Icon(Icons.usb, size: 18),
+                                label: const Text('Use USB (localhost)'),
+                                onPressed: () => discovery.manualConnect('localhost'),
+                              ),
+                              TextButton.icon(
+                                style: TextButton.styleFrom(
+                                  foregroundColor: const Color(0xFF818CF8),
+                                ),
+                                icon: const Icon(Icons.refresh, size: 18),
+                                label: const Text('Scan Again'),
+                                onPressed: () => discovery.discoverServer(),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
           ),

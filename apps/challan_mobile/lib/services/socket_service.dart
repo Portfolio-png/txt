@@ -13,7 +13,6 @@ class SocketService extends ChangeNotifier {
     }
 
     _socket = io.io(url, io.OptionBuilder()
-      .setTransports(['websocket']) // for Flutter or Web
       .disableAutoConnect()  // disable auto-connection
       .build());
 

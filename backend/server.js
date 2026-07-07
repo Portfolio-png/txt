@@ -19313,9 +19313,13 @@ const handleCreateChallan = async (req, res) => {
       req.body?.challanNo ?? req.body?.challan_no,
       challan.type,
     );
+    const challanDto = await rowToDeliveryChallanDto(challan);
+    if (io) {
+      io.emit('challan_generated_ok', challanDto);
+    }
     res.status(201).json({
       success: true,
-      data: await rowToDeliveryChallanDto(challan),
+      data: challanDto,
       warnings: warning ? [warning] : [],
       error: null,
     });
