@@ -80,15 +80,22 @@ class _ChallanStagingScreenState extends State<ChallanStagingScreen> {
   @override
   Widget build(BuildContext context) {
     final socketService = context.watch<SocketService>();
+    final isTablet = MediaQuery.of(context).size.width >= 600;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Live Dock Staging'),
+        title: Text(
+          'Live Dock Staging',
+          style: TextStyle(
+            fontSize: isTablet ? 24.0 : 20.0,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         backgroundColor: socketService.isConnected ? SoftErpTheme.accent : Colors.red,
         foregroundColor: Colors.white,
         actions: [
           IconButton(
-            icon: const Icon(Icons.camera_alt),
+            icon: Icon(Icons.camera_alt, size: isTablet ? 28.0 : 24.0),
             onPressed: _openCameraScanner,
             tooltip: 'Camera Scanner (Fallback)',
           )
@@ -104,11 +111,15 @@ class _ChallanStagingScreenState extends State<ChallanStagingScreen> {
               Container(
                 width: double.infinity,
                 color: Colors.red.shade100,
-                padding: const EdgeInsets.all(8.0),
-                child: const Text(
+                padding: EdgeInsets.all(isTablet ? 12.0 : 8.0),
+                child: Text(
                   'Offline - Scans are saved locally',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: Colors.red, 
+                    fontWeight: FontWeight.bold,
+                    fontSize: isTablet ? 16.0 : 14.0,
+                  ),
                 ),
               ),
               
@@ -119,23 +130,49 @@ class _ChallanStagingScreenState extends State<ChallanStagingScreen> {
                       child: Text(
                         'Ready to Scan\n\n(Waiting for Bluetooth Scanner)',
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.grey.shade600, fontSize: 18),
+                        style: TextStyle(
+                          color: Colors.grey.shade600, 
+                          fontSize: isTablet ? 22.0 : 18.0
+                        ),
                       ),
                     )
                   : ListView.builder(
                       itemCount: _stagedItems.length,
                       itemBuilder: (context, index) {
                         final item = _stagedItems[index];
-                        return Card(
-                          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          child: ListTile(
-                            leading: const CircleAvatar(
-                              backgroundColor: SoftErpTheme.accent,
-                              child: Icon(Icons.qr_code, color: Colors.white),
+                        return Center(
+                          child: Container(
+                            constraints: BoxConstraints(maxWidth: isTablet ? 720.0 : double.infinity),
+                            child: Card(
+                              margin: EdgeInsets.symmetric(
+                                horizontal: isTablet ? 24.0 : 16.0, 
+                                vertical: isTablet ? 10.0 : 8.0
+                              ),
+                              child: ListTile(
+                                contentPadding: EdgeInsets.all(isTablet ? 18.0 : 12.0),
+                                leading: CircleAvatar(
+                                  radius: isTablet ? 28.0 : 20.0,
+                                  backgroundColor: SoftErpTheme.accent,
+                                  child: Icon(Icons.qr_code, color: Colors.white, size: isTablet ? 28.0 : 20.0),
+                                ),
+                                title: Text(
+                                  'Barcode: ${item['barcode']}', 
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold, 
+                                    fontSize: isTablet ? 22.0 : 18.0
+                                  )
+                                ),
+                                subtitle: Text(
+                                  'Scanned at: ${DateTime.parse(item['timestamp']).toLocal().toString().split('.')[0]}',
+                                  style: TextStyle(fontSize: isTablet ? 15.0 : 13.0),
+                                ),
+                                trailing: Icon(
+                                  Icons.check_circle, 
+                                  color: Colors.green, 
+                                  size: isTablet ? 28.0 : 24.0
+                                ),
+                              ),
                             ),
-                            title: Text('Barcode: ${item['barcode']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                            subtitle: Text('Scanned at: ${DateTime.parse(item['timestamp']).toLocal().toString().split('.')[0]}'),
-                            trailing: const Icon(Icons.check_circle, color: Colors.green),
                           ),
                         );
                       },

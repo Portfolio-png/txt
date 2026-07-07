@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import 'challan_mobile_editor_screen.dart';
 import 'challan_staging_screen.dart';
-import 'package:core_erp/core/theme/soft_erp_theme.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});

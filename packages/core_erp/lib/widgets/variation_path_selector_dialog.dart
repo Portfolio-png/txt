@@ -92,6 +92,7 @@ class _VariationPathSelectorDialogState
         .where((step) => step.selectedValueId != null)
         .length;
 
+    final isTablet = MediaQuery.of(context).size.width >= 600;
     return Padding(
       padding: const EdgeInsets.all(22),
       child: Column(
@@ -107,6 +108,7 @@ class _VariationPathSelectorDialogState
                       'Select Variation Path',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
+                        fontSize: isTablet ? 22.0 : 18.0,
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -114,15 +116,16 @@ class _VariationPathSelectorDialogState
                       _item.displayName,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: SoftErpTheme.textSecondary,
+                        fontSize: isTablet ? 16.0 : 14.0,
                       ),
                     ),
                   ],
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 7,
+                padding: EdgeInsets.symmetric(
+                  horizontal: isTablet ? 16.0 : 12.0,
+                  vertical: isTablet ? 10.0 : 7.0,
                 ),
                 decoration: BoxDecoration(
                   color: SoftErpTheme.accentSoft,
@@ -133,13 +136,14 @@ class _VariationPathSelectorDialogState
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
                     color: SoftErpTheme.accent,
                     fontWeight: FontWeight.w800,
+                    fontSize: isTablet ? 14.0 : 12.0,
                   ),
                 ),
               ),
               const SizedBox(width: 8),
               IconButton(
                 onPressed: () => Navigator.of(context).pop(),
-                icon: const Icon(Icons.close_rounded),
+                icon: Icon(Icons.close_rounded, size: isTablet ? 28.0 : 24.0),
               ),
             ],
           ),
@@ -178,7 +182,10 @@ class _VariationPathSelectorDialogState
           const SizedBox(height: 16),
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding: EdgeInsets.symmetric(
+              horizontal: isTablet ? 20.0 : 16.0,
+              vertical: isTablet ? 18.0 : 14.0,
+            ),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(14),
@@ -195,6 +202,7 @@ class _VariationPathSelectorDialogState
                 fontWeight: selectedLeaf == null
                     ? FontWeight.w500
                     : FontWeight.w700,
+                fontSize: isTablet ? 16.0 : 14.0,
               ),
             ),
           ),
@@ -222,6 +230,7 @@ class _VariationPathSelectorDialogState
   }
 
   Widget _buildStepField(VariationStep step) {
+    final isTablet = MediaQuery.of(context).size.width >= 600;
     final fieldKey = ValueKey<String>(
       'orders-variation-step-${step.property.id}',
     );
@@ -230,12 +239,16 @@ class _VariationPathSelectorDialogState
       tapTargetKey: fieldKey,
       value: step.selectedValueId,
       fieldEnabled: !widget.readOnly,
-      decoration: const InputDecoration(
+      decoration: InputDecoration(
         hintText: 'Select value',
+        hintStyle: TextStyle(fontSize: isTablet ? 16.0 : 14.0),
         filled: true,
         fillColor: Colors.white,
         isDense: true,
-        contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: isTablet ? 18.0 : 14.0,
+          vertical: isTablet ? 16.0 : 12.0,
+        ),
       ),
       dialogTitle: step.property.name.trim().isEmpty
           ? 'Variation Value'
@@ -327,6 +340,7 @@ class _VariationPathSelectorDialogState
     required bool isComplete,
     required Widget child,
   }) {
+    final isTablet = MediaQuery.of(context).size.width >= 600;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -347,21 +361,22 @@ class _VariationPathSelectorDialogState
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: SoftErpTheme.textPrimary,
                   fontWeight: FontWeight.w800,
+                  fontSize: isTablet ? 16.0 : 14.0,
                 ),
               ),
               if (!isComplete) ...[
                 const SizedBox(width: 6),
-                const Icon(
+                Icon(
                   Icons.error_outline_rounded,
-                  size: 14,
-                  color: Color(0xFFEF4444),
+                  size: isTablet ? 16.0 : 14.0,
+                  color: const Color(0xFFEF4444),
                 ),
               ],
             ],
           ),
           const SizedBox(height: 8),
           ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 360),
+            constraints: BoxConstraints(maxWidth: isTablet ? 500.0 : 360.0),
             child: child,
           ),
         ],

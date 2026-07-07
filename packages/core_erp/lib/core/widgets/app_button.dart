@@ -20,6 +20,7 @@ class AppButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isTablet = MediaQuery.of(context).size.width >= 600;
     final isPrimary = variant == AppButtonVariant.primary;
     final foregroundColor = isPrimary ? Colors.white : SoftErpTheme.textPrimary;
     final backgroundColor = isPrimary
@@ -30,7 +31,7 @@ class AppButton extends StatelessWidget {
     );
 
     return SizedBox(
-      height: 44,
+      height: isTablet ? 52.0 : 44.0,
       child: ElevatedButton(
         onPressed: isLoading ? null : onPressed,
         style: ElevatedButton.styleFrom(
@@ -44,27 +45,33 @@ class AppButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             side: side,
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 2),
+          padding: EdgeInsets.symmetric(
+            horizontal: isTablet ? 24.0 : 18.0,
+            vertical: 2,
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (isLoading)
               SizedBox(
-                width: 18,
-                height: 18,
+                width: isTablet ? 22.0 : 18.0,
+                height: isTablet ? 22.0 : 18.0,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
                   valueColor: AlwaysStoppedAnimation<Color>(foregroundColor),
                 ),
               )
             else if (icon != null) ...[
-              Icon(icon, size: 18),
-              const SizedBox(width: 8),
+              Icon(icon, size: isTablet ? 22.0 : 18.0),
+              SizedBox(width: isTablet ? 10.0 : 8.0),
             ],
             Text(
               label,
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: isTablet ? 16.0 : 14.0,
+              ),
             ),
           ],
         ),

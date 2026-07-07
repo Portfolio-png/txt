@@ -163,6 +163,9 @@ class SearchableSelectField<T> extends FormField<T> {
                              selected.label,
                              maxLines: 1,
                              overflow: TextOverflow.ellipsis,
+                             style: TextStyle(
+                               fontSize: MediaQuery.of(context).size.width >= 600 ? 16.0 : 14.0,
+                             ),
                            ),
                    ),
                  );
@@ -345,9 +348,11 @@ class _SearchableSelectDialogState<T>
       return const _SearchableSelectLayout.centered();
     }
 
+    final isTablet = overlaySize.width >= 600;
+    final preferredWidth = isTablet ? 400.0 : _preferredWidth;
     final width = math.min(
       overlaySize.width - (_screenPadding * 2),
-      math.max(anchorRect.width, _preferredWidth),
+      math.max(anchorRect.width, preferredWidth),
     );
     final left = anchorRect.left.clamp(
       _screenPadding,
@@ -457,43 +462,47 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
             children: [
               if (title != null) ...[
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+                  padding: EdgeInsets.fromLTRB(14, 14, 14, MediaQuery.of(context).size.width >= 600 ? 14 : 10),
                   child: Text(
                     title!,
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w700,
                       color: const Color(0xFF2F3744),
+                      fontSize: MediaQuery.of(context).size.width >= 600 ? 16.0 : 14.0,
                     ),
                   ),
                 ),
               ] else
-                const SizedBox(height: 14),
+                SizedBox(height: MediaQuery.of(context).size.width >= 600 ? 18.0 : 14.0),
               Padding(
-                padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                padding: EdgeInsets.fromLTRB(14, 0, 14, MediaQuery.of(context).size.width >= 600 ? 16 : 12),
                 child: SizedBox(
-                  height: 40,
+                  height: MediaQuery.of(context).size.width >= 600 ? 48.0 : 40.0,
                   child: TextField(
                     controller: searchController,
                     autofocus: true,
                     textInputAction: TextInputAction.next,
                     onChanged: onQueryChanged,
+                    style: TextStyle(
+                      fontSize: MediaQuery.of(context).size.width >= 600 ? 15.0 : 13.0,
+                    ),
                     decoration: InputDecoration(
                       hintText: searchHintText,
-                      hintStyle: const TextStyle(
-                        color: Color(0xFF7B8494),
-                        fontSize: 13,
+                      hintStyle: TextStyle(
+                        color: const Color(0xFF7B8494),
+                        fontSize: MediaQuery.of(context).size.width >= 600 ? 15.0 : 13.0,
                         fontWeight: FontWeight.w500,
                       ),
-                      prefixIcon: const Icon(
+                      prefixIcon: Icon(
                         Icons.search_rounded,
-                        size: 18,
-                        color: Color(0xFF7B8494),
+                        size: MediaQuery.of(context).size.width >= 600 ? 22.0 : 18.0,
+                        color: const Color(0xFF7B8494),
                       ),
                       filled: true,
                       fillColor: const Color(0xFFF7F8FB),
-                      contentPadding: const EdgeInsets.symmetric(
+                      contentPadding: EdgeInsets.symmetric(
                         horizontal: 12,
-                        vertical: 10,
+                        vertical: MediaQuery.of(context).size.width >= 600 ? 14.0 : 10.0,
                       ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
@@ -639,19 +648,22 @@ class _SearchableSelectOptionTileState<T>
           borderRadius: BorderRadius.circular(10),
           onTap: selectOption,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            padding: EdgeInsets.symmetric(
+              horizontal: MediaQuery.of(context).size.width >= 600 ? 16.0 : 12.0,
+              vertical: MediaQuery.of(context).size.width >= 600 ? 14.0 : 11.0,
+            ),
             child: Row(
               children: [
                 if (baseColor != null) ...[
                   Container(
-                    width: 8,
-                    height: 8,
+                    width: MediaQuery.of(context).size.width >= 600 ? 10.0 : 8.0,
+                    height: MediaQuery.of(context).size.width >= 600 ? 10.0 : 8.0,
                     decoration: BoxDecoration(
                       color: baseColor,
                       shape: BoxShape.circle,
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  SizedBox(width: MediaQuery.of(context).size.width >= 600 ? 10.0 : 8.0),
                 ],
                 Expanded(
                   child: Tooltip(
@@ -663,7 +675,7 @@ class _SearchableSelectOptionTileState<T>
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: const Color(0xFF2F3744),
-                        fontSize: 13,
+                        fontSize: MediaQuery.of(context).size.width >= 600 ? 15.0 : 13.0,
                         fontWeight: widget.isSelected
                             ? FontWeight.w700
                             : FontWeight.w500,
@@ -671,14 +683,14 @@ class _SearchableSelectOptionTileState<T>
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
+                SizedBox(width: MediaQuery.of(context).size.width >= 600 ? 12.0 : 10.0),
                 AnimatedOpacity(
                   opacity: widget.isSelected ? 1 : 0,
                   duration: const Duration(milliseconds: 120),
-                  child: const Icon(
+                  child: Icon(
                     Icons.check_rounded,
-                    size: 18,
-                    color: Color(0xFF6C63FF),
+                    size: MediaQuery.of(context).size.width >= 600 ? 22.0 : 18.0,
+                    color: const Color(0xFF6C63FF),
                   ),
                 ),
               ],
@@ -766,27 +778,31 @@ class _SearchableSelectCreateTileState<T>
           onTap: _isCreating ? null : _create,
           borderRadius: BorderRadius.circular(10),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            padding: EdgeInsets.symmetric(
+              horizontal: MediaQuery.of(context).size.width >= 600 ? 16.0 : 12.0,
+              vertical: MediaQuery.of(context).size.width >= 600 ? 14.0 : 11.0,
+            ),
             child: Row(
               children: [
                 _isCreating
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                    ? SizedBox(
+                        width: MediaQuery.of(context).size.width >= 600 ? 22.0 : 18.0,
+                        height: MediaQuery.of(context).size.width >= 600 ? 22.0 : 18.0,
+                        child: const CircularProgressIndicator(strokeWidth: 2),
                       )
                     : Icon(
                         widget.icon,
-                        size: 18,
+                        size: MediaQuery.of(context).size.width >= 600 ? 22.0 : 18.0,
                         color: const Color(0xFF7C6BFF),
                       ),
-                const SizedBox(width: 10),
+                SizedBox(width: MediaQuery.of(context).size.width >= 600 ? 12.0 : 10.0),
                 Expanded(
                   child: Text(
                     widget.label,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: const Color(0xFF5E49E6),
                       fontWeight: FontWeight.w600,
+                      fontSize: MediaQuery.of(context).size.width >= 600 ? 15.0 : 13.0,
                     ),
                   ),
                 ),
