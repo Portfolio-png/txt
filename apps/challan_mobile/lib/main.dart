@@ -63,7 +63,7 @@ class BootstrapGate extends StatefulWidget {
 
 class _BootstrapGateState extends State<BootstrapGate> {
   final TextEditingController _ipController = TextEditingController();
-  static const _configuredApiUrl = String.fromEnvironment('PAPER_API_BASE_URL', defaultValue: 'http://16.171.150.193:18080');
+  static const _configuredApiUrl = String.fromEnvironment('PAPER_API_BASE_URL');
 
   @override
   void dispose() {
