@@ -95,7 +95,9 @@ class ChallanProvider extends ChangeNotifier {
   void _handleReconnect(dynamic _) {
     // The SSE dropped and came back (commonly the desktop app backgrounding);
     // events during the gap may have been missed, so resync the whole list.
-    refresh();
+    // Silent so the list updates in place instead of flashing a spinner on
+    // every foreground.
+    refresh(silent: true);
   }
 
   @override
@@ -106,10 +108,16 @@ class ChallanProvider extends ChangeNotifier {
     super.dispose();
   }
 
-  Future<void> refresh() async {
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
+  /// Reloads the company profile and challan list. When [silent] is true the
+  /// loading spinner is not shown and transient errors are swallowed — used for
+  /// background resyncs (e.g. on SSE reconnect) so the list updates in place
+  /// instead of blanking to a spinner every time the app returns to foreground.
+  Future<void> refresh({bool silent = false}) async {
+    if (!silent) {
+      _isLoading = true;
+      _errorMessage = null;
+      notifyListeners();
+    }
     try {
       await _repository.init();
       final results = await Future.wait([
@@ -126,9 +134,9 @@ class ChallanProvider extends ChangeNotifier {
       _challans = results[1] as List<DeliveryChallan>;
     } catch (error) {
       _logError(error);
-      _errorMessage = error.toString();
+      if (!silent) _errorMessage = error.toString();
     } finally {
-      _isLoading = false;
+      if (!silent) _isLoading = false;
       notifyListeners();
     }
   }
