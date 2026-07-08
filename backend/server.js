@@ -17385,7 +17385,7 @@ app.post('/api/auth/login', async (req, res) => {
 // ---------------------------------------------------------
 // Railway Track Real-time Events (SSE)
 // ---------------------------------------------------------
-app.get('/api/events', requirePermission('config.read'), async (req, res) => {
+app.get('/api/events', requireAuth, requirePermission('config.read'), async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');

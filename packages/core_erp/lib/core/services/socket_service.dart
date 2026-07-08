@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 
 class SocketService {
@@ -17,9 +18,13 @@ class SocketService {
   final Map<String, List<Function(dynamic)>> _listeners = {};
 
   void init(String baseUrl, {String? token}) {
-    if (_isConnected) return;
-    _isConnected = true;
+    bool tokenChanged = _currentToken != token;
     _currentToken = token;
+    
+    if (_isConnected && !tokenChanged) return;
+    
+    _isConnected = true;
+    _reconnectTimer?.cancel();
     _connectInternal(baseUrl);
   }
 
@@ -33,6 +38,9 @@ class SocketService {
       final request = http.Request('GET', uri);
       if (_currentToken != null && _currentToken!.isNotEmpty) {
         request.headers['Authorization'] = 'Bearer $_currentToken';
+        print('SocketService: Connecting with token... ${_currentToken!.substring(0, math.min(10, _currentToken!.length))}...');
+      } else {
+        print('SocketService: Connecting WITHOUT token!');
       }
       final response = await _client!.send(request);
 

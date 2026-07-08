@@ -59,6 +59,34 @@ class ApiClientRepository implements ClientRepository {
   }
 
   @override
+  Future<ClientDefinition?> getClient(int id) async {
+    if (useMockResponses) {
+      _seedMockStoreIfNeeded();
+      try {
+        return _mockClients.firstWhere((c) => c.id == id);
+      } catch (e) {
+        return null;
+      }
+    }
+
+    final uri = Uri.parse('$baseUrl/api/clients/$id');
+    final response = await _client.get(uri);
+    
+    if (response.statusCode == 404) return null;
+    
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] == false) {
+      throw ClientApiException(
+        payload['error'] as String? ?? 'Failed to fetch client.',
+      );
+    }
+
+    return ClientDto.fromJson(payload['client'] as Map<String, dynamic>).toDomain();
+  }
+
+  @override
   Future<ClientDefinition> createClient(CreateClientInput input) async {
     if (useMockResponses) {
       _seedMockStoreIfNeeded();
