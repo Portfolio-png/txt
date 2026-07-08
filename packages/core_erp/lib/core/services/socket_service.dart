@@ -130,6 +130,19 @@ class SocketService {
       } catch (e) {
         // ignore JSON parse errors
       }
+    } else if (eventType.isEmpty && data.isNotEmpty) {
+      // Initial-state / head-position message: {"lastChangeId": N}. Anchor our
+      // position to head so the next reconnect only replays events missed after
+      // this point (rather than re-sending since=0 and losing them).
+      try {
+        final parsedData = jsonDecode(data);
+        final head = parsedData is Map ? parsedData['lastChangeId'] : null;
+        if (head is int && head > _lastEventId) {
+          _lastEventId = head;
+        }
+      } catch (e) {
+        // ignore JSON parse errors
+      }
     }
   }
 

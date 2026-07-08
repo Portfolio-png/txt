@@ -53,15 +53,42 @@ class ChallanProvider extends ChangeNotifier {
       return;
     }
     _initialized = true;
-    SocketService.instance.on('challan_updated', (data) {
-      refresh();
-    });
-    
-    // Also listen to specific challan generated if it is still emitted via custom-event
-    SocketService.instance.on('challan_generated_ok', (data) {
-      refresh();
-    });
+    SocketService.instance.on('challan_updated', _handleChallanEvent);
+    SocketService.instance.on('challan_generated_ok', _handleChallanEvent);
     await refresh();
+  }
+
+  void _handleChallanEvent(dynamic data) async {
+    if (data == null) return;
+    // The id can arrive as an int (INSERT → result.lastID), a String (UPDATE →
+    // req.params.id), or nested in a custom-event payload. Coerce defensively so
+    // a stray String doesn't throw and silently swallow the refresh.
+    final dynamic rawId = data is Map ? data['id'] : data;
+    int? id;
+    if (rawId is int) {
+      id = rawId;
+    } else if (rawId is num) {
+      id = rawId.toInt();
+    } else if (rawId is String) {
+      id = int.tryParse(rawId.trim());
+    }
+
+    if (id != null) {
+      try {
+        final updatedChallan = await _repository.getChallan(id);
+        final index = _challans.indexWhere((c) => c.id == id);
+        if (index >= 0) {
+          _challans[index] = updatedChallan;
+        } else {
+          _challans.insert(0, updatedChallan);
+        }
+        notifyListeners();
+      } catch (e) {
+        _logError(e);
+      }
+    } else {
+      refresh();
+    }
   }
 
   @override

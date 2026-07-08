@@ -17387,9 +17387,22 @@ app.post('/api/auth/login', async (req, res) => {
 // ---------------------------------------------------------
 app.get('/api/events', requireAuth, requirePermission('config.read'), async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
+  // Tell nginx / reverse proxies NOT to buffer this stream. Without this, small
+  // change events pile up in the proxy's buffer and reach the client only when
+  // it fills or the heartbeat flushes it — so live updates arrive in laggy
+  // bursts. Pairs with `proxy_buffering off` in deploy/nginx.paper.conf.
+  res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
+  // Disable Nagle so each small SSE frame goes out on the wire immediately.
+  req.socket?.setNoDelay(true);
+
+  // Flush per-write when a flush() is available (e.g. behind compression);
+  // harmless no-op otherwise.
+  const flush = () => {
+    if (typeof res.flush === 'function') res.flush();
+  };
 
   let sinceId = Number(req.query.since);
   if (!Number.isFinite(sinceId) || sinceId < 0) {
@@ -17397,19 +17410,31 @@ app.get('/api/events', requireAuth, requirePermission('config.read'), async (req
   }
 
   try {
-    if (sinceId !== null) {
-      // Catch up on missed events
-      const rows = await all('SELECT id, table_name, record_id, event_type FROM changelog WHERE id > ? ORDER BY id ASC', [sinceId]);
+    // Only replay when the client already holds a real position (since > 0),
+    // i.e. it received live events and then reconnected. A fresh client sends
+    // since=0 and just syncs to head — it does a full initial load on its own,
+    // so replaying the entire changelog history would be a needless burst of
+    // refetches on every app launch.
+    if (sinceId !== null && sinceId > 0) {
+      // Catch up on events missed while disconnected. This MUST use the same
+      // framing as the live `listener` below (an `event: table-change` line and
+      // table_name/record_id/event_type keys) — otherwise the client silently
+      // drops every replayed event and never recovers changes made during the
+      // reconnect gap. LIMIT guards against an unbounded replay for a very stale
+      // client; the closing `lastChangeId` still advances it to head.
+      const rows = await all('SELECT id, table_name, record_id, event_type FROM changelog WHERE id > ? ORDER BY id ASC LIMIT 1000', [sinceId]);
       for (const row of rows) {
         res.write(`id: ${row.id}\n`);
-        res.write(`data: ${JSON.stringify({ table: row.table_name, recordId: row.record_id, eventType: row.event_type })}\n\n`);
+        res.write(`event: table-change\n`);
+        res.write(`data: ${JSON.stringify({ table_name: row.table_name, record_id: row.record_id, event_type: row.event_type })}\n\n`);
       }
-    } else {
-      // Send initial state
-      const row = await get('SELECT MAX(id) as maxId FROM changelog');
-      const maxId = row?.maxId || 0;
-      res.write(`data: ${JSON.stringify({ lastChangeId: maxId })}\n\n`);
     }
+    // Always tell the client the current head so it can anchor its position
+    // (used on first connect, and after a capped catch-up).
+    const row = await get('SELECT MAX(id) as maxId FROM changelog');
+    const maxId = row?.maxId || 0;
+    res.write(`data: ${JSON.stringify({ lastChangeId: maxId })}\n\n`);
+    flush();
   } catch (err) {
     console.error('[SSE] Failed to fetch changelog:', err);
   }
@@ -17418,20 +17443,23 @@ app.get('/api/events', requireAuth, requirePermission('config.read'), async (req
     res.write(`id: ${event.id}\n`);
     res.write(`event: table-change\n`);
     res.write(`data: ${JSON.stringify({ table_name: event.table, record_id: event.recordId, event_type: event.eventType })}\n\n`);
+    flush();
   };
 
   const customEventListener = (payload) => {
     res.write(`event: custom-event\n`);
     res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    flush();
   };
 
   changeEmitter.on('table-change', listener);
   changeEmitter.on('custom-event', customEventListener);
 
-  // Heartbeat to keep connection alive
+  // Heartbeat to keep the connection (and any idle proxy) alive.
   const heartbeat = setInterval(() => {
     res.write(': heartbeat\n\n');
-  }, 30000);
+    flush();
+  }, 15000);
 
   req.on('close', () => {
     changeEmitter.off('table-change', listener);

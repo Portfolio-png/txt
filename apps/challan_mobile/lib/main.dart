@@ -36,6 +36,7 @@ import 'package:core_erp/features/search/presentation/providers/search_provider.
 import 'package:core_erp/core/services/socket_service.dart' as core_socket;
 
 import 'screens/home_screen.dart';
+import 'screens/demo_passcode_screen.dart';
 import 'services/network_discovery_service.dart';
 import 'services/socket_service.dart';
 
@@ -342,13 +343,13 @@ class MyApp extends StatelessWidget {
               demoMode: _isDemoMode,
             )..initialize();
             
-            if (!_isDemoMode) {
-              // Auto-login for mobile dev if not in demo mode
-              provider.login(
-                email: 'super@paper.local',
-                password: 'Paper@12345',
-              );
-            }
+            // if (!_isDemoMode) {
+            //   // Auto-login for mobile dev if not in demo mode
+            //   provider.login(
+            //     email: 'super@paper.local',
+            //     password: 'Paper@12345',
+            //   );
+            // }
             return provider;
           },
         ),
@@ -566,6 +567,8 @@ class _AuthGateState extends State<_AuthGate> {
       );
     }
     
-    return authenticated ? const HomeScreen() : const Scaffold(body: Center(child: Text("Authenticating...")));
+    return authenticated 
+        ? const HomeScreen() 
+        : const DemoPasscodeScreen();
   }
 }
