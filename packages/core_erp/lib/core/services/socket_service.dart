@@ -14,7 +14,8 @@ class SocketService {
   int _lastEventId = 0;
   Timer? _reconnectTimer;
   String? _currentToken;
-  
+  bool _hasConnectedBefore = false;
+
   final Map<String, List<Function(dynamic)>> _listeners = {};
 
   void init(String baseUrl, {String? token}) {
@@ -46,6 +47,14 @@ class SocketService {
 
       if (response.statusCode == 200) {
         print('SocketService: Connected to backend (SSE)');
+        // On a *re*connect (e.g. after the app backgrounded and the stream
+        // dropped) we may have missed change events during the gap. Tell
+        // listeners to resync so nothing is left stale — this does NOT depend on
+        // the server-side changelog replay being correct.
+        if (_hasConnectedBefore) {
+          _emit('realtime:reconnected', null);
+        }
+        _hasConnectedBefore = true;
         String buffer = '';
         response.stream.transform(utf8.decoder).listen((data) {
           buffer += data;

@@ -17385,7 +17385,11 @@ app.post('/api/auth/login', async (req, res) => {
 // ---------------------------------------------------------
 // Railway Track Real-time Events (SSE)
 // ---------------------------------------------------------
-app.get('/api/events', requireAuth, requirePermission('config.read'), async (req, res) => {
+// Any authenticated user may receive the realtime change stream. It carries only
+// {table_name, record_id, event_type} (ids, no row data); the actual fetch each
+// event triggers is separately permission-checked. Gating this behind
+// config.read wrongly starved non-admin users of live updates.
+app.get('/api/events', requireAuth, async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');

@@ -389,41 +389,67 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
     );
 
     final result = await provider.createChallan(draft);
-    if (mounted) {
+    if (!mounted) return;
+
+    if (result == null) {
       setState(() => _isSaving = false);
-      if (result != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle, color: Colors.white),
-                const SizedBox(width: 12),
-                Text('Created Challan: ${result.challanNo}', style: const TextStyle(fontWeight: FontWeight.bold)),
-              ],
-            ),
-            backgroundColor: Colors.green.shade600,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          )
-        );
-        setState(() {
-          final count = _items.length;
-          _items.clear();
-          for (var i = 0; i < count; i++) {
-            _listKey.currentState?.removeItem(0, (context, animation) => const SizedBox.shrink());
-          }
-          _notesController.clear();
-        });
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(provider.errorMessage ?? 'Failed to create challan'),
-            backgroundColor: Colors.redAccent,
-            behavior: SnackBarBehavior.floating,
-          )
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(provider.errorMessage ?? 'Failed to create challan'),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        )
+      );
+      return;
     }
+
+    // Mobile submits an issued challan, not a draft: issue it right after
+    // creation. If the backend rejects the issue (e.g. a delivery challan with
+    // no linked order / customer), the challan is preserved as a draft and the
+    // user is told why so it can be completed from the desktop — nothing is lost.
+    final issued = await provider.issueChallan(result.id);
+    if (!mounted) return;
+    setState(() => _isSaving = false);
+
+    if (issued != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle, color: Colors.white),
+              const SizedBox(width: 12),
+              Text('Issued Challan: ${issued.challanNo}', style: const TextStyle(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          backgroundColor: Colors.green.shade600,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        )
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Saved draft ${result.challanNo} — could not issue: '
+            '${provider.errorMessage ?? 'unknown error'}. Issue it from the desktop.',
+          ),
+          backgroundColor: Colors.orange.shade800,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 6),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        )
+      );
+    }
+
+    // The challan is saved either way (issued or draft) — clear for next entry.
+    setState(() {
+      final count = _items.length;
+      _items.clear();
+      for (var i = 0; i < count; i++) {
+        _listKey.currentState?.removeItem(0, (context, animation) => const SizedBox.shrink());
+      }
+      _notesController.clear();
+    });
   }
 
   int get _totalQty {

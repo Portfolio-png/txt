@@ -127,9 +127,11 @@ Future<void> main() async {
   SessionReplayService.instance.initialize(_resolveApiBaseUrl(), clientId);
 
   await AutoUpdaterService.instance.initialize();
-  
-  // Initialize WebSocket connection for real-time updates
-  SocketService.instance.init(_resolveApiBaseUrl());
+
+  // Real-time updates (SSE) are connected once auth is available and rebound
+  // whenever the token changes — see _RealtimeSocketConnector above MaterialApp.
+  // Connecting here would be pre-login and token-less, which the authenticated
+  // /api/events endpoint rejects; it would then never recover without a restart.
 
   await SentryFlutter.init((options) {
     options.dsn = const String.fromEnvironment(
@@ -140,6 +142,29 @@ Future<void> main() async {
     options.experimental.replay.sessionSampleRate = 1.0;
     options.experimental.replay.onErrorSampleRate = 1.0;
   }, appRunner: () => runApp(const MyApp()));
+}
+
+/// Keeps the real-time [SocketService] (SSE) connection bound to the current
+/// auth token. Sits directly above [MaterialApp] and watches [AuthProvider], so
+/// it rebuilds on every login/logout/token change and re-binds the socket.
+/// [SocketService.init] no-ops when the token is unchanged, so this is cheap and
+/// only reconnects when the token actually changes. Returning [child] unchanged
+/// means the app subtree is not rebuilt.
+///
+/// This is a widget (not a provider whose value nothing reads) on purpose: it
+/// guarantees the binding actually runs. Without a live-authenticated socket the
+/// desktop never receives change events and its UI only refreshes on a restart.
+class _RealtimeSocketConnector extends StatelessWidget {
+  const _RealtimeSocketConnector({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    SocketService.instance.init(_apiBaseUrl, token: auth.token);
+    return child;
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -539,7 +564,8 @@ class MyApp extends StatelessWidget {
           },
         ),
       ],
-      child: MaterialApp(
+      child: _RealtimeSocketConnector(
+        child: MaterialApp(
         navigatorKey: appNavigatorKey,
         navigatorObservers: [ReplayNavigatorObserver()],
         title: 'Paper',
@@ -578,6 +604,7 @@ class MyApp extends StatelessWidget {
           return null;
         },
         home: _AuthGate(isDemoMode: _effectiveDemoMode),
+        ),
       ),
     );
   }

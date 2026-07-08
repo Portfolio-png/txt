@@ -55,6 +55,7 @@ class ChallanProvider extends ChangeNotifier {
     _initialized = true;
     SocketService.instance.on('challan_updated', _handleChallanEvent);
     SocketService.instance.on('challan_generated_ok', _handleChallanEvent);
+    SocketService.instance.on('realtime:reconnected', _handleReconnect);
     await refresh();
   }
 
@@ -91,10 +92,17 @@ class ChallanProvider extends ChangeNotifier {
     }
   }
 
+  void _handleReconnect(dynamic _) {
+    // The SSE dropped and came back (commonly the desktop app backgrounding);
+    // events during the gap may have been missed, so resync the whole list.
+    refresh();
+  }
+
   @override
   void dispose() {
     SocketService.instance.off('challan_updated');
     SocketService.instance.off('challan_generated_ok');
+    SocketService.instance.off('realtime:reconnected', _handleReconnect);
     super.dispose();
   }
 
