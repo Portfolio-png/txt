@@ -67,6 +67,9 @@ class BootstrapGate extends StatefulWidget {
 class _BootstrapGateState extends State<BootstrapGate> {
   final TextEditingController _ipController = TextEditingController();
   static const _configuredApiUrl = String.fromEnvironment('PAPER_API_BASE_URL');
+  // Cloud/production server the app points at with one tap. manualConnect wraps
+  // a bare IP as http://<ip>:18080.
+  static const _onlineServerIp = '16.171.150.193';
 
   @override
   void dispose() {
@@ -232,6 +235,40 @@ class _BootstrapGateState extends State<BootstrapGate> {
                             ),
                           ],
                           const SizedBox(height: 20),
+                          // One-tap connect to the cloud/production server.
+                          _ConnectionOptionCard(
+                            icon: Icons.cloud_done_rounded,
+                            title: 'Online Server',
+                            subtitle: 'Connect to the cloud server ($_onlineServerIp)',
+                            onTap: () => discovery.manualConnect(_onlineServerIp),
+                          ),
+                          const SizedBox(height: 20),
+                          const Row(
+                            children: [
+                              Expanded(child: Divider(color: Color(0xFF334155))),
+                              Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 12),
+                                child: Text(
+                                  'or connect manually',
+                                  style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                ),
+                              ),
+                              Expanded(child: Divider(color: Color(0xFF334155))),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+                          const Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'For local testing',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF94A3B8),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
                           TextField(
                             controller: _ipController,
                             style: const TextStyle(color: Colors.white, fontSize: 15),
@@ -319,6 +356,83 @@ class _BootstrapGateState extends State<BootstrapGate> {
     }
 
     return MyApp(apiUrl: discovery.discoveredUrl!);
+  }
+}
+
+/// Tappable connection preset card (e.g. the online/cloud server).
+class _ConnectionOptionCard extends StatelessWidget {
+  const _ConnectionOptionCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF6366F1).withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: const Color(0xFF6366F1).withValues(alpha: 0.6),
+              width: 1.5,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF312E81),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, size: 22, color: const Color(0xFF818CF8)),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF94A3B8),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: Color(0xFF818CF8),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
