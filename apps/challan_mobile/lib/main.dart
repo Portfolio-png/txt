@@ -415,10 +415,18 @@ class MyApp extends StatelessWidget {
           ),
         ),
         ChangeNotifierProvider(create: (_) => ChallanEditorCommandProvider()),
-        ChangeNotifierProvider(
-          create: (_) {
-            final localSocket = SocketService()..connect(apiUrl);
+        ChangeNotifierProxyProvider<AuthProvider, SocketService>(
+          create: (context) {
+            final auth = context.read<AuthProvider>();
+            final localSocket = SocketService()
+              ..initAuth(auth)
+              ..connect(apiUrl);
             core_socket.SocketService.instance.init(apiUrl);
+            return localSocket;
+          },
+          update: (context, auth, previous) {
+            final localSocket = previous ?? SocketService()..connect(apiUrl);
+            localSocket.initAuth(auth);
             return localSocket;
           },
         ),

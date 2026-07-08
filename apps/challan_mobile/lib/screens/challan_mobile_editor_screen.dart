@@ -25,6 +25,8 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
   
   int? _selectedClientId;
   int? _selectedVendorId;
+  DateTime _challanDate = DateTime.now();
+  final _challanNoController = TextEditingController();
   final _locationController = TextEditingController(text: 'MAIN');
   final _notesController = TextEditingController();
   
@@ -46,6 +48,7 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
   @override
   void dispose() {
     _fabAnimController.dispose();
+    _challanNoController.dispose();
     _locationController.dispose();
     _notesController.dispose();
     super.dispose();
@@ -368,12 +371,12 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
     final draft = DeliveryChallanDraftInput(
       type: _type,
       purpose: ChallanPurpose.trading,
-      challanNo: '', // Auto-generated
+      challanNo: _challanNoController.text, // User-entered or empty for auto-generate
       orderId: 0,
       orderIds: [],
       vendorId: _selectedVendorId ?? 0,
       materialOwnerClientId: _selectedClientId,
-      date: DateTime.now(),
+      date: _challanDate,
       location: _locationController.text,
       sourceReference: '',
       notes: _notesController.text,
@@ -736,6 +739,41 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
                                   onChanged: (v) => setState(() => _selectedVendorId = v),
                                   validator: (v) => v == null ? 'Vendor is required' : null,
                                 ),
+                              const SizedBox(height: 16),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller: _challanNoController,
+                                      style: const TextStyle(fontWeight: FontWeight.w600),
+                                      decoration: _glassInputDecoration('Challan No. (Auto)', Icons.numbers_rounded),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: InkWell(
+                                      onTap: () async {
+                                        final picked = await showDatePicker(
+                                          context: context,
+                                          initialDate: _challanDate,
+                                          firstDate: DateTime(2000),
+                                          lastDate: DateTime(2100),
+                                        );
+                                        if (picked != null) {
+                                          setState(() => _challanDate = picked);
+                                        }
+                                      },
+                                      child: InputDecorator(
+                                        decoration: _glassInputDecoration('Date', Icons.calendar_today_rounded),
+                                        child: Text(
+                                          '${_challanDate.day}/${_challanDate.month}/${_challanDate.year}',
+                                          style: const TextStyle(fontWeight: FontWeight.w600),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                               const SizedBox(height: 16),
                               TextFormField(
                                 controller: _locationController,

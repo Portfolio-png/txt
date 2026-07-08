@@ -53,26 +53,20 @@ class ChallanProvider extends ChangeNotifier {
       return;
     }
     _initialized = true;
+    SocketService.instance.on('challan_updated', (data) {
+      refresh();
+    });
+    
+    // Also listen to specific challan generated if it is still emitted via custom-event
     SocketService.instance.on('challan_generated_ok', (data) {
-      if (data != null && data is Map<String, dynamic>) {
-        try {
-          final newChallan = DeliveryChallan.fromJson(data);
-          // Insert at the beginning of the list
-          _challans = [newChallan, ..._challans];
-          notifyListeners();
-        } catch (e) {
-          // Fallback to full refresh on parsing error
-          refresh();
-        }
-      } else {
-        refresh();
-      }
+      refresh();
     });
     await refresh();
   }
 
   @override
   void dispose() {
+    SocketService.instance.off('challan_updated');
     SocketService.instance.off('challan_generated_ok');
     super.dispose();
   }

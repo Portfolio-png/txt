@@ -13,6 +13,7 @@ const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const cors = require('cors');
 const crypto = require('crypto');
 const fs = require('fs');
+const { EventEmitter } = require('events');
 const { imageSize } = require('image-size');
 const path = require('path');
 const PDFDocument = require('pdfkit');
@@ -92,6 +93,37 @@ function parseBooleanEnv(value, fallback = false) {
   const normalized = String(value).trim().toLowerCase();
   return ['1', 'true', 'yes', 'y', 'on'].includes(normalized);
 }
+
+// ---------------------------------------------------------
+// Railway Track Real-time Change Delivery
+// ---------------------------------------------------------
+const changeEmitter = new EventEmitter();
+
+async function logChange(tableName, recordId, eventType) {
+  try {
+    const result = await new Promise((resolve, reject) => {
+      db.run(
+        `INSERT INTO changelog (table_name, record_id, event_type, timestamp) VALUES (?, ?, ?, datetime('now'))`,
+        [tableName, recordId, eventType],
+        function (err) {
+          if (err) reject(err);
+          else resolve(this);
+        }
+      );
+    });
+    // Emit event for SSE stream
+    changeEmitter.emit('table-change', {
+      id: result.lastID,
+      table: tableName,
+      recordId: recordId,
+      eventType: eventType
+    });
+  } catch (err) {
+    console.error(`[Realtime] Failed to log change for ${tableName} ${recordId}:`, err);
+    // Ignore error so we don't break transactions if the changelog insert fails
+  }
+}
+
 const USER_ROLES = new Set(['super_admin', 'admin', 'user']);
 const PERMISSION_KEYS = [
   'inventory.read',
@@ -6874,6 +6906,7 @@ async function saveClient({ name, alias = '', gstNumber = '', address = '', logo
       `,
       [trimmedName, trimmedAlias, trimmedGstNumber, trimmedAddress, now, now],
     );
+    await logChange('clients', result.lastID, 'INSERT');
     return getClientRowById(result.lastID);
   }
 
@@ -6911,6 +6944,7 @@ async function saveClient({ name, alias = '', gstNumber = '', address = '', logo
     'UPDATE clients SET name = ?, alias = ?, gst_number = ?, address = ?, updated_at = ? WHERE id = ?',
     [trimmedName, trimmedAlias, trimmedGstNumber, trimmedAddress, now, id],
   );
+  await logChange('clients', id, 'UPDATE');
   return getClientRowById(id);
 }
 
@@ -7102,6 +7136,7 @@ async function saveVendor({
         now,
       ],
     );
+    await logChange('vendors', result.lastID, 'INSERT');
     return getVendorRowById(result.lastID);
   }
 
@@ -7130,6 +7165,7 @@ async function saveVendor({
       id,
     ],
   );
+  await logChange('vendors', id, 'UPDATE');
   return getVendorRowById(id);
 }
 
@@ -10014,6 +10050,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
       itemCount: items.length,
     });
     const saved = await getDeliveryChallanRowById(challanId);
+    await logChange('delivery_challans', challanId, existing ? 'UPDATE' : 'INSERT');
     await run('COMMIT');
     return saved;
   } catch (error) {
@@ -10179,6 +10216,7 @@ async function issueDeliveryChallan(id, actor = null) {
         id,
       ],
     );
+    await logChange('delivery_challans', id, 'UPDATE');
     await run('COMMIT');
   } catch (error) {
     await run('ROLLBACK');
@@ -10273,6 +10311,7 @@ async function cancelDeliveryChallan(id, actor = null) {
       "UPDATE delivery_challans SET status = 'cancelled', updated_by = ?, updated_at = ? WHERE id = ?",
       [actor?.id || null, now, id],
     );
+    await logChange('delivery_challans', id, 'UPDATE');
     await run('COMMIT');
   } catch (error) {
     await run('ROLLBACK');
@@ -10345,6 +10384,7 @@ async function deleteDraftDeliveryChallan(id, actor = null) {
     await run('DELETE FROM delivery_challan_order_items WHERE challan_id = ?', [id]);
     await run('DELETE FROM delivery_challan_items WHERE challan_id = ?', [id]);
     await run('DELETE FROM delivery_challans WHERE id = ?', [id]);
+    await logChange('delivery_challans', id, 'DELETE');
     await run('COMMIT');
   } catch (error) {
     await run('ROLLBACK');
@@ -13867,6 +13907,7 @@ async function saveItem({
       now,
     );
 
+    await logChange('items', itemId, id == null ? 'INSERT' : 'UPDATE');
     await run('COMMIT');
     return getItemRowById(itemId);
   } catch (error) {
@@ -13932,6 +13973,7 @@ async function ensureItemRecord({
       const now = new Date().toISOString();
       await run('UPDATE items SET is_archived = 1, updated_at = ? WHERE id = ?', [now, item.id]);
       await run('UPDATE item_variation_nodes SET is_archived = 1, updated_at = ? WHERE item_id = ?', [now, item.id]);
+      await logChange('items', item.id, 'UPDATE');
     }
     return getItemRowById(item.id);
   }
@@ -13940,6 +13982,7 @@ async function ensureItemRecord({
     const now = new Date().toISOString();
     await run('UPDATE items SET is_archived = ?, updated_at = ? WHERE id = ?', [isArchived ? 1 : 0, now, existing.id]);
     await run('UPDATE item_variation_nodes SET is_archived = ?, updated_at = ? WHERE item_id = ?', [isArchived ? 1 : 0, now, existing.id]);
+    await logChange('items', existing.id, 'UPDATE');
   }
   return getItemRowById(existing.id);
 }
@@ -17338,6 +17381,63 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (error) {
     res.status(500).json({ success: false, user: null, token: null, error: error.message });
   }
+});
+// ---------------------------------------------------------
+// Railway Track Real-time Events (SSE)
+// ---------------------------------------------------------
+app.get('/api/events', requirePermission('config.read'), async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  let sinceId = Number(req.query.since);
+  if (!Number.isFinite(sinceId) || sinceId < 0) {
+    sinceId = null;
+  }
+
+  try {
+    if (sinceId !== null) {
+      // Catch up on missed events
+      const rows = await all('SELECT id, table_name, record_id, event_type FROM changelog WHERE id > ? ORDER BY id ASC', [sinceId]);
+      for (const row of rows) {
+        res.write(`id: ${row.id}\n`);
+        res.write(`data: ${JSON.stringify({ table: row.table_name, recordId: row.record_id, eventType: row.event_type })}\n\n`);
+      }
+    } else {
+      // Send initial state
+      const row = await get('SELECT MAX(id) as maxId FROM changelog');
+      const maxId = row?.maxId || 0;
+      res.write(`data: ${JSON.stringify({ lastChangeId: maxId })}\n\n`);
+    }
+  } catch (err) {
+    console.error('[SSE] Failed to fetch changelog:', err);
+  }
+
+  const listener = (event) => {
+    res.write(`id: ${event.id}\n`);
+    res.write(`event: table-change\n`);
+    res.write(`data: ${JSON.stringify({ table_name: event.table, record_id: event.recordId, event_type: event.eventType })}\n\n`);
+  };
+
+  const customEventListener = (payload) => {
+    res.write(`event: custom-event\n`);
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+
+  changeEmitter.on('table-change', listener);
+  changeEmitter.on('custom-event', customEventListener);
+
+  // Heartbeat to keep connection alive
+  const heartbeat = setInterval(() => {
+    res.write(': heartbeat\n\n');
+  }, 30000);
+
+  req.on('close', () => {
+    changeEmitter.off('table-change', listener);
+    changeEmitter.off('custom-event', customEventListener);
+    clearInterval(heartbeat);
+  });
 });
 
 app.get('/api/delivery-challans/health', (_req, res) => {
@@ -21211,6 +21311,7 @@ app.delete('/api/vendors/:id', requirePermission('config.write'), async (req, re
       return res.status(400).json({ success: false, error: 'Cannot delete vendor: referenced by reception challans.' });
     }
     await run('DELETE FROM vendors WHERE id = ?', [id]);
+    await logChange('vendors', id, 'DELETE');
     if (io) {
       io.emit('vendor_deleted', { id });
     }
@@ -21466,6 +21567,7 @@ app.delete('/api/items/:id', requirePermission('config.write'), async (req, res)
       return;
     }
     await run('DELETE FROM items WHERE id = ?', [id]);
+    await logChange('items', id, 'DELETE');
     if (io) {
       io.emit('item_deleted', { id });
     }
@@ -23605,6 +23707,46 @@ app.delete('/api/employees/:id', requirePermission('config.write'), async (req, 
   }
 });
 
+app.post('/api/mobile/stage-item', requireAuth, async (req, res) => {
+  try {
+    if (io) io.emit('item_staged', req.body);
+    changeEmitter.emit('custom-event', { event: 'item_staged', data: req.body });
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/mobile/remove-staged-item', requireAuth, async (req, res) => {
+  try {
+    if (io) io.emit('item_removed', req.body);
+    changeEmitter.emit('custom-event', { event: 'item_removed', data: req.body });
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/mobile/lock-inventory', requireAuth, async (req, res) => {
+  try {
+    if (io) io.emit('inventory_locked', req.body);
+    changeEmitter.emit('custom-event', { event: 'inventory_locked', data: req.body });
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/mobile/challan-generated', requireAuth, async (req, res) => {
+  try {
+    if (io) io.emit('challan_generated_ok', req.body);
+    changeEmitter.emit('custom-event', { event: 'challan_generated_ok', data: req.body });
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ==========================================
 // PAYROLL APIs
 // ==========================================
@@ -23992,8 +24134,7 @@ function startServer() {
         
         // Mobile staging workflow events
         socket.on('stage_item', (data) => {
-          console.log(`Item staged by mobile:`, data);
-          // Broadcast to Desktop apps
+          console.log(`Item staged by mobile (WS):`, data);
           socket.broadcast.emit('item_staged', data);
         });
 
