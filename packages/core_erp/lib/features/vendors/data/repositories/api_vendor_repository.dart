@@ -34,6 +34,25 @@ class ApiVendorRepository implements VendorRepository {
   }
 
   @override
+  Future<VendorDefinition?> getVendor(int id) async {
+    if (useMockResponses) {
+      try {
+        return _mockVendors.firstWhere((v) => v.id == id);
+      } catch (e) {
+        return null;
+      }
+    }
+    try {
+      final payload = await _request('GET', '/api/vendors/$id');
+      if (payload['vendor'] == null) return null;
+      return _vendorFromJson(payload['vendor'] as Map<String, dynamic>);
+    } catch (e) {
+      if (e.toString().contains('404')) return null;
+      rethrow;
+    }
+  }
+
+  @override
   Future<VendorDefinition> createVendor(CreateVendorInput input) async {
     if (useMockResponses) {
       final created = VendorDefinition(

@@ -4,6 +4,7 @@ import '../../domain/client_inputs.dart';
 abstract class ClientRepository {
   Future<void> init();
   Future<List<ClientDefinition>> getClients();
+  Future<ClientDefinition?> getClient(int id);
   Future<ClientDefinition> createClient(CreateClientInput input);
   Future<ClientDefinition> updateClient(UpdateClientInput input);
   Future<ClientDefinition> archiveClient(int id);

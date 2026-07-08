@@ -59,6 +59,34 @@ class ApiItemRepository implements ItemRepository {
   }
 
   @override
+  Future<ItemDefinition?> getItem(int id) async {
+    if (useMockResponses) {
+      _seedMockStoreIfNeeded();
+      try {
+        return _mockItems.firstWhere((i) => i.id == id);
+      } catch (e) {
+        return null;
+      }
+    }
+
+    final uri = Uri.parse('$baseUrl/api/items/$id');
+    final response = await _client.get(uri);
+    
+    if (response.statusCode == 404) return null;
+    
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] == false) {
+      throw ItemApiException(
+        payload['error'] as String? ?? 'Failed to fetch item.',
+      );
+    }
+    
+    return ItemDto.fromJson(payload['item'] as Map<String, dynamic>).toDomain();
+  }
+
+  @override
   Future<ItemDefinition> createItem(CreateItemInput input) async {
     if (useMockResponses) {
       _seedMockStoreIfNeeded();

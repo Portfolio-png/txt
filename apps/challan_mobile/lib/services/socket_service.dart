@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:core_erp/core/providers/auth_provider.dart';
+import 'package:core_erp/features/auth/presentation/providers/auth_provider.dart';
 
 class SocketService extends ChangeNotifier {
   bool _isConnected = false;

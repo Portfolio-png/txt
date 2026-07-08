@@ -19301,6 +19301,24 @@ app.get('/api/clients', requirePermission('config.read'), async (req, res) => {
   }
 });
 
+app.get('/api/clients/:id', requirePermission('config.read'), async (req, res) => {
+  try {
+    const row = await get(`
+      SELECT
+        clients.*,
+        (SELECT COUNT(*) FROM order_items WHERE order_items.client_id = clients.id) AS usage_count
+      FROM clients
+      WHERE id = ?
+    `, [req.params.id]);
+    if (!row) {
+      return res.status(404).json({ success: false, client: null, error: 'Not found' });
+    }
+    res.json({ success: true, client: rowToClientDto(row), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, client: null, error: error.message });
+  }
+});
+
 function actorFromRequest(req) {
   return {
     id: req.user?.id || null,
@@ -21291,6 +21309,24 @@ app.get('/api/vendors', requirePermission('config.read'), async (_req, res) => {
   }
 });
 
+app.get('/api/vendors/:id', requirePermission('config.read'), async (req, res) => {
+  try {
+    const row = await get(`
+      SELECT
+        vendors.*,
+        (SELECT COUNT(*) FROM delivery_challans WHERE delivery_challans.vendor_id = vendors.id) AS usage_count
+      FROM vendors
+      WHERE id = ?
+    `, [req.params.id]);
+    if (!row) {
+      return res.status(404).json({ success: false, vendor: null, error: 'Not found' });
+    }
+    res.json({ success: true, vendor: rowToVendorDto(row), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, vendor: null, error: error.message });
+  }
+});
+
 app.post('/api/vendors', requirePermission('config.write'), async (req, res) => {
   try {
     const vendor = await saveVendor(req.body || {});
@@ -21401,6 +21437,32 @@ app.get('/api/items', requirePermission('config.read'), async (req, res) => {
     res.json({ success: true, items, error: null });
   } catch (error) {
     res.status(500).json({ success: false, items: [], error: error.message });
+  }
+});
+
+app.get('/api/items/:id', requirePermission('config.read'), async (req, res) => {
+  try {
+    const row = await get(`
+      SELECT
+        items.*,
+        pipeline_templates.name AS default_pipeline_name,
+        (
+          (SELECT COUNT(*) FROM order_items WHERE order_items.item_id = items.id) +
+          (SELECT COUNT(*) FROM delivery_challan_items WHERE delivery_challan_items.item_id = items.id) +
+          (SELECT COUNT(*) FROM order_material_requirements WHERE order_material_requirements.item_id = items.id) +
+          (SELECT COUNT(*) FROM materials WHERE materials.linked_item_id = items.id) +
+          (SELECT COUNT(*) FROM material_group_item_links WHERE material_group_item_links.item_id = items.id)
+        ) AS usage_count
+      FROM items
+      LEFT JOIN pipeline_templates ON items.default_pipeline_id = pipeline_templates.id
+      WHERE items.id = ?
+    `, [req.params.id]);
+    if (!row) {
+      return res.status(404).json({ success: false, item: null, error: 'Not found' });
+    }
+    res.json({ success: true, item: rowToItemDto(row), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, item: null, error: error.message });
   }
 });
 

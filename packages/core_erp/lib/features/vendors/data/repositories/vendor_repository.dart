@@ -4,6 +4,7 @@ import '../../domain/vendor_inputs.dart';
 abstract class VendorRepository {
   Future<void> init();
   Future<List<VendorDefinition>> getVendors();
+  Future<VendorDefinition?> getVendor(int id);
   Future<VendorDefinition> createVendor(CreateVendorInput input);
   Future<VendorDefinition> updateVendor(UpdateVendorInput input);
   Future<VendorDefinition> archiveVendor(int id);

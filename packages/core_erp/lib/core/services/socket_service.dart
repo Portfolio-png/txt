@@ -12,12 +12,14 @@ class SocketService {
   bool _isConnected = false;
   int _lastEventId = 0;
   Timer? _reconnectTimer;
+  String? _currentToken;
   
   final Map<String, List<Function(dynamic)>> _listeners = {};
 
-  void init(String baseUrl) {
+  void init(String baseUrl, {String? token}) {
     if (_isConnected) return;
     _isConnected = true;
+    _currentToken = token;
     _connectInternal(baseUrl);
   }
 
@@ -29,6 +31,9 @@ class SocketService {
       final url = baseUrl.isEmpty ? 'http://localhost:3000' : baseUrl;
       final uri = Uri.parse('$url/api/events?since=$_lastEventId');
       final request = http.Request('GET', uri);
+      if (_currentToken != null && _currentToken!.isNotEmpty) {
+        request.headers['Authorization'] = 'Bearer $_currentToken';
+      }
       final response = await _client!.send(request);
 
       if (response.statusCode == 200) {
@@ -50,9 +55,11 @@ class SocketService {
           _scheduleReconnect(baseUrl);
         });
       } else {
+        print('SocketService: Failed to connect, status code: ${response.statusCode}');
         _scheduleReconnect(baseUrl);
       }
     } catch (e) {
+      print('SocketService: Exception during connect: $e');
       _scheduleReconnect(baseUrl);
     }
   }

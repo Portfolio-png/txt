@@ -87,24 +87,30 @@ class ClientsProvider extends ChangeNotifier {
     }
     _initialized = true;
     
-    SocketService.instance.on('client_added', (data) {
-      if (data != null && data is Map<String, dynamic>) {
+    SocketService.instance.on('client_added', (data) async {
+      if (data != null && data is Map<String, dynamic> && data['id'] != null) {
         try {
-          final newClient = ClientDto.fromJson(data).toDomain();
-          _clients = [..._clients, newClient];
-          _sortClients();
-          notifyListeners();
+          final id = data['id'] as int;
+          final newClient = await _repository.getClient(id);
+          if (newClient != null) {
+            _clients = [..._clients, newClient];
+            _sortClients();
+            notifyListeners();
+          } else { refresh(); }
         } catch (_) { refresh(); }
       } else { refresh(); }
     });
 
-    SocketService.instance.on('client_updated', (data) {
-      if (data != null && data is Map<String, dynamic>) {
+    SocketService.instance.on('client_updated', (data) async {
+      if (data != null && data is Map<String, dynamic> && data['id'] != null) {
         try {
-          final updatedClient = ClientDto.fromJson(data).toDomain();
-          _clients = _clients.map((c) => c.id == updatedClient.id ? updatedClient : c).toList(growable: false);
-          _sortClients();
-          notifyListeners();
+          final id = data['id'] as int;
+          final updatedClient = await _repository.getClient(id);
+          if (updatedClient != null) {
+            _clients = _clients.map((c) => c.id == updatedClient.id ? updatedClient : c).toList(growable: false);
+            _sortClients();
+            notifyListeners();
+          } else { refresh(); }
         } catch (_) { refresh(); }
       } else { refresh(); }
     });

@@ -5,6 +5,7 @@ import '../../domain/item_usage_record.dart';
 abstract class ItemRepository {
   Future<void> init();
   Future<List<ItemDefinition>> getItems();
+  Future<ItemDefinition?> getItem(int id);
   Future<ItemDefinition> createItem(CreateItemInput input);
   Future<ItemDefinition> updateItem(UpdateItemInput input);
   Future<ItemDefinition> archiveItem(int id);

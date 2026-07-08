@@ -127,24 +127,30 @@ class ItemsProvider extends ChangeNotifier {
     }
     _initialized = true;
     
-    SocketService.instance.on('item_added', (data) {
-      if (data != null && data is Map<String, dynamic>) {
+    SocketService.instance.on('item_added', (data) async {
+      if (data != null && data is Map<String, dynamic> && data['id'] != null) {
         try {
-          final newItem = ItemDto.fromJson(data).toDomain();
-          _items = [..._items, newItem];
-          _sortItems();
-          notifyListeners();
+          final id = data['id'] as int;
+          final newItem = await _repository.getItem(id);
+          if (newItem != null) {
+            _items = [..._items, newItem];
+            _sortItems();
+            notifyListeners();
+          } else { refresh(); }
         } catch (_) { refresh(); }
       } else { refresh(); }
     });
 
-    SocketService.instance.on('item_updated', (data) {
-      if (data != null && data is Map<String, dynamic>) {
+    SocketService.instance.on('item_updated', (data) async {
+      if (data != null && data is Map<String, dynamic> && data['id'] != null) {
         try {
-          final updatedItem = ItemDto.fromJson(data).toDomain();
-          _items = _items.map((i) => i.id == updatedItem.id ? updatedItem : i).toList(growable: false);
-          _sortItems();
-          notifyListeners();
+          final id = data['id'] as int;
+          final updatedItem = await _repository.getItem(id);
+          if (updatedItem != null) {
+            _items = _items.map((i) => i.id == updatedItem.id ? updatedItem : i).toList(growable: false);
+            _sortItems();
+            notifyListeners();
+          } else { refresh(); }
         } catch (_) { refresh(); }
       } else { refresh(); }
     });

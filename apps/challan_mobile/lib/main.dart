@@ -421,12 +421,13 @@ class MyApp extends StatelessWidget {
             final localSocket = SocketService()
               ..initAuth(auth)
               ..connect(apiUrl);
-            core_socket.SocketService.instance.init(apiUrl);
+            core_socket.SocketService.instance.init(apiUrl, token: auth.token);
             return localSocket;
           },
           update: (context, auth, previous) {
             final localSocket = previous ?? SocketService()..connect(apiUrl);
             localSocket.initAuth(auth);
+            core_socket.SocketService.instance.init(apiUrl, token: auth.token);
             return localSocket;
           },
         ),

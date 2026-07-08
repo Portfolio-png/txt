@@ -87,24 +87,30 @@ class VendorsProvider extends ChangeNotifier {
     }
     _initialized = true;
     
-    SocketService.instance.on('vendor_added', (data) {
-      if (data != null && data is Map<String, dynamic>) {
+    SocketService.instance.on('vendor_added', (data) async {
+      if (data != null && data is Map<String, dynamic> && data['id'] != null) {
         try {
-          final newVendor = VendorDefinition.fromJson(data);
-          _vendors = [..._vendors, newVendor];
-          _sortVendors();
-          notifyListeners();
+          final id = data['id'] as int;
+          final newVendor = await _repository.getVendor(id);
+          if (newVendor != null) {
+            _vendors = [..._vendors, newVendor];
+            _sortVendors();
+            notifyListeners();
+          } else { refresh(); }
         } catch (_) { refresh(); }
       } else { refresh(); }
     });
 
-    SocketService.instance.on('vendor_updated', (data) {
-      if (data != null && data is Map<String, dynamic>) {
+    SocketService.instance.on('vendor_updated', (data) async {
+      if (data != null && data is Map<String, dynamic> && data['id'] != null) {
         try {
-          final updatedVendor = VendorDefinition.fromJson(data);
-          _vendors = _vendors.map((v) => v.id == updatedVendor.id ? updatedVendor : v).toList(growable: false);
-          _sortVendors();
-          notifyListeners();
+          final id = data['id'] as int;
+          final updatedVendor = await _repository.getVendor(id);
+          if (updatedVendor != null) {
+            _vendors = _vendors.map((v) => v.id == updatedVendor.id ? updatedVendor : v).toList(growable: false);
+            _sortVendors();
+            notifyListeners();
+          } else { refresh(); }
         } catch (_) { refresh(); }
       } else { refresh(); }
     });
