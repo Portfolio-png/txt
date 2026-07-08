@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../data/repositories/vendor_repository.dart';
 import '../../domain/vendor_definition.dart';
 import '../../domain/vendor_inputs.dart';
+import '../../../../core/services/socket_service.dart';
 
 enum VendorStatusFilter { active, archived, all }
 
@@ -65,12 +66,66 @@ class VendorsProvider extends ChangeNotifier {
         .toList(growable: false);
   }
 
+  void _sortVendors() {
+    _vendors.sort((a, b) {
+      if (a.isArchived != b.isArchived) {
+        return a.isArchived ? 1 : -1;
+      }
+      final nameCompare = a.name.toLowerCase().compareTo(
+        b.name.toLowerCase(),
+      );
+      if (nameCompare != 0) {
+        return nameCompare;
+      }
+      return a.alias.toLowerCase().compareTo(b.alias.toLowerCase());
+    });
+  }
+
   Future<void> initialize() async {
     if (_initialized) {
       return;
     }
     _initialized = true;
+    
+    SocketService.instance.on('vendor_added', (data) {
+      if (data != null && data is Map<String, dynamic>) {
+        try {
+          final newVendor = VendorDefinition.fromJson(data);
+          _vendors = [..._vendors, newVendor];
+          _sortVendors();
+          notifyListeners();
+        } catch (_) { refresh(); }
+      } else { refresh(); }
+    });
+
+    SocketService.instance.on('vendor_updated', (data) {
+      if (data != null && data is Map<String, dynamic>) {
+        try {
+          final updatedVendor = VendorDefinition.fromJson(data);
+          _vendors = _vendors.map((v) => v.id == updatedVendor.id ? updatedVendor : v).toList(growable: false);
+          _sortVendors();
+          notifyListeners();
+        } catch (_) { refresh(); }
+      } else { refresh(); }
+    });
+
+    SocketService.instance.on('vendor_deleted', (data) {
+      if (data != null && data is Map<String, dynamic> && data['id'] != null) {
+        final id = data['id'] as int;
+        _vendors = _vendors.where((v) => v.id != id).toList();
+        notifyListeners();
+      } else { refresh(); }
+    });
+
     await refresh();
+  }
+
+  @override
+  void dispose() {
+    SocketService.instance.off('vendor_added');
+    SocketService.instance.off('vendor_updated');
+    SocketService.instance.off('vendor_deleted');
+    super.dispose();
   }
 
   Future<void> refresh() async {

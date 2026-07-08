@@ -21070,7 +21070,11 @@ app.delete('/api/orders/:id', requirePermission('config.write'), async (req, res
 app.post('/api/clients', requirePermission('config.write'), async (req, res) => {
   try {
     const client = await saveClient(req.body || {});
-    res.status(201).json({ success: true, client: rowToClientDto(client), error: null });
+    const clientDto = rowToClientDto(client);
+    if (io) {
+      io.emit('client_added', clientDto);
+    }
+    res.status(201).json({ success: true, client: clientDto, error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({
       success: false,
@@ -21095,6 +21099,9 @@ app.delete('/api/clients/:id', requirePermission('config.write'), async (req, re
       return res.status(400).json({ success: false, error: 'Cannot delete client: referenced by reception challans.' });
     }
     await run('DELETE FROM clients WHERE id = ?', [id]);
+    if (io) {
+      io.emit('client_deleted', { id });
+    }
     res.json({ success: true, error: null });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -21107,7 +21114,11 @@ app.patch('/api/clients/:id', requirePermission('config.write'), async (req, res
       ...(req.body || {}),
       id: Number(req.params.id),
     });
-    res.json({ success: true, client: rowToClientDto(client), error: null });
+    const clientDto = rowToClientDto(client);
+    if (io) {
+      io.emit('client_updated', clientDto);
+    }
+    res.json({ success: true, client: clientDto, error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({
       success: false,
@@ -21138,7 +21149,11 @@ app.patch('/api/clients/:id/archive', requirePermission('config.write'), async (
       id,
     ]);
     const updated = await getClientRowById(id);
-    res.json({ success: true, client: rowToClientDto(updated), error: null });
+    const clientDto = rowToClientDto(updated);
+    if (io) {
+      io.emit('client_updated', clientDto);
+    }
+    res.json({ success: true, client: clientDto, error: null });
   } catch (error) {
     res.status(500).json({ success: false, client: null, error: error.message });
   }
@@ -21157,7 +21172,11 @@ app.patch('/api/clients/:id/restore', requirePermission('config.write'), async (
       id,
     ]);
     const updated = await getClientRowById(id);
-    res.json({ success: true, client: rowToClientDto(updated), error: null });
+    const clientDto = rowToClientDto(updated);
+    if (io) {
+      io.emit('client_updated', clientDto);
+    }
+    res.json({ success: true, client: clientDto, error: null });
   } catch (error) {
     res.status(500).json({ success: false, client: null, error: error.message });
   }
@@ -21175,7 +21194,11 @@ app.get('/api/vendors', requirePermission('config.read'), async (_req, res) => {
 app.post('/api/vendors', requirePermission('config.write'), async (req, res) => {
   try {
     const vendor = await saveVendor(req.body || {});
-    res.status(201).json({ success: true, vendor: rowToVendorDto(vendor), error: null });
+    const vendorDto = rowToVendorDto(vendor);
+    if (io) {
+      io.emit('vendor_added', vendorDto);
+    }
+    res.status(201).json({ success: true, vendor: vendorDto, error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({ success: false, vendor: null, error: error.message });
   }
@@ -21188,6 +21211,9 @@ app.delete('/api/vendors/:id', requirePermission('config.write'), async (req, re
       return res.status(400).json({ success: false, error: 'Cannot delete vendor: referenced by reception challans.' });
     }
     await run('DELETE FROM vendors WHERE id = ?', [id]);
+    if (io) {
+      io.emit('vendor_deleted', { id });
+    }
     res.json({ success: true, error: null });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -21200,7 +21226,11 @@ app.patch('/api/vendors/:id', requirePermission('config.write'), async (req, res
       ...(req.body || {}),
       id: Number(req.params.id),
     });
-    res.json({ success: true, vendor: rowToVendorDto(vendor), error: null });
+    const vendorDto = rowToVendorDto(vendor);
+    if (io) {
+      io.emit('vendor_updated', vendorDto);
+    }
+    res.json({ success: true, vendor: vendorDto, error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({ success: false, vendor: null, error: error.message });
   }
@@ -21222,7 +21252,11 @@ app.patch('/api/vendors/:id/archive', requirePermission('config.write'), async (
       new Date().toISOString(),
       id,
     ]);
-    res.json({ success: true, vendor: rowToVendorDto(await getVendorRowById(id)), error: null });
+    const vendorDto = rowToVendorDto(await getVendorRowById(id));
+    if (io) {
+      io.emit('vendor_updated', vendorDto);
+    }
+    res.json({ success: true, vendor: vendorDto, error: null });
   } catch (error) {
     res.status(500).json({ success: false, vendor: null, error: error.message });
   }
@@ -21240,7 +21274,11 @@ app.patch('/api/vendors/:id/restore', requirePermission('config.write'), async (
       new Date().toISOString(),
       id,
     ]);
-    res.json({ success: true, vendor: rowToVendorDto(await getVendorRowById(id)), error: null });
+    const vendorDto = rowToVendorDto(await getVendorRowById(id));
+    if (io) {
+      io.emit('vendor_updated', vendorDto);
+    }
+    res.json({ success: true, vendor: vendorDto, error: null });
   } catch (error) {
     res.status(500).json({ success: false, vendor: null, error: error.message });
   }
@@ -21323,7 +21361,11 @@ app.delete('/api/inventory/sets/:id', requirePermission('inventory.delete'), asy
 app.post('/api/items', requirePermission('config.write'), async (req, res) => {
   try {
     const item = await saveItem(req.body || {});
-    res.status(201).json({ success: true, item: await rowToItemDto(item), error: null });
+    const itemDto = await rowToItemDto(item);
+    if (io) {
+      io.emit('item_added', itemDto);
+    }
+    res.status(201).json({ success: true, item: itemDto, error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({
       success: false,
@@ -21339,7 +21381,11 @@ app.patch('/api/items/:id', requirePermission('config.write'), async (req, res) 
       ...(req.body || {}),
       id: Number(req.params.id),
     });
-    res.json({ success: true, item: await rowToItemDto(item), error: null });
+    const itemDto = await rowToItemDto(item);
+    if (io) {
+      io.emit('item_updated', itemDto);
+    }
+    res.json({ success: true, item: itemDto, error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({
       success: false,
@@ -21369,7 +21415,11 @@ app.patch('/api/items/:id/archive', requirePermission('config.write'), async (re
     await run('UPDATE items SET is_archived = 1, updated_at = ? WHERE id = ?', [now, id]);
     await run('UPDATE item_variation_nodes SET is_archived = 1, updated_at = ? WHERE item_id = ?', [now, id]);
     const updated = await getItemRowById(id);
-    res.json({ success: true, item: await rowToItemDto(updated), error: null });
+    const itemDto = await rowToItemDto(updated);
+    if (io) {
+      io.emit('item_updated', itemDto);
+    }
+    res.json({ success: true, item: itemDto, error: null });
   } catch (error) {
     res.status(500).json({ success: false, item: null, error: error.message });
   }
@@ -21387,7 +21437,11 @@ app.patch('/api/items/:id/restore', requirePermission('config.write'), async (re
     await run('UPDATE items SET is_archived = 0, updated_at = ? WHERE id = ?', [now, id]);
     await run('UPDATE item_variation_nodes SET is_archived = 0, updated_at = ? WHERE item_id = ?', [now, id]);
     const updated = await getItemRowById(id);
-    res.json({ success: true, item: await rowToItemDto(updated), error: null });
+    const itemDto = await rowToItemDto(updated);
+    if (io) {
+      io.emit('item_updated', itemDto);
+    }
+    res.json({ success: true, item: itemDto, error: null });
   } catch (error) {
     res.status(500).json({ success: false, item: null, error: error.message });
   }
@@ -21411,8 +21465,10 @@ app.delete('/api/items/:id', requirePermission('config.write'), async (req, res)
       });
       return;
     }
-    // Own children (variation nodes, conversions, schema, BOM) cascade.
     await run('DELETE FROM items WHERE id = ?', [id]);
+    if (io) {
+      io.emit('item_deleted', { id });
+    }
     res.json({ success: true, error: null });
   } catch (error) {
     if (/SQLITE_CONSTRAINT|FOREIGN KEY/i.test(`${error.code || ''} ${error.message || ''}`)) {
@@ -23920,8 +23976,8 @@ function startServer() {
       // Initialize Bonjour mDNS
       try {
         bonjour = new Bonjour();
-        bonjour.publish({ name: 'Paper Local Server', type: 'paper_erp', protocol: 'tcp', port: PORT });
-        console.log('mDNS service _paper_erp._tcp published.');
+        bonjour.publish({ name: 'Paper Local Server', type: 'papererp', protocol: 'tcp', port: PORT });
+        console.log('mDNS service _papererp._tcp published.');
       } catch (e) {
         console.warn('Failed to publish mDNS service:', e);
       }

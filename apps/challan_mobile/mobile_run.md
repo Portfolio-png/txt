@@ -18,5 +18,5 @@ If you don't mind plugging your phone into your Mac with a **USB cable for just 
    ```bash
    ~/Library/Android/sdk/platform-tools/adb reverse tcp:18080 tcp:18080
    ```
-
-After this, `flutter run` will work perfectly over Wi-Fi without any pairing errors.
+6. mobile app: http://10.0.2.2:18080 - local ip for backend
+   After this, `flutter run` will work perfectly over Wi-Fi without any pairing errors.

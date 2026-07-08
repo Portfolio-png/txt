@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:nsd/nsd.dart';
 
 class NetworkDiscoveryService extends ChangeNotifier {
-  static const String _serviceType = '_paper_erp._tcp';
+  static const String _serviceType = '_papererp._tcp';
   
   Discovery? _discovery;
   String? _discoveredUrl;

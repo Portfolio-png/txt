@@ -33,6 +33,8 @@ import 'package:core_erp/features/search/data/repositories/api_search_repository
 import 'package:core_erp/features/search/data/repositories/search_repository.dart';
 import 'package:core_erp/features/search/presentation/providers/search_provider.dart';
 
+import 'package:core_erp/core/services/socket_service.dart' as core_socket;
+
 import 'screens/home_screen.dart';
 import 'services/network_discovery_service.dart';
 import 'services/socket_service.dart';
@@ -280,8 +282,10 @@ class _BootstrapGateState extends State<BootstrapGate> {
                           const SizedBox(height: 24),
                           const Divider(color: Color(0xFF334155)),
                           const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          Wrap(
+                            alignment: WrapAlignment.center,
+                            spacing: 8,
+                            runSpacing: 8,
                             children: [
                               TextButton.icon(
                                 style: TextButton.styleFrom(
@@ -296,7 +300,7 @@ class _BootstrapGateState extends State<BootstrapGate> {
                                   foregroundColor: const Color(0xFF818CF8),
                                 ),
                                 icon: const Icon(Icons.refresh, size: 18),
-                                label: const Text('Scan Again'),
+                                label: const Text('Retry Scan'),
                                 onPressed: () => discovery.discoverServer(),
                               ),
                             ],
@@ -412,7 +416,11 @@ class MyApp extends StatelessWidget {
         ),
         ChangeNotifierProvider(create: (_) => ChallanEditorCommandProvider()),
         ChangeNotifierProvider(
-          create: (_) => SocketService()..connect(apiUrl),
+          create: (_) {
+            final localSocket = SocketService()..connect(apiUrl);
+            core_socket.SocketService.instance.init(apiUrl);
+            return localSocket;
+          },
         ),
         ChangeNotifierProxyProvider<OrderRepository, OrdersProvider>(
           create: (context) => OrdersProvider(repository: context.read<OrderRepository>())..initialize(),

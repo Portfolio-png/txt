@@ -66,6 +66,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'core/services/auto_updater_service.dart';
 import 'core/services/data_sync_service.dart';
 import 'core/services/session_replay_service.dart';
+import 'package:core_erp/core/services/socket_service.dart';
 
 const _isDemoMode = bool.fromEnvironment(
   'PAPER_DEMO_MODE',
@@ -126,6 +127,9 @@ Future<void> main() async {
   SessionReplayService.instance.initialize(_resolveApiBaseUrl(), clientId);
 
   await AutoUpdaterService.instance.initialize();
+  
+  // Initialize WebSocket connection for real-time updates
+  SocketService.instance.init(_resolveApiBaseUrl());
 
   await SentryFlutter.init((options) {
     options.dsn = const String.fromEnvironment(

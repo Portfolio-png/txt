@@ -5,6 +5,7 @@ import 'package:core_erp/app/reports/domain/reconciliation_report.dart';
 import '../../domain/challan_template.dart';
 import '../../domain/delivery_challan.dart';
 import '../../domain/models/cancel_challan_options.dart';
+import '../../../../core/services/socket_service.dart';
 
 class ChallanProvider extends ChangeNotifier {
   ChallanProvider({required ChallanRepository repository})
@@ -52,7 +53,28 @@ class ChallanProvider extends ChangeNotifier {
       return;
     }
     _initialized = true;
+    SocketService.instance.on('challan_generated_ok', (data) {
+      if (data != null && data is Map<String, dynamic>) {
+        try {
+          final newChallan = DeliveryChallan.fromJson(data);
+          // Insert at the beginning of the list
+          _challans = [newChallan, ..._challans];
+          notifyListeners();
+        } catch (e) {
+          // Fallback to full refresh on parsing error
+          refresh();
+        }
+      } else {
+        refresh();
+      }
+    });
     await refresh();
+  }
+
+  @override
+  void dispose() {
+    SocketService.instance.off('challan_generated_ok');
+    super.dispose();
   }
 
   Future<void> refresh() async {

@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 
 import '../../data/repositories/client_repository.dart';
 import '../../domain/client_definition.dart';
+import '../../data/models/client_api_models.dart';
 import '../../domain/client_inputs.dart';
+import '../../../../core/services/socket_service.dart';
 
 enum ClientStatusFilter { active, archived, all }
 
@@ -64,12 +66,66 @@ class ClientsProvider extends ChangeNotifier {
         .toList(growable: false);
   }
 
+  void _sortClients() {
+    _clients.sort((a, b) {
+      if (a.isArchived != b.isArchived) {
+        return a.isArchived ? 1 : -1;
+      }
+      final nameCompare = a.name.toLowerCase().compareTo(
+        b.name.toLowerCase(),
+      );
+      if (nameCompare != 0) {
+        return nameCompare;
+      }
+      return a.alias.toLowerCase().compareTo(b.alias.toLowerCase());
+    });
+  }
+
   Future<void> initialize() async {
     if (_initialized) {
       return;
     }
     _initialized = true;
+    
+    SocketService.instance.on('client_added', (data) {
+      if (data != null && data is Map<String, dynamic>) {
+        try {
+          final newClient = ClientDto.fromJson(data).toDomain();
+          _clients = [..._clients, newClient];
+          _sortClients();
+          notifyListeners();
+        } catch (_) { refresh(); }
+      } else { refresh(); }
+    });
+
+    SocketService.instance.on('client_updated', (data) {
+      if (data != null && data is Map<String, dynamic>) {
+        try {
+          final updatedClient = ClientDto.fromJson(data).toDomain();
+          _clients = _clients.map((c) => c.id == updatedClient.id ? updatedClient : c).toList(growable: false);
+          _sortClients();
+          notifyListeners();
+        } catch (_) { refresh(); }
+      } else { refresh(); }
+    });
+
+    SocketService.instance.on('client_deleted', (data) {
+      if (data != null && data is Map<String, dynamic> && data['id'] != null) {
+        final id = data['id'] as int;
+        _clients = _clients.where((c) => c.id != id).toList();
+        notifyListeners();
+      } else { refresh(); }
+    });
+
     await refresh();
+  }
+
+  @override
+  void dispose() {
+    SocketService.instance.off('client_added');
+    SocketService.instance.off('client_updated');
+    SocketService.instance.off('client_deleted');
+    super.dispose();
   }
 
   Future<void> refresh() async {

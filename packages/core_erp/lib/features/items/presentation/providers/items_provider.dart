@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import '../../data/repositories/item_repository.dart';
 import '../../domain/item_asset.dart';
 import '../../domain/item_definition.dart';
+import '../../data/models/item_api_models.dart';
 import '../../domain/item_inputs.dart';
 import '../../domain/item_usage_record.dart';
+import '../../../../core/services/socket_service.dart';
 
 enum ItemStatusFilter { active, archived, all }
 
@@ -98,12 +100,72 @@ class ItemsProvider extends ChangeNotifier {
         .toList(growable: false);
   }
 
+  void _sortItems() {
+    _items.sort((a, b) {
+      if (a.isArchived != b.isArchived) {
+        return a.isArchived ? 1 : -1;
+      }
+      final groupCompare = a.groupId.compareTo(b.groupId);
+      if (groupCompare != 0) {
+        return groupCompare;
+      }
+      final nameCompare = a.name.toLowerCase().compareTo(
+        b.name.toLowerCase(),
+      );
+      if (nameCompare != 0) {
+        return nameCompare;
+      }
+      return a.displayName.toLowerCase().compareTo(
+        b.displayName.toLowerCase(),
+      );
+    });
+  }
+
   Future<void> initialize() async {
     if (_initialized) {
       return;
     }
     _initialized = true;
+    
+    SocketService.instance.on('item_added', (data) {
+      if (data != null && data is Map<String, dynamic>) {
+        try {
+          final newItem = ItemDto.fromJson(data).toDomain();
+          _items = [..._items, newItem];
+          _sortItems();
+          notifyListeners();
+        } catch (_) { refresh(); }
+      } else { refresh(); }
+    });
+
+    SocketService.instance.on('item_updated', (data) {
+      if (data != null && data is Map<String, dynamic>) {
+        try {
+          final updatedItem = ItemDto.fromJson(data).toDomain();
+          _items = _items.map((i) => i.id == updatedItem.id ? updatedItem : i).toList(growable: false);
+          _sortItems();
+          notifyListeners();
+        } catch (_) { refresh(); }
+      } else { refresh(); }
+    });
+
+    SocketService.instance.on('item_deleted', (data) {
+      if (data != null && data is Map<String, dynamic> && data['id'] != null) {
+        final id = data['id'] as int;
+        _items = _items.where((i) => i.id != id).toList();
+        notifyListeners();
+      } else { refresh(); }
+    });
+
     await refresh();
+  }
+
+  @override
+  void dispose() {
+    SocketService.instance.off('item_added');
+    SocketService.instance.off('item_updated');
+    SocketService.instance.off('item_deleted');
+    super.dispose();
   }
 
   Future<void> refresh() async {
