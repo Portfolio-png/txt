@@ -5512,23 +5512,26 @@ class _InventoryNameCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final title = entry.displayName ?? record.name;
-    final metadata = entry.displayMetadata ?? _metadataText(record);
     final titleColor = _inventoryGroupTextColor(entry.depth);
-    final metadataColor = SoftErpTheme.textSecondary;
     final hierarchyIndent = math.min(entry.depth * metrics.treeIndent, 48.0);
-    final hierarchyDecoration = entry.depth >= 2
-        ? BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.74),
-            borderRadius: BorderRadius.circular(12),
-            border: const Border(
-              left: BorderSide(color: SoftErpTheme.borderStrong, width: 4),
-            ),
-          )
-        : null;
+    // Nested rows read their depth from a smooth indent plus a slim guide line —
+    // no nested "card inside a card", which looked like a rendering glitch.
+    final showGuide = entry.depth >= 2;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         SizedBox(width: hierarchyIndent),
+        if (showGuide) ...[
+          Container(
+            width: 2,
+            height: metrics.bodyFontSize + 8,
+            decoration: BoxDecoration(
+              color: SoftErpTheme.border,
+              borderRadius: BorderRadius.circular(1),
+            ),
+          ),
+          SizedBox(width: metrics.nameGap),
+        ],
         if (entry.canExpand)
           InkWell(
             onTap: onExpandToggle,
@@ -5549,15 +5552,10 @@ class _InventoryNameCell extends StatelessWidget {
           SizedBox(width: metrics.chevronSize),
         SizedBox(width: metrics.nameGap),
         Expanded(
-          child: Container(
-            padding: hierarchyDecoration == null
-                ? EdgeInsets.zero
-                : const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: hierarchyDecoration,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
                 Tooltip(
                   message: title,
                   waitDuration: const Duration(milliseconds: 500),
@@ -5646,50 +5644,11 @@ class _InventoryNameCell extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(height: 3),
-                Tooltip(
-                  message: metadata,
-                  waitDuration: const Duration(milliseconds: 500),
-                  child: Text(
-                    metadata,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: _inventorySegoeStyle(
-                      color: metadataColor,
-                      size: math.max(11, metrics.bodyFontSize - 3),
-                      weight: FontWeight.w400,
-                    ),
-                  ),
-                ),
               ],
             ),
-          ),
         ),
       ],
     );
-  }
-
-  String _metadataText(MaterialRecord material) {
-    final parts = <String>[];
-    final unit = _effectiveUnitSymbol(material.unit);
-    if (unit.isNotEmpty) {
-      parts.add(unit);
-    }
-    if (material.supplier.trim().isNotEmpty) {
-      parts.add(material.supplier.trim());
-    }
-    if (material.location.trim().isNotEmpty) {
-      parts.add(material.location.trim());
-    }
-    if (material.hasInheritanceLink) {
-      parts.add(material.linkedItemId != null ? 'Linked item' : 'Linked group');
-    }
-    parts.add(
-      material.hasBeenScanned
-          ? 'Scanned ${material.scanCount}x'
-          : 'Awaiting first scan',
-    );
-    return parts.join('  •  ');
   }
 }
 
@@ -6850,6 +6809,34 @@ class _InventoryTableMetrics {
   });
 
   factory _InventoryTableMetrics.fromViewportWidth(double width) {
+    // Compact tier for small / mobile widths: tighter columns and padding so
+    // the table stays usable (it still scrolls horizontally below its min).
+    if (width < 860) {
+      return const _InventoryTableMetrics(
+        horizontalPadding: 14,
+        nameWidth: 200,
+        barcodeWidth: 120,
+        stockWidth: 128,
+        dateWidth: 132,
+        createdByWidth: 124,
+        statusWidth: 124,
+        actionsWidth: 128,
+        headerHeight: 42,
+        rowHeight: 52,
+        headerFontSize: 12,
+        bodyFontSize: 13,
+        statusFontSize: 11,
+        treeIndent: 18,
+        chevronSize: 18,
+        nameGap: 7,
+        rowRadius: 16,
+        statusRadius: 4,
+        statusHorizontalPadding: 8,
+        statusVerticalPadding: 4,
+        actionButtonSize: 24,
+        rowGap: 8,
+      );
+    }
     if (width < 1120) {
       return const _InventoryTableMetrics(
         horizontalPadding: 18,
@@ -6861,7 +6848,7 @@ class _InventoryTableMetrics {
         statusWidth: 136,
         actionsWidth: 152,
         headerHeight: 46,
-        rowHeight: 82,
+        rowHeight: 56,
         headerFontSize: 12,
         bodyFontSize: 14,
         statusFontSize: 11,
@@ -6873,7 +6860,7 @@ class _InventoryTableMetrics {
         statusHorizontalPadding: 8,
         statusVerticalPadding: 4,
         actionButtonSize: 24,
-        rowGap: 4,
+        rowGap: 8,
       );
     }
     if (width < 1500) {
@@ -6887,7 +6874,7 @@ class _InventoryTableMetrics {
         statusWidth: 172,
         actionsWidth: 168,
         headerHeight: 48,
-        rowHeight: 86,
+        rowHeight: 60,
         headerFontSize: 14,
         bodyFontSize: 15,
         statusFontSize: 12,
@@ -6899,7 +6886,7 @@ class _InventoryTableMetrics {
         statusHorizontalPadding: 10,
         statusVerticalPadding: 5,
         actionButtonSize: 24,
-        rowGap: 5,
+        rowGap: 9,
       );
     }
     return const _InventoryTableMetrics(
@@ -6912,7 +6899,7 @@ class _InventoryTableMetrics {
       statusWidth: 194,
       actionsWidth: 184,
       headerHeight: 50,
-      rowHeight: 86,
+      rowHeight: 62,
       headerFontSize: 14,
       bodyFontSize: 16,
       statusFontSize: 12,
@@ -6924,7 +6911,7 @@ class _InventoryTableMetrics {
       statusHorizontalPadding: 10,
       statusVerticalPadding: 5,
       actionButtonSize: 24,
-      rowGap: 4,
+      rowGap: 10,
     );
   }
 

@@ -29,6 +29,14 @@ class SocketService {
     _connectInternal(baseUrl);
   }
 
+  /// Ask all subscribers to resync their data. Used when the app returns to the
+  /// foreground — desktop App Nap can suspend the SSE and silently drop change
+  /// events — so the UI refreshes without the user manually toggling a filter.
+  /// Reuses the same signal providers already handle on reconnect.
+  void requestResync() {
+    _emit('realtime:reconnected', null);
+  }
+
   Future<void> _connectInternal(String baseUrl) async {
     _client?.close();
     _client = http.Client();

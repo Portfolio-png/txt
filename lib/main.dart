@@ -154,16 +154,46 @@ Future<void> main() async {
 /// This is a widget (not a provider whose value nothing reads) on purpose: it
 /// guarantees the binding actually runs. Without a live-authenticated socket the
 /// desktop never receives change events and its UI only refreshes on a restart.
-class _RealtimeSocketConnector extends StatelessWidget {
+class _RealtimeSocketConnector extends StatefulWidget {
   const _RealtimeSocketConnector({required this.child});
 
   final Widget child;
 
   @override
+  State<_RealtimeSocketConnector> createState() =>
+      _RealtimeSocketConnectorState();
+}
+
+class _RealtimeSocketConnectorState extends State<_RealtimeSocketConnector>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Returning to the foreground: on desktop, App Nap can suspend the SSE while
+    // the window is unfocused (e.g. while the user issues a challan on mobile),
+    // so live change events are missed. Force a resync so the list is current
+    // without the user having to toggle a filter to trigger a refresh.
+    if (state == AppLifecycleState.resumed) {
+      SocketService.instance.requestResync();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     SocketService.instance.init(_apiBaseUrl, token: auth.token);
-    return child;
+    return widget.child;
   }
 }
 

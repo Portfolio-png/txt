@@ -301,15 +301,15 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
 
     rows.sort((a, b) => a.challan.date.compareTo(b.challan.date));
 
-    final balanceQtyMap = <String, double>{};
-    final balanceWtMap = <String, double>{};
+    // Single running balance for the whole sheet: the view is scoped to one
+    // item, so every reception adds and every delivery subtracts against the
+    // same total (deliveries draw down accumulated receptions instead of
+    // opening their own per-particulars bucket).
+    double bQty = 0.0;
+    double bWt = 0.0;
     for (var row in rows) {
-      final key = row.item?.particulars ?? '-';
       final qty = double.tryParse(row.item?.quantityPcs ?? '') ?? 0;
       final wt = double.tryParse(row.item?.weight ?? '') ?? 0;
-
-      double bQty = balanceQtyMap[key] ?? 0.0;
-      double bWt = balanceWtMap[key] ?? 0.0;
 
       if (row.challan.isReception) {
         bQty += qty;
@@ -319,14 +319,12 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
         bWt -= wt;
       }
 
-      balanceQtyMap[key] = bQty;
-      balanceWtMap[key] = bWt;
-
       row.balanceQty = bQty;
       row.balanceWt = bWt;
     }
 
-    _currentRows = rows;
+    // Balance is accumulated chronologically above; display latest first.
+    _currentRows = rows.reversed.toList();
   }
 
   Widget _buildTableWithPreview() {
@@ -462,7 +460,6 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
             ),
             columns: [
               const DataColumn(label: Text('Date')),
-              const DataColumn(label: Text('Challan No')),
               const DataColumn(label: Text('Party Name')),
               const DataColumn(label: Text('Item Particulars')),
               DataColumn(
@@ -531,7 +528,6 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
                 },
                 cells: [
                   DataCell(Text(dateStr)),
-                  DataCell(Text(row.challan.challanNo)),
                   DataCell(
                     Text(
                       row.challan.isDelivery

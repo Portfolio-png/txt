@@ -1,14 +1,13 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:core_erp/features/auth/presentation/providers/auth_provider.dart';
 
 class DemoPasscodeScreen extends StatefulWidget {
   final String expectedPasscode;
-  
+
   const DemoPasscodeScreen({
     super.key,
-    this.expectedPasscode = 'DB0047',
+    this.expectedPasscode = '0000',
   });
 
   @override
@@ -16,69 +15,25 @@ class DemoPasscodeScreen extends StatefulWidget {
 }
 
 class _DemoPasscodeScreenState extends State<DemoPasscodeScreen> {
-  String _enteredChars = '';
   String _enteredDigits = '';
-  bool _isAlphaStage = true;
-  late List<String> _alphaGrid;
 
-  @override
-  void initState() {
-    super.initState();
-    _generateAlphaGrid();
-  }
-
-  void _generateAlphaGrid() {
-    // Generate 16 letters, ensuring the first two of expectedPasscode are included.
-    final char1 = widget.expectedPasscode[0].toUpperCase();
-    final char2 = widget.expectedPasscode[1].toUpperCase();
-    
-    final random = Random();
-    final Set<String> chars = {char1, char2};
-    
-    // Fill the rest with random unique letters
-    while (chars.length < 16) {
-      final code = random.nextInt(26) + 65; // A-Z
-      chars.add(String.fromCharCode(code));
-    }
-    
-    _alphaGrid = chars.toList()..shuffle(random);
-  }
-
-  void _onAlphaPressed(String char) {
-    setState(() {
-      _enteredChars += char;
-      final expectedAlpha = widget.expectedPasscode.substring(0, 2).toUpperCase();
-      
-      if (_enteredChars.length == 2) {
-        if (_enteredChars == expectedAlpha) {
-          _isAlphaStage = false; // Move to numeric stage
-        } else {
-          // Wrong chars, reset
-          _enteredChars = '';
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Incorrect characters')),
-          );
-        }
-      }
-    });
-  }
+  int get _passcodeLength => widget.expectedPasscode.length;
 
   void _onDigitPressed(String digit) {
     setState(() {
-      if (_enteredDigits.length < 4) {
+      if (_enteredDigits.length < _passcodeLength) {
         _enteredDigits += digit;
       }
-      
-      if (_enteredDigits.length == 4) {
-        final expectedDigits = widget.expectedPasscode.substring(2);
-        if (_enteredDigits == expectedDigits) {
+
+      if (_enteredDigits.length == _passcodeLength) {
+        if (_enteredDigits == widget.expectedPasscode) {
           // Success! Login
           _performLogin();
         } else {
           // Wrong digits, reset
           _enteredDigits = '';
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Incorrect digits')),
+            const SnackBar(content: Text('Incorrect passcode')),
           );
         }
       }
@@ -87,17 +42,8 @@ class _DemoPasscodeScreenState extends State<DemoPasscodeScreen> {
 
   void _onBackspacePressed() {
     setState(() {
-      if (!_isAlphaStage) {
-        if (_enteredDigits.isNotEmpty) {
-          _enteredDigits = _enteredDigits.substring(0, _enteredDigits.length - 1);
-        } else {
-          _isAlphaStage = true;
-          _enteredChars = _enteredChars.substring(0, _enteredChars.length - 1);
-        }
-      } else {
-        if (_enteredChars.isNotEmpty) {
-          _enteredChars = _enteredChars.substring(0, _enteredChars.length - 1);
-        }
+      if (_enteredDigits.isNotEmpty) {
+        _enteredDigits = _enteredDigits.substring(0, _enteredDigits.length - 1);
       }
     });
   }
@@ -130,7 +76,7 @@ class _DemoPasscodeScreenState extends State<DemoPasscodeScreen> {
             const SizedBox(height: 32),
             _buildPasscodeIndicators(),
             const Spacer(),
-            _isAlphaStage ? _buildAlphaPad() : _buildNumberPad(),
+            _buildNumberPad(),
             const SizedBox(height: 48),
           ],
         ),
@@ -141,19 +87,8 @@ class _DemoPasscodeScreenState extends State<DemoPasscodeScreen> {
   Widget _buildPasscodeIndicators() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(6, (index) {
-        final isAlpha = index < 2;
-        final bool isFilled;
-        final String text;
-        
-        if (isAlpha) {
-          isFilled = index < _enteredChars.length;
-          text = isFilled ? _enteredChars[index] : '';
-        } else {
-          final digitIndex = index - 2;
-          isFilled = digitIndex < _enteredDigits.length;
-          text = isFilled ? '*' : ''; // Obfuscate digits
-        }
+      children: List.generate(_passcodeLength, (index) {
+        final isFilled = index < _enteredDigits.length;
 
         return Container(
           margin: const EdgeInsets.symmetric(horizontal: 8),
@@ -169,7 +104,7 @@ class _DemoPasscodeScreenState extends State<DemoPasscodeScreen> {
           ),
           alignment: Alignment.center,
           child: Text(
-            text,
+            isFilled ? '*' : '', // Obfuscate digits
             style: const TextStyle(
               color: Colors.white,
               fontSize: 24,
@@ -178,30 +113,6 @@ class _DemoPasscodeScreenState extends State<DemoPasscodeScreen> {
           ),
         );
       }),
-    );
-  }
-
-  Widget _buildAlphaPad() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 4,
-          childAspectRatio: 1,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-        ),
-        itemCount: 16,
-        itemBuilder: (context, index) {
-          final char = _alphaGrid[index];
-          return _buildKey(
-            char,
-            onTap: () => _onAlphaPressed(char),
-          );
-        },
-      ),
     );
   }
 
