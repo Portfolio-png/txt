@@ -415,11 +415,12 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
             foreground: SoftErpTheme.accent,
           ),
           const SizedBox(width: 16),
-          IconButton(
-            icon: const Icon(Icons.close_rounded),
-            onPressed: widget.onClose ?? () => Navigator.of(context).pop(),
-            tooltip: 'Close',
-          ),
+          if (!widget.isEmbedded)
+            IconButton(
+              icon: const Icon(Icons.close_rounded),
+              onPressed: widget.onClose ?? () => Navigator.of(context).pop(),
+              tooltip: 'Close',
+            ),
         ],
       ),
     );
@@ -708,8 +709,8 @@ class _LedgerUnitPresentation {
 // Unit colour coding: the primary unit (e.g. weight) and the secondary unit
 // use distinct hues so a stacked "primary over secondary" cell reads clearly.
 // Kept separate from the balance sign colours (green/red) to avoid clashing.
-const Color _kLedgerPrimaryUnitColor = SoftErpTheme.infoText; // e.g. weight
-const Color _kLedgerSecondaryUnitColor = SoftErpTheme.warningText; // e.g. pcs
+const Color _kLedgerPrimaryUnitColor = SoftErpTheme.textPrimary; // e.g. weight
+const Color _kLedgerSecondaryUnitColor = SoftErpTheme.textSecondary; // e.g. pcs
 
 class _LedgerMeasureHeader extends StatelessWidget {
   const _LedgerMeasureHeader({
@@ -724,26 +725,24 @@ class _LedgerMeasureHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 132,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            child: Text(
-              title,
-              style: const TextStyle(
-                color: SoftErpTheme.textPrimary,
-                fontWeight: FontWeight.w900,
-              ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: SoftErpTheme.textPrimary,
+              fontWeight: FontWeight.w900,
             ),
           ),
-          _unitLegendLabel(primaryLabel, _kLedgerPrimaryUnitColor),
-          if (secondaryLabel != null)
-            _unitLegendLabel(secondaryLabel!, _kLedgerSecondaryUnitColor),
-        ],
-      ),
+        ),
+        _unitLegendLabel(primaryLabel, _kLedgerPrimaryUnitColor),
+        if (secondaryLabel != null)
+          _unitLegendLabel(secondaryLabel!, _kLedgerSecondaryUnitColor),
+      ],
     );
   }
 
@@ -759,7 +758,8 @@ class _LedgerMeasureHeader extends StatelessWidget {
             margin: const EdgeInsets.only(right: 6),
             decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
-          Flexible(
+          Container(
+            constraints: const BoxConstraints(maxWidth: 100),
             child: Text(
               label,
               overflow: TextOverflow.ellipsis,
@@ -791,33 +791,30 @@ class _LedgerMeasureCell extends StatelessWidget {
     // tinted by unit so the primary (top) and secondary (bottom) lines are
     // instantly distinguishable and match the colour-coded column headers.
     final Color primaryColor = isBalance
-        ? (isNegative ? Colors.red : Colors.green.shade700)
+        ? (isNegative ? SoftErpTheme.dangerText : SoftErpTheme.successText)
         : _kLedgerPrimaryUnitColor;
     final Color secondaryColor = isBalance
-        ? (isNegative ? Colors.red : Colors.green.shade700)
+        ? (isNegative ? SoftErpTheme.dangerText : SoftErpTheme.successText)
         : _kLedgerSecondaryUnitColor;
     final weight = isBalance ? FontWeight.w900 : FontWeight.w600;
-    return SizedBox(
-      width: 132,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          primary.isEmpty ? '-' : primary,
+          style: TextStyle(color: primaryColor, fontWeight: weight),
+        ),
+        // Only render the secondary line when it actually carries a value —
+        // no empty "-" placeholder when there's no secondary-unit amount.
+        if (secondary != null && secondary!.trim().isNotEmpty) ...[
+          const SizedBox(height: 4),
           Text(
-            primary.isEmpty ? '-' : primary,
-            style: TextStyle(color: primaryColor, fontWeight: weight),
+            secondary!,
+            style: TextStyle(color: secondaryColor, fontWeight: weight),
           ),
-          // Only render the secondary line when it actually carries a value —
-          // no empty "-" placeholder when there's no secondary-unit amount.
-          if (secondary != null && secondary!.trim().isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              secondary!,
-              style: TextStyle(color: secondaryColor, fontWeight: weight),
-            ),
-          ],
         ],
-      ),
+      ],
     );
   }
 }

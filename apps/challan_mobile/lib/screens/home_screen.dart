@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 
+import 'package:core_erp/app/dashboard/views/dashboard_screen.dart';
+
 import 'challan_mobile_editor_screen.dart';
 import 'challan_staging_screen.dart';
+import 'inventory_stock_screen.dart';
+import 'module_placeholder_screen.dart';
+import 'orders_list_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -13,9 +18,16 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = [
-    const ChallanStagingScreen(),
-    const ChallanMobileEditorScreen(),
+  // Production and Jobs live in the desktop `paper` package and are not wired
+  // into the mobile app yet, so they show a placeholder for now.
+  final List<Widget> _screens = const [
+    ChallanStagingScreen(),
+    ChallanMobileEditorScreen(),
+    DashboardScreen(),
+    OrdersListScreen(),
+    InventoryStockScreen(),
+    ModulePlaceholderScreen(title: 'Production', icon: Icons.precision_manufacturing_outlined),
+    ModulePlaceholderScreen(title: 'Jobs', icon: Icons.work_outline),
   ];
 
   @override
@@ -27,6 +39,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
+        labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
         onDestinationSelected: (index) {
           setState(() {
             _currentIndex = index;
@@ -35,11 +48,36 @@ class _HomeScreenState extends State<HomeScreen> {
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.qr_code_scanner),
-            label: 'Live Staging',
+            label: 'Staging',
           ),
           NavigationDestination(
             icon: Icon(Icons.edit_document),
             label: 'Challan',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.dashboard_outlined),
+            selectedIcon: Icon(Icons.dashboard),
+            label: 'Dashboard',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.receipt_long_outlined),
+            selectedIcon: Icon(Icons.receipt_long),
+            label: 'Order',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.inventory_2_outlined),
+            selectedIcon: Icon(Icons.inventory_2),
+            label: 'Inventory',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.precision_manufacturing_outlined),
+            selectedIcon: Icon(Icons.precision_manufacturing),
+            label: 'Production',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.work_outline),
+            selectedIcon: Icon(Icons.work),
+            label: 'Jobs',
           ),
         ],
       ),

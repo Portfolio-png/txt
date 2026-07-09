@@ -88,5 +88,11 @@
     "displayName": "Single-type Challan View",
     "category": "Challans Screen",
     "description": "Show one challan type full-width instead of the split Reception/Delivery view"
+  },
+  {
+    "key": "mobile.bottomNav",
+    "displayName": "Bottom Navigation Footer",
+    "category": "Mobile",
+    "description": "Show a bottom navigation footer (Dashboard, Orders, Inventory, Production, Jobs) on mobile-width layouts"
   }
 ]

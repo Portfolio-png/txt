@@ -40,8 +40,8 @@ typedef VariationValueCreator =
       required String valueName,
     });
 
-class VariationPathSelectorDialog extends StatefulWidget {
-  const VariationPathSelectorDialog({
+class VariationPathSelectorWidget extends StatefulWidget {
+  const VariationPathSelectorWidget({
     super.key,
     required this.item,
     required this.initialRootPropertyId,
@@ -49,6 +49,10 @@ class VariationPathSelectorDialog extends StatefulWidget {
     this.initialCustomVariationValues = const {},
     this.onCreateValue,
     this.readOnly = false,
+    this.showHeaderAndFooter = false,
+    this.onChanged,
+    this.onComplete,
+    this.onCancel,
   });
 
   final ItemDefinition item;
@@ -57,14 +61,18 @@ class VariationPathSelectorDialog extends StatefulWidget {
   final Map<int, String> initialCustomVariationValues;
   final VariationValueCreator? onCreateValue;
   final bool readOnly;
+  final bool showHeaderAndFooter;
+  final ValueChanged<VariationPathSelectionResult>? onChanged;
+  final ValueChanged<VariationPathSelectionResult>? onComplete;
+  final VoidCallback? onCancel;
 
   @override
-  State<VariationPathSelectorDialog> createState() =>
-      _VariationPathSelectorDialogState();
+  State<VariationPathSelectorWidget> createState() =>
+      _VariationPathSelectorWidgetState();
 }
 
-class _VariationPathSelectorDialogState
-    extends State<VariationPathSelectorDialog> {
+class _VariationPathSelectorWidgetState
+    extends State<VariationPathSelectorWidget> {
   late ItemDefinition _item;
   late int? _selectedRootPropertyId;
   late List<int> _selectedValueNodeIds;
@@ -94,12 +102,13 @@ class _VariationPathSelectorDialogState
 
     final isTablet = MediaQuery.of(context).size.width >= 600;
     return Padding(
-      padding: const EdgeInsets.all(22),
+      padding: EdgeInsets.all(widget.showHeaderAndFooter ? 22 : 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
+          if (widget.showHeaderAndFooter) ...[
+            Row(
+              children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -142,20 +151,21 @@ class _VariationPathSelectorDialogState
               ),
               const SizedBox(width: 8),
               IconButton(
-                onPressed: () => Navigator.of(context).pop(),
+                onPressed: () => widget.onCancel?.call(),
                 icon: Icon(Icons.close_rounded, size: isTablet ? 28.0 : 24.0),
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          ],
+          if (widget.showHeaderAndFooter) const SizedBox(height: 20),
           Expanded(
             child: Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(16),
+              padding: widget.showHeaderAndFooter ? const EdgeInsets.all(16) : EdgeInsets.zero,
               decoration: BoxDecoration(
-                color: SoftErpTheme.cardSurfaceAlt,
+                color: widget.showHeaderAndFooter ? SoftErpTheme.cardSurfaceAlt : Colors.transparent,
                 borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: SoftErpTheme.border),
+                border: widget.showHeaderAndFooter ? Border.all(color: SoftErpTheme.border) : null,
               ),
               child: SingleChildScrollView(
                 child: Column(
@@ -179,6 +189,7 @@ class _VariationPathSelectorDialogState
               ),
             ),
           ),
+          if (widget.showHeaderAndFooter) ...[
           const SizedBox(height: 16),
           Container(
             width: double.infinity,
@@ -215,7 +226,7 @@ class _VariationPathSelectorDialogState
               AppButton(
                 label: widget.readOnly ? 'Close' : 'Cancel',
                 variant: AppButtonVariant.secondary,
-                onPressed: () => Navigator.of(context).pop(),
+                onPressed: () => widget.onCancel?.call(),
               ),
               if (!widget.readOnly)
                 AppButton(
@@ -224,6 +235,7 @@ class _VariationPathSelectorDialogState
                 ),
             ],
           ),
+          ],
         ],
       ),
     );
@@ -289,6 +301,7 @@ class _VariationPathSelectorDialogState
                   result.selectedValueNodeIds,
                 );
               });
+              _notifyChanges();
               return SearchableSelectOption<int>(
                 value: result.createdValueNode.id,
                 label: result.createdValueNode.name.trim().isEmpty
@@ -318,6 +331,7 @@ class _VariationPathSelectorDialogState
             value == null ? const <int>[] : <int>[value],
           );
         });
+        _notifyChanges();
       },
     );
   }
@@ -548,12 +562,25 @@ class _VariationPathSelectorDialogState
     return segments.isEmpty ? _item.displayName : segments.join(' / ');
   }
 
-  void _submit() {
+  void _notifyChanges() {
     final leaf = _resolveLeafFromSelection();
-    Navigator.of(context).pop(
+    widget.onChanged?.call(
       VariationPathSelectionResult(
         item: _item,
-        rootPropertyId: null,
+        rootPropertyId: _selectedRootPropertyId,
+        valueNodeIds: List<int>.from(_selectedValueNodeIds),
+        customVariationValues: Map.from(_customVariationValues),
+        leaf: leaf,
+      ),
+    );
+  }
+
+  void _submit() {
+    final leaf = _resolveLeafFromSelection();
+    widget.onComplete?.call(
+      VariationPathSelectionResult(
+        item: _item,
+        rootPropertyId: _selectedRootPropertyId,
         valueNodeIds: List<int>.from(_selectedValueNodeIds),
         customVariationValues: Map.from(_customVariationValues),
         leaf: leaf,
@@ -563,3 +590,38 @@ class _VariationPathSelectorDialogState
 }
 
 
+
+
+class VariationPathSelectorDialog extends StatelessWidget {
+  const VariationPathSelectorDialog({
+    super.key,
+    required this.item,
+    required this.initialRootPropertyId,
+    required this.initialValueNodeIds,
+    this.initialCustomVariationValues = const {},
+    this.onCreateValue,
+    this.readOnly = false,
+  });
+
+  final ItemDefinition item;
+  final int? initialRootPropertyId;
+  final List<int> initialValueNodeIds;
+  final Map<int, String> initialCustomVariationValues;
+  final VariationValueCreator? onCreateValue;
+  final bool readOnly;
+
+  @override
+  Widget build(BuildContext context) {
+    return VariationPathSelectorWidget(
+      item: item,
+      initialRootPropertyId: initialRootPropertyId,
+      initialValueNodeIds: initialValueNodeIds,
+      initialCustomVariationValues: initialCustomVariationValues,
+      onCreateValue: onCreateValue,
+      readOnly: readOnly,
+      showHeaderAndFooter: true,
+      onComplete: (result) => Navigator.of(context).pop(result),
+      onCancel: () => Navigator.of(context).pop(),
+    );
+  }
+}
