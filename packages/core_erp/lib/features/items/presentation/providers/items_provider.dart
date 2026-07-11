@@ -8,7 +8,7 @@ import '../../domain/item_inputs.dart';
 import '../../domain/item_usage_record.dart';
 import '../../../../core/services/socket_service.dart';
 
-enum ItemStatusFilter { active, archived, all }
+
 
 enum ItemDuplicateWarning {
   none,
@@ -63,7 +63,7 @@ class ItemsProvider extends ChangeNotifier {
   bool _isAssetUploading = false;
   String? _errorMessage;
   String _searchQuery = '';
-  ItemStatusFilter _statusFilter = ItemStatusFilter.active;
+
   bool _initialized = false;
 
   List<ItemDefinition> get items => _items;
@@ -74,20 +74,13 @@ class ItemsProvider extends ChangeNotifier {
   bool get isAssetUploading => _isAssetUploading;
   String? get errorMessage => _errorMessage;
   String get searchQuery => _searchQuery;
-  ItemStatusFilter get statusFilter => _statusFilter;
+
 
   List<ItemDefinition> get filteredItems {
     final query = _normalize(_searchQuery);
     return _items
         .where((item) {
-          final matchesStatus = switch (_statusFilter) {
-            ItemStatusFilter.active => !item.isArchived,
-            ItemStatusFilter.archived => item.isArchived,
-            ItemStatusFilter.all => true,
-          };
-          if (!matchesStatus) {
-            return false;
-          }
+
           if (query.isEmpty) {
             return true;
           }
@@ -102,9 +95,7 @@ class ItemsProvider extends ChangeNotifier {
 
   void _sortItems() {
     _items.sort((a, b) {
-      if (a.isArchived != b.isArchived) {
-        return a.isArchived ? 1 : -1;
-      }
+
       final groupCompare = a.groupId.compareTo(b.groupId);
       if (groupCompare != 0) {
         return groupCompare;
@@ -221,10 +212,7 @@ class ItemsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setStatusFilter(ItemStatusFilter value) {
-    _statusFilter = value;
-    notifyListeners();
-  }
+
 
   ItemDuplicateCheck checkDuplicate({
     required String name,
@@ -378,6 +366,7 @@ class ItemsProvider extends ChangeNotifier {
           ),
         ],
         namingFormat: current.namingFormat,
+        availableForPurchase: current.availableForPurchase,
         variationTree: current.variationTree
             .map(_toInput)
             .toList(growable: false),
@@ -438,6 +427,7 @@ class ItemsProvider extends ChangeNotifier {
           unitConversions: _preservedConversions(current),
           namingFormat: current.namingFormat,
           defaultPipelineId: current.defaultPipelineId,
+          availableForPurchase: current.availableForPurchase,
           variationTree: mutation.nodes,
         ),
       ),
@@ -483,6 +473,7 @@ class ItemsProvider extends ChangeNotifier {
       return null;
     }
 
+    if (_isSaving) return null;
     _isSaving = true;
     _errorMessage = null;
     notifyListeners();
@@ -498,6 +489,7 @@ class ItemsProvider extends ChangeNotifier {
           unitConversions: _preservedConversions(current),
           namingFormat: current.namingFormat,
           defaultPipelineId: current.defaultPipelineId,
+          availableForPurchase: current.availableForPurchase,
           variationTree: <ItemVariationNodeInput>[
             ...current.variationTree.map(_toInput),
             ItemVariationNodeInput(
@@ -533,15 +525,9 @@ class ItemsProvider extends ChangeNotifier {
     }
   }
 
-  Future<ItemDefinition?> archiveItem(int id) async {
-    return _save(() => _repository.archiveItem(id));
-  }
-
-  Future<ItemDefinition?> restoreItem(int id) async {
-    return _save(() => _repository.restoreItem(id));
-  }
 
   Future<bool> deleteItem(int id) async {
+    if (_isSaving) return false;
     _isSaving = true;
     _errorMessage = null;
     notifyListeners();
@@ -653,6 +639,7 @@ class ItemsProvider extends ChangeNotifier {
   Future<ItemDefinition?> _save(
     Future<ItemDefinition> Function() action,
   ) async {
+    if (_isSaving) return null;
     _isSaving = true;
     _errorMessage = null;
     notifyListeners();
@@ -677,6 +664,7 @@ class ItemsProvider extends ChangeNotifier {
     required String valueName,
     required List<String> propertyPathSegments,
   }) async {
+    if (_isSaving) return null;
     _isSaving = true;
     _errorMessage = null;
     notifyListeners();

@@ -242,9 +242,7 @@ class _StructuredGroupEditorDialogState
     final provider = context.watch<InventoryProvider>();
     final groupsProvider = context.watch<GroupsProvider>();
     final itemsProvider = context.watch<ItemsProvider>();
-    final groups = groupsProvider.filteredGroupsByType(widget.groupType)
-        .where((g) => !g.isArchived)
-        .toList(growable: false);
+    final groups = groupsProvider.filteredGroupsByType(widget.groupType).toList(growable: false);
     final units = context.watch<UnitsProvider>().activeUnits;
     final items = _activeItems();
     final saveError =
@@ -1193,7 +1191,6 @@ class _StructuredGroupEditorDialogState
         return;
       }
       final matchingGroups = groupsProvider.filteredGroupsByType(widget.groupType)
-          .where((g) => !g.isArchived)
           .where(
             (group) =>
                 group.name.trim().toLowerCase() ==
@@ -1520,7 +1517,6 @@ class _StructuredGroupEditorDialogState
     return context
         .read<ItemsProvider>()
         .items
-        .where((item) => !item.isArchived)
         .toList(growable: false);
   }
 

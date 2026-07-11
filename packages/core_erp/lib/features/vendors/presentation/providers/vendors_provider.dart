@@ -5,7 +5,7 @@ import '../../domain/vendor_definition.dart';
 import '../../domain/vendor_inputs.dart';
 import '../../../../core/services/socket_service.dart';
 
-enum VendorStatusFilter { active, archived, all }
+
 
 enum VendorDuplicateWarning { none, nameOnly, gstOnly, nameAndGst }
 
@@ -30,7 +30,7 @@ class VendorsProvider extends ChangeNotifier {
   bool _isSaving = false;
   String? _errorMessage;
   String _searchQuery = '';
-  VendorStatusFilter _statusFilter = VendorStatusFilter.active;
+
   bool _initialized = false;
 
   List<VendorDefinition> get vendors => _vendors;
@@ -38,20 +38,13 @@ class VendorsProvider extends ChangeNotifier {
   bool get isSaving => _isSaving;
   String? get errorMessage => _errorMessage;
   String get searchQuery => _searchQuery;
-  VendorStatusFilter get statusFilter => _statusFilter;
+
 
   List<VendorDefinition> get filteredVendors {
     final query = _normalize(_searchQuery);
     return _vendors
         .where((vendor) {
-          final matchesStatus = switch (_statusFilter) {
-            VendorStatusFilter.active => !vendor.isArchived,
-            VendorStatusFilter.archived => vendor.isArchived,
-            VendorStatusFilter.all => true,
-          };
-          if (!matchesStatus) {
-            return false;
-          }
+
           if (query.isEmpty) {
             return true;
           }
@@ -68,9 +61,7 @@ class VendorsProvider extends ChangeNotifier {
 
   void _sortVendors() {
     _vendors.sort((a, b) {
-      if (a.isArchived != b.isArchived) {
-        return a.isArchived ? 1 : -1;
-      }
+
       final nameCompare = a.name.toLowerCase().compareTo(
         b.name.toLowerCase(),
       );
@@ -167,10 +158,7 @@ class VendorsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setStatusFilter(VendorStatusFilter value) {
-    _statusFilter = value;
-    notifyListeners();
-  }
+
 
   VendorDefinition? findById(int? id) {
     if (id == null) {
@@ -235,15 +223,26 @@ class VendorsProvider extends ChangeNotifier {
   Future<VendorDefinition?> updateVendor(UpdateVendorInput input) =>
       _saveVendor(() => _repository.updateVendor(input));
 
-  Future<VendorDefinition?> archiveVendor(int id) =>
-      _saveVendor(() => _repository.archiveVendor(id));
-
-  Future<VendorDefinition?> restoreVendor(int id) =>
-      _saveVendor(() => _repository.restoreVendor(id));
+  Future<void> deleteVendor(int id) async {
+    if (_isSaving) return;
+    _isSaving = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      await _repository.deleteVendor(id);
+      await refresh();
+    } catch (error) {
+      _errorMessage = error.toString();
+    } finally {
+      _isSaving = false;
+      notifyListeners();
+    }
+  }
 
   Future<VendorDefinition?> _saveVendor(
     Future<VendorDefinition> Function() action,
   ) async {
+    if (_isSaving) return null;
     _isSaving = true;
     _errorMessage = null;
     notifyListeners();

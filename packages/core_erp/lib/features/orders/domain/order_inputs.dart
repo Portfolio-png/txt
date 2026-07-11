@@ -4,6 +4,7 @@ class CreateOrderInput {
   const CreateOrderInput({
     required this.orderNo,
     required this.clientId,
+    this.subContractorId,
     required this.clientName,
     required this.poNumber,
     required this.clientCode,
@@ -27,6 +28,7 @@ class CreateOrderInput {
 
   final String orderNo;
   final int clientId;
+  final int? subContractorId;
   final String clientName;
   final String poNumber;
   final String clientCode;

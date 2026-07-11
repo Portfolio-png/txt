@@ -7,6 +7,5 @@ abstract class VendorRepository {
   Future<VendorDefinition?> getVendor(int id);
   Future<VendorDefinition> createVendor(CreateVendorInput input);
   Future<VendorDefinition> updateVendor(UpdateVendorInput input);
-  Future<VendorDefinition> archiveVendor(int id);
-  Future<VendorDefinition> restoreVendor(int id);
+  Future<void> deleteVendor(int id);
 }

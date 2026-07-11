@@ -7,6 +7,5 @@ abstract class ClientRepository {
   Future<ClientDefinition?> getClient(int id);
   Future<ClientDefinition> createClient(CreateClientInput input);
   Future<ClientDefinition> updateClient(UpdateClientInput input);
-  Future<ClientDefinition> archiveClient(int id);
-  Future<ClientDefinition> restoreClient(int id);
+  Future<void> deleteClient(int id);
 }

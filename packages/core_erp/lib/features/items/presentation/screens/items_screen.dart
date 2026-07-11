@@ -8,6 +8,7 @@ import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_section_title.dart';
 import '../../../../core/widgets/app_toast.dart';
+import '../../../../core/widgets/confirm_dialog.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/widgets/searchable_select.dart';
 import '../../../../core/widgets/soft_master_data.dart';
@@ -262,24 +263,7 @@ class _ItemsToolbar extends StatelessWidget {
             hintText: 'Search items, properties, values, or leaf nodes',
             onChanged: provider.setSearchQuery,
           ),
-        SoftSegmentedFilter<ItemStatusFilter>(
-          selected: provider.statusFilter,
-          onChanged: provider.setStatusFilter,
-          options: const [
-            SoftSegmentOption<ItemStatusFilter>(
-              value: ItemStatusFilter.active,
-              label: 'Active',
-            ),
-            SoftSegmentOption<ItemStatusFilter>(
-              value: ItemStatusFilter.archived,
-              label: 'Archived',
-            ),
-            SoftSegmentOption<ItemStatusFilter>(
-              value: ItemStatusFilter.all,
-              label: 'All',
-            ),
-          ],
-        ),
+
         _ItemsViewToggleButton(isGridView: isGridView, onTap: onToggleView),
         if (isGridView)
           _ItemsGridSizeControls(
@@ -687,15 +671,17 @@ class _ItemRow extends StatelessWidget {
                 ),
               ),
               SoftActionLink(
-                label: item.isArchived ? 'Restore' : 'Archive',
+                label: 'Delete',
                 onTap: itemsProvider.isSaving
                     ? null
-                    : () {
-                        if (item.isArchived) {
-                          itemsProvider.restoreItem(item.id);
-                        } else {
-                          itemsProvider.archiveItem(item.id);
-                        }
+                    : () async {
+                        final ok = await showConfirmDialog(
+                          context,
+                          title: 'Delete item?',
+                          message:
+                              'Permanently delete "${item.displayName}"? You can restore it later from the Action Center.',
+                        );
+                        if (ok) itemsProvider.deleteItem(item.id);
                       },
               ),
             ],
@@ -817,6 +803,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   bool _isLoadingGroupSchema = false;
   String? _defaultPipelineId;
   List<Map<String, String>> _availablePipelines = [];
+  bool _availableForPurchase = false;
 
   bool get _isReadOnly => false;
 
@@ -837,6 +824,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     _selectedUnitId = widget.item?.unitId;
     _namingFormat = widget.item?.namingFormat.toList() ?? [];
     _defaultPipelineId = widget.item?.defaultPipelineId;
+    _availableForPurchase = widget.item?.availableForPurchase ?? false;
     _displayNameTouched = (widget.item?.displayName ?? '').trim().isNotEmpty;
 
     _nameController.addListener(_handlePrimaryChange);
@@ -1532,19 +1520,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                       searchText: _groupOptionSearchText(group, groupsProvider),
                     ),
                   ),
-                  if (selectedGroup != null &&
-                      availableGroups.every(
-                        (group) => group.id != selectedGroup.id,
-                      ))
-                    SearchableSelectOption<int>(
-                      value: selectedGroup.id,
-                      label:
-                          '${_groupOptionLabel(selectedGroup, groupsProvider)} (archived)',
-                      searchText: _groupOptionSearchText(
-                        selectedGroup,
-                        groupsProvider,
-                      ),
-                    ),
+
                 ],
                 onChanged: (value) => _handleGroupChanged(value),
                 validator: (value) => value == null ? 'Required' : null,
@@ -1766,6 +1742,23 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           ],
           const SizedBox(height: 12),
           _WarningText(warning: duplicate.warning),
+          // Compact, flag-gated: adds no height for clients without the flag.
+          if (FeatureFlags.isEnabled(FeatureKeys.catalogPurchaseItems))
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              value: _availableForPurchase,
+              onChanged: _isReadOnly
+                  ? null
+                  : (value) => setState(() {
+                      _availableForPurchase = value;
+                      _handleChange();
+                    }),
+              title: const Text(
+                'Available for purchase',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              ),
+            ),
         ],
       ),
     );
@@ -2066,23 +2059,26 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                         ),
                       if (widget.item != null)
                         AppButton(
-                          label: widget.item!.isArchived
-                              ? 'Restore'
-                              : 'Archive',
+                          label: 'Delete',
                           variant: AppButtonVariant.secondary,
                           isLoading: itemsProvider.isSaving,
                           onPressed: () async {
-                            final result = widget.item!.isArchived
-                                ? await itemsProvider.restoreItem(
-                                    widget.item!.id,
-                                  )
-                                : await itemsProvider.archiveItem(
-                                    widget.item!.id,
-                                  );
-                            if (context.mounted &&
-                                result != null &&
-                                itemsProvider.errorMessage == null) {
-                              Navigator.of(context).pop(result);
+                            final ok = await showConfirmDialog(
+                              context,
+                              title: 'Delete item?',
+                              message:
+                                  'Permanently delete "${widget.item!.displayName}"? You can restore it later from the Action Center.',
+                            );
+                            if (!ok) return;
+                            await itemsProvider.deleteItem(widget.item!.id);
+                            if (!context.mounted) return;
+                            if (itemsProvider.errorMessage == null) {
+                              Navigator.of(context).pop(null);
+                            } else {
+                              showGlobalToast(
+                                itemsProvider.errorMessage!,
+                                kind: AppToastKind.error,
+                              );
                             }
                           },
                         ),
@@ -2586,6 +2582,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                defaultPipelineId: _defaultPipelineId,
                baseItemId: widget.item?.id,
                photoUrl: _photoUrlController.text.trim(),
+               availableForPurchase: _availableForPurchase,
              );
              final created = await itemsProvider.createItem(input);
              if (created != null) {
@@ -2842,6 +2839,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               variationTree: _variationTreeInputs,
               defaultPipelineId: _defaultPipelineId,
               photoUrl: _photoUrlController.text.trim(),
+              availableForPurchase: _availableForPurchase,
             ),
           )
         : await itemsProvider.updateItem(
@@ -2865,6 +2863,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               variationTree: _variationTreeInputs,
               defaultPipelineId: _defaultPipelineId,
               photoUrl: _photoUrlController.text.trim(),
+              availableForPurchase: _availableForPurchase,
             ),
           );
 

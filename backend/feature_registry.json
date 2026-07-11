@@ -42,6 +42,12 @@
     "description": "Enable Delivery Challans"
   },
   {
+    "key": "modules.actionCenter",
+    "displayName": "Action Center",
+    "category": "Modules",
+    "description": "Trash bin & broken-reference resolution center"
+  },
+  {
     "key": "orders.allowCustomActions",
     "displayName": "Allow Dynamic Actions Dropdown",
     "category": "Orders Screen",
@@ -90,9 +96,9 @@
     "description": "Show one challan type full-width instead of the split Reception/Delivery view"
   },
   {
-    "key": "mobile.bottomNav",
-    "displayName": "Bottom Navigation Footer",
-    "category": "Mobile",
-    "description": "Show a bottom navigation footer (Dashboard, Orders, Inventory, Production, Jobs) on mobile-width layouts"
+    "key": "catalog.purchaseItems",
+    "displayName": "Purchase Items",
+    "category": "Catalog & Inventory",
+    "description": "Enable the \"Available for purchase\" item toggle and the mobile Purchase (reception) challan flow"
   }
 ]

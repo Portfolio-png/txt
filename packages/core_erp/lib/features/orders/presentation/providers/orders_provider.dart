@@ -130,6 +130,7 @@ class OrdersProvider extends ChangeNotifier {
   }
 
   Future<List<OrderDeletionSummary>?> deleteOrder(int orderId, {String? wipBarcode, double? wipQty}) async {
+    if (_isSaving) return null;
     _isSaving = true;
     _errorMessage = null;
     notifyListeners();
@@ -184,6 +185,7 @@ class OrdersProvider extends ChangeNotifier {
     Future<OrderEntry> Function() action, {
     void Function(OrderEntry saved)? onSuccess,
   }) async {
+    if (_isSaving) return null;
     _isSaving = true;
     _errorMessage = null;
     notifyListeners();

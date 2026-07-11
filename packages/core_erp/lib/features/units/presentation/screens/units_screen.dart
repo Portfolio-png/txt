@@ -104,24 +104,7 @@ class _UnitsToolbar extends StatelessWidget {
             hintText: 'Search units or symbols',
             onChanged: provider.setSearchQuery,
           ),
-        SoftSegmentedFilter<UnitStatusFilter>(
-          selected: provider.statusFilter,
-          onChanged: provider.setStatusFilter,
-          options: const [
-            SoftSegmentOption<UnitStatusFilter>(
-              value: UnitStatusFilter.active,
-              label: 'Active',
-            ),
-            SoftSegmentOption<UnitStatusFilter>(
-              value: UnitStatusFilter.archived,
-              label: 'Archived',
-            ),
-            SoftSegmentOption<UnitStatusFilter>(
-              value: UnitStatusFilter.all,
-              label: 'All',
-            ),
-          ],
-        ),
+
       ],
     );
   }
@@ -197,16 +180,10 @@ class _UnitRow extends StatelessWidget {
         Expanded(
           flex: 1,
           child: SoftStatusPill(
-            label: unit.isArchived ? 'Archived' : 'Active',
-            background: unit.isArchived
-                ? const Color(0xFFF3F4F6)
-                : const Color(0xFFECFDF5),
-            textColor: unit.isArchived
-                ? const Color(0xFF6B7280)
-                : const Color(0xFF0F766E),
-            borderColor: unit.isArchived
-                ? const Color(0xFFE5E7EB)
-                : const Color(0xFFBFEAD8),
+            label: 'Active',
+            background: const Color(0xFFECFDF5),
+            textColor: const Color(0xFF0F766E),
+            borderColor: const Color(0xFFBFEAD8),
           ),
         ),
         Expanded(
@@ -220,15 +197,11 @@ class _UnitRow extends StatelessWidget {
                 onTap: () => UnitsScreen.openEditor(context, unit: unit),
               ),
               SoftActionLink(
-                label: unit.isArchived ? 'Restore' : 'Archive',
+                label: 'Delete',
                 onTap: provider.isSaving
                     ? null
                     : () {
-                        if (unit.isArchived) {
-                          provider.restoreUnit(unit.id);
-                        } else {
-                          provider.archiveUnit(unit.id);
-                        }
+                        provider.deleteUnit(unit.id);
                       },
               ),
             ],
@@ -332,7 +305,7 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
         provider.activeUnits
             .where(
               (unit) =>
-                  !unit.isArchived &&
+                  unit.conversionBaseUnitId == null &&
                   (widget.unit == null || unit.id != widget.unit!.id),
             )
             .toList(growable: false)
@@ -873,24 +846,15 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                         children: [
                           if (widget.unit != null)
                             AppButton(
-                              label: widget.unit!.isArchived
-                                  ? 'Restore'
-                                  : 'Archive',
+                              label: 'Delete',
                               variant: AppButtonVariant.secondary,
                               isLoading: provider.isSaving,
                               onPressed: () async {
-                                final result = widget.unit!.isArchived
-                                    ? await provider.restoreUnit(
-                                        widget.unit!.id,
-                                      )
-                                    : await provider.archiveUnit(
-                                        widget.unit!.id,
-                                      );
-                                if (context.mounted &&
-                                    result != null &&
-                                    provider.errorMessage == null) {
-                                  Navigator.of(context).pop(result);
+                                await provider.deleteUnit(widget.unit!.id);
+                                if (!context.mounted || provider.errorMessage != null) {
+                                  return;
                                 }
+                                Navigator.of(context).pop(null);
                               },
                             ),
                           AppButton(

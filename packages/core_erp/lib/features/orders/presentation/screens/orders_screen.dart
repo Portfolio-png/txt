@@ -18,6 +18,7 @@ import '../../../../core/widgets/searchable_select.dart';
 import '../../../../core/widgets/soft_primitives.dart';
 import 'package:collection/collection.dart';
 import 'package:core_erp/core/navigation/app_navigation.dart';
+import '../../../clients/presentation/widgets/sub_contractors_sheet.dart';
 import '../../../clients/domain/client_definition.dart';
 import '../../../clients/presentation/providers/clients_provider.dart';
 import '../../../clients/presentation/screens/clients_screen.dart';
@@ -1689,7 +1690,7 @@ class _OrderDataRowState extends State<_OrderDataRow> {
                             ),
                           ),
                           _DataCell(
-                            '${group.items.fold<int>(0, (sum, item) => sum + item.quantity)} Units',
+                            '${group.items.fold<int>(0, (sum, item) => sum + item.quantity)} ${group.items.isNotEmpty && group.items.first.unitSymbol.isNotEmpty ? group.items.first.unitSymbol : 'Units'}',
                             width: layout.quantityWidth,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -2731,6 +2732,8 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
   late final TextEditingController _endDateController;
 
   int? _selectedClientId;
+  int? _selectedSubContractorId;
+  String? _selectedSubContractorName;
   late final List<_OrderLineDraft> _lines;
   bool _itemWiseCompletionDate = true;
   DateTime? _startDate;
@@ -2742,6 +2745,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
   final List<_PendingPoDocument> _poDocuments = <_PendingPoDocument>[];
   List<CachedPoFile> _recentPoFiles = const <CachedPoFile>[];
   bool _isUploadingPoDocuments = false;
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -2750,6 +2754,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     _orderNoController = TextEditingController(text: group?.orderNo ?? '');
     _poNumberController = TextEditingController(text: group?.poNumber ?? '');
     _selectedClientId = group?.clientId;
+    _selectedSubContractorId = group?.subContractorId;
     _startDate = group?.items.first.startDate ?? DateTime.now();
     _startDateController = TextEditingController(
       text: _formatDate(_startDate!),
@@ -2969,6 +2974,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                   child: _OrderEditorFooterButton(
                     key: const ValueKey<String>('orders-editor-save-draft'),
                     label: 'Save Draft',
+                    isLoading: _isSaving,
                     onPressed: canUseFooterActions
                         ? () => _submit(
                             context,
@@ -2987,6 +2993,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                     key: const ValueKey<String>('orders-editor-create-order'),
                     label: 'Save',
                     isPrimary: true,
+                    isLoading: _isSaving,
                     onPressed: canUseFooterActions
                         ? () => _submit(context, clients, items)
                         : null,
@@ -3238,7 +3245,37 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
               ),
             ),
           ),
-          const SizedBox(height: 28),
+          if (_selectedClientId != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 20),
+              child: GestureDetector(
+                onTap: () async {
+                  final clients = context.read<ClientsProvider>().clients;
+                  final client = clients.firstWhere((c) => c.id == _selectedClientId);
+                  final sub = await SubContractorsSheet.show(context, client);
+                  if (sub != null) {
+                    setState(() {
+                      _selectedSubContractorId = sub.id;
+                      _selectedSubContractorName = sub.name;
+                    });
+                  }
+                },
+                child: Text(
+                  _selectedSubContractorId == null
+                      ? '+ Add sub-contractor'
+                      : _selectedSubContractorName != null
+                          ? 'Sub-contractor: $_selectedSubContractorName (Tap to change)'
+                          : '1 sub-contractor chosen (Tap to change)',
+                  style: const TextStyle(
+                    color: Color(0xFF3B82F6),
+                    decoration: TextDecoration.underline,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            )
+          else
+            const SizedBox(height: 28),
           FocusTraversalOrder(
             order: const NumericFocusOrder(3),
             child: _OrderEditorField(
@@ -4262,6 +4299,8 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     OrderStatus? statusOverride,
     String successMessage = 'Order created successfully.',
   }) async {
+    if (_isSaving) return;
+    
     if (!_formKey.currentState!.validate()) {
       showGlobalToast(
         'Please fix the highlighted fields before saving.',
@@ -4277,8 +4316,13 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       );
       return;
     }
+    
+    setState(() {
+      _isSaving = true;
+    });
 
-    final selectedClient = _selectedClient(clients);
+    try {
+      final selectedClient = _selectedClient(clients);
     final isDraft = statusOverride == OrderStatus.draft;
     if (selectedClient == null) {
       showAppSnack(
@@ -4369,6 +4413,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
         CreateOrderInput(
           orderNo: baseOrderNo,
           clientId: selectedClient.id,
+          subContractorId: _selectedSubContractorId,
           clientName: selectedClient.name,
           poNumber: _poNumberController.text,
           clientCode: lineClientCode,
@@ -4420,6 +4465,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
           return CreateOrderInput(
             orderNo: input.orderNo,
             clientId: input.clientId,
+            subContractorId: input.subContractorId,
             clientName: input.clientName,
             poNumber: input.poNumber,
             clientCode: input.clientCode,
@@ -4515,6 +4561,11 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
         ordersProvider.errorMessage ??
         'Unable to create order. Please try again.';
     showAppToast(context, message, kind: AppToastKind.error);
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
   }
 
   bool _normalizeCompletionDateInputs() {
@@ -8014,11 +8065,13 @@ class _OrderEditorFooterButton extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.isPrimary = false,
+    this.isLoading = false,
   });
 
   final String label;
   final VoidCallback? onPressed;
   final bool isPrimary;
+  final bool isLoading;
 
   @override
   Widget build(BuildContext context) {
@@ -8031,7 +8084,7 @@ class _OrderEditorFooterButton extends StatelessWidget {
       width: width,
       height: 44,
       child: FilledButton(
-        onPressed: onPressed,
+        onPressed: isLoading ? null : onPressed,
         style: FilledButton.styleFrom(
           elevation: 0,
           backgroundColor: isPrimary ? SoftErpTheme.accent : Colors.white,
@@ -8049,12 +8102,23 @@ class _OrderEditorFooterButton extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14),
           textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
         ),
-        child: Text(
-          label,
-          maxLines: 1,
-          softWrap: false,
-          overflow: TextOverflow.visible,
-        ),
+        child: isLoading 
+            ? SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    isPrimary ? Colors.white : SoftErpTheme.textSecondary,
+                  ),
+                ),
+              )
+            : Text(
+                label,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.visible,
+              ),
       ),
     );
   }

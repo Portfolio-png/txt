@@ -10,6 +10,8 @@ import 'app/shell/app_shell.dart';
 import 'app/shell/navigation_provider.dart';
 import 'package:core_erp/features/auth/presentation/providers/auth_provider.dart';
 import 'package:core_erp/features/auth/presentation/screens/login_screen.dart';
+import 'package:core_erp/features/clients/presentation/providers/clients_provider.dart';
+import 'package:core_erp/features/clients/presentation/providers/sub_contractors_provider.dart';
 import 'package:paper/core/services/activation_service.dart';
 import 'package:paper/features/auth/presentation/screens/activation_screen.dart';
 import 'package:core_erp/features/groups/data/repositories/api_group_repository.dart';
@@ -18,11 +20,15 @@ import 'package:core_erp/features/groups/presentation/providers/groups_provider.
 import 'package:core_erp/features/inventory/data/repositories/api_inventory_repository.dart';
 import 'package:core_erp/features/inventory/data/repositories/inventory_repository.dart';
 import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
+import 'package:core_erp/features/action_center/data/action_center_repository.dart';
+import 'package:core_erp/features/action_center/presentation/providers/action_center_provider.dart';
 import 'features/jobs/data/jobs_repository.dart';
 import 'features/jobs/presentation/providers/jobs_provider.dart';
 import 'features/jobs/presentation/screens/freelancer_portal_screen.dart';
 import 'package:core_erp/features/clients/data/repositories/api_client_repository.dart';
+import 'package:core_erp/features/clients/data/repositories/api_sub_contractor_repository.dart';
 import 'package:core_erp/features/clients/data/repositories/client_repository.dart';
+import 'package:core_erp/features/clients/data/repositories/sub_contractor_repository.dart';
 import 'package:core_erp/features/clients/presentation/providers/clients_provider.dart';
 import 'package:core_erp/features/delivery_challans/data/api_delivery_challan_repository.dart';
 import 'package:core_erp/features/delivery_challans/data/delivery_challan_repository.dart';
@@ -75,10 +81,6 @@ const _isDemoMode = bool.fromEnvironment(
 const _localApiBaseUrl = 'http://localhost:18080';
 const _configuredApiBaseUrl = String.fromEnvironment('PAPER_API_BASE_URL');
 
-// Testing convenience: log in automatically on startup so the login screen is
-// skipped. Disable with --dart-define=PAPER_AUTO_LOGIN=false once user
-// management testing starts. If the attempt fails (e.g. wrong credentials for
-// the target backend), the login screen appears as usual.
 const _autoLoginEnabled = bool.fromEnvironment(
   'PAPER_AUTO_LOGIN',
   defaultValue: true,
@@ -92,9 +94,6 @@ const _autoLoginPassword = String.fromEnvironment(
   defaultValue: 'Paper@12345',
 );
 
-// Demo escape hatch: skip the activation screen without using demo mode, so a
-// real-backend (EC2) demo can't get stuck on activation. Default off.
-//   flutter run -d windows --dart-define=PAPER_SKIP_ACTIVATION=true
 const _skipActivation = bool.fromEnvironment(
   'PAPER_SKIP_ACTIVATION',
   defaultValue: false,
@@ -116,22 +115,14 @@ String _resolveApiBaseUrl() {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Remote Config
   const clientId = String.fromEnvironment('CLIENT_ID', defaultValue: 'default');
   await ConfigService.instance.init(_resolveApiBaseUrl(), clientId, isDemoMode: _isDemoMode);
 
-  // Initialize SQLite state sync to Control Plane
   DataSyncService.instance.initialize(_resolveApiBaseUrl(), clientId);
 
-  // Initialize Session Replay tracking
   SessionReplayService.instance.initialize(_resolveApiBaseUrl(), clientId);
 
   await AutoUpdaterService.instance.initialize();
-
-  // Real-time updates (SSE) are connected once auth is available and rebound
-  // whenever the token changes — see _RealtimeSocketConnector above MaterialApp.
-  // Connecting here would be pre-login and token-less, which the authenticated
-  // /api/events endpoint rejects; it would then never recover without a restart.
 
   await SentryFlutter.init((options) {
     options.dsn = const String.fromEnvironment(
@@ -144,16 +135,6 @@ Future<void> main() async {
   }, appRunner: () => runApp(const MyApp()));
 }
 
-/// Keeps the real-time [SocketService] (SSE) connection bound to the current
-/// auth token. Sits directly above [MaterialApp] and watches [AuthProvider], so
-/// it rebuilds on every login/logout/token change and re-binds the socket.
-/// [SocketService.init] no-ops when the token is unchanged, so this is cheap and
-/// only reconnects when the token actually changes. Returning [child] unchanged
-/// means the app subtree is not rebuilt.
-///
-/// This is a widget (not a provider whose value nothing reads) on purpose: it
-/// guarantees the binding actually runs. Without a live-authenticated socket the
-/// desktop never receives change events and its UI only refreshes on a restart.
 class _RealtimeSocketConnector extends StatefulWidget {
   const _RealtimeSocketConnector({required this.child});
 
@@ -180,10 +161,6 @@ class _RealtimeSocketConnectorState extends State<_RealtimeSocketConnector>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Returning to the foreground: on desktop, App Nap can suspend the SSE while
-    // the window is unfocused (e.g. while the user issues a challan on mobile),
-    // so live change events are missed. Force a resync so the list is current
-    // without the user having to toggle a filter to trigger a refresh.
     if (state == AppLifecycleState.resumed) {
       SocketService.instance.requestResync();
     }
@@ -396,6 +373,10 @@ class MyApp extends StatelessWidget {
               clientRepository ??
               _buildClientRepository(context.read<AuthProvider>()),
         ),
+        Provider<SubContractorRepository>(
+          create: (context) =>
+              _buildSubContractorRepository(context.read<AuthProvider>()),
+        ),
         Provider<VendorRepository>(
           create: (context) =>
               vendorRepository ??
@@ -448,6 +429,13 @@ class MyApp extends StatelessWidget {
               departmentsRepository ??
               _buildDepartmentsRepository(context.read<AuthProvider>()),
         ),
+        Provider<ActionCenterRepository>(
+          create: (context) => ActionCenterRepository(
+            client: _authClient(context.read<AuthProvider>()),
+            baseUrl: _apiBaseUrl,
+            useMockResponses: _effectiveDemoMode,
+          ),
+        ),
         ChangeNotifierProvider(create: (_) => PreferencesProvider()),
         ChangeNotifierProvider(create: (_) => NavigationProvider()),
         Provider<AppNavigation>(
@@ -496,6 +484,12 @@ class MyApp extends StatelessWidget {
               previous ?? ClientsProvider(repository: repository)
                 ..initialize(),
         ),
+        ChangeNotifierProxyProvider<SubContractorRepository, SubContractorsProvider>(
+          create: (context) =>
+              SubContractorsProvider(repository: context.read<SubContractorRepository>()),
+          update: (context, repository, previous) =>
+              previous ?? SubContractorsProvider(repository: repository),
+        ),
         ChangeNotifierProxyProvider<VendorRepository, VendorsProvider>(
           create: (context) =>
               VendorsProvider(repository: context.read<VendorRepository>())
@@ -535,6 +529,12 @@ class MyApp extends StatelessWidget {
           update: (context, repository, previous) =>
               previous ?? DiesProvider(repository: repository)
                 ..initialize(),
+        ),
+        ChangeNotifierProxyProvider<ActionCenterRepository, ActionCenterProvider>(
+          create: (context) =>
+              ActionCenterProvider(repository: context.read<ActionCenterRepository>()),
+          update: (context, repository, previous) =>
+              previous ?? ActionCenterProvider(repository: repository),
         ),
         ChangeNotifierProxyProvider<DepartmentsRepository, DepartmentsProvider>(
           create: (context) => DepartmentsProvider(
@@ -670,6 +670,14 @@ class MyApp extends StatelessWidget {
   ClientRepository _buildClientRepository(AuthProvider auth) {
     return ApiClientRepository(
       client: _authClient(auth),
+      baseUrl: _apiBaseUrl,
+      useMockResponses: _effectiveDemoMode,
+    );
+  }
+
+  SubContractorRepository _buildSubContractorRepository(AuthProvider authProvider) {
+    return ApiSubContractorRepository(
+      client: _authClient(authProvider),
       baseUrl: _apiBaseUrl,
       useMockResponses: _effectiveDemoMode,
     );

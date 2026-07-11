@@ -20,6 +20,7 @@ const List<String> kSidebarNavigationOrder = <String>[
   'configurator_dies',
   'production_pipelines',
   'user_management',
+  'action_center',
 ];
 
 const Set<String> kConfiguratorNavigationKeys = <String>{

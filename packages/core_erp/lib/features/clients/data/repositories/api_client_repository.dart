@@ -177,57 +177,24 @@ class ApiClientRepository implements ClientRepository {
   }
 
   @override
-  Future<ClientDefinition> archiveClient(int id) async {
-    return _updateArchiveState(id, archive: true);
-  }
-
-  @override
-  Future<ClientDefinition> restoreClient(int id) async {
-    return _updateArchiveState(id, archive: false);
-  }
-
-  Future<ClientDefinition> _updateArchiveState(
-    int id, {
-    required bool archive,
-  }) async {
+  Future<void> deleteClient(int id) async {
     if (useMockResponses) {
       _seedMockStoreIfNeeded();
-      final index = _mockClients.indexWhere((client) => client.id == id);
-      if (index == -1) {
-        throw ClientApiException('Client not found.');
-      }
-      final current = _mockClients[index];
-      final updated = ClientDefinition(
-        id: current.id,
-        name: current.name,
-        alias: current.alias,
-        gstNumber: current.gstNumber,
-        address: current.address,
-        isArchived: archive,
-        usageCount: current.usageCount,
-        createdAt: current.createdAt,
-        updatedAt: DateTime.now(),
-        logoUrl: current.logoUrl,
-        photoUrl: current.photoUrl,
-      );
-      _mockClients[index] = updated;
-      return updated;
+      _mockClients.removeWhere((c) => c.id == id);
+      return;
     }
 
-    final path = archive ? 'archive' : 'restore';
-    final uri = Uri.parse('$baseUrl/api/clients/$id/$path');
-    final response = await _client.patch(uri);
+    final uri = Uri.parse('$baseUrl/api/clients/$id');
+    final response = await _client.delete(uri);
     final payload = _decodeJsonObject(response.body);
     final parsed = ClientResponse.fromJson(payload);
     if (response.statusCode < 200 ||
         response.statusCode >= 300 ||
-        !parsed.success ||
-        parsed.client == null) {
+        !parsed.success) {
       throw ClientApiException(
-        parsed.error ?? 'Failed to update client status.',
+        parsed.error ?? 'Failed to delete client.',
       );
     }
-    return parsed.client!.toDomain();
   }
 
   void _assertNoDuplicate({

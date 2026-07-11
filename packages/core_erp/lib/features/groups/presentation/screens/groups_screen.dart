@@ -6,12 +6,12 @@ import '../../../../core/navigation/app_navigation.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_empty_state.dart';
+import '../../../../core/widgets/confirm_dialog.dart';
 import '../../../../core/widgets/soft_master_data.dart';
 import '../../../../core/widgets/soft_primitives.dart';
 import '../../../units/domain/unit_definition.dart';
 import '../../../units/presentation/providers/units_provider.dart';
 import '../../domain/group_definition.dart';
-import '../widgets/delete_group_dialog.dart';
 import '../providers/groups_provider.dart';
 import '../../../inventory/presentation/providers/inventory_provider.dart';
 import '../../../items/presentation/providers/items_provider.dart';
@@ -57,7 +57,7 @@ class GroupsScreen extends StatelessWidget {
                     'name': g.name,
                     'parent_group': parentName,
                     'unit': unitName,
-                    'status': g.isArchived ? 'Archived' : 'Active',
+                    'status': 'Active',
                   };
                 }).toList();
                 ExportPreviewDialog.show(
@@ -197,24 +197,7 @@ class _GroupsToolbar extends StatelessWidget {
             hintText: 'Search groups or parent groups',
             onChanged: provider.setSearchQuery,
           ),
-        SoftSegmentedFilter<GroupStatusFilter>(
-          selected: provider.statusFilter,
-          onChanged: provider.setStatusFilter,
-          options: const [
-            SoftSegmentOption<GroupStatusFilter>(
-              value: GroupStatusFilter.active,
-              label: 'Active',
-            ),
-            SoftSegmentOption<GroupStatusFilter>(
-              value: GroupStatusFilter.archived,
-              label: 'Archived',
-            ),
-            SoftSegmentOption<GroupStatusFilter>(
-              value: GroupStatusFilter.all,
-              label: 'All',
-            ),
-          ],
-        ),
+
       ],
     );
   }
@@ -279,16 +262,10 @@ class _GroupRow extends StatelessWidget {
         Expanded(
           flex: 1,
           child: SoftStatusPill(
-            label: group.isArchived ? 'Archived' : 'Active',
-            background: group.isArchived
-                ? const Color(0xFFF3F4F6)
-                : const Color(0xFFECFDF5),
-            textColor: group.isArchived
-                ? const Color(0xFF6B7280)
-                : const Color(0xFF0F766E),
-            borderColor: group.isArchived
-                ? const Color(0xFFE5E7EB)
-                : const Color(0xFFBFEAD8),
+            label: 'Active',
+            background: const Color(0xFFECFDF5),
+            textColor: const Color(0xFF0F766E),
+            borderColor: const Color(0xFFBFEAD8),
           ),
         ),
         Expanded(
@@ -301,23 +278,20 @@ class _GroupRow extends StatelessWidget {
                 label: 'Edit',
                 onTap: () => GroupsScreen.openEditor(context, group: group, groupType: group.groupType),
               ),
-              SoftActionLink(
-                label: group.isArchived ? 'Restore' : 'Archive',
-                onTap: groupsProvider.isSaving
-                    ? null
-                    : () {
-                        if (group.isArchived) {
-                          groupsProvider.restoreGroup(group.id);
-                        } else {
-                          groupsProvider.archiveGroup(group.id);
-                        }
-                      },
-              ),
+
               SoftActionLink(
                 label: 'Delete',
                 onTap: groupsProvider.isSaving
                     ? null
-                    : () => DeleteGroupDialog.open(context, group),
+                    : () async {
+                        final ok = await showConfirmDialog(
+                          context,
+                          title: 'Delete group?',
+                          message:
+                              'Permanently delete "${group.name}"? Items and sub-groups under it will need reassignment — check the Action Center afterward. You can restore the group from there too.',
+                        );
+                        if (ok) groupsProvider.deleteGroup(group.id);
+                      },
               ),
             ],
           ),

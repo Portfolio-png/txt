@@ -4,7 +4,7 @@ import '../../data/repositories/unit_repository.dart';
 import '../../domain/unit_definition.dart';
 import '../../domain/unit_inputs.dart';
 
-enum UnitStatusFilter { active, archived, all }
+
 
 enum UnitDuplicateWarning { none, nameOnly, symbolOnly, nameAndSymbol }
 
@@ -28,7 +28,7 @@ class UnitsProvider extends ChangeNotifier {
   bool _isSaving = false;
   String? _errorMessage;
   String _searchQuery = '';
-  UnitStatusFilter _statusFilter = UnitStatusFilter.active;
+
   bool _initialized = false;
 
   List<UnitDefinition> get units => _units;
@@ -36,19 +36,12 @@ class UnitsProvider extends ChangeNotifier {
   bool get isSaving => _isSaving;
   String? get errorMessage => _errorMessage;
   String get searchQuery => _searchQuery;
-  UnitStatusFilter get statusFilter => _statusFilter;
+
 
   List<UnitDefinition> get filteredUnits {
     final query = _normalize(_searchQuery);
     return _units.where((unit) {
-      final matchesStatus = switch (_statusFilter) {
-        UnitStatusFilter.active => !unit.isArchived,
-        UnitStatusFilter.archived => unit.isArchived,
-        UnitStatusFilter.all => true,
-      };
-      if (!matchesStatus) {
-        return false;
-      }
+
       if (query.isEmpty) {
         return true;
       }
@@ -178,10 +171,7 @@ class UnitsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setStatusFilter(UnitStatusFilter value) {
-    _statusFilter = value;
-    notifyListeners();
-  }
+
 
   UnitDuplicateCheck checkDuplicate({
     required String name,
@@ -272,28 +262,17 @@ class UnitsProvider extends ChangeNotifier {
     }
   }
 
-  Future<UnitDefinition?> archiveUnit(int id) async {
-    return _changeStatus(() => _repository.archiveUnit(id));
-  }
-
-  Future<UnitDefinition?> restoreUnit(int id) async {
-    return _changeStatus(() => _repository.restoreUnit(id));
-  }
-
-  Future<UnitDefinition?> _changeStatus(
-    Future<UnitDefinition> Function() action,
-  ) async {
+  Future<void> deleteUnit(int id) async {
+    if (_isSaving) return;
     _isSaving = true;
     _errorMessage = null;
     notifyListeners();
     try {
-      final updated = await action();
+      await _repository.deleteUnit(id);
       await refresh();
-      return _units.where((unit) => unit.id == updated.id).firstOrNull ?? updated;
     } catch (error) {
       _errorMessage = error.toString();
       notifyListeners();
-      return null;
     } finally {
       _isSaving = false;
       notifyListeners();

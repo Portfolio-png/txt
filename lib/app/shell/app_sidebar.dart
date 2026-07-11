@@ -60,6 +60,11 @@ class _AppSidebarState extends State<AppSidebar> {
     ),
     _SidebarItemData('pm', 'PM', Icons.widgets_outlined),
     _SidebarItemData('jobs', 'Jobs', Icons.engineering_outlined),
+    _SidebarItemData(
+      'action_center',
+      'Action Center',
+      Icons.restore_from_trash_outlined,
+    ),
   ];
 
   static const List<_SidebarItemData> _configuratorItems = <_SidebarItemData>[

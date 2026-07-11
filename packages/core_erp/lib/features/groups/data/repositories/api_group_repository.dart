@@ -150,65 +150,6 @@ class ApiGroupRepository implements GroupRepository {
     }
     return parsed.group!.toDomain();
   }
-
-  @override
-  Future<GroupDefinition> archiveGroup(int id) async {
-    return _updateArchiveState(id, archive: true);
-  }
-
-  @override
-  Future<GroupDefinition> restoreGroup(int id) async {
-    return _updateArchiveState(id, archive: false);
-  }
-
-  Future<GroupDefinition> _updateArchiveState(
-    int id, {
-    required bool archive,
-  }) async {
-    if (useMockResponses) {
-      _seedMockStoreIfNeeded();
-      final index = _mockGroups.indexWhere((group) => group.id == id);
-      if (index == -1) {
-        throw GroupApiException('Group not found.');
-      }
-      final current = _mockGroups[index];
-      if (archive &&
-          _mockGroups.any(
-            (group) => group.parentGroupId == id && !group.isArchived,
-          )) {
-        throw GroupApiException(
-          'This group has active child groups. Reassign or archive them first.',
-        );
-      }
-      final updated = GroupDefinition(
-        id: current.id,
-        name: current.name,
-        groupType: current.groupType,
-        parentGroupId: current.parentGroupId,
-        unitId: current.unitId,
-        isArchived: archive,
-        usageCount: current.usageCount,
-        createdAt: current.createdAt,
-        updatedAt: DateTime.now(),
-      );
-      _mockGroups[index] = updated;
-      return updated;
-    }
-
-    final path = archive ? 'archive' : 'restore';
-    final uri = Uri.parse('$baseUrl/api/groups/$id/$path');
-    final response = await _client.patch(uri);
-    final payload = _decodeJsonObject(response.body);
-    final parsed = GroupResponse.fromJson(payload);
-    if (response.statusCode < 200 ||
-        response.statusCode >= 300 ||
-        !parsed.success ||
-        parsed.group == null) {
-      throw GroupApiException(parsed.error ?? 'Failed to update group status.');
-    }
-    return parsed.group!.toDomain();
-  }
-
   @override
   Future<void> deleteGroup(int id) async {
     if (useMockResponses) {

@@ -130,6 +130,7 @@ class ConfigService {
       case 'pm': return FeatureFlags.isEnabled(FeatureKeys.modulesPm);
       case 'jobs': return FeatureFlags.isEnabled(FeatureKeys.modulesJobs);
       case 'delivery_challans': return FeatureFlags.isEnabled(FeatureKeys.modulesChallans);
+      case 'action_center': return FeatureFlags.isEnabled(FeatureKeys.modulesActionCenter);
       default: return true;
     }
   }
@@ -163,6 +164,8 @@ class ConfigService {
         return 'jobs';
       case 'pm':
         return 'pm';
+      case 'action_center':
+        return 'action_center';
       default:
         return null; // dashboard, user_management, reports → always allowed
     }

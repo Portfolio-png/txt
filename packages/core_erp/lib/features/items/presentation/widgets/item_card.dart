@@ -145,8 +145,8 @@ class _ItemCardPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final readUrl = primaryAsset?.readUrl?.toString();
-    if (readUrl != null && readUrl.isNotEmpty) {
+    final readUrl = primaryAsset?.readUrl?.toString() ?? item.photoUrl;
+    if (readUrl.isNotEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(18),
         child: Image.network(

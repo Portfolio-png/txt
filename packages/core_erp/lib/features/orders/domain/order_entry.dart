@@ -12,6 +12,7 @@ class OrderEntry {
     required this.id,
     required this.orderNo,
     required this.clientId,
+    this.subContractorId,
     required this.clientName,
     required this.poNumber,
     required this.clientCode,
@@ -37,6 +38,7 @@ class OrderEntry {
   final int id;
   final String orderNo;
   final int clientId;
+  final int? subContractorId;
   final String clientName;
   final String poNumber;
   final String clientCode;
@@ -76,6 +78,7 @@ class OrderGroup {
   const OrderGroup({
     required this.orderNo,
     required this.clientId,
+    this.subContractorId,
     required this.clientName,
     required this.poNumber,
     required this.createdAt,
@@ -84,6 +87,7 @@ class OrderGroup {
 
   final String orderNo;
   final int clientId;
+  final int? subContractorId;
   final String clientName;
   final String poNumber;
   final DateTime createdAt;

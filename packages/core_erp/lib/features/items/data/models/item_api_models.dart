@@ -108,6 +108,7 @@ class ItemDto {
     this.baseItemId,
     this.photoUrl = '',
     this.combinationGroupIds = const <int>[],
+    this.availableForPurchase = false,
   });
 
   final int id;
@@ -130,6 +131,7 @@ class ItemDto {
   final int? baseItemId;
   final String photoUrl;
   final List<int> combinationGroupIds;
+  final bool availableForPurchase;
 
   factory ItemDto.fromJson(Map<String, dynamic> json) {
     return ItemDto(
@@ -178,6 +180,7 @@ class ItemDto {
           (json['combinationGroupIds'] as List<dynamic>? ?? const [])
               .map((e) => e as int)
               .toList(growable: false),
+      availableForPurchase: json['availableForPurchase'] as bool? ?? false,
     );
   }
 
@@ -209,6 +212,7 @@ class ItemDto {
       baseItemId: baseItemId,
       photoUrl: photoUrl,
       combinationGroupIds: combinationGroupIds,
+      availableForPurchase: availableForPurchase,
     );
   }
 }
@@ -406,6 +410,7 @@ class CreateItemRequest {
     this.defaultPipelineId,
     this.baseItemId,
     this.photoUrl = '',
+    this.availableForPurchase = false,
   });
 
   final String name;
@@ -419,6 +424,7 @@ class CreateItemRequest {
   final String? defaultPipelineId;
   final int? baseItemId;
   final String photoUrl;
+  final bool availableForPurchase;
 
   factory CreateItemRequest.fromInput(CreateItemInput input) {
     return CreateItemRequest(
@@ -437,6 +443,7 @@ class CreateItemRequest {
       defaultPipelineId: input.defaultPipelineId,
       baseItemId: input.baseItemId,
       photoUrl: input.photoUrl,
+      availableForPurchase: input.availableForPurchase,
     );
   }
 
@@ -457,6 +464,7 @@ class CreateItemRequest {
       if (defaultPipelineId != null) 'defaultPipelineId': defaultPipelineId,
       if (baseItemId != null) 'baseItemId': baseItemId,
       'photoUrl': photoUrl,
+      'availableForPurchase': availableForPurchase,
     };
   }
 }
@@ -474,6 +482,7 @@ class UpdateItemRequest {
     this.defaultPipelineId,
     this.baseItemId,
     this.photoUrl = '',
+    this.availableForPurchase = false,
   });
 
   final String name;
@@ -487,6 +496,7 @@ class UpdateItemRequest {
   final String? defaultPipelineId;
   final int? baseItemId;
   final String photoUrl;
+  final bool availableForPurchase;
 
   factory UpdateItemRequest.fromInput(UpdateItemInput input) {
     return UpdateItemRequest(
@@ -505,6 +515,7 @@ class UpdateItemRequest {
       defaultPipelineId: input.defaultPipelineId,
       baseItemId: input.baseItemId,
       photoUrl: input.photoUrl,
+      availableForPurchase: input.availableForPurchase,
     );
   }
 
@@ -525,6 +536,7 @@ class UpdateItemRequest {
       if (defaultPipelineId != null) 'defaultPipelineId': defaultPipelineId,
       if (baseItemId != null) 'baseItemId': baseItemId,
       'photoUrl': photoUrl,
+      'availableForPurchase': availableForPurchase,
     };
   }
 }

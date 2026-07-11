@@ -234,16 +234,6 @@ class ApiItemRepository implements ItemRepository {
   }
 
   @override
-  Future<ItemDefinition> archiveItem(int id) async {
-    return _updateArchiveState(id, archive: true);
-  }
-
-  @override
-  Future<ItemDefinition> restoreItem(int id) async {
-    return _updateArchiveState(id, archive: false);
-  }
-
-  @override
   Future<List<ItemAsset>> getItemAssets(int itemId) async {
     if (useMockResponses) {
       return List<ItemAsset>.from(
@@ -469,55 +459,6 @@ class ApiItemRepository implements ItemRepository {
     }
   }
 
-  Future<ItemDefinition> _updateArchiveState(
-    int id, {
-    required bool archive,
-  }) async {
-    if (useMockResponses) {
-      _seedMockStoreIfNeeded();
-      final index = _mockItems.indexWhere((item) => item.id == id);
-      if (index == -1) {
-        throw ItemApiException('Item not found.');
-      }
-      final current = _mockItems[index];
-      final now = DateTime.now();
-      final updated = ItemDefinition(
-        id: current.id,
-        name: current.name,
-        alias: current.alias,
-        displayName: current.displayName,
-        quantity: current.quantity,
-        groupId: current.groupId,
-        unitId: current.unitId,
-        unitConversions: current.unitConversions,
-        namingFormat: current.namingFormat,
-        isArchived: archive,
-        usageCount: current.usageCount,
-        createdAt: current.createdAt,
-        updatedAt: now,
-        variationTree: _copyTreeArchiveState(
-          current.variationTree,
-          archive,
-          now,
-        ),
-      );
-      _mockItems[index] = updated;
-      return updated;
-    }
-
-    final path = archive ? 'archive' : 'restore';
-    final uri = Uri.parse('$baseUrl/api/items/$id/$path');
-    final response = await _client.patch(uri);
-    final payload = _decodeJsonObject(response.body);
-    final parsed = ItemResponse.fromJson(payload);
-    if (response.statusCode < 200 ||
-        response.statusCode >= 300 ||
-        !parsed.success ||
-        parsed.item == null) {
-      throw ItemApiException(parsed.error ?? 'Failed to update item status.');
-    }
-    return parsed.item!.toDomain();
-  }
 
   @override
   Future<void> deleteItem(int id) async {
@@ -594,31 +535,6 @@ class ApiItemRepository implements ItemRepository {
       throw ItemApiException(parsed.error ?? 'Failed to relocate item.');
     }
     return parsed.item!.toDomain();
-  }
-
-  List<ItemVariationNodeDefinition> _copyTreeArchiveState(
-    List<ItemVariationNodeDefinition> nodes,
-    bool archive,
-    DateTime timestamp,
-  ) {
-    return nodes
-        .map(
-          (node) => ItemVariationNodeDefinition(
-            code: '',
-            id: node.id,
-            itemId: node.itemId,
-            parentNodeId: node.parentNodeId,
-            kind: node.kind,
-            name: node.name,
-            displayName: node.displayName,
-            position: node.position,
-            isArchived: archive,
-            createdAt: node.createdAt,
-            updatedAt: timestamp,
-            children: _copyTreeArchiveState(node.children, archive, timestamp),
-          ),
-        )
-        .toList(growable: false);
   }
 
   void _validateCreateOrUpdate({

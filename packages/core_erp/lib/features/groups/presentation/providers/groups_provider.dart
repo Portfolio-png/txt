@@ -4,7 +4,7 @@ import '../../data/repositories/group_repository.dart';
 import '../../domain/group_definition.dart';
 import '../../domain/group_inputs.dart';
 
-enum GroupStatusFilter { active, archived, all }
+
 
 enum GroupDuplicateWarning { none, sameParent }
 
@@ -29,7 +29,7 @@ class GroupsProvider extends ChangeNotifier {
   bool _isSaving = false;
   String? _errorMessage;
   String _searchQuery = '';
-  GroupStatusFilter _statusFilter = GroupStatusFilter.active;
+
   bool _initialized = false;
 
   List<GroupDefinition> get groups => _groups;
@@ -42,7 +42,7 @@ class GroupsProvider extends ChangeNotifier {
 
   /// Active combination groups (flat variant sets).
   List<GroupDefinition> get combinationGroups => _groups
-      .where((g) => g.groupType == 'item' && g.isCombination && !g.isArchived)
+      .where((g) => g.groupType == 'item' && g.isCombination)
       .toList();
   List<GroupDefinition> get machineGroups => _groups.where((g) => g.groupType == 'machine').toList();
   List<GroupDefinition> get dieGroups => _groups.where((g) => g.groupType == 'die').toList();
@@ -50,20 +50,13 @@ class GroupsProvider extends ChangeNotifier {
   bool get isSaving => _isSaving;
   String? get errorMessage => _errorMessage;
   String get searchQuery => _searchQuery;
-  GroupStatusFilter get statusFilter => _statusFilter;
+
 
   List<GroupDefinition> get filteredGroups {
     final query = _normalize(_searchQuery);
     return _groups
         .where((group) {
-          final matchesStatus = switch (_statusFilter) {
-            GroupStatusFilter.active => !group.isArchived,
-            GroupStatusFilter.archived => group.isArchived,
-            GroupStatusFilter.all => true,
-          };
-          if (!matchesStatus) {
-            return false;
-          }
+
           if (query.isEmpty) {
             return true;
           }
@@ -80,7 +73,7 @@ class GroupsProvider extends ChangeNotifier {
   }
 
   List<GroupDefinition> get activeGroups =>
-      _groups.where((group) => !group.isArchived).toList(growable: false);
+      _groups.toList(growable: false);
 
   Future<void> initialize() async {
     if (_initialized) {
@@ -101,9 +94,7 @@ class GroupsProvider extends ChangeNotifier {
         for (final group in groups) group.id: group.name,
       };
       groups.sort((a, b) {
-        if (a.isArchived != b.isArchived) {
-          return a.isArchived ? 1 : -1;
-        }
+
         final parentA = namesById[a.parentGroupId] ?? '';
         final parentB = namesById[b.parentGroupId] ?? '';
         final parentCompare = parentA.toLowerCase().compareTo(
@@ -128,10 +119,7 @@ class GroupsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setStatusFilter(GroupStatusFilter value) {
-    _statusFilter = value;
-    notifyListeners();
-  }
+
 
   GroupDefinition? findById(int? id) {
     if (id == null) {
@@ -178,7 +166,7 @@ class GroupsProvider extends ChangeNotifier {
 
   bool hasActiveChildren(int groupId) {
     return _groups.any(
-      (group) => group.parentGroupId == groupId && !group.isArchived,
+      (group) => group.parentGroupId == groupId,
     );
   }
 
@@ -238,13 +226,7 @@ class GroupsProvider extends ChangeNotifier {
     return _save(() => _repository.updateGroup(input));
   }
 
-  Future<GroupDefinition?> archiveGroup(int id) async {
-    return _save(() => _repository.archiveGroup(id));
-  }
 
-  Future<GroupDefinition?> restoreGroup(int id) async {
-    return _save(() => _repository.restoreGroup(id));
-  }
 
   Future<bool> deleteGroup(int id) async {
     _isSaving = true;

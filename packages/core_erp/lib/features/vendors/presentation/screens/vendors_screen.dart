@@ -11,6 +11,7 @@ import '../../../../core/widgets/export_preview_dialog.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_toast.dart';
+import '../../../../core/widgets/confirm_dialog.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/widgets/soft_master_data.dart';
 import '../../../../core/widgets/soft_primitives.dart';
@@ -49,7 +50,7 @@ class VendorsScreen extends StatelessWidget {
                         'contact_name': v.contactName,
                         'phone': v.phone,
                         'email': v.email,
-                        'status': v.isArchived ? 'Archived' : 'Active',
+                        'status': 'Active',
                       },
                     )
                     .toList();
@@ -119,21 +120,6 @@ class _VendorsToolbar extends StatelessWidget {
             hintText: 'Search vendor, contact, GST, or address',
             onChanged: provider.setSearchQuery,
           ),
-        SoftSegmentedFilter<VendorStatusFilter>(
-          selected: provider.statusFilter,
-          onChanged: provider.setStatusFilter,
-          options: const [
-            SoftSegmentOption(
-              value: VendorStatusFilter.active,
-              label: 'Active',
-            ),
-            SoftSegmentOption(
-              value: VendorStatusFilter.archived,
-              label: 'Archived',
-            ),
-            SoftSegmentOption(value: VendorStatusFilter.all, label: 'All'),
-          ],
-        ),
       ],
     );
   }
@@ -211,16 +197,10 @@ class _VendorRow extends StatelessWidget {
         Expanded(
           flex: 1,
           child: SoftStatusPill(
-            label: vendor.isArchived ? 'Archived' : 'Active',
-            background: vendor.isArchived
-                ? const Color(0xFFF3F4F6)
-                : const Color(0xFFECFDF5),
-            textColor: vendor.isArchived
-                ? const Color(0xFF6B7280)
-                : const Color(0xFF0F766E),
-            borderColor: vendor.isArchived
-                ? const Color(0xFFE5E7EB)
-                : const Color(0xFFBFEAD8),
+            label: 'Active',
+            background: const Color(0xFFECFDF5),
+            textColor: const Color(0xFF0F766E),
+            borderColor: const Color(0xFFBFEAD8),
           ),
         ),
         Expanded(
@@ -234,15 +214,17 @@ class _VendorRow extends StatelessWidget {
                 onTap: () => VendorsScreen.openEditor(context, vendor: vendor),
               ),
               SoftActionLink(
-                label: vendor.isArchived ? 'Restore' : 'Archive',
+                label: 'Delete',
                 onTap: provider.isSaving
                     ? null
-                    : () {
-                        if (vendor.isArchived) {
-                          provider.restoreVendor(vendor.id);
-                        } else {
-                          provider.archiveVendor(vendor.id);
-                        }
+                    : () async {
+                        final ok = await showConfirmDialog(
+                          context,
+                          title: 'Delete vendor?',
+                          message:
+                              'Permanently delete "${vendor.name}"? You can restore it later from the Action Center.',
+                        );
+                        if (ok) provider.deleteVendor(vendor.id);
                       },
               ),
             ],
@@ -273,6 +255,7 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
   late final TextEditingController _emailController;
   late final TextEditingController _logoUrlController;
   late final TextEditingController _photoUrlController;
+  bool _isSaving = false;
   String? _localError;
 
   @override
@@ -487,25 +470,33 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
             ),
             if (widget.vendor != null)
               AppButton(
-                label: widget.vendor!.isArchived ? 'Restore' : 'Archive',
+                label: 'Delete',
                 variant: AppButtonVariant.secondary,
                 isLoading: provider.isSaving,
                 onPressed: () async {
-                  final saved = widget.vendor!.isArchived
-                      ? await provider.restoreVendor(widget.vendor!.id)
-                      : await provider.archiveVendor(widget.vendor!.id);
-                  if (!context.mounted ||
-                      saved == null ||
-                      provider.errorMessage != null) {
+                  final ok = await showConfirmDialog(
+                    context,
+                    title: 'Delete vendor?',
+                    message:
+                        'Permanently delete this vendor? You can restore it later from the Action Center.',
+                  );
+                  if (!ok) return;
+                  await provider.deleteVendor(widget.vendor!.id);
+                  if (!context.mounted) return;
+                  if (provider.errorMessage != null) {
+                    showGlobalToast(
+                      provider.errorMessage!,
+                      kind: AppToastKind.error,
+                    );
                     return;
                   }
-                  Navigator.of(context).pop(saved);
+                  Navigator.of(context).pop(null);
                 },
               ),
             AppButton(
               label: widget.vendor == null ? 'Create Vendor' : 'Save Changes',
               icon: Icons.save_outlined,
-              isLoading: provider.isSaving,
+              isLoading: _isSaving || provider.isSaving,
               onPressed: _save,
             ),
           ],
@@ -546,6 +537,7 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
   }
 
   Future<void> _save() async {
+    if (_isSaving) return;
     if (!(_formKey.currentState?.validate() ?? false)) {
       return;
     }
@@ -564,8 +556,11 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
     }
     setState(() {
       _localError = null;
+      _isSaving = true;
     });
-    final saved = widget.vendor == null
+    
+    try {
+      final saved = widget.vendor == null
         ? await provider.createVendor(
             CreateVendorInput(
               name: _nameController.text,
@@ -593,13 +588,18 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
               photoUrl: _photoUrlController.text,
             ),
           );
-    if (saved != null && mounted && provider.errorMessage == null) {
-      showAppToast(
-        context,
-        widget.vendor == null ? 'Vendor created' : 'Vendor saved',
-        kind: AppToastKind.success,
-      );
-      Navigator.of(context).pop(saved);
+      if (saved != null && mounted && provider.errorMessage == null) {
+        showAppToast(
+          context,
+          widget.vendor == null ? 'Vendor created' : 'Vendor saved',
+          kind: AppToastKind.success,
+        );
+        Navigator.of(context).pop(saved);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
     }
   }
 }

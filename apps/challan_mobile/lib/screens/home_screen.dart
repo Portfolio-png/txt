@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 
 import 'package:core_erp/app/dashboard/views/dashboard_screen.dart';
 
-import 'challan_mobile_editor_screen.dart';
 import 'challan_staging_screen.dart';
 import 'inventory_stock_screen.dart';
 import 'module_placeholder_screen.dart';
 import 'orders_list_screen.dart';
+import 'purchase_challan_screens.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -22,7 +22,7 @@ class _HomeScreenState extends State<HomeScreen> {
   // into the mobile app yet, so they show a placeholder for now.
   final List<Widget> _screens = const [
     ChallanStagingScreen(),
-    ChallanMobileEditorScreen(),
+    ChallanTabScreen(),
     DashboardScreen(),
     OrdersListScreen(),
     InventoryStockScreen(),

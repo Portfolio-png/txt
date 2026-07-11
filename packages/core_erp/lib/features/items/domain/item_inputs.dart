@@ -44,6 +44,7 @@ class CreateItemInput {
     this.defaultPipelineId,
     this.baseItemId,
     this.photoUrl = '',
+    this.availableForPurchase = false,
   });
 
   final String name;
@@ -57,6 +58,7 @@ class CreateItemInput {
   final String? defaultPipelineId;
   final int? baseItemId;
   final String photoUrl;
+  final bool availableForPurchase;
 }
 
 class UpdateItemInput {
@@ -73,6 +75,7 @@ class UpdateItemInput {
     this.defaultPipelineId,
     this.baseItemId,
     this.photoUrl = '',
+    this.availableForPurchase = false,
   });
 
   final int id;
@@ -87,4 +90,5 @@ class UpdateItemInput {
   final String? defaultPipelineId;
   final int? baseItemId;
   final String photoUrl;
+  final bool availableForPurchase;
 }

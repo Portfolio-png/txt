@@ -209,9 +209,8 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
     );
   }
 
-  void _openImagePreview(ItemAsset asset) {
-    final readUrl = asset.readUrl;
-    if (readUrl == null) {
+  void _openImagePreview(String imageUrl) {
+    if (imageUrl.isEmpty) {
       return;
     }
     showDialog<void>(
@@ -221,7 +220,7 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
         insetPadding: const EdgeInsets.all(32),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(18),
-          child: Image.network(readUrl.toString(), fit: BoxFit.contain),
+          child: Image.network(imageUrl, fit: BoxFit.contain),
         ),
       ),
     );
@@ -322,9 +321,9 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                   primaryAsset: primaryAsset,
                   isUploading: _isUploading || itemsProvider.isAssetUploading,
                   onUpload: _pickAndUploadImage,
-                  onOpenImage: primaryAsset == null
+                  onOpenImage: (primaryAsset?.readUrl?.toString() ?? item.photoUrl).isEmpty
                       ? null
-                      : () => _openImagePreview(primaryAsset),
+                      : () => _openImagePreview(primaryAsset?.readUrl?.toString() ?? item.photoUrl),
                   onDeleteImage: primaryAsset == null
                       ? null
                       : () => _deleteImage(primaryAsset),
@@ -438,7 +437,7 @@ class _ItemImagePreview extends StatelessWidget {
             aspectRatio: 1.55,
             child: InkWell(
               borderRadius: BorderRadius.circular(14),
-              onTap: primaryAsset?.readUrl == null ? onUpload : onOpenImage,
+              onTap: (primaryAsset?.readUrl == null && item.photoUrl.isEmpty) ? onUpload : onOpenImage,
               child: Container(
                 decoration: BoxDecoration(
                   color: Colors.white,
@@ -477,7 +476,7 @@ class _ItemImagePreview extends StatelessWidget {
                             icon: primaryAsset == null
                                 ? Icons.add_photo_alternate_outlined
                                 : Icons.upload_file_outlined,
-                            tooltip: primaryAsset == null
+                            tooltip: (primaryAsset == null && item.photoUrl.isEmpty)
                                 ? 'Upload image'
                                 : 'Replace image',
                             onTap: onUpload,
@@ -496,12 +495,12 @@ class _ItemImagePreview extends StatelessWidget {
   }
 
   Widget _previewContent(String code) {
-    final readUrl = primaryAsset?.readUrl;
-    if (readUrl != null) {
+    final readUrl = primaryAsset?.readUrl?.toString() ?? item.photoUrl;
+    if (readUrl.isNotEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(13),
         child: Image.network(
-          readUrl.toString(),
+          readUrl,
           fit: BoxFit.cover,
           errorBuilder: (context, error, stackTrace) =>
               _placeholderContent(code),

@@ -54,6 +54,7 @@ class OrderDto {
     required this.id,
     required this.orderNo,
     required this.clientId,
+    this.subContractorId,
     required this.clientName,
     required this.poNumber,
     required this.clientCode,
@@ -79,6 +80,7 @@ class OrderDto {
   final int id;
   final String orderNo;
   final int clientId;
+  final int? subContractorId;
   final String clientName;
   final String poNumber;
   final String clientCode;
@@ -105,6 +107,7 @@ class OrderDto {
       id: json['id'] as int? ?? 0,
       orderNo: json['orderNo'] as String? ?? '',
       clientId: json['clientId'] as int? ?? 0,
+      subContractorId: json['subContractorId'] as int?,
       clientName: json['clientName'] as String? ?? '',
       poNumber: json['poNumber'] as String? ?? '',
       clientCode: json['clientCode'] as String? ?? '',
@@ -151,6 +154,7 @@ class OrderDto {
       id: id,
       orderNo: orderNo,
       clientId: clientId,
+      subContractorId: subContractorId,
       clientName: clientName,
       poNumber: poNumber,
       clientCode: clientCode,
@@ -213,6 +217,7 @@ class CreateOrderRequest {
   const CreateOrderRequest({
     required this.orderNo,
     required this.clientId,
+    this.subContractorId,
     required this.clientName,
     required this.poNumber,
     required this.clientCode,
@@ -236,6 +241,7 @@ class CreateOrderRequest {
 
   final String orderNo;
   final int clientId;
+  final int? subContractorId;
   final String clientName;
   final String poNumber;
   final String clientCode;
@@ -260,6 +266,7 @@ class CreateOrderRequest {
     return CreateOrderRequest(
       orderNo: input.orderNo,
       clientId: input.clientId,
+      subContractorId: input.subContractorId,
       clientName: input.clientName,
       poNumber: input.poNumber,
       clientCode: input.clientCode,
@@ -286,6 +293,7 @@ class CreateOrderRequest {
     return {
       'orderNo': orderNo,
       'clientId': clientId,
+      'subContractorId': subContractorId,
       'clientName': clientName,
       'poNumber': poNumber,
       'clientCode': clientCode,

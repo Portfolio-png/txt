@@ -6,6 +6,5 @@ abstract class UnitRepository {
   Future<List<UnitDefinition>> getUnits();
   Future<UnitDefinition> createUnit(CreateUnitInput input);
   Future<UnitDefinition> updateUnit(UpdateUnitInput input);
-  Future<UnitDefinition> archiveUnit(int id);
-  Future<UnitDefinition> restoreUnit(int id);
+  Future<void> deleteUnit(int id);
 }

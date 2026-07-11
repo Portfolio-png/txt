@@ -10,10 +10,6 @@ abstract class GroupRepository {
 
   Future<GroupDefinition> updateGroup(UpdateGroupInput input);
 
-  Future<GroupDefinition> archiveGroup(int id);
-
-  Future<GroupDefinition> restoreGroup(int id);
-
   Future<void> deleteGroup(int id);
 
   /// Bulk-assigns [itemIds] to the combination group [groupId]. Returns the

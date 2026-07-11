@@ -16,6 +16,7 @@ import 'package:core_erp/core/widgets/soft_primitives.dart';
 import 'package:core_erp/app/reports/views/challan_invoice_reconciliation_screen.dart';
 import 'package:core_erp/app/dashboard/views/dashboard_screen.dart';
 import 'package:core_erp/features/auth/presentation/screens/user_management_screen.dart';
+import 'package:core_erp/features/action_center/presentation/screens/action_center_screen.dart';
 import 'package:core_erp/features/delivery_challans/domain/delivery_challan.dart';
 import 'package:core_erp/features/delivery_challans/presentation/providers/challan_editor_command_provider.dart';
 import 'package:core_erp/features/delivery_challans/presentation/screens/delivery_challan_screen.dart';
@@ -845,6 +846,7 @@ class _ShellContentSwitcher extends StatelessWidget {
               ),
               'configurator_dies' => const DiesScreen(),
               'user_management' => const UserManagementScreen(),
+              'action_center' => const ActionCenterScreen(),
               _ => const DashboardScreen(),
             },
           ),

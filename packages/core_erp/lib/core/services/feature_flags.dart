@@ -31,6 +31,9 @@ class FeatureKeys {
   @FeatureFlag(category: 'Modules', displayName: 'Delivery Challans', desc: 'Enable Delivery Challans')
   static const String modulesChallans = 'modules.delivery_challans';
 
+  @FeatureFlag(category: 'Modules', displayName: 'Action Center', desc: 'Trash bin & broken-reference resolution center')
+  static const String modulesActionCenter = 'modules.actionCenter';
+
   @FeatureFlag(category: 'Orders Screen', displayName: 'Allow Dynamic Actions Dropdown', desc: 'Show dynamic actions on orders')
   static const String ordersAllowCustomActions = 'orders.allowCustomActions';
 
@@ -62,6 +65,12 @@ class FeatureKeys {
   /// view to that one type, full-width. OFF keeps the side-by-side layout.
   @FeatureFlag(category: 'Challans Screen', displayName: 'Single-type Challan View', desc: 'Show one challan type full-width instead of the split Reception/Delivery view')
   static const String challansSingleTypeView = 'challans.singleTypeView';
+
+  /// Gates the purchase-catalog capability: shows the "Available for purchase"
+  /// toggle in the desktop item editor, and (on mobile) the Purchase-challan
+  /// browse flow that only lists purchase-available items. OFF by default.
+  @FeatureFlag(category: 'Catalog & Inventory', displayName: 'Purchase Items', desc: 'Enable the "Available for purchase" item toggle and the mobile Purchase (reception) challan flow')
+  static const String catalogPurchaseItems = 'catalog.purchaseItems';
 }
 
 class FeatureFlags {

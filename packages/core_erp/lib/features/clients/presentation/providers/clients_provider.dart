@@ -10,6 +10,8 @@ import '../../../../core/services/socket_service.dart';
 
 enum ClientStatusFilter { active, archived, all }
 
+enum ClientMasterView { clients, subContractors }
+
 enum ClientDuplicateWarning { none, nameOnly, gstOnly, nameAndGst }
 
 class ClientDuplicateCheck {
@@ -34,6 +36,7 @@ class ClientsProvider extends ChangeNotifier {
   String? _errorMessage;
   String _searchQuery = '';
   ClientStatusFilter _statusFilter = ClientStatusFilter.active;
+  ClientMasterView _viewType = ClientMasterView.clients;
   bool _initialized = false;
 
   List<ClientDefinition> get clients => _clients;
@@ -42,6 +45,7 @@ class ClientsProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   String get searchQuery => _searchQuery;
   ClientStatusFilter get statusFilter => _statusFilter;
+  ClientMasterView get viewType => _viewType;
 
   List<ClientDefinition> get filteredClients {
     final query = _normalize(_searchQuery);
@@ -167,8 +171,15 @@ class ClientsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setStatusFilter(ClientStatusFilter value) {
-    _statusFilter = value;
+  void setStatusFilter(ClientStatusFilter filter) {
+    if (_statusFilter == filter) return;
+    _statusFilter = filter;
+    notifyListeners();
+  }
+
+  void setViewType(ClientMasterView type) {
+    if (_viewType == type) return;
+    _viewType = type;
     notifyListeners();
   }
 
@@ -220,6 +231,7 @@ class ClientsProvider extends ChangeNotifier {
   }
 
   Future<ClientDefinition?> createClient(CreateClientInput input) async {
+    if (_isSaving) return null;
     _isSaving = true;
     _errorMessage = null;
     notifyListeners();
@@ -239,6 +251,7 @@ class ClientsProvider extends ChangeNotifier {
   }
 
   Future<ClientDefinition?> updateClient(UpdateClientInput input) async {
+    if (_isSaving) return null;
     _isSaving = true;
     _errorMessage = null;
     notifyListeners();
@@ -257,34 +270,24 @@ class ClientsProvider extends ChangeNotifier {
     }
   }
 
-  Future<ClientDefinition?> archiveClient(int id) async {
-    return _changeStatus(() => _repository.archiveClient(id));
-  }
-
-  Future<ClientDefinition?> restoreClient(int id) async {
-    return _changeStatus(() => _repository.restoreClient(id));
-  }
-
-  Future<ClientDefinition?> _changeStatus(
-    Future<ClientDefinition> Function() action,
-  ) async {
+  Future<void> deleteClient(int id) async {
+    if (_isSaving) return;
     _isSaving = true;
     _errorMessage = null;
     notifyListeners();
     try {
-      final updated = await action();
+      await _repository.deleteClient(id);
       await refresh();
-      return _clients.where((client) => client.id == updated.id).firstOrNull ??
-          updated;
     } catch (error) {
       _errorMessage = error.toString();
       notifyListeners();
-      return null;
     } finally {
       _isSaving = false;
       notifyListeners();
     }
   }
+
+
 
   static String normalizeGstNumber(String value) => _normalizeGstNumber(value);
 

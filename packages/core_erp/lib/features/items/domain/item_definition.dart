@@ -106,6 +106,7 @@ class ItemDefinition {
     this.baseItemId,
     this.photoUrl = '',
     this.combinationGroupIds = const <int>[],
+    this.availableForPurchase = false,
   });
 
   final int id;
@@ -131,6 +132,10 @@ class ItemDefinition {
   final String? defaultPipelineName;
   final int? baseItemId;
   final String photoUrl;
+
+  /// Whether this item can be ordered as a purchase (reception) line in the
+  /// mobile Purchase-challan flow. Curated in the desktop item editor.
+  final bool availableForPurchase;
 
   bool get isUsed => usageCount > 0;
 

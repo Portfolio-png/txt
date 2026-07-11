@@ -163,54 +163,22 @@ class ApiUnitRepository implements UnitRepository {
   }
 
   @override
-  Future<UnitDefinition> archiveUnit(int id) async {
-    return _updateArchiveState(id, archive: true);
-  }
-
-  @override
-  Future<UnitDefinition> restoreUnit(int id) async {
-    return _updateArchiveState(id, archive: false);
-  }
-
-  Future<UnitDefinition> _updateArchiveState(int id, {required bool archive}) async {
+  Future<void> deleteUnit(int id) async {
     if (useMockResponses) {
       _seedMockStoreIfNeeded();
-      final index = _mockUnits.indexWhere((unit) => unit.id == id);
-      if (index == -1) {
-        throw UnitApiException('Unit not found.');
-      }
-      final current = _mockUnits[index];
-      final updated = UnitDefinition(
-        id: current.id,
-        name: current.name,
-        symbol: current.symbol,
-        notes: current.notes,
-        unitGroupId: current.unitGroupId,
-        unitGroupName: current.unitGroupName,
-        conversionFactor: current.conversionFactor,
-        conversionBaseUnitId: current.conversionBaseUnitId,
-        conversionBaseUnitName: current.conversionBaseUnitName,
-        isArchived: archive,
-        usageCount: current.usageCount,
-        createdAt: current.createdAt,
-        updatedAt: DateTime.now(),
-      );
-      _mockUnits[index] = updated;
-      return updated;
+      _mockUnits.removeWhere((unit) => unit.id == id);
+      return;
     }
 
-    final path = archive ? 'archive' : 'restore';
-    final uri = Uri.parse('$baseUrl/api/units/$id/$path');
-    final response = await _client.patch(uri);
+    final uri = Uri.parse('$baseUrl/api/units/$id');
+    final response = await _client.delete(uri);
     final payload = _decodeJsonObject(response.body);
     final parsed = UnitResponse.fromJson(payload);
     if (response.statusCode < 200 ||
         response.statusCode >= 300 ||
-        !parsed.success ||
-        parsed.unit == null) {
-      throw UnitApiException(parsed.error ?? 'Failed to update unit status.');
+        !parsed.success) {
+      throw UnitApiException(parsed.error ?? 'Failed to delete unit.');
     }
-    return parsed.unit!.toDomain();
   }
 
   void _seedMockStoreIfNeeded() {

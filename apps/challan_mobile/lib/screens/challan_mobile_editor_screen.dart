@@ -13,7 +13,19 @@ import 'package:core_erp/features/items/domain/item_definition.dart';
 import 'package:core_erp/widgets/variation_path_selector_dialog.dart';
 
 class ChallanMobileEditorScreen extends StatefulWidget {
-  const ChallanMobileEditorScreen({super.key});
+  const ChallanMobileEditorScreen({
+    super.key,
+    this.initialItems,
+    this.lockedType,
+  });
+
+  /// Line items pre-collected by the Purchase browse flow. When provided, the
+  /// editor opens as a review-and-submit screen with these already added.
+  final List<DeliveryChallanItem>? initialItems;
+
+  /// When set, the document-type dropdown is hidden and the type is fixed
+  /// (the Purchase flow locks this to [ChallanType.reception]).
+  final ChallanType? lockedType;
 
   @override
   State<ChallanMobileEditorScreen> createState() => _ChallanMobileEditorScreenState();
@@ -39,6 +51,8 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
   @override
   void initState() {
     super.initState();
+    if (widget.lockedType != null) _type = widget.lockedType!;
+    if (widget.initialItems != null) _items.addAll(widget.initialItems!);
     _fabAnimController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
@@ -219,8 +233,14 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
 
   void _addItem() async {
     final itemsProvider = context.read<ItemsProvider>();
-    if (itemsProvider.items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No items loaded.')));
+    // In the Purchase (reception) flow only purchase-available items are offered.
+    final availableItems = widget.lockedType == ChallanType.reception
+        ? itemsProvider.items
+            .where((i) => i.availableForPurchase && !i.isArchived)
+            .toList(growable: false)
+        : itemsProvider.items;
+    if (availableItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No items available.')));
       return;
     }
 
@@ -262,9 +282,9 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
               Expanded(
                 child: ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: itemsProvider.items.length,
+                  itemCount: availableItems.length,
                   itemBuilder: (ctx, i) {
-                    final item = itemsProvider.items[i];
+                    final item = availableItems[i];
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
                       decoration: BoxDecoration(
@@ -441,7 +461,14 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
       );
     }
 
-    // The challan is saved either way (issued or draft) — clear for next entry.
+    // Review flow (Purchase): the challan is saved (issued or draft), so return
+    // to the browse flow with `true` and let it clear the collected lines.
+    if (widget.lockedType != null) {
+      if (mounted) Navigator.of(context).pop(true);
+      return;
+    }
+
+    // Standalone flow: the challan is saved either way — clear for next entry.
     setState(() {
       final count = _items.length;
       _items.clear();
@@ -736,17 +763,19 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
                                 ],
                               ),
                               const SizedBox(height: 24),
-                              DropdownButtonFormField<ChallanType>(
-                                value: _type,
-                                icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.accent),
-                                decoration: _glassInputDecoration('Document Type', Icons.document_scanner_rounded),
-                                items: const [
-                                  DropdownMenuItem(value: ChallanType.delivery, child: Text('DELIVERY CHALLAN', style: TextStyle(fontWeight: FontWeight.w700))),
-                                  DropdownMenuItem(value: ChallanType.reception, child: Text('RECEPTION CHALLAN', style: TextStyle(fontWeight: FontWeight.w700))),
-                                ],
-                                onChanged: (v) { if (v != null) setState(() => _type = v); },
-                              ),
-                              const SizedBox(height: 16),
+                              if (widget.lockedType == null) ...[
+                                DropdownButtonFormField<ChallanType>(
+                                  value: _type,
+                                  icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.accent),
+                                  decoration: _glassInputDecoration('Document Type', Icons.document_scanner_rounded),
+                                  items: const [
+                                    DropdownMenuItem(value: ChallanType.delivery, child: Text('DELIVERY CHALLAN', style: TextStyle(fontWeight: FontWeight.w700))),
+                                    DropdownMenuItem(value: ChallanType.reception, child: Text('RECEPTION CHALLAN', style: TextStyle(fontWeight: FontWeight.w700))),
+                                  ],
+                                  onChanged: (v) { if (v != null) setState(() => _type = v); },
+                                ),
+                                const SizedBox(height: 16),
+                              ],
                               if (_type == ChallanType.delivery)
                                 DropdownButtonFormField<int>(
                                   value: _selectedClientId,

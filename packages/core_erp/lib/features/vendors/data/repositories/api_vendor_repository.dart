@@ -135,55 +135,12 @@ class ApiVendorRepository implements VendorRepository {
   }
 
   @override
-  Future<VendorDefinition> archiveVendor(int id) async {
+  Future<void> deleteVendor(int id) async {
     if (useMockResponses) {
-      final index = _mockVendors.indexWhere((vendor) => vendor.id == id);
-      final current = _mockVendors[index];
-      final updated = VendorDefinition(
-        id: current.id,
-        name: current.name,
-        alias: current.alias,
-        gstNumber: current.gstNumber,
-        address: current.address,
-        contactName: current.contactName,
-        phone: current.phone,
-        email: current.email,
-        isArchived: true,
-        usageCount: current.usageCount,
-        createdAt: current.createdAt,
-        updatedAt: DateTime.now(),
-      );
-      _mockVendors[index] = updated;
-      return updated;
+      _mockVendors.removeWhere((vendor) => vendor.id == id);
+      return;
     }
-    final payload = await _request('PATCH', '/api/vendors/$id/archive');
-    return _vendorFromJson(payload['vendor'] as Map<String, dynamic>);
-  }
-
-  @override
-  Future<VendorDefinition> restoreVendor(int id) async {
-    if (useMockResponses) {
-      final index = _mockVendors.indexWhere((vendor) => vendor.id == id);
-      final current = _mockVendors[index];
-      final updated = VendorDefinition(
-        id: current.id,
-        name: current.name,
-        alias: current.alias,
-        gstNumber: current.gstNumber,
-        address: current.address,
-        contactName: current.contactName,
-        phone: current.phone,
-        email: current.email,
-        isArchived: false,
-        usageCount: current.usageCount,
-        createdAt: current.createdAt,
-        updatedAt: DateTime.now(),
-      );
-      _mockVendors[index] = updated;
-      return updated;
-    }
-    final payload = await _request('PATCH', '/api/vendors/$id/restore');
-    return _vendorFromJson(payload['vendor'] as Map<String, dynamic>);
+    await _request('DELETE', '/api/vendors/$id');
   }
 
   Future<Map<String, dynamic>> _request(

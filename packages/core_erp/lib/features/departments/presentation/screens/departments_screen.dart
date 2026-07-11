@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_empty_state.dart';
+import '../../../../core/widgets/confirm_dialog.dart';
 import '../../../../core/widgets/soft_master_data.dart';
 import '../../../../core/widgets/soft_primitives.dart';
 import '../../domain/employee_definition.dart';
@@ -745,7 +746,15 @@ class _EmployeeRow extends StatelessWidget {
               icon: Icons.delete_outline,
               tooltip: 'Delete',
               iconColor: const Color(0xFFB91C1C),
-              onTap: () => provider.deleteEmployee(emp.id),
+              onTap: () async {
+                final ok = await showConfirmDialog(
+                  context,
+                  title: 'Delete employee?',
+                  message:
+                      'Permanently delete "${emp.name}"? You can restore them later from the Action Center.',
+                );
+                if (ok) provider.deleteEmployee(emp.id);
+              },
             ),
           ],
         ),

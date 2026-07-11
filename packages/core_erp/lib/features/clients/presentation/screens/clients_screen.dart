@@ -9,16 +9,21 @@ import 'package:mime/mime.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/app_empty_state.dart';
+import '../../../../core/widgets/confirm_dialog.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/widgets/soft_master_data.dart';
 import '../../../../core/widgets/soft_primitives.dart';
 import '../../domain/client_definition.dart';
 import '../../domain/client_inputs.dart';
+import '../../domain/sub_contractor_definition.dart';
+import '../../domain/sub_contractor_inputs.dart';
 import '../providers/clients_provider.dart';
 import '../../../orders/presentation/providers/orders_provider.dart';
 import '../../../items/presentation/providers/items_provider.dart';
 import '../../../../core/services/generic_asset_service.dart';
 import '../../../../core/widgets/export_preview_dialog.dart';
+import '../widgets/sub_contractors_sheet.dart';
+import '../providers/sub_contractors_provider.dart';
 
 class ClientsScreen extends StatelessWidget {
   const ClientsScreen({super.key});
@@ -49,7 +54,7 @@ class ClientsScreen extends StatelessWidget {
                         'alias': c.alias,
                         'gst_number': c.gstNumber,
                         'address': c.address,
-                        'status': c.isArchived ? 'Archived' : 'Active',
+                        'status': 'Active',
                       },
                     )
                     .toList();
@@ -63,10 +68,18 @@ class ClientsScreen extends StatelessWidget {
             subtitle:
                 'Manage client master data for sales flows, billing details, and downstream transaction forms.',
             action: AppButton(
-              label: 'Add Client',
+              label: clients.viewType == ClientMasterView.subContractors
+                  ? 'Add Sub-contractor'
+                  : 'Add Client',
               icon: Icons.add,
-              isLoading: clients.isSaving,
-              onPressed: () => _openClientEditor(context),
+              isLoading: clients.isSaving, // Or check if SubContractorsProvider is saving if needed
+              onPressed: () {
+                if (clients.viewType == ClientMasterView.subContractors) {
+                  _openSubContractorEditor(context);
+                } else {
+                  _openClientEditor(context);
+                }
+              },
             ),
             toolbar: const _ClientsToolbar(),
             messages: [
@@ -76,14 +89,16 @@ class ClientsScreen extends StatelessWidget {
                   isError: true,
                 ),
             ],
-            body: clients.filteredClients.isEmpty
-                ? const AppEmptyState(
-                    title: 'No clients found',
-                    message:
-                        'Add your first client to keep names, GST numbers, and addresses consistent across the system.',
-                    icon: Icons.groups_outlined,
-                  )
-                : _ClientsTable(clients: clients.filteredClients),
+            body: clients.viewType == ClientMasterView.subContractors
+                ? _AllSubContractorsTable(searchQuery: clients.searchQuery)
+                : clients.filteredClients.isEmpty
+                    ? const AppEmptyState(
+                        title: 'No clients found',
+                        message:
+                            'Add your first client to keep names, GST numbers, and addresses consistent across the system.',
+                        icon: Icons.groups_outlined,
+                      )
+                    : _ClientsTable(clients: clients.filteredClients),
           ),
         );
       },
@@ -109,6 +124,17 @@ class ClientsScreen extends StatelessWidget {
   }) {
     return openEditor(context, client: client);
   }
+
+  static Future<SubContractorDefinition?> _openSubContractorEditor(
+    BuildContext context,
+  ) {
+    return showErpFormDialog<SubContractorDefinition?>(
+      context,
+      maxWidth: 600,
+      maxHeight: 760,
+      child: const _SubContractorEditorSheet(),
+    );
+  }
 }
 
 class _ClientsToolbar extends StatelessWidget {
@@ -125,21 +151,22 @@ class _ClientsToolbar extends StatelessWidget {
             hintText: 'Search clients, alias, GST, or address',
             onChanged: provider.setSearchQuery,
           ),
-        SoftSegmentedFilter<ClientStatusFilter>(
-          selected: provider.statusFilter,
-          onChanged: provider.setStatusFilter,
+        SoftSegmentedFilter<ClientMasterView>(
+          selected: provider.viewType,
+          onChanged: (view) {
+            provider.setViewType(view);
+            if (view == ClientMasterView.subContractors) {
+              context.read<SubContractorsProvider>().loadAll();
+            }
+          },
           options: const [
-            SoftSegmentOption<ClientStatusFilter>(
-              value: ClientStatusFilter.active,
-              label: 'Active',
+            SoftSegmentOption<ClientMasterView>(
+              value: ClientMasterView.clients,
+              label: 'Clients',
             ),
-            SoftSegmentOption<ClientStatusFilter>(
-              value: ClientStatusFilter.archived,
-              label: 'Archived',
-            ),
-            SoftSegmentOption<ClientStatusFilter>(
-              value: ClientStatusFilter.all,
-              label: 'All',
+            SoftSegmentOption<ClientMasterView>(
+              value: ClientMasterView.subContractors,
+              label: 'Sub-contractors',
             ),
           ],
         ),
@@ -167,6 +194,54 @@ class _ClientsTable extends StatelessWidget {
       ],
       itemCount: clients.length,
       rowBuilder: (context, index) => _ClientRow(client: clients[index]),
+    );
+  }
+}
+
+class _AllSubContractorsTable extends StatelessWidget {
+  const _AllSubContractorsTable({required this.searchQuery});
+
+  /// Passed in (rather than read from the provider) so this subtree rebuilds
+  /// when the search text changes — a const, param-less widget would not.
+  final String searchQuery;
+
+  @override
+  Widget build(BuildContext context) {
+    final subContractors =
+        context.watch<SubContractorsProvider>().filteredSubContractors(searchQuery);
+
+    return SoftMasterTable(
+      minWidth: 900,
+      columns: const [
+        SoftTableColumn('Name', flex: 2),
+        SoftTableColumn('Client', flex: 2),
+        SoftTableColumn('Phone', flex: 2),
+        SoftTableColumn('Email', flex: 2),
+      ],
+      itemCount: subContractors.length,
+      rowBuilder: (context, index) {
+        final sub = subContractors[index];
+        return SoftMasterRow(
+          children: [
+            Expanded(
+              flex: 2,
+              child: SoftInlineText(sub.name, weight: FontWeight.w700),
+            ),
+            Expanded(
+              flex: 2,
+              child: SoftInlineText(sub.clientName ?? '—'),
+            ),
+            Expanded(
+              flex: 2,
+              child: SoftInlineText(sub.phone.isEmpty ? '—' : sub.phone),
+            ),
+            Expanded(
+              flex: 2,
+              child: SoftInlineText(sub.email.isEmpty ? '—' : sub.email),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -205,16 +280,10 @@ class _ClientRow extends StatelessWidget {
         Expanded(
           flex: 1,
           child: SoftStatusPill(
-            label: client.isArchived ? 'Archived' : 'Active',
-            background: client.isArchived
-                ? const Color(0xFFF3F4F6)
-                : const Color(0xFFECFDF5),
-            textColor: client.isArchived
-                ? const Color(0xFF6B7280)
-                : const Color(0xFF0F766E),
-            borderColor: client.isArchived
-                ? const Color(0xFFE5E7EB)
-                : const Color(0xFFBFEAD8),
+            label: 'Active',
+            background: const Color(0xFFECFDF5),
+            textColor: const Color(0xFF0F766E),
+            borderColor: const Color(0xFFBFEAD8),
           ),
         ),
         Expanded(
@@ -249,15 +318,21 @@ class _ClientRow extends StatelessWidget {
                 onTap: () => ClientsScreen.openEditor(context, client: client),
               ),
               SoftActionLink(
-                label: client.isArchived ? 'Restore' : 'Archive',
+                label: 'Sub-contractors',
+                onTap: () => SubContractorsSheet.show(context, client),
+              ),
+              SoftActionLink(
+                label: 'Delete',
                 onTap: provider.isSaving
                     ? null
-                    : () {
-                        if (client.isArchived) {
-                          provider.restoreClient(client.id);
-                        } else {
-                          provider.archiveClient(client.id);
-                        }
+                    : () async {
+                        final ok = await showConfirmDialog(
+                          context,
+                          title: 'Delete client?',
+                          message:
+                              'Permanently delete "${client.name}"? You can restore it later from the Action Center.',
+                        );
+                        if (ok) provider.deleteClient(client.id);
                       },
               ),
             ],
@@ -286,6 +361,9 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
   late final TextEditingController _addressController;
   late final TextEditingController _logoUrlController;
   late final TextEditingController _photoUrlController;
+
+  bool _isSaving = false;
+
   String? _localError;
 
   @override
@@ -456,25 +534,10 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
               variant: AppButtonVariant.secondary,
               onPressed: () => Navigator.of(context).maybePop(),
             ),
-            if (widget.client != null)
-              AppButton(
-                label: widget.client!.isArchived ? 'Restore' : 'Archive',
-                variant: AppButtonVariant.secondary,
-                isLoading: provider.isSaving,
-                onPressed: () async {
-                  final result = widget.client!.isArchived
-                      ? await provider.restoreClient(widget.client!.id)
-                      : await provider.archiveClient(widget.client!.id);
-                  if (context.mounted &&
-                      result != null &&
-                      provider.errorMessage == null) {
-                    Navigator.of(context).pop(result);
-                  }
-                },
-              ),
+
             AppButton(
               label: widget.client == null ? 'Create Client' : 'Save Changes',
-              isLoading: provider.isSaving,
+              isLoading: _isSaving || provider.isSaving,
               onPressed: () => _submit(context),
             ),
           ],
@@ -484,6 +547,7 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
   }
 
   Future<void> _submit(BuildContext context) async {
+    if (_isSaving) return;
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -511,9 +575,11 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
 
     setState(() {
       _localError = null;
+      _isSaving = true;
     });
 
-    final normalizedGst = ClientsProvider.normalizeGstNumber(
+    try {
+      final normalizedGst = ClientsProvider.normalizeGstNumber(
       _gstController.text,
     );
     final result = widget.client == null
@@ -539,13 +605,256 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
             ),
           );
 
-    if (context.mounted && result != null && provider.errorMessage == null) {
-      showAppToast(
-        context,
-        widget.client == null ? 'Client created' : 'Client saved',
-        kind: AppToastKind.success,
-      );
-      Navigator.of(context).pop(result);
+      if (context.mounted && result != null && provider.errorMessage == null) {
+        showAppToast(
+          context,
+          widget.client == null ? 'Client created' : 'Client saved',
+          kind: AppToastKind.success,
+        );
+        Navigator.of(context).pop(result);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
+}
+
+class _SubContractorEditorSheet extends StatefulWidget {
+  const _SubContractorEditorSheet({this.subContractor, this.initialClientId});
+
+  final SubContractorDefinition? subContractor;
+  final int? initialClientId;
+
+  @override
+  State<_SubContractorEditorSheet> createState() => _SubContractorEditorSheetState();
+}
+
+class _SubContractorEditorSheetState extends State<_SubContractorEditorSheet> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _nameController;
+  late final TextEditingController _phoneController;
+  late final TextEditingController _emailController;
+  late final TextEditingController _notesController;
+  late final TextEditingController _gstController;
+  late final TextEditingController _addressController;
+  late final TextEditingController _photoUrlController;
+
+  int? _selectedClientId;
+  bool _isSaving = false;
+  String? _localError;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedClientId = widget.subContractor?.clientId ?? widget.initialClientId;
+    _nameController = TextEditingController(text: widget.subContractor?.name ?? '');
+    _phoneController = TextEditingController(text: widget.subContractor?.phone ?? '');
+    _emailController = TextEditingController(text: widget.subContractor?.email ?? '');
+    _notesController = TextEditingController(text: widget.subContractor?.notes ?? '');
+    _gstController = TextEditingController(text: widget.subContractor?.gstNumber ?? '');
+    _addressController = TextEditingController(text: widget.subContractor?.address ?? '');
+    _photoUrlController = TextEditingController(text: widget.subContractor?.photoUrl ?? '');
+
+    _nameController.addListener(_handleChange);
+    _gstController.addListener(_handleChange);
+    _addressController.addListener(_handleChange);
+    _photoUrlController.addListener(_handleChange);
+  }
+
+  void _handleChange() {
+    setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _nameController.removeListener(_handleChange);
+    _gstController.removeListener(_handleChange);
+    _addressController.removeListener(_handleChange);
+    _photoUrlController.removeListener(_handleChange);
+    _nameController.dispose();
+    _phoneController.dispose();
+    _emailController.dispose();
+    _notesController.dispose();
+    _gstController.dispose();
+    _addressController.dispose();
+    _photoUrlController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final clientsProvider = context.watch<ClientsProvider>();
+    final subProvider = context.watch<SubContractorsProvider>();
+    final title = widget.subContractor == null ? 'Add Sub-contractor' : 'Edit Sub-contractor';
+    final banner = _localError ?? (subProvider.isLoading == false ? subProvider.error : null);
+
+    return Form(
+      key: _formKey,
+      child: ErpFormScaffold(
+        title: title,
+        subtitle: 'Capture sub-contractor details for tracking assignments.',
+        errorBanner: banner == null ? null : ErpFormMessageBanner(message: banner, isError: true),
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ErpDialogSectionCard(
+              title: 'Details',
+              subtitle: 'Assign to a client and enter basic info.',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DropdownButtonFormField<int>(
+                    value: _selectedClientId,
+                    decoration: const InputDecoration(
+                      labelText: 'Client',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: clientsProvider.clients.map((c) {
+                      return DropdownMenuItem(value: c.id, child: Text(c.name));
+                    }).toList(),
+                    onChanged: (val) => setState(() => _selectedClientId = val),
+                    validator: (val) => val == null ? 'Client is required' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  _ClientTextField(
+                    controller: _nameController,
+                    label: 'Name',
+                    helper: 'Required. Sub-contractor name',
+                  ),
+                  const SizedBox(height: 12),
+                  _ClientTextField(
+                    controller: _phoneController,
+                    label: 'Phone',
+                    helper: 'Optional contact number',
+                    required: false,
+                  ),
+                  const SizedBox(height: 12),
+                  _ClientTextField(
+                    controller: _emailController,
+                    label: 'Email',
+                    helper: 'Optional contact email',
+                    required: false,
+                    textCapitalization: TextCapitalization.none,
+                  ),
+                  const SizedBox(height: 12),
+                  _ClientTextField(
+                    controller: _notesController,
+                    label: 'Notes',
+                    helper: 'Optional internal notes',
+                    required: false,
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 12),
+                  _ClientTextField(
+                    controller: _gstController,
+                    label: 'GST No.',
+                    helper: 'Optional. Must stay unique when provided',
+                    required: false,
+                    textCapitalization: TextCapitalization.characters,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            ErpDialogSectionCard(
+              title: 'Photos',
+              subtitle: 'Optional contact photo for quick visual identification.',
+              child: Column(
+                children: [
+                  _ClientImagePickerField(
+                    controller: _photoUrlController,
+                    label: 'Sub-contractor Photo',
+                    hintText: 'Paste contact photo URL…',
+                    placeholderIcon: Icons.person_rounded,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            ErpDialogSectionCard(
+              title: 'Address & Preview',
+              subtitle: 'Keep the address close to the final record preview.',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _ClientTextField(
+                    controller: _addressController,
+                    label: 'Address',
+                    helper: 'Optional primary address',
+                    required: false,
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 16),
+                  _ClientPreviewCard(
+                    name: _nameController.text.trim(),
+                    alias: '', // Sub-contractors don't have aliases currently
+                    gstNumber: ClientsProvider.normalizeGstNumber(
+                      _gstController.text,
+                    ),
+                    address: _addressController.text.trim(),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            AppButton(
+              label: 'Cancel',
+              variant: AppButtonVariant.secondary,
+              onPressed: () => Navigator.pop(context),
+            ),
+            AppButton(
+              label: widget.subContractor == null ? 'Create Sub-contractor' : 'Save Changes',
+              isLoading: _isSaving || subProvider.isLoading,
+              onPressed: () => _submit(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _submit(BuildContext context) async {
+    if (_isSaving) return;
+    if (!_formKey.currentState!.validate() || _selectedClientId == null) return;
+
+    setState(() {
+      _localError = null;
+      _isSaving = true;
+    });
+
+    try {
+      final subProvider = context.read<SubContractorsProvider>();
+      final result = widget.subContractor == null
+          ? await subProvider.create(
+              _selectedClientId!,
+              CreateSubContractorInput(
+                name: _nameController.text.trim(),
+                phone: _phoneController.text.trim(),
+                email: _emailController.text.trim(),
+                notes: _notesController.text.trim(),
+                gstNumber: ClientsProvider.normalizeGstNumber(_gstController.text),
+                address: _addressController.text.trim(),
+                photoUrl: _photoUrlController.text.trim(),
+              ),
+            )
+          : null; // Update not fully implemented in form yet for global usage
+
+      if (context.mounted && result != null && subProvider.error == null) {
+        showAppToast(context, 'Sub-contractor saved', kind: AppToastKind.success);
+        Navigator.of(context).pop(result);
+      }
+    } catch (e) {
+      if (mounted) setState(() => _localError = e.toString());
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 }

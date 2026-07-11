@@ -334,6 +334,20 @@ const db = new sqlite3.Database(DB_PATH, (error) => {
   console.log(`SQLite database opened at ${DB_PATH}`);
 });
 
+// Dedicated connection used ONLY for FK-bypassing hard-deletes and trash
+// restores. Foreign-key enforcement is turned OFF permanently on this
+// connection (see initDb), so we can delete a still-referenced master (leaving
+// a dangling reference for the Action Center to surface) WITHOUT toggling a
+// process-wide PRAGMA on the shared connection — which would otherwise leak
+// FK-off into concurrent requests, or be silently no-op'd by another request's
+// open transaction. WAL mode (set on the main connection, DB-level) lets these
+// two connections coexist; busy_timeout makes cross-connection writes wait.
+const deleteDb = new sqlite3.Database(DB_PATH, (error) => {
+  if (error) {
+    console.error('Failed to open SQLite delete connection:', error);
+  }
+});
+
 const PROCESS_HANDLER_GUARD = '__paperProcessHandlersRegistered';
 if (!globalThis[PROCESS_HANDLER_GUARD]) {
   process.on('uncaughtException', (error) => {
@@ -454,6 +468,19 @@ function run(sql, params = []) {
   });
 }
 
+// Runs a statement on the dedicated FK-off delete connection.
+function runOnDelete(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    deleteDb.run(sql, params, function onRun(error) {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(this);
+    });
+  });
+}
+
 function get(sql, params = []) {
   return new Promise((resolve, reject) => {
     db.get(sql, params, (error, row) => {
@@ -487,6 +514,14 @@ async function enableForeignKeys() {
   // WAL mode: readers don't block writers and vice versa.
   // Safe for single-process Node.js + SQLite; persists across connections.
   await run('PRAGMA journal_mode = WAL');
+  // Let a write wait for another connection's write lock instead of erroring.
+  await run('PRAGMA busy_timeout = 5000');
+
+  // Configure the dedicated delete connection: FK enforcement OFF for its whole
+  // lifetime, and the same busy_timeout so it waits on the main connection's
+  // write lock rather than throwing SQLITE_BUSY.
+  await runOnDelete('PRAGMA foreign_keys = OFF');
+  await runOnDelete('PRAGMA busy_timeout = 5000');
 }
 
 function base64UrlEncode(value) {
@@ -1386,12 +1421,14 @@ function requireApiWritePermission(req, res, next) {
 
 function closeDb() {
   return new Promise((resolve, reject) => {
-    db.close((error) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      resolve();
+    deleteDb.close(() => {
+      db.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
     });
   });
 }
@@ -1550,6 +1587,78 @@ function rowToUnitDto(row) {
   };
 }
 
+// Moves a single row into the deleted_records trash table, then hard-deletes it.
+// Notes:
+//  - The DELETE runs on the dedicated FK-off connection (deleteDb) so a
+//    referenced master (e.g. a client still used by orders) can be removed; the
+//    resulting dangling reference is what the Action Center surfaces. Because
+//    FK-off lives on its own connection, it never affects concurrent requests.
+//  - If the DELETE fails we roll back the trash row so no orphan is left behind.
+//  - A DELETE change is logged so SSE/changelog clients live-refresh uniformly.
+async function trashAndDelete(tableName, recordId, req) {
+  const deletedBy = req?.user?.name || 'System';
+
+  // Fetch the row
+  const row = await get(`SELECT * FROM ${tableName} WHERE id = ?`, [recordId]);
+  if (!row) return;
+
+  // Insert into trash
+  const trash = await run(
+    `INSERT INTO deleted_records (table_name, record_id, data_json, deleted_at, deleted_by)
+     VALUES (?, ?, ?, ?, ?)`,
+    [tableName, recordId, JSON.stringify(row), new Date().toISOString(), deletedBy]
+  );
+
+  // Delete via the dedicated FK-off connection (see deleteDb).
+  try {
+    await runOnDelete(`DELETE FROM ${tableName} WHERE id = ?`, [recordId]);
+  } catch (err) {
+    // Compensate so a failed delete never strands an unrecoverable trash row.
+    await run('DELETE FROM deleted_records WHERE id = ?', [trash.lastID]).catch(() => {});
+    throw err;
+  }
+
+  await logChange(tableName, recordId, 'DELETE');
+}
+
+async function trashAndDeleteMany(tableName, recordIds, req) {
+  if (!recordIds || recordIds.length === 0) return;
+  const deletedBy = req?.user?.name || 'System';
+  const now = new Date().toISOString();
+  // Chunk to stay well under SQLite's default 999 bound-variable limit so a
+  // parent with a very large child set (e.g. 1000+ variation nodes) still deletes.
+  const CHUNK = 400;
+
+  for (let i = 0; i < recordIds.length; i += CHUNK) {
+    const chunk = recordIds.slice(i, i + CHUNK);
+    const placeholders = chunk.map(() => '?').join(',');
+    const rows = await all(`SELECT * FROM ${tableName} WHERE id IN (${placeholders})`, chunk);
+    if (rows.length === 0) continue;
+
+    const trashIds = [];
+    for (const row of rows) {
+      const trash = await run(
+        `INSERT INTO deleted_records (table_name, record_id, data_json, deleted_at, deleted_by)
+         VALUES (?, ?, ?, ?, ?)`,
+        [tableName, row.id, JSON.stringify(row), now, deletedBy]
+      );
+      trashIds.push(trash.lastID);
+    }
+
+    try {
+      await runOnDelete(`DELETE FROM ${tableName} WHERE id IN (${placeholders})`, chunk);
+    } catch (err) {
+      const trashPlaceholders = trashIds.map(() => '?').join(',');
+      await run(`DELETE FROM deleted_records WHERE id IN (${trashPlaceholders})`, trashIds).catch(() => {});
+      throw err;
+    }
+
+    for (const row of rows) {
+      await logChange(tableName, row.id, 'DELETE');
+    }
+  }
+}
+
 function rowToGroupDto(row) {
   if (!row) {
     return null;
@@ -1632,6 +1741,7 @@ function rowToOrderDto(row) {
     id: row.id,
     orderNo: row.order_no || '',
     clientId: row.client_id || 0,
+    subContractorId: row.sub_contractor_id || null,
     clientName: row.client_name || '',
     poNumber: row.po_number || '',
     clientCode: row.client_code || '',
@@ -1800,6 +1910,8 @@ async function rowToItemDto(row) {
     propertySchema,
     baseItemId: row.base_item_id || null,
     combinationGroupIds: combinationGroupRows.map((entry) => entry.group_id),
+    photoUrl: row.photo_url || null,
+    availableForPurchase: Boolean(row.available_for_purchase),
   };
 }
 
@@ -3350,9 +3462,34 @@ async function initDb() {
   await run('CREATE INDEX IF NOT EXISTS idx_production_runs_item ON production_runs(item_id, variation_leaf_node_id)');
 
   await run(`
+    CREATE TABLE IF NOT EXISTS deleted_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      table_name TEXT NOT NULL,
+      record_id INTEGER NOT NULL,
+      data_json TEXT NOT NULL,
+      deleted_at TEXT NOT NULL,
+      deleted_by TEXT
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS sub_contractors (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      phone TEXT,
+      email TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await run(`
     CREATE TABLE IF NOT EXISTS order_headers (
       order_no TEXT PRIMARY KEY,
       client_id INTEGER NOT NULL REFERENCES clients(id),
+      sub_contractor_id INTEGER REFERENCES sub_contractors(id),
       po_number TEXT DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL DEFAULT ''
@@ -3366,6 +3503,7 @@ async function initDb() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       order_no TEXT NOT NULL REFERENCES order_headers(order_no),
       client_id INTEGER NOT NULL REFERENCES clients(id),
+      sub_contractor_id INTEGER REFERENCES sub_contractors(id),
       client_name TEXT NOT NULL DEFAULT '',
       po_number TEXT DEFAULT '',
       client_code TEXT DEFAULT '',
@@ -3601,6 +3739,8 @@ async function initDb() {
   await ensureColumnExists('groups', 'group_structure', "TEXT NOT NULL DEFAULT 'hierarchical'");
   await ensureColumnExists('groups', 'description', "TEXT NOT NULL DEFAULT ''");
 
+  await ensureColumnExists('items', 'photo_url', 'TEXT DEFAULT NULL');
+
   await ensureColumnExists('delivery_challans', 'order_id', 'INTEGER');
   await ensureColumnExists('delivery_challans', 'order_no', "TEXT DEFAULT ''");
   await ensureColumnExists('delivery_challans', 'type', "TEXT NOT NULL DEFAULT 'delivery'");
@@ -3804,6 +3944,9 @@ async function initDb() {
 
   await ensureColumnExists('items', 'quantity', 'REAL NOT NULL DEFAULT 0');
   await ensureColumnExists('items', 'naming_format', "TEXT NOT NULL DEFAULT ''");
+  // Whether this item can be ordered as a purchase (reception) line on the
+  // mobile Purchase-challan flow. Curated per item in the desktop item editor.
+  await ensureColumnExists('items', 'available_for_purchase', 'INTEGER NOT NULL DEFAULT 0');
   await ensureColumnExists('item_unit_conversions', 'factor_to_primary', 'REAL NOT NULL DEFAULT 1');
   await ensureColumnExists('item_variations', 'alias', "TEXT DEFAULT ''");
   await ensureColumnExists('item_variations', 'display_name', "TEXT DEFAULT ''");
@@ -12849,6 +12992,7 @@ function normalizeOptionalDate(value, fieldName) {
 async function saveOrder({
   orderNo,
   clientId,
+  subContractorId = null,
   clientName = '',
   poNumber = '',
   clientCode = '',
@@ -12873,6 +13017,10 @@ async function saveOrder({
 } = {}, { returnMeta = false } = {}) {
   const trimmedOrderNo = String(orderNo || '').trim();
   const normalizedClientId = Number(clientId);
+  let normalizedSubContractorId = null;
+  if (subContractorId) {
+    normalizedSubContractorId = Number(subContractorId);
+  }
   const normalizedItemId = Number(itemId);
   const normalizedQuantity = Number(quantity || 0);
   const normalizedUnitPrice = Number(unitPrice || 0);
@@ -12909,6 +13057,19 @@ async function saveOrder({
     const error = new Error('Selected client is not available.');
     error.statusCode = 400;
     throw error;
+  }
+  if (normalizedSubContractorId) {
+    const subContractor = await get('SELECT client_id FROM sub_contractors WHERE id = ?', [normalizedSubContractorId]);
+    if (!subContractor) {
+      const error = new Error('Selected sub-contractor is not available.');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (subContractor.client_id !== normalizedClientId) {
+      const error = new Error('Selected sub-contractor does not belong to the selected client.');
+      error.statusCode = 400;
+      throw error;
+    }
   }
   if (!Number.isFinite(normalizedQuantity) || normalizedQuantity <= 0) {
     const error = new Error('Quantity must be greater than zero.');
@@ -13038,6 +13199,7 @@ async function saveOrder({
             start_date = ?,
             end_date = ?,
             custom_variation_values_json = ?,
+            sub_contractor_id = ?,
             updated_at = ?
         WHERE id = ?
         `,
@@ -13059,6 +13221,7 @@ async function saveOrder({
           normalizedStartDate,
           normalizedEndDate,
           normalizedCustomVariationValuesJson,
+          normalizedSubContractorId,
           now,
           existing.id,
         ],
@@ -13080,11 +13243,17 @@ async function saveOrder({
     } else {
       await run(
         `
-        INSERT INTO order_headers (order_no, client_id, po_number, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO order_headers (order_no, client_id, po_number, sub_contractor_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(order_no) DO NOTHING
         `,
-        [trimmedOrderNo, normalizedClientId, trimmedPoNumber, now, now]
+        [trimmedOrderNo, normalizedClientId, trimmedPoNumber, normalizedSubContractorId, now, now]
+      );
+      
+      // Update order headers for existing orders to ensure sub_contractor_id is correctly set
+      await run(
+        `UPDATE order_headers SET sub_contractor_id = ?, updated_at = ? WHERE order_no = ?`,
+        [normalizedSubContractorId, now, trimmedOrderNo]
       );
       
       const result = await run(
@@ -13093,10 +13262,10 @@ async function saveOrder({
           order_no, client_id, client_name, po_number, client_code, item_id, item_name,
           variation_leaf_node_id, variation_path_label, variation_path_node_ids_json, quantity,
           unit_id, unit_name, unit_symbol, unit_price, total_invoiced_qty, status,
-          custom_variation_values_json,
+          custom_variation_values_json, sub_contractor_id,
           created_at, updated_at, start_date, end_date
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           trimmedOrderNo,
@@ -13117,6 +13286,7 @@ async function saveOrder({
           hasInvoicedQtyInput ? normalizedTotalInvoicedQty : 0,
           normalizedStatus,
           normalizedCustomVariationValuesJson,
+          normalizedSubContractorId,
           now,
           now,
           normalizedStartDate,
@@ -13606,9 +13776,12 @@ async function saveItem({
   variationTree = [],
   defaultPipelineId = null,
   baseItemId = null,
+  photoUrl = null,
+  availableForPurchase = false,
   id = null,
 }) {
   const trimmedName = String(name || '').trim();
+  const normalizedAvailableForPurchase = availableForPurchase ? 1 : 0;
   const trimmedAlias = String(alias || '').trim();
   const serializedNamingFormat = JSON.stringify(Array.isArray(namingFormat) ? namingFormat : []);
   const quantityNumber = Number(quantity ?? 0);
@@ -13716,8 +13889,8 @@ async function saveItem({
       const result = await run(
         `
         INSERT INTO items (
-          name, alias, display_name, quantity, group_id, unit_id, naming_format, is_archived, default_pipeline_id, base_item_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+          name, alias, display_name, quantity, group_id, unit_id, naming_format, is_archived, default_pipeline_id, base_item_id, photo_url, available_for_purchase, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)
         `,
         [
           trimmedName,
@@ -13729,6 +13902,8 @@ async function saveItem({
           serializedNamingFormat,
           defaultPipelineId || null,
           normalizedBaseItemId,
+          photoUrl || null,
+          normalizedAvailableForPurchase,
           now,
           now,
         ],
@@ -13752,7 +13927,7 @@ async function saveItem({
       await run(
         `
         UPDATE items
-        SET name = ?, alias = ?, display_name = ?, quantity = ?, group_id = ?, unit_id = ?, naming_format = ?, default_pipeline_id = ?, base_item_id = ?, updated_at = ?
+        SET name = ?, alias = ?, display_name = ?, quantity = ?, group_id = ?, unit_id = ?, naming_format = ?, default_pipeline_id = ?, base_item_id = ?, photo_url = ?, available_for_purchase = ?, updated_at = ?
         WHERE id = ?
         `,
         [
@@ -13765,6 +13940,8 @@ async function saveItem({
           serializedNamingFormat,
           defaultPipelineId || null,
           normalizedBaseItemId,
+          photoUrl || null,
+          normalizedAvailableForPurchase,
           now,
           id,
         ],
@@ -18284,241 +18461,6 @@ app.patch('/api/users/:id/status', requirePermission('users.update_status'), asy
     res.status(500).json({ success: false, user: null, error: error.message });
   }
 });
-
-app.post('/api/delete-requests', requirePermission('inventory.request_delete'), async (req, res) => {
-  try {
-    const entityType = String(req.body?.entityType || '').trim();
-    const entityId = String(req.body?.entityId || '').trim();
-    const entityLabel = String(req.body?.entityLabel || '').trim();
-    const reason = String(req.body?.reason || '').trim();
-    if (!entityType || !entityId) {
-      res.status(400).json({ success: false, request: null, error: 'entityType and entityId are required.' });
-      return;
-    }
-    if (entityType !== 'material') {
-      res.status(400).json({ success: false, request: null, error: 'Only material delete requests are supported in v1.' });
-      return;
-    }
-    const now = new Date().toISOString();
-    const result = await run(
-      `
-      INSERT INTO delete_requests (
-        entity_type, entity_id, entity_label, reason, status, requested_by_user_id, created_at
-      ) VALUES (?, ?, ?, ?, 'pending', ?, ?)
-      `,
-      [entityType, entityId, entityLabel, reason, req.user.id, now],
-    );
-    const row = await getDeleteRequestById(result.lastID);
-    await logAuthEvent({
-      eventType: 'delete_request_created',
-      actorUserId: req.user.id,
-      targetUserId: req.user.id,
-      ipAddress: getRequestIp(req),
-      userAgent: getRequestUserAgent(req),
-      metadata: { entityType, entityId },
-    });
-    res.status(201).json({ success: true, request: rowToDeleteRequestDto(row), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, request: null, error: error.message });
-  }
-});
-
-app.get('/api/delete-requests', requirePermission('delete_requests.review'), async (req, res) => {
-  try {
-    const status = String(req.query.status || '').trim();
-    const requesterId = Number(req.query.requestedByUserId || 0);
-    const from = normalizeNullableDate(req.query.from);
-    const to = normalizeNullableDate(req.query.to);
-    const { limit, offset } = parsePagination(req.query, {
-      defaultLimit: 25,
-      maxLimit: 100,
-    });
-    const params = [];
-    const whereClauses = [];
-    if (status) {
-      whereClauses.push('dr.status = ?');
-      params.push(status);
-    }
-    if (requesterId > 0) {
-      whereClauses.push('dr.requested_by_user_id = ?');
-      params.push(requesterId);
-    }
-    if (from) {
-      whereClauses.push('datetime(dr.created_at) >= datetime(?)');
-      params.push(from);
-    }
-    if (to) {
-      whereClauses.push('datetime(dr.created_at) <= datetime(?)');
-      params.push(to);
-    }
-    const where = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
-    const countRow = await get(
-      `SELECT COUNT(*) AS count FROM delete_requests dr ${where}`,
-      params,
-    );
-    const total = Number(countRow?.count || 0);
-    const rows = await all(
-      `
-      SELECT
-        dr.*,
-        requester.name AS requested_by_name,
-        reviewer.name AS reviewed_by_name
-      FROM delete_requests dr
-      LEFT JOIN users requester ON requester.id = dr.requested_by_user_id
-      LEFT JOIN users reviewer ON reviewer.id = dr.reviewed_by_user_id
-      ${where}
-      ORDER BY dr.created_at DESC
-      LIMIT ? OFFSET ?
-      `,
-      [...params, limit, offset],
-    );
-    res.json({
-      success: true,
-      requests: rows.map(rowToDeleteRequestDto),
-      pagination: {
-        total,
-        limit,
-        offset,
-        hasMore: offset + rows.length < total,
-      },
-      error: null,
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, requests: [], error: error.message });
-  }
-});
-
-app.post('/api/delete-requests/:id/approve', requirePermission('delete_requests.review'), async (req, res) => {
-  try {
-    const request = await getDeleteRequestById(Number(req.params.id));
-    if (!request) {
-      res.status(404).json({ success: false, request: null, error: 'Delete request not found.' });
-      return;
-    }
-    if (request.status !== 'pending') {
-      res.status(409).json({ success: false, request: rowToDeleteRequestDto(request), error: 'Delete request has already been reviewed.' });
-      return;
-    }
-    if (request.entity_type !== 'material') {
-      res.status(400).json({ success: false, request: null, error: 'Unsupported delete request type.' });
-      return;
-    }
-    await deleteMaterialRecord(request.entity_id, currentActor(req));
-    const reviewedNote = String(req.body?.reviewedNote || '').trim();
-    await run('UPDATE delete_requests SET status = ?, reviewed_by_user_id = ?, reviewed_note = ?, reviewed_at = ? WHERE id = ?', [
-      'approved',
-      req.user.id,
-      reviewedNote,
-      new Date().toISOString(),
-      request.id,
-    ]);
-    const updated = await getDeleteRequestById(request.id);
-    await logAuthEvent({
-      eventType: 'delete_request_approved',
-      actorUserId: req.user.id,
-      targetUserId: request.requested_by_user_id || null,
-      ipAddress: getRequestIp(req),
-      userAgent: getRequestUserAgent(req),
-      metadata: { requestId: request.id, entityType: request.entity_type, entityId: request.entity_id, reviewedNote },
-    });
-    res.json({ success: true, request: rowToDeleteRequestDto(updated), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, request: null, error: error.message });
-  }
-});
-
-app.post('/api/delete-requests/:id/reject', requirePermission('delete_requests.review'), async (req, res) => {
-  try {
-    const request = await getDeleteRequestById(Number(req.params.id));
-    if (!request) {
-      res.status(404).json({ success: false, request: null, error: 'Delete request not found.' });
-      return;
-    }
-    if (request.status !== 'pending') {
-      res.status(409).json({ success: false, request: rowToDeleteRequestDto(request), error: 'Delete request has already been reviewed.' });
-      return;
-    }
-    const reviewedNote = String(req.body?.reviewedNote || '').trim();
-    await run('UPDATE delete_requests SET status = ?, reviewed_by_user_id = ?, reviewed_note = ?, reviewed_at = ? WHERE id = ?', [
-      'rejected',
-      req.user.id,
-      reviewedNote,
-      new Date().toISOString(),
-      request.id,
-    ]);
-    const updated = await getDeleteRequestById(request.id);
-    await logAuthEvent({
-      eventType: 'delete_request_rejected',
-      actorUserId: req.user.id,
-      targetUserId: request.requested_by_user_id || null,
-      ipAddress: getRequestIp(req),
-      userAgent: getRequestUserAgent(req),
-      metadata: { requestId: request.id, entityType: request.entity_type, entityId: request.entity_id, reviewedNote },
-    });
-    res.json({ success: true, request: rowToDeleteRequestDto(updated), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, request: null, error: error.message });
-  }
-});
-
-app.get('/api/delete-requests/export', requirePermission('audit.read'), async (_req, res) => {
-  try {
-    const rows = await all(
-      `
-      SELECT
-        dr.*,
-        requester.name AS requested_by_name,
-        reviewer.name AS reviewed_by_name
-      FROM delete_requests dr
-      LEFT JOIN users requester ON requester.id = dr.requested_by_user_id
-      LEFT JOIN users reviewer ON reviewer.id = dr.reviewed_by_user_id
-      ORDER BY datetime(dr.created_at) DESC
-      LIMIT 5000
-      `,
-    );
-    const csv = toCsv(
-      [
-        'id',
-        'created_at',
-        'status',
-        'entity_type',
-        'entity_id',
-        'entity_label',
-        'reason',
-        'requested_by_user_id',
-        'requested_by_name',
-        'reviewed_by_user_id',
-        'reviewed_by_name',
-        'reviewed_note',
-        'reviewed_at',
-      ],
-      rows.map((row) => [
-        row.id,
-        row.created_at,
-        row.status,
-        row.entity_type,
-        row.entity_id,
-        row.entity_label || '',
-        row.reason || '',
-        row.requested_by_user_id || '',
-        row.requested_by_name || '',
-        row.reviewed_by_user_id || '',
-        row.reviewed_by_name || '',
-        row.reviewed_note || '',
-        row.reviewed_at || '',
-      ]),
-    );
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="delete-requests-${new Date().toISOString().slice(0, 10)}.csv"`,
-    );
-    res.status(200).send(csv);
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 function machineRowToDto(r) {
   return {
     id: String(r.id),
@@ -19269,49 +19211,13 @@ app.patch('/api/units/:id', requirePermission('config.write'), async (req, res) 
   }
 });
 
-app.patch('/api/units/:id/archive', requirePermission('config.write'), async (req, res) => {
+app.delete('/api/units/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const existing = await getUnitRowById(id);
-    if (!existing) {
-      res.status(404).json({ success: false, unit: null, error: 'Unit not found.' });
-      return;
-    }
-    if ((existing.usage_count || 0) > 0) {
-      res.status(409).json({
-        success: false,
-        unit: null,
-        error: 'Used units cannot be archived.',
-      });
-      return;
-    }
-    await run('UPDATE units SET is_archived = 1, updated_at = ? WHERE id = ?', [
-      new Date().toISOString(),
-      id,
-    ]);
-    const updated = await getUnitRowById(id);
-    res.json({ success: true, unit: rowToUnitDto(updated), error: null });
+    await trashAndDelete('units', id, req);
+    res.json({ success: true, error: null });
   } catch (error) {
-    res.status(500).json({ success: false, unit: null, error: error.message });
-  }
-});
-
-app.patch('/api/units/:id/restore', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const existing = await getUnitRowById(id);
-    if (!existing) {
-      res.status(404).json({ success: false, unit: null, error: 'Unit not found.' });
-      return;
-    }
-    await run('UPDATE units SET is_archived = 0, updated_at = ? WHERE id = ?', [
-      new Date().toISOString(),
-      id,
-    ]);
-    const updated = await getUnitRowById(id);
-    res.json({ success: true, unit: rowToUnitDto(updated), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, unit: null, error: error.message });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -19348,6 +19254,118 @@ app.get('/api/clients/:id', requirePermission('config.read'), async (req, res) =
     res.json({ success: true, client: rowToClientDto(row), error: null });
   } catch (error) {
     res.status(500).json({ success: false, client: null, error: error.message });
+  }
+});
+
+// --- SUB-CONTRACTORS ENDPOINTS ---
+
+function rowToSubContractorDto(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    clientId: row.client_id,
+    name: row.name,
+    phone: row.phone,
+    email: row.email,
+    notes: row.notes,
+    gstNumber: row.gst_number,
+    address: row.address,
+    photoUrl: row.photo_url,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    clientName: row.client_name,
+  };
+}
+
+app.get('/api/sub-contractors', requirePermission('config.read'), async (req, res) => {
+  try {
+    const rows = await get('SELECT name FROM sqlite_master WHERE type=\'table\' AND name=\'sub_contractors\'');
+    if (!rows) {
+      return res.json({ success: true, subContractors: [], error: null });
+    }
+    const dataRows = await all(`
+      SELECT s.*, c.name as client_name 
+      FROM sub_contractors s
+      LEFT JOIN clients c ON s.client_id = c.id
+      ORDER BY s.name ASC
+    `);
+    res.json({ success: true, subContractors: dataRows.map(rowToSubContractorDto), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, subContractors: [], error: error.message });
+  }
+});
+
+app.get('/api/clients/:clientId/sub-contractors', requirePermission('config.read'), async (req, res) => {
+  try {
+    const clientId = Number(req.params.clientId);
+    const rows = await get('SELECT name FROM sqlite_master WHERE type=\'table\' AND name=\'sub_contractors\'');
+    if (!rows) {
+      return res.json({ success: true, subContractors: [], error: null });
+    }
+    const dataRows = await all('SELECT * FROM sub_contractors WHERE client_id = ? ORDER BY name ASC', [clientId]);
+    res.json({ success: true, subContractors: dataRows.map(rowToSubContractorDto), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, subContractors: [], error: error.message });
+  }
+});
+
+app.post('/api/clients/:clientId/sub-contractors', requirePermission('config.write'), async (req, res) => {
+  try {
+    const clientId = Number(req.params.clientId);
+    const { name, phone, email, notes, gstNumber, address, photoUrl } = req.body || {};
+    
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ success: false, error: 'Name is required' });
+    }
+    
+    const now = new Date().toISOString();
+    const result = await run(
+      `INSERT INTO sub_contractors (client_id, name, phone, email, notes, gst_number, address, photo_url, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [clientId, String(name).trim(), phone || '', email || '', notes || '', gstNumber || '', address || '', photoUrl || '', now, now]
+    );
+    
+    const row = await get('SELECT * FROM sub_contractors WHERE id = ?', [result.lastID]);
+    res.status(201).json({ success: true, subContractor: rowToSubContractorDto(row), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, subContractor: null, error: error.message });
+  }
+});
+
+app.put('/api/sub-contractors/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { name, phone, email, notes, gstNumber, address, photoUrl } = req.body || {};
+    
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ success: false, error: 'Name is required' });
+    }
+    
+    const now = new Date().toISOString();
+    await run(
+      `UPDATE sub_contractors 
+       SET name = ?, phone = ?, email = ?, notes = ?, gst_number = ?, address = ?, photo_url = ?, updated_at = ?
+       WHERE id = ?`,
+      [String(name).trim(), phone || '', email || '', notes || '', gstNumber || '', address || '', photoUrl || '', now, id]
+    );
+    
+    const row = await get('SELECT * FROM sub_contractors WHERE id = ?', [id]);
+    if (!row) {
+      return res.status(404).json({ success: false, error: 'Not found' });
+    }
+    res.json({ success: true, subContractor: rowToSubContractorDto(row), error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, subContractor: null, error: error.message });
+  }
+});
+
+app.delete('/api/sub-contractors/:id', requirePermission('config.write'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    await run('DELETE FROM sub_contractors WHERE id = ?', [id]);
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -19565,6 +19583,15 @@ const handleIssueChallan = async (req, res) => {
   try {
     const challan = await issueDeliveryChallan(Number(req.params.id), actorFromRequest(req));
     res.json({ success: true, data: await rowToDeliveryChallanDto(challan), error: null });
+    
+    // Emit item_updated for each item affected if stock was modified
+    if (io && challan && Number(challan.maintain_stocks || 1) !== 0) {
+      const items = await all('SELECT item_id FROM delivery_challan_items WHERE challan_id = ?', [challan.id]);
+      const uniqueItemIds = new Set(items.map(i => i.item_id).filter(id => Number.isFinite(id) && id > 0));
+      for (const itemId of uniqueItemIds) {
+        io.emit('item_updated', { id: itemId });
+      }
+    }
   } catch (error) {
     res.status(error.statusCode || 500).json({
       success: false,
@@ -19648,6 +19675,15 @@ const handleCancelChallan = async (req, res) => {
 
     const challan = await cancelDeliveryChallan(id, actorFromRequest(req));
     res.json({ success: true, data: await rowToDeliveryChallanDto(challan), error: null });
+    
+    // Emit item_updated for each item affected if stock was modified
+    if (io && challan && Number(challan.maintain_stocks || 1) !== 0) {
+      const items = await all('SELECT item_id FROM delivery_challan_items WHERE challan_id = ?', [challan.id]);
+      const uniqueItemIds = new Set(items.map(i => i.item_id).filter(id => Number.isFinite(id) && id > 0));
+      for (const itemId of uniqueItemIds) {
+        io.emit('item_updated', { id: itemId });
+      }
+    }
   } catch (error) {
     res.status(error.statusCode || 500).json({
       success: false,
@@ -21236,19 +21272,7 @@ app.post('/api/clients', requirePermission('config.write'), async (req, res) => 
 app.delete('/api/clients/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const orderCount = await get('SELECT COUNT(*) as count FROM order_items WHERE client_id = ?', [id]);
-    if (orderCount && orderCount.count > 0) {
-      return res.status(400).json({ success: false, error: 'Cannot delete client: referenced by existing orders.' });
-    }
-    const challanCount = await get('SELECT COUNT(*) as count FROM delivery_challans WHERE client_id = ?', [id]);
-    if (challanCount && challanCount.count > 0) {
-      return res.status(400).json({ success: false, error: 'Cannot delete client: referenced by delivery challans.' });
-    }
-    const receptionCount = await get('SELECT COUNT(*) as count FROM reception_challans WHERE material_owner_client_id = ?', [id]);
-    if (receptionCount && receptionCount.count > 0) {
-      return res.status(400).json({ success: false, error: 'Cannot delete client: referenced by reception challans.' });
-    }
-    await run('DELETE FROM clients WHERE id = ?', [id]);
+    await trashAndDelete('clients', id, req);
     if (io) {
       io.emit('client_deleted', { id });
     }
@@ -21275,60 +21299,6 @@ app.patch('/api/clients/:id', requirePermission('config.write'), async (req, res
       client: null,
       error: error.message,
     });
-  }
-});
-
-app.patch('/api/clients/:id/archive', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const existing = await getClientRowById(id);
-    if (!existing) {
-      res.status(404).json({ success: false, client: null, error: 'Client not found.' });
-      return;
-    }
-    if ((existing.usage_count || 0) > 0) {
-      res.status(409).json({
-        success: false,
-        client: null,
-        error: 'Used clients cannot be archived.',
-      });
-      return;
-    }
-    await run('UPDATE clients SET is_archived = 1, updated_at = ? WHERE id = ?', [
-      new Date().toISOString(),
-      id,
-    ]);
-    const updated = await getClientRowById(id);
-    const clientDto = rowToClientDto(updated);
-    if (io) {
-      io.emit('client_updated', clientDto);
-    }
-    res.json({ success: true, client: clientDto, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, client: null, error: error.message });
-  }
-});
-
-app.patch('/api/clients/:id/restore', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const existing = await getClientRowById(id);
-    if (!existing) {
-      res.status(404).json({ success: false, client: null, error: 'Client not found.' });
-      return;
-    }
-    await run('UPDATE clients SET is_archived = 0, updated_at = ? WHERE id = ?', [
-      new Date().toISOString(),
-      id,
-    ]);
-    const updated = await getClientRowById(id);
-    const clientDto = rowToClientDto(updated);
-    if (io) {
-      io.emit('client_updated', clientDto);
-    }
-    res.json({ success: true, client: clientDto, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, client: null, error: error.message });
   }
 });
 
@@ -21374,12 +21344,7 @@ app.post('/api/vendors', requirePermission('config.write'), async (req, res) => 
 app.delete('/api/vendors/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const challanCount = await get('SELECT COUNT(*) as count FROM reception_challans WHERE vendor_id = ?', [id]);
-    if (challanCount && challanCount.count > 0) {
-      return res.status(400).json({ success: false, error: 'Cannot delete vendor: referenced by reception challans.' });
-    }
-    await run('DELETE FROM vendors WHERE id = ?', [id]);
-    await logChange('vendors', id, 'DELETE');
+    await trashAndDelete('vendors', id, req);
     if (io) {
       io.emit('vendor_deleted', { id });
     }
@@ -21402,54 +21367,6 @@ app.patch('/api/vendors/:id', requirePermission('config.write'), async (req, res
     res.json({ success: true, vendor: vendorDto, error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({ success: false, vendor: null, error: error.message });
-  }
-});
-
-app.patch('/api/vendors/:id/archive', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const existing = await getVendorRowById(id);
-    if (!existing) {
-      res.status(404).json({ success: false, vendor: null, error: 'Vendor not found.' });
-      return;
-    }
-    if ((existing.usage_count || 0) > 0) {
-      res.status(409).json({ success: false, vendor: null, error: 'Used vendors cannot be archived.' });
-      return;
-    }
-    await run('UPDATE vendors SET is_archived = 1, updated_at = ? WHERE id = ?', [
-      new Date().toISOString(),
-      id,
-    ]);
-    const vendorDto = rowToVendorDto(await getVendorRowById(id));
-    if (io) {
-      io.emit('vendor_updated', vendorDto);
-    }
-    res.json({ success: true, vendor: vendorDto, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, vendor: null, error: error.message });
-  }
-});
-
-app.patch('/api/vendors/:id/restore', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const existing = await getVendorRowById(id);
-    if (!existing) {
-      res.status(404).json({ success: false, vendor: null, error: 'Vendor not found.' });
-      return;
-    }
-    await run('UPDATE vendors SET is_archived = 0, updated_at = ? WHERE id = ?', [
-      new Date().toISOString(),
-      id,
-    ]);
-    const vendorDto = rowToVendorDto(await getVendorRowById(id));
-    if (io) {
-      io.emit('vendor_updated', vendorDto);
-    }
-    res.json({ success: true, vendor: vendorDto, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, vendor: null, error: error.message });
   }
 });
 
@@ -21590,93 +21507,34 @@ app.patch('/api/items/:id', requirePermission('config.write'), async (req, res) 
   }
 });
 
-app.patch('/api/items/:id/archive', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const existing = await getItemRowById(id);
-    if (!existing) {
-      res.status(404).json({ success: false, item: null, error: 'Item not found.' });
-      return;
-    }
-    if ((existing.usage_count || 0) > 0) {
-      res.status(409).json({
-        success: false,
-        item: null,
-        error: 'Used items cannot be archived.',
-      });
-      return;
-    }
-    const now = new Date().toISOString();
-    await run('UPDATE items SET is_archived = 1, updated_at = ? WHERE id = ?', [now, id]);
-    await run('UPDATE item_variation_nodes SET is_archived = 1, updated_at = ? WHERE item_id = ?', [now, id]);
-    const updated = await getItemRowById(id);
-    const itemDto = await rowToItemDto(updated);
-    if (io) {
-      io.emit('item_updated', itemDto);
-    }
-    res.json({ success: true, item: itemDto, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, item: null, error: error.message });
-  }
-});
-
-app.patch('/api/items/:id/restore', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const existing = await getItemRowById(id);
-    if (!existing) {
-      res.status(404).json({ success: false, item: null, error: 'Item not found.' });
-      return;
-    }
-    const now = new Date().toISOString();
-    await run('UPDATE items SET is_archived = 0, updated_at = ? WHERE id = ?', [now, id]);
-    await run('UPDATE item_variation_nodes SET is_archived = 0, updated_at = ? WHERE item_id = ?', [now, id]);
-    const updated = await getItemRowById(id);
-    const itemDto = await rowToItemDto(updated);
-    if (io) {
-      io.emit('item_updated', itemDto);
-    }
-    res.json({ success: true, item: itemDto, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, item: null, error: error.message });
-  }
-});
-
 app.delete('/api/items/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const existing = await getItemRowById(id);
-    if (!existing) {
-      res.status(404).json({ success: false, error: 'Item not found.' });
-      return;
-    }
-    // usage_count counts every non-cascading reference (orders, challans,
-    // material requirements, linked materials, group links). > 0 means the
-    // item is in use and must be relocated, not deleted.
-    if ((existing.usage_count || 0) > 0) {
-      res.status(409).json({
-        success: false,
-        error: 'Item is in use (orders, challans, or inventory) and cannot be deleted. Relocate it instead.',
-      });
-      return;
-    }
-    await run('DELETE FROM items WHERE id = ?', [id]);
-    await logChange('items', id, 'DELETE');
+    
+    const nodeIds = (await all('SELECT id FROM item_variation_nodes WHERE item_id = ?', [id])).map(r => r.id);
+    await trashAndDeleteMany('item_variation_nodes', nodeIds, req);
+    
+    const convIds = (await all('SELECT id FROM item_unit_conversions WHERE item_id = ?', [id])).map(r => r.id);
+    await trashAndDeleteMany('item_unit_conversions', convIds, req);
+    
+    const varIds = (await all('SELECT id FROM item_variations WHERE item_id = ?', [id])).map(r => r.id);
+    await trashAndDeleteMany('item_variations', varIds, req);
+    
+    const assetIds = (await all("SELECT id FROM uploaded_assets WHERE entity_type='item' AND entity_id=?", [id])).map(r => r.id);
+    await trashAndDeleteMany('uploaded_assets', assetIds, req);
+    
+    await trashAndDelete('items', id, req);
+    
     if (io) {
       io.emit('item_deleted', { id });
     }
     res.json({ success: true, error: null });
   } catch (error) {
-    if (/SQLITE_CONSTRAINT|FOREIGN KEY/i.test(`${error.code || ''} ${error.message || ''}`)) {
-      res.status(409).json({
-        success: false,
-        error: 'Item is referenced elsewhere and cannot be deleted. Relocate it instead.',
-      });
-      return;
-    }
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+
 
 // Relocate an item to another group without touching its variation tree /
 // conversions (saveItem would rewrite those). Used by the delete-group flow.
@@ -21853,98 +21711,17 @@ app.patch('/api/groups/:id', requirePermission('config.write'), async (req, res)
   }
 });
 
-app.patch('/api/groups/:id/archive', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const existing = await getGroupRowById(id);
-    if (!existing) {
-      res.status(404).json({ success: false, group: null, error: 'Group not found.' });
-      return;
-    }
-    if ((existing.usage_count || 0) > 0) {
-      res.status(409).json({
-        success: false,
-        group: null,
-        error: 'Used groups cannot be archived.',
-      });
-      return;
-    }
-    const activeChildren = await getActiveChildGroups(id);
-    if (activeChildren.length > 0) {
-      res.status(409).json({
-        success: false,
-        group: null,
-        error: 'This group has active child groups. Reassign or archive them first.',
-      });
-      return;
-    }
-    await run('UPDATE groups SET is_archived = 1, updated_at = ? WHERE id = ?', [
-      new Date().toISOString(),
-      id,
-    ]);
-    const updated = await getGroupRowById(id);
-    res.json({ success: true, group: rowToGroupDto(updated), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, group: null, error: error.message });
-  }
-});
-
-app.patch('/api/groups/:id/restore', requirePermission('config.write'), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const existing = await getGroupRowById(id);
-    if (!existing) {
-      res.status(404).json({ success: false, group: null, error: 'Group not found.' });
-      return;
-    }
-    await run('UPDATE groups SET is_archived = 0, updated_at = ? WHERE id = ?', [
-      new Date().toISOString(),
-      id,
-    ]);
-    const updated = await getGroupRowById(id);
-    res.json({ success: true, group: rowToGroupDto(updated), error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, group: null, error: error.message });
-  }
-});
-
 app.delete('/api/groups/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const existing = await getGroupRowById(id);
-    if (!existing) {
-      res.status(404).json({ success: false, error: 'Group not found.' });
-      return;
-    }
-    const items = await all('SELECT id FROM items WHERE group_id = ?', [id]);
-    if (items.length > 0) {
-      res.status(409).json({
-        success: false,
-        error: 'Group still has items. Relocate or delete its items first.',
-      });
-      return;
-    }
-    const children = await all('SELECT id FROM groups WHERE parent_group_id = ?', [id]);
-    if (children.length > 0) {
-      res.status(409).json({
-        success: false,
-        error: 'This group has child groups. Reassign or delete them first.',
-      });
-      return;
-    }
-    await run('DELETE FROM groups WHERE id = ?', [id]);
+    await trashAndDelete('groups', id, req);
     res.json({ success: true, error: null });
   } catch (error) {
-    if (/SQLITE_CONSTRAINT|FOREIGN KEY/i.test(`${error.code || ''} ${error.message || ''}`)) {
-      res.status(409).json({
-        success: false,
-        error: 'Group is referenced elsewhere (e.g. inventory) and cannot be deleted.',
-      });
-      return;
-    }
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+
 
 app.get('/api/groups/:id/effective-schema', requirePermission('config.read'), async (req, res) => {
   try {
@@ -22879,6 +22656,57 @@ app.put('/runs/:id/node-metrics', async (req, res) => {
 
     await upsertStageReconciliation(req.params.id, nodeId, metrics);
 
+    // Auto-generate internal challan for leftover if remaining is specified
+    if (metrics.remaining !== undefined) {
+      const runId = req.params.id;
+      const sourceRef = `Leftover/Run ${runId}/Node ${nodeId}`;
+      
+      // Find input item for this node
+      let itemId = null;
+      const templateRow = await get('SELECT * FROM pipeline_templates WHERE id = ?', [runRow.template_id]);
+      if (templateRow) {
+        const tpl = rowToTemplate(templateRow);
+        const node = tpl.nodes.find(n => n.id === nodeId);
+        const inName = node && node.inputs && node.inputs[0];
+        if (inName) {
+          const matched = await get('SELECT id FROM items WHERE LOWER(name) = ? OR LOWER(alias) = ?', [inName.toLowerCase(), inName.toLowerCase()]);
+          if (matched) itemId = matched.id;
+        }
+      }
+      
+      if (itemId) {
+        let existingChallan = await get('SELECT id FROM delivery_challans WHERE source_reference = ?', [sourceRef]);
+        if (existingChallan) {
+          if (Number(metrics.remaining) > 0) {
+            await run(`UPDATE delivery_challan_items SET quantity_pcs = ?, weight = ? WHERE challan_id = ?`, [Number(metrics.remaining), Number(metrics.remaining), existingChallan.id]);
+          } else {
+            // If they set it back to 0, let's delete the challan items or the whole challan
+            await run('DELETE FROM delivery_challan_items WHERE challan_id = ?', [existingChallan.id]);
+            await run('DELETE FROM delivery_challans WHERE id = ?', [existingChallan.id]);
+          }
+        } else if (Number(metrics.remaining) > 0) {
+          const challanNo = await generateChallanNumber('internal');
+          const challanRes = await run(
+            `INSERT INTO delivery_challans (
+              type, challan_no, date, location, source_reference, status, maintain_stocks, purpose, internal_purpose, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              'internal', challanNo, new Date().toISOString(), 'MAIN', sourceRef, 'completed', 0, 'manufacturing', 'leftover', new Date().toISOString(), new Date().toISOString()
+            ]
+          );
+          const challanId = challanRes.lastID;
+          await run(
+            `INSERT INTO delivery_challan_items (
+              challan_id, item_id, quantity_pcs, weight, line_no, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [
+              challanId, itemId, Number(metrics.remaining), Number(metrics.remaining), 1, new Date().toISOString(), new Date().toISOString()
+            ]
+          );
+        }
+      }
+    }
+
     res.json({ success: true, run: await rowToRun(runRow) });
   } catch (error) {
     res.status(500).json({ success: false, run: null, error: error.message });
@@ -22978,6 +22806,27 @@ app.post('/api/production-scrap', requirePermission('config.write'), async (req,
         actor: actor?.id || null,
         lotCode: newLotBarcode,
       }, { useTransaction: false });
+
+      // Auto-generate internal challan for scrap so it appears in Ledger
+      const challanNo = await generateChallanNumber('internal');
+      const challanRes = await run(
+        `INSERT INTO delivery_challans (
+          type, challan_no, date, location, source_reference, status, maintain_stocks, purpose, internal_purpose, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          'internal', challanNo, new Date().toISOString(), 'MAIN', `Scrap/Run ${pipelineRunId}/Node ${nodeId}`, 'completed', 0, 'manufacturing', 'scrap', new Date().toISOString(), new Date().toISOString()
+        ]
+      );
+      
+      const challanId = challanRes.lastID;
+      await run(
+        `INSERT INTO delivery_challan_items (
+          challan_id, item_id, quantity_pcs, weight, line_no, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          challanId, scrapItem ? scrapItem.id : sourceMaterial.linked_item_id, Number(scrapQty), Number(scrapQty), 1, new Date().toISOString(), new Date().toISOString()
+        ]
+      );
     }
 
     res.status(201).json({ success: true });
@@ -23724,7 +23573,13 @@ app.patch('/api/departments/:id', requirePermission('config.write'), async (req,
 app.delete('/api/departments/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
-    await run('UPDATE departments SET is_archived = 1, updated_at = ? WHERE id = ?', [new Date().toISOString(), id]);
+    // Employees are owned by their department (employees.department_id is NOT NULL),
+    // so cascade-trash them before removing the department. Cross-entity references
+    // (e.g. an order that names a deleted client) are intentionally left for the
+    // Action Center to surface rather than cascade-deleted.
+    const employeeIds = (await all('SELECT id FROM employees WHERE department_id = ?', [id])).map((r) => r.id);
+    await trashAndDeleteMany('employees', employeeIds, req);
+    await trashAndDelete('departments', id, req);
     res.json({ success: true, error: null });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -23794,7 +23649,7 @@ app.patch('/api/employees/:id', requirePermission('config.write'), async (req, r
 app.delete('/api/employees/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
-    await run('UPDATE employees SET is_archived = 1, updated_at = ? WHERE id = ?', [new Date().toISOString(), id]);
+    await trashAndDelete('employees', id, req);
     res.json({ success: true, error: null });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -24274,6 +24129,222 @@ if (require.main === module) {
   });
 }
 
+// ─── TRASH BIN ───────────────────────────────────────────────────────────────
+// Tables whose rows can be recovered from the trash. Kept explicit so a
+// client-supplied tableName can never be interpolated into SQL unchecked.
+const RESTORABLE_TABLES = new Set([
+  'clients', 'vendors', 'units', 'items', 'groups', 'departments', 'employees',
+  'item_variations', 'item_variation_nodes', 'item_unit_conversions', 'uploaded_assets',
+]);
+
+// GET /api/trash — list trashed records (most recent first), optionally filtered by table.
+app.get('/api/trash', requirePermission('config.read'), async (req, res) => {
+  try {
+    const { tableName } = req.query;
+    const params = [];
+    let where = '';
+    if (tableName) {
+      where = 'WHERE table_name = ?';
+      params.push(String(tableName));
+    }
+    const rows = await all(
+      `SELECT id, table_name, record_id, data_json, deleted_at, deleted_by
+       FROM deleted_records ${where} ORDER BY id DESC LIMIT 500`,
+      params
+    );
+    const records = rows.map((r) => {
+      let data = null;
+      try {
+        data = JSON.parse(r.data_json);
+      } catch (_) {
+        data = null;
+      }
+      return {
+        id: r.id,
+        tableName: r.table_name,
+        recordId: r.record_id,
+        deletedAt: r.deleted_at,
+        deletedBy: r.deleted_by,
+        label: (data && (data.display_name || data.name || data.challan_no)) || `${r.table_name} #${r.record_id}`,
+        data,
+      };
+    });
+    res.json({ success: true, records, total: records.length, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, records: [], total: 0, error: error.message });
+  }
+});
+
+// POST /api/trash/restore — re-insert a trashed row (original id preserved) and
+// remove it from the trash. Uses a plain INSERT (never OR REPLACE) so a live row
+// is never silently clobbered; FK checks are skipped so a row can be restored even
+// if some of its own references are still missing (those resurface in Action Center).
+app.post('/api/trash/restore', requirePermission('config.write'), async (req, res) => {
+  try {
+    const tableName = String(req.body?.tableName || '');
+    const recordId = Number(req.body?.recordId);
+    if (!tableName || !Number.isFinite(recordId)) {
+      return res.status(400).json({ success: false, error: 'tableName and recordId are required.' });
+    }
+    if (!RESTORABLE_TABLES.has(tableName)) {
+      return res.status(400).json({ success: false, error: `Table "${tableName}" is not restorable.` });
+    }
+
+    const rec = await get(
+      `SELECT * FROM deleted_records WHERE table_name = ? AND record_id = ? ORDER BY id DESC LIMIT 1`,
+      [tableName, recordId]
+    );
+    if (!rec) {
+      return res.status(404).json({ success: false, error: 'No trashed record found for that table and id.' });
+    }
+
+    // Never clobber a live row that already occupies this id.
+    const live = await get(`SELECT id FROM ${tableName} WHERE id = ?`, [recordId]);
+    if (live) {
+      return res.status(409).json({ success: false, error: `A live ${tableName} record with id ${recordId} already exists.` });
+    }
+
+    let data;
+    try {
+      data = JSON.parse(rec.data_json);
+    } catch (_) {
+      return res.status(422).json({ success: false, error: 'Trashed record data is corrupt and cannot be restored.' });
+    }
+    const cols = Object.keys(data || {});
+    if (cols.length === 0) {
+      return res.status(422).json({ success: false, error: 'Trashed record has no columns to restore.' });
+    }
+    const colList = cols.map((c) => `"${c}"`).join(', ');
+    const placeholders = cols.map(() => '?').join(', ');
+    const values = cols.map((c) => data[c]);
+
+    // Insert on the dedicated FK-off connection so a row can be restored even
+    // while some of its own references are still missing (they resurface in the
+    // Action Center) without touching FK enforcement on the main connection.
+    try {
+      await runOnDelete(`INSERT INTO ${tableName} (${colList}) VALUES (${placeholders})`, values);
+    } catch (insertErr) {
+      const msg = String((insertErr && insertErr.message) || insertErr);
+      // Turn the common recoverable failures into clean 4xx responses instead of
+      // a raw 500: a non-PK UNIQUE collision, or a column that no longer exists
+      // because a migration changed the table since the row was trashed.
+      if (/UNIQUE constraint/i.test(msg)) {
+        return res.status(409).json({ success: false, error: `Cannot restore: it conflicts with an existing record. (${msg})` });
+      }
+      if (/no column named|has no column/i.test(msg)) {
+        return res.status(422).json({ success: false, error: `Cannot restore: this table's structure changed since the record was deleted. (${msg})` });
+      }
+      return res.status(422).json({ success: false, error: `Restore failed: ${msg}` });
+    }
+
+    // Remove every trash entry for this record (there may be more than one).
+    await run(`DELETE FROM deleted_records WHERE table_name = ? AND record_id = ?`, [tableName, recordId]);
+
+    await logChange(tableName, recordId, 'INSERT');
+
+    res.json({ success: true, restored: { tableName, recordId }, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ─── ACTION CENTER ─────────────────────────────────────────────────────────────
+// Scans for broken foreign-key references caused by hard-deletes and returns a
+// structured list of issues the user can resolve.
+app.get('/api/action-center/issues', requirePermission('config.read'), async (req, res) => {
+  const issues = [];
+  const scanErrors = [];
+
+  // ownerTable/ownerId → the record holding the dangling reference (drives "Resolve").
+  // brokenTable/brokenId → the missing target row (drives "Revert" = restore from trash).
+  function addIssue({ severity, ownerTable, ownerId, ownerLabel, brokenTable, brokenField, brokenId, brokenLabel }) {
+    issues.push({
+      type: 'broken_reference',
+      severity,
+      ownerTable,
+      ownerId,
+      ownerLabel,
+      brokenTable,
+      brokenField,
+      brokenId,
+      brokenLabel,
+    });
+  }
+
+  // Each scan runs in isolation so one failing query (e.g. a table absent on an
+  // older DB) records an error but never aborts the remaining scans.
+  async function scan(label, fn) {
+    try {
+      await fn();
+    } catch (err) {
+      scanErrors.push({ scan: label, error: err.message });
+      console.error(`[ActionCenter] scan "${label}" failed:`, err.message);
+    }
+  }
+
+  // Items → groups
+  await scan('items.group_id', async () => {
+    const rows = await all(`SELECT i.id, i.name, i.display_name, i.group_id FROM items i LEFT JOIN groups g ON g.id = i.group_id WHERE i.group_id IS NOT NULL AND g.id IS NULL`);
+    for (const r of rows) addIssue({ severity: 'error', ownerTable: 'items', ownerId: r.id, ownerLabel: r.display_name || r.name || `Item #${r.id}`, brokenTable: 'groups', brokenField: 'group_id', brokenId: r.group_id, brokenLabel: `Group #${r.group_id}` });
+  });
+
+  // Items → units
+  await scan('items.unit_id', async () => {
+    const rows = await all(`SELECT i.id, i.name, i.display_name, i.unit_id FROM items i LEFT JOIN units u ON u.id = i.unit_id WHERE i.unit_id IS NOT NULL AND u.id IS NULL`);
+    for (const r of rows) addIssue({ severity: 'error', ownerTable: 'items', ownerId: r.id, ownerLabel: r.display_name || r.name || `Item #${r.id}`, brokenTable: 'units', brokenField: 'unit_id', brokenId: r.unit_id, brokenLabel: `Unit #${r.unit_id}` });
+  });
+
+  // Groups → parent group
+  await scan('groups.parent_group_id', async () => {
+    const rows = await all(`SELECT g.id, g.name, g.parent_group_id FROM groups g LEFT JOIN groups p ON p.id = g.parent_group_id WHERE g.parent_group_id IS NOT NULL AND p.id IS NULL`);
+    for (const r of rows) addIssue({ severity: 'warning', ownerTable: 'groups', ownerId: r.id, ownerLabel: r.name || `Group #${r.id}`, brokenTable: 'groups', brokenField: 'parent_group_id', brokenId: r.parent_group_id, brokenLabel: `Group #${r.parent_group_id}` });
+  });
+
+  // Groups → units
+  await scan('groups.unit_id', async () => {
+    const rows = await all(`SELECT g.id, g.name, g.unit_id FROM groups g LEFT JOIN units u ON u.id = g.unit_id WHERE g.unit_id IS NOT NULL AND u.id IS NULL`);
+    for (const r of rows) addIssue({ severity: 'warning', ownerTable: 'groups', ownerId: r.id, ownerLabel: r.name || `Group #${r.id}`, brokenTable: 'units', brokenField: 'unit_id', brokenId: r.unit_id, brokenLabel: `Unit #${r.unit_id}` });
+  });
+
+  // Order lines → client
+  await scan('order_items.client_id', async () => {
+    const rows = await all(`SELECT oi.id, oi.order_no, oi.client_id FROM order_items oi LEFT JOIN clients c ON c.id = oi.client_id WHERE oi.client_id IS NOT NULL AND c.id IS NULL`);
+    for (const r of rows) addIssue({ severity: 'error', ownerTable: 'order_items', ownerId: r.id, ownerLabel: `Order ${r.order_no || '#' + r.id}`, brokenTable: 'clients', brokenField: 'client_id', brokenId: r.client_id, brokenLabel: `Client #${r.client_id}` });
+  });
+
+  // Order lines → item
+  await scan('order_items.item_id', async () => {
+    const rows = await all(`SELECT oi.id, oi.order_no, oi.item_id FROM order_items oi LEFT JOIN items i ON i.id = oi.item_id WHERE oi.item_id IS NOT NULL AND i.id IS NULL`);
+    for (const r of rows) addIssue({ severity: 'error', ownerTable: 'order_items', ownerId: r.id, ownerLabel: `Order ${r.order_no || '#' + r.id}`, brokenTable: 'items', brokenField: 'item_id', brokenId: r.item_id, brokenLabel: `Item #${r.item_id}` });
+  });
+
+  // Order lines → sub-contractor
+  await scan('order_items.sub_contractor_id', async () => {
+    const rows = await all(`SELECT oi.id, oi.order_no, oi.sub_contractor_id FROM order_items oi LEFT JOIN sub_contractors s ON s.id = oi.sub_contractor_id WHERE oi.sub_contractor_id IS NOT NULL AND s.id IS NULL`);
+    for (const r of rows) addIssue({ severity: 'warning', ownerTable: 'order_items', ownerId: r.id, ownerLabel: `Order ${r.order_no || '#' + r.id}`, brokenTable: 'sub_contractors', brokenField: 'sub_contractor_id', brokenId: r.sub_contractor_id, brokenLabel: `Sub-contractor #${r.sub_contractor_id}` });
+  });
+
+  // Delivery challans → material-owner client
+  await scan('delivery_challans.material_owner_client_id', async () => {
+    const rows = await all(`SELECT dc.id, dc.challan_no, dc.material_owner_client_id FROM delivery_challans dc LEFT JOIN clients c ON c.id = dc.material_owner_client_id WHERE dc.material_owner_client_id IS NOT NULL AND c.id IS NULL`);
+    for (const r of rows) addIssue({ severity: 'error', ownerTable: 'delivery_challans', ownerId: r.id, ownerLabel: r.challan_no ? `Challan ${r.challan_no}` : `Challan #${r.id}`, brokenTable: 'clients', brokenField: 'material_owner_client_id', brokenId: r.material_owner_client_id, brokenLabel: `Client #${r.material_owner_client_id}` });
+  });
+
+  // Delivery challans → vendor
+  await scan('delivery_challans.vendor_id', async () => {
+    const rows = await all(`SELECT dc.id, dc.challan_no, dc.vendor_id FROM delivery_challans dc LEFT JOIN vendors v ON v.id = dc.vendor_id WHERE dc.vendor_id IS NOT NULL AND v.id IS NULL`);
+    for (const r of rows) addIssue({ severity: 'error', ownerTable: 'delivery_challans', ownerId: r.id, ownerLabel: r.challan_no ? `Challan ${r.challan_no}` : `Challan #${r.id}`, brokenTable: 'vendors', brokenField: 'vendor_id', brokenId: r.vendor_id, brokenLabel: `Vendor #${r.vendor_id}` });
+  });
+
+  // Inventory movements → item
+  await scan('inventory_movements.item_id', async () => {
+    const rows = await all(`SELECT m.id, m.item_id, m.movement_type FROM inventory_movements m LEFT JOIN items i ON i.id = m.item_id WHERE m.item_id IS NOT NULL AND i.id IS NULL`);
+    for (const r of rows) addIssue({ severity: 'warning', ownerTable: 'inventory_movements', ownerId: r.id, ownerLabel: `${r.movement_type || 'Movement'} #${r.id}`, brokenTable: 'items', brokenField: 'item_id', brokenId: r.item_id, brokenLabel: `Item #${r.item_id}` });
+  });
+
+  res.json({ success: true, issues, total: issues.length, scanErrors, error: null });
+});
+
 
 module.exports = {
   app,
@@ -24328,9 +24399,7 @@ module.exports = {
   ensureMockOrdersPresent,
   ensureDemoDataset,
   resetAndSeedDemoData,
-  updateOrderLifecycle,
   getOrderActivity,
-  getOrderStatusHistory,
   getOrders,
   getUnitsWithUsage,
   getGroupsWithUsage,

@@ -50,4 +50,7 @@ const Map<String, dynamic> devConfig = {
     // Single-type Challan view: type selector + collapse split to one column.
     'singleTypeView': true,
   },
+  // Purchase items: "Available for purchase" item toggle + mobile Purchase
+  // (reception) challan flow.
+  'catalog': {'purchaseItems': true},
 };

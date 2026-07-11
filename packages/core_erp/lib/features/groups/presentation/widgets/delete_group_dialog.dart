@@ -70,8 +70,7 @@ class _DeleteGroupDialogState extends State<DeleteGroupDialog> {
         .groups
         .where((g) =>
             g.groupType == widget.group.groupType &&
-            g.id != widget.group.id &&
-            !g.isArchived)
+            g.id != widget.group.id)
         .toList(growable: false)
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
   }

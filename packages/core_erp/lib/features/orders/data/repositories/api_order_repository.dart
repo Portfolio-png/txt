@@ -84,6 +84,7 @@ class ApiOrderRepository implements OrderRepository {
           id: existing.id,
           orderNo: resolvedOrderNo,
           clientId: input.clientId,
+          subContractorId: input.subContractorId ?? existing.subContractorId,
           clientName: input.clientName.trim(),
           poNumber: input.poNumber.trim(),
           clientCode: input.clientCode.trim(),
@@ -124,6 +125,7 @@ class ApiOrderRepository implements OrderRepository {
         id: _mockNextId++,
         orderNo: resolvedOrderNo,
         clientId: input.clientId,
+        subContractorId: input.subContractorId,
         clientName: input.clientName.trim(),
         poNumber: input.poNumber.trim(),
         clientCode: input.clientCode.trim(),
@@ -161,6 +163,7 @@ class ApiOrderRepository implements OrderRepository {
     final requestInput = CreateOrderInput(
       orderNo: resolvedOrderNo,
       clientId: input.clientId,
+      subContractorId: input.subContractorId,
       clientName: input.clientName,
       poNumber: input.poNumber,
       clientCode: input.clientCode,

@@ -396,6 +396,7 @@ class ChallanProvider extends ChangeNotifier {
   }
 
   Future<T?> _save<T>(Future<T> Function() action) async {
+    if (_isSaving) return null;
     _isSaving = true;
     _errorMessage = null;
     notifyListeners();
