@@ -143,6 +143,7 @@ class PurchaseGroupBrowseScreen extends StatefulWidget {
 
 class _PurchaseGroupBrowseScreenState extends State<PurchaseGroupBrowseScreen> {
   final List<DeliveryChallanItem> _lines = [];
+  bool _reviewing = false;
 
   @override
   Widget build(BuildContext context) {
@@ -206,6 +207,8 @@ class _PurchaseGroupBrowseScreenState extends State<PurchaseGroupBrowseScreen> {
                 icon: const Icon(Icons.receipt_long_rounded),
                 label: Text('Review Challan (${_lines.length})', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
                 onPressed: () async {
+                  if (_reviewing) return; // guard against a double-tap opening two editors
+                  _reviewing = true;
                   final done = await Navigator.of(context).push<bool>(
                     MaterialPageRoute(
                       builder: (_) => ChallanMobileEditorScreen(
@@ -214,6 +217,7 @@ class _PurchaseGroupBrowseScreenState extends State<PurchaseGroupBrowseScreen> {
                       ),
                     ),
                   );
+                  _reviewing = false;
                   if (done == true && mounted) setState(() => _lines.clear());
                 },
               ),
@@ -236,26 +240,32 @@ class PurchaseItemBrowseScreen extends StatefulWidget {
 
 class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
   Future<void> _pickItem(ItemDefinition item) async {
-    final variation = await showDialog<VariationPathSelectionResult>(
-      context: context,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        insetPadding: const EdgeInsets.all(24),
-        child: SizedBox(
-          height: MediaQuery.of(context).size.height * 0.7,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(24),
-            child: VariationPathSelectorDialog(
-              item: item,
-              initialRootPropertyId: null,
-              initialValueNodeIds: const [],
+    VariationPathSelectionResult? variation;
+    // Items with no variation properties skip the picker entirely — the dialog
+    // can never resolve a leaf for them, so its Confirm button would stay
+    // disabled and the item could never be added.
+    if (item.topLevelProperties.isNotEmpty) {
+      variation = await showDialog<VariationPathSelectionResult>(
+        context: context,
+        builder: (ctx) => Dialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          insetPadding: const EdgeInsets.all(24),
+          child: SizedBox(
+            height: MediaQuery.of(context).size.height * 0.7,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: VariationPathSelectorDialog(
+                item: item,
+                initialRootPropertyId: null,
+                initialValueNodeIds: const [],
+              ),
             ),
           ),
         ),
-      ),
-    );
-    if (variation == null || !mounted) return;
+      );
+      if (variation == null || !mounted) return;
+    }
 
     showPurchaseQuantitySheet(context, (qty, weight) {
       widget.lines.add(
@@ -264,10 +274,10 @@ class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
           orderItemId: null,
           productionRunId: null,
           itemId: item.id,
-          variationLeafNodeId: variation.leaf?.id ?? 0,
-          variationPathLabel: variation.leaf?.displayName ?? '',
-          variationPathNodeIds: variation.valueNodeIds,
-          customVariationValues: variation.customVariationValues,
+          variationLeafNodeId: variation?.leaf?.id ?? 0,
+          variationPathLabel: variation?.leaf?.displayName ?? '',
+          variationPathNodeIds: variation?.valueNodeIds ?? const <int>[],
+          customVariationValues: variation?.customVariationValues ?? const <int, String>{},
           particulars: item.displayName,
           quantityPcs: qty,
           weight: weight,

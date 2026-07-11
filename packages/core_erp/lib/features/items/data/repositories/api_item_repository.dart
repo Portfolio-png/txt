@@ -134,6 +134,7 @@ class ApiItemRepository implements ItemRepository {
         variationTree: tree,
         baseItemId: input.baseItemId,
         photoUrl: input.photoUrl.trim(),
+        availableForPurchase: input.availableForPurchase,
       );
       _mockItems.add(created);
       return created;
@@ -210,6 +211,7 @@ class ApiItemRepository implements ItemRepository {
         variationTree: tree,
         baseItemId: input.baseItemId,
         photoUrl: input.photoUrl.trim(),
+        availableForPurchase: input.availableForPurchase,
       );
       _mockItems[index] = updated;
       return updated;
@@ -515,6 +517,7 @@ class ApiItemRepository implements ItemRepository {
         createdAt: current.createdAt,
         updatedAt: DateTime.now(),
         variationTree: current.variationTree,
+        availableForPurchase: current.availableForPurchase,
       );
       _mockItems[index] = updated;
       return updated;

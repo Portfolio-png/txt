@@ -322,29 +322,34 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
 
     if (selectedItem == null || !mounted) return;
 
-    final variationResult = await showDialog<VariationPathSelectionResult>(
-      context: context,
-      builder: (ctx) {
-        return Dialog(
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          insetPadding: const EdgeInsets.all(24),
-          child: SizedBox(
-            height: MediaQuery.of(context).size.height * 0.7,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(24),
-              child: VariationPathSelectorDialog(
-                item: selectedItem,
-                initialRootPropertyId: null,
-                initialValueNodeIds: const [],
+    // Items with no variation properties skip the picker (it can never resolve
+    // a leaf, so its Confirm button would stay disabled).
+    VariationPathSelectionResult? variationResult;
+    if (selectedItem.topLevelProperties.isNotEmpty) {
+      variationResult = await showDialog<VariationPathSelectionResult>(
+        context: context,
+        builder: (ctx) {
+          return Dialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            insetPadding: const EdgeInsets.all(24),
+            child: SizedBox(
+              height: MediaQuery.of(context).size.height * 0.7,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: VariationPathSelectorDialog(
+                  item: selectedItem,
+                  initialRootPropertyId: null,
+                  initialValueNodeIds: const [],
+                ),
               ),
             ),
-          ),
-        );
-      }
-    );
+          );
+        }
+      );
 
-    if (variationResult == null || !mounted) return;
+      if (variationResult == null || !mounted) return;
+    }
 
     _showQuantityBottomSheet(context, null, (qty, weight) {
       final newItem = DeliveryChallanItem(
@@ -352,10 +357,10 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
         orderItemId: null,
         productionRunId: null,
         itemId: selectedItem.id,
-        variationLeafNodeId: variationResult.leaf?.id ?? 0,
-        variationPathLabel: variationResult.leaf?.displayName ?? '',
-        variationPathNodeIds: variationResult.valueNodeIds,
-        customVariationValues: variationResult.customVariationValues,
+        variationLeafNodeId: variationResult?.leaf?.id ?? 0,
+        variationPathLabel: variationResult?.leaf?.displayName ?? '',
+        variationPathNodeIds: variationResult?.valueNodeIds ?? const <int>[],
+        customVariationValues: variationResult?.customVariationValues ?? const <int, String>{},
         particulars: selectedItem.displayName,
         quantityPcs: qty,
         weight: weight,

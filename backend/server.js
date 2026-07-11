@@ -13777,11 +13777,10 @@ async function saveItem({
   defaultPipelineId = null,
   baseItemId = null,
   photoUrl = null,
-  availableForPurchase = false,
+  availableForPurchase,
   id = null,
 }) {
   const trimmedName = String(name || '').trim();
-  const normalizedAvailableForPurchase = availableForPurchase ? 1 : 0;
   const trimmedAlias = String(alias || '').trim();
   const serializedNamingFormat = JSON.stringify(Array.isArray(namingFormat) ? namingFormat : []);
   const quantityNumber = Number(quantity ?? 0);
@@ -13903,7 +13902,7 @@ async function saveItem({
           defaultPipelineId || null,
           normalizedBaseItemId,
           photoUrl || null,
-          normalizedAvailableForPurchase,
+          availableForPurchase ? 1 : 0,
           now,
           now,
         ],
@@ -13941,7 +13940,11 @@ async function saveItem({
           defaultPipelineId || null,
           normalizedBaseItemId,
           photoUrl || null,
-          normalizedAvailableForPurchase,
+          // Preserve the existing flag when the caller didn't send it (e.g. an
+          // internal re-seed via ensureItemRecord) instead of resetting to 0.
+          availableForPurchase !== undefined
+            ? (availableForPurchase ? 1 : 0)
+            : (existing.available_for_purchase ? 1 : 0),
           now,
           id,
         ],
