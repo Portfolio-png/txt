@@ -376,6 +376,7 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
   }
 
   Future<void> _submit() async {
+    if (_isSaving) return; // guard against a double submit creating two challans
     if (!_formKey.currentState!.validate()) return;
     if (_items.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -653,7 +654,7 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
               ]
             ),
             child: FloatingActionButton.extended(
-              onPressed: _addItem,
+              onPressed: _isSaving ? null : _addItem,
               backgroundColor: SoftErpTheme.accent,
               foregroundColor: Colors.white,
               elevation: 0, // Handled by container
