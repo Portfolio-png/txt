@@ -50,8 +50,20 @@ async function runMigrations() {
                 const sql = fs.readFileSync(filePath, 'utf8');
                 await new Promise((res, rej) => {
                   db.exec(sql, (execErr) => {
-                    if (execErr) rej(execErr);
-                    else res();
+                    if (execErr) {
+                      // Tolerate a column that already exists — some migrations
+                      // re-add columns that initDb's CREATE TABLE already defines,
+                      // so the desired end state (column present) is already met.
+                      // Treat as applied instead of aborting the whole boot.
+                      if (/duplicate column name/i.test(execErr.message || '')) {
+                        console.warn(`Migration ${file}: ${execErr.message} — column already present, skipping.`);
+                        res();
+                      } else {
+                        rej(execErr);
+                      }
+                    } else {
+                      res();
+                    }
                   });
                 });
               } else if (file.endsWith('.js')) {

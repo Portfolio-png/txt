@@ -22,7 +22,7 @@ backups, and a few untested money/inventory paths.
   `/sandbox-config/:clientId`, offline dev overlay. This is the core "tailor per
   client" mechanic and it's functioning.
 - **Deploy automation already exists** (the good news for "on the go"):
-  `backend/Dockerfile`, `ecosystem.config.js` (PM2), `deploy/nginx.paper.conf`,
+  `ecosystem.config.js` (PM2), `deploy/nginx.paper.conf`,
   `.github/workflows/deploy-backend.yml` (push-to-main → SCP to EC2 → pm2 restart),
   `deploy/redeploy.sh` with health check, `.env.example` (27 vars), and a `/health`
   endpoint. Seeding/smoke tooling is good (`reseed-demo-data`, `simulate-user-flow`,
@@ -109,8 +109,7 @@ past one client or hit concurrency.
   fallback to `default`; feature registry via `bin/generate_registry.dart` →
   `feature_registry.json`. **No row-level tenant isolation** — `clientId` is advisory;
   `/api/sandbox-sync/:clientId` is unauthenticated.
-- **Deploy artifacts:** `backend/Dockerfile` (Node 20 slim, `npm ci --omit=dev`);
-  `ecosystem.config.js` (fork mode, 300M limit, auto-restart, `instances: 1`);
+- **Deploy artifacts:** `ecosystem.config.js` (fork mode, 300M limit, auto-restart, `instances: 1`);
   `deploy/nginx.paper.conf` (reverse proxy, 20M upload, HTTP only); `.env.example`;
   `.github/workflows/deploy-backend.yml`; `deploy/redeploy.sh` (git pull, npm install,
   pm2 start, health + smoke check, `pm2-logrotate`).

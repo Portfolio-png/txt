@@ -21412,7 +21412,7 @@ app.get('/api/items/:id', requirePermission('config.read'), async (req, res) => 
     if (!row) {
       return res.status(404).json({ success: false, item: null, error: 'Not found' });
     }
-    res.json({ success: true, item: rowToItemDto(row), error: null });
+    res.json({ success: true, item: await rowToItemDto(row), error: null });
   } catch (error) {
     res.status(500).json({ success: false, item: null, error: error.message });
   }
