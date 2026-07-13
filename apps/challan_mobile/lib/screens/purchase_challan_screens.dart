@@ -239,6 +239,30 @@ class PurchaseItemBrowseScreen extends StatefulWidget {
 }
 
 class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
+  bool _reviewing = false;
+
+  // "Next": leave item selection and go to the reception challan editor with
+  // everything collected so far. On a successful submit the cart is cleared and
+  // we pop back to the group screen (which refreshes to an empty cart).
+  Future<void> _goToChallan() async {
+    if (_reviewing) return;
+    _reviewing = true;
+    final done = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => ChallanMobileEditorScreen(
+          initialItems: List<DeliveryChallanItem>.of(widget.lines),
+          lockedType: ChallanType.reception,
+        ),
+      ),
+    );
+    _reviewing = false;
+    if (!mounted) return;
+    if (done == true) {
+      widget.lines.clear();
+      Navigator.of(context).pop();
+    }
+  }
+
   Future<void> _pickItem(ItemDefinition item) async {
     VariationPathSelectionResult? variation;
     // Items with no variation properties skip the picker entirely — the dialog
@@ -326,6 +350,22 @@ class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
             ),
         ],
       ),
+      bottomNavigationBar: widget.lines.isEmpty
+          ? null
+          : SafeArea(
+              minimum: const EdgeInsets.all(16),
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(56),
+                  backgroundColor: SoftErpTheme.accent,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                ),
+                icon: const Icon(Icons.arrow_forward_rounded),
+                label: Text('Next  ·  Review Challan (${widget.lines.length})',
+                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                onPressed: _goToChallan,
+              ),
+            ),
       body: items.isEmpty
           ? const _EmptyHint(
               icon: Icons.inventory_2_outlined,
