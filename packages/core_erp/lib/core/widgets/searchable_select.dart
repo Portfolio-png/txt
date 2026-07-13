@@ -43,7 +43,8 @@ Future<SearchableSelectOption<T>?> showSearchableSelectDialog<T>({
   final overlayContext = overlayState?.context ?? context;
   final overlayBox = overlayContext.findRenderObject() as RenderBox?;
   final anchorBox = context.findRenderObject() as RenderBox?;
-  if (anchorRect == null && overlayBox != null && anchorBox != null) {
+  final isTablet = MediaQuery.of(context).size.width >= 600;
+  if (anchorRect == null && overlayBox != null && anchorBox != null && isTablet) {
     final topLeft = anchorBox.localToGlobal(Offset.zero, ancestor: overlayBox);
     anchorRect = topLeft & anchorBox.size;
   }
@@ -322,7 +323,12 @@ class _SearchableSelectDialogState<T>
           );
 
           if (layout.centered) {
-            return Center(child: menu);
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Center(child: menu),
+            );
           }
 
           return Stack(

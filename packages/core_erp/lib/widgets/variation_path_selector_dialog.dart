@@ -10,11 +10,13 @@ class VariationStep {
     required this.property,
     required this.values,
     required this.selectedValueId,
+    this.groupName,
   });
 
   final ItemVariationNodeDefinition property;
   final List<ItemVariationNodeDefinition> values;
   final int? selectedValueId;
+  final String? groupName;
 }
 
 class VariationPathSelectionResult {
@@ -184,6 +186,24 @@ class _VariationPathSelectorWidgetState
                       stepIndex < steps.length;
                       stepIndex++
                     ) ...[
+                      if (stepIndex == 0 || steps[stepIndex].groupName != steps[stepIndex - 1].groupName) ...[
+                        if (steps[stepIndex].groupName != null) ...[
+                          Padding(
+                            padding: EdgeInsets.only(
+                              top: stepIndex == 0 ? 0 : 16,
+                              bottom: 8,
+                              left: 4,
+                            ),
+                            child: Text(
+                              steps[stepIndex].groupName!,
+                              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                color: SoftErpTheme.textSecondary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                       _buildStepRow(
                         title: _variationStepTitle(steps[stepIndex]),
                         isComplete: steps[stepIndex].selectedValueId != null,
@@ -482,14 +502,15 @@ class _VariationPathSelectorWidgetState
     }
     final steps = <VariationStep>[];
 
-    void traverse(ItemVariationNodeDefinition prop) {
+    void traverse(ItemVariationNodeDefinition prop, [String? currentGroupName]) {
       final subProps = prop.activeChildren
           .where((node) => node.kind == ItemVariationNodeKind.property)
           .toList(growable: false);
       if (subProps.isNotEmpty) {
         // Property group
+        final groupName = currentGroupName ?? prop.name.trim();
         for (final sp in subProps) {
-          traverse(sp);
+          traverse(sp, groupName.isEmpty ? prop.displayName : groupName);
         }
       } else {
         // Leaf property
@@ -510,6 +531,7 @@ class _VariationPathSelectorWidgetState
             property: prop,
             values: values,
             selectedValueId: activeSelectedId,
+            groupName: currentGroupName,
           ),
         );
 
