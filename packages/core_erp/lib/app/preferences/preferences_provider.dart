@@ -2,9 +2,11 @@ import 'package:flutter/foundation.dart';
 import '../../core/services/config_service.dart';
 
 class PreferencesProvider extends ChangeNotifier {
-  bool get maintainStocks => ConfigService.instance.isModuleEnabled('inventory');
+  bool get maintainStocks =>
+      ConfigService.instance.isModuleEnabled('inventory');
   bool get enableTrading => ConfigService.instance.isModuleEnabled('trading');
-  bool get enableManufacturing => ConfigService.instance.isModuleEnabled('production');
+  bool get enableManufacturing =>
+      ConfigService.instance.isModuleEnabled('production');
   bool get enableServiceMode => ConfigService.instance.isModuleEnabled('jobs');
 
   void toggleMaintainStocks(bool value) {

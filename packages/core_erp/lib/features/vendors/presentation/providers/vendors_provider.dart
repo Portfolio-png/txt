@@ -5,8 +5,6 @@ import '../../domain/vendor_definition.dart';
 import '../../domain/vendor_inputs.dart';
 import '../../../../core/services/socket_service.dart';
 
-
-
 enum VendorDuplicateWarning { none, nameOnly, gstOnly, nameAndGst }
 
 class VendorDuplicateCheck {
@@ -39,12 +37,10 @@ class VendorsProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   String get searchQuery => _searchQuery;
 
-
   List<VendorDefinition> get filteredVendors {
     final query = _normalize(_searchQuery);
     return _vendors
         .where((vendor) {
-
           if (query.isEmpty) {
             return true;
           }
@@ -61,10 +57,7 @@ class VendorsProvider extends ChangeNotifier {
 
   void _sortVendors() {
     _vendors.sort((a, b) {
-
-      final nameCompare = a.name.toLowerCase().compareTo(
-        b.name.toLowerCase(),
-      );
+      final nameCompare = a.name.toLowerCase().compareTo(b.name.toLowerCase());
       if (nameCompare != 0) {
         return nameCompare;
       }
@@ -77,19 +70,32 @@ class VendorsProvider extends ChangeNotifier {
       return;
     }
     _initialized = true;
-    
+
     SocketService.instance.on('vendor_added', (data) async {
       if (data != null && data is Map<String, dynamic> && data['id'] != null) {
         try {
           final id = data['id'] as int;
           final newVendor = await _repository.getVendor(id);
           if (newVendor != null) {
-            _vendors = [..._vendors, newVendor];
+            // Dedupe: the creator already refreshed the list, so this rail echo
+            // must replace-if-present (not blindly append) to avoid a duplicate.
+            final exists = _vendors.any((v) => v.id == newVendor.id);
+            _vendors = exists
+                ? _vendors
+                      .map((v) => v.id == newVendor.id ? newVendor : v)
+                      .toList(growable: false)
+                : [..._vendors, newVendor];
             _sortVendors();
             notifyListeners();
-          } else { refresh(); }
-        } catch (_) { refresh(); }
-      } else { refresh(); }
+          } else {
+            refresh();
+          }
+        } catch (_) {
+          refresh();
+        }
+      } else {
+        refresh();
+      }
     });
 
     SocketService.instance.on('vendor_updated', (data) async {
@@ -98,12 +104,20 @@ class VendorsProvider extends ChangeNotifier {
           final id = data['id'] as int;
           final updatedVendor = await _repository.getVendor(id);
           if (updatedVendor != null) {
-            _vendors = _vendors.map((v) => v.id == updatedVendor.id ? updatedVendor : v).toList(growable: false);
+            _vendors = _vendors
+                .map((v) => v.id == updatedVendor.id ? updatedVendor : v)
+                .toList(growable: false);
             _sortVendors();
             notifyListeners();
-          } else { refresh(); }
-        } catch (_) { refresh(); }
-      } else { refresh(); }
+          } else {
+            refresh();
+          }
+        } catch (_) {
+          refresh();
+        }
+      } else {
+        refresh();
+      }
     });
 
     SocketService.instance.on('vendor_deleted', (data) {
@@ -111,7 +125,9 @@ class VendorsProvider extends ChangeNotifier {
         final id = data['id'] as int;
         _vendors = _vendors.where((v) => v.id != id).toList();
         notifyListeners();
-      } else { refresh(); }
+      } else {
+        refresh();
+      }
     });
 
     await refresh();
@@ -157,8 +173,6 @@ class VendorsProvider extends ChangeNotifier {
     _searchQuery = value;
     notifyListeners();
   }
-
-
 
   VendorDefinition? findById(int? id) {
     if (id == null) {

@@ -449,7 +449,9 @@ class _UserRow extends StatelessWidget {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('Are you sure you want to permanently delete this user? A backup will be taken. This will break any dependencies in the system.'),
+              const Text(
+                'Are you sure you want to permanently delete this user? A backup will be taken. This will break any dependencies in the system.',
+              ),
               const SizedBox(height: 16),
               CheckboxListTile(
                 title: const Text('Override compliance and force delete'),
@@ -464,15 +466,17 @@ class _UserRow extends StatelessWidget {
               child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: override ? () async {
-                final ok = await context.read<AuthProvider>().deleteUser(
-                  userId: user.id,
-                  override: override,
-                );
-                if (ok && dialogContext.mounted) {
-                  Navigator.of(dialogContext).pop();
-                }
-              } : null,
+              onPressed: override
+                  ? () async {
+                      final ok = await context.read<AuthProvider>().deleteUser(
+                        userId: user.id,
+                        override: override,
+                      );
+                      if (ok && dialogContext.mounted) {
+                        Navigator.of(dialogContext).pop();
+                      }
+                    }
+                  : null,
               style: FilledButton.styleFrom(backgroundColor: Colors.red),
               child: const Text('Delete Permanently'),
             ),

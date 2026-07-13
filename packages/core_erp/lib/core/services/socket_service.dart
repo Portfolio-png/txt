@@ -21,9 +21,9 @@ class SocketService {
   void init(String baseUrl, {String? token}) {
     bool tokenChanged = _currentToken != token;
     _currentToken = token;
-    
+
     if (_isConnected && !tokenChanged) return;
-    
+
     _isConnected = true;
     _reconnectTimer?.cancel();
     _connectInternal(baseUrl);
@@ -47,7 +47,9 @@ class SocketService {
       final request = http.Request('GET', uri);
       if (_currentToken != null && _currentToken!.isNotEmpty) {
         request.headers['Authorization'] = 'Bearer $_currentToken';
-        print('SocketService: Connecting with token... ${_currentToken!.substring(0, math.min(10, _currentToken!.length))}...');
+        print(
+          'SocketService: Connecting with token... ${_currentToken!.substring(0, math.min(10, _currentToken!.length))}...',
+        );
       } else {
         print('SocketService: Connecting WITHOUT token!');
       }
@@ -64,23 +66,33 @@ class SocketService {
         }
         _hasConnectedBefore = true;
         String buffer = '';
-        response.stream.transform(utf8.decoder).listen((data) {
-          buffer += data;
-          int index;
-          while ((index = buffer.indexOf('\n\n')) != -1) {
-            String eventBlock = buffer.substring(0, index);
-            buffer = buffer.substring(index + 2);
-            _processEvent(eventBlock);
-          }
-        }, onDone: () {
-          print('SocketService: Disconnected from backend (SSE stream done)');
-          _scheduleReconnect(baseUrl);
-        }, onError: (e) {
-          print('SocketService: Disconnected from backend (SSE error)');
-          _scheduleReconnect(baseUrl);
-        });
+        response.stream
+            .transform(utf8.decoder)
+            .listen(
+              (data) {
+                buffer += data;
+                int index;
+                while ((index = buffer.indexOf('\n\n')) != -1) {
+                  String eventBlock = buffer.substring(0, index);
+                  buffer = buffer.substring(index + 2);
+                  _processEvent(eventBlock);
+                }
+              },
+              onDone: () {
+                print(
+                  'SocketService: Disconnected from backend (SSE stream done)',
+                );
+                _scheduleReconnect(baseUrl);
+              },
+              onError: (e) {
+                print('SocketService: Disconnected from backend (SSE error)');
+                _scheduleReconnect(baseUrl);
+              },
+            );
       } else {
-        print('SocketService: Failed to connect, status code: ${response.statusCode}');
+        print(
+          'SocketService: Failed to connect, status code: ${response.statusCode}',
+        );
         _scheduleReconnect(baseUrl);
       }
     } catch (e) {
@@ -110,22 +122,31 @@ class SocketService {
         final tableName = parsedData['table_name'];
         final recordId = parsedData['record_id'];
         final action = parsedData['event_type']; // INSERT, UPDATE, DELETE
-        
+
         final payload = {'id': recordId};
         String emitEvent = '';
-        
+
         if (tableName == 'clients') {
-          if (action == 'INSERT') emitEvent = 'client_added';
-          else if (action == 'UPDATE') emitEvent = 'client_updated';
-          else if (action == 'DELETE') emitEvent = 'client_deleted';
+          if (action == 'INSERT')
+            emitEvent = 'client_added';
+          else if (action == 'UPDATE')
+            emitEvent = 'client_updated';
+          else if (action == 'DELETE')
+            emitEvent = 'client_deleted';
         } else if (tableName == 'vendors') {
-          if (action == 'INSERT') emitEvent = 'vendor_added';
-          else if (action == 'UPDATE') emitEvent = 'vendor_updated';
-          else if (action == 'DELETE') emitEvent = 'vendor_deleted';
+          if (action == 'INSERT')
+            emitEvent = 'vendor_added';
+          else if (action == 'UPDATE')
+            emitEvent = 'vendor_updated';
+          else if (action == 'DELETE')
+            emitEvent = 'vendor_deleted';
         } else if (tableName == 'items') {
-          if (action == 'INSERT') emitEvent = 'item_added';
-          else if (action == 'UPDATE') emitEvent = 'item_updated';
-          else if (action == 'DELETE') emitEvent = 'item_deleted';
+          if (action == 'INSERT')
+            emitEvent = 'item_added';
+          else if (action == 'UPDATE')
+            emitEvent = 'item_updated';
+          else if (action == 'DELETE')
+            emitEvent = 'item_deleted';
         } else if (tableName == 'delivery_challans') {
           emitEvent = 'challan_updated';
         }
@@ -175,7 +196,7 @@ class SocketService {
   void _scheduleReconnect(String baseUrl) {
     _client?.close();
     if (!_isConnected) return;
-    
+
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(const Duration(seconds: 3), () {
       _connectInternal(baseUrl);

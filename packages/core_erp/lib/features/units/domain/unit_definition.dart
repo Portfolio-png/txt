@@ -30,7 +30,8 @@ class UnitDefinition {
   final DateTime updatedAt;
 
   bool get isUsed => usageCount > 0;
-  bool get isGrouped => unitGroupId != null && (unitGroupName?.isNotEmpty ?? false);
+  bool get isGrouped =>
+      unitGroupId != null && (unitGroupName?.isNotEmpty ?? false);
   bool get isBaseUnit => isGrouped && conversionBaseUnitId == null;
 
   String get displayLabel => '$name ($symbol)';

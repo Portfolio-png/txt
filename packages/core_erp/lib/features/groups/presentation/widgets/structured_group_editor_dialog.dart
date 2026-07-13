@@ -242,7 +242,9 @@ class _StructuredGroupEditorDialogState
     final provider = context.watch<InventoryProvider>();
     final groupsProvider = context.watch<GroupsProvider>();
     final itemsProvider = context.watch<ItemsProvider>();
-    final groups = groupsProvider.filteredGroupsByType(widget.groupType).toList(growable: false);
+    final groups = groupsProvider
+        .filteredGroupsByType(widget.groupType)
+        .toList(growable: false);
     final units = context.watch<UnitsProvider>().activeUnits;
     final items = _activeItems();
     final saveError =
@@ -396,140 +398,143 @@ class _StructuredGroupEditorDialogState
                             ),
                           ],
                           if (!_isCombination) ...[
-                          const SizedBox(height: 16),
-                          KeyedSubtree(
-                            key: const ValueKey<String>('groups-parent-field'),
-                            child: SearchableSelectField<int?>(
-                              tapTargetKey: const ValueKey<String>(
-                                'masters-group-parent',
+                            const SizedBox(height: 16),
+                            KeyedSubtree(
+                              key: const ValueKey<String>(
+                                'groups-parent-field',
                               ),
-                              value:
-                                  groups.any(
-                                    (group) =>
-                                        group.id == _selectedParentGroupId,
-                                  )
-                                  ? _selectedParentGroupId
-                                  : null,
-                              decoration: _selectDecoration(
-                                label: 'Parent Group',
-                                helper:
-                                    'Primary means this group is a top-level inventory group.',
-                              ),
-                              dialogTitle: 'Parent Group',
-                              searchHintText: 'Search group',
-                              options: [
-                                const SearchableSelectOption<int?>(
-                                  value: null,
-                                  label: 'Primary',
+                              child: SearchableSelectField<int?>(
+                                tapTargetKey: const ValueKey<String>(
+                                  'masters-group-parent',
                                 ),
-                                ...groups
-                                    .where(
-                                      (group) => group.id != widget.group?.id,
+                                value:
+                                    groups.any(
+                                      (group) =>
+                                          group.id == _selectedParentGroupId,
                                     )
-                                    .map(
-                                      (group) => SearchableSelectOption<int?>(
-                                        value: group.id,
-                                        label: group.name,
+                                    ? _selectedParentGroupId
+                                    : null,
+                                decoration: _selectDecoration(
+                                  label: 'Parent Group',
+                                  helper:
+                                      'Primary means this group is a top-level inventory group.',
+                                ),
+                                dialogTitle: 'Parent Group',
+                                searchHintText: 'Search group',
+                                options: [
+                                  const SearchableSelectOption<int?>(
+                                    value: null,
+                                    label: 'Primary',
+                                  ),
+                                  ...groups
+                                      .where(
+                                        (group) => group.id != widget.group?.id,
+                                      )
+                                      .map(
+                                        (group) => SearchableSelectOption<int?>(
+                                          value: group.id,
+                                          label: group.name,
+                                        ),
                                       ),
-                                    ),
-                              ],
-                              onChanged: _setSelectedParentGroup,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          KeyedSubtree(
-                            key: const ValueKey<String>('groups-unit-field'),
-                            child: SearchableSelectField<int>(
-                              tapTargetKey: const ValueKey<String>(
-                                'masters-group-unit',
-                              ),
-                              value:
-                                  units.any(
-                                    (unit) => unit.id == _selectedUnitId,
-                                  )
-                                  ? _selectedUnitId
-                                  : selectedUnit?.id,
-                              decoration: _selectDecoration(
-                                label: 'Group Unit',
-                                helper: widget.groupType == 'machine'
-                                    ? 'Optional for machines.'
-                                    : 'Required. If the unit is missing, create it here and continue.',
-                              ),
-                              dialogTitle: 'Group Unit',
-                              searchHintText: 'Search unit',
-                              onCreateOption: (query) async {
-                                final created = await UnitsScreen.openEditor(
-                                  context,
-                                  initialName: query,
-                                );
-                                if (!context.mounted || created == null) {
-                                  return null;
-                                }
-                                return SearchableSelectOption<int>(
-                                  value: created.id,
-                                  label: created.displayLabel,
-                                );
-                              },
-                              createOptionLabelBuilder: (query) =>
-                                  'Create unit "$query"',
-                              options: units
-                                  .map(
-                                    (unit) => SearchableSelectOption<int>(
-                                      value: unit.id,
-                                      label: unit.displayLabel,
-                                    ),
-                                  )
-                                  .toList(growable: false),
-                              onChanged: (value) {
-                                setState(() {
-                                  _selectedUnitId = value;
-                                });
-                              },
-                              validator: (value) =>
-                                  value == null && widget.groupType != 'machine'
-                                      ? 'Required'
-                                      : null,
-                            ),
-                          ),
-                          const SizedBox(height: 18),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color: const Color(0xFFE2E8F0),
+                                ],
+                                onChanged: _setSelectedParentGroup,
                               ),
                             ),
-                            child: Wrap(
-                              spacing: 10,
-                              runSpacing: 10,
-                              children: [
-                                _PropertyChip(
-                                  label: _nameController.text.trim().isEmpty
-                                      ? 'Name pending'
-                                      : _nameController.text.trim(),
-                                  onRemove: () {},
-                                  removable: false,
+                            const SizedBox(height: 16),
+                            KeyedSubtree(
+                              key: const ValueKey<String>('groups-unit-field'),
+                              child: SearchableSelectField<int>(
+                                tapTargetKey: const ValueKey<String>(
+                                  'masters-group-unit',
                                 ),
-                                _PropertyChip(
-                                  label: selectedParentGroup == null
-                                      ? 'Primary parent'
-                                      : 'Under: ${selectedParentGroup.name}',
-                                  onRemove: () {},
-                                  removable: false,
+                                value:
+                                    units.any(
+                                      (unit) => unit.id == _selectedUnitId,
+                                    )
+                                    ? _selectedUnitId
+                                    : selectedUnit?.id,
+                                decoration: _selectDecoration(
+                                  label: 'Group Unit',
+                                  helper: widget.groupType == 'machine'
+                                      ? 'Optional for machines.'
+                                      : 'Required. If the unit is missing, create it here and continue.',
                                 ),
-                                _PropertyChip(
-                                  label: selectedUnit == null
-                                      ? 'Unit pending'
-                                      : 'Unit: ${selectedUnit.displayLabel}',
-                                  onRemove: () {},
-                                  removable: false,
-                                ),
-                              ],
+                                dialogTitle: 'Group Unit',
+                                searchHintText: 'Search unit',
+                                onCreateOption: (query) async {
+                                  final created = await UnitsScreen.openEditor(
+                                    context,
+                                    initialName: query,
+                                  );
+                                  if (!context.mounted || created == null) {
+                                    return null;
+                                  }
+                                  return SearchableSelectOption<int>(
+                                    value: created.id,
+                                    label: created.displayLabel,
+                                  );
+                                },
+                                createOptionLabelBuilder: (query) =>
+                                    'Create unit "$query"',
+                                options: units
+                                    .map(
+                                      (unit) => SearchableSelectOption<int>(
+                                        value: unit.id,
+                                        label: unit.displayLabel,
+                                      ),
+                                    )
+                                    .toList(growable: false),
+                                onChanged: (value) {
+                                  setState(() {
+                                    _selectedUnitId = value;
+                                  });
+                                },
+                                validator: (value) =>
+                                    value == null &&
+                                        widget.groupType != 'machine'
+                                    ? 'Required'
+                                    : null,
+                              ),
                             ),
-                          ),
+                            const SizedBox(height: 18),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: const Color(0xFFE2E8F0),
+                                ),
+                              ),
+                              child: Wrap(
+                                spacing: 10,
+                                runSpacing: 10,
+                                children: [
+                                  _PropertyChip(
+                                    label: _nameController.text.trim().isEmpty
+                                        ? 'Name pending'
+                                        : _nameController.text.trim(),
+                                    onRemove: () {},
+                                    removable: false,
+                                  ),
+                                  _PropertyChip(
+                                    label: selectedParentGroup == null
+                                        ? 'Primary parent'
+                                        : 'Under: ${selectedParentGroup.name}',
+                                    onRemove: () {},
+                                    removable: false,
+                                  ),
+                                  _PropertyChip(
+                                    label: selectedUnit == null
+                                        ? 'Unit pending'
+                                        : 'Unit: ${selectedUnit.displayLabel}',
+                                    onRemove: () {},
+                                    removable: false,
+                                  ),
+                                ],
+                              ),
+                            ),
                           ], // end if (!_isCombination)
                         ],
                       ),
@@ -1190,7 +1195,8 @@ class _StructuredGroupEditorDialogState
       if (itemsProvider.errorMessage != null) {
         return;
       }
-      final matchingGroups = groupsProvider.filteredGroupsByType(widget.groupType)
+      final matchingGroups = groupsProvider
+          .filteredGroupsByType(widget.groupType)
           .where(
             (group) =>
                 group.name.trim().toLowerCase() ==
@@ -1514,10 +1520,7 @@ class _StructuredGroupEditorDialogState
   }
 
   List<ItemDefinition> _activeItems() {
-    return context
-        .read<ItemsProvider>()
-        .items
-        .toList(growable: false);
+    return context.read<ItemsProvider>().items.toList(growable: false);
   }
 
   String _propertyKey(String value) =>
@@ -1680,7 +1683,9 @@ class _StructureOptionTile extends StatelessWidget {
                   ? Icons.radio_button_checked_rounded
                   : Icons.radio_button_unchecked_rounded,
               size: 20,
-              color: selected ? const Color(0xFF6049E3) : const Color(0xFF9CA3AF),
+              color: selected
+                  ? const Color(0xFF6049E3)
+                  : const Color(0xFF9CA3AF),
             ),
             const SizedBox(width: 10),
             Expanded(

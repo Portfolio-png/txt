@@ -22,7 +22,8 @@ class SoftEntranceAnimation extends StatefulWidget {
   State<SoftEntranceAnimation> createState() => _SoftEntranceAnimationState();
 }
 
-class _SoftEntranceAnimationState extends State<SoftEntranceAnimation> with SingleTickerProviderStateMixin {
+class _SoftEntranceAnimationState extends State<SoftEntranceAnimation>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
@@ -32,9 +33,10 @@ class _SoftEntranceAnimationState extends State<SoftEntranceAnimation> with Sing
     super.initState();
     _controller = AnimationController(vsync: this, duration: widget.duration);
 
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
-    );
+    _fadeAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
 
     Offset beginOffset;
     switch (widget.direction) {
@@ -52,9 +54,10 @@ class _SoftEntranceAnimationState extends State<SoftEntranceAnimation> with Sing
         break;
     }
 
-    _slideAnimation = Tween<Offset>(begin: beginOffset, end: Offset.zero).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
-    );
+    _slideAnimation = Tween<Offset>(
+      begin: beginOffset,
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
 
     if (widget.delay == Duration.zero) {
       _controller.forward();
@@ -77,10 +80,7 @@ class _SoftEntranceAnimationState extends State<SoftEntranceAnimation> with Sing
   Widget build(BuildContext context) {
     return FadeTransition(
       opacity: _fadeAnimation,
-      child: SlideTransition(
-        position: _slideAnimation,
-        child: widget.child,
-      ),
+      child: SlideTransition(position: _slideAnimation, child: widget.child),
     );
   }
 }

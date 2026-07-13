@@ -150,6 +150,7 @@ class ApiGroupRepository implements GroupRepository {
     }
     return parsed.group!.toDomain();
   }
+
   @override
   Future<void> deleteGroup(int id) async {
     if (useMockResponses) {
@@ -171,9 +172,7 @@ class ApiGroupRepository implements GroupRepository {
     final response = await _client.delete(uri);
     final payload = _decodeJsonObject(response.body);
     final success = payload['success'] == true;
-    if (response.statusCode < 200 ||
-        response.statusCode >= 300 ||
-        !success) {
+    if (response.statusCode < 200 || response.statusCode >= 300 || !success) {
       throw GroupApiException(
         payload['error']?.toString() ?? 'Failed to delete group.',
       );

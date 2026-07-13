@@ -5,7 +5,8 @@ class SalaryStructureDesigner extends StatefulWidget {
   const SalaryStructureDesigner({super.key, required this.employeeId});
 
   @override
-  State<SalaryStructureDesigner> createState() => _SalaryStructureDesignerState();
+  State<SalaryStructureDesigner> createState() =>
+      _SalaryStructureDesignerState();
 }
 
 class _SalaryStructureDesignerState extends State<SalaryStructureDesigner> {
@@ -21,7 +22,11 @@ class _SalaryStructureDesignerState extends State<SalaryStructureDesigner> {
   Future<void> _loadStructure() async {
     // Mock load
     setState(() {
-      _components.add({'name': 'Basic Pay', 'amount': 25000.0, 'type': 'earning'});
+      _components.add({
+        'name': 'Basic Pay',
+        'amount': 25000.0,
+        'type': 'earning',
+      });
       _components.add({'name': 'HRA', 'amount': 10000.0, 'type': 'earning'});
       _components.add({'name': 'PF', 'amount': 1800.0, 'type': 'deduction'});
       _grossSalary = 35000.0;
@@ -29,7 +34,9 @@ class _SalaryStructureDesignerState extends State<SalaryStructureDesigner> {
   }
 
   void _save() {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Salary structure saved.')));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Salary structure saved.')));
     Navigator.of(context).pop();
   }
 
@@ -45,8 +52,14 @@ class _SalaryStructureDesignerState extends State<SalaryStructureDesigner> {
           decoration: const InputDecoration(labelText: 'Amount'),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text('Save')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Save'),
+          ),
         ],
       ),
     );
@@ -72,14 +85,26 @@ class _SalaryStructureDesignerState extends State<SalaryStructureDesigner> {
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Name (e.g. Bonus)')),
-                TextField(controller: amountCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Amount')),
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Name (e.g. Bonus)',
+                  ),
+                ),
+                TextField(
+                  controller: amountCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Amount'),
+                ),
                 DropdownButton<String>(
                   value: type,
                   isExpanded: true,
                   items: const [
                     DropdownMenuItem(value: 'earning', child: Text('Earning')),
-                    DropdownMenuItem(value: 'deduction', child: Text('Deduction')),
+                    DropdownMenuItem(
+                      value: 'deduction',
+                      child: Text('Deduction'),
+                    ),
                   ],
                   onChanged: (val) {
                     if (val != null) setDialogState(() => type = val);
@@ -87,18 +112,25 @@ class _SalaryStructureDesignerState extends State<SalaryStructureDesigner> {
                 ),
               ],
             );
-          }
+          },
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () {
               final amt = double.tryParse(amountCtrl.text);
               if (nameCtrl.text.isNotEmpty && amt != null) {
-                Navigator.pop(context, {'name': nameCtrl.text, 'amount': amt, 'type': type});
+                Navigator.pop(context, {
+                  'name': nameCtrl.text,
+                  'amount': amt,
+                  'type': type,
+                });
               }
             },
-            child: const Text('Add')
+            child: const Text('Add'),
           ),
         ],
       ),
@@ -116,9 +148,7 @@ class _SalaryStructureDesignerState extends State<SalaryStructureDesigner> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Salary Structure Designer'),
-        actions: [
-          IconButton(icon: const Icon(Icons.save), onPressed: _save),
-        ],
+        actions: [IconButton(icon: const Icon(Icons.save), onPressed: _save)],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -127,7 +157,13 @@ class _SalaryStructureDesignerState extends State<SalaryStructureDesigner> {
             Card(
               child: ListTile(
                 title: const Text('Gross Salary'),
-                trailing: Text('₹$_grossSalary', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                trailing: Text(
+                  '₹$_grossSalary',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 onTap: _editGrossSalary,
                 subtitle: const Text('Tap to edit'),
               ),
@@ -141,14 +177,24 @@ class _SalaryStructureDesignerState extends State<SalaryStructureDesigner> {
                   final isEarning = c['type'] == 'earning';
                   return Card(
                     child: ListTile(
-                      leading: Icon(isEarning ? Icons.add_circle : Icons.remove_circle, color: isEarning ? Colors.green : Colors.red),
+                      leading: Icon(
+                        isEarning ? Icons.add_circle : Icons.remove_circle,
+                        color: isEarning ? Colors.green : Colors.red,
+                      ),
                       title: Text(c['name']),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text('₹${c['amount']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                          Text(
+                            '₹${c['amount']}',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
                           IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.grey, size: 20),
+                            icon: const Icon(
+                              Icons.delete,
+                              color: Colors.grey,
+                              size: 20,
+                            ),
                             onPressed: () {
                               setState(() => _components.removeAt(index));
                             },

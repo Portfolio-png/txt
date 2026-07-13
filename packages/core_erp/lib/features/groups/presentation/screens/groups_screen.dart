@@ -42,8 +42,12 @@ class GroupsScreen extends StatelessWidget {
           actions: {
             PrintIntent: CallbackAction<PrintIntent>(
               onInvoke: (intent) {
-                final currentGroupType = mode == 'machines' ? 'machine' : 'item';
-                final data = groups.filteredGroupsByType(currentGroupType).map((g) {
+                final currentGroupType = mode == 'machines'
+                    ? 'machine'
+                    : 'item';
+                final data = groups.filteredGroupsByType(currentGroupType).map((
+                  g,
+                ) {
                   final parentName =
                       groups.parentNameFor(g.parentGroupId) ?? 'Primary Group';
                   final unitName =
@@ -96,14 +100,23 @@ class GroupsScreen extends StatelessWidget {
                   isError: true,
                 ),
             ],
-            body: groups.filteredGroupsByType(mode == 'machines' ? 'machine' : 'item').isEmpty
+            body:
+                groups
+                    .filteredGroupsByType(
+                      mode == 'machines' ? 'machine' : 'item',
+                    )
+                    .isEmpty
                 ? const AppEmptyState(
                     title: 'No groups found',
                     message:
                         'Create a top-level group like Paper, then add child groups beneath it as needed.',
                     icon: Icons.grid_view_outlined,
                   )
-                : _GroupsTable(groups: groups.filteredGroupsByType(mode == 'machines' ? 'machine' : 'item')),
+                : _GroupsTable(
+                    groups: groups.filteredGroupsByType(
+                      mode == 'machines' ? 'machine' : 'item',
+                    ),
+                  ),
           ),
         );
       },
@@ -197,7 +210,6 @@ class _GroupsToolbar extends StatelessWidget {
             hintText: 'Search groups or parent groups',
             onChanged: provider.setSearchQuery,
           ),
-
       ],
     );
   }
@@ -276,7 +288,11 @@ class _GroupRow extends StatelessWidget {
             children: [
               SoftActionLink(
                 label: 'Edit',
-                onTap: () => GroupsScreen.openEditor(context, group: group, groupType: group.groupType),
+                onTap: () => GroupsScreen.openEditor(
+                  context,
+                  group: group,
+                  groupType: group.groupType,
+                ),
               ),
 
               SoftActionLink(

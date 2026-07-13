@@ -39,11 +39,7 @@ import '../../../../core/services/generic_asset_service.dart';
 import '../../../../core/widgets/export_preview_dialog.dart';
 
 class ItemsScreen extends StatefulWidget {
-  const ItemsScreen({
-    super.key,
-    this.initialTab = 0,
-    this.onCreatePipeline,
-  });
+  const ItemsScreen({super.key, this.initialTab = 0, this.onCreatePipeline});
 
   final int initialTab;
   final Future<String?> Function()? onCreatePipeline;
@@ -441,13 +437,17 @@ class _ItemsTableState extends State<_ItemsTable> {
 
   @override
   Widget build(BuildContext context) {
-    final topLevelItems = widget.items.where((i) => i.baseItemId == null).toList();
+    final topLevelItems = widget.items
+        .where((i) => i.baseItemId == null)
+        .toList();
     final displayItems = <ItemDefinition>[];
 
     for (final baseItem in topLevelItems) {
       displayItems.add(baseItem);
       if (_expandedBaseItemIds.contains(baseItem.id)) {
-        final variants = widget.items.where((i) => i.baseItemId == baseItem.id).toList();
+        final variants = widget.items
+            .where((i) => i.baseItemId == baseItem.id)
+            .toList();
         displayItems.addAll(variants);
       }
     }
@@ -609,11 +609,20 @@ class _ItemRow extends StatelessWidget {
                     children: [
                       const Padding(
                         padding: EdgeInsets.only(top: 2.0),
-                        child: Icon(Icons.subdirectory_arrow_right_rounded, size: 16, color: SoftErpTheme.textSecondary),
+                        child: Icon(
+                          Icons.subdirectory_arrow_right_rounded,
+                          size: 16,
+                          color: SoftErpTheme.textSecondary,
+                        ),
                       ),
                       const SizedBox(width: 6),
-                      Expanded(child: SoftInlineText(item.displayName, weight: FontWeight.w600)),
-                    ]
+                      Expanded(
+                        child: SoftInlineText(
+                          item.displayName,
+                          weight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   )
                 else
                   SoftInlineText(item.displayName, weight: FontWeight.w700),
@@ -621,7 +630,10 @@ class _ItemRow extends StatelessWidget {
                   const SizedBox(height: 4),
                   Padding(
                     padding: EdgeInsets.only(left: isVariant ? 22.0 : 0.0),
-                    child: SoftInlineText(item.alias, color: SoftErpTheme.textSecondary),
+                    child: SoftInlineText(
+                      item.alias,
+                      color: SoftErpTheme.textSecondary,
+                    ),
                   ),
                 ],
               ],
@@ -703,6 +715,7 @@ class _NodeDraft {
     this.detailsExpanded = false,
     this.isNameEditing = false,
     this.displayNameTouched = false,
+    this.inputType = 'Text',
     List<_NodeDraft>? children,
   }) : nameController = TextEditingController(text: name),
        codeController = TextEditingController(text: code),
@@ -718,6 +731,7 @@ class _NodeDraft {
   bool detailsExpanded;
   bool isNameEditing;
   bool displayNameTouched;
+  String inputType;
   bool inheritedFromGroup = false;
   bool inheritedMandatory = false;
   String? inheritedPropertyKey;
@@ -879,6 +893,15 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     ItemVariationNodeDefinition node,
     _NodeDraft? parent,
   ) {
+    String inputType = 'Text';
+    if (node.kind == ItemVariationNodeKind.property) {
+      final key = _propertyKey(node.name);
+      final schemaEntry = widget.item?.propertySchema
+          .where((e) => _propertyKey(e.propertyKey) == key)
+          .firstOrNull;
+      inputType = schemaEntry?.inputType ?? 'Text';
+    }
+
     final draft = _NodeDraft(
       id: node.id,
       kind: node.kind,
@@ -889,6 +912,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       detailsExpanded: false,
       isNameEditing: false,
       displayNameTouched: node.displayName.trim().isNotEmpty,
+      inputType: inputType,
     );
     draft.nameController.addListener(() {
       _syncLeafDisplayNames();
@@ -1421,7 +1445,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       variationTree: _variationTreeInputs,
       excludeId: widget.item?.id,
     );
-    final availableGroups = groupsProvider.itemGroups.where((g) => !g.isArchived).toList(growable: false);
+    final availableGroups = groupsProvider.itemGroups
+        .where((g) => !g.isArchived)
+        .toList(growable: false);
     final selectedGroup = groupsProvider.findById(_selectedGroupId);
     final availableUnits = unitsProvider.units
         .where((u) => !u.isArchived)
@@ -1520,7 +1546,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                       searchText: _groupOptionSearchText(group, groupsProvider),
                     ),
                   ),
-
                 ],
                 onChanged: (value) => _handleGroupChanged(value),
                 validator: (value) => value == null ? 'Required' : null,
@@ -1728,7 +1753,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               ],
             ],
           ],
-          if (_secondaryUnitConversions.isNotEmpty && primaryUnitSymbol == '-') ...[
+          if (_secondaryUnitConversions.isNotEmpty &&
+              primaryUnitSymbol == '-') ...[
             const SizedBox(height: 12),
             Text(
               'Warning: You are mapping a conversion to the system default Primary Unit (-). '
@@ -1842,7 +1868,14 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                 ),
                           onAddProperty:
                               _rootNodes[index].kind ==
-                                  ItemVariationNodeKind.value
+                                      ItemVariationNodeKind.value ||
+                                  (_rootNodes[index].kind ==
+                                          ItemVariationNodeKind.property &&
+                                      !_rootNodes[index].children.any(
+                                        (c) =>
+                                            c.kind ==
+                                            ItemVariationNodeKind.value,
+                                      ))
                               ? () => _addChildProperty(_rootNodes[index])
                               : null,
                           onPromoteToGroup:
@@ -1855,7 +1888,12 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                               : null,
                           onAddValue:
                               _rootNodes[index].kind ==
-                                  ItemVariationNodeKind.property
+                                      ItemVariationNodeKind.property &&
+                                  !_rootNodes[index].children.any(
+                                    (c) =>
+                                        c.kind ==
+                                        ItemVariationNodeKind.property,
+                                  )
                               ? () => _addChildValue(_rootNodes[index])
                               : null,
                           onMoveUp: index == 0
@@ -1942,6 +1980,65 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                     ?.copyWith(color: Colors.grey[600]),
                               ),
                               const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Text(
+                                    'Display Format: ',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.grey[700],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  DropdownButton<String>(
+                                    value:
+                                        _namingFormat.contains(
+                                          '__format:detailed',
+                                        )
+                                        ? 'detailed'
+                                        : _namingFormat.contains(
+                                            '__format:dimensions',
+                                          )
+                                        ? 'dimensions'
+                                        : 'default',
+                                    isDense: true,
+                                    underline: const SizedBox.shrink(),
+                                    items: const [
+                                      DropdownMenuItem(
+                                        value: 'default',
+                                        child: Text('Default (Val1 Val2)'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'detailed',
+                                        child: Text('Detailed (Prop: Val)'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'dimensions',
+                                        child: Text('Dimensions (Val1 x Val2)'),
+                                      ),
+                                    ],
+                                    onChanged: _isReadOnly
+                                        ? null
+                                        : (val) {
+                                            setState(() {
+                                              _namingFormat.removeWhere(
+                                                (t) =>
+                                                    t.startsWith('__format:'),
+                                              );
+                                              if (val != 'default' &&
+                                                  val != null) {
+                                                _namingFormat.add(
+                                                  '__format:$val',
+                                                );
+                                              }
+                                              _handleChange();
+                                            });
+                                          },
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
                               _buildActiveNamingFormatArea(context),
                               _buildInactiveNamingFormatArea(context),
                             ],
@@ -1949,7 +2046,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                         ),
                       );
 
-                      final isRawMaterialGroup = selectedGroup?.name.toLowerCase().contains('raw material') == true;
+                      final isRawMaterialGroup =
+                          selectedGroup?.name.toLowerCase().contains(
+                            'raw material',
+                          ) ==
+                          true;
 
                       final defaultPipelineSection = _SectionCard(
                         title: 'Default Pipeline',
@@ -1957,7 +2058,15 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             SearchableSelectField<String>(
-                              options: _availablePipelines.map((p) => SearchableSelectOption<String>(value: p['id']!, label: p['name']!, searchText: p['name']!)).toList(),
+                              options: _availablePipelines
+                                  .map(
+                                    (p) => SearchableSelectOption<String>(
+                                      value: p['id']!,
+                                      label: p['name']!,
+                                      searchText: p['name']!,
+                                    ),
+                                  )
+                                  .toList(),
                               value: _defaultPipelineId,
                               fieldEnabled: !_isReadOnly,
                               onChanged: (val) {
@@ -1966,15 +2075,19 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                   _handleChange();
                                 });
                               },
-                              decoration: const InputDecoration(hintText: 'Select a pipeline'),
+                              decoration: const InputDecoration(
+                                hintText: 'Select a pipeline',
+                              ),
                               searchHintText: 'Search pipelines',
                             ),
-                            if (!_isReadOnly && widget.onCreatePipeline != null) ...[
+                            if (!_isReadOnly &&
+                                widget.onCreatePipeline != null) ...[
                               const SizedBox(height: 12),
                               OutlinedButton.icon(
                                 onPressed: () async {
                                   if (widget.onCreatePipeline != null) {
-                                    final newPipelineId = await widget.onCreatePipeline!();
+                                    final newPipelineId =
+                                        await widget.onCreatePipeline!();
                                     if (mounted) {
                                       await _fetchPipelines();
                                       if (newPipelineId != null) {
@@ -2112,8 +2225,26 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       onFinishNameEditing: child.isLockedInheritedProperty
           ? null
           : () => _setNodeNameEditing(child, false),
-      onAddProperty: child.kind == ItemVariationNodeKind.value
+      onAddProperty:
+          child.kind == ItemVariationNodeKind.value ||
+              (child.kind == ItemVariationNodeKind.property &&
+                  !child.children.any(
+                    (c) => c.kind == ItemVariationNodeKind.value,
+                  ))
           ? () => _addChildProperty(child)
+          : null,
+      onToggleInputType:
+          child.kind == ItemVariationNodeKind.property &&
+              !_isReadOnly &&
+              !child.isLockedInheritedProperty
+          ? () {
+              setState(() {
+                child.inputType = child.inputType == 'Numeric'
+                    ? 'Text'
+                    : 'Numeric';
+              });
+              _handleChange();
+            }
           : null,
       onPromoteToGroup:
           child.kind == ItemVariationNodeKind.property &&
@@ -2122,7 +2253,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               !child.isLockedInheritedProperty
           ? () => _promotePropertyToGroup(child)
           : null,
-      onAddValue: child.kind == ItemVariationNodeKind.property
+      onAddValue:
+          child.kind == ItemVariationNodeKind.property &&
+              !child.children.any(
+                (c) => c.kind == ItemVariationNodeKind.property,
+              )
           ? () => _addChildValue(child)
           : null,
       onMoveUp: index == 0 ? null : () => _moveNode(siblings, index, index - 1),
@@ -2150,7 +2285,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   List<String> get _activeNamingFormat {
     final available = _availableNamingTokens;
     _excludedNamingTokens.retainAll(available);
-    final format = _namingFormat.where((t) => available.contains(t) && !_excludedNamingTokens.contains(t)).toList();
+    final format = _namingFormat
+        .where(
+          (t) => available.contains(t) && !_excludedNamingTokens.contains(t),
+        )
+        .toList();
     for (final token in available) {
       if (!format.contains(token) && !_excludedNamingTokens.contains(token)) {
         format.add(token);
@@ -2168,12 +2307,17 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
         resetLeaves(child);
       }
     }
+
     for (final node in _rootNodes) {
       resetLeaves(node);
     }
   }
 
-  Widget _buildNamingTokenChip(String token, {required bool isActive, int? index}) {
+  Widget _buildNamingTokenChip(
+    String token, {
+    required bool isActive,
+    int? index,
+  }) {
     final displayName = _getDisplayNameForToken(token);
     return MouseRegion(
       cursor: isActive ? SystemMouseCursors.grab : SystemMouseCursors.click,
@@ -2183,7 +2327,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           color: isActive ? const Color(0xFFF1F5F9) : const Color(0xFFF8FAFC),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isActive ? const Color(0xFFE2E8F0) : const Color(0xFFE2E8F0).withValues(alpha: 0.5),
+            color: isActive
+                ? const Color(0xFFE2E8F0)
+                : const Color(0xFFE2E8F0).withValues(alpha: 0.5),
             style: BorderStyle.solid,
           ),
         ),
@@ -2203,7 +2349,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               style: TextStyle(
                 fontWeight: FontWeight.w600,
                 fontSize: 13,
-                color: isActive ? const Color(0xFF334155) : const Color(0xFF94A3B8),
+                color: isActive
+                    ? const Color(0xFF334155)
+                    : const Color(0xFF94A3B8),
               ),
             ),
             const SizedBox(width: 6),
@@ -2218,11 +2366,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                 },
                 child: const MouseRegion(
                   cursor: SystemMouseCursors.click,
-                  child: Icon(
-                    Icons.close,
-                    size: 14,
-                    color: Color(0xFF94A3B8),
-                  ),
+                  child: Icon(Icons.close, size: 14, color: Color(0xFF94A3B8)),
                 ),
               )
             else
@@ -2239,11 +2383,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                 },
                 child: const MouseRegion(
                   cursor: SystemMouseCursors.click,
-                  child: Icon(
-                    Icons.add,
-                    size: 14,
-                    color: Color(0xFF94A3B8),
-                  ),
+                  child: Icon(Icons.add, size: 14, color: Color(0xFF94A3B8)),
                 ),
               ),
           ],
@@ -2297,10 +2437,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               ? Center(
                   child: Text(
                     'No active naming blocks. Drag properties here to include them.',
-                    style: TextStyle(
-                      color: Colors.grey[500],
-                      fontSize: 13,
-                    ),
+                    style: TextStyle(color: Colors.grey[500], fontSize: 13),
                   ),
                 )
               : Wrap(
@@ -2310,7 +2447,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   children: List.generate(active.length, (i) {
                     final token = active[i];
                     return DragTarget<String>(
-                      onWillAcceptWithDetails: (details) => details.data != token,
+                      onWillAcceptWithDetails: (details) =>
+                          details.data != token,
                       onAcceptWithDetails: (details) {
                         final draggedToken = details.data;
                         setState(() {
@@ -2319,7 +2457,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                           }
                           final list = _namingFormat.toList();
                           list.remove(draggedToken);
-                          
+
                           int insertIdx = list.indexOf(token);
                           if (insertIdx == -1) {
                             insertIdx = 0;
@@ -2332,16 +2470,17 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                       },
                       builder: (context, candidateData, rejectedData) {
                         final isChipHovered = candidateData.isNotEmpty;
-                        final chipWidget = _buildNamingTokenChip(token, isActive: true, index: i);
-                        
+                        final chipWidget = _buildNamingTokenChip(
+                          token,
+                          isActive: true,
+                          index: i,
+                        );
+
                         return Draggable<String>(
                           data: token,
                           feedback: Material(
                             color: Colors.transparent,
-                            child: Opacity(
-                              opacity: 0.85,
-                              child: chipWidget,
-                            ),
+                            child: Opacity(opacity: 0.85, child: chipWidget),
                           ),
                           childWhenDragging: Opacity(
                             opacity: 0.3,
@@ -2389,9 +2528,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
         Text(
           'Available Blocks (Drag blocks here to remove, or click + to include):',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Colors.grey[600],
-                fontWeight: FontWeight.w600,
-              ),
+            color: Colors.grey[600],
+            fontWeight: FontWeight.w600,
+          ),
         ),
         const SizedBox(height: 8),
         DragTarget<String>(
@@ -2412,10 +2551,14 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
               constraints: const BoxConstraints(minHeight: 48),
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: isHovered ? const Color(0xFFF1F5F9) : const Color(0xFFF8FAFC),
+                color: isHovered
+                    ? const Color(0xFFF1F5F9)
+                    : const Color(0xFFF8FAFC),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: isHovered ? Theme.of(context).primaryColor : const Color(0xFFE2E8F0).withValues(alpha: 0.5),
+                  color: isHovered
+                      ? Theme.of(context).primaryColor
+                      : const Color(0xFFE2E8F0).withValues(alpha: 0.5),
                   width: 1.0,
                 ),
               ),
@@ -2423,25 +2566,22 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                   ? Center(
                       child: Text(
                         'Drag active blocks here to remove them from display name sequence.',
-                        style: TextStyle(
-                          color: Colors.grey[500],
-                          fontSize: 12,
-                        ),
+                        style: TextStyle(color: Colors.grey[500], fontSize: 12),
                       ),
                     )
                   : Wrap(
                       spacing: 8,
                       runSpacing: 8,
                       children: inactive.map((token) {
-                        final chipWidget = _buildNamingTokenChip(token, isActive: false);
+                        final chipWidget = _buildNamingTokenChip(
+                          token,
+                          isActive: false,
+                        );
                         return Draggable<String>(
                           data: token,
                           feedback: Material(
                             color: Colors.transparent,
-                            child: Opacity(
-                              opacity: 0.85,
-                              child: chipWidget,
-                            ),
+                            child: Opacity(opacity: 0.85, child: chipWidget),
                           ),
                           childWhenDragging: Opacity(
                             opacity: 0.3,
@@ -2482,6 +2622,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       displayName: node.isLeafValue
           ? node.displayNameController.text.trim()
           : '',
+      inputType: node.inputType,
       children: node.children
           .map((child) => _toInput(child, node.id))
           .toList(growable: false),
@@ -2540,19 +2681,27 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   Future<void> _openVariationCreationDialog() async {
     if (widget.item == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please save this base item before spawning variants.')),
+        const SnackBar(
+          content: Text('Please save this base item before spawning variants.'),
+        ),
       );
       return;
     }
 
-    final properties = _rootNodes.where((n) => n.kind == ItemVariationNodeKind.property).toList();
+    final properties = _rootNodes
+        .where((n) => n.kind == ItemVariationNodeKind.property)
+        .toList();
     if (properties.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please add at least one top-level property and some values first.')),
+        const SnackBar(
+          content: Text(
+            'Please add at least one top-level property and some values first.',
+          ),
+        ),
       );
       return;
     }
-    
+
     await showDialog<void>(
       context: context,
       builder: (context) => _VariationCreationDialog(
@@ -2560,41 +2709,58 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
         onSpawnItems: (combinations) async {
           if (_selectedGroupId == null || _selectedUnitId == null) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Select both a group and a unit for the base item before spawning variants.')),
+              const SnackBar(
+                content: Text(
+                  'Select both a group and a unit for the base item before spawning variants.',
+                ),
+              ),
             );
             return;
           }
           final itemsProvider = context.read<ItemsProvider>();
           final createdItemIds = <int>[];
           for (final combo in combinations) {
-             final valuesStr = combo.map((val) => val.nameController.text.trim()).join(' - ');
-             final newName = '${_nameController.text.trim()} - $valuesStr';
-             final newDisplayName = '${_displayNameController.text.trim()} - $valuesStr';
+            final valuesStr = combo
+                .map((val) => val.nameController.text.trim())
+                .join(' - ');
+            final newName = '${_nameController.text.trim()} - $valuesStr';
+            final newDisplayName =
+                '${_displayNameController.text.trim()} - $valuesStr';
 
-             final input = CreateItemInput(
-               name: newName,
-               displayName: newDisplayName,
-               groupId: _selectedGroupId!,
-               unitId: _selectedUnitId!,
-               unitConversions: _secondaryUnitConversions.map((draft) => ItemUnitConversionInput(unitId: draft.unitId, factorToPrimary: 1 / _getDerivedUnitsPerPrimary(draft.unitId))).toList(),
-               namingFormat: _activeNamingFormat,
-               variationTree: const [], // Spawned items have a flat/empty tree
-               defaultPipelineId: _defaultPipelineId,
-               baseItemId: widget.item?.id,
-               photoUrl: _photoUrlController.text.trim(),
-               availableForPurchase: _availableForPurchase,
-             );
-             final created = await itemsProvider.createItem(input);
-             if (created != null) {
-               createdItemIds.add(created.id);
-             }
+            final input = CreateItemInput(
+              name: newName,
+              displayName: newDisplayName,
+              groupId: _selectedGroupId!,
+              unitId: _selectedUnitId!,
+              unitConversions: _secondaryUnitConversions
+                  .map(
+                    (draft) => ItemUnitConversionInput(
+                      unitId: draft.unitId,
+                      factorToPrimary:
+                          1 / _getDerivedUnitsPerPrimary(draft.unitId),
+                    ),
+                  )
+                  .toList(),
+              namingFormat: _activeNamingFormat,
+              variationTree: const [], // Spawned items have a flat/empty tree
+              defaultPipelineId: _defaultPipelineId,
+              baseItemId: widget.item?.id,
+              photoUrl: _photoUrlController.text.trim(),
+              availableForPurchase: _availableForPurchase,
+            );
+            final created = await itemsProvider.createItem(input);
+            if (created != null) {
+              createdItemIds.add(created.id);
+            }
           }
           if (!context.mounted) {
             return;
           }
           // Enhancement 2.2 — immediately offer to add the freshly spawned
           // variants to a combination group.
-          if (FeatureFlags.isEnabled(FeatureKeys.catalogInventoryEnhancements) &&
+          if (FeatureFlags.isEnabled(
+                FeatureKeys.catalogInventoryEnhancements,
+              ) &&
               createdItemIds.isNotEmpty) {
             await _promptAddVariantsToCombinationGroup(context, createdItemIds);
             if (!context.mounted) {
@@ -2602,7 +2768,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
             }
           }
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Successfully spawned ${combinations.length} variant items!')),
+            SnackBar(
+              content: Text(
+                'Successfully spawned ${combinations.length} variant items!',
+              ),
+            ),
           );
           Navigator.of(context).pop();
         },
@@ -2706,10 +2876,11 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   }
 
   void _addChildProperty(_NodeDraft parent) {
-    if (parent.kind != ItemVariationNodeKind.value) {
+    if (parent.kind == ItemVariationNodeKind.property &&
+        parent.children.any((c) => c.kind == ItemVariationNodeKind.value)) {
       setState(() {
         _localError =
-            'A property can only be added under a value node. Top-level entries must start as properties.';
+            'A property cannot contain both values and sub-properties.';
       });
       return;
     }
@@ -2727,6 +2898,13 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     if (parent.kind != ItemVariationNodeKind.property) {
       setState(() {
         _localError = 'A value can only be added under a property node.';
+      });
+      return;
+    }
+    if (parent.children.any((c) => c.kind == ItemVariationNodeKind.property)) {
+      setState(() {
+        _localError =
+            'A property cannot contain both values and sub-properties.';
       });
       return;
     }
@@ -3054,17 +3232,17 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       ItemDuplicateWarning.emptyNodeName =>
         'Every property and value node needs a name.',
       ItemDuplicateWarning.invalidTreeStructure =>
-        'The tree must alternate property groups and values.',
+        'Invalid tree structure. A value node can only contain property nodes, and a property cannot contain both values and properties.',
       ItemDuplicateWarning.duplicateSiblingName =>
         'Sibling nodes under the same parent must have unique names.',
+      ItemDuplicateWarning.duplicatePropertyName =>
+        'A property with this name already exists elsewhere in the item.',
     };
   }
 }
 
 /// Enhancement 3 — inline configurator under a property node: marks it
 /// measurable and picks the units allowed for its value leaves.
-
-
 
 class _TreeNodeEditor extends StatelessWidget {
   const _TreeNodeEditor({
@@ -3081,6 +3259,7 @@ class _TreeNodeEditor extends StatelessWidget {
     required this.onRemove,
     required this.buildChildEditor,
     this.onAddProperty,
+    this.onToggleInputType,
     this.onPromoteToGroup,
     this.onAddValue,
   });
@@ -3095,6 +3274,7 @@ class _TreeNodeEditor extends StatelessWidget {
   final VoidCallback? onEnableNameEditing;
   final VoidCallback? onFinishNameEditing;
   final VoidCallback? onAddProperty;
+  final VoidCallback? onToggleInputType;
   final VoidCallback? onPromoteToGroup;
   final VoidCallback? onAddValue;
   final VoidCallback? onMoveUp;
@@ -3150,203 +3330,246 @@ class _TreeNodeEditor extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-          padding: EdgeInsets.only(left: depth * 20.0),
-          child: Material(
-            color: rowHighlight,
-            borderRadius: BorderRadius.circular(8),
-            child: InkWell(
+            padding: EdgeInsets.only(left: depth * 20.0),
+            child: Material(
+              color: rowHighlight,
               borderRadius: BorderRadius.circular(8),
-              onTap: canExpand ? onToggleBranch : null,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                child: Row(
-                  mainAxisSize: MainAxisSize.max,
-                  children: [
-                    SizedBox(
-                      width: 20,
-                      child: canExpand
-                          ? Icon(
-                              draft.detailsExpanded
-                                  ? Icons.expand_more
-                                  : Icons.chevron_right,
-                              size: 18,
-                            )
-                          : const SizedBox.shrink(),
-                    ),
-                    Icon(icon, size: iconSize),
-                    const SizedBox(width: 8),
-                    if (draft.isNameEditing && !readOnly)
-                      Expanded(
-                        child: Row(
-                          children: [
-                            Expanded(
-                              flex: 3,
-                              child: TextField(
-                                controller: draft.nameController,
-                                autofocus: true,
-                                onEditingComplete: onFinishNameEditing,
-                                onSubmitted: (_) => onFinishNameEditing?.call(),
-                                decoration: InputDecoration(
-                                  isDense: true,
-                                  hintText: isProperty
-                                      ? 'Property name'
-                                      : 'Value name',
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 8,
-                                  ),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              flex: 2,
-                              child: TextField(
-                                controller: draft.codeController,
-                                onEditingComplete: onFinishNameEditing,
-                                onSubmitted: (_) => onFinishNameEditing?.call(),
-                                decoration: InputDecoration(
-                                  isDense: true,
-                                  hintText: 'Code (Optional)',
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 8,
-                                  ),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: canExpand ? onToggleBranch : null,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 6,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.max,
+                    children: [
+                      SizedBox(
+                        width: 20,
+                        child: canExpand
+                            ? Icon(
+                                draft.detailsExpanded
+                                    ? Icons.expand_more
+                                    : Icons.chevron_right,
+                                size: 18,
+                              )
+                            : const SizedBox.shrink(),
+                      ),
+                      Icon(icon, size: iconSize),
+                      const SizedBox(width: 8),
+                      if (draft.isNameEditing && !readOnly)
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Expanded(
+                                flex: 3,
+                                child: TextField(
+                                  controller: draft.nameController,
+                                  autofocus: true,
+                                  onEditingComplete: onFinishNameEditing,
+                                  onSubmitted: (_) =>
+                                      onFinishNameEditing?.call(),
+                                  decoration: InputDecoration(
+                                    isDense: true,
+                                    hintText: isProperty
+                                        ? 'Property name'
+                                        : 'Value name',
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 8,
+                                    ),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                      )
-                    else
-                      Expanded(
-                        child: MouseRegion(
-                          cursor: readOnly
-                              ? MouseCursor.defer
-                              : SystemMouseCursors.text,
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: readOnly ? null : onEnableNameEditing,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 4),
-                              child: Text(
-                                summaryLabel,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: textColor,
-                                  fontWeight: isProperty
-                                      ? FontWeight.w700
-                                      : FontWeight.w500,
+                              const SizedBox(width: 8),
+                              Expanded(
+                                flex: 2,
+                                child: TextField(
+                                  controller: draft.codeController,
+                                  onEditingComplete: onFinishNameEditing,
+                                  onSubmitted: (_) =>
+                                      onFinishNameEditing?.call(),
+                                  decoration: InputDecoration(
+                                    isDense: true,
+                                    hintText: 'Code (Optional)',
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 8,
+                                    ),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        Expanded(
+                          child: MouseRegion(
+                            cursor: readOnly
+                                ? MouseCursor.defer
+                                : SystemMouseCursors.text,
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: readOnly ? null : onEnableNameEditing,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 4,
+                                ),
+                                child: Text(
+                                  summaryLabel,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: textColor,
+                                    fontWeight: isProperty
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    if (visiblePills.isNotEmpty) ...[
+                      if (visiblePills.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            alignment: WrapAlignment.end,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              for (final pill in visiblePills)
+                                _TreeMetaPill(
+                                  label: pill.label,
+                                  tone: pill.tone,
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
                       const SizedBox(width: 8),
-                      Flexible(
-                        child: Wrap(
-                          spacing: 6,
-                          runSpacing: 4,
-                          alignment: WrapAlignment.end,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            for (final pill in visiblePills)
-                              _TreeMetaPill(label: pill.label, tone: pill.tone),
-                          ],
+                      _NodeTypePill(label: nodeType),
+                      if (!readOnly) ...[
+                        const SizedBox(width: 4),
+                        if (onToggleInputType != null)
+                          InkWell(
+                            onTap: onToggleInputType,
+                            borderRadius: BorderRadius.circular(4),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: draft.inputType == 'Numeric'
+                                    ? Colors.blue.withValues(alpha: 0.1)
+                                    : Colors.grey.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: draft.inputType == 'Numeric'
+                                      ? Colors.blue.withValues(alpha: 0.3)
+                                      : Colors.grey.withValues(alpha: 0.3),
+                                ),
+                              ),
+                              child: Text(
+                                draft.inputType == 'Numeric' ? '1' : 'A',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: draft.inputType == 'Numeric'
+                                      ? Colors.blue[700]
+                                      : Colors.grey[700],
+                                ),
+                              ),
+                            ),
+                          ),
+                        if (onAddValue != null)
+                          _TreeActionButton(
+                            tooltip: 'Add value',
+                            icon: Icons.add,
+                            onPressed: onAddValue,
+                          ),
+                        if (onAddProperty != null)
+                          _TreeActionButton(
+                            tooltip: 'Add property',
+                            icon: Icons.account_tree_outlined,
+                            onPressed: onAddProperty,
+                          ),
+                        if (onPromoteToGroup != null)
+                          _TreeActionButton(
+                            tooltip: 'Promote to group',
+                            icon: Icons.upload_rounded,
+                            onPressed: onPromoteToGroup,
+                          ),
+                        if (onEnableNameEditing != null)
+                          _TreeActionButton(
+                            tooltip: 'Edit name',
+                            icon: Icons.edit_outlined,
+                            onPressed: onEnableNameEditing,
+                          ),
+                        _TreeActionButton(
+                          tooltip: 'Move up',
+                          icon: Icons.arrow_upward,
+                          onPressed: onMoveUp,
                         ),
-                      ),
+                        _TreeActionButton(
+                          tooltip: 'Move down',
+                          icon: Icons.arrow_downward,
+                          onPressed: onMoveDown,
+                        ),
+                        if (onRemove != null)
+                          _TreeActionButton(
+                            tooltip: 'Remove',
+                            icon: Icons.delete_outline,
+                            onPressed: onRemove,
+                          ),
+                      ],
                     ],
-                    const SizedBox(width: 8),
-                    _NodeTypePill(label: nodeType),
-                    if (!readOnly) ...[
-                      const SizedBox(width: 4),
-                      if (onAddValue != null)
-                        _TreeActionButton(
-                          tooltip: 'Add value',
-                          icon: Icons.add,
-                          onPressed: onAddValue,
-                        ),
-                      if (onAddProperty != null)
-                        _TreeActionButton(
-                          tooltip: 'Add property',
-                          icon: Icons.account_tree_outlined,
-                          onPressed: onAddProperty,
-                        ),
-                      if (onPromoteToGroup != null)
-                        _TreeActionButton(
-                          tooltip: 'Promote to group',
-                          icon: Icons.upload_rounded,
-                          onPressed: onPromoteToGroup,
-                        ),
-                      if (onEnableNameEditing != null)
-                        _TreeActionButton(
-                          tooltip: 'Edit name',
-                          icon: Icons.edit_outlined,
-                          onPressed: onEnableNameEditing,
-                        ),
-                      _TreeActionButton(
-                        tooltip: 'Move up',
-                        icon: Icons.arrow_upward,
-                        onPressed: onMoveUp,
-                      ),
-                      _TreeActionButton(
-                        tooltip: 'Move down',
-                        icon: Icons.arrow_downward,
-                        onPressed: onMoveDown,
-                      ),
-                      if (onRemove != null)
-                        _TreeActionButton(
-                          tooltip: 'Remove',
-                          icon: Icons.delete_outline,
-                          onPressed: onRemove,
-                        ),
-                    ],
-
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-        if (hasChildren && draft.detailsExpanded)
-          Padding(
-            padding: EdgeInsets.only(left: depth * 20.0 + 10),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                border: Border(left: BorderSide(color: branchColor, width: 1)),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.only(left: 10, top: 4),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    for (
-                      var childIndex = 0;
-                      childIndex < draft.children.length;
-                      childIndex++
-                    ) ...[
-                      buildChildEditor(
-                        draft.children[childIndex],
-                        depth + 1,
-                        draft.children,
-                      ),
-                      if (childIndex != draft.children.length - 1)
-                        const SizedBox(height: 2),
+          if (hasChildren && draft.detailsExpanded)
+            Padding(
+              padding: EdgeInsets.only(left: depth * 20.0 + 10),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border(
+                    left: BorderSide(color: branchColor, width: 1),
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 10, top: 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (
+                        var childIndex = 0;
+                        childIndex < draft.children.length;
+                        childIndex++
+                      ) ...[
+                        buildChildEditor(
+                          draft.children[childIndex],
+                          depth + 1,
+                          draft.children,
+                        ),
+                        if (childIndex != draft.children.length - 1)
+                          const SizedBox(height: 2),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),
-          ),
-      ],
+        ],
       ),
     );
   }
@@ -3584,9 +3807,11 @@ class _WarningText extends StatelessWidget {
       ItemDuplicateWarning.emptyNodeName =>
         'Every property and value node needs a name.',
       ItemDuplicateWarning.invalidTreeStructure =>
-        'The tree must alternate property groups and values.',
+        'Invalid tree structure. A value node can only contain property nodes, and a property cannot contain both values and properties.',
       ItemDuplicateWarning.duplicateSiblingName =>
         'Sibling names under the same parent must be unique.',
+      ItemDuplicateWarning.duplicatePropertyName =>
+        'A property with this name already exists elsewhere in the item.',
     };
     if (message.isEmpty) {
       return const SizedBox.shrink();
@@ -3860,9 +4085,7 @@ class _ItemPhotoPickerFieldState extends State<_ItemPhotoPickerField> {
         const SnackBar(content: Text('Image uploaded successfully.')),
       );
     } catch (error) {
-      showAppSnack(
-        SnackBar(content: Text('Image upload failed: $error')),
-      );
+      showAppSnack(SnackBar(content: Text('Image upload failed: $error')));
     } finally {
       if (mounted) {
         setState(() => _isUploading = false);
@@ -3977,7 +4200,8 @@ class _VariationCreationDialog extends StatefulWidget {
   });
 
   @override
-  State<_VariationCreationDialog> createState() => _VariationCreationDialogState();
+  State<_VariationCreationDialog> createState() =>
+      _VariationCreationDialogState();
 }
 
 class _VariationCreationDialogState extends State<_VariationCreationDialog> {
@@ -4071,8 +4295,6 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
     });
   }
 
-
-
   void _save() {
     widget.onSpawnItems(_createdCombinations);
   }
@@ -4090,8 +4312,14 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Variation Creation', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.of(context).pop()),
+                const Text(
+                  'Variation Creation',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
               ],
             ),
             const SizedBox(height: 20),
@@ -4112,13 +4340,22 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
                               color: Colors.grey.shade100,
-                              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                              borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(8),
+                              ),
                             ),
                             width: double.infinity,
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text(_selectedIndex == null ? 'Bulk Creation Tree' : 'Editing Selected Variant', style: const TextStyle(fontWeight: FontWeight.w600)),
+                                Text(
+                                  _selectedIndex == null
+                                      ? 'Bulk Creation Tree'
+                                      : 'Editing Selected Variant',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                                 if (_selectedIndex != null)
                                   TextButton(
                                     onPressed: _deselectCard,
@@ -4133,46 +4370,97 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
                               itemCount: widget.topLevelProperties.length,
                               itemBuilder: (context, index) {
                                 final prop = widget.topLevelProperties[index];
-                                final values = prop.children.where((c) => c.kind == ItemVariationNodeKind.value).toList();
+                                final values = prop.children
+                                    .where(
+                                      (c) =>
+                                          c.kind == ItemVariationNodeKind.value,
+                                    )
+                                    .toList();
                                 return Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Padding(
-                                      padding: const EdgeInsets.symmetric(vertical: 8),
-                                      child: Text(prop.nameController.text.isEmpty ? 'Unnamed Property' : prop.nameController.text, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 8,
+                                      ),
+                                      child: Text(
+                                        prop.nameController.text.isEmpty
+                                            ? 'Unnamed Property'
+                                            : prop.nameController.text,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
                                     ),
                                     if (values.isEmpty)
                                       const Padding(
-                                        padding: EdgeInsets.only(left: 16, bottom: 8),
-                                        child: Text('No values', style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic)),
+                                        padding: EdgeInsets.only(
+                                          left: 16,
+                                          bottom: 8,
+                                        ),
+                                        child: Text(
+                                          'No values',
+                                          style: TextStyle(
+                                            color: Colors.grey,
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                        ),
                                       ),
                                     for (final val in values)
                                       CheckboxListTile(
                                         dense: true,
-                                        title: Text(val.nameController.text.isEmpty ? 'Unnamed Value' : val.nameController.text),
-                                        value: _selectedValues[prop]!.contains(val),
+                                        title: Text(
+                                          val.nameController.text.isEmpty
+                                              ? 'Unnamed Value'
+                                              : val.nameController.text,
+                                        ),
+                                        value: _selectedValues[prop]!.contains(
+                                          val,
+                                        ),
                                         onChanged: (checked) {
                                           setState(() {
                                             if (_selectedIndex != null) {
                                               if (checked == true) {
-                                                final activeCombo = List<_NodeDraft>.from(_createdCombinations[_selectedIndex!]);
-                                                final propValues = prop.children.where((c) => c.kind == ItemVariationNodeKind.value).toSet();
-                                                activeCombo.removeWhere((val) => propValues.contains(val));
+                                                final activeCombo =
+                                                    List<_NodeDraft>.from(
+                                                      _createdCombinations[_selectedIndex!],
+                                                    );
+                                                final propValues = prop.children
+                                                    .where(
+                                                      (c) =>
+                                                          c.kind ==
+                                                          ItemVariationNodeKind
+                                                              .value,
+                                                    )
+                                                    .toSet();
+                                                activeCombo.removeWhere(
+                                                  (val) =>
+                                                      propValues.contains(val),
+                                                );
                                                 activeCombo.add(val);
-                                                _createdCombinations[_selectedIndex!] = activeCombo;
+                                                _createdCombinations[_selectedIndex!] =
+                                                    activeCombo;
                                                 _selectedValues[prop]!.clear();
                                                 _selectedValues[prop]!.add(val);
                                               } else {
-                                                final activeCombo = List<_NodeDraft>.from(_createdCombinations[_selectedIndex!]);
+                                                final activeCombo =
+                                                    List<_NodeDraft>.from(
+                                                      _createdCombinations[_selectedIndex!],
+                                                    );
                                                 activeCombo.remove(val);
-                                                _createdCombinations[_selectedIndex!] = activeCombo;
-                                                _selectedValues[prop]!.remove(val);
+                                                _createdCombinations[_selectedIndex!] =
+                                                    activeCombo;
+                                                _selectedValues[prop]!.remove(
+                                                  val,
+                                                );
                                               }
                                             } else {
                                               if (checked == true) {
                                                 _selectedValues[prop]!.add(val);
                                               } else {
-                                                _selectedValues[prop]!.remove(val);
+                                                _selectedValues[prop]!.remove(
+                                                  val,
+                                                );
                                               }
                                             }
                                           });
@@ -4212,37 +4500,61 @@ class _VariationCreationDialogState extends State<_VariationCreationDialog> {
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
                               color: Colors.grey.shade100,
-                              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                              borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(8),
+                              ),
                             ),
                             width: double.infinity,
-                            child: const Text('Generated Combinations', style: TextStyle(fontWeight: FontWeight.w600)),
+                            child: const Text(
+                              'Generated Combinations',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
                           ),
                           Expanded(
                             child: _createdCombinations.isEmpty
-                                ? const Center(child: Text('No variants created yet.', style: TextStyle(color: Colors.grey)))
+                                ? const Center(
+                                    child: Text(
+                                      'No variants created yet.',
+                                      style: TextStyle(color: Colors.grey),
+                                    ),
+                                  )
                                 : ListView.builder(
                                     padding: const EdgeInsets.all(8),
                                     itemCount: _createdCombinations.length,
                                     itemBuilder: (context, index) {
                                       final combo = _createdCombinations[index];
-                                      final label = combo.map((n) => n.nameController.text).join(' - ');
+                                      final label = combo
+                                          .map((n) => n.nameController.text)
+                                          .join(' - ');
                                       return ListTile(
                                         selected: _selectedIndex == index,
-                                        selectedTileColor: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+                                        selectedTileColor: Theme.of(context)
+                                            .colorScheme
+                                            .primaryContainer
+                                            .withOpacity(0.3),
                                         onTap: () => _selectCard(index),
                                         title: Text(label),
                                         trailing: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             IconButton(
-                                              icon: const Icon(Icons.copy, size: 20),
+                                              icon: const Icon(
+                                                Icons.copy,
+                                                size: 20,
+                                              ),
                                               tooltip: 'Duplicate',
-                                              onPressed: () => _duplicateCard(index),
+                                              onPressed: () =>
+                                                  _duplicateCard(index),
                                             ),
                                             IconButton(
-                                              icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                                              icon: const Icon(
+                                                Icons.delete_outline,
+                                                color: Colors.red,
+                                                size: 20,
+                                              ),
                                               tooltip: 'Delete',
-                                              onPressed: () => _deleteCard(index),
+                                              onPressed: () =>
+                                                  _deleteCard(index),
                                             ),
                                           ],
                                         ),

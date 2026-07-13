@@ -71,9 +71,9 @@ class ApiClientRepository implements ClientRepository {
 
     final uri = Uri.parse('$baseUrl/api/clients/$id');
     final response = await _client.get(uri);
-    
+
     if (response.statusCode == 404) return null;
-    
+
     final payload = _decodeJsonObject(response.body);
     if (response.statusCode < 200 ||
         response.statusCode >= 300 ||
@@ -83,7 +83,9 @@ class ApiClientRepository implements ClientRepository {
       );
     }
 
-    return ClientDto.fromJson(payload['client'] as Map<String, dynamic>).toDomain();
+    return ClientDto.fromJson(
+      payload['client'] as Map<String, dynamic>,
+    ).toDomain();
   }
 
   @override
@@ -191,9 +193,7 @@ class ApiClientRepository implements ClientRepository {
     if (response.statusCode < 200 ||
         response.statusCode >= 300 ||
         !parsed.success) {
-      throw ClientApiException(
-        parsed.error ?? 'Failed to delete client.',
-      );
+      throw ClientApiException(parsed.error ?? 'Failed to delete client.');
     }
   }
 

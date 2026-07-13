@@ -558,36 +558,36 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
       _localError = null;
       _isSaving = true;
     });
-    
+
     try {
       final saved = widget.vendor == null
-        ? await provider.createVendor(
-            CreateVendorInput(
-              name: _nameController.text,
-              alias: _aliasController.text,
-              gstNumber: _gstController.text,
-              address: _addressController.text,
-              contactName: _contactController.text,
-              phone: _phoneController.text,
-              email: _emailController.text,
-              logoUrl: _logoUrlController.text,
-              photoUrl: _photoUrlController.text,
-            ),
-          )
-        : await provider.updateVendor(
-            UpdateVendorInput(
-              id: widget.vendor!.id,
-              name: _nameController.text,
-              alias: _aliasController.text,
-              gstNumber: _gstController.text,
-              address: _addressController.text,
-              contactName: _contactController.text,
-              phone: _phoneController.text,
-              email: _emailController.text,
-              logoUrl: _logoUrlController.text,
-              photoUrl: _photoUrlController.text,
-            ),
-          );
+          ? await provider.createVendor(
+              CreateVendorInput(
+                name: _nameController.text,
+                alias: _aliasController.text,
+                gstNumber: _gstController.text,
+                address: _addressController.text,
+                contactName: _contactController.text,
+                phone: _phoneController.text,
+                email: _emailController.text,
+                logoUrl: _logoUrlController.text,
+                photoUrl: _photoUrlController.text,
+              ),
+            )
+          : await provider.updateVendor(
+              UpdateVendorInput(
+                id: widget.vendor!.id,
+                name: _nameController.text,
+                alias: _aliasController.text,
+                gstNumber: _gstController.text,
+                address: _addressController.text,
+                contactName: _contactController.text,
+                phone: _phoneController.text,
+                email: _emailController.text,
+                logoUrl: _logoUrlController.text,
+                photoUrl: _photoUrlController.text,
+              ),
+            );
       if (saved != null && mounted && provider.errorMessage == null) {
         showAppToast(
           context,
@@ -751,9 +751,7 @@ class _VendorImagePickerFieldState extends State<_VendorImagePickerField> {
         const SnackBar(content: Text('Image uploaded successfully.')),
       );
     } catch (error) {
-      showAppSnack(
-        SnackBar(content: Text('Image upload failed: $error')),
-      );
+      showAppSnack(SnackBar(content: Text('Image upload failed: $error')));
     } finally {
       if (mounted) {
         setState(() => _isUploading = false);

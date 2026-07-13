@@ -252,7 +252,11 @@ class ApiOrderRepository implements OrderRepository {
   }
 
   @override
-  Future<List<OrderDeletionSummary>> deleteOrder(int orderId, {String? wipBarcode, double? wipQty}) async {
+  Future<List<OrderDeletionSummary>> deleteOrder(
+    int orderId, {
+    String? wipBarcode,
+    double? wipQty,
+  }) async {
     if (useMockResponses) {
       _mockOrders.removeWhere((o) => o.id == orderId);
       return [];
@@ -269,7 +273,9 @@ class ApiOrderRepository implements OrderRepository {
     );
     final payload = _decodeJsonObject(response.body);
     final parsed = OrderDeletionResponse.fromJson(payload);
-    if (response.statusCode < 200 || response.statusCode >= 300 || !parsed.success) {
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !parsed.success) {
       throw OrderApiException(parsed.error ?? 'Failed to delete order.');
     }
     return parsed.recoveredMovements;

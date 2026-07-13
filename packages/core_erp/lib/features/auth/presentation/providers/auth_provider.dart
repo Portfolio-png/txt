@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-
 import '../../data/auth_api.dart';
 import '../../domain/auth_user.dart';
 
@@ -9,8 +8,8 @@ class AuthProvider extends ChangeNotifier {
     required String baseUrl,
     bool demoMode = false,
     this.onUserCreated,
-  })  : _demoMode = demoMode,
-        _api = AuthApi(baseUrl: baseUrl);
+  }) : _demoMode = demoMode,
+       _api = AuthApi(baseUrl: baseUrl);
 
   final AuthApi _api;
   final bool _demoMode;
@@ -256,7 +255,7 @@ class AuthProvider extends ChangeNotifier {
         password: password,
         admin: admin,
       );
-      
+
       // Sync the user to the control plane sandbox dashboard
       onUserCreated?.call(email, admin ? 'admin' : 'worker');
 
@@ -271,10 +270,7 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> deleteUser({
-    required int userId,
-    bool override = false,
-  }) async {
+  Future<bool> deleteUser({required int userId, bool override = false}) async {
     if (!can('users.manage_permissions')) {
       _errorMessage = 'You do not have permission to delete users.';
       notifyListeners();

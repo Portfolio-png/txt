@@ -18,12 +18,15 @@ class AttendanceLog extends StatelessWidget {
           children: [
             const Icon(Icons.calendar_month, size: 64, color: Colors.grey),
             const SizedBox(height: 16),
-            const Text('No attendance records found.', style: TextStyle(fontSize: 18)),
+            const Text(
+              'No attendance records found.',
+              style: TextStyle(fontSize: 18),
+            ),
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: () {},
               child: const Text('Import Biometric Data'),
-            )
+            ),
           ],
         ),
       ),

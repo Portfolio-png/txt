@@ -71,9 +71,9 @@ class ApiItemRepository implements ItemRepository {
 
     final uri = Uri.parse('$baseUrl/api/items/$id');
     final response = await _client.get(uri);
-    
+
     if (response.statusCode == 404) return null;
-    
+
     final payload = _decodeJsonObject(response.body);
     if (response.statusCode < 200 ||
         response.statusCode >= 300 ||
@@ -82,7 +82,7 @@ class ApiItemRepository implements ItemRepository {
         payload['error'] as String? ?? 'Failed to fetch item.',
       );
     }
-    
+
     return ItemDto.fromJson(payload['item'] as Map<String, dynamic>).toDomain();
   }
 
@@ -461,7 +461,6 @@ class ApiItemRepository implements ItemRepository {
     }
   }
 
-
   @override
   Future<void> deleteItem(int id) async {
     if (useMockResponses) {
@@ -484,9 +483,7 @@ class ApiItemRepository implements ItemRepository {
     final response = await _client.delete(uri);
     final payload = _decodeJsonObject(response.body);
     final success = payload['success'] == true;
-    if (response.statusCode < 200 ||
-        response.statusCode >= 300 ||
-        !success) {
+    if (response.statusCode < 200 || response.statusCode >= 300 || !success) {
       throw ItemApiException(
         payload['error']?.toString() ?? 'Failed to delete item.',
       );
@@ -2009,16 +2006,14 @@ class ApiItemRepository implements ItemRepository {
     final response = await _client.get(uri);
     final payload = _decodeJsonObject(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      final error = payload['error']?.toString() ?? 'Failed to fetch pipeline templates';
+      final error =
+          payload['error']?.toString() ?? 'Failed to fetch pipeline templates';
       throw ItemApiException(error);
     }
     final dataList = payload['templates'] as List<dynamic>? ?? [];
     return dataList.map((e) {
       final map = e as Map<String, dynamic>;
-      return {
-        'id': map['id'].toString(),
-        'name': map['name'].toString(),
-      };
+      return {'id': map['id'].toString(), 'name': map['name'].toString()};
     }).toList();
   }
 }

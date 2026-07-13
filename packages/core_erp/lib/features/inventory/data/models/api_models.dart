@@ -98,13 +98,13 @@ class MaterialDto {
     final parsedChildren = rawChildren is String
         ? List<String>.from(jsonDecode(rawChildren) as List<dynamic>)
         : List<String>.from((rawChildren as List<dynamic>? ?? const []));
-    
+
     final rawCustomVars = json['customVariationValues'];
     final parsedCustomVars = rawCustomVars is String
         ? Map<String, String>.from(jsonDecode(rawCustomVars) as Map)
         : rawCustomVars != null
-            ? Map<String, String>.from(rawCustomVars as Map)
-            : null;
+        ? Map<String, String>.from(rawCustomVars as Map)
+        : null;
 
     return MaterialDto(
       id: json['id'] as int?,
@@ -186,7 +186,9 @@ class MaterialDto {
       'linkedGroupId': linkedGroupId,
       'linkedItemId': linkedItemId,
       'linkedVariationLeafNodeId': linkedVariationLeafNodeId,
-      'customVariationValues': customVariationValues != null ? jsonEncode(customVariationValues) : null,
+      'customVariationValues': customVariationValues != null
+          ? jsonEncode(customVariationValues)
+          : null,
       'displayStock': displayStock,
       'createdBy': createdBy,
       'workflowStatus': workflowStatus,

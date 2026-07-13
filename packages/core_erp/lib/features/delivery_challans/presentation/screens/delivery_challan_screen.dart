@@ -4924,41 +4924,81 @@ class _ItemsEditor extends StatelessWidget {
     if (valueNodeIds.isEmpty) {
       return itemName;
     }
+
     final selectedValueIds = valueNodeIds.toSet();
     final propIdToValue = <int, String>{};
-    for (final root in item.topLevelProperties) {
-      ItemVariationNodeDefinition currentProperty = root;
-      while (true) {
-        final selectedValue = currentProperty.activeChildren
-            .where((n) => n.kind == ItemVariationNodeKind.value)
-            .where((n) => selectedValueIds.contains(n.id))
-            .firstOrNull;
-        if (selectedValue == null) {
-          final tempId = -currentProperty.id;
-          if (selectedValueIds.contains(tempId)) {
-            final valName = customVariationValues[currentProperty.id];
-            if (valName != null) {
-              propIdToValue[currentProperty.id] = valName;
-            }
-          }
-          break;
-        }
 
-        final valName = selectedValue.name.trim().isEmpty
-            ? selectedValue.displayName.trim()
-            : selectedValue.name.trim();
-        propIdToValue[currentProperty.id] = valName;
-
-        final nextProp = selectedValue.activeChildren
-            .where((n) => n.kind == ItemVariationNodeKind.property)
-            .firstOrNull;
-        if (nextProp == null) break;
-        currentProperty = nextProp;
+    void extractValues(ItemVariationNodeDefinition prop) {
+      final subProps = prop.activeChildren.where(
+        (n) => n.kind == ItemVariationNodeKind.property,
+      );
+      if (subProps.isNotEmpty) {
+        for (final sp in subProps) extractValues(sp);
+        return;
       }
+
+      final selectedValue = prop.activeChildren
+          .where((n) => n.kind == ItemVariationNodeKind.value)
+          .where((n) => selectedValueIds.contains(n.id))
+          .firstOrNull;
+
+      if (selectedValue == null) {
+        final tempId = -prop.id;
+        if (selectedValueIds.contains(tempId)) {
+          final valName = customVariationValues[prop.id];
+          if (valName != null) {
+            propIdToValue[prop.id] = valName;
+          }
+        }
+        return;
+      }
+
+      final valName = selectedValue.name.trim().isEmpty
+          ? selectedValue.displayName.trim()
+          : selectedValue.name.trim();
+      propIdToValue[prop.id] = valName;
+
+      final nextProps = selectedValue.activeChildren.where(
+        (n) => n.kind == ItemVariationNodeKind.property,
+      );
+      for (final np in nextProps) {
+        extractValues(np);
+      }
+    }
+
+    for (final root in item.topLevelProperties) {
+      extractValues(root);
+    }
+
+    String getCombinedValue(
+      ItemVariationNodeDefinition prop,
+      bool isDetailed,
+      bool isDimensions,
+    ) {
+      final subProps = prop.activeChildren.where(
+        (n) => n.kind == ItemVariationNodeKind.property,
+      );
+      if (subProps.isNotEmpty) {
+        final childVals = <String>[];
+        for (final sp in subProps) {
+          final val = getCombinedValue(sp, isDetailed, isDimensions);
+          if (val.isNotEmpty) childVals.add(val);
+        }
+        if (childVals.isEmpty) return '';
+        if (isDimensions) return childVals.join(' x ');
+        return childVals.join(isDetailed ? ', ' : ' ');
+      }
+
+      final val = propIdToValue[prop.id];
+      if (val == null || val.isEmpty) return '';
+      return isDetailed ? '${prop.name.trim()}: $val' : val;
     }
 
     final topProps = item.topLevelProperties;
     final parts = <String>[];
+
+    final isDetailed = item.namingFormat.contains('__format:detailed');
+    final isDimensions = item.namingFormat.contains('__format:dimensions');
     if (item.namingFormat.isNotEmpty) {
       for (final token in item.namingFormat) {
         if (token == 'name') {
@@ -4966,19 +5006,41 @@ class _ItemsEditor extends StatelessWidget {
         } else if (token.startsWith('prop_')) {
           final idx = int.tryParse(token.substring(5));
           if (idx != null && idx >= 0 && idx < topProps.length) {
-            final value = propIdToValue[topProps[idx].id];
-            if (value != null && value.isNotEmpty) {
-              parts.add(value);
+            final prop = topProps[idx];
+            final combinedValue = getCombinedValue(
+              prop,
+              isDetailed,
+              isDimensions,
+            );
+            if (combinedValue.isNotEmpty) {
+              parts.add(combinedValue);
             }
           }
         }
       }
-    }
-    if (parts.isEmpty) {
+    } else {
       parts.add(itemName);
-      parts.addAll(propIdToValue.values.where((v) => v.isNotEmpty));
+      for (final root in item.topLevelProperties) {
+        final combinedValue = getCombinedValue(root, isDetailed, isDimensions);
+        if (combinedValue.isNotEmpty) {
+          parts.add(combinedValue);
+        }
+      }
     }
-    return parts.join(' ');
+
+    if (isDimensions) {
+      final nameIndex = parts.indexOf(itemName);
+      if (nameIndex != -1) {
+        final variations = List<String>.from(parts)..removeAt(nameIndex);
+        if (variations.isNotEmpty) {
+          return '$itemName ${variations.join(' x ')}';
+        }
+      } else if (parts.isNotEmpty) {
+        return parts.join(' x ');
+      }
+    }
+
+    return parts.join(isDetailed ? ', ' : ' ');
   }
 }
 

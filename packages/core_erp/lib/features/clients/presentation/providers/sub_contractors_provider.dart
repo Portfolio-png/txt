@@ -5,9 +5,8 @@ import '../../domain/sub_contractor_definition.dart';
 import '../../domain/sub_contractor_inputs.dart';
 
 class SubContractorsProvider extends ChangeNotifier {
-  SubContractorsProvider({
-    required SubContractorRepository repository,
-  }) : _repository = repository;
+  SubContractorsProvider({required SubContractorRepository repository})
+    : _repository = repository;
 
   final SubContractorRepository _repository;
 
@@ -19,16 +18,18 @@ class SubContractorsProvider extends ChangeNotifier {
 
   int? _currentClientId;
   List<SubContractorDefinition> _subContractors = [];
-  List<SubContractorDefinition> get subContractors => List.unmodifiable(_subContractors);
+  List<SubContractorDefinition> get subContractors =>
+      List.unmodifiable(_subContractors);
 
   List<SubContractorDefinition> filteredSubContractors(String query) {
     if (query.isEmpty) return _subContractors;
     final lowerQuery = query.toLowerCase();
     return _subContractors.where((s) {
       return s.name.toLowerCase().contains(lowerQuery) ||
-             (s.clientName != null && s.clientName!.toLowerCase().contains(lowerQuery)) ||
-             s.phone.toLowerCase().contains(lowerQuery) ||
-             s.email.toLowerCase().contains(lowerQuery);
+          (s.clientName != null &&
+              s.clientName!.toLowerCase().contains(lowerQuery)) ||
+          s.phone.toLowerCase().contains(lowerQuery) ||
+          s.email.toLowerCase().contains(lowerQuery);
     }).toList();
   }
 
@@ -64,7 +65,10 @@ class SubContractorsProvider extends ChangeNotifier {
     }
   }
 
-  Future<SubContractorDefinition?> create(int clientId, CreateSubContractorInput input) async {
+  Future<SubContractorDefinition?> create(
+    int clientId,
+    CreateSubContractorInput input,
+  ) async {
     try {
       final created = await _repository.createSubContractor(clientId, input);
       if (_currentClientId == clientId) {

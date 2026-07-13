@@ -29,7 +29,10 @@ class ExportService {
   }
 
   /// Exports data to JSON
-  static Future<void> exportToJson(String fileName, List<Map<String, dynamic>> data) async {
+  static Future<void> exportToJson(
+    String fileName,
+    List<Map<String, dynamic>> data,
+  ) async {
     final scrubbed = scrubData(data);
     final jsonString = const JsonEncoder.withIndent('  ').convert(scrubbed);
     final bytes = Uint8List.fromList(utf8.encode(jsonString));
@@ -37,80 +40,114 @@ class ExportService {
   }
 
   /// Exports data to CSV
-  static Future<void> exportToCsv(String fileName, List<Map<String, dynamic>> data) async {
+  static Future<void> exportToCsv(
+    String fileName,
+    List<Map<String, dynamic>> data,
+  ) async {
     if (data.isEmpty) return;
     final scrubbed = scrubData(data);
-    
+
     final headers = scrubbed.first.keys.toList();
     final buffer = StringBuffer();
-    
+
     // Add headers
     buffer.writeln(headers.map(_escapeCsv).join(','));
-    
+
     // Add rows
     for (final row in scrubbed) {
-      final values = headers.map((h) => _escapeCsv(row[h]?.toString() ?? '')).join(',');
+      final values = headers
+          .map((h) => _escapeCsv(row[h]?.toString() ?? ''))
+          .join(',');
       buffer.writeln(values);
     }
-    
+
     final bytes = Uint8List.fromList(utf8.encode(buffer.toString()));
     await _saveFile('$fileName.csv', bytes, 'text/csv');
   }
 
   /// Exports data to Excel
-  static Future<void> exportToExcel(String fileName, List<Map<String, dynamic>> data) async {
+  static Future<void> exportToExcel(
+    String fileName,
+    List<Map<String, dynamic>> data,
+  ) async {
     if (data.isEmpty) return;
     final scrubbed = scrubData(data);
-    
+
     final excel = Excel.createExcel();
     final sheet = excel['Sheet1'];
     excel.setDefaultSheet('Sheet1');
 
     final headers = scrubbed.first.keys.toList();
-    
+
     // Add headers
     sheet.appendRow(headers.map((h) => TextCellValue(h)).toList());
-    
+
     // Add rows
     for (final row in scrubbed) {
-      sheet.appendRow(headers.map((h) => TextCellValue(row[h]?.toString() ?? '')).toList());
+      sheet.appendRow(
+        headers.map((h) => TextCellValue(row[h]?.toString() ?? '')).toList(),
+      );
     }
-    
+
     final bytes = Uint8List.fromList(excel.encode()!);
-    await _saveFile('$fileName.xlsx', bytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    await _saveFile(
+      '$fileName.xlsx',
+      bytes,
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
   }
 
   /// Prints data to PDF
-  static Future<void> printToPdf(String title, List<Map<String, dynamic>> data) async {
+  static Future<void> printToPdf(
+    String title,
+    List<Map<String, dynamic>> data,
+  ) async {
     if (data.isEmpty) return;
     final scrubbed = scrubData(data);
-    
+
     final headers = scrubbed.first.keys.toList();
-    
+
     await Printing.layoutPdf(
       onLayout: (PdfPageFormat format) async {
         final doc = pw.Document();
-        
+
         doc.addPage(
           pw.MultiPage(
             pageFormat: format,
             build: (context) => [
-              pw.Header(level: 0, child: pw.Text(title, style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold))),
+              pw.Header(
+                level: 0,
+                child: pw.Text(
+                  title,
+                  style: pw.TextStyle(
+                    fontSize: 24,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
               pw.SizedBox(height: 20),
               pw.TableHelper.fromTextArray(
                 headers: headers,
-                data: scrubbed.map((row) => headers.map((h) => row[h]?.toString() ?? '').toList()).toList(),
+                data: scrubbed
+                    .map(
+                      (row) =>
+                          headers.map((h) => row[h]?.toString() ?? '').toList(),
+                    )
+                    .toList(),
                 headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
+                headerDecoration: const pw.BoxDecoration(
+                  color: PdfColors.grey300,
+                ),
                 cellHeight: 30,
                 cellAlignments: {
-                  for (var i = 0; i < headers.length; i++) i: pw.Alignment.centerLeft,
+                  for (var i = 0; i < headers.length; i++)
+                    i: pw.Alignment.centerLeft,
                 },
               ),
             ],
           ),
         );
-        
+
         return doc.save();
       },
     );
@@ -123,7 +160,11 @@ class ExportService {
     return value;
   }
 
-  static Future<void> _saveFile(String suggestedName, Uint8List bytes, String mimeType) async {
+  static Future<void> _saveFile(
+    String suggestedName,
+    Uint8List bytes,
+    String mimeType,
+  ) async {
     final location = await getSaveLocation(suggestedName: suggestedName);
     if (location != null) {
       final file = XFile.fromData(bytes, mimeType: mimeType);

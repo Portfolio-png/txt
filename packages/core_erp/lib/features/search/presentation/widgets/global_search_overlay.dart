@@ -40,21 +40,22 @@ class _GlobalSearchOverlayState extends State<GlobalSearchOverlay>
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 200),
-    )..addStatusListener((status) {
-        if (status == AnimationStatus.dismissed) {
-          setState(() {
-            _selectedItemId = null;
-            _selectedVariationValueNodeIds = [];
-            _customVariationValues = {};
-            _selectedRootPropertyId = null;
-            _leaf = null;
-            _selectedStock = null;
-          });
-        }
-      });
+    _controller =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 200),
+        )..addStatusListener((status) {
+          if (status == AnimationStatus.dismissed) {
+            setState(() {
+              _selectedItemId = null;
+              _selectedVariationValueNodeIds = [];
+              _customVariationValues = {};
+              _selectedRootPropertyId = null;
+              _leaf = null;
+              _selectedStock = null;
+            });
+          }
+        });
     _scaleAnimation = Tween<double>(
       begin: 0.95,
       end: 1.0,
@@ -78,8 +79,9 @@ class _GlobalSearchOverlayState extends State<GlobalSearchOverlay>
       _isLoadingStock = true;
     });
     try {
-      final records =
-          await context.read<InventoryRepository>().getVariationStock();
+      final records = await context
+          .read<InventoryRepository>()
+          .getVariationStock();
       if (mounted) {
         setState(() {
           _allStock = records;
@@ -126,8 +128,6 @@ class _GlobalSearchOverlayState extends State<GlobalSearchOverlay>
     return 'Properties selected';
   }
 
-
-
   @override
   Widget build(BuildContext context) {
     return Consumer<SearchProvider>(
@@ -153,11 +153,12 @@ class _GlobalSearchOverlayState extends State<GlobalSearchOverlay>
         final items = context.watch<ItemsProvider>().items;
         final groupsProvider = context.watch<GroupsProvider>();
         final selectedItem = _getSelectedItem(items);
-        final hasVariations = selectedItem != null &&
-            selectedItem.topLevelProperties.isNotEmpty;
+        final hasVariations =
+            selectedItem != null && selectedItem.topLevelProperties.isNotEmpty;
 
-        final bool isFullySelected = _selectedItemId != null && (!hasVariations || _leaf != null);
-        
+        final bool isFullySelected =
+            _selectedItemId != null && (!hasVariations || _leaf != null);
+
         final screenWidth = MediaQuery.of(context).size.width;
         final isTablet = screenWidth >= 600;
         final expandedWidth = screenWidth * 0.9;
@@ -203,7 +204,9 @@ class _GlobalSearchOverlayState extends State<GlobalSearchOverlay>
                           // Header
                           Padding(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 20.0, vertical: 16.0),
+                              horizontal: 20.0,
+                              vertical: 16.0,
+                            ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
@@ -211,16 +214,21 @@ class _GlobalSearchOverlayState extends State<GlobalSearchOverlay>
                                   children: [
                                     if (_selectedItemId != null)
                                       Padding(
-                                        padding: const EdgeInsets.only(right: 12.0),
+                                        padding: const EdgeInsets.only(
+                                          right: 12.0,
+                                        ),
                                         child: IconButton(
                                           icon: Icon(
                                             _isLeftPaneMinimized
-                                                ? Icons.keyboard_double_arrow_right_rounded
-                                                : Icons.keyboard_double_arrow_left_rounded,
+                                                ? Icons
+                                                      .keyboard_double_arrow_right_rounded
+                                                : Icons
+                                                      .keyboard_double_arrow_left_rounded,
                                           ),
                                           onPressed: () {
                                             setState(() {
-                                              _isLeftPaneMinimized = !_isLeftPaneMinimized;
+                                              _isLeftPaneMinimized =
+                                                  !_isLeftPaneMinimized;
                                             });
                                           },
                                           padding: EdgeInsets.zero,
@@ -230,10 +238,13 @@ class _GlobalSearchOverlayState extends State<GlobalSearchOverlay>
                                       ),
                                     Text(
                                       'Product & Stock Lookup',
-                                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                        fontWeight: FontWeight.w900,
-                                        color: SoftErpTheme.textPrimary,
-                                      ),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleLarge
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w900,
+                                            color: SoftErpTheme.textPrimary,
+                                          ),
                                     ),
                                   ],
                                 ),
@@ -255,7 +266,9 @@ class _GlobalSearchOverlayState extends State<GlobalSearchOverlay>
                                 AnimatedContainer(
                                   duration: const Duration(milliseconds: 300),
                                   curve: Curves.easeOutCubic,
-                                  width: _isLeftPaneMinimized ? 0.0 : (narrowWidth - 2.0),
+                                  width: _isLeftPaneMinimized
+                                      ? 0.0
+                                      : (narrowWidth - 2.0),
                                   clipBehavior: Clip.hardEdge,
                                   decoration: const BoxDecoration(
                                     color: SoftErpTheme.sectionSurface,
@@ -265,79 +278,13 @@ class _GlobalSearchOverlayState extends State<GlobalSearchOverlay>
                                     minWidth: narrowWidth - 2.0,
                                     maxWidth: narrowWidth - 2.0,
                                     child: Container(
-                                    padding: const EdgeInsets.all(24),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Select Item',
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w600,
-                                            color: SoftErpTheme.textSecondary,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 8),
-                                        SearchableSelectField<int>(
-                                          value: _selectedItemId,
-                                          decoration: InputDecoration(
-                                            hintText: 'Search item...',
-                                            border: OutlineInputBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                            ),
-                                            contentPadding:
-                                                const EdgeInsets.symmetric(
-                                                    horizontal: 12),
-                                          ),
-                                          dialogTitle: 'Select Item',
-                                          searchHintText: 'Search by name',
-                                          options: items
-                                              .map((item) {
-                                                final primaryGroup = groupsProvider
-                                                        .findById(item.groupId)
-                                                        ?.name ??
-                                                    'No primary group';
-                                                final fullVariationName = item
-                                                        .displayName.isNotEmpty
-                                                    ? item.displayName
-                                                    : item.name;
-                                                return SearchableSelectOption<
-                                                    int>(
-                                                  value: item.id,
-                                                  label: fullVariationName,
-                                                  searchText:
-                                                      '$fullVariationName $primaryGroup',
-                                                );
-                                              })
-                                              .toList(growable: false),
-                                          onChanged: (value) {
-                                            setState(() {
-                                              _selectedItemId = value;
-                                              _selectedVariationValueNodeIds =
-                                                  [];
-                                              _customVariationValues = {};
-                                              _selectedRootPropertyId = null;
-                                              _leaf = null;
-                                              _updateSelectedStock();
-                                            });
-                                            if (value != null) {
-                                              final item = _getSelectedItem(items);
-                                              if (item != null &&
-                                                  item.topLevelProperties
-                                                      .isNotEmpty) {
-                                                if (item.topLevelProperties.length == 1) {
-                                                  _selectedRootPropertyId = item.topLevelProperties.first.id;
-                                                }
-                                              }
-                                            }
-                                          },
-                                        ),
-                                        if (hasVariations) ...[
-                                          const SizedBox(height: 16),
+                                      padding: const EdgeInsets.all(24),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
                                           const Text(
-                                            'Variation Path',
+                                            'Select Item',
                                             style: TextStyle(
                                               fontSize: 13,
                                               fontWeight: FontWeight.w600,
@@ -345,157 +292,279 @@ class _GlobalSearchOverlayState extends State<GlobalSearchOverlay>
                                             ),
                                           ),
                                           const SizedBox(height: 8),
-                                          Expanded(
-                                            child: VariationPathSelectorWidget(
-                                              key: ValueKey(selectedItem.id),
-                                              item: selectedItem,
-                                              initialRootPropertyId: _selectedRootPropertyId,
-                                              initialValueNodeIds: _selectedVariationValueNodeIds,
-                                              initialCustomVariationValues: _customVariationValues,
-                                              readOnly: false,
-                                              showHeaderAndFooter: false,
-                                              onChanged: (result) {
-                                                setState(() {
-                                                  _selectedVariationValueNodeIds = result.valueNodeIds;
-                                                  _customVariationValues = result.customVariationValues;
-                                                  _leaf = result.leaf;
-                                                  if (selectedItem.topLevelProperties.length == 1) {
-                                                      _selectedRootPropertyId = selectedItem.topLevelProperties.first.id;
-                                                  }
-                                                  _updateSelectedStock();
-                                                });
-                                              },
+                                          SearchableSelectField<int>(
+                                            value: _selectedItemId,
+                                            decoration: InputDecoration(
+                                              hintText: 'Search item...',
+                                              border: OutlineInputBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                              contentPadding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                  ),
                                             ),
+                                            dialogTitle: 'Select Item',
+                                            searchHintText: 'Search by name',
+                                            options: items
+                                                .map((item) {
+                                                  final primaryGroup =
+                                                      groupsProvider
+                                                          .findById(
+                                                            item.groupId,
+                                                          )
+                                                          ?.name ??
+                                                      'No primary group';
+                                                  final fullVariationName =
+                                                      item
+                                                          .displayName
+                                                          .isNotEmpty
+                                                      ? item.displayName
+                                                      : item.name;
+                                                  return SearchableSelectOption<
+                                                    int
+                                                  >(
+                                                    value: item.id,
+                                                    label: fullVariationName,
+                                                    searchText:
+                                                        '$fullVariationName $primaryGroup',
+                                                  );
+                                                })
+                                                .toList(growable: false),
+                                            onChanged: (value) {
+                                              setState(() {
+                                                _selectedItemId = value;
+                                                _selectedVariationValueNodeIds =
+                                                    [];
+                                                _customVariationValues = {};
+                                                _selectedRootPropertyId = null;
+                                                _leaf = null;
+                                                _updateSelectedStock();
+                                              });
+                                              if (value != null) {
+                                                final item = _getSelectedItem(
+                                                  items,
+                                                );
+                                                if (item != null &&
+                                                    item
+                                                        .topLevelProperties
+                                                        .isNotEmpty) {
+                                                  if (item
+                                                          .topLevelProperties
+                                                          .length ==
+                                                      1) {
+                                                    _selectedRootPropertyId =
+                                                        item
+                                                            .topLevelProperties
+                                                            .first
+                                                            .id;
+                                                  }
+                                                }
+                                              }
+                                            },
                                           ),
+                                          if (hasVariations) ...[
+                                            const SizedBox(height: 16),
+                                            const Text(
+                                              'Variation Path',
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w600,
+                                                color:
+                                                    SoftErpTheme.textSecondary,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Expanded(
+                                              child: VariationPathSelectorWidget(
+                                                key: ValueKey(selectedItem.id),
+                                                item: selectedItem,
+                                                initialRootPropertyId:
+                                                    _selectedRootPropertyId,
+                                                initialValueNodeIds:
+                                                    _selectedVariationValueNodeIds,
+                                                initialCustomVariationValues:
+                                                    _customVariationValues,
+                                                readOnly: false,
+                                                showHeaderAndFooter: false,
+                                                onChanged: (result) {
+                                                  setState(() {
+                                                    _selectedVariationValueNodeIds =
+                                                        result.valueNodeIds;
+                                                    _customVariationValues = result
+                                                        .customVariationValues;
+                                                    _leaf = result.leaf;
+                                                    if (selectedItem
+                                                            .topLevelProperties
+                                                            .length ==
+                                                        1) {
+                                                      _selectedRootPropertyId =
+                                                          selectedItem
+                                                              .topLevelProperties
+                                                              .first
+                                                              .id;
+                                                    }
+                                                    _updateSelectedStock();
+                                                  });
+                                                },
+                                              ),
+                                            ),
+                                          ],
                                         ],
-                                      ],
+                                      ),
                                     ),
                                   ),
                                 ),
-                                ),
-                                if (isFullySelected) const VerticalDivider(width: 1),
+                                if (isFullySelected)
+                                  const VerticalDivider(width: 1),
                                 // Right Pane: Stock & Ledger
                                 Expanded(
                                   child: ClipRect(
                                     child: AnimatedOpacity(
-                                      duration: const Duration(milliseconds: 300),
+                                      duration: const Duration(
+                                        milliseconds: 300,
+                                      ),
                                       opacity: isFullySelected ? 1.0 : 0.0,
-                                      child: isFullySelected ? Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.stretch,
-                                          children: [
-                                            // Stock Info Top
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.all(24),
-                                              child: Row(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.center,
-                                                children: [
-                                                  Container(
-                                                    width: 60,
-                                                    height: 60,
-                                                    decoration: BoxDecoration(
-                                                      color: SoftErpTheme.accent
-                                                          .withOpacity(0.1),
-                                                      shape: BoxShape.circle,
-                                                    ),
-                                                    child: const Icon(
-                                                      Icons.inventory_2,
-                                                      size: 30,
-                                                      color:
-                                                          SoftErpTheme.accent,
-                                                    ),
+                                      child: isFullySelected
+                                          ? Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.stretch,
+                                              children: [
+                                                // Stock Info Top
+                                                Container(
+                                                  padding: const EdgeInsets.all(
+                                                    24,
                                                   ),
-                                                  const SizedBox(width: 20),
-                                                  Expanded(
-                                                    child: Column(
-                                                      crossAxisAlignment:
-                                                          CrossAxisAlignment
-                                                              .start,
-                                                      children: [
-                                                        Text(
-                                                          selectedItem?.name ?? '',
-                                                          style:
-                                                              const TextStyle(
-                                                            fontSize: 20,
-                                                            fontWeight:
-                                                                FontWeight.bold,
-                                                          ),
+                                                  child: Row(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .center,
+                                                    children: [
+                                                      Container(
+                                                        width: 60,
+                                                        height: 60,
+                                                        decoration:
+                                                            BoxDecoration(
+                                                              color: SoftErpTheme
+                                                                  .accent
+                                                                  .withOpacity(
+                                                                    0.1,
+                                                                  ),
+                                                              shape: BoxShape
+                                                                  .circle,
+                                                            ),
+                                                        child: const Icon(
+                                                          Icons.inventory_2,
+                                                          size: 30,
+                                                          color: SoftErpTheme
+                                                              .accent,
                                                         ),
-                                                        if (_leaf != null)
-                                                          Text(
-                                                            _leaf!.displayName.isNotEmpty ? _leaf!.displayName : _leaf!.name,
-                                                            style:
-                                                                const TextStyle(
-                                                              fontSize: 14,
+                                                      ),
+                                                      const SizedBox(width: 20),
+                                                      Expanded(
+                                                        child: Column(
+                                                          crossAxisAlignment:
+                                                              CrossAxisAlignment
+                                                                  .start,
+                                                          children: [
+                                                            Text(
+                                                              selectedItem
+                                                                      ?.name ??
+                                                                  '',
+                                                              style: const TextStyle(
+                                                                fontSize: 20,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                              ),
+                                                            ),
+                                                            if (_leaf != null)
+                                                              Text(
+                                                                _leaf!
+                                                                        .displayName
+                                                                        .isNotEmpty
+                                                                    ? _leaf!
+                                                                          .displayName
+                                                                    : _leaf!
+                                                                          .name,
+                                                                style: const TextStyle(
+                                                                  fontSize: 14,
+                                                                  color: SoftErpTheme
+                                                                      .textSecondary,
+                                                                ),
+                                                              ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                      Column(
+                                                        crossAxisAlignment:
+                                                            CrossAxisAlignment
+                                                                .end,
+                                                        children: [
+                                                          const Text(
+                                                            'Stock Available',
+                                                            style: TextStyle(
+                                                              fontSize: 12,
                                                               color: SoftErpTheme
                                                                   .textSecondary,
                                                             ),
                                                           ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                  Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment.end,
-                                                    children: [
-                                                      const Text(
-                                                        'Stock Available',
-                                                        style: TextStyle(
-                                                          fontSize: 12,
-                                                          color: SoftErpTheme
-                                                              .textSecondary,
-                                                        ),
+                                                          if (_isLoadingStock)
+                                                            const SizedBox(
+                                                              width: 20,
+                                                              height: 20,
+                                                              child:
+                                                                  CircularProgressIndicator(
+                                                                    strokeWidth:
+                                                                        2,
+                                                                  ),
+                                                            )
+                                                          else
+                                                            Text(
+                                                              _selectedStock !=
+                                                                      null
+                                                                  ? '${_selectedStock!.quantity}'
+                                                                  : '0',
+                                                              style: TextStyle(
+                                                                fontSize: 24,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                                color:
+                                                                    _selectedStock !=
+                                                                            null &&
+                                                                        _selectedStock!.quantity >
+                                                                            0
+                                                                    ? SoftErpTheme
+                                                                          .successText
+                                                                    : SoftErpTheme
+                                                                          .dangerText,
+                                                              ),
+                                                            ),
+                                                        ],
                                                       ),
-                                                      if (_isLoadingStock)
-                                                        const SizedBox(
-                                                          width: 20,
-                                                          height: 20,
-                                                          child:
-                                                              CircularProgressIndicator(
-                                                            strokeWidth: 2,
-                                                          ),
-                                                        )
-                                                      else
-                                                        Text(
-                                                          _selectedStock != null
-                                                              ? '${_selectedStock!.quantity}'
-                                                              : '0',
-                                                          style: TextStyle(
-                                                            fontSize: 24,
-                                                            fontWeight:
-                                                                FontWeight.bold,
-                                                            color: _selectedStock !=
-                                                                        null &&
-                                                                    _selectedStock!
-                                                                            .quantity >
-                                                                        0
-                                                                ? SoftErpTheme.successText
-                                                                : SoftErpTheme.dangerText,
-                                                          ),
-                                                        ),
                                                     ],
                                                   ),
-                                                ],
-                                              ),
-                                            ),
-                                            const Divider(height: 1),
-                                            // Ledger Below
-                                            Expanded(
-                                              child: ChallanExcelView(
-                                                isEmbedded: true,
-                                                filterItemId: _selectedItemId,
-                                                filterVariationLeafNodeId:
-                                                    _leaf?.id,
-                                                title: 'In/Out Ledger',
-                                                onClose: () {},
-                                              ),
-                                            ),
-                                          ],
-                                        ) : const SizedBox.shrink(),
-                                      ),
+                                                ),
+                                                const Divider(height: 1),
+                                                // Ledger Below
+                                                Expanded(
+                                                  child: ChallanExcelView(
+                                                    isEmbedded: true,
+                                                    filterItemId:
+                                                        _selectedItemId,
+                                                    filterVariationLeafNodeId:
+                                                        _leaf?.id,
+                                                    title: 'In/Out Ledger',
+                                                    onClose: () {},
+                                                  ),
+                                                ),
+                                              ],
+                                            )
+                                          : const SizedBox.shrink(),
                                     ),
+                                  ),
                                 ),
                               ],
                             ),

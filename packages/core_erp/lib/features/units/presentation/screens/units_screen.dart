@@ -104,7 +104,6 @@ class _UnitsToolbar extends StatelessWidget {
             hintText: 'Search units or symbols',
             onChanged: provider.setSearchQuery,
           ),
-
       ],
     );
   }
@@ -258,7 +257,8 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
     _conversionController = TextEditingController(
       text: widget.unit?.conversionFactor.toString() ?? '1',
     );
-    _selectedExistingFamilyUnitId = widget.unit?.conversionBaseUnitId ?? widget.initialConversionBaseUnitId;
+    _selectedExistingFamilyUnitId =
+        widget.unit?.conversionBaseUnitId ?? widget.initialConversionBaseUnitId;
     _baseUnitNameController = TextEditingController();
     _baseUnitSymbolController = TextEditingController();
     _nameController.addListener(_handleChange);
@@ -416,121 +416,120 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
           );
 
     final usageContent = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _UnitGroupingSection(
-            convertsToAnotherUnit: _convertsToAnotherUnit,
-            onConvertsChanged: (val) {
-              setState(() {
-                _convertsToAnotherUnit = val;
-                if (!val) {
-                  _conversionController.text = '1';
-                }
-              });
-            },
-            controller: _groupController,
-            suggestions: provider.availableGroupNames,
-            existingFamilyBaseUnits: existingFamilyBaseUnits,
-            selectedExistingFamilyUnitId:
-                _selectedExistingFamilyUnitId ?? baseUnit?.id,
-            onExistingFamilySelected: (unit) {
-              setState(() {
-                _selectedExistingFamilyUnitId = unit?.id;
-                if (unit != null) {
-                  _groupController.text =
-                      (unit.unitGroupName ?? '').trim().isEmpty
-                      ? unit.name
-                      : unit.unitGroupName!.trim();
-                }
-              });
-            },
-            currentUnitName: _nameController.text.trim(),
-            onCreateNewBaseUnit: () {
-              setState(() {
-                _createNewBaseUnit = true;
-              });
-            },
-            createNewBaseUnit: _createNewBaseUnit,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _UnitGroupingSection(
+          convertsToAnotherUnit: _convertsToAnotherUnit,
+          onConvertsChanged: (val) {
+            setState(() {
+              _convertsToAnotherUnit = val;
+              if (!val) {
+                _conversionController.text = '1';
+              }
+            });
+          },
+          controller: _groupController,
+          suggestions: provider.availableGroupNames,
+          existingFamilyBaseUnits: existingFamilyBaseUnits,
+          selectedExistingFamilyUnitId:
+              _selectedExistingFamilyUnitId ?? baseUnit?.id,
+          onExistingFamilySelected: (unit) {
+            setState(() {
+              _selectedExistingFamilyUnitId = unit?.id;
+              if (unit != null) {
+                _groupController.text =
+                    (unit.unitGroupName ?? '').trim().isEmpty
+                    ? unit.name
+                    : unit.unitGroupName!.trim();
+              }
+            });
+          },
+          currentUnitName: _nameController.text.trim(),
+          onCreateNewBaseUnit: () {
+            setState(() {
+              _createNewBaseUnit = true;
+            });
+          },
+          createNewBaseUnit: _createNewBaseUnit,
+        ),
+        if (_convertsToAnotherUnit && _createNewBaseUnit) ...[
+          const SizedBox(height: 12),
+          Text(
+            'Define the base unit for this family:',
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: const Color(0xFF64748B),
+              fontWeight: FontWeight.w700,
+            ),
           ),
-          if (_convertsToAnotherUnit && _createNewBaseUnit) ...[
-            const SizedBox(height: 12),
-            Text(
-              'Define the base unit for this family:',
-              style: Theme.of(context)
-                  .textTheme
-                  .labelMedium
-                  ?.copyWith(
-                    color: const Color(0xFF64748B),
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: _UnitTextField(
-                    controller: _baseUnitNameController,
-                    label: 'Base name (e.g. gram)',
-                    readOnly: false,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _UnitTextField(
-                    controller: _baseUnitSymbolController,
-                    label: 'Symbol (e.g. g)',
-                    readOnly: false,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _UnitGroupField(
-              controller: _groupController,
-              readOnly: false,
-              suggestions: provider.availableGroupNames,
-              label: 'Family name (Optional)',
-              helper: isCreateMode ? '' : 'A simple family name like "Length" or "Weight".',
-            ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: () {
-                  setState(() {
-                    _createNewBaseUnit = false;
-                  });
-                },
-                icon: const Icon(Icons.close_rounded, size: 18),
-                label: const Text('Cancel creating base unit'),
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFF64748B),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                flex: 2,
+                child: _UnitTextField(
+                  controller: _baseUnitNameController,
+                  label: 'Base name (e.g. gram)',
+                  readOnly: false,
                 ),
               ),
-            ),
-          ],
-          if (_convertsToAnotherUnit) ...[
-            const SizedBox(height: 16),
-            _ConversionField(
-              controller: _conversionController,
-              readOnly: !requiresConversion,
-              helper: '1 ${_symbolController.text.trim().isEmpty ? 'unit' : _symbolController.text.trim()} = this many ${_createNewBaseUnit ? (_baseUnitSymbolController.text.trim().isEmpty ? 'base' : _baseUnitSymbolController.text.trim()) : (baseUnit?.symbol ?? '')}.',
-            ),
-            if (!isCreateMode) ...[
-              const SizedBox(height: 10),
-              Text(
-                'Units in the same family can be used interchangeably anywhere that family is allowed.',
-                style: Theme.of(context).textTheme.bodySmall
-                    ?.copyWith(
-                      color: const Color(0xFF475569),
-                      fontWeight: FontWeight.w600,
-                    ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _UnitTextField(
+                  controller: _baseUnitSymbolController,
+                  label: 'Symbol (e.g. g)',
+                  readOnly: false,
+                ),
               ),
             ],
+          ),
+          const SizedBox(height: 12),
+          _UnitGroupField(
+            controller: _groupController,
+            readOnly: false,
+            suggestions: provider.availableGroupNames,
+            label: 'Family name (Optional)',
+            helper: isCreateMode
+                ? ''
+                : 'A simple family name like "Length" or "Weight".',
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () {
+                setState(() {
+                  _createNewBaseUnit = false;
+                });
+              },
+              icon: const Icon(Icons.close_rounded, size: 18),
+              label: const Text('Cancel creating base unit'),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF64748B),
+              ),
+            ),
+          ),
+        ],
+        if (_convertsToAnotherUnit) ...[
+          const SizedBox(height: 16),
+          _ConversionField(
+            controller: _conversionController,
+            readOnly: !requiresConversion,
+            helper:
+                '1 ${_symbolController.text.trim().isEmpty ? 'unit' : _symbolController.text.trim()} = this many ${_createNewBaseUnit ? (_baseUnitSymbolController.text.trim().isEmpty ? 'base' : _baseUnitSymbolController.text.trim()) : (baseUnit?.symbol ?? '')}.',
+          ),
+          if (!isCreateMode) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Units in the same family can be used interchangeably anywhere that family is allowed.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: const Color(0xFF475569),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ],
         ],
-      );
+      ],
+    );
 
     final usageCard = isCreateMode
         ? usageContent
@@ -545,36 +544,22 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
     final familyUnitsCard = _EditorSectionCard(
       icon: Icons.account_tree_outlined,
       title: 'Family units',
-      subtitle:
-          'Units connected to this family. You can add more units here.',
+      subtitle: 'Units connected to this family. You can add more units here.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ...[
-            ...provider.activeUnits
-                .where((u) {
-                  final uGroup =
-                      (u.unitGroupName ?? '').trim();
-                  final matchesGroup =
-                      uGroup.isNotEmpty &&
-                      uGroup == groupName;
-                  final isBaseMatch =
-                      u.isBaseUnit && u.name == groupName;
-                  final isActualBase =
-                      baseUnit != null &&
-                      u.id == baseUnit.id;
-                  return matchesGroup ||
-                      isBaseMatch ||
-                      isActualBase;
-                })
-                .toList()
-              ..sort((a, b) {
-                if (a.isBaseUnit) return -1;
-                if (b.isBaseUnit) return 1;
-                return a.conversionFactor.compareTo(
-                  b.conversionFactor,
-                );
-              })
+            ...provider.activeUnits.where((u) {
+              final uGroup = (u.unitGroupName ?? '').trim();
+              final matchesGroup = uGroup.isNotEmpty && uGroup == groupName;
+              final isBaseMatch = u.isBaseUnit && u.name == groupName;
+              final isActualBase = baseUnit != null && u.id == baseUnit.id;
+              return matchesGroup || isBaseMatch || isActualBase;
+            }).toList()..sort((a, b) {
+              if (a.isBaseUnit) return -1;
+              if (b.isBaseUnit) return 1;
+              return a.conversionFactor.compareTo(b.conversionFactor);
+            }),
           ].map(
             (u) => Padding(
               padding: const EdgeInsets.only(bottom: 8),
@@ -610,8 +595,7 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
               final newUnit = await UnitsScreen.openEditor(
                 context,
                 initialGroupName: groupName,
-                initialConversionBaseUnitId:
-                    baseUnit?.id ?? widget.unit?.id,
+                initialConversionBaseUnitId: baseUnit?.id ?? widget.unit?.id,
               );
               if (newUnit != null && mounted) {
                 setState(() {});
@@ -631,10 +615,10 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
         name: _nameController.text.trim(),
         symbol: _symbolController.text.trim(),
         groupName: groupName,
-        conversionText:
-            (!_convertsToAnotherUnit && groupName.isEmpty)
+        conversionText: (!_convertsToAnotherUnit && groupName.isEmpty)
             ? null
-            : ((!_convertsToAnotherUnit && groupName.isNotEmpty) || baseUnit == null
+            : ((!_convertsToAnotherUnit && groupName.isNotEmpty) ||
+                      baseUnit == null
                   ? 'Base unit (1x)'
                   : '${_conversionController.text.trim().isEmpty ? '1' : _conversionController.text.trim()}x of ${baseUnit.symbol}'),
       ),
@@ -804,7 +788,8 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   usageCard,
-                                  if (!isCreateMode && groupName.isNotEmpty) ...[
+                                  if (!isCreateMode &&
+                                      groupName.isNotEmpty) ...[
                                     const SizedBox(height: 18),
                                     familyUnitsCard,
                                   ],
@@ -824,7 +809,9 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                     border: Border(top: BorderSide(color: Color(0xFFE7EAF3))),
                   ),
                   child: Wrap(
-                    alignment: isCreateMode ? WrapAlignment.end : WrapAlignment.spaceBetween,
+                    alignment: isCreateMode
+                        ? WrapAlignment.end
+                        : WrapAlignment.spaceBetween,
                     runAlignment: WrapAlignment.center,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     spacing: 12,
@@ -835,10 +822,11 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                           _isDetailsLocked
                               ? 'Core details are locked because this unit is already in use.'
                               : 'Changes apply anywhere this unit is available.',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: const Color(0xFF64748B),
-                            fontWeight: FontWeight.w600,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: const Color(0xFF64748B),
+                                fontWeight: FontWeight.w600,
+                              ),
                         ),
                       Wrap(
                         spacing: 12,
@@ -851,7 +839,8 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                               isLoading: provider.isSaving,
                               onPressed: () async {
                                 await provider.deleteUnit(widget.unit!.id);
-                                if (!context.mounted || provider.errorMessage != null) {
+                                if (!context.mounted ||
+                                    provider.errorMessage != null) {
                                   return;
                                 }
                                 Navigator.of(context).pop(null);
@@ -943,9 +932,7 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
       _localError = null;
     });
 
-    if (widget.unit == null &&
-        _convertsToAnotherUnit &&
-        _createNewBaseUnit) {
+    if (widget.unit == null && _convertsToAnotherUnit && _createNewBaseUnit) {
       final baseResult = await provider.createUnit(
         CreateUnitInput(
           name: _baseUnitNameController.text.trim(),
@@ -965,10 +952,7 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
               symbol: _symbolController.text.trim(),
               notes: _notesController.text.trim(),
               unitGroupName: groupName,
-              conversionFactor:
-                  !_convertsToAnotherUnit
-                  ? 1
-                  : conversionFactor,
+              conversionFactor: !_convertsToAnotherUnit ? 1 : conversionFactor,
             ),
           )
         : await provider.updateUnit(
@@ -1023,7 +1007,7 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
     if (_convertsToAnotherUnit && _createNewBaseUnit) {
       return _groupController.text.trim();
     }
-    
+
     final selectedBaseUnitId = _selectedExistingFamilyUnitId;
     if (provider != null && selectedBaseUnitId != null) {
       final baseUnit = provider.findById(selectedBaseUnitId);
@@ -1432,8 +1416,11 @@ class _UnitGroupingSection extends StatelessWidget {
         ] else ...[
           if (!createNewBaseUnit) ...[
             SearchableSelectField<int>(
-              tapTargetKey: const ValueKey<String>('unit-existing-family-field'),
-              value: existingFamilyBaseUnits.any(
+              tapTargetKey: const ValueKey<String>(
+                'unit-existing-family-field',
+              ),
+              value:
+                  existingFamilyBaseUnits.any(
                     (unit) => unit.id == selectedExistingFamilyUnitId,
                   )
                   ? selectedExistingFamilyUnitId
@@ -1450,12 +1437,15 @@ class _UnitGroupingSection extends StatelessWidget {
                     (unit) => SearchableSelectOption<int>(
                       value: unit.id,
                       label: _existingFamilyOptionLabel(unit),
-                      searchText: '${unit.name} ${unit.symbol} ${unit.unitGroupName ?? ''}',
+                      searchText:
+                          '${unit.name} ${unit.symbol} ${unit.unitGroupName ?? ''}',
                     ),
                   )
                   .toList(growable: false),
               onChanged: (value) {
-                final selected = existingFamilyBaseUnits.where((unit) => unit.id == value).firstOrNull;
+                final selected = existingFamilyBaseUnits
+                    .where((unit) => unit.id == value)
+                    .firstOrNull;
                 onExistingFamilySelected(selected);
               },
             ),

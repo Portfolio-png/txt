@@ -13,7 +13,6 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   static const _quickLoginPassword = 'Paper@12345';
 
-
   final _emailController = TextEditingController(text: 'super@paper.local');
   final _passwordController = TextEditingController();
   final _passwordFocusNode = FocusNode();
@@ -73,7 +72,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Form(
                   key: _formKey,
                   child: Column(
-                     mainAxisSize: MainAxisSize.min,
+                    mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
@@ -173,13 +172,17 @@ class _LoginScreenState extends State<LoginScreen> {
                       children: [
                         Expanded(
                           child: InkWell(
-                            onTap: auth.isLoading ? null : () => _quickLoginWith('super@paper.local'),
+                            onTap: auth.isLoading
+                                ? null
+                                : () => _quickLoginWith('super@paper.local'),
                             borderRadius: BorderRadius.circular(8),
                             child: Container(
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
                                 color: Colors.white,
-                                border: Border.all(color: const Color(0xFFE5E7EB)),
+                                border: Border.all(
+                                  color: const Color(0xFFE5E7EB),
+                                ),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Column(
@@ -187,7 +190,11 @@ class _LoginScreenState extends State<LoginScreen> {
                                 children: [
                                   Row(
                                     children: [
-                                      const Icon(Icons.computer_rounded, size: 14, color: Colors.blue),
+                                      const Icon(
+                                        Icons.computer_rounded,
+                                        size: 14,
+                                        color: Colors.blue,
+                                      ),
                                       const SizedBox(width: 4),
                                       Text(
                                         'Local Dev',
@@ -213,7 +220,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                   const SizedBox(height: 2),
                                   const Text(
                                     'Local Sandbox',
-                                    style: TextStyle(fontSize: 10, color: Color(0xFF6B7280)),
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Color(0xFF6B7280),
+                                    ),
                                   ),
                                 ],
                               ),
@@ -223,13 +233,17 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: InkWell(
-                            onTap: auth.isLoading ? null : () => _prefillEmail('tangriine@gmail.com'),
+                            onTap: auth.isLoading
+                                ? null
+                                : () => _prefillEmail('tangriine@gmail.com'),
                             borderRadius: BorderRadius.circular(8),
                             child: Container(
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
                                 color: Colors.white,
-                                border: Border.all(color: const Color(0xFFE5E7EB)),
+                                border: Border.all(
+                                  color: const Color(0xFFE5E7EB),
+                                ),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Column(
@@ -237,7 +251,11 @@ class _LoginScreenState extends State<LoginScreen> {
                                 children: [
                                   Row(
                                     children: [
-                                      const Icon(Icons.cloud_queue_rounded, size: 14, color: Colors.teal),
+                                      const Icon(
+                                        Icons.cloud_queue_rounded,
+                                        size: 14,
+                                        color: Colors.teal,
+                                      ),
                                       const SizedBox(width: 4),
                                       Text(
                                         'Online Env',
@@ -263,7 +281,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                   const SizedBox(height: 2),
                                   const Text(
                                     'AWS — enter password',
-                                    style: TextStyle(fontSize: 10, color: Color(0xFF6B7280)),
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Color(0xFF6B7280),
+                                    ),
                                   ),
                                 ],
                               ),

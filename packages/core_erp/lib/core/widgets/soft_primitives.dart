@@ -384,7 +384,8 @@ class SoftRowCard extends StatefulWidget {
   State<SoftRowCard> createState() => _SoftRowCardState();
 }
 
-class _SoftRowCardState extends State<SoftRowCard> with SingleTickerProviderStateMixin {
+class _SoftRowCardState extends State<SoftRowCard>
+    with SingleTickerProviderStateMixin {
   bool _hovered = false;
   bool _pressed = false;
   late AnimationController _entranceController;
@@ -414,10 +415,14 @@ class _SoftRowCardState extends State<SoftRowCard> with SingleTickerProviderStat
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _entranceController, curve: Curves.easeOut),
     );
-    _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(
-      CurvedAnimation(parent: _entranceController, curve: Curves.easeOutCubic),
-    );
-    
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(
+          CurvedAnimation(
+            parent: _entranceController,
+            curve: Curves.easeOutCubic,
+          ),
+        );
+
     final delayMs = 150 + (myIndex * 50);
     Future.delayed(Duration(milliseconds: delayMs), () {
       if (mounted) {
@@ -464,7 +469,8 @@ class _SoftRowCardState extends State<SoftRowCard> with SingleTickerProviderStat
               child: InkWell(
                 onTap: widget.onTap,
                 onDoubleTap: widget.onDoubleTap,
-                onHighlightChanged: (pressed) => setState(() => _pressed = pressed),
+                onHighlightChanged: (pressed) =>
+                    setState(() => _pressed = pressed),
                 borderRadius: BorderRadius.circular(22),
                 child: Ink(
                   decoration: BoxDecoration(

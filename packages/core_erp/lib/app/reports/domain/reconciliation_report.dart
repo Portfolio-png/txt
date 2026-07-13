@@ -121,15 +121,19 @@ class ClientStatementGroup {
 
   factory ClientStatementGroup.fromJson(Map<String, dynamic> json) {
     return ClientStatementGroup(
-      receptionChallanNo: _asString(json['receptionChallanNo'] ?? json['reception_challan_no']),
+      receptionChallanNo: _asString(
+        json['receptionChallanNo'] ?? json['reception_challan_no'],
+      ),
       receptionDate: _asDate(json['receptionDate'] ?? json['reception_date']),
       receptionSize: _asString(json['receptionSize'] ?? json['reception_size']),
-      receptionWeight: _asDouble(json['receptionWeight'] ?? json['reception_weight']),
+      receptionWeight: _asDouble(
+        json['receptionWeight'] ?? json['reception_weight'],
+      ),
       lessWeight: _asDouble(json['lessWeight'] ?? json['less_weight']),
       totalWeight: _asDouble(json['totalWeight'] ?? json['total_weight']),
-      deliveries: _asMapList(json['deliveries'])
-          .map(ClientStatementGroupDeliveryItem.fromJson)
-          .toList(growable: false),
+      deliveries: _asMapList(
+        json['deliveries'],
+      ).map(ClientStatementGroupDeliveryItem.fromJson).toList(growable: false),
     );
   }
 }

@@ -12,10 +12,6 @@ class PageContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: Colors.transparent,
-      padding: padding,
-      child: child,
-    );
+    return Container(color: Colors.transparent, padding: padding, child: child);
   }
 }

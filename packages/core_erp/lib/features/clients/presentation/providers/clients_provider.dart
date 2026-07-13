@@ -75,9 +75,7 @@ class ClientsProvider extends ChangeNotifier {
       if (a.isArchived != b.isArchived) {
         return a.isArchived ? 1 : -1;
       }
-      final nameCompare = a.name.toLowerCase().compareTo(
-        b.name.toLowerCase(),
-      );
+      final nameCompare = a.name.toLowerCase().compareTo(b.name.toLowerCase());
       if (nameCompare != 0) {
         return nameCompare;
       }
@@ -90,19 +88,32 @@ class ClientsProvider extends ChangeNotifier {
       return;
     }
     _initialized = true;
-    
+
     SocketService.instance.on('client_added', (data) async {
       if (data != null && data is Map<String, dynamic> && data['id'] != null) {
         try {
           final id = data['id'] as int;
           final newClient = await _repository.getClient(id);
           if (newClient != null) {
-            _clients = [..._clients, newClient];
+            // Dedupe: the creator already refreshed the list, so this rail echo
+            // must replace-if-present (not blindly append) to avoid a duplicate.
+            final exists = _clients.any((c) => c.id == newClient.id);
+            _clients = exists
+                ? _clients
+                      .map((c) => c.id == newClient.id ? newClient : c)
+                      .toList(growable: false)
+                : [..._clients, newClient];
             _sortClients();
             notifyListeners();
-          } else { refresh(); }
-        } catch (_) { refresh(); }
-      } else { refresh(); }
+          } else {
+            refresh();
+          }
+        } catch (_) {
+          refresh();
+        }
+      } else {
+        refresh();
+      }
     });
 
     SocketService.instance.on('client_updated', (data) async {
@@ -111,12 +122,20 @@ class ClientsProvider extends ChangeNotifier {
           final id = data['id'] as int;
           final updatedClient = await _repository.getClient(id);
           if (updatedClient != null) {
-            _clients = _clients.map((c) => c.id == updatedClient.id ? updatedClient : c).toList(growable: false);
+            _clients = _clients
+                .map((c) => c.id == updatedClient.id ? updatedClient : c)
+                .toList(growable: false);
             _sortClients();
             notifyListeners();
-          } else { refresh(); }
-        } catch (_) { refresh(); }
-      } else { refresh(); }
+          } else {
+            refresh();
+          }
+        } catch (_) {
+          refresh();
+        }
+      } else {
+        refresh();
+      }
     });
 
     SocketService.instance.on('client_deleted', (data) {
@@ -124,7 +143,9 @@ class ClientsProvider extends ChangeNotifier {
         final id = data['id'] as int;
         _clients = _clients.where((c) => c.id != id).toList();
         notifyListeners();
-      } else { refresh(); }
+      } else {
+        refresh();
+      }
     });
 
     await refresh();
@@ -287,8 +308,6 @@ class ClientsProvider extends ChangeNotifier {
     }
   }
 
-
-
   static String normalizeGstNumber(String value) => _normalizeGstNumber(value);
 
   static String _normalize(String value) {
@@ -298,10 +317,17 @@ class ClientsProvider extends ChangeNotifier {
   static String _normalizeGstNumber(String value) {
     return value.trim().replaceAll(RegExp(r'\s+'), '').toUpperCase();
   }
-  Future<void> updatePortalCredentials(int clientId, String email, String password) async {
+
+  Future<void> updatePortalCredentials(
+    int clientId,
+    String email,
+    String password,
+  ) async {
     try {
       final res = await http.post(
-        Uri.parse('http://localhost:3000/api/clients/${clientId}/portal-credentials'),
+        Uri.parse(
+          'http://localhost:3000/api/clients/${clientId}/portal-credentials',
+        ),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'email': email, 'password': password}),
       );
@@ -315,7 +341,11 @@ class ClientsProvider extends ChangeNotifier {
 
   Future<List<int>> getPortalCatalog(int clientId) async {
     try {
-      final res = await http.get(Uri.parse('http://localhost:3000/api/clients/${clientId}/portal-catalog'));
+      final res = await http.get(
+        Uri.parse(
+          'http://localhost:3000/api/clients/${clientId}/portal-catalog',
+        ),
+      );
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         return List<int>.from(data['itemIds'] ?? []);
@@ -329,7 +359,9 @@ class ClientsProvider extends ChangeNotifier {
   Future<void> updatePortalCatalog(int clientId, List<int> itemIds) async {
     try {
       final res = await http.post(
-        Uri.parse('http://localhost:3000/api/clients/${clientId}/portal-catalog'),
+        Uri.parse(
+          'http://localhost:3000/api/clients/${clientId}/portal-catalog',
+        ),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'itemIds': itemIds}),
       );
@@ -345,4 +377,3 @@ class ClientsProvider extends ChangeNotifier {
 extension<T> on Iterable<T> {
   T? get firstOrNull => isEmpty ? null : first;
 }
-

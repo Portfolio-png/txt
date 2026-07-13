@@ -219,10 +219,7 @@ class AuthApi {
     }
   }
 
-  Future<void> deleteUser({
-    required int userId,
-    bool override = false,
-  }) async {
+  Future<void> deleteUser({required int userId, bool override = false}) async {
     final response = await _client.delete(
       Uri.parse('$baseUrl/api/users/$userId?override=$override'),
       headers: _jsonHeaders,

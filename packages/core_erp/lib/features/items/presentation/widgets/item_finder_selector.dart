@@ -11,7 +11,8 @@ class ItemFinderSelectorDialog extends StatefulWidget {
   const ItemFinderSelectorDialog({super.key});
 
   @override
-  State<ItemFinderSelectorDialog> createState() => _ItemFinderSelectorDialogState();
+  State<ItemFinderSelectorDialog> createState() =>
+      _ItemFinderSelectorDialogState();
 }
 
 class _ItemFinderSelectorDialogState extends State<ItemFinderSelectorDialog> {
@@ -25,7 +26,9 @@ class _ItemFinderSelectorDialogState extends State<ItemFinderSelectorDialog> {
     final groupsProvider = context.watch<GroupsProvider>();
     final itemsProvider = context.watch<ItemsProvider>();
 
-    final allGroupDefinitions = groupsProvider.groups.where((g) => g.groupType == 'item').toList();
+    final allGroupDefinitions = groupsProvider.groups
+        .where((g) => g.groupType == 'item')
+        .toList();
     final allItems = itemsProvider.items;
     final baseItems = allItems.where((i) => i.baseItemId == null).toList();
     final variations = allItems.where((i) => i.baseItemId != null).toList();
@@ -45,8 +48,16 @@ class _ItemFinderSelectorDialogState extends State<ItemFinderSelectorDialog> {
             const SizedBox(height: 16),
             Expanded(
               child: _searchQuery.isNotEmpty
-                  ? _buildSearchResults(allGroupDefinitions, baseItems, variations)
-                  : _buildFinderColumns(allGroupDefinitions, baseItems, variations),
+                  ? _buildSearchResults(
+                      allGroupDefinitions,
+                      baseItems,
+                      variations,
+                    )
+                  : _buildFinderColumns(
+                      allGroupDefinitions,
+                      baseItems,
+                      variations,
+                    ),
             ),
           ],
         ),
@@ -105,36 +116,54 @@ class _ItemFinderSelectorDialogState extends State<ItemFinderSelectorDialog> {
     final columns = <Widget>[];
 
     // Column 0: Root
-    columns.add(_buildColumn(
-      level: 0,
-      groups: allGroupDefinitions.where((g) => g.parentGroupId == null).toList(),
-      items: baseItems.where((i) => allGroupDefinitions.where((g) => g.id == i.groupId).isEmpty || i.groupId == -1).toList(), // fallback
-      allGroupDefinitions: allGroupDefinitions,
-      baseItems: baseItems,
-      variations: variations,
-    ));
+    columns.add(
+      _buildColumn(
+        level: 0,
+        groups: allGroupDefinitions
+            .where((g) => g.parentGroupId == null)
+            .toList(),
+        items: baseItems
+            .where(
+              (i) =>
+                  allGroupDefinitions.where((g) => g.id == i.groupId).isEmpty ||
+                  i.groupId == -1,
+            )
+            .toList(), // fallback
+        allGroupDefinitions: allGroupDefinitions,
+        baseItems: baseItems,
+        variations: variations,
+      ),
+    );
 
     // Subsequent columns based on path
     for (int i = 0; i < _selectedPath.length; i++) {
       final node = _selectedPath[i];
       if (node is GroupDefinition) {
-        columns.add(_buildColumn(
-          level: i + 1,
-          groups: allGroupDefinitions.where((g) => g.parentGroupId == node.id).toList(),
-          items: baseItems.where((item) => item.groupId == node.id).toList(),
-          allGroupDefinitions: allGroupDefinitions,
-          baseItems: baseItems,
-          variations: variations,
-        ));
+        columns.add(
+          _buildColumn(
+            level: i + 1,
+            groups: allGroupDefinitions
+                .where((g) => g.parentGroupId == node.id)
+                .toList(),
+            items: baseItems.where((item) => item.groupId == node.id).toList(),
+            allGroupDefinitions: allGroupDefinitions,
+            baseItems: baseItems,
+            variations: variations,
+          ),
+        );
       } else if (node is ItemDefinition) {
-        columns.add(_buildColumn(
-          level: i + 1,
-          groups: [],
-          items: variations.where((item) => item.baseItemId == node.id).toList(),
-          allGroupDefinitions: allGroupDefinitions,
-          baseItems: baseItems,
-          variations: variations,
-        ));
+        columns.add(
+          _buildColumn(
+            level: i + 1,
+            groups: [],
+            items: variations
+                .where((item) => item.baseItemId == node.id)
+                .toList(),
+            allGroupDefinitions: allGroupDefinitions,
+            baseItems: baseItems,
+            variations: variations,
+          ),
+        );
       }
     }
 
@@ -161,8 +190,17 @@ class _ItemFinderSelectorDialogState extends State<ItemFinderSelectorDialog> {
                 Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton.icon(
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 14),
-                    label: Text(_selectedPath.length == 1 ? 'Root' : _nameForNode(_selectedPath[_selectedPath.length - 2])),
+                    icon: const Icon(
+                      Icons.arrow_back_ios_new_rounded,
+                      size: 14,
+                    ),
+                    label: Text(
+                      _selectedPath.length == 1
+                          ? 'Root'
+                          : _nameForNode(
+                              _selectedPath[_selectedPath.length - 2],
+                            ),
+                    ),
                     onPressed: () {
                       setState(() {
                         _selectedPath.removeLast();
@@ -232,22 +270,33 @@ class _ItemFinderSelectorDialogState extends State<ItemFinderSelectorDialog> {
   }
 
   Widget _buildGroupDefinitionTile(GroupDefinition group, int level) {
-    final isSelected = _selectedPath.length > level && _selectedPath[level] == group;
+    final isSelected =
+        _selectedPath.length > level && _selectedPath[level] == group;
     return ListTile(
       dense: true,
       selected: isSelected,
       selectedTileColor: SoftErpTheme.accentSoft,
-      leading: const Icon(Icons.folder_outlined, color: SoftErpTheme.textSecondary, size: 20),
+      leading: const Icon(
+        Icons.folder_outlined,
+        color: SoftErpTheme.textSecondary,
+        size: 20,
+      ),
       title: Text(
         group.name,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
           fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-          color: isSelected ? SoftErpTheme.accentDark : SoftErpTheme.textPrimary,
+          color: isSelected
+              ? SoftErpTheme.accentDark
+              : SoftErpTheme.textPrimary,
         ),
       ),
-      trailing: const Icon(Icons.chevron_right_rounded, size: 16, color: SoftErpTheme.textSecondary),
+      trailing: const Icon(
+        Icons.chevron_right_rounded,
+        size: 16,
+        color: SoftErpTheme.textSecondary,
+      ),
       onTap: () {
         setState(() {
           // Trim path up to this level, then add this group
@@ -260,12 +309,18 @@ class _ItemFinderSelectorDialogState extends State<ItemFinderSelectorDialog> {
     );
   }
 
-  Widget _buildItemTile(ItemDefinition item, int level, List<ItemDefinition> allVariations) {
+  Widget _buildItemTile(
+    ItemDefinition item,
+    int level,
+    List<ItemDefinition> allVariations,
+  ) {
     final isBase = item.baseItemId == null;
-    final isSelected = _selectedPath.length > level && _selectedPath[level] == item;
-    
+    final isSelected =
+        _selectedPath.length > level && _selectedPath[level] == item;
+
     // Check if this base item has variations
-    final hasVariations = isBase && allVariations.any((v) => v.baseItemId == item.id);
+    final hasVariations =
+        isBase && allVariations.any((v) => v.baseItemId == item.id);
 
     return ListTile(
       dense: true,
@@ -282,11 +337,17 @@ class _ItemFinderSelectorDialogState extends State<ItemFinderSelectorDialog> {
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
           fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-          color: isSelected ? SoftErpTheme.accentDark : SoftErpTheme.textPrimary,
+          color: isSelected
+              ? SoftErpTheme.accentDark
+              : SoftErpTheme.textPrimary,
         ),
       ),
       trailing: hasVariations
-          ? const Icon(Icons.chevron_right_rounded, size: 16, color: SoftErpTheme.textSecondary)
+          ? const Icon(
+              Icons.chevron_right_rounded,
+              size: 16,
+              color: SoftErpTheme.textSecondary,
+            )
           : null,
       onTap: () {
         if (hasVariations) {
@@ -305,13 +366,20 @@ class _ItemFinderSelectorDialogState extends State<ItemFinderSelectorDialog> {
     );
   }
 
-  String _getFullPathForGroup(GroupDefinition group, List<GroupDefinition> allGroupDefinitions) {
+  String _getFullPathForGroup(
+    GroupDefinition group,
+    List<GroupDefinition> allGroupDefinitions,
+  ) {
     final pathSegments = <String>[group.name];
-    GroupDefinition? currentGroup = allGroupDefinitions.where((g) => g.id == group.parentGroupId).firstOrNull;
+    GroupDefinition? currentGroup = allGroupDefinitions
+        .where((g) => g.id == group.parentGroupId)
+        .firstOrNull;
     while (currentGroup != null) {
       pathSegments.insert(0, currentGroup.name);
       if (currentGroup.parentGroupId != null) {
-        currentGroup = allGroupDefinitions.where((g) => g.id == currentGroup!.parentGroupId).firstOrNull;
+        currentGroup = allGroupDefinitions
+            .where((g) => g.id == currentGroup!.parentGroupId)
+            .firstOrNull;
       } else {
         currentGroup = null;
       }
@@ -319,25 +387,38 @@ class _ItemFinderSelectorDialogState extends State<ItemFinderSelectorDialog> {
     return pathSegments.join(' / ');
   }
 
-  String _getFullPathForItem(ItemDefinition item, List<GroupDefinition> allGroupDefinitions, List<ItemDefinition> baseItems) {
+  String _getFullPathForItem(
+    ItemDefinition item,
+    List<GroupDefinition> allGroupDefinitions,
+    List<ItemDefinition> baseItems,
+  ) {
     final pathSegments = <String>[];
-    
+
     ItemDefinition? baseItem;
     if (item.baseItemId != null) {
       baseItem = baseItems.where((i) => i.id == item.baseItemId).firstOrNull;
       if (baseItem != null) {
-        pathSegments.insert(0, baseItem.displayName.isNotEmpty ? baseItem.displayName : baseItem.name);
+        pathSegments.insert(
+          0,
+          baseItem.displayName.isNotEmpty
+              ? baseItem.displayName
+              : baseItem.name,
+        );
       }
     } else {
       baseItem = item;
     }
 
     if (baseItem != null && baseItem.groupId > 0) {
-      GroupDefinition? currentGroup = allGroupDefinitions.where((g) => g.id == baseItem!.groupId).firstOrNull;
+      GroupDefinition? currentGroup = allGroupDefinitions
+          .where((g) => g.id == baseItem!.groupId)
+          .firstOrNull;
       while (currentGroup != null) {
         pathSegments.insert(0, currentGroup.name);
         if (currentGroup.parentGroupId != null) {
-          currentGroup = allGroupDefinitions.where((g) => g.id == currentGroup!.parentGroupId).firstOrNull;
+          currentGroup = allGroupDefinitions
+              .where((g) => g.id == currentGroup!.parentGroupId)
+              .firstOrNull;
         } else {
           currentGroup = null;
         }
@@ -353,17 +434,25 @@ class _ItemFinderSelectorDialogState extends State<ItemFinderSelectorDialog> {
     List<ItemDefinition> baseItems,
     List<ItemDefinition> variations,
   ) {
-    final matchingGroupDefinitions = allGroupDefinitions.where((g) => g.name.toLowerCase().contains(_searchQuery)).toList();
-    final matchingBase = baseItems.where((i) => 
-      i.displayName.toLowerCase().contains(_searchQuery) || 
-      i.name.toLowerCase().contains(_searchQuery) || 
-      i.alias.toLowerCase().contains(_searchQuery)
-    ).toList();
-    final matchingVars = variations.where((i) => 
-      i.displayName.toLowerCase().contains(_searchQuery) || 
-      i.name.toLowerCase().contains(_searchQuery) || 
-      i.alias.toLowerCase().contains(_searchQuery)
-    ).toList();
+    final matchingGroupDefinitions = allGroupDefinitions
+        .where((g) => g.name.toLowerCase().contains(_searchQuery))
+        .toList();
+    final matchingBase = baseItems
+        .where(
+          (i) =>
+              i.displayName.toLowerCase().contains(_searchQuery) ||
+              i.name.toLowerCase().contains(_searchQuery) ||
+              i.alias.toLowerCase().contains(_searchQuery),
+        )
+        .toList();
+    final matchingVars = variations
+        .where(
+          (i) =>
+              i.displayName.toLowerCase().contains(_searchQuery) ||
+              i.name.toLowerCase().contains(_searchQuery) ||
+              i.alias.toLowerCase().contains(_searchQuery),
+        )
+        .toList();
 
     return Container(
       decoration: BoxDecoration(
@@ -376,13 +465,25 @@ class _ItemFinderSelectorDialogState extends State<ItemFinderSelectorDialog> {
           if (matchingGroupDefinitions.isNotEmpty) ...[
             const Padding(
               padding: EdgeInsets.all(12),
-              child: Text('Groups', style: TextStyle(fontWeight: FontWeight.bold, color: SoftErpTheme.textSecondary)),
+              child: Text(
+                'Groups',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: SoftErpTheme.textSecondary,
+                ),
+              ),
             ),
             for (final g in matchingGroupDefinitions)
               ListTile(
                 leading: const Icon(Icons.folder_outlined),
                 title: Text(g.name),
-                subtitle: Text(_getFullPathForGroup(g, allGroupDefinitions), style: const TextStyle(color: SoftErpTheme.textSecondary, fontSize: 12)),
+                subtitle: Text(
+                  _getFullPathForGroup(g, allGroupDefinitions),
+                  style: const TextStyle(
+                    color: SoftErpTheme.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
                 onTap: () {
                   // Jump to this group in finder view
                   setState(() {
@@ -396,15 +497,29 @@ class _ItemFinderSelectorDialogState extends State<ItemFinderSelectorDialog> {
           if (matchingBase.isNotEmpty) ...[
             const Padding(
               padding: EdgeInsets.all(12),
-              child: Text('Base Items', style: TextStyle(fontWeight: FontWeight.bold, color: SoftErpTheme.textSecondary)),
+              child: Text(
+                'Base Items',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: SoftErpTheme.textSecondary,
+                ),
+              ),
             ),
             for (final i in matchingBase)
               ListTile(
                 leading: const Icon(Icons.inventory_2_outlined),
                 title: Text(i.displayName.isNotEmpty ? i.displayName : i.name),
-                subtitle: Text(_getFullPathForItem(i, allGroupDefinitions, baseItems), style: const TextStyle(color: SoftErpTheme.textSecondary, fontSize: 12)),
+                subtitle: Text(
+                  _getFullPathForItem(i, allGroupDefinitions, baseItems),
+                  style: const TextStyle(
+                    color: SoftErpTheme.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
                 onTap: () {
-                  final hasVariations = variations.any((v) => v.baseItemId == i.id);
+                  final hasVariations = variations.any(
+                    (v) => v.baseItemId == i.id,
+                  );
                   if (hasVariations) {
                     setState(() {
                       _searchQuery = '';
@@ -420,13 +535,25 @@ class _ItemFinderSelectorDialogState extends State<ItemFinderSelectorDialog> {
           if (matchingVars.isNotEmpty) ...[
             const Padding(
               padding: EdgeInsets.all(12),
-              child: Text('Variations', style: TextStyle(fontWeight: FontWeight.bold, color: SoftErpTheme.textSecondary)),
+              child: Text(
+                'Variations',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: SoftErpTheme.textSecondary,
+                ),
+              ),
             ),
             for (final i in matchingVars)
               ListTile(
                 leading: const Icon(Icons.bubble_chart_outlined),
                 title: Text(i.displayName.isNotEmpty ? i.displayName : i.name),
-                subtitle: Text(_getFullPathForItem(i, allGroupDefinitions, baseItems), style: const TextStyle(color: SoftErpTheme.textSecondary, fontSize: 12)),
+                subtitle: Text(
+                  _getFullPathForItem(i, allGroupDefinitions, baseItems),
+                  style: const TextStyle(
+                    color: SoftErpTheme.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
                 onTap: () {
                   Navigator.of(context).pop(i.id);
                 },
@@ -437,25 +564,35 @@ class _ItemFinderSelectorDialogState extends State<ItemFinderSelectorDialog> {
     );
   }
 
-  void _buildPathToGroup(GroupDefinition target, List<GroupDefinition> allGroupDefinitions) {
+  void _buildPathToGroup(
+    GroupDefinition target,
+    List<GroupDefinition> allGroupDefinitions,
+  ) {
     _selectedPath.clear();
     final path = <GroupDefinition>[];
     GroupDefinition? current = target;
     while (current != null) {
       path.insert(0, current);
       if (current.parentGroupId == null) break;
-      current = allGroupDefinitions.where((g) => g.id == current!.parentGroupId).firstOrNull;
+      current = allGroupDefinitions
+          .where((g) => g.id == current!.parentGroupId)
+          .firstOrNull;
     }
     _selectedPath.addAll(path);
   }
 
-  void _buildPathToBaseItem(ItemDefinition target, List<GroupDefinition> allGroupDefinitions) {
+  void _buildPathToBaseItem(
+    ItemDefinition target,
+    List<GroupDefinition> allGroupDefinitions,
+  ) {
     if (target.groupId <= 0) {
       _selectedPath.clear();
       _selectedPath.add(target);
       return;
     }
-    final parentGroup = allGroupDefinitions.where((g) => g.id == target.groupId).firstOrNull;
+    final parentGroup = allGroupDefinitions
+        .where((g) => g.id == target.groupId)
+        .firstOrNull;
     if (parentGroup != null) {
       _buildPathToGroup(parentGroup, allGroupDefinitions);
     } else {
@@ -466,7 +603,8 @@ class _ItemFinderSelectorDialogState extends State<ItemFinderSelectorDialog> {
 
   String _nameForNode(dynamic node) {
     if (node is GroupDefinition) return node.name;
-    if (node is ItemDefinition) return node.displayName.isNotEmpty ? node.displayName : node.name;
+    if (node is ItemDefinition)
+      return node.displayName.isNotEmpty ? node.displayName : node.name;
     return 'Unknown';
   }
 }

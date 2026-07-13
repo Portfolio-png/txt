@@ -207,7 +207,9 @@ class _IssueCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = issue.isError ? const Color(0xFFD64545) : const Color(0xFFB8860B);
+    final color = issue.isError
+        ? const Color(0xFFD64545)
+        : const Color(0xFFB8860B);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       decoration: BoxDecoration(
@@ -282,8 +284,11 @@ class _TrashCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.restore_from_trash_outlined,
-              color: SoftErpTheme.textSecondary, size: 22),
+          const Icon(
+            Icons.restore_from_trash_outlined,
+            color: SoftErpTheme.textSecondary,
+            size: 22,
+          ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(

@@ -5556,96 +5556,96 @@ class _InventoryNameCell extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-                Tooltip(
-                  message: title,
-                  waitDuration: const Duration(milliseconds: 500),
-                  child: Row(
-                    children: [
-                      if (isPinned) ...[
-                        const Icon(
-                          Icons.push_pin_rounded,
-                          size: 12,
-                          color: SoftErpTheme.accentDark,
+              Tooltip(
+                message: title,
+                waitDuration: const Duration(milliseconds: 500),
+                child: Row(
+                  children: [
+                    if (isPinned) ...[
+                      const Icon(
+                        Icons.push_pin_rounded,
+                        size: 12,
+                        color: SoftErpTheme.accentDark,
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    Expanded(
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: _inventoryManropeStyle(
+                          color: titleColor,
+                          size: metrics.bodyFontSize,
+                          weight: entry.canExpand
+                              ? FontWeight.w700
+                              : FontWeight.w400,
                         ),
-                        const SizedBox(width: 6),
-                      ],
-                      Expanded(
+                      ),
+                    ),
+                    // Mirror the production sidebar's yellow "in pipeline"
+                    // headband so committed stock is obvious from inventory too.
+                    if (record.linkedPipelineCount > 0) ...[
+                      const SizedBox(width: 8),
+                      Tooltip(
+                        message: record.linkedPipelineCount > 1
+                            ? 'Assigned to ${record.linkedPipelineCount} production pipelines'
+                            : 'Assigned to a production pipeline',
+                        child: _PipelinePill(
+                          count: record.linkedPipelineCount,
+                          fontSize: math.max(10, metrics.bodyFontSize - 4),
+                        ),
+                      ),
+                    ],
+                    if (entry.directItemCount != null) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: SoftErpTheme.accentSoft,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: const Color(0xFFD5DCF8)),
+                        ),
                         child: Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: _inventoryManropeStyle(
-                            color: titleColor,
-                            size: metrics.bodyFontSize,
-                            weight: entry.canExpand
-                                ? FontWeight.w700
-                                : FontWeight.w400,
+                          '${entry.directItemCount} items',
+                          style: _inventorySegoeStyle(
+                            color: SoftErpTheme.accentDark,
+                            size: math.max(10, metrics.bodyFontSize - 4),
+                            weight: FontWeight.w600,
                           ),
                         ),
                       ),
-                      // Mirror the production sidebar's yellow "in pipeline"
-                      // headband so committed stock is obvious from inventory too.
-                      if (record.linkedPipelineCount > 0) ...[
-                        const SizedBox(width: 8),
-                        Tooltip(
-                          message: record.linkedPipelineCount > 1
-                              ? 'Assigned to ${record.linkedPipelineCount} production pipelines'
-                              : 'Assigned to a production pipeline',
-                          child: _PipelinePill(
-                            count: record.linkedPipelineCount,
-                            fontSize: math.max(10, metrics.bodyFontSize - 4),
-                          ),
-                        ),
-                      ],
-                      if (entry.directItemCount != null) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: SoftErpTheme.accentSoft,
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(color: const Color(0xFFD5DCF8)),
-                          ),
-                          child: Text(
-                            '${entry.directItemCount} items',
-                            style: _inventorySegoeStyle(
-                              color: SoftErpTheme.accentDark,
-                              size: math.max(10, metrics.bodyFontSize - 4),
-                              weight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                      if (entry.setQuantity != null) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF6F4FF),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(color: const Color(0xFFD9CCFF)),
-                          ),
-                          child: Text(
-                            '${entry.setQuantity} in set',
-                            style: _inventorySegoeStyle(
-                              color: SoftErpTheme.accentDark,
-                              size: math.max(10, metrics.bodyFontSize - 4),
-                              weight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
                     ],
-                  ),
+                    if (entry.setQuantity != null) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF6F4FF),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: const Color(0xFFD9CCFF)),
+                        ),
+                        child: Text(
+                          '${entry.setQuantity} in set',
+                          style: _inventorySegoeStyle(
+                            color: SoftErpTheme.accentDark,
+                            size: math.max(10, metrics.bodyFontSize - 4),
+                            weight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
+          ),
         ),
       ],
     );

@@ -6884,7 +6884,7 @@ function sanitizeNodes(nodes, expectedKind, pathSegments = [], parentPropertyNam
     }
     const kind = String(node.kind || '');
     if (kind !== expectedKind) {
-      const error = new Error('Variation tree must alternate between property groups and values.');
+      const error = new Error(`Expected variation tree node of kind '${expectedKind}', but got '${kind}'.`);
       error.statusCode = 409;
       throw error;
     }
@@ -6899,14 +6899,17 @@ function sanitizeNodes(nodes, expectedKind, pathSegments = [], parentPropertyNam
     const nodeId = node.id || null;
 
     if (kind === 'property') {
+      const hasPropertyChildren = (node.children || []).some(c => c.kind === 'property');
+      const expectedChildKind = hasPropertyChildren ? 'property' : 'value';
       return {
         id: nodeId,
         kind,
         name: trimmedName,
         code: String(node.code || '').trim(),
         displayName: '',
+        inputType: String(node.inputType || 'Text').trim() || 'Text',
         position: index,
-        children: sanitizeNodes(node.children || [], 'value', pathSegments, trimmedName, depth + 1),
+        children: sanitizeNodes(node.children || [], expectedChildKind, pathSegments, trimmedName, depth + 1),
       };
     }
 
@@ -6925,37 +6928,18 @@ function sanitizeNodes(nodes, expectedKind, pathSegments = [], parentPropertyNam
   });
 }
 
-async function findItemDuplicate({ name, groupId, unitId, excludeId = null, variationTree = [] }) {
+async function findItemDuplicate({ name, groupId, unitId, excludeId = null }) {
   const rows = await all('SELECT id, name, group_id, unit_id FROM items');
   const normalizedName = normalizeUnitValue(name);
   const normalizedGroupId = Number(groupId || 0);
   const normalizedUnitId = Number(unitId || 0);
-
-  const comparableTree = (nodes = []) =>
-    (nodes || [])
-      .map((node) => ({
-        id: null,
-        kind: node.kind,
-        name: String(node.name || '').trim(),
-        displayName: String(node.displayName || '').trim(),
-        code: String(node.code || '').trim(),
-        children: comparableTree(node.children || []),
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-
-  const sanitizedTree = sanitizeNodes(variationTree, 'property');
-  const serializedInputTree = JSON.stringify(comparableTree(sanitizedTree));
 
   for (const row of rows) {
     if (excludeId != null && row.id === excludeId) {
       continue;
     }
     if (normalizeUnitValue(row.name) === normalizedName && Number(row.group_id || 0) === normalizedGroupId && Number(row.unit_id || 0) === normalizedUnitId) {
-      const existingTree = await getItemVariationTree(row.id);
-      const serializedExistingTree = JSON.stringify(comparableTree(existingTree));
-      if (serializedInputTree === serializedExistingTree) {
-        return row;
-      }
+      return row;
     }
   }
   return null;
@@ -13853,7 +13837,6 @@ async function saveItem({
     groupId: normalizedGroupId,
     unitId: normalizedUnitId,
     excludeId: id,
-    variationTree: variationTree,
   });
   if (duplicate) {
     const error = new Error('An item with the same name already exists.');
@@ -13874,6 +13857,7 @@ async function saveItem({
         // H-1 fix: include 'code' so that renaming a variation node's barcode/
         // naming code on a used item is correctly treated as a structural change.
         code: String(node.code || '').trim(),
+        inputType: String(node.inputType || 'Text').trim() || 'Text',
 
         children: comparableTree(node.children || []),
       }))
@@ -15087,7 +15071,7 @@ function collectTopLevelPropertySchemaFromTree(
     drafts.push({
       propertyKey,
       displayName,
-      inputType: existing?.inputType || fallback?.inputType || 'Text',
+      inputType: node.inputType || existing?.inputType || fallback?.inputType || 'Text',
       mandatory: existing?.mandatory ?? fallback?.mandatory ?? false,
       unitId: existing?.unitId ?? fallback?.unitId ?? null,
       unitSymbol: existing?.unitSymbol ?? fallback?.unitSymbol ?? null,

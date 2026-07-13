@@ -55,8 +55,11 @@ class SubmitFormShortcuts extends StatelessWidget {
             _submit(context),
         const SingleActivator(LogicalKeyboardKey.enter, meta: true): () =>
             _submit(context),
-        const SingleActivator(LogicalKeyboardKey.numpadEnter, control: true):
-            () => _submit(context),
+        const SingleActivator(
+          LogicalKeyboardKey.numpadEnter,
+          control: true,
+        ): () =>
+            _submit(context),
         const SingleActivator(LogicalKeyboardKey.numpadEnter, meta: true): () =>
             _submit(context),
       },

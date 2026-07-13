@@ -40,14 +40,17 @@ class GenericAssetService {
   final String baseUrl;
   final bool useMockResponses;
 
-  Future<GenericAssetUploadTarget> createUploadIntent(GenericAssetUploadIntentInput input) async {
+  Future<GenericAssetUploadTarget> createUploadIntent(
+    GenericAssetUploadIntentInput input,
+  ) async {
     if (useMockResponses) {
       await Future.delayed(const Duration(milliseconds: 300));
       return GenericAssetUploadTarget(
         uploadUrl: Uri.parse('http://mock.local/upload'),
         headers: {},
         objectKey: 'mock-key-${DateTime.now().millisecondsSinceEpoch}',
-        readUrl: 'https://images.unsplash.com/photo-1550439062-609e1531270e?auto=format&fit=crop&q=80',
+        readUrl:
+            'https://images.unsplash.com/photo-1550439062-609e1531270e?auto=format&fit=crop&q=80',
       );
     }
 
@@ -64,18 +67,23 @@ class GenericAssetService {
     );
 
     final payload = jsonDecode(response.body);
-    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] != true) {
-      throw Exception(payload['error'] as String? ?? 'Failed to create generic upload intent');
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw Exception(
+        payload['error'] as String? ?? 'Failed to create generic upload intent',
+      );
     }
 
     final data = payload['intent'] as Map<String, dynamic>;
     final uploadMap = data['upload'] as Map<String, dynamic>;
     final headersMap = uploadMap['headers'] as Map<String, dynamic>? ?? {};
-    
+
     // In the generic asset flow, readUrl is returned immediately or constructed since there's no completion callback
     // (Wait, the backend returns readUrl inside intent if it's already generated, or we might need to construct it).
     // Let's assume readUrl is returned in the intent or upload map.
-    final readUrl = data['readUrl'] as String? ?? uploadMap['readUrl'] as String?;
+    final readUrl =
+        data['readUrl'] as String? ?? uploadMap['readUrl'] as String?;
 
     return GenericAssetUploadTarget(
       uploadUrl: Uri.parse(uploadMap['uploadUrl'] as String? ?? ''),

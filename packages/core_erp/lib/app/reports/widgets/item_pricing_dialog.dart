@@ -203,10 +203,7 @@ class _ItemPricingDialogState extends State<ItemPricingDialog> {
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                   const SizedBox(width: 12),
-                  AppButton(
-                    label: 'Continue',
-                    onPressed: _submit,
-                  ),
+                  AppButton(label: 'Continue', onPressed: _submit),
                 ],
               ),
             ),

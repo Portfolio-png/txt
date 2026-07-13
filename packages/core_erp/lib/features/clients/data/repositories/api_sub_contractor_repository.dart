@@ -24,7 +24,8 @@ class ApiSubContractorRepository implements SubContractorRepository {
   final String baseUrl;
   final bool useMockResponses;
 
-  static final List<SubContractorDefinition> _mockSubContractors = <SubContractorDefinition>[];
+  static final List<SubContractorDefinition> _mockSubContractors =
+      <SubContractorDefinition>[];
   static int _mockNextId = 1;
 
   @override
@@ -51,13 +52,19 @@ class ApiSubContractorRepository implements SubContractorRepository {
     final uri = Uri.parse('$baseUrl/api/clients/$clientId/sub-contractors');
     final response = await _client.get(uri);
     final payload = _decodeJsonObject(response.body);
-    
-    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] == false) {
-      throw SubContractorApiException(payload['error'] as String? ?? 'Failed to fetch sub-contractors.');
+
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] == false) {
+      throw SubContractorApiException(
+        payload['error'] as String? ?? 'Failed to fetch sub-contractors.',
+      );
     }
-    
+
     final list = payload['subContractors'] as List<dynamic>? ?? [];
-    return list.map((e) => SubContractorDefinition.fromJson(e as Map<String, dynamic>)).toList();
+    return list
+        .map((e) => SubContractorDefinition.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   @override
@@ -69,17 +76,26 @@ class ApiSubContractorRepository implements SubContractorRepository {
     final uri = Uri.parse('$baseUrl/api/sub-contractors');
     final response = await _client.get(uri);
     final payload = _decodeJsonObject(response.body);
-    
-    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] == false) {
-      throw SubContractorApiException(payload['error'] as String? ?? 'Failed to fetch sub-contractors.');
+
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] == false) {
+      throw SubContractorApiException(
+        payload['error'] as String? ?? 'Failed to fetch sub-contractors.',
+      );
     }
-    
+
     final list = payload['subContractors'] as List<dynamic>? ?? [];
-    return list.map((e) => SubContractorDefinition.fromJson(e as Map<String, dynamic>)).toList();
+    return list
+        .map((e) => SubContractorDefinition.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   @override
-  Future<SubContractorDefinition> createSubContractor(int clientId, CreateSubContractorInput input) async {
+  Future<SubContractorDefinition> createSubContractor(
+    int clientId,
+    CreateSubContractorInput input,
+  ) async {
     if (useMockResponses) {
       final created = SubContractorDefinition(
         id: _mockNextId++,
@@ -106,19 +122,28 @@ class ApiSubContractorRepository implements SubContractorRepository {
     );
     final payload = _decodeJsonObject(response.body);
 
-    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] == false) {
-      throw SubContractorApiException(payload['error'] as String? ?? 'Failed to create sub-contractor.');
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] == false) {
+      throw SubContractorApiException(
+        payload['error'] as String? ?? 'Failed to create sub-contractor.',
+      );
     }
 
-    return SubContractorDefinition.fromJson(payload['subContractor'] as Map<String, dynamic>);
+    return SubContractorDefinition.fromJson(
+      payload['subContractor'] as Map<String, dynamic>,
+    );
   }
 
   @override
-  Future<SubContractorDefinition> updateSubContractor(int id, UpdateSubContractorInput input) async {
+  Future<SubContractorDefinition> updateSubContractor(
+    int id,
+    UpdateSubContractorInput input,
+  ) async {
     if (useMockResponses) {
       final index = _mockSubContractors.indexWhere((s) => s.id == id);
       if (index == -1) throw const SubContractorApiException('Not found');
-      
+
       final current = _mockSubContractors[index];
       final updated = current.copyWith(
         name: input.name,
@@ -142,11 +167,17 @@ class ApiSubContractorRepository implements SubContractorRepository {
     );
     final payload = _decodeJsonObject(response.body);
 
-    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] == false) {
-      throw SubContractorApiException(payload['error'] as String? ?? 'Failed to update sub-contractor.');
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] == false) {
+      throw SubContractorApiException(
+        payload['error'] as String? ?? 'Failed to update sub-contractor.',
+      );
     }
 
-    return SubContractorDefinition.fromJson(payload['subContractor'] as Map<String, dynamic>);
+    return SubContractorDefinition.fromJson(
+      payload['subContractor'] as Map<String, dynamic>,
+    );
   }
 
   @override
@@ -160,8 +191,12 @@ class ApiSubContractorRepository implements SubContractorRepository {
     final response = await _client.delete(uri);
     final payload = _decodeJsonObject(response.body);
 
-    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] == false) {
-      throw SubContractorApiException(payload['error'] as String? ?? 'Failed to delete sub-contractor.');
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] == false) {
+      throw SubContractorApiException(
+        payload['error'] as String? ?? 'Failed to delete sub-contractor.',
+      );
     }
   }
 }

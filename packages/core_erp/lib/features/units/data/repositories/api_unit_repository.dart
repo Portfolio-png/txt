@@ -40,7 +40,9 @@ class ApiUnitRepository implements UnitRepository {
     final response = await _client.get(uri);
     final payload = _decodeJsonObject(response.body);
     final parsed = UnitsListResponse.fromJson(payload);
-    if (response.statusCode < 200 || response.statusCode >= 300 || !parsed.success) {
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        !parsed.success) {
       throw UnitApiException(
         payload['error'] as String? ?? 'Failed to fetch units.',
       );
@@ -256,10 +258,12 @@ class ApiUnitRepository implements UnitRepository {
     if (existing.isNotEmpty) {
       return existing.first;
     }
-    return (_mockUnits.map((unit) => unit.unitGroupId ?? 0).fold<int>(
-          0,
-          (previous, value) => value > previous ? value : previous,
-        )) +
+    return (_mockUnits
+            .map((unit) => unit.unitGroupId ?? 0)
+            .fold<int>(
+              0,
+              (previous, value) => value > previous ? value : previous,
+            )) +
         1;
   }
 
@@ -283,10 +287,7 @@ class ApiUnitRepository implements UnitRepository {
     if (baseId == null) {
       return null;
     }
-    return _mockUnits
-        .where((unit) => unit.id == baseId)
-        .firstOrNull
-        ?.name;
+    return _mockUnits.where((unit) => unit.id == baseId).firstOrNull?.name;
   }
 }
 

@@ -43,7 +43,15 @@ import '../../data/models/order_api_models.dart';
 import '../providers/orders_provider.dart';
 import '../widgets/order_report_dialog.dart';
 
-enum OrderSortColumn { orderDate, partyItem, poNumber, qty, startDate, endDate, status }
+enum OrderSortColumn {
+  orderDate,
+  partyItem,
+  poNumber,
+  qty,
+  startDate,
+  endDate,
+  status,
+}
 
 Map<ShortcutActivator, VoidCallback> _submitShortcutBindings(
   VoidCallback onSubmit,
@@ -229,9 +237,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
                             _sortAscending = ascending;
                           });
                         },
-                        onOrderSearch: (query) => setState(() => _orderSearchQuery = query),
-                        onClientSearch: (query) => setState(() => _clientSearchQuery = query),
-                        onPoSearch: (query) => setState(() => _poSearchQuery = query),
+                        onOrderSearch: (query) =>
+                            setState(() => _orderSearchQuery = query),
+                        onClientSearch: (query) =>
+                            setState(() => _clientSearchQuery = query),
+                        onPoSearch: (query) =>
+                            setState(() => _poSearchQuery = query),
                       ),
                     ),
                   ],
@@ -299,8 +310,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
             cmp = aQty.compareTo(bQty);
             break;
           case OrderSortColumn.startDate:
-            final aStart = a.items.map((i) => i.startDate).whereType<DateTime>().fold<DateTime?>(null, (min, d) => min == null || d.isBefore(min) ? d : min);
-            final bStart = b.items.map((i) => i.startDate).whereType<DateTime>().fold<DateTime?>(null, (min, d) => min == null || d.isBefore(min) ? d : min);
+            final aStart = a.items
+                .map((i) => i.startDate)
+                .whereType<DateTime>()
+                .fold<DateTime?>(
+                  null,
+                  (min, d) => min == null || d.isBefore(min) ? d : min,
+                );
+            final bStart = b.items
+                .map((i) => i.startDate)
+                .whereType<DateTime>()
+                .fold<DateTime?>(
+                  null,
+                  (min, d) => min == null || d.isBefore(min) ? d : min,
+                );
             if (aStart == null && bStart == null) {
               cmp = 0;
             } else if (aStart == null) {
@@ -312,8 +335,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
             }
             break;
           case OrderSortColumn.endDate:
-            final aEnd = a.items.map((i) => i.endDate).whereType<DateTime>().fold<DateTime?>(null, (max, d) => max == null || d.isAfter(max) ? d : max);
-            final bEnd = b.items.map((i) => i.endDate).whereType<DateTime>().fold<DateTime?>(null, (max, d) => max == null || d.isAfter(max) ? d : max);
+            final aEnd = a.items
+                .map((i) => i.endDate)
+                .whereType<DateTime>()
+                .fold<DateTime?>(
+                  null,
+                  (max, d) => max == null || d.isAfter(max) ? d : max,
+                );
+            final bEnd = b.items
+                .map((i) => i.endDate)
+                .whereType<DateTime>()
+                .fold<DateTime?>(
+                  null,
+                  (max, d) => max == null || d.isAfter(max) ? d : max,
+                );
             if (aEnd == null && bEnd == null) {
               cmp = 0;
             } else if (aEnd == null) {
@@ -325,7 +360,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
             }
             break;
           case OrderSortColumn.status:
-            cmp = _statusPriorityWeight(a.overallStatus).compareTo(_statusPriorityWeight(b.overallStatus));
+            cmp = _statusPriorityWeight(
+              a.overallStatus,
+            ).compareTo(_statusPriorityWeight(b.overallStatus));
             break;
         }
         if (cmp != 0) {
@@ -1299,7 +1336,9 @@ class _TableHeaderRow extends StatelessWidget {
                 showSearch: showSearch,
                 searchHint: searchHint,
                 initialSearchQuery: initialSearchQuery,
-                initialSortAscending: sortColumn == column ? sortAscending : null,
+                initialSortAscending: sortColumn == column
+                    ? sortAscending
+                    : null,
                 onSort: (ascending) {
                   if (ascending == null) {
                     onSortChange?.call(null, true);
@@ -1331,14 +1370,86 @@ class _TableHeaderRow extends StatelessWidget {
       child: Row(
         children: [
           const SizedBox(width: _OrdersTableMetrics.prioritySlotWidth),
-          _HeaderCell('Order / Date', width: layout.orderDateGroupWidth, onTap: (ctx) => _showColumnFilterMenu(ctx, title: 'Order / Date', column: OrderSortColumn.orderDate, showSearch: true, searchHint: 'Search Order No...', initialSearchQuery: orderSearchQuery, onSearch: onOrderSearch)),
-          _HeaderCell('Party / Item', width: layout.partyItemGroupWidth, onTap: (ctx) => _showColumnFilterMenu(ctx, title: 'Party / Item', column: OrderSortColumn.partyItem, showSearch: true, searchHint: 'Search Client...', initialSearchQuery: clientSearchQuery, onSearch: onClientSearch)),
-          _HeaderCell('Purchase Order Number', width: layout.poWidth, onTap: (ctx) => _showColumnFilterMenu(ctx, title: 'PO Number', column: OrderSortColumn.poNumber, showSearch: true, searchHint: 'Search PO No...', initialSearchQuery: poSearchQuery, onSearch: onPoSearch)),
-          _HeaderCell('Qty', width: layout.quantityWidth, onTap: (ctx) => _showColumnFilterMenu(ctx, title: 'Quantity', column: OrderSortColumn.qty)),
-          _HeaderCell('Start Date', width: layout.startDateWidth, onTap: (ctx) => _showColumnFilterMenu(ctx, title: 'Start Date', column: OrderSortColumn.startDate)),
-          _HeaderCell('End Date', width: layout.endDateWidth, onTap: (ctx) => _showColumnFilterMenu(ctx, title: 'End Date', column: OrderSortColumn.endDate)),
-          _HeaderCell('Status', width: layout.statusWidth, onTap: (ctx) => _showColumnFilterMenu(ctx, title: 'Status', column: OrderSortColumn.status)),
-          _HeaderCell('Actions', width: layout.actionsWidth, showChevron: false),
+          _HeaderCell(
+            'Order / Date',
+            width: layout.orderDateGroupWidth,
+            onTap: (ctx) => _showColumnFilterMenu(
+              ctx,
+              title: 'Order / Date',
+              column: OrderSortColumn.orderDate,
+              showSearch: true,
+              searchHint: 'Search Order No...',
+              initialSearchQuery: orderSearchQuery,
+              onSearch: onOrderSearch,
+            ),
+          ),
+          _HeaderCell(
+            'Party / Item',
+            width: layout.partyItemGroupWidth,
+            onTap: (ctx) => _showColumnFilterMenu(
+              ctx,
+              title: 'Party / Item',
+              column: OrderSortColumn.partyItem,
+              showSearch: true,
+              searchHint: 'Search Client...',
+              initialSearchQuery: clientSearchQuery,
+              onSearch: onClientSearch,
+            ),
+          ),
+          _HeaderCell(
+            'Purchase Order Number',
+            width: layout.poWidth,
+            onTap: (ctx) => _showColumnFilterMenu(
+              ctx,
+              title: 'PO Number',
+              column: OrderSortColumn.poNumber,
+              showSearch: true,
+              searchHint: 'Search PO No...',
+              initialSearchQuery: poSearchQuery,
+              onSearch: onPoSearch,
+            ),
+          ),
+          _HeaderCell(
+            'Qty',
+            width: layout.quantityWidth,
+            onTap: (ctx) => _showColumnFilterMenu(
+              ctx,
+              title: 'Quantity',
+              column: OrderSortColumn.qty,
+            ),
+          ),
+          _HeaderCell(
+            'Start Date',
+            width: layout.startDateWidth,
+            onTap: (ctx) => _showColumnFilterMenu(
+              ctx,
+              title: 'Start Date',
+              column: OrderSortColumn.startDate,
+            ),
+          ),
+          _HeaderCell(
+            'End Date',
+            width: layout.endDateWidth,
+            onTap: (ctx) => _showColumnFilterMenu(
+              ctx,
+              title: 'End Date',
+              column: OrderSortColumn.endDate,
+            ),
+          ),
+          _HeaderCell(
+            'Status',
+            width: layout.statusWidth,
+            onTap: (ctx) => _showColumnFilterMenu(
+              ctx,
+              title: 'Status',
+              column: OrderSortColumn.status,
+            ),
+          ),
+          _HeaderCell(
+            'Actions',
+            width: layout.actionsWidth,
+            showChevron: false,
+          ),
         ],
       ),
     );
@@ -1346,7 +1457,12 @@ class _TableHeaderRow extends StatelessWidget {
 }
 
 class _HeaderCell extends StatelessWidget {
-  const _HeaderCell(this.label, {required this.width, this.showChevron = true, this.onTap});
+  const _HeaderCell(
+    this.label, {
+    required this.width,
+    this.showChevron = true,
+    this.onTap,
+  });
 
   final String label;
   final double width;
@@ -1371,17 +1487,18 @@ class _HeaderCell extends StatelessWidget {
         ),
         if (showChevron) ...[
           const SizedBox(width: 4),
-          const Icon(Icons.keyboard_arrow_down_rounded, size: 14, color: SoftErpTheme.textSecondary),
+          const Icon(
+            Icons.keyboard_arrow_down_rounded,
+            size: 14,
+            color: SoftErpTheme.textSecondary,
+          ),
         ],
       ],
     );
 
     final cell = SizedBox(
       width: width,
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: content,
-      ),
+      child: Align(alignment: Alignment.centerLeft, child: content),
     );
 
     if (onTap != null) {
@@ -1447,88 +1564,97 @@ class _ColumnFilterPanelState extends State<_ColumnFilterPanel> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-            Text(
-              widget.title,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: SoftErpTheme.textPrimary,
-              ),
+          Text(
+            widget.title,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: SoftErpTheme.textPrimary,
             ),
-            if (widget.showSearch) ...[
-              const SizedBox(height: 16),
-              TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: widget.searchHint,
-                  prefixIcon: const Icon(Icons.search, size: 18),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: SoftErpTheme.border),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: SoftErpTheme.border),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: SoftErpTheme.accentDark),
-                  ),
-                ),
-                onChanged: (val) {
-                  widget.onSearch?.call(val);
-                },
-              ),
-            ],
-            const SizedBox(height: 20),
-            const Text(
-              'Sort',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: SoftErpTheme.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Ascending (A-Z)'),
-              trailing: _sortAscending == true ? const Icon(Icons.check, color: SoftErpTheme.accentDark) : null,
-              onTap: () {
-                setState(() => _sortAscending = true);
-                widget.onSort?.call(true);
-              },
-            ),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Descending (Z-A)'),
-              trailing: _sortAscending == false ? const Icon(Icons.check, color: SoftErpTheme.accentDark) : null,
-              onTap: () {
-                setState(() => _sortAscending = false);
-                widget.onSort?.call(false);
-              },
-            ),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Default / None'),
-              trailing: _sortAscending == null ? const Icon(Icons.check, color: SoftErpTheme.accentDark) : null,
-              onTap: () {
-                setState(() => _sortAscending = null);
-                widget.onSort?.call(null);
-              },
-            ),
+          ),
+          if (widget.showSearch) ...[
             const SizedBox(height: 16),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Close'),
+            TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: widget.searchHint,
+                prefixIcon: const Icon(Icons.search, size: 18),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: SoftErpTheme.border),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: SoftErpTheme.border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: SoftErpTheme.accentDark),
+                ),
               ),
+              onChanged: (val) {
+                widget.onSearch?.call(val);
+              },
             ),
           ],
-        ),
-      );
+          const SizedBox(height: 20),
+          const Text(
+            'Sort',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: SoftErpTheme.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Ascending (A-Z)'),
+            trailing: _sortAscending == true
+                ? const Icon(Icons.check, color: SoftErpTheme.accentDark)
+                : null,
+            onTap: () {
+              setState(() => _sortAscending = true);
+              widget.onSort?.call(true);
+            },
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Descending (Z-A)'),
+            trailing: _sortAscending == false
+                ? const Icon(Icons.check, color: SoftErpTheme.accentDark)
+                : null,
+            onTap: () {
+              setState(() => _sortAscending = false);
+              widget.onSort?.call(false);
+            },
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Default / None'),
+            trailing: _sortAscending == null
+                ? const Icon(Icons.check, color: SoftErpTheme.accentDark)
+                : null,
+            onTap: () {
+              setState(() => _sortAscending = null);
+              widget.onSort?.call(null);
+            },
+          ),
+          const SizedBox(height: 16),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -1667,14 +1793,26 @@ class _OrderDataRowState extends State<_OrderDataRow> {
                             primary: group.clientName,
                             secondary: group.items.length > 1
                                 ? '${group.items.length} items'
-                                : (group.items.first.variationPathLabel.isEmpty ||
-                                        group.items.first.variationPathLabel ==
-                                            group.items.first.itemName
-                                    ? group.items.first.itemName
-                                    : (group.items.first.variationPathLabel
-                                            .startsWith(group.items.first.itemName)
-                                        ? group.items.first.variationPathLabel
-                                        : '${group.items.first.itemName} · ${group.items.first.variationPathLabel}')),
+                                : (group
+                                              .items
+                                              .first
+                                              .variationPathLabel
+                                              .isEmpty ||
+                                          group
+                                                  .items
+                                                  .first
+                                                  .variationPathLabel ==
+                                              group.items.first.itemName
+                                      ? group.items.first.itemName
+                                      : (group.items.first.variationPathLabel
+                                                .startsWith(
+                                                  group.items.first.itemName,
+                                                )
+                                            ? group
+                                                  .items
+                                                  .first
+                                                  .variationPathLabel
+                                            : '${group.items.first.itemName} · ${group.items.first.variationPathLabel}')),
                             primaryStyle: const TextStyle(
                               fontWeight: FontWeight.w700,
                             ),
@@ -1754,7 +1892,8 @@ class _OrderDataRowState extends State<_OrderDataRow> {
                                 onEdit: () =>
                                     OrdersScreen.openEditor(context, group),
                                 onDelete: () => _handleDelete(context, group),
-                                onChangeStatus: (status) => _performCustomStatusChange(status),
+                                onChangeStatus: (status) =>
+                                    _performCustomStatusChange(status),
                                 onShowReport: () =>
                                     OrderReportDialog.show(context, group),
                               ),
@@ -1784,12 +1923,16 @@ class _OrderDataRowState extends State<_OrderDataRow> {
         UpdateOrderLifecycleInput(
           id: order.id,
           status: targetStatus,
-          startDate: targetStatus == OrderStatus.inProgress ? (order.startDate ?? now) : order.startDate,
-          endDate: targetStatus == OrderStatus.completed ? (order.endDate ?? now) : order.endDate,
+          startDate: targetStatus == OrderStatus.inProgress
+              ? (order.startDate ?? now)
+              : order.startDate,
+          endDate: targetStatus == OrderStatus.completed
+              ? (order.endDate ?? now)
+              : order.endDate,
         ),
       );
     }
-    
+
     if (mounted) setState(() => _updatingLifecycle = false);
   }
 
@@ -2276,9 +2419,12 @@ class _InlineRowActions extends StatelessWidget {
                 if (value == 'edit') onEdit();
                 if (value == 'delete') onDelete();
                 if (value == 'report') onShowReport();
-                if (value == 'status_pending') onChangeStatus(OrderStatus.notStarted);
-                if (value == 'status_inprogress') onChangeStatus(OrderStatus.inProgress);
-                if (value == 'status_completed') onChangeStatus(OrderStatus.completed);
+                if (value == 'status_pending')
+                  onChangeStatus(OrderStatus.notStarted);
+                if (value == 'status_inprogress')
+                  onChangeStatus(OrderStatus.inProgress);
+                if (value == 'status_completed')
+                  onChangeStatus(OrderStatus.completed);
               },
               itemBuilder: (context) => [
                 if (ConfigService.instance.allowCustomOrderActions) ...[
@@ -2594,31 +2740,51 @@ class _StatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = ConfigService.instance.ordersStatusColors;
-    
+
     // Default fallback schemes
     ({Color bg, Color border, Color text}) scheme;
-    
+
     switch (status) {
       case OrderStatus.draft:
-        scheme = (bg: const Color(0xFFF1EEF8), border: const Color(0x00FFFFFF), text: const Color(0xFF6D5E8C));
+        scheme = (
+          bg: const Color(0xFFF1EEF8),
+          border: const Color(0x00FFFFFF),
+          text: const Color(0xFF6D5E8C),
+        );
         break;
       case OrderStatus.notStarted:
         final hex = colors['pending'] ?? "#FFA500";
         final c = _colorFromHex(hex);
-        scheme = (bg: c.withValues(alpha: 0.15), border: const Color(0x00FFFFFF), text: c);
+        scheme = (
+          bg: c.withValues(alpha: 0.15),
+          border: const Color(0x00FFFFFF),
+          text: c,
+        );
         break;
       case OrderStatus.inProgress:
         final hex = colors['in_progress'] ?? "#1E90FF";
         final c = _colorFromHex(hex);
-        scheme = (bg: c.withValues(alpha: 0.15), border: const Color(0x00FFFFFF), text: c);
+        scheme = (
+          bg: c.withValues(alpha: 0.15),
+          border: const Color(0x00FFFFFF),
+          text: c,
+        );
         break;
       case OrderStatus.completed:
         final hex = colors['completed'] ?? "#32CD32";
         final c = _colorFromHex(hex);
-        scheme = (bg: c.withValues(alpha: 0.15), border: const Color(0x00FFFFFF), text: c);
+        scheme = (
+          bg: c.withValues(alpha: 0.15),
+          border: const Color(0x00FFFFFF),
+          text: c,
+        );
         break;
       case OrderStatus.delayed:
-        scheme = (bg: const Color(0xFFFDEDEE), border: const Color(0x00FFFFFF), text: SoftErpTheme.dangerText);
+        scheme = (
+          bg: const Color(0xFFFDEDEE),
+          border: const Color(0x00FFFFFF),
+          text: SoftErpTheme.dangerText,
+        );
         break;
     }
 
@@ -2837,173 +3003,176 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
         autofocus: true,
         skipTraversal: true,
         child: FocusTraversalGroup(
-        policy: OrderedTraversalPolicy(),
-        child: Form(
-          key: _formKey,
-          child: ErpFormScaffold(
-            title: 'Create New Order',
-            subtitle:
-                'Capture the customer, item lines, and purchase-order context in the same workspace your team already uses.',
-            bodyScrollable: false,
-            bodyPadding: const EdgeInsets.fromLTRB(36, 18, 36, 22),
-            errorBanner:
-                ordersProvider.errorMessage != null && !ordersProvider.isSaving
-                ? ErpFormMessageBanner(
-                    message: ordersProvider.errorMessage!,
-                    isError: true,
-                  )
-                : null,
-            headerActions: Builder(
-              builder: (context) {
-                final compactActions = MediaQuery.of(context).size.width < 1280;
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _OrderHeaderActionButton(
-                      icon: Icons.print_outlined,
-                      label: 'Print',
-                      compact: compactActions,
-                      onTap: _handlePrintOrder,
-                    ),
-                    const SizedBox(width: 8),
-                    _OrderHeaderActionButton(
-                      icon: Icons.upload_file_outlined,
-                      label: 'Upload PO',
-                      compact: compactActions,
-                      isActive: _showUploadPanel,
-                      onTap: _toggleUploadPanel,
-                    ),
-                  ],
-                );
-              },
-            ),
-            body: !canSubmit
-                ? _DependencyMessage(
-                    hasClients: clients.isNotEmpty,
-                    hasItems: items.isNotEmpty,
-                    hasUnits: units.isNotEmpty,
-                  )
-                : LayoutBuilder(
-                    builder: (context, constraints) {
-                      final isCompact = constraints.maxWidth < 720;
-                      final detailsPanel = _buildOrderDetailsPanel(
-                        context,
-                        clients,
-                      );
-                      final itemsPanel = _buildOrderItemsPanel(
-                        context,
-                        items,
-                        isCompact: isCompact,
-                      );
-                      final uploadPanel = _OrderUploadPanel(
-                        onClose: _toggleUploadPanel,
-                        onAddDocument: _handleAddDocument,
-                        documents: _poDocuments,
-                        recentFiles: _recentPoFiles,
-                        onRemoveDocument: _removePoDocument,
-                        onRetryDocument: _retryPoDocument,
-                        onUseRecentFile: _addCachedPoFile,
-                      );
-                      final canShowUploadColumn =
-                          _renderUploadPanel && constraints.maxWidth >= 980;
-                      final showStackedUploadPanel =
-                          _renderUploadPanel &&
-                          !isCompact &&
-                          !canShowUploadColumn;
-                      if (isCompact) {
-                        return SingleChildScrollView(
-                          child: Column(
-                            children: [
-                              detailsPanel,
-                              const SizedBox(height: 10),
-                              itemsPanel,
-                              if (_renderUploadPanel) ...[
+          policy: OrderedTraversalPolicy(),
+          child: Form(
+            key: _formKey,
+            child: ErpFormScaffold(
+              title: 'Create New Order',
+              subtitle:
+                  'Capture the customer, item lines, and purchase-order context in the same workspace your team already uses.',
+              bodyScrollable: false,
+              bodyPadding: const EdgeInsets.fromLTRB(36, 18, 36, 22),
+              errorBanner:
+                  ordersProvider.errorMessage != null &&
+                      !ordersProvider.isSaving
+                  ? ErpFormMessageBanner(
+                      message: ordersProvider.errorMessage!,
+                      isError: true,
+                    )
+                  : null,
+              headerActions: Builder(
+                builder: (context) {
+                  final compactActions =
+                      MediaQuery.of(context).size.width < 1280;
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _OrderHeaderActionButton(
+                        icon: Icons.print_outlined,
+                        label: 'Print',
+                        compact: compactActions,
+                        onTap: _handlePrintOrder,
+                      ),
+                      const SizedBox(width: 8),
+                      _OrderHeaderActionButton(
+                        icon: Icons.upload_file_outlined,
+                        label: 'Upload PO',
+                        compact: compactActions,
+                        isActive: _showUploadPanel,
+                        onTap: _toggleUploadPanel,
+                      ),
+                    ],
+                  );
+                },
+              ),
+              body: !canSubmit
+                  ? _DependencyMessage(
+                      hasClients: clients.isNotEmpty,
+                      hasItems: items.isNotEmpty,
+                      hasUnits: units.isNotEmpty,
+                    )
+                  : LayoutBuilder(
+                      builder: (context, constraints) {
+                        final isCompact = constraints.maxWidth < 720;
+                        final detailsPanel = _buildOrderDetailsPanel(
+                          context,
+                          clients,
+                        );
+                        final itemsPanel = _buildOrderItemsPanel(
+                          context,
+                          items,
+                          isCompact: isCompact,
+                        );
+                        final uploadPanel = _OrderUploadPanel(
+                          onClose: _toggleUploadPanel,
+                          onAddDocument: _handleAddDocument,
+                          documents: _poDocuments,
+                          recentFiles: _recentPoFiles,
+                          onRemoveDocument: _removePoDocument,
+                          onRetryDocument: _retryPoDocument,
+                          onUseRecentFile: _addCachedPoFile,
+                        );
+                        final canShowUploadColumn =
+                            _renderUploadPanel && constraints.maxWidth >= 980;
+                        final showStackedUploadPanel =
+                            _renderUploadPanel &&
+                            !isCompact &&
+                            !canShowUploadColumn;
+                        if (isCompact) {
+                          return SingleChildScrollView(
+                            child: Column(
+                              children: [
+                                detailsPanel,
                                 const SizedBox(height: 10),
-                                uploadPanel,
-                              ],
-                            ],
-                          ),
-                        );
-                      }
-                      if (showStackedUploadPanel) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Expanded(
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Expanded(flex: 4, child: detailsPanel),
-                                  const SizedBox(width: 14),
-                                  Expanded(flex: 9, child: itemsPanel),
+                                itemsPanel,
+                                if (_renderUploadPanel) ...[
+                                  const SizedBox(height: 10),
+                                  uploadPanel,
                                 ],
-                              ),
+                              ],
                             ),
-                            _AnimatedOrderStackedUploadSlot(
-                              visible: _showUploadPanel,
-                              child: Padding(
-                                padding: const EdgeInsets.only(top: 14),
-                                child: uploadPanel,
+                          );
+                        }
+                        if (showStackedUploadPanel) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Expanded(
+                                child: Row(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    Expanded(flex: 4, child: detailsPanel),
+                                    const SizedBox(width: 14),
+                                    Expanded(flex: 9, child: itemsPanel),
+                                  ],
+                                ),
                               ),
-                            ),
-                          ],
+                              _AnimatedOrderStackedUploadSlot(
+                                visible: _showUploadPanel,
+                                child: Padding(
+                                  padding: const EdgeInsets.only(top: 14),
+                                  child: uploadPanel,
+                                ),
+                              ),
+                            ],
+                          );
+                        }
+                        return _AnimatedOrderEditorColumns(
+                          showUploadPanel: _showUploadPanel,
+                          renderUploadPanel: _renderUploadPanel,
+                          detailsPanel: detailsPanel,
+                          itemsPanel: itemsPanel,
+                          uploadPanel: uploadPanel,
                         );
-                      }
-                      return _AnimatedOrderEditorColumns(
-                        showUploadPanel: _showUploadPanel,
-                        renderUploadPanel: _renderUploadPanel,
-                        detailsPanel: detailsPanel,
-                        itemsPanel: itemsPanel,
-                        uploadPanel: uploadPanel,
-                      );
-                    },
+                      },
+                    ),
+              footer: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  FocusTraversalOrder(
+                    order: const NumericFocusOrder(9000),
+                    child: _OrderEditorFooterButton(
+                      label: 'Cancel',
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
                   ),
-            footer: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                FocusTraversalOrder(
-                  order: const NumericFocusOrder(9000),
-                  child: _OrderEditorFooterButton(
-                    label: 'Cancel',
-                    onPressed: () => Navigator.of(context).pop(),
+                  const SizedBox(width: 10),
+                  FocusTraversalOrder(
+                    order: const NumericFocusOrder(9001),
+                    child: _OrderEditorFooterButton(
+                      key: const ValueKey<String>('orders-editor-save-draft'),
+                      label: 'Save Draft',
+                      isLoading: _isSaving,
+                      onPressed: canUseFooterActions
+                          ? () => _submit(
+                              context,
+                              clients,
+                              items,
+                              statusOverride: OrderStatus.draft,
+                              successMessage: 'Draft saved successfully.',
+                            )
+                          : null,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                FocusTraversalOrder(
-                  order: const NumericFocusOrder(9001),
-                  child: _OrderEditorFooterButton(
-                    key: const ValueKey<String>('orders-editor-save-draft'),
-                    label: 'Save Draft',
-                    isLoading: _isSaving,
-                    onPressed: canUseFooterActions
-                        ? () => _submit(
-                            context,
-                            clients,
-                            items,
-                            statusOverride: OrderStatus.draft,
-                            successMessage: 'Draft saved successfully.',
-                          )
-                        : null,
+                  const SizedBox(width: 10),
+                  FocusTraversalOrder(
+                    order: const NumericFocusOrder(9002),
+                    child: _OrderEditorFooterButton(
+                      key: const ValueKey<String>('orders-editor-create-order'),
+                      label: 'Save',
+                      isPrimary: true,
+                      isLoading: _isSaving,
+                      onPressed: canUseFooterActions
+                          ? () => _submit(context, clients, items)
+                          : null,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                FocusTraversalOrder(
-                  order: const NumericFocusOrder(9002),
-                  child: _OrderEditorFooterButton(
-                    key: const ValueKey<String>('orders-editor-create-order'),
-                    label: 'Save',
-                    isPrimary: true,
-                    isLoading: _isSaving,
-                    onPressed: canUseFooterActions
-                        ? () => _submit(context, clients, items)
-                        : null,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -3251,7 +3420,9 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
               child: GestureDetector(
                 onTap: () async {
                   final clients = context.read<ClientsProvider>().clients;
-                  final client = clients.firstWhere((c) => c.id == _selectedClientId);
+                  final client = clients.firstWhere(
+                    (c) => c.id == _selectedClientId,
+                  );
                   final sub = await SubContractorsSheet.show(context, client);
                   if (sub != null) {
                     setState(() {
@@ -3264,8 +3435,8 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
                   _selectedSubContractorId == null
                       ? '+ Add sub-contractor'
                       : _selectedSubContractorName != null
-                          ? 'Sub-contractor: $_selectedSubContractorName (Tap to change)'
-                          : '1 sub-contractor chosen (Tap to change)',
+                      ? 'Sub-contractor: $_selectedSubContractorName (Tap to change)'
+                      : '1 sub-contractor chosen (Tap to change)',
                   style: const TextStyle(
                     color: Color(0xFF3B82F6),
                     decoration: TextDecoration.underline,
@@ -3566,7 +3737,8 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
   Widget _buildItemSelectForLine(List<ItemDefinition> items, int index) {
     final line = _lines[index];
     final selectedItem = _selectedItemForLine(items, line.selectedItemId);
-    final hasVariations = selectedItem != null && selectedItem.topLevelProperties.isNotEmpty;
+    final hasVariations =
+        selectedItem != null && selectedItem.topLevelProperties.isNotEmpty;
 
     Widget child = _buildItemAutocompleteForLine(items, index);
 
@@ -3641,7 +3813,9 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
           .map(
             (group) => SearchableSelectOption<int>(
               value: group.id,
-              label: group.isCombination ? '${group.name} (combination)' : group.name,
+              label: group.isCombination
+                  ? '${group.name} (combination)'
+                  : group.name,
             ),
           ),
     ];
@@ -3662,8 +3836,9 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
           // Drop the current item if it no longer belongs to the filtered set.
           if (value != null && line.selectedItemId != null) {
             final visible = _itemsForGroupFilter(items, value);
-            final stillVisible =
-                visible.any((item) => item.id == line.selectedItemId);
+            final stillVisible = visible.any(
+              (item) => item.id == line.selectedItemId,
+            );
             if (!stillVisible) {
               line.selectedItemId = null;
               _syncVariationSelectionForLine(line, null);
@@ -3697,7 +3872,9 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
               final primaryGroup =
                   groupsProvider.findById(item.groupId)?.name ??
                   'No primary group';
-              final fullVariationName = item.displayName.isNotEmpty ? item.displayName : item.name;
+              final fullVariationName = item.displayName.isNotEmpty
+                  ? item.displayName
+                  : item.name;
               return SearchableSelectOption<int>(
                 value: item.id,
                 label: fullVariationName,
@@ -3735,7 +3912,6 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       ),
     );
   }
-
 
   Widget _buildUnitFieldForLine(List<ItemDefinition> items, int index) {
     final line = _lines[index];
@@ -4300,7 +4476,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     String successMessage = 'Order created successfully.',
   }) async {
     if (_isSaving) return;
-    
+
     if (!_formKey.currentState!.validate()) {
       showGlobalToast(
         'Please fix the highlighted fields before saving.',
@@ -4316,251 +4492,253 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       );
       return;
     }
-    
+
     setState(() {
       _isSaving = true;
     });
 
     try {
       final selectedClient = _selectedClient(clients);
-    final isDraft = statusOverride == OrderStatus.draft;
-    if (selectedClient == null) {
-      showAppSnack(
-        const SnackBar(content: Text('Select a client before saving.')),
-      );
-      return;
-    }
-
-    final String baseOrderNo = _orderNoController.text.trim().isNotEmpty
-        ? _orderNoController.text.trim()
-        : 'ORD-${DateTime.now().millisecondsSinceEpoch}';
-
-    final orderLines = <CreateOrderInput>[];
-    final activeUnits = context.read<UnitsProvider>().activeUnits;
-    for (var index = 0; index < _lines.length; index++) {
-      final line = _lines[index];
-      final item = _selectedItemForLine(items, line.selectedItemId);
-      final leaf = _selectedLeafForLine(item, line.selectedVariationLeafId);
-
-      // BUG-14: Items that have top-level properties but no leaf variants yet
-      // have a structurally incomplete variation tree — block ordering them.
-      if (!isDraft &&
-          item != null &&
-          item.topLevelProperties.isNotEmpty &&
-          item.leafVariationNodes.isEmpty) {
-        setState(() {
-          line.variationPathError =
-              'This item has no orderable variants yet. Add leaf values in Masters → Items.';
-        });
+      final isDraft = statusOverride == OrderStatus.draft;
+      if (selectedClient == null) {
         showAppSnack(
-          const SnackBar(
-            content: Text(
-              'One or more items have an incomplete variation tree. Add leaf variants before ordering.',
-            ),
-          ),
+          const SnackBar(content: Text('Select a client before saving.')),
         );
         return;
       }
 
-      // BUG-02: Drafts skip variation path completeness check — they're allowed
-      // to be saved in an incomplete state.
-      final requiresVariation =
-          item?.topLevelProperties.isNotEmpty == true &&
-          item?.leafVariationNodes.isNotEmpty == true;
-      final isPathComplete = item == null
-          ? false
-          : (isDraft ||
-                !requiresVariation ||
-                _isVariationPathComplete(
-                  item,
-                  line.selectedVariationValueNodeIds,
-                ));
-      if (item == null || !isPathComplete) {
-        setState(() {
-          line.variationPathError = item == null
-              ? 'Select an item first.'
-              : 'Select a complete variation path.';
-        });
-        showAppSnack(
-          SnackBar(
-            content: Text(
-              index == 0
-                  ? 'Complete the first order item path.'
-                  : 'Each added item row needs an item and variation path.',
+      final String baseOrderNo = _orderNoController.text.trim().isNotEmpty
+          ? _orderNoController.text.trim()
+          : 'ORD-${DateTime.now().millisecondsSinceEpoch}';
+
+      final orderLines = <CreateOrderInput>[];
+      final activeUnits = context.read<UnitsProvider>().activeUnits;
+      for (var index = 0; index < _lines.length; index++) {
+        final line = _lines[index];
+        final item = _selectedItemForLine(items, line.selectedItemId);
+        final leaf = _selectedLeafForLine(item, line.selectedVariationLeafId);
+
+        // BUG-14: Items that have top-level properties but no leaf variants yet
+        // have a structurally incomplete variation tree — block ordering them.
+        if (!isDraft &&
+            item != null &&
+            item.topLevelProperties.isNotEmpty &&
+            item.leafVariationNodes.isEmpty) {
+          setState(() {
+            line.variationPathError =
+                'This item has no orderable variants yet. Add leaf values in Masters → Items.';
+          });
+          showAppSnack(
+            const SnackBar(
+              content: Text(
+                'One or more items have an incomplete variation tree. Add leaf variants before ordering.',
+              ),
             ),
-          ),
-        );
-        return;
-      }
-
-      final selectedUnit = _selectedUnitForLine(line, item, activeUnits);
-      if (selectedUnit == null) {
-        showAppSnack(
-          SnackBar(
-            content: Text(
-              index == 0
-                  ? 'Select a unit for the first order item.'
-                  : 'Each added item row needs a unit.',
-            ),
-          ),
-        );
-        return;
-      }
-
-      final lineClientCode = line.clientCodeController.text.trim();
-
-      orderLines.add(
-        CreateOrderInput(
-          orderNo: baseOrderNo,
-          clientId: selectedClient.id,
-          subContractorId: _selectedSubContractorId,
-          clientName: selectedClient.name,
-          poNumber: _poNumberController.text,
-          clientCode: lineClientCode,
-          itemId: item.id,
-          itemName: item.displayName,
-          variationLeafNodeId: leaf?.id ?? 0,
-          variationPathLabel: line.selectedVariationValueNodeIds.isEmpty
-              ? ''
-              : _variationSelectionLabel(
-                  item,
-                  line.selectedVariationValueNodeIds,
-                  line.customVariationValues,
-                ),
-          variationPathNodeIds: line.selectedVariationValueNodeIds.isEmpty
-              ? const <int>[]
-              : _variationSelectionNodeIds(
-                  item,
-                  line.selectedVariationValueNodeIds,
-                ),
-          customVariationValues: line.customVariationValues.map(
-              (k, v) => MapEntry(k.toString(), v)),
-          quantity: int.tryParse(line.quantityController.text.trim()) ?? 1,
-          unitId: selectedUnit.id,
-          unitName: selectedUnit.name,
-          unitSymbol: selectedUnit.symbol,
-          status: statusOverride ?? OrderStatus.notStarted,
-          startDate: _startDate,
-          endDate: _itemWiseCompletionDate
-              ? line.completionDate ?? _endDate
-              : _endDate,
-          poDocumentIds: const <int>[],
-        ),
-      );
-    }
-
-    final poDocumentIds = _poDocuments.isEmpty
-        ? const <int>[]
-        : await _ensurePoDocumentsUploaded();
-    if (!context.mounted || poDocumentIds == null) {
-      return;
-    }
-
-    final orderLinesWithDocuments = orderLines
-        .asMap()
-        .entries
-        .map((entry) {
-          final isHeader = entry.key == 0;
-          final input = entry.value;
-          return CreateOrderInput(
-            orderNo: input.orderNo,
-            clientId: input.clientId,
-            subContractorId: input.subContractorId,
-            clientName: input.clientName,
-            poNumber: input.poNumber,
-            clientCode: input.clientCode,
-            itemId: input.itemId,
-            itemName: input.itemName,
-            variationLeafNodeId: input.variationLeafNodeId,
-            variationPathLabel: input.variationPathLabel,
-            variationPathNodeIds: input.variationPathNodeIds,
-            customVariationValues: input.customVariationValues,
-            quantity: input.quantity,
-            unitId: input.unitId,
-            unitName: input.unitName,
-            unitSymbol: input.unitSymbol,
-            status: input.status,
-            startDate: input.startDate,
-            endDate: input.endDate,
-            poDocumentIds: isHeader ? poDocumentIds : const <int>[],
           );
-        })
-        .toList(growable: false);
+          return;
+        }
 
-    OrderEntry? result;
-    var mergedLineCount = 0;
-    var createdLineCount = 0;
-    var updatedLineCount = 0;
-    String? singleLineOutcomeMessage;
-    final ordersProvider = context.read<OrdersProvider>();
+        // BUG-02: Drafts skip variation path completeness check — they're allowed
+        // to be saved in an incomplete state.
+        final requiresVariation =
+            item?.topLevelProperties.isNotEmpty == true &&
+            item?.leafVariationNodes.isNotEmpty == true;
+        final isPathComplete = item == null
+            ? false
+            : (isDraft ||
+                  !requiresVariation ||
+                  _isVariationPathComplete(
+                    item,
+                    line.selectedVariationValueNodeIds,
+                  ));
+        if (item == null || !isPathComplete) {
+          setState(() {
+            line.variationPathError = item == null
+                ? 'Select an item first.'
+                : 'Select a complete variation path.';
+          });
+          showAppSnack(
+            SnackBar(
+              content: Text(
+                index == 0
+                    ? 'Complete the first order item path.'
+                    : 'Each added item row needs an item and variation path.',
+              ),
+            ),
+          );
+          return;
+        }
 
-    for (var i = 0; i < orderLinesWithDocuments.length; i++) {
-      final input = orderLinesWithDocuments[i];
-      final line = _lines[i];
-      final isExisting =
-          widget.initialOrderGroup?.items.any((e) => e.id == line.id) ?? false;
+        final selectedUnit = _selectedUnitForLine(line, item, activeUnits);
+        if (selectedUnit == null) {
+          showAppSnack(
+            SnackBar(
+              content: Text(
+                index == 0
+                    ? 'Select a unit for the first order item.'
+                    : 'Each added item row needs a unit.',
+              ),
+            ),
+          );
+          return;
+        }
 
-      if (isExisting) {
-        result = await ordersProvider.updateOrder(line.id, input);
-        updatedLineCount += 1;
-      } else {
-        result = await ordersProvider.createOrder(input);
-        if (ordersProvider.lastCreateWasMerged) {
-          mergedLineCount += 1;
+        final lineClientCode = line.clientCodeController.text.trim();
+
+        orderLines.add(
+          CreateOrderInput(
+            orderNo: baseOrderNo,
+            clientId: selectedClient.id,
+            subContractorId: _selectedSubContractorId,
+            clientName: selectedClient.name,
+            poNumber: _poNumberController.text,
+            clientCode: lineClientCode,
+            itemId: item.id,
+            itemName: item.displayName,
+            variationLeafNodeId: leaf?.id ?? 0,
+            variationPathLabel: line.selectedVariationValueNodeIds.isEmpty
+                ? ''
+                : _variationSelectionLabel(
+                    item,
+                    line.selectedVariationValueNodeIds,
+                    line.customVariationValues,
+                  ),
+            variationPathNodeIds: line.selectedVariationValueNodeIds.isEmpty
+                ? const <int>[]
+                : _variationSelectionNodeIds(
+                    item,
+                    line.selectedVariationValueNodeIds,
+                  ),
+            customVariationValues: line.customVariationValues.map(
+              (k, v) => MapEntry(k.toString(), v),
+            ),
+            quantity: int.tryParse(line.quantityController.text.trim()) ?? 1,
+            unitId: selectedUnit.id,
+            unitName: selectedUnit.name,
+            unitSymbol: selectedUnit.symbol,
+            status: statusOverride ?? OrderStatus.notStarted,
+            startDate: _startDate,
+            endDate: _itemWiseCompletionDate
+                ? line.completionDate ?? _endDate
+                : _endDate,
+            poDocumentIds: const <int>[],
+          ),
+        );
+      }
+
+      final poDocumentIds = _poDocuments.isEmpty
+          ? const <int>[]
+          : await _ensurePoDocumentsUploaded();
+      if (!context.mounted || poDocumentIds == null) {
+        return;
+      }
+
+      final orderLinesWithDocuments = orderLines
+          .asMap()
+          .entries
+          .map((entry) {
+            final isHeader = entry.key == 0;
+            final input = entry.value;
+            return CreateOrderInput(
+              orderNo: input.orderNo,
+              clientId: input.clientId,
+              subContractorId: input.subContractorId,
+              clientName: input.clientName,
+              poNumber: input.poNumber,
+              clientCode: input.clientCode,
+              itemId: input.itemId,
+              itemName: input.itemName,
+              variationLeafNodeId: input.variationLeafNodeId,
+              variationPathLabel: input.variationPathLabel,
+              variationPathNodeIds: input.variationPathNodeIds,
+              customVariationValues: input.customVariationValues,
+              quantity: input.quantity,
+              unitId: input.unitId,
+              unitName: input.unitName,
+              unitSymbol: input.unitSymbol,
+              status: input.status,
+              startDate: input.startDate,
+              endDate: input.endDate,
+              poDocumentIds: isHeader ? poDocumentIds : const <int>[],
+            );
+          })
+          .toList(growable: false);
+
+      OrderEntry? result;
+      var mergedLineCount = 0;
+      var createdLineCount = 0;
+      var updatedLineCount = 0;
+      String? singleLineOutcomeMessage;
+      final ordersProvider = context.read<OrdersProvider>();
+
+      for (var i = 0; i < orderLinesWithDocuments.length; i++) {
+        final input = orderLinesWithDocuments[i];
+        final line = _lines[i];
+        final isExisting =
+            widget.initialOrderGroup?.items.any((e) => e.id == line.id) ??
+            false;
+
+        if (isExisting) {
+          result = await ordersProvider.updateOrder(line.id, input);
+          updatedLineCount += 1;
         } else {
-          createdLineCount += 1;
+          result = await ordersProvider.createOrder(input);
+          if (ordersProvider.lastCreateWasMerged) {
+            mergedLineCount += 1;
+          } else {
+            createdLineCount += 1;
+          }
+        }
+
+        if (!context.mounted) {
+          return;
+        }
+        if (result == null) {
+          break;
+        }
+        singleLineOutcomeMessage = ordersProvider.lastCreateOutcomeMessage;
+      }
+
+      if (widget.initialOrderGroup != null && result != null) {
+        final currentLineIds = _lines.map((l) => l.id).toSet();
+        for (final item in widget.initialOrderGroup!.items) {
+          if (!currentLineIds.contains(item.id)) {
+            final delSummary = await ordersProvider.deleteOrder(item.id);
+            if (delSummary == null) {
+              result = null; // stop on error
+              break;
+            }
+          }
         }
       }
 
       if (!context.mounted) {
         return;
       }
-      if (result == null) {
-        break;
-      }
-      singleLineOutcomeMessage = ordersProvider.lastCreateOutcomeMessage;
-    }
 
-    if (widget.initialOrderGroup != null && result != null) {
-      final currentLineIds = _lines.map((l) => l.id).toSet();
-      for (final item in widget.initialOrderGroup!.items) {
-        if (!currentLineIds.contains(item.id)) {
-          final delSummary = await ordersProvider.deleteOrder(item.id);
-          if (delSummary == null) {
-            result = null; // stop on error
-            break;
-          }
+      if (result != null) {
+        final totalLines = orderLinesWithDocuments.length;
+        String finalMessage = successMessage;
+        if (widget.initialOrderGroup != null) {
+          finalMessage = 'Order updated successfully.';
+        } else {
+          finalMessage = totalLines == 1
+              ? (singleLineOutcomeMessage ?? successMessage)
+              : mergedLineCount == 0
+              ? successMessage
+              : createdLineCount == 0
+              ? '$mergedLineCount order line(s) merged into existing orders.'
+              : '$createdLineCount order line(s) created, $mergedLineCount merged into existing orders.';
         }
+        showAppToast(context, finalMessage, kind: AppToastKind.success);
+        Navigator.of(context).pop();
+        return;
       }
-    }
 
-    if (!context.mounted) {
-      return;
-    }
-
-    if (result != null) {
-      final totalLines = orderLinesWithDocuments.length;
-      String finalMessage = successMessage;
-      if (widget.initialOrderGroup != null) {
-        finalMessage = 'Order updated successfully.';
-      } else {
-        finalMessage = totalLines == 1
-            ? (singleLineOutcomeMessage ?? successMessage)
-            : mergedLineCount == 0
-            ? successMessage
-            : createdLineCount == 0
-            ? '$mergedLineCount order line(s) merged into existing orders.'
-            : '$createdLineCount order line(s) created, $mergedLineCount merged into existing orders.';
-      }
-      showAppToast(context, finalMessage, kind: AppToastKind.success);
-      Navigator.of(context).pop();
-      return;
-    }
-
-    final message =
-        ordersProvider.errorMessage ??
-        'Unable to create order. Please try again.';
-    showAppToast(context, message, kind: AppToastKind.error);
+      final message =
+          ordersProvider.errorMessage ??
+          'Unable to create order. Please try again.';
+      showAppToast(context, message, kind: AppToastKind.error);
     } finally {
       if (mounted) {
         setState(() => _isSaving = false);
@@ -4864,7 +5042,8 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     if (valueNodeIds != null) {
       final selectedValues = List<int>.from(valueNodeIds);
       line.selectedVariationValueNodeIds = selectedValues;
-      line.customVariationValues = customVariationValues ?? const <int, String>{};
+      line.customVariationValues =
+          customVariationValues ?? const <int, String>{};
       line.selectedVariationLeafId =
           leaf?.id ?? _selectedTerminalLeafForValues(item, selectedValues)?.id;
       line.variationPathError = null;
@@ -5028,13 +5207,21 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     return nodeIds;
   }
 
-  String _variationSelectionLabel(ItemDefinition item, List<int> valueNodeIds, [Map<int, String> customVariationValues = const {}]) {
+  String _variationSelectionLabel(
+    ItemDefinition item,
+    List<int> valueNodeIds, [
+    Map<int, String> customVariationValues = const {},
+  ]) {
     return _buildNamingFormatLabel(item, valueNodeIds, customVariationValues);
   }
 
   /// Builds a display label using the item's naming format order.
   /// Format tokens: 'name' = item base name, 'prop_N' = Nth top-level property's selected value.
-  String _buildNamingFormatLabel(ItemDefinition item, List<int> valueNodeIds, [Map<int, String> customVariationValues = const {}]) {
+  String _buildNamingFormatLabel(
+    ItemDefinition item,
+    List<int> valueNodeIds, [
+    Map<int, String> customVariationValues = const {},
+  ]) {
     final itemName = item.displayName.trim().isEmpty
         ? item.name
         : item.displayName;
@@ -5042,43 +5229,80 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       return itemName;
     }
 
-    // Build a map: propertyId -> selected value name, walking the tree
     final selectedValueIds = valueNodeIds.toSet();
-    // Map property node id -> selected value name
     final propIdToValue = <int, String>{};
-    for (final root in item.topLevelProperties) {
-      ItemVariationNodeDefinition currentProperty = root;
-      while (true) {
-        final selectedValue = currentProperty.activeChildren
-            .where((n) => n.kind == ItemVariationNodeKind.value)
-            .where((n) => selectedValueIds.contains(n.id))
-            .firstOrNull;
-        if (selectedValue == null) {
-          final tempId = -currentProperty.id;
-          if (selectedValueIds.contains(tempId)) {
-            final valName = customVariationValues[currentProperty.id];
-            if (valName != null) {
-              propIdToValue[currentProperty.id] = valName;
-            }
-          }
-          break;
-        }
-        final valName = selectedValue.name.trim().isEmpty
-            ? selectedValue.displayName.trim()
-            : selectedValue.name.trim();
-        propIdToValue[currentProperty.id] = valName;
-        final nextProp = selectedValue.activeChildren
-            .where((n) => n.kind == ItemVariationNodeKind.property)
-            .firstOrNull;
-        if (nextProp == null) break;
-        currentProperty = nextProp;
+
+    void extractValues(ItemVariationNodeDefinition prop) {
+      final subProps = prop.activeChildren.where(
+        (n) => n.kind == ItemVariationNodeKind.property,
+      );
+      if (subProps.isNotEmpty) {
+        for (final sp in subProps) extractValues(sp);
+        return;
       }
+
+      final selectedValue = prop.activeChildren
+          .where((n) => n.kind == ItemVariationNodeKind.value)
+          .where((n) => selectedValueIds.contains(n.id))
+          .firstOrNull;
+
+      if (selectedValue == null) {
+        final tempId = -prop.id;
+        if (selectedValueIds.contains(tempId)) {
+          final valName = customVariationValues[prop.id];
+          if (valName != null) {
+            propIdToValue[prop.id] = valName;
+          }
+        }
+        return;
+      }
+
+      final valName = selectedValue.name.trim().isEmpty
+          ? selectedValue.displayName.trim()
+          : selectedValue.name.trim();
+      propIdToValue[prop.id] = valName;
+
+      final nextProps = selectedValue.activeChildren.where(
+        (n) => n.kind == ItemVariationNodeKind.property,
+      );
+      for (final np in nextProps) {
+        extractValues(np);
+      }
+    }
+
+    for (final root in item.topLevelProperties) {
+      extractValues(root);
+    }
+
+    String getCombinedValue(
+      ItemVariationNodeDefinition prop,
+      bool isDetailed,
+      bool isDimensions,
+    ) {
+      final subProps = prop.activeChildren.where(
+        (n) => n.kind == ItemVariationNodeKind.property,
+      );
+      if (subProps.isNotEmpty) {
+        final childVals = <String>[];
+        for (final sp in subProps) {
+          final val = getCombinedValue(sp, isDetailed, isDimensions);
+          if (val.isNotEmpty) childVals.add(val);
+        }
+        if (childVals.isEmpty) return '';
+        if (isDimensions) return childVals.join(' x ');
+        return childVals.join(isDetailed ? ', ' : ' ');
+      }
+
+      final val = propIdToValue[prop.id];
+      if (val == null || val.isEmpty) return '';
+      return isDetailed ? '${prop.name.trim()}: $val' : val;
     }
 
     final topProps = item.topLevelProperties;
     final parts = <String>[];
 
-    // If naming format is specified, follow it
+    final isDetailed = item.namingFormat.contains('__format:detailed');
+    final isDimensions = item.namingFormat.contains('__format:dimensions');
     if (item.namingFormat.isNotEmpty) {
       for (final token in item.namingFormat) {
         if (token == 'name') {
@@ -5086,22 +5310,41 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
         } else if (token.startsWith('prop_')) {
           final idx = int.tryParse(token.substring(5));
           if (idx != null && idx >= 0 && idx < topProps.length) {
-            final value = propIdToValue[topProps[idx].id];
-            if (value != null && value.isNotEmpty) {
-              parts.add(value);
+            final prop = topProps[idx];
+            final combinedValue = getCombinedValue(
+              prop,
+              isDetailed,
+              isDimensions,
+            );
+            if (combinedValue.isNotEmpty) {
+              parts.add(combinedValue);
             }
           }
         }
       }
-    }
-
-    // Fallback: item name + all selected values in tree order
-    if (parts.isEmpty) {
+    } else {
       parts.add(itemName);
-      parts.addAll(propIdToValue.values.where((v) => v.isNotEmpty));
+      for (final root in item.topLevelProperties) {
+        final combinedValue = getCombinedValue(root, isDetailed, isDimensions);
+        if (combinedValue.isNotEmpty) {
+          parts.add(combinedValue);
+        }
+      }
     }
 
-    return parts.join(' ');
+    if (isDimensions) {
+      final nameIndex = parts.indexOf(itemName);
+      if (nameIndex != -1) {
+        final variations = List<String>.from(parts)..removeAt(nameIndex);
+        if (variations.isNotEmpty) {
+          return '$itemName ${variations.join(' x ')}';
+        }
+      } else if (parts.isNotEmpty) {
+        return parts.join(' x ');
+      }
+    }
+
+    return parts.join(isDetailed ? ', ' : ' ');
   }
 
   String _buildNamingFormatCodeLabel(
@@ -6225,7 +6468,10 @@ class _OrderItemsDetailCard extends StatelessWidget {
                             const SizedBox(width: 6),
                             const Text(
                               'Pipeline assigned',
-                              style: TextStyle(fontSize: 12, color: Color(0xFF48C7A4)),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF48C7A4),
+                              ),
                             ),
                           ],
                         )
@@ -8102,7 +8348,7 @@ class _OrderEditorFooterButton extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14),
           textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
         ),
-        child: isLoading 
+        child: isLoading
             ? SizedBox(
                 width: 16,
                 height: 16,

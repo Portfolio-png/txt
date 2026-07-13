@@ -5,8 +5,9 @@ enum AppToastKind { info, success, warning, error }
 
 /// App-wide navigator key so toasts can reach a global overlay without a
 /// call-site context. Wired into MaterialApp(navigatorKey: appNavigatorKey).
-final GlobalKey<NavigatorState> appNavigatorKey =
-    GlobalKey<NavigatorState>(debugLabel: 'appNavigator');
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>(
+  debugLabel: 'appNavigator',
+);
 
 /// Shows a transient notice anchored to the TOP of the screen (SnackBars are
 /// stuck to the bottom). Uses the root overlay, so it survives the dialog or
@@ -18,7 +19,8 @@ void showAppToast(
   AppToastKind kind = AppToastKind.info,
   Duration duration = const Duration(seconds: 3),
 }) {
-  final overlay = Overlay.maybeOf(context, rootOverlay: true) ??
+  final overlay =
+      Overlay.maybeOf(context, rootOverlay: true) ??
       appNavigatorKey.currentState?.overlay;
   _insertToast(overlay, message, kind, duration);
 }
@@ -89,8 +91,9 @@ void _insertToast(
   if (message.startsWith('Exception: ')) {
     message = message.substring(11).trim();
   }
-  
-  if (message.contains('SQLITE_CONSTRAINT') || message.contains('FOREIGN KEY')) {
+
+  if (message.contains('SQLITE_CONSTRAINT') ||
+      message.contains('FOREIGN KEY')) {
     String recordName = 'record';
     final match = RegExp(r'failed:\s*([a-zA-Z0-9_]+)\.').firstMatch(message);
     if (match != null) {
@@ -100,15 +103,19 @@ void _insertToast(
         var lastWord = words.last;
         if (lastWord.endsWith('ies')) {
           lastWord = '${lastWord.substring(0, lastWord.length - 3)}y';
-        } else if (lastWord.endsWith('s') && !lastWord.endsWith('ss') && !lastWord.endsWith('us')) {
+        } else if (lastWord.endsWith('s') &&
+            !lastWord.endsWith('ss') &&
+            !lastWord.endsWith('us')) {
           lastWord = lastWord.substring(0, lastWord.length - 1);
         }
         words[words.length - 1] = lastWord;
-        words[0] = words[0].substring(0, 1).toUpperCase() + words[0].substring(1);
+        words[0] =
+            words[0].substring(0, 1).toUpperCase() + words[0].substring(1);
         recordName = words.join(' ');
       }
     }
-    message = 'This $recordName is currently in use or referenced elsewhere in the system. It cannot be deleted or modified until those connections are removed.';
+    message =
+        'This $recordName is currently in use or referenced elsewhere in the system. It cannot be deleted or modified until those connections are removed.';
   }
   late OverlayEntry entry;
   var removed = false;
@@ -217,12 +224,16 @@ class _AppToastState extends State<_AppToast>
           child: FadeTransition(
             opacity: _controller,
             child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, -0.4),
-                end: Offset.zero,
-              ).animate(
-                CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
-              ),
+              position:
+                  Tween<Offset>(
+                    begin: const Offset(0, -0.4),
+                    end: Offset.zero,
+                  ).animate(
+                    CurvedAnimation(
+                      parent: _controller,
+                      curve: Curves.easeOutCubic,
+                    ),
+                  ),
               child: Material(
                 color: Colors.transparent,
                 child: GestureDetector(

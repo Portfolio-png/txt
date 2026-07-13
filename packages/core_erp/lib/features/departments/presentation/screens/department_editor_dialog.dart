@@ -17,7 +17,10 @@ class DepartmentEditorDialog extends StatelessWidget {
 
   final DepartmentDefinition? department;
 
-  static Future<void> open(BuildContext context, {DepartmentDefinition? department}) {
+  static Future<void> open(
+    BuildContext context, {
+    DepartmentDefinition? department,
+  }) {
     return showErpFormDialog(
       context,
       maxWidth: 560,
@@ -71,8 +74,17 @@ class _DepartmentEditorSheetState extends State<_DepartmentEditorSheet> {
 
     final provider = context.read<DepartmentsProvider>();
     final success = widget.department == null
-        ? await provider.createDepartment(name, _descController.text, _photoController.text)
-        : await provider.updateDepartment(widget.department!.id, name, _descController.text, _photoController.text);
+        ? await provider.createDepartment(
+            name,
+            _descController.text,
+            _photoController.text,
+          )
+        : await provider.updateDepartment(
+            widget.department!.id,
+            name,
+            _descController.text,
+            _photoController.text,
+          );
 
     if (success && mounted) {
       Navigator.of(context).pop();
@@ -97,7 +109,11 @@ class _DepartmentEditorSheetState extends State<_DepartmentEditorSheet> {
               children: [
                 _Field(controller: _nameController, label: 'Department Name'),
                 const SizedBox(height: 14),
-                _Field(controller: _descController, label: 'Description', maxLines: 2),
+                _Field(
+                  controller: _descController,
+                  label: 'Description',
+                  maxLines: 2,
+                ),
               ],
             ),
           ),
@@ -146,7 +162,11 @@ InputDecoration _decoration(String label, {Widget? suffix}) {
 }
 
 class _Field extends StatelessWidget {
-  const _Field({required this.controller, required this.label, this.maxLines = 1});
+  const _Field({
+    required this.controller,
+    required this.label,
+    this.maxLines = 1,
+  });
 
   final TextEditingController controller;
   final String label;
@@ -168,10 +188,12 @@ class _DepartmentImagePickerField extends StatefulWidget {
   final TextEditingController controller;
 
   @override
-  State<_DepartmentImagePickerField> createState() => _DepartmentImagePickerFieldState();
+  State<_DepartmentImagePickerField> createState() =>
+      _DepartmentImagePickerFieldState();
 }
 
-class _DepartmentImagePickerFieldState extends State<_DepartmentImagePickerField> {
+class _DepartmentImagePickerFieldState
+    extends State<_DepartmentImagePickerField> {
   bool _isUploading = false;
 
   @override
@@ -187,10 +209,15 @@ class _DepartmentImagePickerFieldState extends State<_DepartmentImagePickerField
   String _contentTypeFromExtension(String fileName) {
     final ext = fileName.split('.').last.toLowerCase();
     switch (ext) {
-      case 'png': return 'image/png';
-      case 'jpg': case 'jpeg': return 'image/jpeg';
-      case 'webp': return 'image/webp';
-      default: return 'application/octet-stream';
+      case 'png':
+        return 'image/png';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'webp':
+        return 'image/webp';
+      default:
+        return 'application/octet-stream';
     }
   }
 
@@ -207,13 +234,19 @@ class _DepartmentImagePickerFieldState extends State<_DepartmentImagePickerField
     if (file == null || !mounted) return;
 
     setState(() => _isUploading = true);
-    final baseUrl = const String.fromEnvironment('PAPER_API_BASE_URL', defaultValue: 'http://localhost:8080');
+    final baseUrl = const String.fromEnvironment(
+      'PAPER_API_BASE_URL',
+      defaultValue: 'http://localhost:8080',
+    );
     final service = GenericAssetService(baseUrl: baseUrl);
 
     try {
       final bytes = await file.readAsBytes();
       final digest = sha256.convert(bytes).toString();
-      final contentType = file.mimeType ?? lookupMimeType(file.name, headerBytes: bytes.take(24).toList()) ?? _contentTypeFromExtension(file.name);
+      final contentType =
+          file.mimeType ??
+          lookupMimeType(file.name, headerBytes: bytes.take(24).toList()) ??
+          _contentTypeFromExtension(file.name);
 
       final intent = await service.createUploadIntent(
         GenericAssetUploadIntentInput(
@@ -225,7 +258,11 @@ class _DepartmentImagePickerFieldState extends State<_DepartmentImagePickerField
       );
 
       if (intent.uploadUrl.host != 'mock.local') {
-        final response = await http.put(intent.uploadUrl, headers: intent.headers, body: bytes);
+        final response = await http.put(
+          intent.uploadUrl,
+          headers: intent.headers,
+          body: bytes,
+        );
         if (response.statusCode < 200 || response.statusCode >= 300) {
           throw Exception('Upload failed with status ${response.statusCode}.');
         }
@@ -234,7 +271,9 @@ class _DepartmentImagePickerFieldState extends State<_DepartmentImagePickerField
       if (intent.readUrl == null) throw Exception('No read URL from intent.');
 
       widget.controller.text = intent.readUrl!;
-      showAppSnack(const SnackBar(content: Text('Image uploaded successfully.')));
+      showAppSnack(
+        const SnackBar(content: Text('Image uploaded successfully.')),
+      );
     } catch (e) {
       showAppSnack(SnackBar(content: Text('Upload failed: $e')));
     } finally {
@@ -255,7 +294,8 @@ class _DepartmentImagePickerFieldState extends State<_DepartmentImagePickerField
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          width: 56, height: 56,
+          width: 56,
+          height: 56,
           decoration: BoxDecoration(
             color: const Color(0xFFF1F5F9),
             borderRadius: BorderRadius.circular(8),
@@ -263,7 +303,12 @@ class _DepartmentImagePickerFieldState extends State<_DepartmentImagePickerField
           ),
           clipBehavior: Clip.antiAlias,
           child: url.isNotEmpty
-              ? Image.network(url, fit: BoxFit.cover, errorBuilder: (_, _, _) => const Icon(Icons.image, color: Color(0xFF94A3B8)))
+              ? Image.network(
+                  url,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) =>
+                      const Icon(Icons.image, color: Color(0xFF94A3B8)),
+                )
               : const Icon(Icons.image, color: Color(0xFF94A3B8)),
         ),
         const SizedBox(width: 12),
@@ -273,7 +318,10 @@ class _DepartmentImagePickerFieldState extends State<_DepartmentImagePickerField
             decoration: _decoration(
               'Photo URL',
               suffix: url.isNotEmpty
-                  ? IconButton(icon: const Icon(Icons.clear, size: 18), onPressed: () => widget.controller.clear())
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, size: 18),
+                      onPressed: () => widget.controller.clear(),
+                    )
                   : null,
             ),
           ),

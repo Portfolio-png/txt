@@ -20,7 +20,9 @@ class _PayrollRunWizardState extends State<PayrollRunWizard> {
           if (_currentStep < 2) {
             setState(() => _currentStep += 1);
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Payroll Generated!')));
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('Payroll Generated!')));
             Navigator.of(context).pop();
           }
         },
@@ -38,11 +40,15 @@ class _PayrollRunWizardState extends State<PayrollRunWizard> {
           ),
           Step(
             title: Text('Review Attendance & Leaves'),
-            content: Text('All employee attendance and leaves have been synced.'),
+            content: Text(
+              'All employee attendance and leaves have been synced.',
+            ),
           ),
           Step(
             title: Text('Generate & Finalize'),
-            content: Text('This will generate payslips for all eligible employees. Continue?'),
+            content: Text(
+              'This will generate payslips for all eligible employees. Continue?',
+            ),
           ),
         ],
       ),

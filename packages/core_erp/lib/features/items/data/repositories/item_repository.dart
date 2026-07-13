@@ -2,6 +2,7 @@ import '../../domain/item_definition.dart';
 import '../../domain/item_inputs.dart';
 import '../../domain/item_asset.dart';
 import '../../domain/item_usage_record.dart';
+
 abstract class ItemRepository {
   Future<void> init();
   Future<List<ItemDefinition>> getItems();

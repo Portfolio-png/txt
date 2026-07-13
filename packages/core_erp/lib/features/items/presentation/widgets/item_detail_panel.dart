@@ -147,9 +147,7 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
       }
       if (intent.alreadyUploaded && intent.asset != null) {
         await provider.loadItemAssets(widget.item.id);
-        showAppSnack(
-          const SnackBar(content: Text('Image already uploaded.')),
-        );
+        showAppSnack(const SnackBar(content: Text('Image already uploaded.')));
         return;
       }
       final upload = intent.upload;
@@ -178,13 +176,9 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
       if (completed == null) {
         throw Exception(provider.errorMessage ?? 'Failed to finish upload.');
       }
-      showAppSnack(
-        const SnackBar(content: Text('Item image uploaded.')),
-      );
+      showAppSnack(const SnackBar(content: Text('Item image uploaded.')));
     } catch (error) {
-      showAppSnack(
-        SnackBar(content: Text('Image upload failed: $error')),
-      );
+      showAppSnack(SnackBar(content: Text('Image upload failed: $error')));
     } finally {
       if (mounted) {
         setState(() => _isUploading = false);
@@ -308,10 +302,14 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final useTwoColumn = constraints.maxWidth >= 760;
-                final sameNamingFormatItems = itemsProvider.items.where((other) {
-                  if (other.namingFormat.length != item.namingFormat.length) return false;
+                final sameNamingFormatItems = itemsProvider.items.where((
+                  other,
+                ) {
+                  if (other.namingFormat.length != item.namingFormat.length)
+                    return false;
                   for (int i = 0; i < item.namingFormat.length; i++) {
-                    if (other.namingFormat[i] != item.namingFormat[i]) return false;
+                    if (other.namingFormat[i] != item.namingFormat[i])
+                      return false;
                   }
                   return true;
                 }).toList();
@@ -321,9 +319,13 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                   primaryAsset: primaryAsset,
                   isUploading: _isUploading || itemsProvider.isAssetUploading,
                   onUpload: _pickAndUploadImage,
-                  onOpenImage: (primaryAsset?.readUrl?.toString() ?? item.photoUrl).isEmpty
+                  onOpenImage:
+                      (primaryAsset?.readUrl?.toString() ?? item.photoUrl)
+                          .isEmpty
                       ? null
-                      : () => _openImagePreview(primaryAsset?.readUrl?.toString() ?? item.photoUrl),
+                      : () => _openImagePreview(
+                          primaryAsset?.readUrl?.toString() ?? item.photoUrl,
+                        ),
                   onDeleteImage: primaryAsset == null
                       ? null
                       : () => _deleteImage(primaryAsset),
@@ -365,14 +367,9 @@ class _ItemDetailPanelState extends State<ItemDetailPanel> {
                             ),
                           ),
                           const SizedBox(width: 16),
-                          SizedBox(
-                            width: 320,
-                            child: factsheet,
-                          ),
+                          SizedBox(width: 320, child: factsheet),
                           const SizedBox(width: 16),
-                          Expanded(
-                            child: _ItemVariationSection(item: item),
-                          ),
+                          Expanded(child: _ItemVariationSection(item: item)),
                         ],
                       )
                     : Column(
@@ -437,7 +434,9 @@ class _ItemImagePreview extends StatelessWidget {
             aspectRatio: 1.55,
             child: InkWell(
               borderRadius: BorderRadius.circular(14),
-              onTap: (primaryAsset?.readUrl == null && item.photoUrl.isEmpty) ? onUpload : onOpenImage,
+              onTap: (primaryAsset?.readUrl == null && item.photoUrl.isEmpty)
+                  ? onUpload
+                  : onOpenImage,
               child: Container(
                 decoration: BoxDecoration(
                   color: Colors.white,
@@ -476,7 +475,8 @@ class _ItemImagePreview extends StatelessWidget {
                             icon: primaryAsset == null
                                 ? Icons.add_photo_alternate_outlined
                                 : Icons.upload_file_outlined,
-                            tooltip: (primaryAsset == null && item.photoUrl.isEmpty)
+                            tooltip:
+                                (primaryAsset == null && item.photoUrl.isEmpty)
                                 ? 'Upload image'
                                 : 'Replace image',
                             onTap: onUpload,
@@ -612,7 +612,7 @@ class _ItemFactsheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final allUnits = [
       unitLabel,
-      ...item.unitConversions.map((e) => e.unitSymbol)
+      ...item.unitConversions.map((e) => e.unitSymbol),
     ].join(', ');
 
     return _DetailCard(
@@ -624,14 +624,27 @@ class _ItemFactsheet extends StatelessWidget {
             _FactRow(label: 'Unit', value: allUnits, width: 90),
             _UsageFactRow(item: item, width: 140),
             _FactRow(label: 'Display name', value: item.displayName, width: 90),
-            _FactRow(label: 'Status', value: item.isArchived ? 'Archived' : 'Active', width: 90),
+            _FactRow(
+              label: 'Status',
+              value: item.isArchived ? 'Archived' : 'Active',
+              width: 90,
+            ),
             _FactRow(label: 'Group', value: groupName, width: 120),
-            if (item.defaultPipelineName != null && item.defaultPipelineName!.isNotEmpty)
-              _FactRow(label: 'Default pipeline', value: item.defaultPipelineName!, width: 140),
+            if (item.defaultPipelineName != null &&
+                item.defaultPipelineName!.isNotEmpty)
+              _FactRow(
+                label: 'Default pipeline',
+                value: item.defaultPipelineName!,
+                width: 140,
+              ),
             if (item.alias.trim().isNotEmpty)
               _FactRow(label: 'Alias', value: item.alias, width: 90),
             if (imageCount > 0)
-              _FactRow(label: 'Images', value: imageCount.toString(), width: 90),
+              _FactRow(
+                label: 'Images',
+                value: imageCount.toString(),
+                width: 90,
+              ),
           ],
         ),
         const SizedBox(height: 8),
@@ -666,7 +679,9 @@ class _ItemVariationSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final rootNodes = item.variationTree.where((node) => !node.isArchived).toList();
+    final rootNodes = item.variationTree
+        .where((node) => !node.isArchived)
+        .toList();
     return _DetailCard(
       title: 'Variation Tree',
       children: [
@@ -717,11 +732,19 @@ class _VariationTreeNodeWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isProperty = node.kind == ItemVariationNodeKind.property;
-    final Color badgeBg = isProperty ? const Color(0xFFEEF2FE) : const Color(0xFFF0FDF4);
-    final Color badgeText = isProperty ? const Color(0xFF3B82F6) : const Color(0xFF16A34A);
-    final Color badgeBorder = isProperty ? const Color(0xFFBFDBFE) : const Color(0xFFBBF7D0);
-    final IconData icon = isProperty ? Icons.account_tree_outlined : Icons.label_outlined;
-    
+    final Color badgeBg = isProperty
+        ? const Color(0xFFEEF2FE)
+        : const Color(0xFFF0FDF4);
+    final Color badgeText = isProperty
+        ? const Color(0xFF3B82F6)
+        : const Color(0xFF16A34A);
+    final Color badgeBorder = isProperty
+        ? const Color(0xFFBFDBFE)
+        : const Color(0xFFBBF7D0);
+    final IconData icon = isProperty
+        ? Icons.account_tree_outlined
+        : Icons.label_outlined;
+
     final activeChildren = node.activeChildren;
 
     return SoftEntranceAnimation(
@@ -730,99 +753,100 @@ class _VariationTreeNodeWidget extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (int i = 0; i < depth; i++)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (int i = 0; i < depth; i++)
+                Container(
+                  width: 24,
+                  height: 32,
+                  alignment: Alignment.center,
+                  child:
+                      i < parentHasNextSibling.length && parentHasNextSibling[i]
+                      ? Container(width: 1.5, color: const Color(0xFFCBD5E1))
+                      : null,
+                ),
+              if (depth > 0)
+                SizedBox(
+                  width: 24,
+                  height: 32,
+                  child: Stack(
+                    children: [
+                      Align(
+                        alignment: Alignment.topLeft,
+                        child: Container(
+                          width: 1.5,
+                          height: isLastChild ? 16 : 32,
+                          color: const Color(0xFFCBD5E1),
+                          margin: const EdgeInsets.only(left: 11),
+                        ),
+                      ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Container(
+                          width: 12,
+                          height: 1.5,
+                          color: const Color(0xFFCBD5E1),
+                          margin: const EdgeInsets.only(left: 11),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               Container(
-                width: 24,
-                height: 32,
-                alignment: Alignment.center,
-                child: i < parentHasNextSibling.length && parentHasNextSibling[i]
-                    ? Container(
-                        width: 1.5,
-                        color: const Color(0xFFCBD5E1),
-                      )
-                    : null,
-              ),
-            if (depth > 0)
-              SizedBox(
-                width: 24,
-                height: 32,
-                child: Stack(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: badgeBg,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: badgeBorder),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Align(
-                      alignment: Alignment.topLeft,
-                      child: Container(
-                        width: 1.5,
-                        height: isLastChild ? 16 : 32,
-                        color: const Color(0xFFCBD5E1),
-                        margin: const EdgeInsets.only(left: 11),
+                    Icon(icon, size: 14, color: badgeText),
+                    const SizedBox(width: 6),
+                    Text(
+                      node.name.isEmpty ? node.displayName : node.name,
+                      style: TextStyle(
+                        color: badgeText,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Container(
-                        width: 12,
-                        height: 1.5,
-                        color: const Color(0xFFCBD5E1),
-                        margin: const EdgeInsets.only(left: 11),
+                    if (node.code.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                        '(${node.code})',
+                        style: TextStyle(
+                          color: badgeText.withValues(alpha: 0.6),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: badgeBg,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: badgeBorder),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(icon, size: 14, color: badgeText),
-                  const SizedBox(width: 6),
-                  Text(
-                    node.name.isEmpty ? node.displayName : node.name,
-                    style: TextStyle(
-                      color: badgeText,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  if (node.code.isNotEmpty) ...[
-                    const SizedBox(width: 6),
-                    Text(
-                      '(${node.code})',
-                      style: TextStyle(
-                        color: badgeText.withValues(alpha: 0.6),
-                        fontSize: 10,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
-        if (activeChildren.isNotEmpty)
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: List.generate(activeChildren.length, (index) {
-              final child = activeChildren[index];
-              final isLast = index == activeChildren.length - 1;
-              return _VariationTreeNodeWidget(
-                node: child,
-                depth: depth + 1,
-                isLastChild: isLast,
-                parentHasNextSibling: [...parentHasNextSibling, !isLastChild],
-              );
-            }),
+            ],
           ),
-      ],
+          if (activeChildren.isNotEmpty)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: List.generate(activeChildren.length, (index) {
+                final child = activeChildren[index];
+                final isLast = index == activeChildren.length - 1;
+                return _VariationTreeNodeWidget(
+                  node: child,
+                  depth: depth + 1,
+                  isLastChild: isLast,
+                  parentHasNextSibling: [...parentHasNextSibling, !isLastChild],
+                );
+              }),
+            ),
+        ],
       ),
     );
   }
@@ -903,8 +927,6 @@ class _FactRow extends StatelessWidget {
     return content;
   }
 }
-
-
 
 class _FactWrapRow extends StatelessWidget {
   const _FactWrapRow({
@@ -1087,7 +1109,9 @@ String generatedItemVariationCode(
 }
 
 String nodeNameOrGenerated(ItemVariationNodeDefinition node) {
-  final name = node.displayName.trim().isEmpty ? node.name.trim() : node.displayName.trim();
+  final name = node.displayName.trim().isEmpty
+      ? node.name.trim()
+      : node.displayName.trim();
   return name.isNotEmpty ? name : 'Unnamed';
 }
 
@@ -1189,7 +1213,9 @@ class _UsageFactRowState extends State<_UsageFactRow> {
     });
     if (_expanded && _records == null && !_loading) {
       setState(() => _loading = true);
-      final records = await context.read<ItemsProvider>().fetchItemUsage(widget.item.id);
+      final records = await context.read<ItemsProvider>().fetchItemUsage(
+        widget.item.id,
+      );
       if (mounted) {
         setState(() {
           _loading = false;
@@ -1227,21 +1253,27 @@ class _UsageFactRowState extends State<_UsageFactRow> {
                     child: Text(
                       '${widget.item.usageCount} linked record(s)',
                       style: TextStyle(
-                        color: widget.item.usageCount > 0 ? SoftErpTheme.accent : SoftErpTheme.textPrimary,
+                        color: widget.item.usageCount > 0
+                            ? SoftErpTheme.accent
+                            : SoftErpTheme.textPrimary,
                         fontSize: 14,
                         fontWeight: FontWeight.w800,
-                        decoration: widget.item.usageCount > 0 ? TextDecoration.underline : TextDecoration.none,
+                        decoration: widget.item.usageCount > 0
+                            ? TextDecoration.underline
+                            : TextDecoration.none,
                       ),
                     ),
                   ),
                   if (widget.item.usageCount > 0) ...[
                     const SizedBox(width: 4),
                     Icon(
-                      _expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                      _expanded
+                          ? Icons.keyboard_arrow_up
+                          : Icons.keyboard_arrow_down,
                       size: 16,
                       color: SoftErpTheme.accent,
                     ),
-                  ]
+                  ],
                 ],
               ),
             ),
@@ -1317,6 +1349,9 @@ class _UsageFactRowState extends State<_UsageFactRow> {
     if (widget.width != null && !_expanded) {
       return SizedBox(width: widget.width, child: content);
     }
-    return SizedBox(width: _expanded ? double.infinity : widget.width, child: content);
+    return SizedBox(
+      width: _expanded ? double.infinity : widget.width,
+      child: content,
+    );
   }
 }

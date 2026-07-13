@@ -485,6 +485,41 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
     });
   }
 
+  Future<void> _discardChallan() async {
+    if (_isSaving) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('Discard challan?', style: TextStyle(fontWeight: FontWeight.w700)),
+        content: const Text('This challan and everything you added will be cleared.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Keep')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFD64545)),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    if (widget.lockedType != null) {
+      // Purchase flow: exit all the way back to the Purchase/Sale start,
+      // discarding the browse screens (and their collected cart) with it.
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } else {
+      setState(() {
+        final count = _items.length;
+        _items.clear();
+        for (var i = 0; i < count; i++) {
+          _listKey.currentState?.removeItem(0, (context, animation) => const SizedBox.shrink());
+        }
+        _notesController.clear();
+      });
+    }
+  }
+
   int get _totalQty {
     return _items.fold(0, (t, i) => t + (int.tryParse(i.quantityPcs) ?? 0));
   }
@@ -708,6 +743,11 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
                     ),
                   ),
                   actions: [
+                    IconButton(
+                      tooltip: 'Discard challan',
+                      icon: const Icon(Icons.delete_outline_rounded, color: Colors.white),
+                      onPressed: _discardChallan,
+                    ),
                     if (_items.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(right: 16.0),

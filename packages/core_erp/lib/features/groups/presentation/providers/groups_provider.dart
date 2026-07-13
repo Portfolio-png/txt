@@ -4,8 +4,6 @@ import '../../data/repositories/group_repository.dart';
 import '../../domain/group_definition.dart';
 import '../../domain/group_inputs.dart';
 
-
-
 enum GroupDuplicateWarning { none, sameParent }
 
 class GroupDuplicateCheck {
@@ -41,22 +39,21 @@ class GroupsProvider extends ChangeNotifier {
       _groups.where((g) => g.groupType == 'item' && !g.isCombination).toList();
 
   /// Active combination groups (flat variant sets).
-  List<GroupDefinition> get combinationGroups => _groups
-      .where((g) => g.groupType == 'item' && g.isCombination)
-      .toList();
-  List<GroupDefinition> get machineGroups => _groups.where((g) => g.groupType == 'machine').toList();
-  List<GroupDefinition> get dieGroups => _groups.where((g) => g.groupType == 'die').toList();
+  List<GroupDefinition> get combinationGroups =>
+      _groups.where((g) => g.groupType == 'item' && g.isCombination).toList();
+  List<GroupDefinition> get machineGroups =>
+      _groups.where((g) => g.groupType == 'machine').toList();
+  List<GroupDefinition> get dieGroups =>
+      _groups.where((g) => g.groupType == 'die').toList();
   bool get isLoading => _isLoading;
   bool get isSaving => _isSaving;
   String? get errorMessage => _errorMessage;
   String get searchQuery => _searchQuery;
 
-
   List<GroupDefinition> get filteredGroups {
     final query = _normalize(_searchQuery);
     return _groups
         .where((group) {
-
           if (query.isEmpty) {
             return true;
           }
@@ -69,11 +66,12 @@ class GroupsProvider extends ChangeNotifier {
   }
 
   List<GroupDefinition> filteredGroupsByType(String groupType) {
-    return filteredGroups.where((g) => g.groupType == groupType).toList(growable: false);
+    return filteredGroups
+        .where((g) => g.groupType == groupType)
+        .toList(growable: false);
   }
 
-  List<GroupDefinition> get activeGroups =>
-      _groups.toList(growable: false);
+  List<GroupDefinition> get activeGroups => _groups.toList(growable: false);
 
   Future<void> initialize() async {
     if (_initialized) {
@@ -94,7 +92,6 @@ class GroupsProvider extends ChangeNotifier {
         for (final group in groups) group.id: group.name,
       };
       groups.sort((a, b) {
-
         final parentA = namesById[a.parentGroupId] ?? '';
         final parentB = namesById[b.parentGroupId] ?? '';
         final parentCompare = parentA.toLowerCase().compareTo(
@@ -118,8 +115,6 @@ class GroupsProvider extends ChangeNotifier {
     _searchQuery = value;
     notifyListeners();
   }
-
-
 
   GroupDefinition? findById(int? id) {
     if (id == null) {
@@ -165,9 +160,7 @@ class GroupsProvider extends ChangeNotifier {
   }
 
   bool hasActiveChildren(int groupId) {
-    return _groups.any(
-      (group) => group.parentGroupId == groupId,
-    );
+    return _groups.any((group) => group.parentGroupId == groupId);
   }
 
   GroupDuplicateCheck checkDuplicate({
@@ -225,8 +218,6 @@ class GroupsProvider extends ChangeNotifier {
   Future<GroupDefinition?> updateGroup(UpdateGroupInput input) async {
     return _save(() => _repository.updateGroup(input));
   }
-
-
 
   Future<bool> deleteGroup(int id) async {
     _isSaving = true;

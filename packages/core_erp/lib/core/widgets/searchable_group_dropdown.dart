@@ -30,8 +30,9 @@ class SearchableGroupDropdown extends StatefulWidget {
 class _SearchableGroupDropdownState extends State<SearchableGroupDropdown> {
   String get _selectedLabel {
     if (widget.selectedId == null) return 'No Group';
-    final match =
-        widget.groups.where((g) => g.id == widget.selectedId).firstOrNull;
+    final match = widget.groups
+        .where((g) => g.id == widget.selectedId)
+        .firstOrNull;
     return match?.name ?? 'Unknown Group';
   }
 
@@ -79,8 +80,10 @@ class _SearchableGroupDropdownState extends State<SearchableGroupDropdown> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const Icon(Icons.arrow_drop_down_rounded,
-                    color: Color(0xFF6B7280)),
+                const Icon(
+                  Icons.arrow_drop_down_rounded,
+                  color: Color(0xFF6B7280),
+                ),
               ],
             ),
           ),
@@ -172,9 +175,10 @@ class _GroupPickerDialogState extends State<_GroupPickerDialog> {
                   const Text(
                     'Select Group',
                     style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF111827)),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF111827),
+                    ),
                   ),
                   const SizedBox(height: 12),
                   TextField(
@@ -187,7 +191,9 @@ class _GroupPickerDialogState extends State<_GroupPickerDialog> {
                       filled: true,
                       fillColor: const Color(0xFFF3F4F6),
                       contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 10),
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
                         borderSide: BorderSide.none,
@@ -208,16 +214,18 @@ class _GroupPickerDialogState extends State<_GroupPickerDialog> {
                     _GroupPickerItem(
                       name: 'No Group',
                       isSelected: widget.selectedId == null,
-                      onTap: () =>
-                          Navigator.of(context)
-                              .pop(const _GroupPickResult(null)),
+                      onTap: () => Navigator.of(
+                        context,
+                      ).pop(const _GroupPickResult(null)),
                     ),
                   if (filtered.isEmpty)
                     const Padding(
                       padding: EdgeInsets.all(24),
                       child: Center(
-                        child: Text('No groups match your search.',
-                            style: TextStyle(color: Color(0xFF6B7280))),
+                        child: Text(
+                          'No groups match your search.',
+                          style: TextStyle(color: Color(0xFF6B7280)),
+                        ),
                       ),
                     )
                   else
@@ -264,12 +272,14 @@ class _GroupPickerItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      title: Text(name,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-            color: const Color(0xFF111827),
-          )),
+      title: Text(
+        name,
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+          color: const Color(0xFF111827),
+        ),
+      ),
       trailing: isSelected
           ? const Icon(Icons.check_rounded, size: 18, color: Color(0xFF2563EB))
           : null,

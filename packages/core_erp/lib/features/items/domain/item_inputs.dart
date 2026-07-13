@@ -18,6 +18,7 @@ class ItemVariationNodeInput {
     required this.name,
     this.code = '',
     this.displayName = '',
+    this.inputType = 'Text',
     this.children = const [],
   });
 
@@ -27,8 +28,8 @@ class ItemVariationNodeInput {
   final String name;
   final String code;
   final String displayName;
+  final String inputType;
   final List<ItemVariationNodeInput> children;
-
 }
 
 class CreateItemInput {

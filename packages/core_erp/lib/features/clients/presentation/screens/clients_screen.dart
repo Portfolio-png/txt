@@ -72,7 +72,8 @@ class ClientsScreen extends StatelessWidget {
                   ? 'Add Sub-contractor'
                   : 'Add Client',
               icon: Icons.add,
-              isLoading: clients.isSaving, // Or check if SubContractorsProvider is saving if needed
+              isLoading: clients
+                  .isSaving, // Or check if SubContractorsProvider is saving if needed
               onPressed: () {
                 if (clients.viewType == ClientMasterView.subContractors) {
                   _openSubContractorEditor(context);
@@ -92,13 +93,13 @@ class ClientsScreen extends StatelessWidget {
             body: clients.viewType == ClientMasterView.subContractors
                 ? _AllSubContractorsTable(searchQuery: clients.searchQuery)
                 : clients.filteredClients.isEmpty
-                    ? const AppEmptyState(
-                        title: 'No clients found',
-                        message:
-                            'Add your first client to keep names, GST numbers, and addresses consistent across the system.',
-                        icon: Icons.groups_outlined,
-                      )
-                    : _ClientsTable(clients: clients.filteredClients),
+                ? const AppEmptyState(
+                    title: 'No clients found',
+                    message:
+                        'Add your first client to keep names, GST numbers, and addresses consistent across the system.',
+                    icon: Icons.groups_outlined,
+                  )
+                : _ClientsTable(clients: clients.filteredClients),
           ),
         );
       },
@@ -207,8 +208,9 @@ class _AllSubContractorsTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final subContractors =
-        context.watch<SubContractorsProvider>().filteredSubContractors(searchQuery);
+    final subContractors = context
+        .watch<SubContractorsProvider>()
+        .filteredSubContractors(searchQuery);
 
     return SoftMasterTable(
       minWidth: 900,
@@ -227,10 +229,7 @@ class _AllSubContractorsTable extends StatelessWidget {
               flex: 2,
               child: SoftInlineText(sub.name, weight: FontWeight.w700),
             ),
-            Expanded(
-              flex: 2,
-              child: SoftInlineText(sub.clientName ?? '—'),
-            ),
+            Expanded(flex: 2, child: SoftInlineText(sub.clientName ?? '—')),
             Expanded(
               flex: 2,
               child: SoftInlineText(sub.phone.isEmpty ? '—' : sub.phone),
@@ -304,17 +303,18 @@ class _ClientRow extends StatelessWidget {
                 },
               ),
               SoftActionLink(
-                  label: 'Portal Access',
-                  onTap: () {
-                    showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (context) => _PortalSettingsSheet(client: client),
-                    );
-                  },
-                ),
-                SoftActionLink(label: 'Edit',
+                label: 'Portal Access',
+                onTap: () {
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (context) => _PortalSettingsSheet(client: client),
+                  );
+                },
+              ),
+              SoftActionLink(
+                label: 'Edit',
                 onTap: () => ClientsScreen.openEditor(context, client: client),
               ),
               SoftActionLink(
@@ -580,30 +580,30 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
 
     try {
       final normalizedGst = ClientsProvider.normalizeGstNumber(
-      _gstController.text,
-    );
-    final result = widget.client == null
-        ? await provider.createClient(
-            CreateClientInput(
-              name: _nameController.text.trim(),
-              alias: _aliasController.text.trim(),
-              gstNumber: normalizedGst,
-              address: _addressController.text.trim(),
-              logoUrl: _logoUrlController.text.trim(),
-              photoUrl: _photoUrlController.text.trim(),
-            ),
-          )
-        : await provider.updateClient(
-            UpdateClientInput(
-              id: widget.client!.id,
-              name: _nameController.text.trim(),
-              alias: _aliasController.text.trim(),
-              gstNumber: normalizedGst,
-              address: _addressController.text.trim(),
-              logoUrl: _logoUrlController.text.trim(),
-              photoUrl: _photoUrlController.text.trim(),
-            ),
-          );
+        _gstController.text,
+      );
+      final result = widget.client == null
+          ? await provider.createClient(
+              CreateClientInput(
+                name: _nameController.text.trim(),
+                alias: _aliasController.text.trim(),
+                gstNumber: normalizedGst,
+                address: _addressController.text.trim(),
+                logoUrl: _logoUrlController.text.trim(),
+                photoUrl: _photoUrlController.text.trim(),
+              ),
+            )
+          : await provider.updateClient(
+              UpdateClientInput(
+                id: widget.client!.id,
+                name: _nameController.text.trim(),
+                alias: _aliasController.text.trim(),
+                gstNumber: normalizedGst,
+                address: _addressController.text.trim(),
+                logoUrl: _logoUrlController.text.trim(),
+                photoUrl: _photoUrlController.text.trim(),
+              ),
+            );
 
       if (context.mounted && result != null && provider.errorMessage == null) {
         showAppToast(
@@ -628,7 +628,8 @@ class _SubContractorEditorSheet extends StatefulWidget {
   final int? initialClientId;
 
   @override
-  State<_SubContractorEditorSheet> createState() => _SubContractorEditorSheetState();
+  State<_SubContractorEditorSheet> createState() =>
+      _SubContractorEditorSheetState();
 }
 
 class _SubContractorEditorSheetState extends State<_SubContractorEditorSheet> {
@@ -648,14 +649,29 @@ class _SubContractorEditorSheetState extends State<_SubContractorEditorSheet> {
   @override
   void initState() {
     super.initState();
-    _selectedClientId = widget.subContractor?.clientId ?? widget.initialClientId;
-    _nameController = TextEditingController(text: widget.subContractor?.name ?? '');
-    _phoneController = TextEditingController(text: widget.subContractor?.phone ?? '');
-    _emailController = TextEditingController(text: widget.subContractor?.email ?? '');
-    _notesController = TextEditingController(text: widget.subContractor?.notes ?? '');
-    _gstController = TextEditingController(text: widget.subContractor?.gstNumber ?? '');
-    _addressController = TextEditingController(text: widget.subContractor?.address ?? '');
-    _photoUrlController = TextEditingController(text: widget.subContractor?.photoUrl ?? '');
+    _selectedClientId =
+        widget.subContractor?.clientId ?? widget.initialClientId;
+    _nameController = TextEditingController(
+      text: widget.subContractor?.name ?? '',
+    );
+    _phoneController = TextEditingController(
+      text: widget.subContractor?.phone ?? '',
+    );
+    _emailController = TextEditingController(
+      text: widget.subContractor?.email ?? '',
+    );
+    _notesController = TextEditingController(
+      text: widget.subContractor?.notes ?? '',
+    );
+    _gstController = TextEditingController(
+      text: widget.subContractor?.gstNumber ?? '',
+    );
+    _addressController = TextEditingController(
+      text: widget.subContractor?.address ?? '',
+    );
+    _photoUrlController = TextEditingController(
+      text: widget.subContractor?.photoUrl ?? '',
+    );
 
     _nameController.addListener(_handleChange);
     _gstController.addListener(_handleChange);
@@ -687,15 +703,21 @@ class _SubContractorEditorSheetState extends State<_SubContractorEditorSheet> {
   Widget build(BuildContext context) {
     final clientsProvider = context.watch<ClientsProvider>();
     final subProvider = context.watch<SubContractorsProvider>();
-    final title = widget.subContractor == null ? 'Add Sub-contractor' : 'Edit Sub-contractor';
-    final banner = _localError ?? (subProvider.isLoading == false ? subProvider.error : null);
+    final title = widget.subContractor == null
+        ? 'Add Sub-contractor'
+        : 'Edit Sub-contractor';
+    final banner =
+        _localError ??
+        (subProvider.isLoading == false ? subProvider.error : null);
 
     return Form(
       key: _formKey,
       child: ErpFormScaffold(
         title: title,
         subtitle: 'Capture sub-contractor details for tracking assignments.',
-        errorBanner: banner == null ? null : ErpFormMessageBanner(message: banner, isError: true),
+        errorBanner: banner == null
+            ? null
+            : ErpFormMessageBanner(message: banner, isError: true),
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -715,7 +737,8 @@ class _SubContractorEditorSheetState extends State<_SubContractorEditorSheet> {
                       return DropdownMenuItem(value: c.id, child: Text(c.name));
                     }).toList(),
                     onChanged: (val) => setState(() => _selectedClientId = val),
-                    validator: (val) => val == null ? 'Client is required' : null,
+                    validator: (val) =>
+                        val == null ? 'Client is required' : null,
                   ),
                   const SizedBox(height: 12),
                   _ClientTextField(
@@ -760,7 +783,8 @@ class _SubContractorEditorSheetState extends State<_SubContractorEditorSheet> {
             const SizedBox(height: 16),
             ErpDialogSectionCard(
               title: 'Photos',
-              subtitle: 'Optional contact photo for quick visual identification.',
+              subtitle:
+                  'Optional contact photo for quick visual identification.',
               child: Column(
                 children: [
                   _ClientImagePickerField(
@@ -811,7 +835,9 @@ class _SubContractorEditorSheetState extends State<_SubContractorEditorSheet> {
               onPressed: () => Navigator.pop(context),
             ),
             AppButton(
-              label: widget.subContractor == null ? 'Create Sub-contractor' : 'Save Changes',
+              label: widget.subContractor == null
+                  ? 'Create Sub-contractor'
+                  : 'Save Changes',
               isLoading: _isSaving || subProvider.isLoading,
               onPressed: () => _submit(context),
             ),
@@ -840,7 +866,9 @@ class _SubContractorEditorSheetState extends State<_SubContractorEditorSheet> {
                 phone: _phoneController.text.trim(),
                 email: _emailController.text.trim(),
                 notes: _notesController.text.trim(),
-                gstNumber: ClientsProvider.normalizeGstNumber(_gstController.text),
+                gstNumber: ClientsProvider.normalizeGstNumber(
+                  _gstController.text,
+                ),
                 address: _addressController.text.trim(),
                 photoUrl: _photoUrlController.text.trim(),
               ),
@@ -848,7 +876,11 @@ class _SubContractorEditorSheetState extends State<_SubContractorEditorSheet> {
           : null; // Update not fully implemented in form yet for global usage
 
       if (context.mounted && result != null && subProvider.error == null) {
-        showAppToast(context, 'Sub-contractor saved', kind: AppToastKind.success);
+        showAppToast(
+          context,
+          'Sub-contractor saved',
+          kind: AppToastKind.success,
+        );
         Navigator.of(context).pop(result);
       }
     } catch (e) {
@@ -1200,9 +1232,7 @@ class _ClientImagePickerFieldState extends State<_ClientImagePickerField> {
         const SnackBar(content: Text('Image uploaded successfully.')),
       );
     } catch (error) {
-      showAppSnack(
-        SnackBar(content: Text('Image upload failed: $error')),
-      );
+      showAppSnack(SnackBar(content: Text('Image upload failed: $error')));
     } finally {
       if (mounted) {
         setState(() => _isUploading = false);
@@ -1315,17 +1345,19 @@ class _PortalSettingsSheetState extends State<_PortalSettingsSheet> {
   bool _isLoading = true;
   bool _isSaving = false;
   Set<int> _selectedItemIds = {};
-  
+
   @override
   void initState() {
     super.initState();
     _loadData();
   }
-  
+
   Future<void> _loadData() async {
     try {
       await context.read<ItemsProvider>().initialize();
-      final itemIds = await context.read<ClientsProvider>().getPortalCatalog(widget.client.id);
+      final itemIds = await context.read<ClientsProvider>().getPortalCatalog(
+        widget.client.id,
+      );
       if (mounted) {
         setState(() {
           _selectedItemIds = itemIds.toSet();
@@ -1343,22 +1375,41 @@ class _PortalSettingsSheetState extends State<_PortalSettingsSheet> {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
     if (email.isEmpty || password.isEmpty) {
-      showAppToast(context, 'Email and password required', kind: AppToastKind.error);
+      showAppToast(
+        context,
+        'Email and password required',
+        kind: AppToastKind.error,
+      );
       return;
     }
-    
+
     setState(() => _isSaving = true);
     try {
       final clientsProvider = context.read<ClientsProvider>();
-      await clientsProvider.updatePortalCredentials(widget.client.id, email, password);
-      await clientsProvider.updatePortalCatalog(widget.client.id, _selectedItemIds.toList());
+      await clientsProvider.updatePortalCredentials(
+        widget.client.id,
+        email,
+        password,
+      );
+      await clientsProvider.updatePortalCatalog(
+        widget.client.id,
+        _selectedItemIds.toList(),
+      );
       if (mounted) {
-        showAppToast(context, 'Portal settings saved', kind: AppToastKind.success);
+        showAppToast(
+          context,
+          'Portal settings saved',
+          kind: AppToastKind.success,
+        );
         Navigator.of(context).maybePop();
       }
     } catch (e) {
       if (mounted) {
-        showAppToast(context, 'Error saving settings: $e', kind: AppToastKind.error);
+        showAppToast(
+          context,
+          'Error saving settings: $e',
+          kind: AppToastKind.error,
+        );
         setState(() => _isSaving = false);
       }
     }
@@ -1371,7 +1422,9 @@ class _PortalSettingsSheetState extends State<_PortalSettingsSheet> {
     }
 
     final itemsProvider = context.watch<ItemsProvider>();
-    final activeItems = itemsProvider.items.where((i) => !i.isArchived).toList();
+    final activeItems = itemsProvider.items
+        .where((i) => !i.isArchived)
+        .toList();
 
     return ErpFormScaffold(
       title: 'Portal Access',
@@ -1380,7 +1433,10 @@ class _PortalSettingsSheetState extends State<_PortalSettingsSheet> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('Portal Login Credentials', style: TextStyle(fontWeight: FontWeight.w600)),
+          const Text(
+            'Portal Login Credentials',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
           const SizedBox(height: 8),
           _ClientTextField(
             controller: _emailController,
@@ -1394,12 +1450,21 @@ class _PortalSettingsSheetState extends State<_PortalSettingsSheet> {
             helper: 'Set a new password for this client',
           ),
           const SizedBox(height: 24),
-          const Text('Custom Catalog Items', style: TextStyle(fontWeight: FontWeight.w600)),
-          const Text('Select which items this client is allowed to see and order.', style: TextStyle(color: Colors.grey, fontSize: 12)),
+          const Text(
+            'Custom Catalog Items',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const Text(
+            'Select which items this client is allowed to see and order.',
+            style: TextStyle(color: Colors.grey, fontSize: 12),
+          ),
           const SizedBox(height: 12),
           Container(
             height: 300,
-            decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(8)),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(8),
+            ),
             child: ListView.builder(
               itemCount: activeItems.length,
               itemBuilder: (context, index) {

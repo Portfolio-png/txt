@@ -3,7 +3,8 @@ import '../../domain/search_result.dart';
 import '../../data/repositories/search_repository.dart';
 
 class SearchProvider extends ChangeNotifier {
-  SearchProvider({required SearchRepository repository}) : _repository = repository;
+  SearchProvider({required SearchRepository repository})
+    : _repository = repository;
 
   final SearchRepository _repository;
 

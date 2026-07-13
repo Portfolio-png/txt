@@ -171,7 +171,9 @@ class InventoryMaterialModel {
       'linked_group_id': linkedGroupId,
       'linked_item_id': linkedItemId,
       'linked_variation_leaf_node_id': linkedVariationLeafNodeId,
-      'custom_variation_values_json': customVariationValues != null ? jsonEncode(customVariationValues) : null,
+      'custom_variation_values_json': customVariationValues != null
+          ? jsonEncode(customVariationValues)
+          : null,
       'display_stock': displayStock,
       'created_by': createdBy,
       'workflow_status': workflowStatus,

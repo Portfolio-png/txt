@@ -174,14 +174,17 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
                   child: Column(
                     children: [
                       _Field(
-                          controller: _nameController, label: 'Employee Name'),
+                        controller: _nameController,
+                        label: 'Employee Name',
+                      ),
                       const SizedBox(height: 14),
                       Row(
                         children: [
                           Expanded(
                             child: _Field(
-                                controller: _roleController,
-                                label: 'Role / Position'),
+                              controller: _roleController,
+                              label: 'Role / Position',
+                            ),
                           ),
                           const SizedBox(width: 14),
                           Expanded(
@@ -231,7 +234,10 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
                       DropdownButtonFormField<String>(
                         initialValue: _employmentType,
                         isExpanded: true,
-                        icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.textSecondary),
+                        icon: const Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          color: SoftErpTheme.textSecondary,
+                        ),
                         dropdownColor: Colors.white,
                         borderRadius: BorderRadius.circular(8),
                         style: const TextStyle(
@@ -304,8 +310,8 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
                               variant: AppButtonVariant.secondary,
                               onPressed:
                                   _barcodeIdController.text.trim().isEmpty
-                                      ? null
-                                      : _showIdCard,
+                                  ? null
+                                  : _showIdCard,
                             ),
                           ],
                         ),
@@ -689,9 +695,7 @@ class _EmployeeImagePickerFieldState extends State<_EmployeeImagePickerField> {
       }
     } catch (error) {
       if (mounted) {
-        showAppSnack(
-          SnackBar(content: Text('Image upload failed: \$error')),
-        );
+        showAppSnack(SnackBar(content: Text('Image upload failed: \$error')));
       }
     } finally {
       if (mounted) {
@@ -729,7 +733,10 @@ class _EmployeeImagePickerFieldState extends State<_EmployeeImagePickerField> {
                 label: const Text('Remove'),
                 style: TextButton.styleFrom(
                   foregroundColor: Colors.red.shade600,
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 0,
+                  ),
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),

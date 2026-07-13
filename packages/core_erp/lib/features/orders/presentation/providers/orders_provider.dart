@@ -77,7 +77,6 @@ class OrdersProvider extends ChangeNotifier {
     return map.values.toList();
   }
 
-
   void setSearchQuery(String value) {
     _searchQuery = value;
     notifyListeners();
@@ -129,13 +128,21 @@ class OrdersProvider extends ChangeNotifier {
     return _save(() => _repository.updateOrder(orderId, input));
   }
 
-  Future<List<OrderDeletionSummary>?> deleteOrder(int orderId, {String? wipBarcode, double? wipQty}) async {
+  Future<List<OrderDeletionSummary>?> deleteOrder(
+    int orderId, {
+    String? wipBarcode,
+    double? wipQty,
+  }) async {
     if (_isSaving) return null;
     _isSaving = true;
     _errorMessage = null;
     notifyListeners();
     try {
-      final summary = await _repository.deleteOrder(orderId, wipBarcode: wipBarcode, wipQty: wipQty);
+      final summary = await _repository.deleteOrder(
+        orderId,
+        wipBarcode: wipBarcode,
+        wipQty: wipQty,
+      );
       await refresh();
       return summary;
     } catch (error) {
@@ -147,6 +154,7 @@ class OrdersProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+
   Future<OrderEntry?> updateOrderLifecycle(
     UpdateOrderLifecycleInput input,
   ) async {

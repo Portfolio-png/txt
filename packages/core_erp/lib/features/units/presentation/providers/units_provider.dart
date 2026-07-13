@@ -4,8 +4,6 @@ import '../../data/repositories/unit_repository.dart';
 import '../../domain/unit_definition.dart';
 import '../../domain/unit_inputs.dart';
 
-
-
 enum UnitDuplicateWarning { none, nameOnly, symbolOnly, nameAndSymbol }
 
 class UnitDuplicateCheck {
@@ -19,7 +17,8 @@ class UnitDuplicateCheck {
 }
 
 class UnitsProvider extends ChangeNotifier {
-  UnitsProvider({required UnitRepository repository}) : _repository = repository;
+  UnitsProvider({required UnitRepository repository})
+    : _repository = repository;
 
   final UnitRepository _repository;
 
@@ -37,32 +36,32 @@ class UnitsProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   String get searchQuery => _searchQuery;
 
-
   List<UnitDefinition> get filteredUnits {
     final query = _normalize(_searchQuery);
-    return _units.where((unit) {
-
-      if (query.isEmpty) {
-        return true;
-      }
-      return _normalize(unit.name).contains(query) ||
-          _normalize(unit.symbol).contains(query) ||
-          _normalize(unit.unitGroupName ?? '').contains(query) ||
-          _normalize(unit.notes).contains(query);
-    }).toList(growable: false);
+    return _units
+        .where((unit) {
+          if (query.isEmpty) {
+            return true;
+          }
+          return _normalize(unit.name).contains(query) ||
+              _normalize(unit.symbol).contains(query) ||
+              _normalize(unit.unitGroupName ?? '').contains(query) ||
+              _normalize(unit.notes).contains(query);
+        })
+        .toList(growable: false);
   }
 
-  List<UnitDefinition> get activeUnits => _units
-      .where((unit) => !unit.isArchived)
-      .toList(growable: false);
+  List<UnitDefinition> get activeUnits =>
+      _units.where((unit) => !unit.isArchived).toList(growable: false);
 
   List<String> get availableGroupNames {
-    final names = _units
-        .map((unit) => unit.unitGroupName?.trim() ?? '')
-        .where((name) => name.isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    final names =
+        _units
+            .map((unit) => unit.unitGroupName?.trim() ?? '')
+            .where((name) => name.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     return names;
   }
 
@@ -73,10 +72,7 @@ class UnitsProvider extends ChangeNotifier {
     return _units.where((unit) => unit.id == id).firstOrNull;
   }
 
-  UnitDefinition? findBaseUnitForGroupName(
-    String groupName, {
-    int? excludeId,
-  }) {
+  UnitDefinition? findBaseUnitForGroupName(String groupName, {int? excludeId}) {
     final normalized = _normalize(groupName);
     if (normalized.isEmpty) {
       return null;
@@ -90,8 +86,9 @@ class UnitsProvider extends ChangeNotifier {
     }).firstOrNull;
   }
 
-  UnitDefinition? get primaryUnit =>
-      _units.where((u) => u.name == 'Primary Unit' && u.symbol == '-').firstOrNull;
+  UnitDefinition? get primaryUnit => _units
+      .where((u) => u.name == 'Primary Unit' && u.symbol == '-')
+      .firstOrNull;
 
   bool areUnitsCompatible(int? groupUnitId, int? candidateUnitId) {
     if (groupUnitId == null || candidateUnitId == null) {
@@ -145,7 +142,9 @@ class UnitsProvider extends ChangeNotifier {
         if (a.isArchived != b.isArchived) {
           return a.isArchived ? 1 : -1;
         }
-        final nameCompare = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        final nameCompare = a.name.toLowerCase().compareTo(
+          b.name.toLowerCase(),
+        );
         if (nameCompare != 0) {
           return nameCompare;
         }
@@ -170,8 +169,6 @@ class UnitsProvider extends ChangeNotifier {
     _searchQuery = value;
     notifyListeners();
   }
-
-
 
   UnitDuplicateCheck checkDuplicate({
     required String name,
@@ -233,7 +230,8 @@ class UnitsProvider extends ChangeNotifier {
     try {
       final created = await _repository.createUnit(input);
       await refresh();
-      return _units.where((unit) => unit.id == created.id).firstOrNull ?? created;
+      return _units.where((unit) => unit.id == created.id).firstOrNull ??
+          created;
     } catch (error) {
       _errorMessage = error.toString();
       notifyListeners();
@@ -251,7 +249,8 @@ class UnitsProvider extends ChangeNotifier {
     try {
       final updated = await _repository.updateUnit(input);
       await refresh();
-      return _units.where((unit) => unit.id == updated.id).firstOrNull ?? updated;
+      return _units.where((unit) => unit.id == updated.id).firstOrNull ??
+          updated;
     } catch (error) {
       _errorMessage = error.toString();
       notifyListeners();

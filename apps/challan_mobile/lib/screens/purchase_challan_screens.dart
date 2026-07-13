@@ -132,6 +132,31 @@ class _ChoiceCard extends StatelessWidget {
   }
 }
 
+/// Confirms discarding the whole in-progress purchase challan, clears the
+/// collected [lines], and exits the flow back to the Purchase/Sale start.
+Future<void> confirmDiscardChallan(BuildContext context, List<DeliveryChallanItem> lines) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      title: const Text('Discard challan?', style: TextStyle(fontWeight: FontWeight.w700)),
+      content: const Text('The items you\'ve added will be cleared.'),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Keep')),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: const Color(0xFFD64545)),
+          onPressed: () => Navigator.of(ctx).pop(true),
+          child: const Text('Discard'),
+        ),
+      ],
+    ),
+  );
+  if (ok == true && context.mounted) {
+    lines.clear();
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+}
+
 /// Step 1 of Purchase: pick an item group. Only groups that contain at least one
 /// purchase-available item are shown. Collected lines accumulate across groups.
 class PurchaseGroupBrowseScreen extends StatefulWidget {
@@ -165,6 +190,14 @@ class _PurchaseGroupBrowseScreenState extends State<PurchaseGroupBrowseScreen> {
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         elevation: 0,
+        actions: [
+          if (_lines.isNotEmpty)
+            IconButton(
+              tooltip: 'Discard challan',
+              icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFD64545)),
+              onPressed: () => confirmDiscardChallan(context, _lines),
+            ),
+        ],
       ),
       body: groups.isEmpty
           ? const _EmptyHint(
@@ -339,14 +372,17 @@ class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
         actions: [
           if (addedInGroup > 0)
             Center(
-              child: Padding(
-                padding: const EdgeInsets.only(right: 16),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(color: SoftErpTheme.accent.withOpacity(0.12), borderRadius: BorderRadius.circular(999)),
-                  child: Text('$addedInGroup in challan', style: const TextStyle(color: SoftErpTheme.accent, fontWeight: FontWeight.w800, fontSize: 12)),
-                ),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(color: SoftErpTheme.accent.withOpacity(0.12), borderRadius: BorderRadius.circular(999)),
+                child: Text('$addedInGroup in challan', style: const TextStyle(color: SoftErpTheme.accent, fontWeight: FontWeight.w800, fontSize: 12)),
               ),
+            ),
+          if (widget.lines.isNotEmpty)
+            IconButton(
+              tooltip: 'Discard challan',
+              icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFD64545)),
+              onPressed: () => confirmDiscardChallan(context, widget.lines),
             ),
         ],
       ),

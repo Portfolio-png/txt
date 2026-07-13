@@ -110,4 +110,3 @@ class OrderGroup {
     return OrderStatus.inProgress;
   }
 }
-

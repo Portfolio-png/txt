@@ -35,9 +35,13 @@ class ActionCenterRepository {
   Future<List<ActionCenterIssue>> getIssues() async {
     if (useMockResponses) return const <ActionCenterIssue>[];
 
-    final response = await _client.get(Uri.parse('$baseUrl/api/action-center/issues'));
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/action-center/issues'),
+    );
     final payload = _decode(response.body);
-    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] != true) {
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
       throw ActionCenterApiException(
         (payload['error'] as String?) ?? 'Failed to load action-center issues.',
       );
@@ -55,7 +59,9 @@ class ActionCenterRepository {
 
     final response = await _client.get(Uri.parse('$baseUrl/api/trash'));
     final payload = _decode(response.body);
-    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] != true) {
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
       throw ActionCenterApiException(
         (payload['error'] as String?) ?? 'Failed to load the trash bin.',
       );
@@ -77,7 +83,9 @@ class ActionCenterRepository {
       body: jsonEncode({'tableName': tableName, 'recordId': recordId}),
     );
     final payload = _decode(response.body);
-    if (response.statusCode < 200 || response.statusCode >= 300 || payload['success'] != true) {
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
       throw ActionCenterApiException(
         (payload['error'] as String?) ?? 'Failed to restore the record.',
       );

@@ -675,9 +675,7 @@ class _EmployeeRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = context.read<DepartmentsProvider>();
     final isFreelancer = emp.employmentType == 'freelancer';
-    final contact = [
-      emp.phone,
-    ].where((s) => s.isNotEmpty).join(' • ');
+    final contact = [emp.phone].where((s) => s.isNotEmpty).join(' • ');
     return SoftRowCard(
       onTap: () => EmployeeViewDialog.open(
         context,

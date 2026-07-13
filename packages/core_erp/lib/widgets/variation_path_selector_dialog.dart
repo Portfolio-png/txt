@@ -4,6 +4,7 @@ import '../core/widgets/app_button.dart';
 import '../core/widgets/searchable_select.dart';
 import '../features/items/domain/item_definition.dart';
 import '../features/items/presentation/providers/items_provider.dart';
+
 class VariationStep {
   const VariationStep({
     required this.property,
@@ -109,63 +110,70 @@ class _VariationPathSelectorWidgetState
           if (widget.showHeaderAndFooter) ...[
             Row(
               children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Select Variation Path',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        fontSize: isTablet ? 22.0 : 18.0,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Select Variation Path',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              fontSize: isTablet ? 22.0 : 18.0,
+                            ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      _item.displayName,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: SoftErpTheme.textSecondary,
-                        fontSize: isTablet ? 16.0 : 14.0,
+                      const SizedBox(height: 6),
+                      Text(
+                        _item.displayName,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: SoftErpTheme.textSecondary,
+                          fontSize: isTablet ? 16.0 : 14.0,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: EdgeInsets.symmetric(
-                  horizontal: isTablet ? 16.0 : 12.0,
-                  vertical: isTablet ? 10.0 : 7.0,
-                ),
-                decoration: BoxDecoration(
-                  color: SoftErpTheme.accentSoft,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  '$selectedStepCount out of $totalSelectableSteps selected',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: SoftErpTheme.accent,
-                    fontWeight: FontWeight.w800,
-                    fontSize: isTablet ? 14.0 : 12.0,
+                    ],
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                onPressed: () => widget.onCancel?.call(),
-                icon: Icon(Icons.close_rounded, size: isTablet ? 28.0 : 24.0),
-              ),
-            ],
-          ),
+                Container(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isTablet ? 16.0 : 12.0,
+                    vertical: isTablet ? 10.0 : 7.0,
+                  ),
+                  decoration: BoxDecoration(
+                    color: SoftErpTheme.accentSoft,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '$selectedStepCount out of $totalSelectableSteps selected',
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: SoftErpTheme.accent,
+                      fontWeight: FontWeight.w800,
+                      fontSize: isTablet ? 14.0 : 12.0,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: () => widget.onCancel?.call(),
+                  icon: Icon(Icons.close_rounded, size: isTablet ? 28.0 : 24.0),
+                ),
+              ],
+            ),
           ],
           if (widget.showHeaderAndFooter) const SizedBox(height: 20),
           Expanded(
             child: Container(
               width: double.infinity,
-              padding: widget.showHeaderAndFooter ? const EdgeInsets.all(16) : EdgeInsets.zero,
+              padding: widget.showHeaderAndFooter
+                  ? const EdgeInsets.all(16)
+                  : EdgeInsets.zero,
               decoration: BoxDecoration(
-                color: widget.showHeaderAndFooter ? SoftErpTheme.cardSurfaceAlt : Colors.transparent,
+                color: widget.showHeaderAndFooter
+                    ? SoftErpTheme.cardSurfaceAlt
+                    : Colors.transparent,
                 borderRadius: BorderRadius.circular(18),
-                border: widget.showHeaderAndFooter ? Border.all(color: SoftErpTheme.border) : null,
+                border: widget.showHeaderAndFooter
+                    ? Border.all(color: SoftErpTheme.border)
+                    : null,
               ),
               child: SingleChildScrollView(
                 child: Column(
@@ -190,51 +198,51 @@ class _VariationPathSelectorWidgetState
             ),
           ),
           if (widget.showHeaderAndFooter) ...[
-          const SizedBox(height: 16),
-          Container(
-            width: double.infinity,
-            padding: EdgeInsets.symmetric(
-              horizontal: isTablet ? 20.0 : 16.0,
-              vertical: isTablet ? 18.0 : 14.0,
-            ),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: SoftErpTheme.border),
-            ),
-            child: Text(
-              selectedLeaf == null
-                  ? 'Complete the path by selecting each property.'
-                  : _selectionSummaryLabel(),
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: selectedLeaf == null
-                    ? SoftErpTheme.textSecondary
-                    : SoftErpTheme.textPrimary,
-                fontWeight: selectedLeaf == null
-                    ? FontWeight.w500
-                    : FontWeight.w700,
-                fontSize: isTablet ? 16.0 : 14.0,
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.symmetric(
+                horizontal: isTablet ? 20.0 : 16.0,
+                vertical: isTablet ? 18.0 : 14.0,
               ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              AppButton(
-                label: widget.readOnly ? 'Close' : 'Cancel',
-                variant: AppButtonVariant.secondary,
-                onPressed: () => widget.onCancel?.call(),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: SoftErpTheme.border),
               ),
-              if (!widget.readOnly)
-                AppButton(
-                  label: 'Apply Path',
-                  onPressed: selectedLeaf == null ? null : _submit,
+              child: Text(
+                selectedLeaf == null
+                    ? 'Complete the path by selecting each property.'
+                    : _selectionSummaryLabel(),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: selectedLeaf == null
+                      ? SoftErpTheme.textSecondary
+                      : SoftErpTheme.textPrimary,
+                  fontWeight: selectedLeaf == null
+                      ? FontWeight.w500
+                      : FontWeight.w700,
+                  fontSize: isTablet ? 16.0 : 14.0,
                 ),
-            ],
-          ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                AppButton(
+                  label: widget.readOnly ? 'Close' : 'Cancel',
+                  variant: AppButtonVariant.secondary,
+                  onPressed: () => widget.onCancel?.call(),
+                ),
+                if (!widget.readOnly)
+                  AppButton(
+                    label: 'Apply Path',
+                    onPressed: selectedLeaf == null ? null : _submit,
+                  ),
+              ],
+            ),
           ],
         ],
       ),
@@ -246,6 +254,61 @@ class _VariationPathSelectorWidgetState
     final fieldKey = ValueKey<String>(
       'orders-variation-step-${step.property.id}',
     );
+
+    String propertyKey(String name) =>
+        name.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '_');
+    final key = propertyKey(step.property.name);
+    final schemaEntry = _item.propertySchema
+        .where((e) => propertyKey(e.propertyKey) == key)
+        .firstOrNull;
+    final isNumeric = schemaEntry?.inputType == 'Numeric';
+
+    if (isNumeric) {
+      final existingVal =
+          _customVariationValues[step.property.id] ??
+          (step.selectedValueId != null && step.selectedValueId! > 0
+              ? step.values
+                        .where((v) => v.id == step.selectedValueId)
+                        .firstOrNull
+                        ?.name ??
+                    ''
+              : '');
+      return TextFormField(
+        key: fieldKey,
+        initialValue: existingVal,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        enabled: !widget.readOnly,
+        decoration: InputDecoration(
+          hintText: 'Enter numeric value',
+          filled: true,
+          fillColor: Colors.white,
+          isDense: true,
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: isTablet ? 18.0 : 14.0,
+            vertical: isTablet ? 16.0 : 12.0,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+          ),
+        ),
+        onChanged: (val) {
+          final text = val.trim();
+          if (text.isEmpty) {
+            _customVariationValues.remove(step.property.id);
+            _replaceSelectionUnderProperty(step.property, const <int>[]);
+          } else {
+            _customVariationValues[step.property.id] = text;
+            _replaceSelectionUnderProperty(step.property, <int>[
+              -step.property.id,
+            ]);
+          }
+          setState(() {});
+          _notifyChanges();
+        },
+      );
+    }
+
     return SearchableSelectField<int>(
       key: fieldKey,
       tapTargetKey: fieldKey,
@@ -269,12 +332,25 @@ class _VariationPathSelectorWidgetState
       createOptionLabelBuilder: widget.readOnly || widget.onCreateValue == null
           ? null
           : (query) => 'Create value "$query"',
-      // The ephemeral "secondary create" path (temp negative id + JSON-only
-      // custom value) is intentionally disabled: a value created that way has
-      // no real leaf node, so stock-managed challan lines fail
-      // assertValidStockVariationLeaf (kind='value') on issue and never reach
-      // variation_stock / inventory. Creating a value now always persists it as
-      // a real variation value node via onCreateValue below.
+      secondaryCreateOptionLabelBuilder: widget.readOnly
+          ? null
+          : (query) => 'Enter custom value "$query"',
+      onSecondaryCreateOption: widget.readOnly
+          ? null
+          : (query) async {
+              final text = query.trim();
+              _customVariationValues[step.property.id] = text;
+              setState(() {
+                _replaceSelectionUnderProperty(step.property, <int>[
+                  -step.property.id,
+                ]);
+              });
+              _notifyChanges();
+              return SearchableSelectOption<int>(
+                value: -step.property.id,
+                label: text,
+              );
+            },
       onCreateOption: widget.readOnly || widget.onCreateValue == null
           ? null
           : (query) async {
@@ -318,7 +394,9 @@ class _VariationPathSelectorWidgetState
                 : value.name.trim(),
           ),
         ),
-        if (step.selectedValueId != null && step.selectedValueId! < 0 && step.selectedValueId == -step.property.id)
+        if (step.selectedValueId != null &&
+            step.selectedValueId! < 0 &&
+            step.selectedValueId == -step.property.id)
           SearchableSelectOption<int>(
             value: -step.property.id,
             label: _customVariationValues[step.property.id] ?? 'Custom',
@@ -335,8 +413,6 @@ class _VariationPathSelectorWidgetState
       },
     );
   }
-
-
 
   List<VariationStep> _allVariationSteps() {
     return _item.topLevelProperties
@@ -405,39 +481,54 @@ class _VariationPathSelectorWidgetState
       return const <VariationStep>[];
     }
     final steps = <VariationStep>[];
-    var currentProperty = rootProperty;
-    while (true) {
-      final values = currentProperty.activeChildren
-          .where((node) => node.kind == ItemVariationNodeKind.value)
-          .toList(growable: false);
-      final selectedValue = values
-          .where((node) => _selectedValueNodeIds.contains(node.id))
-          .firstOrNull;
-      
-      final tempId = -currentProperty.id;
-      final hasTempSelection = _selectedValueNodeIds.contains(tempId);
-      final activeSelectedId = selectedValue?.id ?? (hasTempSelection ? tempId : null);
 
-      steps.add(
-        VariationStep(
-          property: currentProperty,
-          values: values,
-          selectedValueId: activeSelectedId,
-        ),
-      );
-      
-      if (hasTempSelection && selectedValue == null) {
-        break; // A temporary custom value doesn't have child properties
-      }
-
-      final nextProperty = selectedValue?.activeChildren
+    void traverse(ItemVariationNodeDefinition prop) {
+      final subProps = prop.activeChildren
           .where((node) => node.kind == ItemVariationNodeKind.property)
-          .firstOrNull;
-      if (nextProperty == null) {
-        break;
+          .toList(growable: false);
+      if (subProps.isNotEmpty) {
+        // Property group
+        for (final sp in subProps) {
+          traverse(sp);
+        }
+      } else {
+        // Leaf property
+        final values = prop.activeChildren
+            .where((node) => node.kind == ItemVariationNodeKind.value)
+            .toList(growable: false);
+        final selectedValue = values
+            .where((node) => _selectedValueNodeIds.contains(node.id))
+            .firstOrNull;
+
+        final tempId = -prop.id;
+        final hasTempSelection = _selectedValueNodeIds.contains(tempId);
+        final activeSelectedId =
+            selectedValue?.id ?? (hasTempSelection ? tempId : null);
+
+        steps.add(
+          VariationStep(
+            property: prop,
+            values: values,
+            selectedValueId: activeSelectedId,
+          ),
+        );
+
+        if (hasTempSelection && selectedValue == null) {
+          return; // Custom value doesn't have child properties
+        }
+
+        final nextProps =
+            selectedValue?.activeChildren
+                .where((node) => node.kind == ItemVariationNodeKind.property)
+                .toList() ??
+            [];
+        for (final np in nextProps) {
+          traverse(np);
+        }
       }
-      currentProperty = nextProperty;
     }
+
+    traverse(rootProperty);
     return steps;
   }
 
@@ -446,41 +537,57 @@ class _VariationPathSelectorWidgetState
       return null;
     }
     final terminalValues = <ItemVariationNodeDefinition>[];
-    for (final rootProperty in _item.topLevelProperties) {
-      ItemVariationNodeDefinition currentProperty = rootProperty;
-      while (true) {
-        final currentValue = currentProperty.activeChildren
-            .where((node) => node.kind == ItemVariationNodeKind.value)
-            .where((node) => _selectedValueNodeIds.contains(node.id))
-            .firstOrNull;
-        
-        final tempId = -currentProperty.id;
-        final hasTempSelection = _selectedValueNodeIds.contains(tempId);
-        
-        if (currentValue == null && !hasTempSelection) {
-          return null;
-        }
 
-        if (hasTempSelection && currentValue == null) {
-          // It's a leaf because a temporary value cannot have children properties
-          terminalValues.add(currentProperty);
-          break;
-        }
+    void findLeaf(ItemVariationNodeDefinition prop) {
+      final subProps = prop.activeChildren.where(
+        (n) => n.kind == ItemVariationNodeKind.property,
+      );
+      if (subProps.isNotEmpty) {
+        for (final sp in subProps) findLeaf(sp);
+        return;
+      }
 
-        final nextProperty = currentValue!.activeChildren
-            .where((node) => node.kind == ItemVariationNodeKind.property)
-            .firstOrNull;
-        if (nextProperty == null) {
-          if (!currentValue.isLeafValue) {
-            return null;
-          }
-          terminalValues.add(currentValue);
-          break;
+      final currentValue = prop.activeChildren
+          .where((node) => node.kind == ItemVariationNodeKind.value)
+          .where((node) => _selectedValueNodeIds.contains(node.id))
+          .firstOrNull;
+
+      if (currentValue == null) {
+        final tempId = -prop.id;
+        if (_selectedValueNodeIds.contains(tempId)) {
+          terminalValues.add(
+            ItemVariationNodeDefinition(
+              id: tempId,
+              itemId: _item.id,
+              parentNodeId: prop.id,
+              kind: ItemVariationNodeKind.value,
+              name: _customVariationValues[prop.id] ?? 'Custom',
+              displayName: _customVariationValues[prop.id] ?? 'Custom',
+              position: 0,
+              isArchived: false,
+              createdAt: DateTime.now(),
+              updatedAt: DateTime.now(),
+              children: const [],
+            ),
+          );
         }
-        currentProperty = nextProperty;
+        return;
+      }
+
+      final nextProps = currentValue.activeChildren
+          .where((n) => n.kind == ItemVariationNodeKind.property)
+          .toList();
+      if (nextProps.isEmpty) {
+        terminalValues.add(currentValue);
+      } else {
+        for (final np in nextProps) findLeaf(np);
       }
     }
-    return terminalValues.isEmpty ? null : terminalValues.first;
+
+    for (final rootProperty in _item.topLevelProperties) {
+      findLeaf(rootProperty);
+    }
+    return terminalValues.isEmpty ? null : terminalValues.last;
   }
 
   void _replaceSelectionUnderProperty(
@@ -505,6 +612,8 @@ class _VariationPathSelectorWidgetState
     void visit(ItemVariationNodeDefinition current) {
       if (current.kind == ItemVariationNodeKind.value) {
         ids.add(current.id);
+      } else if (current.kind == ItemVariationNodeKind.property) {
+        ids.add(-current.id);
       }
       for (final child in current.children) {
         visit(child);
@@ -542,9 +651,7 @@ class _VariationPathSelectorWidgetState
         if (step.selectedValueId == tempId) {
           final val = _customVariationValues[step.property.id] ?? 'Custom';
           final propertyName = step.property.name.trim();
-          segments.add(
-            propertyName.isEmpty ? val : '$propertyName: $val',
-          );
+          segments.add(propertyName.isEmpty ? val : '$propertyName: $val');
         }
         continue;
       }
@@ -588,9 +695,6 @@ class _VariationPathSelectorWidgetState
     );
   }
 }
-
-
-
 
 class VariationPathSelectorDialog extends StatelessWidget {
   const VariationPathSelectorDialog({

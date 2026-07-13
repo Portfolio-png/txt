@@ -25,10 +25,8 @@ class EmployeeViewDialog extends StatelessWidget {
   }) {
     return showDialog(
       context: context,
-      builder: (context) => EmployeeViewDialog(
-        departmentId: departmentId,
-        employee: employee,
-      ),
+      builder: (context) =>
+          EmployeeViewDialog(departmentId: departmentId, employee: employee),
     );
   }
 
@@ -56,15 +54,9 @@ class EmployeeViewDialog extends StatelessWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      flex: 5,
-                      child: _buildDetailsColumn(),
-                    ),
+                    Expanded(flex: 5, child: _buildDetailsColumn()),
                     const SizedBox(width: 32),
-                    Expanded(
-                      flex: 4,
-                      child: _buildDocumentsColumn(),
-                    ),
+                    Expanded(flex: 4, child: _buildDocumentsColumn()),
                   ],
                 ),
               ),
@@ -149,7 +141,8 @@ class EmployeeViewDialog extends StatelessWidget {
                 Navigator.of(context).pop();
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => SalaryStructureDesigner(employeeId: employee.id),
+                    builder: (_) =>
+                        SalaryStructureDesigner(employeeId: employee.id),
                   ),
                 );
               },
@@ -193,9 +186,17 @@ class EmployeeViewDialog extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        _buildInfoRow(Icons.phone_outlined, 'Phone', employee.phone.isEmpty ? '—' : employee.phone),
+        _buildInfoRow(
+          Icons.phone_outlined,
+          'Phone',
+          employee.phone.isEmpty ? '—' : employee.phone,
+        ),
         const SizedBox(height: 12),
-        _buildInfoRow(Icons.home_outlined, 'Address', employee.address.isEmpty ? '—' : employee.address),
+        _buildInfoRow(
+          Icons.home_outlined,
+          'Address',
+          employee.address.isEmpty ? '—' : employee.address,
+        ),
         const SizedBox(height: 24),
         const Divider(),
         const SizedBox(height: 24),
@@ -208,8 +209,13 @@ class EmployeeViewDialog extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        _buildInfoRow(Icons.work_outline_rounded, 'Employment Type', employee.employmentType),
-        if (employee.employmentType == 'freelancer' && employee.barcodeId.isNotEmpty) ...[
+        _buildInfoRow(
+          Icons.work_outline_rounded,
+          'Employment Type',
+          employee.employmentType,
+        ),
+        if (employee.employmentType == 'freelancer' &&
+            employee.barcodeId.isNotEmpty) ...[
           const SizedBox(height: 16),
           const Text(
             'Barcode ID',
@@ -254,9 +260,17 @@ class EmployeeViewDialog extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        _buildInfoRow(Icons.pin_outlined, 'Aadhar Number', employee.aadharNumber.isEmpty ? '—' : employee.aadharNumber),
+        _buildInfoRow(
+          Icons.pin_outlined,
+          'Aadhar Number',
+          employee.aadharNumber.isEmpty ? '—' : employee.aadharNumber,
+        ),
         const SizedBox(height: 12),
-        _buildInfoRow(Icons.credit_card_outlined, 'PAN Number', employee.panNumber.isEmpty ? '—' : employee.panNumber),
+        _buildInfoRow(
+          Icons.credit_card_outlined,
+          'PAN Number',
+          employee.panNumber.isEmpty ? '—' : employee.panNumber,
+        ),
       ],
     );
   }
@@ -308,11 +322,23 @@ class EmployeeViewDialog extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        _buildDocumentCard('Employee Photo', employee.employeePhotoUrl, Icons.person),
+        _buildDocumentCard(
+          'Employee Photo',
+          employee.employeePhotoUrl,
+          Icons.person,
+        ),
         const SizedBox(height: 16),
-        _buildDocumentCard('Aadhar Card', employee.aadharPhotoUrl, Icons.credit_card),
+        _buildDocumentCard(
+          'Aadhar Card',
+          employee.aadharPhotoUrl,
+          Icons.credit_card,
+        ),
         const SizedBox(height: 16),
-        _buildDocumentCard('PAN Card', employee.panPhotoUrl, Icons.credit_card_outlined),
+        _buildDocumentCard(
+          'PAN Card',
+          employee.panPhotoUrl,
+          Icons.credit_card_outlined,
+        ),
       ],
     );
   }

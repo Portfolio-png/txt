@@ -8,14 +8,13 @@ import '../../domain/item_inputs.dart';
 import '../../domain/item_usage_record.dart';
 import '../../../../core/services/socket_service.dart';
 
-
-
 enum ItemDuplicateWarning {
   none,
   sameGroup,
   emptyNodeName,
   invalidTreeStructure,
   duplicateSiblingName,
+  duplicatePropertyName,
 }
 
 class ItemDuplicateCheck {
@@ -75,12 +74,10 @@ class ItemsProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   String get searchQuery => _searchQuery;
 
-
   List<ItemDefinition> get filteredItems {
     final query = _normalize(_searchQuery);
     return _items
         .where((item) {
-
           if (query.isEmpty) {
             return true;
           }
@@ -95,20 +92,15 @@ class ItemsProvider extends ChangeNotifier {
 
   void _sortItems() {
     _items.sort((a, b) {
-
       final groupCompare = a.groupId.compareTo(b.groupId);
       if (groupCompare != 0) {
         return groupCompare;
       }
-      final nameCompare = a.name.toLowerCase().compareTo(
-        b.name.toLowerCase(),
-      );
+      final nameCompare = a.name.toLowerCase().compareTo(b.name.toLowerCase());
       if (nameCompare != 0) {
         return nameCompare;
       }
-      return a.displayName.toLowerCase().compareTo(
-        b.displayName.toLowerCase(),
-      );
+      return a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase());
     });
   }
 
@@ -117,19 +109,32 @@ class ItemsProvider extends ChangeNotifier {
       return;
     }
     _initialized = true;
-    
+
     SocketService.instance.on('item_added', (data) async {
       if (data != null && data is Map<String, dynamic> && data['id'] != null) {
         try {
           final id = data['id'] as int;
           final newItem = await _repository.getItem(id);
           if (newItem != null) {
-            _items = [..._items, newItem];
+            // Dedupe: the creator already refreshed the list, so this rail echo
+            // must replace-if-present (not blindly append) to avoid a duplicate.
+            final exists = _items.any((i) => i.id == newItem.id);
+            _items = exists
+                ? _items
+                      .map((i) => i.id == newItem.id ? newItem : i)
+                      .toList(growable: false)
+                : [..._items, newItem];
             _sortItems();
             notifyListeners();
-          } else { refresh(); }
-        } catch (_) { refresh(); }
-      } else { refresh(); }
+          } else {
+            refresh();
+          }
+        } catch (_) {
+          refresh();
+        }
+      } else {
+        refresh();
+      }
     });
 
     SocketService.instance.on('item_updated', (data) async {
@@ -138,12 +143,20 @@ class ItemsProvider extends ChangeNotifier {
           final id = data['id'] as int;
           final updatedItem = await _repository.getItem(id);
           if (updatedItem != null) {
-            _items = _items.map((i) => i.id == updatedItem.id ? updatedItem : i).toList(growable: false);
+            _items = _items
+                .map((i) => i.id == updatedItem.id ? updatedItem : i)
+                .toList(growable: false);
             _sortItems();
             notifyListeners();
-          } else { refresh(); }
-        } catch (_) { refresh(); }
-      } else { refresh(); }
+          } else {
+            refresh();
+          }
+        } catch (_) {
+          refresh();
+        }
+      } else {
+        refresh();
+      }
     });
 
     SocketService.instance.on('item_deleted', (data) {
@@ -151,7 +164,9 @@ class ItemsProvider extends ChangeNotifier {
         final id = data['id'] as int;
         _items = _items.where((i) => i.id != id).toList();
         notifyListeners();
-      } else { refresh(); }
+      } else {
+        refresh();
+      }
     });
 
     await refresh();
@@ -212,8 +227,6 @@ class ItemsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-
-
   ItemDuplicateCheck checkDuplicate({
     required String name,
     required int? groupId,
@@ -222,18 +235,37 @@ class ItemsProvider extends ChangeNotifier {
     int? excludeId,
   }) {
     final normalizedName = _normalize(name);
-    if (groupId != null && unitId != null &&
+    if (groupId != null &&
+        unitId != null &&
         _items.any(
           (item) =>
               item.id != excludeId &&
               item.groupId == groupId &&
               item.unitId == unitId &&
-              _normalize(item.name) == normalizedName &&
-              _areVariationTreesIdentical(item.topLevelProperties, variationTree),
+              _normalize(item.name) == normalizedName,
         )) {
       return const ItemDuplicateCheck(
         blockingDuplicate: true,
         warning: ItemDuplicateWarning.sameGroup,
+      );
+    }
+
+    final allPropertyNames = <String>[];
+    void collectPropertyNames(List<ItemVariationNodeInput> nodes) {
+      for (final node in nodes) {
+        if (node.kind == ItemVariationNodeKind.property) {
+          allPropertyNames.add(_normalize(node.name));
+        }
+        collectPropertyNames(node.children);
+      }
+    }
+    collectPropertyNames(variationTree);
+    
+    final uniquePropertyNames = allPropertyNames.toSet();
+    if (uniquePropertyNames.length < allPropertyNames.length) {
+      return const ItemDuplicateCheck(
+        blockingDuplicate: true,
+        warning: ItemDuplicateWarning.duplicatePropertyName,
       );
     }
 
@@ -260,8 +292,10 @@ class ItemsProvider extends ChangeNotifier {
   ) {
     if (existing.length != input.length) return false;
 
-    final existingSorted = existing.toList()..sort((a, b) => a.name.compareTo(b.name));
-    final inputSorted = input.toList()..sort((a, b) => a.name.compareTo(b.name));
+    final existingSorted = existing.toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+    final inputSorted = input.toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
 
     for (var i = 0; i < existingSorted.length; i++) {
       final eNode = existingSorted[i];
@@ -296,9 +330,17 @@ class ItemsProvider extends ChangeNotifier {
         1) {
       return ItemDuplicateWarning.duplicateSiblingName;
     }
-    final nextKind = node.kind == ItemVariationNodeKind.property
-        ? ItemVariationNodeKind.value
-        : ItemVariationNodeKind.property;
+    ItemVariationNodeKind nextKind;
+    if (node.kind == ItemVariationNodeKind.property) {
+      final hasPropertyChildren = node.children.any(
+        (c) => c.kind == ItemVariationNodeKind.property,
+      );
+      nextKind = hasPropertyChildren
+          ? ItemVariationNodeKind.property
+          : ItemVariationNodeKind.value;
+    } else {
+      nextKind = ItemVariationNodeKind.property;
+    }
     for (final child in node.children) {
       final result = _validateNode(
         child,
@@ -524,7 +566,6 @@ class ItemsProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
-
 
   Future<bool> deleteItem(int id) async {
     if (_isSaving) return false;

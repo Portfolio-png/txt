@@ -5,7 +5,7 @@ import '../../domain/action_center_models.dart';
 
 class ActionCenterProvider extends ChangeNotifier {
   ActionCenterProvider({required ActionCenterRepository repository})
-      : _repository = repository;
+    : _repository = repository;
 
   final ActionCenterRepository _repository;
 

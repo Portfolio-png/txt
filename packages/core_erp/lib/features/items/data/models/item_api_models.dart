@@ -357,6 +357,7 @@ class ItemVariationNodeRequest {
     required this.name,
     required this.code,
     required this.displayName,
+    required this.inputType,
     required this.children,
   });
 
@@ -366,6 +367,7 @@ class ItemVariationNodeRequest {
   final String name;
   final String code;
   final String displayName;
+  final String inputType;
   final List<ItemVariationNodeRequest> children;
 
   factory ItemVariationNodeRequest.fromInput(ItemVariationNodeInput input) {
@@ -376,6 +378,7 @@ class ItemVariationNodeRequest {
       name: input.name,
       code: input.code,
       displayName: input.displayName,
+      inputType: input.inputType,
       children: input.children
           .map(ItemVariationNodeRequest.fromInput)
           .toList(growable: false),
@@ -390,6 +393,7 @@ class ItemVariationNodeRequest {
       'name': name,
       'code': code,
       'displayName': displayName,
+      'inputType': inputType,
       'children': children
           .map((entry) => entry.toJson())
           .toList(growable: false),

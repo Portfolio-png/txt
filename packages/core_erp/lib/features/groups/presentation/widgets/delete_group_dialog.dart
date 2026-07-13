@@ -55,11 +55,14 @@ class _DeleteGroupDialogState extends State<DeleteGroupDialog> {
   }
 
   List<ItemDefinition> _groupItems() {
-    final items = context.read<ItemsProvider>().items
+    final items = context
+        .read<ItemsProvider>()
+        .items
         .where((item) => item.groupId == widget.group.id)
         .toList(growable: false);
     items.sort(
-      (a, b) => a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()),
+      (a, b) =>
+          a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()),
     );
     return items;
   }
@@ -68,9 +71,10 @@ class _DeleteGroupDialogState extends State<DeleteGroupDialog> {
     return context
         .read<GroupsProvider>()
         .groups
-        .where((g) =>
-            g.groupType == widget.group.groupType &&
-            g.id != widget.group.id)
+        .where(
+          (g) =>
+              g.groupType == widget.group.groupType && g.id != widget.group.id,
+        )
         .toList(growable: false)
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
   }
@@ -95,15 +99,19 @@ class _DeleteGroupDialogState extends State<DeleteGroupDialog> {
         if (choice == _kDeleteChoice) {
           final ok = await itemsProvider.deleteItem(item.id);
           if (!ok) {
-            _fail('Could not delete "${item.displayName}": '
-                '${itemsProvider.errorMessage ?? 'unknown error'}');
+            _fail(
+              'Could not delete "${item.displayName}": '
+              '${itemsProvider.errorMessage ?? 'unknown error'}',
+            );
             return;
           }
         } else if (choice != null) {
           final moved = await itemsProvider.reassignItemGroup(item.id, choice);
           if (moved == null) {
-            _fail('Could not relocate "${item.displayName}": '
-                '${itemsProvider.errorMessage ?? 'unknown error'}');
+            _fail(
+              'Could not relocate "${item.displayName}": '
+              '${itemsProvider.errorMessage ?? 'unknown error'}',
+            );
             return;
           }
         }
@@ -142,7 +150,7 @@ class _DeleteGroupDialogState extends State<DeleteGroupDialog> {
       subtitle: items.isEmpty
           ? 'This group has no items and can be deleted.'
           : 'Decide what happens to each item, then delete the group. '
-              'Items used in orders/challans/inventory can only be relocated.',
+                'Items used in orders/challans/inventory can only be relocated.',
       errorBanner: blockedNoTarget
           ? ErpFormMessageBanner(
               message:

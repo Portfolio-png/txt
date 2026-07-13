@@ -41,9 +41,13 @@ class OrderDeletionResponse {
   factory OrderDeletionResponse.fromJson(Map<String, dynamic> json) {
     return OrderDeletionResponse(
       success: json['success'] as bool? ?? false,
-      recoveredMovements: (json['recoveredMovements'] as List<dynamic>? ?? const [])
-          .map((item) => OrderDeletionSummary.fromJson(item as Map<String, dynamic>))
-          .toList(growable: false),
+      recoveredMovements:
+          (json['recoveredMovements'] as List<dynamic>? ?? const [])
+              .map(
+                (item) =>
+                    OrderDeletionSummary.fromJson(item as Map<String, dynamic>),
+              )
+              .toList(growable: false),
       error: json['error'] as String?,
     );
   }
@@ -119,9 +123,9 @@ class OrderDto {
           (json['variationPathNodeIds'] as List<dynamic>? ?? const [])
               .map((entry) => entry as int)
               .toList(growable: false),
-      customVariationValues: (json['customVariationValues'] as Map<String, dynamic>? ?? const {}).map(
-        (key, value) => MapEntry(key, value.toString()),
-      ),
+      customVariationValues:
+          (json['customVariationValues'] as Map<String, dynamic>? ?? const {})
+              .map((key, value) => MapEntry(key, value.toString())),
       quantity: json['quantity'] as int? ?? 0,
       unitId: (json['unitId'] as num? ?? json['unit_id'] as num?)?.toInt(),
       unitName:

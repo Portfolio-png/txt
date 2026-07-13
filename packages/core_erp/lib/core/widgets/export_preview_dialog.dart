@@ -15,7 +15,8 @@ class ExportPreviewDialog extends StatelessWidget {
     required this.data,
   });
 
-  static Future<void> show(BuildContext context, {
+  static Future<void> show(
+    BuildContext context, {
     required String title,
     required List<Map<String, dynamic>> data,
   }) {
@@ -41,7 +42,10 @@ class ExportPreviewDialog extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Preview (First 5 rows):', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text(
+              'Preview (First 5 rows):',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
             if (!hasData)
               const Text('No data to export.')
@@ -56,11 +60,20 @@ class ExportPreviewDialog extends StatelessWidget {
                     scrollDirection: Axis.horizontal,
                     child: SingleChildScrollView(
                       child: DataTable(
-                        headingRowColor: MaterialStateProperty.all(Colors.grey.shade100),
-                        columns: headers.map((h) => DataColumn(label: Text(h))).toList(),
+                        headingRowColor: MaterialStateProperty.all(
+                          Colors.grey.shade100,
+                        ),
+                        columns: headers
+                            .map((h) => DataColumn(label: Text(h)))
+                            .toList(),
                         rows: previewData.map((row) {
                           return DataRow(
-                            cells: headers.map((h) => DataCell(Text(row[h]?.toString() ?? ''))).toList(),
+                            cells: headers
+                                .map(
+                                  (h) =>
+                                      DataCell(Text(row[h]?.toString() ?? '')),
+                                )
+                                .toList(),
                           );
                         }).toList(),
                       ),
@@ -69,7 +82,10 @@ class ExportPreviewDialog extends StatelessWidget {
                 ),
               ),
             const SizedBox(height: 24),
-            const Text('Select export format:', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text(
+              'Select export format:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 16),
             Wrap(
               spacing: 12,
@@ -78,37 +94,45 @@ class ExportPreviewDialog extends StatelessWidget {
                 ElevatedButton.icon(
                   icon: const Icon(Icons.print),
                   label: const Text('Print / PDF'),
-                  onPressed: hasData ? () {
-                    Navigator.of(context).pop();
-                    ExportService.printToPdf(title, data);
-                  } : null,
+                  onPressed: hasData
+                      ? () {
+                          Navigator.of(context).pop();
+                          ExportService.printToPdf(title, data);
+                        }
+                      : null,
                 ),
                 ElevatedButton.icon(
                   icon: const Icon(Icons.table_chart),
                   label: const Text('Excel'),
-                  onPressed: hasData ? () {
-                    Navigator.of(context).pop();
-                    ExportService.exportToExcel(title, data);
-                  } : null,
+                  onPressed: hasData
+                      ? () {
+                          Navigator.of(context).pop();
+                          ExportService.exportToExcel(title, data);
+                        }
+                      : null,
                 ),
                 ElevatedButton.icon(
                   icon: const Icon(Icons.list_alt),
                   label: const Text('CSV'),
-                  onPressed: hasData ? () {
-                    Navigator.of(context).pop();
-                    ExportService.exportToCsv(title, data);
-                  } : null,
+                  onPressed: hasData
+                      ? () {
+                          Navigator.of(context).pop();
+                          ExportService.exportToCsv(title, data);
+                        }
+                      : null,
                 ),
                 ElevatedButton.icon(
                   icon: const Icon(Icons.data_object),
                   label: const Text('JSON'),
-                  onPressed: hasData ? () {
-                    Navigator.of(context).pop();
-                    ExportService.exportToJson(title, data);
-                  } : null,
+                  onPressed: hasData
+                      ? () {
+                          Navigator.of(context).pop();
+                          ExportService.exportToJson(title, data);
+                        }
+                      : null,
                 ),
               ],
-            )
+            ),
           ],
         ),
       ),

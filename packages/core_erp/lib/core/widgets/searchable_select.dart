@@ -164,7 +164,10 @@ class SearchableSelectField<T> extends FormField<T> {
                              maxLines: 1,
                              overflow: TextOverflow.ellipsis,
                              style: TextStyle(
-                               fontSize: MediaQuery.of(context).size.width >= 600 ? 16.0 : 14.0,
+                               fontSize:
+                                   MediaQuery.of(context).size.width >= 600
+                                   ? 16.0
+                                   : 14.0,
                              ),
                            ),
                    ),
@@ -227,7 +230,8 @@ class _SearchableSelectFieldState<T> extends FormFieldState<T> {
       onCreateOption: widget.onCreateOption,
       createOptionLabelBuilder: widget.createOptionLabelBuilder,
       onSecondaryCreateOption: widget.onSecondaryCreateOption,
-      secondaryCreateOptionLabelBuilder: widget.secondaryCreateOptionLabelBuilder,
+      secondaryCreateOptionLabelBuilder:
+          widget.secondaryCreateOptionLabelBuilder,
     );
     if (selected == null) {
       return;
@@ -313,7 +317,8 @@ class _SearchableSelectDialogState<T>
             onCreateOption: widget.onCreateOption,
             createOptionLabelBuilder: widget.createOptionLabelBuilder,
             onSecondaryCreateOption: widget.onSecondaryCreateOption,
-            secondaryCreateOptionLabelBuilder: widget.secondaryCreateOptionLabelBuilder,
+            secondaryCreateOptionLabelBuilder:
+                widget.secondaryCreateOptionLabelBuilder,
           );
 
           if (layout.centered) {
@@ -439,7 +444,8 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
         query.isNotEmpty &&
         !exactMatchExists &&
         (canCreateOption?.call(query, allOptions) ?? true);
-    final createOptionsCount = (showCreateOption ? 1 : 0) + (showSecondaryCreateOption ? 1 : 0);
+    final createOptionsCount =
+        (showCreateOption ? 1 : 0) + (showSecondaryCreateOption ? 1 : 0);
 
     return FocusTraversalGroup(
       child: Material(
@@ -462,47 +468,75 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
             children: [
               if (title != null) ...[
                 Padding(
-                  padding: EdgeInsets.fromLTRB(14, 14, 14, MediaQuery.of(context).size.width >= 600 ? 14 : 10),
+                  padding: EdgeInsets.fromLTRB(
+                    14,
+                    14,
+                    14,
+                    MediaQuery.of(context).size.width >= 600 ? 14 : 10,
+                  ),
                   child: Text(
                     title!,
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w700,
                       color: const Color(0xFF2F3744),
-                      fontSize: MediaQuery.of(context).size.width >= 600 ? 16.0 : 14.0,
+                      fontSize: MediaQuery.of(context).size.width >= 600
+                          ? 16.0
+                          : 14.0,
                     ),
                   ),
                 ),
               ] else
-                SizedBox(height: MediaQuery.of(context).size.width >= 600 ? 18.0 : 14.0),
+                SizedBox(
+                  height: MediaQuery.of(context).size.width >= 600
+                      ? 18.0
+                      : 14.0,
+                ),
               Padding(
-                padding: EdgeInsets.fromLTRB(14, 0, 14, MediaQuery.of(context).size.width >= 600 ? 16 : 12),
+                padding: EdgeInsets.fromLTRB(
+                  14,
+                  0,
+                  14,
+                  MediaQuery.of(context).size.width >= 600 ? 16 : 12,
+                ),
                 child: SizedBox(
-                  height: MediaQuery.of(context).size.width >= 600 ? 48.0 : 40.0,
+                  height: MediaQuery.of(context).size.width >= 600
+                      ? 48.0
+                      : 40.0,
                   child: TextField(
                     controller: searchController,
-                    autofocus: true,
+                    autofocus:
+                        Theme.of(context).platform != TargetPlatform.android &&
+                        Theme.of(context).platform != TargetPlatform.iOS,
                     textInputAction: TextInputAction.next,
                     onChanged: onQueryChanged,
                     style: TextStyle(
-                      fontSize: MediaQuery.of(context).size.width >= 600 ? 15.0 : 13.0,
+                      fontSize: MediaQuery.of(context).size.width >= 600
+                          ? 15.0
+                          : 13.0,
                     ),
                     decoration: InputDecoration(
                       hintText: searchHintText,
                       hintStyle: TextStyle(
                         color: const Color(0xFF7B8494),
-                        fontSize: MediaQuery.of(context).size.width >= 600 ? 15.0 : 13.0,
+                        fontSize: MediaQuery.of(context).size.width >= 600
+                            ? 15.0
+                            : 13.0,
                         fontWeight: FontWeight.w500,
                       ),
                       prefixIcon: Icon(
                         Icons.search_rounded,
-                        size: MediaQuery.of(context).size.width >= 600 ? 22.0 : 18.0,
+                        size: MediaQuery.of(context).size.width >= 600
+                            ? 22.0
+                            : 18.0,
                         color: const Color(0xFF7B8494),
                       ),
                       filled: true,
                       fillColor: const Color(0xFFF7F8FB),
                       contentPadding: EdgeInsets.symmetric(
                         horizontal: 12,
-                        vertical: MediaQuery.of(context).size.width >= 600 ? 14.0 : 10.0,
+                        vertical: MediaQuery.of(context).size.width >= 600
+                            ? 14.0
+                            : 10.0,
                       ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
@@ -553,11 +587,14 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
                           }
                           if (showCreateOption) currentCreateCount++;
 
-                          if (showSecondaryCreateOption && index == currentCreateCount) {
+                          if (showSecondaryCreateOption &&
+                              index == currentCreateCount) {
                             return _SearchableSelectCreateTile<T>(
                               query: query,
                               label:
-                                  secondaryCreateOptionLabelBuilder?.call(query) ??
+                                  secondaryCreateOptionLabelBuilder?.call(
+                                    query,
+                                  ) ??
                                   'Create secondary "$query"',
                               onCreateOption: onSecondaryCreateOption!,
                               icon: Icons.add_task_rounded,
@@ -611,7 +648,9 @@ class _SearchableSelectOptionTileState<T>
               : const Color(0xFFEDE9FF))
         : widget.isSelected
         ? const Color(0xFFF3F0FF)
-        : (baseColor != null ? baseColor.withValues(alpha: 0.08) : Colors.white);
+        : (baseColor != null
+              ? baseColor.withValues(alpha: 0.08)
+              : Colors.white);
 
     void selectOption() {
       Navigator.of(context).pop(widget.option);
@@ -649,21 +688,31 @@ class _SearchableSelectOptionTileState<T>
           onTap: selectOption,
           child: Padding(
             padding: EdgeInsets.symmetric(
-              horizontal: MediaQuery.of(context).size.width >= 600 ? 16.0 : 12.0,
+              horizontal: MediaQuery.of(context).size.width >= 600
+                  ? 16.0
+                  : 12.0,
               vertical: MediaQuery.of(context).size.width >= 600 ? 14.0 : 11.0,
             ),
             child: Row(
               children: [
                 if (baseColor != null) ...[
                   Container(
-                    width: MediaQuery.of(context).size.width >= 600 ? 10.0 : 8.0,
-                    height: MediaQuery.of(context).size.width >= 600 ? 10.0 : 8.0,
+                    width: MediaQuery.of(context).size.width >= 600
+                        ? 10.0
+                        : 8.0,
+                    height: MediaQuery.of(context).size.width >= 600
+                        ? 10.0
+                        : 8.0,
                     decoration: BoxDecoration(
                       color: baseColor,
                       shape: BoxShape.circle,
                     ),
                   ),
-                  SizedBox(width: MediaQuery.of(context).size.width >= 600 ? 10.0 : 8.0),
+                  SizedBox(
+                    width: MediaQuery.of(context).size.width >= 600
+                        ? 10.0
+                        : 8.0,
+                  ),
                 ],
                 Expanded(
                   child: Tooltip(
@@ -675,7 +724,9 @@ class _SearchableSelectOptionTileState<T>
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: const Color(0xFF2F3744),
-                        fontSize: MediaQuery.of(context).size.width >= 600 ? 15.0 : 13.0,
+                        fontSize: MediaQuery.of(context).size.width >= 600
+                            ? 15.0
+                            : 13.0,
                         fontWeight: widget.isSelected
                             ? FontWeight.w700
                             : FontWeight.w500,
@@ -683,13 +734,17 @@ class _SearchableSelectOptionTileState<T>
                     ),
                   ),
                 ),
-                SizedBox(width: MediaQuery.of(context).size.width >= 600 ? 12.0 : 10.0),
+                SizedBox(
+                  width: MediaQuery.of(context).size.width >= 600 ? 12.0 : 10.0,
+                ),
                 AnimatedOpacity(
                   opacity: widget.isSelected ? 1 : 0,
                   duration: const Duration(milliseconds: 120),
                   child: Icon(
                     Icons.check_rounded,
-                    size: MediaQuery.of(context).size.width >= 600 ? 22.0 : 18.0,
+                    size: MediaQuery.of(context).size.width >= 600
+                        ? 22.0
+                        : 18.0,
                     color: const Color(0xFF6C63FF),
                   ),
                 ),
@@ -779,30 +834,42 @@ class _SearchableSelectCreateTileState<T>
           borderRadius: BorderRadius.circular(10),
           child: Padding(
             padding: EdgeInsets.symmetric(
-              horizontal: MediaQuery.of(context).size.width >= 600 ? 16.0 : 12.0,
+              horizontal: MediaQuery.of(context).size.width >= 600
+                  ? 16.0
+                  : 12.0,
               vertical: MediaQuery.of(context).size.width >= 600 ? 14.0 : 11.0,
             ),
             child: Row(
               children: [
                 _isCreating
                     ? SizedBox(
-                        width: MediaQuery.of(context).size.width >= 600 ? 22.0 : 18.0,
-                        height: MediaQuery.of(context).size.width >= 600 ? 22.0 : 18.0,
+                        width: MediaQuery.of(context).size.width >= 600
+                            ? 22.0
+                            : 18.0,
+                        height: MediaQuery.of(context).size.width >= 600
+                            ? 22.0
+                            : 18.0,
                         child: const CircularProgressIndicator(strokeWidth: 2),
                       )
                     : Icon(
                         widget.icon,
-                        size: MediaQuery.of(context).size.width >= 600 ? 22.0 : 18.0,
+                        size: MediaQuery.of(context).size.width >= 600
+                            ? 22.0
+                            : 18.0,
                         color: const Color(0xFF7C6BFF),
                       ),
-                SizedBox(width: MediaQuery.of(context).size.width >= 600 ? 12.0 : 10.0),
+                SizedBox(
+                  width: MediaQuery.of(context).size.width >= 600 ? 12.0 : 10.0,
+                ),
                 Expanded(
                   child: Text(
                     widget.label,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: const Color(0xFF5E49E6),
                       fontWeight: FontWeight.w600,
-                      fontSize: MediaQuery.of(context).size.width >= 600 ? 15.0 : 13.0,
+                      fontSize: MediaQuery.of(context).size.width >= 600
+                          ? 15.0
+                          : 13.0,
                     ),
                   ),
                 ),

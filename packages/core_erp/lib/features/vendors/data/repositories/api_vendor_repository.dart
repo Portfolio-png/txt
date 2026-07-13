@@ -200,7 +200,8 @@ class ApiVendorRepository implements VendorRepository {
       phone: json['phone'] as String? ?? '',
       email: json['email'] as String? ?? '',
       logoUrl: json['logoUrl'] as String? ?? json['logo_url'] as String? ?? '',
-      photoUrl: json['photoUrl'] as String? ?? json['photo_url'] as String? ?? '',
+      photoUrl:
+          json['photoUrl'] as String? ?? json['photo_url'] as String? ?? '',
       isArchived: json['isArchived'] as bool? ?? json['is_archived'] == 1,
       usageCount:
           json['usageCount'] as int? ?? json['usage_count'] as int? ?? 0,

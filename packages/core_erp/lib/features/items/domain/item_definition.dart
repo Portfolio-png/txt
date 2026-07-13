@@ -29,8 +29,6 @@ class ItemVariationNodeDefinition {
   final DateTime updatedAt;
   final List<ItemVariationNodeDefinition> children;
 
-
-
   bool get isLeafValue =>
       kind == ItemVariationNodeKind.value && children.isEmpty;
 
