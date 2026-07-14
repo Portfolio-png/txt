@@ -626,7 +626,8 @@ function normalizeEmail(value = '') {
   return String(value).trim().toLowerCase();
 }
 
-function validatePasswordPolicy(password, { email = '' } = {}) {
+function validatePasswordPolicy(password, { email = '', role = 'user' } = {}) {
+  if (role === 'admin' || role === 'super_admin') return null;
   const value = String(password || '');
   const normalized = value.toLowerCase();
   if (value.length < 10) {
@@ -1233,7 +1234,7 @@ async function createUserAccount({
     error.statusCode = 400;
     throw error;
   }
-  const passwordError = validatePasswordPolicy(password, { email: normalizedEmail });
+  const passwordError = validatePasswordPolicy(password, { email: normalizedEmail, role: normalizedRole });
   if (passwordError) {
     const error = new Error(passwordError);
     error.statusCode = 400;
@@ -18142,7 +18143,7 @@ app.patch('/api/me/password', async (req, res) => {
       res.status(401).json({ success: false, error: 'Current password is incorrect.' });
       return;
     }
-    const passwordError = validatePasswordPolicy(nextPassword, { email: user.email });
+    const passwordError = validatePasswordPolicy(nextPassword, { email: user.email, role: user.role });
     if (passwordError) {
       res.status(400).json({ success: false, error: passwordError });
       return;
@@ -18614,7 +18615,7 @@ app.patch('/api/users/:id/password', requirePermission('users.reset_password'), 
       return;
     }
     const newPassword = String(req.body?.newPassword || req.body?.password || '');
-    const passwordError = validatePasswordPolicy(newPassword, { email: target.email });
+    const passwordError = validatePasswordPolicy(newPassword, { email: target.email, role: target.role });
     if (passwordError) {
       res.status(400).json({ success: false, error: passwordError });
       return;
