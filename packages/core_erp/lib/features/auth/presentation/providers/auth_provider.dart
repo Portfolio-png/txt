@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/auth_api.dart';
 import '../../domain/auth_user.dart';
+import '../../domain/global_audit_log.dart';
 
 class AuthProvider extends ChangeNotifier {
   AuthProvider({
@@ -23,6 +25,7 @@ class AuthProvider extends ChangeNotifier {
   List<DeleteRequest> _deleteRequests = const [];
   List<AuthSession> _mySessions = const [];
   List<AuthEvent> _authEvents = const [];
+  List<GlobalAuditLog> _globalAuditLogs = const [];
   List<PermissionDescriptor> _permissionDescriptors = const [];
   List<PermissionTemplate> _permissionTemplates = const [];
   String _userQuery = '';
@@ -32,6 +35,7 @@ class AuthProvider extends ChangeNotifier {
   int _usersTotal = 0;
   int _deleteRequestsTotal = 0;
   int _authEventsTotal = 0;
+  int _globalAuditLogsTotal = 0;
   bool _usersHasMore = false;
   bool _deleteRequestsHasMore = false;
   bool _authEventsHasMore = false;
@@ -47,6 +51,7 @@ class AuthProvider extends ChangeNotifier {
   List<DeleteRequest> get deleteRequests => _deleteRequests;
   List<AuthSession> get mySessions => _mySessions;
   List<AuthEvent> get authEvents => _authEvents;
+  List<GlobalAuditLog> get globalAuditLogs => _globalAuditLogs;
   List<PermissionDescriptor> get permissionDescriptors =>
       _permissionDescriptors;
   List<PermissionTemplate> get permissionTemplates => _permissionTemplates;
@@ -57,6 +62,7 @@ class AuthProvider extends ChangeNotifier {
   int get usersTotal => _usersTotal;
   int get deleteRequestsTotal => _deleteRequestsTotal;
   int get authEventsTotal => _authEventsTotal;
+  int get globalAuditLogsTotal => _globalAuditLogsTotal;
   bool get usersHasMore => _usersHasMore;
   bool get deleteRequestsHasMore => _deleteRequestsHasMore;
   bool get authEventsHasMore => _authEventsHasMore;
@@ -97,7 +103,16 @@ class AuthProvider extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
     try {
-      final result = await _api.login(email: email, password: password);
+      String platform;
+      if (kIsWeb) {
+        platform = 'web';
+      } else if (defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.android) {
+        platform = 'mobile';
+      } else {
+        platform = 'desktop';
+      }
+
+      final result = await _api.login(email: email, password: password, platform: platform);
       _user = result.user;
       _token = result.token;
       _api.token = _token;
@@ -124,6 +139,7 @@ class AuthProvider extends ChangeNotifier {
     _usersTotal = 0;
     _deleteRequestsTotal = 0;
     _authEventsTotal = 0;
+    _globalAuditLogsTotal = 0;
     _usersHasMore = false;
     _deleteRequestsHasMore = false;
     _authEventsHasMore = false;
@@ -201,10 +217,19 @@ class AuthProvider extends ChangeNotifier {
         _authEvents = response.events;
         _authEventsTotal = response.total;
         _authEventsHasMore = response.hasMore;
+
+        final globalResponse = await _api.getGlobalAuditLogs(
+          limit: 100,
+          offset: 0,
+        );
+        _globalAuditLogs = globalResponse.logs;
+        _globalAuditLogsTotal = globalResponse.total;
       } else {
         _authEvents = const [];
         _authEventsTotal = 0;
         _authEventsHasMore = false;
+        _globalAuditLogs = const [];
+        _globalAuditLogsTotal = 0;
       }
       if (can('sessions.manage')) {
         _mySessions = await _api.getMySessions();

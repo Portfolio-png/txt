@@ -111,9 +111,16 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
             SizedBox(
               width: 280,
               child: TextField(
-                decoration: const InputDecoration(
-                  labelText: 'Search users',
-                  prefixIcon: Icon(Icons.search),
+                decoration: InputDecoration(
+                  hintText: 'Search users',
+                  prefixIcon: const Icon(Icons.search),
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
                 ),
                 onChanged: (value) => context
                     .read<AuthProvider>()
@@ -126,7 +133,16 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                 initialValue: auth.userRoleFilter.isEmpty
                     ? ''
                     : auth.userRoleFilter,
-                decoration: const InputDecoration(labelText: 'Role'),
+                decoration: InputDecoration(
+                  hintText: 'Role',
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                ),
                 items: const [
                   DropdownMenuItem(value: '', child: Text('All Roles')),
                   DropdownMenuItem(
@@ -146,8 +162,15 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                 width: 220,
                 child: DropdownButtonFormField<String>(
                   initialValue: auth.deleteStatusFilter,
-                  decoration: const InputDecoration(
-                    labelText: 'Delete Requests',
+                  decoration: InputDecoration(
+                    hintText: 'Delete Requests',
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
                   ),
                   items: const [
                     DropdownMenuItem(value: 'pending', child: Text('Pending')),
@@ -169,9 +192,15 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
               SizedBox(
                 width: 240,
                 child: TextField(
-                  decoration: const InputDecoration(
-                    labelText: 'Security Event Type',
-                    hintText: 'login_success, password_reset...',
+                  decoration: InputDecoration(
+                    hintText: 'Security Event Type',
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
                   ),
                   onChanged: (value) =>
                       context.read<AuthProvider>().updateEventTypeFilter(value),
@@ -235,6 +264,35 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                         .toList(growable: false),
                   ),
           ),
+        if (auth.can('audit.read')) ...[
+          const SizedBox(height: 20),
+          _Section(
+            title:
+                'System Audit Trail (${auth.globalAuditLogs.length}/${auth.globalAuditLogsTotal})',
+            child: auth.globalAuditLogs.isEmpty
+                ? const _EmptyBlock('No global audit events yet.')
+                : Column(
+                    children: auth.globalAuditLogs
+                        .map(
+                          (log) => ListTile(
+                            dense: true,
+                            title: Text('${log.action} ${log.entityType} ${log.entityId}'),
+                            subtitle: Text(
+                              'By ${log.actorName} (${log.actorRole}) • Path: ${log.details['path'] ?? '-'}',
+                            ),
+                            trailing: Text(
+                              _timeLabel(log.createdAt),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF6B7280),
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(growable: false),
+                  ),
+          ),
+        ],
       ],
     );
   }
@@ -357,6 +415,16 @@ class _UserRow extends StatelessWidget {
                 ? const Color(0xFFE7F8EF)
                 : const Color(0xFFFEECEC),
           ),
+          if (user.can('login.desktop'))
+            const Chip(
+              label: Text('Desktop Access'),
+              backgroundColor: Color(0xFFE3F2FD),
+            ),
+          if (user.can('login.mobile'))
+            const Chip(
+              label: Text('Mobile Access'),
+              backgroundColor: Color(0xFFF3E5F5),
+            ),
           OutlinedButton(
             onPressed: canResetPassword
                 ? () => _resetPassword(context, user)
@@ -774,22 +842,28 @@ class _Section extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border.all(color: const Color(0xFFE1E5ED)),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
             child: Text(
               title,
               style: Theme.of(
                 context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
             ),
           ),
-          const Divider(height: 1),
+          const Divider(height: 1, color: Color(0xFFF3F4F6)),
           child,
         ],
       ),
@@ -805,8 +879,28 @@ class _EmptyBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Text(message, style: const TextStyle(color: Color(0xFF6B7280))),
+      padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 20),
+      child: Center(
+        child: Column(
+          children: [
+            const Icon(
+              Icons.inbox_outlined,
+              size: 48,
+              color: Color(0xFFD1D5DB),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              style: const TextStyle(
+                color: Color(0xFF6B7280),
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -819,12 +913,27 @@ class _InlineError extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFFEECEC),
-        borderRadius: BorderRadius.circular(8),
+        color: const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFCA5A5)),
       ),
-      child: Text(message, style: const TextStyle(color: Color(0xFFB42318))),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, color: Color(0xFFDC2626)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: Color(0xFF991B1B),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

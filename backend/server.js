@@ -142,6 +142,8 @@ const PERMISSION_KEYS = [
   'audit.read',
   'config.read',
   'config.write',
+  'login.mobile',
+  'login.desktop',
 ];
 const PERMISSION_DESCRIPTORS = {
   'inventory.read': {
@@ -205,8 +207,16 @@ const PERMISSION_DESCRIPTORS = {
     description: 'Read units, clients, groups, items, orders, templates, and runs.',
   },
   'config.write': {
-    label: 'Edit configuration',
-    description: 'Create and edit units, clients, groups, items, orders, templates, and runs.',
+    label: 'Modify system config',
+    description: 'Edit application-wide settings (units, tax rates).',
+  },
+  'login.mobile': {
+    label: 'Mobile Login Access',
+    description: 'Allow the user to log in from the mobile app.',
+  },
+  'login.desktop': {
+    label: 'Desktop Login Access',
+    description: 'Allow the user to log in from the desktop or web app.',
   },
 };
 const DEFAULT_ROLE_PERMISSIONS = {
@@ -228,6 +238,8 @@ const DEFAULT_ROLE_PERMISSIONS = {
     'audit.read': true,
     'config.read': true,
     'config.write': true,
+    'login.mobile': true,
+    'login.desktop': true,
   },
   user: {
     'inventory.read': true,
@@ -246,6 +258,8 @@ const DEFAULT_ROLE_PERMISSIONS = {
     'audit.read': false,
     'config.read': true,
     'config.write': false,
+    'login.mobile': true,
+    'login.desktop': true,
   },
 };
 const DEFAULT_PERMISSION_TEMPLATES = [
@@ -993,6 +1007,37 @@ async function logAuthEvent({
     ],
   );
 }
+
+async function logGlobalAudit({
+  actorUserId = null,
+  actorName = '',
+  actorRole = '',
+  action,
+  entityType,
+  entityId = '',
+  details = {},
+  ipAddress = '',
+}) {
+  await run(
+    `
+    INSERT INTO global_audit_logs (
+      actor_user_id, actor_name, actor_role, action, entity_type, entity_id, details_json, ip_address, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    [
+      actorUserId,
+      actorName,
+      actorRole,
+      action,
+      entityType,
+      entityId,
+      JSON.stringify(details || {}),
+      ipAddress,
+      nowIso(),
+    ]
+  );
+}
+
 
 async function createAuthSession({ user, req }) {
   const sessionId = `sess-${crypto.randomUUID()}`;
@@ -17539,6 +17584,22 @@ app.post('/api/auth/login', async (req, res) => {
       return;
     }
     const permissionMap = await getEffectivePermissionMap(user.id, user.role);
+
+    const clientPlatform = (req.headers['x-client-platform'] || '').toLowerCase();
+    const isMobile = clientPlatform === 'mobile' || clientPlatform === 'ios' || clientPlatform === 'android';
+    
+    if (isMobile) {
+      if (permissionMap['login.mobile'] !== true && user.role !== 'super_admin') {
+        res.status(403).json({ success: false, user: null, token: null, error: 'Mobile login is disabled for this account.' });
+        return;
+      }
+    } else {
+      if (permissionMap['login.desktop'] !== true && user.role !== 'super_admin') {
+        res.status(403).json({ success: false, user: null, token: null, error: 'Desktop login is disabled for this account.' });
+        return;
+      }
+    }
+
     const safeUser = safeUserDto(user, permissionMap);
     const { token } = await createAuthSession({ user, req });
     res.json({ success: true, user: safeUser, token, error: null });
@@ -17651,6 +17712,55 @@ app.use('/api', (req, res, next) => {
 });
 app.use('/api', requireAuth);
 app.use('/api', requireApiWritePermission);
+
+app.use('/api', (req, res, next) => {
+  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+    const originalSend = res.send;
+    res.send = function (body) {
+      if (res.statusCode >= 200 && res.statusCode < 300 && req.user) {
+        try {
+          const parsed = JSON.parse(body);
+          if (parsed && parsed.success === false) {
+            // It failed logically even if HTTP status was 200, skip logging
+          } else {
+            let entityType = req.path.split('/')[1] || 'unknown';
+            if (entityType === 'auth') {
+              entityType = req.path.split('/')[2] || 'auth';
+            }
+            let action = req.method;
+            
+            // Do not block response, fire and forget
+            logGlobalAudit({
+              actorUserId: req.user.id,
+              actorName: req.user.name,
+              actorRole: req.user.role,
+              action,
+              entityType,
+              details: { path: req.path, method: req.method },
+              ipAddress: getRequestIp(req)
+            }).catch(err => console.error('[Audit] Failed to log:', err));
+          }
+        } catch (e) {
+          // If response body is not JSON, we still log it.
+          let entityType = req.path.split('/')[1] || 'unknown';
+          let action = req.method;
+          logGlobalAudit({
+            actorUserId: req.user.id,
+            actorName: req.user.name,
+            actorRole: req.user.role,
+            action,
+            entityType,
+            details: { path: req.path, method: req.method },
+            ipAddress: getRequestIp(req)
+          }).catch(err => console.error('[Audit] Failed to log:', err));
+        }
+      }
+      originalSend.call(this, body);
+    };
+  }
+  next();
+});
+
 
 app.get('/api/auth/me', async (req, res) => {
   res.json({ success: true, user: req.user, error: null });
@@ -17769,6 +17879,73 @@ app.post('/api/users/:id/sessions/revoke', requirePermission('sessions.manage'),
       userAgent: getRequestUserAgent(req),
     });
     res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/audit/global', requirePermission('audit.read'), async (req, res) => {
+  try {
+    const params = [];
+    const whereClauses = [];
+    const entityType = String(req.query.entityType || '').trim();
+    const action = String(req.query.action || '').trim();
+    const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 1000);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+
+    if (entityType) {
+      whereClauses.push('g.entity_type = ?');
+      params.push(entityType);
+    }
+    if (action) {
+      whereClauses.push('g.action = ?');
+      params.push(action);
+    }
+
+    if (req.user.role === 'admin') {
+      whereClauses.push('(g.actor_user_id = ? OR g.actor_role = ?)');
+      params.push(req.user.id, 'user');
+    } else if (req.user.role !== 'super_admin') {
+      whereClauses.push('g.actor_user_id = ?');
+      params.push(req.user.id);
+    }
+
+    const whereSql = whereClauses.length > 0 ? 'WHERE ' + whereClauses.join(' AND ') : '';
+
+    const countRow = await get(
+      `SELECT COUNT(*) as c FROM global_audit_logs g ${whereSql}`,
+      params
+    );
+    const total = countRow ? countRow.c : 0;
+
+    const rows = await all(
+      `
+      SELECT 
+        g.id, g.actor_user_id, g.actor_name, g.actor_role, 
+        g.action, g.entity_type, g.entity_id, g.details_json, 
+        g.ip_address, g.created_at
+      FROM global_audit_logs g
+      ${whereSql}
+      ORDER BY g.created_at DESC
+      LIMIT ? OFFSET ?
+      `,
+      [...params, limit, offset]
+    );
+
+    const logs = rows.map((r) => ({
+      id: r.id,
+      actorUserId: r.actor_user_id,
+      actorName: r.actor_name,
+      actorRole: r.actor_role,
+      action: r.action,
+      entityType: r.entity_type,
+      entityId: r.entity_id,
+      details: JSON.parse(r.details_json || '{}'),
+      ipAddress: r.ip_address,
+      createdAt: r.created_at,
+    }));
+
+    res.json({ success: true, data: logs, total, error: null });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

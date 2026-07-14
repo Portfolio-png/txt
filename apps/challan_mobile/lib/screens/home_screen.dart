@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'package:core_erp/app/dashboard/views/dashboard_screen.dart';
 
+import 'package:core_erp/features/auth/presentation/screens/user_management_screen.dart';
+
 import 'challan_staging_screen.dart';
 import 'inventory_stock_screen.dart';
 import 'module_placeholder_screen.dart';
@@ -28,6 +30,7 @@ class _HomeScreenState extends State<HomeScreen> {
     InventoryStockScreen(),
     ModulePlaceholderScreen(title: 'Production', icon: Icons.precision_manufacturing_outlined),
     ModulePlaceholderScreen(title: 'Jobs', icon: Icons.work_outline),
+    UserManagementScreen(),
   ];
 
   @override
@@ -78,6 +81,11 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.work_outline),
             selectedIcon: Icon(Icons.work),
             label: 'Jobs',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.admin_panel_settings_outlined),
+            selectedIcon: Icon(Icons.admin_panel_settings),
+            label: 'Admin',
           ),
         ],
       ),

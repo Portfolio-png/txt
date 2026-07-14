@@ -3,6 +3,14 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../domain/auth_user.dart';
+import '../domain/global_audit_log.dart';
+
+class AuthApiException implements Exception {
+  const AuthApiException(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
 
 class AuthApi {
   AuthApi({required this.baseUrl, http.Client? client})
@@ -19,10 +27,14 @@ class AuthApi {
   Future<({AuthUser user, String token})> login({
     required String email,
     required String password,
+    String? platform,
   }) async {
     final response = await _client.post(
       Uri.parse('$baseUrl/api/auth/login'),
-      headers: const {'Content-Type': 'application/json'},
+      headers: {
+        'Content-Type': 'application/json',
+        if (platform != null) 'X-Client-Platform': platform,
+      },
       body: jsonEncode({'email': email, 'password': password}),
     );
     final payload = _decode(response.body);
@@ -449,6 +461,40 @@ class AuthApi {
     );
   }
 
+  Future<({List<GlobalAuditLog> logs, int total})> getGlobalAuditLogs({
+    String entityType = '',
+    String action = '',
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/audit/global').replace(
+      queryParameters: {
+        if (entityType.trim().isNotEmpty) 'entityType': entityType.trim(),
+        if (action.trim().isNotEmpty) 'action': action.trim(),
+        'limit': '$limit',
+        'offset': '$offset',
+      },
+    );
+    final response = await _client.get(uri, headers: _authHeaders);
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to load global audit logs.',
+      );
+    }
+    final logs = (payload['data'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(GlobalAuditLog.fromJson)
+        .toList(growable: false);
+    
+    return (
+      logs: logs,
+      total: payload['total'] as int? ?? logs.length,
+    );
+  }
+
   Future<List<PermissionDescriptor>> getPermissionDescriptors() async {
     final response = await _client.get(
       Uri.parse('$baseUrl/api/permissions'),
@@ -600,11 +646,3 @@ class AuthApi {
   }
 }
 
-class AuthApiException implements Exception {
-  const AuthApiException(this.message);
-
-  final String message;
-
-  @override
-  String toString() => message;
-}
