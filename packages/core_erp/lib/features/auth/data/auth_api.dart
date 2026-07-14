@@ -177,6 +177,7 @@ class AuthApi {
     required String email,
     required String password,
     required bool admin,
+    int? clientId,
   }) async {
     final path = admin ? 'admins' : 'users';
     final response = await _client.post(

@@ -885,6 +885,8 @@ function safeUserDto(row, permissionMap = null, activeSession = null) {
     failedLoginAttempts: Number(row.failed_login_attempts || 0),
     lockoutUntil: row.lockout_until || null,
     createdByUserId: row.created_by_user_id || null,
+    clientId: row.client_id || null,
+    clientName: row.client_name || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1034,7 +1036,7 @@ async function logGlobalAudit({
     `
     INSERT INTO global_audit_logs (
       actor_user_id, actor_name, actor_role, action, entity_type, entity_id, details_json, ip_address, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       actorUserId,
@@ -1215,6 +1217,7 @@ async function createUserAccount({
   password,
   role,
   createdByUserId = null,
+  clientId = null,
 }) {
   const normalizedEmail = normalizeEmail(email);
   const normalizedName = String(name || '').trim();
@@ -1251,7 +1254,7 @@ async function createUserAccount({
   const result = await run(
     `
     INSERT INTO users (
-      name, email, password_hash, role, is_active, created_by_user_id, created_at, updated_at, mobile_pin
+      name, email, password_hash, role, is_active, created_by_user_id, created_at, updated_at, mobile_pin, client_id
     ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)
     `,
     [
@@ -4127,6 +4130,7 @@ async function initDb() {
   await ensureColumnExists('users', 'last_login_at', 'TEXT');
   await ensureColumnExists('users', 'last_login_ip', "TEXT DEFAULT ''");
   await ensureColumnExists('users', 'mobile_pin', "TEXT");
+  await ensureColumnExists('users', 'client_id', "INTEGER REFERENCES clients(id)");
   await run('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_mobile_pin ON users(mobile_pin)');
   await ensureColumnExists('auth_sessions', 'ip_address', "TEXT DEFAULT ''");
   await ensureColumnExists('auth_sessions', 'user_agent', "TEXT DEFAULT ''");
@@ -18178,19 +18182,19 @@ app.get('/api/users', requirePermission('users.read'), async (req, res) => {
     const role = String(req.query.role || '').trim();
     const isActiveRaw = String(req.query.isActive || '').trim().toLowerCase();
     if (queryText) {
-      whereClauses.push('(LOWER(name) LIKE ? OR LOWER(email) LIKE ?)');
+      whereClauses.push('(LOWER(users.name) LIKE ? OR LOWER(email) LIKE ?)');
       params.push(`%${queryText}%`, `%${queryText}%`);
     }
     if (USER_ROLES.has(role)) {
-      whereClauses.push('role = ?');
+      whereClauses.push('users.role = ?');
       params.push(role);
     }
     if (isActiveRaw === 'true' || isActiveRaw === 'false') {
-      whereClauses.push('is_active = ?');
+      whereClauses.push('users.is_active = ?');
       params.push(isActiveRaw === 'true' ? 1 : 0);
     }
     if (req.user.role === 'admin') {
-      whereClauses.push('(role = ? OR id = ?)');
+      whereClauses.push('(users.role = ? OR users.id = ?)');
       params.push('user', req.user.id);
     }
     const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
@@ -18199,10 +18203,11 @@ app.get('/api/users', requirePermission('users.read'), async (req, res) => {
     const total = Number(countRow?.count || 0);
     const rows = await all(
       `
-      SELECT *
+      SELECT users.*, clients.name as client_name
       FROM users
+      LEFT JOIN clients ON users.client_id = clients.id
       ${whereSql}
-      ORDER BY role ASC, name ASC
+      ORDER BY users.role ASC, users.name ASC
       LIMIT ? OFFSET ?
       `,
       [...params, limit, offset],

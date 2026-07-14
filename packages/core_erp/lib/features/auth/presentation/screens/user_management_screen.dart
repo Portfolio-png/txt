@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../domain/auth_user.dart';
 import '../providers/auth_provider.dart';
+import '../../../clients/presentation/providers/clients_provider.dart';
 
 String? _passwordPolicyValidator(String? value, {String email = '', String role = 'user'}) {
   if (role == 'admin' || role == 'super_admin') return null;
@@ -312,6 +313,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     final nameController = TextEditingController();
     final emailController = TextEditingController();
     final passwordController = TextEditingController();
+    int? selectedClientId;
+    final clientsProvider = context.read<ClientsProvider>();
+    final clients = clientsProvider.clients;
     final formKey = GlobalKey<FormState>();
     await showDialog<void>(
       context: context,
@@ -348,6 +352,19 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                     role: admin ? 'admin' : 'user',
                   ),
                 ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<int?>(
+                  decoration: const InputDecoration(labelText: 'Assign to Client/Factory (Optional)'),
+                  value: selectedClientId,
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('None (Global Access)')),
+                    ...clients.map((c) => DropdownMenuItem(
+                          value: c.id,
+                          child: Text(c.displayLabel),
+                        )),
+                  ],
+                  onChanged: (val) => selectedClientId = val,
+                ),
               ],
             ),
           ),
@@ -367,6 +384,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                 email: emailController.text,
                 password: passwordController.text,
                 admin: admin,
+                clientId: selectedClientId,
               );
               if (ok && dialogContext.mounted) {
                 Navigator.of(dialogContext).pop();

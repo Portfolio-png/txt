@@ -287,6 +287,7 @@ class AuthProvider extends ChangeNotifier {
     required String email,
     required String password,
     required bool admin,
+    int? clientId,
   }) async {
     if (admin && !can('users.create_admin')) {
       _errorMessage = 'You do not have permission to create admins.';
@@ -307,6 +308,7 @@ class AuthProvider extends ChangeNotifier {
         email: email,
         password: password,
         admin: admin,
+        clientId: clientId,
       );
 
       // Sync the user to the control plane sandbox dashboard
