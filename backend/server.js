@@ -18568,6 +18568,16 @@ app.delete('/api/users/:id', requireRoles('super_admin', 'admin'), requirePermis
       await run('UPDATE global_audit_logs SET actor_user_id = NULL WHERE actor_user_id = ?', [targetId]);
       await run('UPDATE delete_requests SET reviewed_by_user_id = NULL WHERE reviewed_by_user_id = ?', [targetId]);
       await run('DELETE FROM delete_requests WHERE requested_by_user_id = ?', [targetId]);
+      await run('UPDATE users SET created_by_user_id = NULL WHERE created_by_user_id = ?', [targetId]);
+      await run('UPDATE procurement_requests SET created_by_user_id = NULL WHERE created_by_user_id = ?', [targetId]);
+      await run('UPDATE procurement_requests SET raised_by_user_id = NULL WHERE raised_by_user_id = ?', [targetId]);
+      await run('UPDATE procurement_requests SET cancelled_by_user_id = NULL WHERE cancelled_by_user_id = ?', [targetId]);
+      await run('UPDATE procurement_requests SET closed_by_user_id = NULL WHERE closed_by_user_id = ?', [targetId]);
+      await run('UPDATE procurement_activity_log SET actor_user_id = NULL WHERE actor_user_id = ?', [targetId]);
+      await run('UPDATE delivery_challans SET created_by = NULL WHERE created_by = ?', [targetId]);
+      await run('UPDATE delivery_challans SET updated_by = NULL WHERE updated_by = ?', [targetId]);
+      await run('DELETE FROM search_history WHERE user_id = ?', [targetId]);
+      await run('DELETE FROM search_clicks WHERE user_id = ?', [targetId]);
       
       await run('DELETE FROM users WHERE id = ?', [targetId]);
       await run('COMMIT');
