@@ -404,8 +404,40 @@ class _UserRow extends StatelessWidget {
       leading: CircleAvatar(
         child: Icon(user.role == 'user' ? Icons.person : Icons.shield),
       ),
-      title: Text(user.name),
-      subtitle: Text('${user.email} • ${user.role}'),
+      title: Row(
+        children: [
+          Text(user.name),
+          if (user.mobilePin != null) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.amber.shade100,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                'PIN: ${user.mobilePin}',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.amber.shade900,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('${user.email} • ${user.role}'),
+          if (user.activeSession != null)
+            Text(
+              'Active on: ${user.activeSession!['userAgent']} (${user.activeSession!['ipAddress']})',
+              style: const TextStyle(fontSize: 12, color: Colors.green),
+            ),
+        ],
+      ),
       trailing: Wrap(
         spacing: 8,
         children: [

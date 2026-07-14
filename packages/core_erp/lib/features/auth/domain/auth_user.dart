@@ -6,6 +6,8 @@ class AuthUser {
     required this.role,
     required this.permissions,
     required this.isActive,
+    this.mobilePin,
+    this.activeSession,
   });
 
   final int id;
@@ -14,6 +16,8 @@ class AuthUser {
   final String role;
   final List<String> permissions;
   final bool isActive;
+  final String? mobilePin;
+  final Map<String, dynamic>? activeSession;
 
   bool get isSuperAdmin => role == 'super_admin';
   bool get isAdmin => role == 'admin' || role == 'super_admin';
@@ -31,6 +35,8 @@ class AuthUser {
           .whereType<String>()
           .toList(growable: false),
       isActive: json['isActive'] as bool? ?? false,
+      mobilePin: json['mobilePin'] as String?,
+      activeSession: json['activeSession'] as Map<String, dynamic>?,
     );
   }
 }

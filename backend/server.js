@@ -869,12 +869,12 @@ async function getUserPermissionSnapshot(user) {
   });
 }
 
-function safeUserDto(row, permissionMap = null) {
+function safeUserDto(row, permissionMap = null, activeSession = null) {
   if (!row) {
     return null;
   }
   const effectivePermissions = permissionMap || createEmptyPermissionMap();
-  return {
+  const dto = {
     id: row.id,
     name: row.name || '',
     email: row.email || '',
@@ -887,6 +887,17 @@ function safeUserDto(row, permissionMap = null) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+  if (row.mobile_pin !== undefined) {
+    dto.mobilePin = row.mobile_pin;
+  }
+  if (activeSession !== undefined) {
+    dto.activeSession = activeSession ? {
+      ipAddress: activeSession.ip_address,
+      userAgent: activeSession.user_agent,
+      lastUsedAt: activeSession.last_used_at,
+    } : null;
+  }
+  return dto;
 }
 
 function rowToDeleteRequestDto(row) {
@@ -1040,6 +1051,7 @@ async function logGlobalAudit({
 
 
 async function createAuthSession({ user, req }) {
+  await revokeSessionsForUser(user.id, { reason: 'new_login_revoked_others' });
   const sessionId = `sess-${crypto.randomUUID()}`;
   const token = signJwt({ sub: user.id, role: user.role, sid: sessionId });
   const tokenHash = hashToken(token);
@@ -1185,6 +1197,17 @@ function canManageUser(actorRole, targetRole) {
   return false;
 }
 
+async function generateUniqueMobilePin() {
+  for (let i = 0; i < 1000; i++) {
+    const pin = Math.floor(1000 + Math.random() * 9000).toString();
+    const existing = await get('SELECT id FROM users WHERE mobile_pin = ?', [pin]);
+    if (!existing) {
+      return pin;
+    }
+  }
+  throw new Error('Unable to generate a unique 4-digit mobile PIN.');
+}
+
 async function createUserAccount({
   name,
   email,
@@ -1223,11 +1246,12 @@ async function createUserAccount({
     throw error;
   }
   const now = new Date().toISOString();
+  const mobilePin = await generateUniqueMobilePin();
   const result = await run(
     `
     INSERT INTO users (
-      name, email, password_hash, role, is_active, created_by_user_id, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+      name, email, password_hash, role, is_active, created_by_user_id, created_at, updated_at, mobile_pin
+    ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)
     `,
     [
       normalizedName,
@@ -1237,6 +1261,7 @@ async function createUserAccount({
       createdByUserId,
       now,
       now,
+      mobilePin,
     ],
   );
   return get('SELECT * FROM users WHERE id = ?', [result.lastID]);
@@ -1251,7 +1276,8 @@ async function safeUserDtoWithPermissions(row) {
     return null;
   }
   const permissionMap = await getEffectivePermissionMap(row.id, row.role);
-  return safeUserDto(row, permissionMap);
+  const activeSession = await get('SELECT ip_address, user_agent, last_used_at FROM auth_sessions WHERE user_id = ? AND revoked_at IS NULL AND expires_at > ? ORDER BY last_used_at DESC LIMIT 1', [row.id, nowIso()]);
+  return safeUserDto(row, permissionMap, activeSession);
 }
 
 async function getDeleteRequestById(id) {
@@ -4099,6 +4125,8 @@ async function initDb() {
   await ensureColumnExists('users', 'lockout_until', 'TEXT');
   await ensureColumnExists('users', 'last_login_at', 'TEXT');
   await ensureColumnExists('users', 'last_login_ip', "TEXT DEFAULT ''");
+  await ensureColumnExists('users', 'mobile_pin', "TEXT");
+  await run('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_mobile_pin ON users(mobile_pin)');
   await ensureColumnExists('auth_sessions', 'ip_address', "TEXT DEFAULT ''");
   await ensureColumnExists('auth_sessions', 'user_agent', "TEXT DEFAULT ''");
   await ensureColumnExists('auth_sessions', 'revoked_reason', "TEXT DEFAULT ''");
@@ -17566,7 +17594,15 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const email = normalizeEmail(req.body?.email);
     const password = String(req.body?.password || '');
-    const user = await get('SELECT * FROM users WHERE email = ?', [email]);
+    const pin = String(req.body?.pin || '').trim();
+
+    let user;
+    if (pin && pin.length === 4) {
+      user = await get('SELECT * FROM users WHERE mobile_pin = ?', [pin]);
+    } else {
+      user = await get('SELECT * FROM users WHERE email = ?', [email]);
+    }
+
     if (user && isTimestampInFuture(user.lockout_until)) {
       await logAuthEvent({
         eventType: 'login_blocked_lockout',
@@ -17578,10 +17614,19 @@ app.post('/api/auth/login', async (req, res) => {
       res.status(423).json({ success: false, user: null, token: null, error: 'Account is temporarily locked. Try again later.' });
       return;
     }
-    if (!user || Number(user.is_active || 0) !== 1 || !verifyPassword(password, user.password_hash)) {
-      await registerLoginFailure({ user, email, req });
-      res.status(401).json({ success: false, user: null, token: null, error: 'Invalid email or password.' });
-      return;
+
+    if (pin && pin.length === 4) {
+      if (!user || Number(user.is_active || 0) !== 1) {
+        await registerLoginFailure({ user, email: 'pin-login', req });
+        res.status(401).json({ success: false, user: null, token: null, error: 'Invalid PIN.' });
+        return;
+      }
+    } else {
+      if (!user || Number(user.is_active || 0) !== 1 || !verifyPassword(password, user.password_hash)) {
+        await registerLoginFailure({ user, email, req });
+        res.status(401).json({ success: false, user: null, token: null, error: 'Invalid email or password.' });
+        return;
+      }
     }
     const permissionMap = await getEffectivePermissionMap(user.id, user.role);
 
@@ -18520,6 +18565,9 @@ app.delete('/api/users/:id', requireRoles('super_admin', 'admin'), requirePermis
       await run('DELETE FROM user_permission_templates WHERE user_id = ?', [targetId]);
       await run('UPDATE auth_events SET actor_user_id = NULL WHERE actor_user_id = ?', [targetId]);
       await run('UPDATE auth_events SET target_user_id = NULL WHERE target_user_id = ?', [targetId]);
+      await run('UPDATE global_audit_logs SET actor_user_id = NULL WHERE actor_user_id = ?', [targetId]);
+      await run('UPDATE delete_requests SET reviewed_by_user_id = NULL WHERE reviewed_by_user_id = ?', [targetId]);
+      await run('DELETE FROM delete_requests WHERE requested_by_user_id = ?', [targetId]);
       
       await run('DELETE FROM users WHERE id = ?', [targetId]);
       await run('COMMIT');
