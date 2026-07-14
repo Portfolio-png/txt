@@ -5,7 +5,8 @@ import 'package:provider/provider.dart';
 import '../../domain/auth_user.dart';
 import '../providers/auth_provider.dart';
 
-String? _passwordPolicyValidator(String? value, {String email = ''}) {
+String? _passwordPolicyValidator(String? value, {String email = '', String role = 'user'}) {
+  if (role == 'admin' || role == 'super_admin') return null;
   final password = (value ?? '').trim();
   if (password.length < 10) {
     return AuthProvider.passwordPolicyMessage;
@@ -344,6 +345,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                   validator: (value) => _passwordPolicyValidator(
                     value,
                     email: emailController.text,
+                    role: admin ? 'admin' : 'user',
                   ),
                 ),
               ],
@@ -510,7 +512,7 @@ class _UserRow extends StatelessWidget {
             decoration: const InputDecoration(labelText: 'New password'),
             obscureText: true,
             validator: (value) =>
-                _passwordPolicyValidator(value, email: user.email),
+                _passwordPolicyValidator(value, email: user.email, role: user.role),
           ),
         ),
         actions: [
