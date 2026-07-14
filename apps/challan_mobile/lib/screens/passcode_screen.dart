@@ -2,22 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:core_erp/features/auth/presentation/providers/auth_provider.dart';
 
-class DemoPasscodeScreen extends StatefulWidget {
+class PasscodeScreen extends StatefulWidget {
   final String expectedPasscode;
 
-  const DemoPasscodeScreen({
+  const PasscodeScreen({
     super.key,
     this.expectedPasscode = '0000',
   });
 
   @override
-  State<DemoPasscodeScreen> createState() => _DemoPasscodeScreenState();
+  State<PasscodeScreen> createState() => _PasscodeScreenState();
 }
 
-class _DemoPasscodeScreenState extends State<DemoPasscodeScreen> {
+class _PasscodeScreenState extends State<PasscodeScreen> {
   String _enteredDigits = '';
 
-  int get _passcodeLength => widget.expectedPasscode.length;
+  int get _passcodeLength => 4;
 
   void _onDigitPressed(String digit) {
     setState(() {
@@ -26,16 +26,7 @@ class _DemoPasscodeScreenState extends State<DemoPasscodeScreen> {
       }
 
       if (_enteredDigits.length == _passcodeLength) {
-        if (_enteredDigits == widget.expectedPasscode) {
-          // Success! Login
-          _performLogin();
-        } else {
-          // Wrong digits, reset
-          _enteredDigits = '';
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Incorrect passcode')),
-          );
-        }
+        _performLogin();
       }
     });
   }
@@ -48,13 +39,19 @@ class _DemoPasscodeScreenState extends State<DemoPasscodeScreen> {
     });
   }
 
-  void _performLogin() {
+  Future<void> _performLogin() async {
     final provider = context.read<AuthProvider>();
-    // Call login with dummy credentials to authenticate
-    provider.login(
-      email: 'super@paper.local',
-      password: 'Paper@12345',
-    );
+    final success = await provider.loginWithPin(pin: _enteredDigits);
+    
+    if (!success) {
+      if (!mounted) return;
+      setState(() {
+        _enteredDigits = '';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(provider.errorMessage ?? 'Invalid passcode')),
+      );
+    }
   }
 
   @override

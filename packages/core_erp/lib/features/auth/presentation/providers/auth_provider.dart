@@ -126,6 +126,34 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> loginWithPin({required String pin}) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      String platform;
+      if (kIsWeb) {
+        platform = 'web';
+      } else if (defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.android) {
+        platform = 'mobile';
+      } else {
+        platform = 'desktop';
+      }
+
+      final result = await _api.loginWithPin(pin: pin, platform: platform);
+      _user = result.user;
+      _token = result.token;
+      _api.token = _token;
+      return true;
+    } catch (error) {
+      _errorMessage = _friendly(error, fallback: 'Login failed.');
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   void logout() {
     _user = null;
     _token = null;

@@ -49,6 +49,30 @@ class AuthApi {
     );
   }
 
+  Future<({AuthUser user, String token})> loginWithPin({
+    required String pin,
+    String? platform,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/auth/login'),
+      headers: {
+        'Content-Type': 'application/json',
+        if (platform != null) 'X-Client-Platform': platform,
+      },
+      body: jsonEncode({'pin': pin}),
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(payload['error'] as String? ?? 'Login failed.');
+    }
+    return (
+      user: AuthUser.fromJson(payload['user'] as Map<String, dynamic>),
+      token: payload['token'] as String? ?? '',
+    );
+  }
+
   Future<AuthUser> me() async {
     final response = await _client.get(
       Uri.parse('$baseUrl/api/auth/me'),
