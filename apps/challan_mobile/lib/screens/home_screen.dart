@@ -19,25 +19,28 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
+  final PageController _pageController = PageController();
 
   // Production and Jobs live in the desktop `paper` package and are not wired
   // into the mobile app yet, so they show a placeholder for now.
   final List<Widget> _screens = const [
     ChallanStagingScreen(),
     ChallanTabScreen(),
-    DashboardScreen(),
     OrdersListScreen(),
     InventoryStockScreen(),
     ModulePlaceholderScreen(title: 'Production', icon: Icons.precision_manufacturing_outlined),
-    ModulePlaceholderScreen(title: 'Jobs', icon: Icons.work_outline),
-    UserManagementScreen(),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
+      body: PageView(
+        controller: _pageController,
+        onPageChanged: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
         children: _screens,
       ),
       bottomNavigationBar: NavigationBar(
@@ -46,6 +49,11 @@ class _HomeScreenState extends State<HomeScreen> {
         onDestinationSelected: (index) {
           setState(() {
             _currentIndex = index;
+            _pageController.animateToPage(
+              index,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+            );
           });
         },
         destinations: const [
@@ -56,11 +64,6 @@ class _HomeScreenState extends State<HomeScreen> {
           NavigationDestination(
             icon: Icon(Icons.edit_document),
             label: 'Challan',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard),
-            label: 'Dashboard',
           ),
           NavigationDestination(
             icon: Icon(Icons.receipt_long_outlined),
@@ -76,16 +79,6 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.precision_manufacturing_outlined),
             selectedIcon: Icon(Icons.precision_manufacturing),
             label: 'Production',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.work_outline),
-            selectedIcon: Icon(Icons.work),
-            label: 'Jobs',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.admin_panel_settings_outlined),
-            selectedIcon: Icon(Icons.admin_panel_settings),
-            label: 'Admin',
           ),
         ],
       ),

@@ -17,6 +17,7 @@ class ChallanMobileEditorScreen extends StatefulWidget {
     super.key,
     this.initialItems,
     this.lockedType,
+    this.initialVendorId,
   });
 
   /// Line items pre-collected by the Purchase browse flow. When provided, the
@@ -26,6 +27,9 @@ class ChallanMobileEditorScreen extends StatefulWidget {
   /// When set, the document-type dropdown is hidden and the type is fixed
   /// (the Purchase flow locks this to [ChallanType.reception]).
   final ChallanType? lockedType;
+  
+  /// Pre-select a vendor if navigating from a vendor-specific flow
+  final int? initialVendorId;
 
   @override
   State<ChallanMobileEditorScreen> createState() => _ChallanMobileEditorScreenState();
@@ -52,6 +56,7 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
   void initState() {
     super.initState();
     if (widget.lockedType != null) _type = widget.lockedType!;
+    if (widget.initialVendorId != null) _selectedVendorId = widget.initialVendorId;
     if (widget.initialItems != null) _items.addAll(widget.initialItems!);
     _fabAnimController = AnimationController(
       vsync: this,
@@ -162,25 +167,49 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
                     ),
                   ),
                   const SizedBox(height: 16),
-                  TextField(
-                    style: const TextStyle(fontSize: 18.0, fontWeight: FontWeight.w600, color: SoftErpTheme.textPrimary),
-                    decoration: InputDecoration(
-                      labelText: 'Weight (kg)',
-                      labelStyle: const TextStyle(color: SoftErpTheme.textSecondary, fontWeight: FontWeight.normal),
-                      filled: true,
-                      fillColor: SoftErpTheme.shellSurface,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(20),
-                        borderSide: BorderSide.none,
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          style: const TextStyle(fontSize: 18.0, fontWeight: FontWeight.w600, color: SoftErpTheme.textPrimary),
+                          decoration: InputDecoration(
+                            labelText: 'Weight (kg)',
+                            labelStyle: const TextStyle(color: SoftErpTheme.textSecondary, fontWeight: FontWeight.normal),
+                            filled: true,
+                            fillColor: SoftErpTheme.shellSurface,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(20),
+                              borderSide: BorderSide.none,
+                            ),
+                            prefixIcon: const Icon(Icons.scale, color: SoftErpTheme.accent),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20.0),
+                          ),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          controller: TextEditingController(text: weight.toString())..selection = TextSelection.collapsed(offset: weight.toString().length),
+                          onChanged: (v) {
+                            weight = double.tryParse(v) ?? 0.0;
+                          },
+                        ),
                       ),
-                      prefixIcon: const Icon(Icons.scale, color: SoftErpTheme.accent),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20.0),
-                    ),
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    controller: TextEditingController(text: weight.toString())..selection = TextSelection.collapsed(offset: weight.toString().length),
-                    onChanged: (v) {
-                      weight = double.tryParse(v) ?? 0.0;
-                    },
+                      const SizedBox(width: 12),
+                      FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+                          backgroundColor: SoftErpTheme.accent.withOpacity(0.1),
+                          foregroundColor: SoftErpTheme.accent,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          elevation: 0,
+                        ),
+                        onPressed: () {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            const SnackBar(content: Text('Fetching weight...'), behavior: SnackBarBehavior.floating),
+                          );
+                        },
+                        icon: const Icon(Icons.bluetooth_connected_rounded, size: 20),
+                        label: const Text('Fetch\nWeight', textAlign: TextAlign.center, style: TextStyle(fontSize: 13, height: 1.1, fontWeight: FontWeight.bold)),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 32),
                   SizedBox(
@@ -231,7 +260,7 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
     );
   }
 
-  void _addItem() async {
+  Future<ItemDefinition?> _selectProduct() async {
     final itemsProvider = context.read<ItemsProvider>();
     // In the Purchase (reception) flow only purchase-available items are offered.
     final availableItems = widget.lockedType == ChallanType.reception
@@ -240,11 +269,11 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
             .toList(growable: false)
         : itemsProvider.items;
     if (availableItems.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No items available.')));
-      return;
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No items available.')));
+      return null;
     }
 
-    final selectedItem = await showModalBottomSheet<ItemDefinition>(
+    return await showModalBottomSheet<ItemDefinition>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
@@ -319,7 +348,10 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
         );
       }
     );
+  }
 
+  void _addItem() async {
+    final selectedItem = await _selectProduct();
     if (selectedItem == null || !mounted) return;
 
     // Items with no variation properties skip the picker (it can never resolve
@@ -372,6 +404,104 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
       _items.add(newItem);
       _listKey.currentState?.insertItem(_items.length - 1, duration: const Duration(milliseconds: 400));
       setState(() {});
+    });
+  }
+
+  void _reselectMainItem(int idx) async {
+    final selectedItem = await _selectProduct();
+    if (selectedItem == null || !mounted) return;
+
+    VariationPathSelectionResult? variationResult;
+    if (selectedItem.topLevelProperties.isNotEmpty) {
+      variationResult = await showDialog<VariationPathSelectionResult>(
+        context: context,
+        builder: (ctx) => Dialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          insetPadding: const EdgeInsets.all(24),
+          child: SizedBox(
+            height: MediaQuery.of(context).size.height * 0.7,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: VariationPathSelectorDialog(
+                item: selectedItem,
+                initialRootPropertyId: null,
+                initialValueNodeIds: const [],
+              ),
+            ),
+          ),
+        ),
+      );
+      if (variationResult == null || !mounted) return;
+    }
+
+    final oldItem = _items[idx];
+    setState(() {
+      _items[idx] = DeliveryChallanItem(
+        id: oldItem.id,
+        orderItemId: oldItem.orderItemId,
+        productionRunId: oldItem.productionRunId,
+        itemId: selectedItem.id,
+        variationLeafNodeId: variationResult?.leaf?.id ?? 0,
+        variationPathLabel: variationResult?.leaf?.displayName ?? '',
+        variationPathNodeIds: variationResult?.valueNodeIds ?? const <int>[],
+        customVariationValues: variationResult?.customVariationValues ?? const <int, String>{},
+        particulars: selectedItem.displayName,
+        quantityPcs: oldItem.quantityPcs,
+        weight: oldItem.weight,
+        lineNo: oldItem.lineNo,
+        hsnCode: oldItem.hsnCode,
+        note: oldItem.note,
+      );
+    });
+  }
+
+  void _reselectVariation(int idx) async {
+    final oldItem = _items[idx];
+    final itemsProvider = context.read<ItemsProvider>();
+    final selectedItem = itemsProvider.items.cast<ItemDefinition?>().firstWhere((i) => i?.id == oldItem.itemId, orElse: () => null);
+    
+    if (selectedItem == null || selectedItem.topLevelProperties.isEmpty) return;
+
+    final variationResult = await showDialog<VariationPathSelectionResult>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        insetPadding: const EdgeInsets.all(24),
+        child: SizedBox(
+          height: MediaQuery.of(context).size.height * 0.7,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: VariationPathSelectorDialog(
+              item: selectedItem,
+              initialRootPropertyId: null,
+              initialValueNodeIds: oldItem.variationPathNodeIds,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    if (variationResult == null || !mounted) return;
+
+    setState(() {
+      _items[idx] = DeliveryChallanItem(
+        id: oldItem.id,
+        orderItemId: oldItem.orderItemId,
+        productionRunId: oldItem.productionRunId,
+        itemId: oldItem.itemId,
+        variationLeafNodeId: variationResult.leaf?.id ?? 0,
+        variationPathLabel: variationResult.leaf?.displayName ?? '',
+        variationPathNodeIds: variationResult.valueNodeIds,
+        customVariationValues: variationResult.customVariationValues,
+        particulars: oldItem.particulars,
+        quantityPcs: oldItem.quantityPcs,
+        weight: oldItem.weight,
+        lineNo: oldItem.lineNo,
+        hsnCode: oldItem.hsnCode,
+        note: oldItem.note,
+      );
     });
   }
 
@@ -626,14 +756,31 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              item.particulars, 
-                              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16.0, color: SoftErpTheme.textPrimary)
+                            InkWell(
+                              onTap: () => _reselectMainItem(idx),
+                              child: Text(
+                                item.particulars, 
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800, 
+                                  fontSize: 16.0, 
+                                  color: SoftErpTheme.accent,
+                                  decoration: TextDecoration.underline,
+                                  decorationColor: SoftErpTheme.accent,
+                                )
+                              ),
                             ),
                             const SizedBox(height: 4),
-                            Text(
-                              item.variationPathLabel, 
-                              style: const TextStyle(color: SoftErpTheme.textSecondary, fontSize: 13.0)
+                            InkWell(
+                              onTap: () => _reselectVariation(idx),
+                              child: Text(
+                                item.variationPathLabel, 
+                                style: const TextStyle(
+                                  color: SoftErpTheme.accent, 
+                                  fontSize: 13.0,
+                                  decoration: TextDecoration.underline,
+                                  decorationColor: SoftErpTheme.accent,
+                                )
+                              ),
                             ),
                             const SizedBox(height: 12),
                             Row(
@@ -689,12 +836,18 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
               ]
             ),
             child: FloatingActionButton.extended(
-              onPressed: _isSaving ? null : _addItem,
+              onPressed: _isSaving ? null : () {
+                if (widget.lockedType != null) {
+                  Navigator.of(context).pop(_items);
+                } else {
+                  _addItem();
+                }
+              },
               backgroundColor: SoftErpTheme.accent,
               foregroundColor: Colors.white,
-              elevation: 0, // Handled by container
-              icon: const Icon(Icons.add_rounded, size: 24),
-              label: const Text('Add Item', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+              elevation: 0,
+              icon: Icon(widget.lockedType != null ? Icons.add_shopping_cart_rounded : Icons.add_rounded, size: 24),
+              label: Text(widget.lockedType != null ? 'Add More Items' : 'Add Item', style: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.5)),
             ),
           );
         }
@@ -743,10 +896,29 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
                     ),
                   ),
                   actions: [
-                    IconButton(
-                      tooltip: 'Discard challan',
-                      icon: const Icon(Icons.delete_outline_rounded, color: Colors.white),
-                      onPressed: _discardChallan,
+                    Padding(
+                      padding: const EdgeInsets.only(right: 24.0),
+                      child: Center(
+                        child: InkWell(
+                          onTap: _discardChallan,
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFD64545),
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10)]
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.delete_outline_rounded, color: Colors.white, size: 18),
+                                SizedBox(width: 8),
+                                Text('Discard', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                     if (_items.isNotEmpty)
                       Padding(

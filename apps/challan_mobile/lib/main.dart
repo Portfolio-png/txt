@@ -20,6 +20,8 @@ import 'package:core_erp/features/delivery_challans/presentation/providers/deliv
 import 'package:core_erp/features/items/data/repositories/api_item_repository.dart';
 import 'package:core_erp/features/items/data/repositories/item_repository.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
+import 'package:core_erp/features/items/data/repositories/favorites_repository.dart';
+import 'package:core_erp/features/items/presentation/providers/favorites_provider.dart';
 import 'package:core_erp/features/orders/data/repositories/api_order_repository.dart';
 import 'package:core_erp/features/orders/data/repositories/order_repository.dart';
 import 'package:core_erp/features/orders/presentation/providers/orders_provider.dart';
@@ -29,6 +31,8 @@ import 'package:core_erp/features/units/presentation/providers/units_provider.da
 import 'package:core_erp/features/vendors/data/repositories/api_vendor_repository.dart';
 import 'package:core_erp/features/vendors/data/repositories/vendor_repository.dart';
 import 'package:core_erp/features/vendors/presentation/providers/vendors_provider.dart';
+import 'package:core_erp/features/vendors/data/repositories/vendor_history_repository.dart';
+import 'package:core_erp/features/vendors/presentation/providers/vendor_history_provider.dart';
 import 'package:core_erp/features/search/data/repositories/api_search_repository.dart';
 import 'package:core_erp/features/search/data/repositories/search_repository.dart';
 import 'package:core_erp/features/search/presentation/providers/search_provider.dart';
@@ -502,11 +506,23 @@ class MyApp extends StatelessWidget {
             useMockResponses: false,
           ),
         ),
+        Provider<VendorHistoryRepository>(
+          create: (context) => VendorHistoryRepository(
+            client: _authClient(context.read<AuthProvider>()),
+            baseUrl: apiUrl,
+          ),
+        ),
         Provider<ItemRepository>(
           create: (context) => ApiItemRepository(
             client: _authClient(context.read<AuthProvider>()),
             baseUrl: apiUrl,
             useMockResponses: false,
+          ),
+        ),
+        Provider<FavoritesRepository>(
+          create: (context) => FavoritesRepository(
+            client: _authClient(context.read<AuthProvider>()),
+            baseUrl: apiUrl,
           ),
         ),
         Provider<OrderRepository>(
@@ -570,9 +586,17 @@ class MyApp extends StatelessWidget {
           create: (context) => VendorsProvider(repository: context.read<VendorRepository>())..initialize(),
           update: (context, repository, previous) => previous ?? VendorsProvider(repository: repository)..initialize(),
         ),
+        ChangeNotifierProxyProvider<VendorHistoryRepository, VendorHistoryProvider>(
+          create: (context) => VendorHistoryProvider(repository: context.read<VendorHistoryRepository>()),
+          update: (context, repository, previous) => previous ?? VendorHistoryProvider(repository: repository),
+        ),
         ChangeNotifierProxyProvider<ItemRepository, ItemsProvider>(
           create: (context) => ItemsProvider(repository: context.read<ItemRepository>())..initialize(),
           update: (context, repository, previous) => previous ?? ItemsProvider(repository: repository)..initialize(),
+        ),
+        ChangeNotifierProxyProvider<FavoritesRepository, FavoritesProvider>(
+          create: (context) => FavoritesProvider(repository: context.read<FavoritesRepository>())..initialize(),
+          update: (context, repository, previous) => previous ?? FavoritesProvider(repository: repository)..initialize(),
         ),
         ChangeNotifierProxyProvider<ChallanRepository, DeliveryChallanProvider>(
           create: (context) => DeliveryChallanProvider(repository: context.read<ChallanRepository>())..initialize(),

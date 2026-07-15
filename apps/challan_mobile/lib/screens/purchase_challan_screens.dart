@@ -8,9 +8,15 @@ import 'package:core_erp/features/groups/domain/group_definition.dart';
 import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
 import 'package:core_erp/features/items/domain/item_definition.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
+import 'package:core_erp/features/items/presentation/providers/favorites_provider.dart';
+import 'package:core_erp/features/vendors/domain/vendor_definition.dart';
+import 'package:core_erp/features/vendors/presentation/providers/vendors_provider.dart';
+import 'package:core_erp/features/vendors/presentation/providers/vendor_history_provider.dart';
 import 'package:core_erp/widgets/variation_path_selector_dialog.dart';
 
 import 'challan_mobile_editor_screen.dart';
+
+final List<DeliveryChallanItem> activePurchaseLines = [];
 
 /// Challan tab entry point: choose Purchase (reception) or Sale (delivery).
 /// Only Purchase is enabled for now; Sale is shown as "coming soon".
@@ -19,6 +25,8 @@ class ChallanTabScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vendors = context.watch<VendorsProvider>().vendors.where((v) => !v.isArchived).toList(growable: false);
+
     return Scaffold(
       backgroundColor: SoftErpTheme.shellSurface,
       appBar: AppBar(
@@ -51,6 +59,20 @@ class ChallanTabScreen extends StatelessWidget {
                 disabled: true,
                 onTap: () {},
               ),
+              if (vendors.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                _ChoiceCard(
+                  title: 'Vendor',
+                  subtitle: 'Re-order past purchases',
+                  icon: Icons.storefront_rounded,
+                  color: const Color(0xFFE57373),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => VendorBrowseScreen(lines: activePurchaseLines),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -167,13 +189,13 @@ class PurchaseGroupBrowseScreen extends StatefulWidget {
 }
 
 class _PurchaseGroupBrowseScreenState extends State<PurchaseGroupBrowseScreen> {
-  final List<DeliveryChallanItem> _lines = [];
   bool _reviewing = false;
 
   @override
   Widget build(BuildContext context) {
     final itemsProvider = context.watch<ItemsProvider>();
     final groupsProvider = context.watch<GroupsProvider>();
+    final favPurchases = context.watch<FavoritesProvider>().favorites;
 
     final purchaseItems = itemsProvider.items
         .where((i) => i.availableForPurchase && !i.isArchived)
@@ -183,6 +205,46 @@ class _PurchaseGroupBrowseScreenState extends State<PurchaseGroupBrowseScreen> {
         .where((g) => !g.isArchived && groupIdsWithPurchase.contains(g.id))
         .toList(growable: false);
 
+    final listItems = <Widget>[];
+
+    if (favPurchases.isNotEmpty) {
+      listItems.add(
+        _BrowseTile(
+          icon: Icons.favorite_rounded,
+          title: 'Favorites',
+          subtitle: '${favPurchases.length} item${favPurchases.length == 1 ? '' : 's'}',
+          onTap: () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => FavoriteItemBrowseScreen(lines: activePurchaseLines),
+              ),
+            );
+            if (mounted) setState(() {});
+          },
+        ),
+      );
+    }
+
+
+    for (final group in groups) {
+      final count = purchaseItems.where((i) => i.groupId == group.id).length;
+      listItems.add(
+        _BrowseTile(
+          icon: Icons.folder_open_rounded,
+          title: group.name,
+          subtitle: '$count item${count == 1 ? '' : 's'}',
+          onTap: () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => PurchaseItemBrowseScreen(group: group, lines: activePurchaseLines),
+              ),
+            );
+            if (mounted) setState(() {}); // refresh cart count
+          },
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: SoftErpTheme.shellSurface,
       appBar: AppBar(
@@ -191,15 +253,15 @@ class _PurchaseGroupBrowseScreenState extends State<PurchaseGroupBrowseScreen> {
         surfaceTintColor: Colors.white,
         elevation: 0,
         actions: [
-          if (_lines.isNotEmpty)
+          if (activePurchaseLines.isNotEmpty)
             IconButton(
               tooltip: 'Discard challan',
               icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFD64545)),
-              onPressed: () => confirmDiscardChallan(context, _lines),
+              onPressed: () => confirmDiscardChallan(context, activePurchaseLines),
             ),
         ],
       ),
-      body: groups.isEmpty
+      body: groups.isEmpty && favPurchases.isEmpty
           ? const _EmptyHint(
               icon: Icons.category_outlined,
               title: 'No purchase items yet',
@@ -207,27 +269,11 @@ class _PurchaseGroupBrowseScreenState extends State<PurchaseGroupBrowseScreen> {
             )
           : ListView.separated(
               padding: const EdgeInsets.all(16),
-              itemCount: groups.length,
+              itemCount: listItems.length,
               separatorBuilder: (_, _) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                final group = groups[index];
-                final count = purchaseItems.where((i) => i.groupId == group.id).length;
-                return _BrowseTile(
-                  icon: Icons.folder_open_rounded,
-                  title: group.name,
-                  subtitle: '$count item${count == 1 ? '' : 's'}',
-                  onTap: () async {
-                    await Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => PurchaseItemBrowseScreen(group: group, lines: _lines),
-                      ),
-                    );
-                    if (mounted) setState(() {}); // refresh cart count
-                  },
-                );
-              },
+              itemBuilder: (context, index) => listItems[index],
             ),
-      bottomNavigationBar: _lines.isEmpty
+      bottomNavigationBar: activePurchaseLines.isEmpty
           ? null
           : SafeArea(
               minimum: const EdgeInsets.all(16),
@@ -238,22 +284,182 @@ class _PurchaseGroupBrowseScreenState extends State<PurchaseGroupBrowseScreen> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                 ),
                 icon: const Icon(Icons.receipt_long_rounded),
-                label: Text('Review Challan (${_lines.length})', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                label: Text('Review Challan (${activePurchaseLines.length})', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
                 onPressed: () async {
                   if (_reviewing) return; // guard against a double-tap opening two editors
                   _reviewing = true;
-                  final done = await Navigator.of(context).push<bool>(
+                  final done = await Navigator.of(context).push<dynamic>(
                     MaterialPageRoute(
                       builder: (_) => ChallanMobileEditorScreen(
-                        initialItems: List<DeliveryChallanItem>.of(_lines),
+                        initialItems: List<DeliveryChallanItem>.of(activePurchaseLines),
                         lockedType: ChallanType.reception,
                       ),
                     ),
                   );
                   _reviewing = false;
-                  if (done == true && mounted) setState(() => _lines.clear());
+                  if (!mounted) return;
+                  if (done == true) {
+                    setState(() => activePurchaseLines.clear());
+                  } else if (done is List<DeliveryChallanItem>) {
+                    setState(() {
+                      activePurchaseLines.clear();
+                      activePurchaseLines.addAll(done);
+                    });
+                  }
                 },
               ),
+            ),
+    );
+  }
+}
+
+class FavoriteItemBrowseScreen extends StatefulWidget {
+  const FavoriteItemBrowseScreen({super.key, required this.lines, this.group});
+
+  final List<DeliveryChallanItem> lines;
+  final GroupDefinition? group;
+
+  @override
+  State<FavoriteItemBrowseScreen> createState() => _FavoriteItemBrowseScreenState();
+}
+
+class _FavoriteItemBrowseScreenState extends State<FavoriteItemBrowseScreen> {
+  bool _reviewing = false;
+
+  Future<void> _goToChallan() async {
+    if (_reviewing) return;
+    _reviewing = true;
+    final done = await Navigator.of(context).push<dynamic>(
+      MaterialPageRoute(
+        builder: (_) => ChallanMobileEditorScreen(
+          initialItems: List<DeliveryChallanItem>.of(widget.lines),
+          lockedType: ChallanType.reception,
+        ),
+      ),
+    );
+    _reviewing = false;
+    if (!mounted) return;
+    if (done == true) {
+      widget.lines.clear();
+      Navigator.of(context).pop();
+    } else if (done is List<DeliveryChallanItem>) {
+      setState(() {
+        widget.lines.clear();
+        widget.lines.addAll(done);
+      });
+    }
+  }
+
+  void _pickFav(DeliveryChallanItem favItem) {
+    showPurchaseQuantitySheet(
+      context,
+      initialFavorite: true,
+      onConfirm: (qty, weight, isFav) {
+        final newItem = DeliveryChallanItem(
+          id: 0,
+          orderItemId: null,
+          productionRunId: null,
+          itemId: favItem.itemId,
+          variationLeafNodeId: favItem.variationLeafNodeId,
+          variationPathLabel: favItem.variationPathLabel,
+          variationPathNodeIds: favItem.variationPathNodeIds,
+          customVariationValues: favItem.customVariationValues,
+          particulars: favItem.particulars,
+          quantityPcs: qty,
+          weight: weight,
+          lineNo: widget.lines.length + 1,
+          hsnCode: '',
+          note: '',
+        );
+        
+        if (!isFav) {
+          context.read<FavoritesProvider>().toggleFavorite(favItem, false);
+        }
+        
+        widget.lines.add(newItem);
+        setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Added ${favItem.particulars}'),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 900),
+        ),
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final itemsProvider = context.watch<ItemsProvider>();
+    final favProvider = context.watch<FavoritesProvider>();
+    final favPurchases = favProvider.favorites;
+    final addedInGroup = widget.lines.length;
+
+    final displayFavs = widget.group == null
+        ? favPurchases
+        : favPurchases.where((f) {
+            return itemsProvider.items.any((item) => item.id == f.itemId && item.groupId == widget.group!.id);
+          }).toList(growable: false);
+
+    return Scaffold(
+      backgroundColor: SoftErpTheme.shellSurface,
+      appBar: AppBar(
+        title: Text(widget.group == null ? 'Favorites' : 'Fav ${widget.group!.name}', style: const TextStyle(fontWeight: FontWeight.w900)),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        elevation: 0,
+        actions: [
+          if (addedInGroup > 0)
+            Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(color: SoftErpTheme.accent.withOpacity(0.12), borderRadius: BorderRadius.circular(999)),
+                child: Text('$addedInGroup in challan', style: const TextStyle(color: SoftErpTheme.accent, fontWeight: FontWeight.w800, fontSize: 12)),
+              ),
+            ),
+          if (widget.lines.isNotEmpty)
+            IconButton(
+              tooltip: 'Discard challan',
+              icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFD64545)),
+              onPressed: () => confirmDiscardChallan(context, widget.lines),
+            ),
+        ],
+      ),
+      bottomNavigationBar: widget.lines.isEmpty
+          ? null
+          : SafeArea(
+              minimum: const EdgeInsets.all(16),
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(56),
+                  backgroundColor: SoftErpTheme.accent,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                ),
+                icon: const Icon(Icons.arrow_forward_rounded),
+                label: Text('Next  ·  Review Challan (${widget.lines.length})', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                onPressed: _goToChallan,
+              ),
+            ),
+      body: displayFavs.isEmpty
+          ? const _EmptyHint(
+              icon: Icons.favorite_border_rounded,
+              title: 'No favorite items',
+              message: 'Favorite items when entering quantity to see them here.',
+            )
+          : ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: displayFavs.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                final item = displayFavs[index];
+                return _BrowseTile(
+                  icon: Icons.favorite_rounded,
+                  title: item.particulars,
+                  subtitle: item.variationPathLabel,
+                  trailing: const Icon(Icons.add_circle_outline_rounded, color: SoftErpTheme.accent),
+                  onTap: () => _pickFav(item),
+                );
+              },
             ),
     );
   }
@@ -280,7 +486,7 @@ class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
   Future<void> _goToChallan() async {
     if (_reviewing) return;
     _reviewing = true;
-    final done = await Navigator.of(context).push<bool>(
+    final done = await Navigator.of(context).push<dynamic>(
       MaterialPageRoute(
         builder: (_) => ChallanMobileEditorScreen(
           initialItems: List<DeliveryChallanItem>.of(widget.lines),
@@ -293,6 +499,11 @@ class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
     if (done == true) {
       widget.lines.clear();
       Navigator.of(context).pop();
+    } else if (done is List<DeliveryChallanItem>) {
+      setState(() {
+        widget.lines.clear();
+        widget.lines.addAll(done);
+      });
     }
   }
 
@@ -324,14 +535,20 @@ class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
       if (variation == null || !mounted) return;
     }
 
-    showPurchaseQuantitySheet(context, (qty, weight) {
-      widget.lines.add(
-        DeliveryChallanItem(
+    final leafNodeId = variation?.leaf?.id ?? 0;
+    final favProvider = context.read<FavoritesProvider>();
+    final existingFav = favProvider.isFavorite(item.id, leafNodeId);
+
+    showPurchaseQuantitySheet(
+      context,
+      initialFavorite: existingFav,
+      onConfirm: (qty, weight, isFav) {
+        final newItem = DeliveryChallanItem(
           id: 0,
           orderItemId: null,
           productionRunId: null,
           itemId: item.id,
-          variationLeafNodeId: variation?.leaf?.id ?? 0,
+          variationLeafNodeId: leafNodeId,
           variationPathLabel: variation?.leaf?.displayName ?? '',
           variationPathNodeIds: variation?.valueNodeIds ?? const <int>[],
           customVariationValues: variation?.customVariationValues ?? const <int, String>{},
@@ -341,9 +558,16 @@ class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
           lineNo: widget.lines.length + 1,
           hsnCode: '',
           note: '',
-        ),
-      );
-      setState(() {});
+        );
+
+        if (isFav && !existingFav) {
+          favProvider.toggleFavorite(newItem, true);
+        } else if (!isFav && existingFav) {
+          favProvider.toggleFavorite(newItem, false);
+        }
+
+        widget.lines.add(newItem);
+        setState(() {});
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Added ${item.displayName}'),
@@ -357,10 +581,16 @@ class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
   @override
   Widget build(BuildContext context) {
     final itemsProvider = context.watch<ItemsProvider>();
+    final favProvider = context.watch<FavoritesProvider>();
+    final favPurchases = favProvider.favorites;
     final items = itemsProvider.items
         .where((i) => i.availableForPurchase && !i.isArchived && i.groupId == widget.group.id)
         .toList(growable: false);
     final addedInGroup = widget.lines.length;
+
+    final groupFavs = favPurchases.where((f) {
+      return itemsProvider.items.any((item) => item.id == f.itemId && item.groupId == widget.group.id);
+    }).toList(growable: false);
 
     return Scaffold(
       backgroundColor: SoftErpTheme.shellSurface,
@@ -402,7 +632,7 @@ class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
                 onPressed: _goToChallan,
               ),
             ),
-      body: items.isEmpty
+      body: items.isEmpty && groupFavs.isEmpty
           ? const _EmptyHint(
               icon: Icons.inventory_2_outlined,
               title: 'No purchase items in this group',
@@ -410,10 +640,30 @@ class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
             )
           : ListView.separated(
               padding: const EdgeInsets.all(16),
-              itemCount: items.length,
+              itemCount: items.length + (groupFavs.isNotEmpty ? 1 : 0),
               separatorBuilder: (_, _) => const SizedBox(height: 12),
               itemBuilder: (context, index) {
-                final item = items[index];
+                if (groupFavs.isNotEmpty && index == 0) {
+                  return _BrowseTile(
+                    icon: Icons.favorite_rounded,
+                    title: 'Favorites in ${widget.group.name}',
+                    subtitle: '${groupFavs.length} item${groupFavs.length == 1 ? '' : 's'}',
+                    onTap: () async {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => FavoriteItemBrowseScreen(
+                            lines: widget.lines,
+                            group: widget.group,
+                          ),
+                        ),
+                      );
+                      if (mounted) setState(() {});
+                    },
+                  );
+                }
+
+                final itemIndex = groupFavs.isNotEmpty ? index - 1 : index;
+                final item = items[itemIndex];
                 return _BrowseTile(
                   icon: Icons.inventory_2_rounded,
                   title: item.displayName,
@@ -430,11 +680,13 @@ class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
 /// Lean quantity + weight sheet. Calls [onConfirm] with the entered values as
 /// strings (matching DeliveryChallanItem's quantityPcs/weight).
 void showPurchaseQuantitySheet(
-  BuildContext context,
-  void Function(String qty, String weight) onConfirm,
-) {
+  BuildContext context, {
+  bool initialFavorite = false,
+  required void Function(String qty, String weight, bool isFavorite) onConfirm,
+}) {
   int qty = 1;
   final weightController = TextEditingController();
+  bool isFavorite = initialFavorite;
 
   showModalBottomSheet(
     context: context,
@@ -466,7 +718,16 @@ void showPurchaseQuantitySheet(
                   ),
                 ),
                 const SizedBox(height: 20),
-                const Text('Set Quantity', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: SoftErpTheme.textPrimary)),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Set Quantity', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: SoftErpTheme.textPrimary)),
+                    IconButton(
+                      icon: Icon(isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: isFavorite ? Colors.red : Colors.grey),
+                      onPressed: () => setModalState(() => isFavorite = !isFavorite),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 20),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -485,16 +746,40 @@ void showPurchaseQuantitySheet(
                   ],
                 ),
                 const SizedBox(height: 20),
-                TextField(
-                  controller: weightController,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
-                  decoration: InputDecoration(
-                    labelText: 'Weight (kg) — optional',
-                    filled: true,
-                    fillColor: const Color(0xFFF8F9FD),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-                  ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: weightController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+                        decoration: InputDecoration(
+                          labelText: 'Weight (kg) — optional',
+                          filled: true,
+                          fillColor: const Color(0xFFF8F9FD),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                        backgroundColor: SoftErpTheme.accent.withOpacity(0.1),
+                        foregroundColor: SoftErpTheme.accent,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        elevation: 0,
+                      ),
+                      onPressed: () {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          const SnackBar(content: Text('Fetching weight...'), behavior: SnackBarBehavior.floating),
+                        );
+                      },
+                      icon: const Icon(Icons.bluetooth_connected_rounded, size: 20),
+                      label: const Text('Fetch\nWeight', textAlign: TextAlign.center, style: TextStyle(fontSize: 13, height: 1.1, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 24),
                 FilledButton(
@@ -506,7 +791,7 @@ void showPurchaseQuantitySheet(
                   onPressed: () {
                     final weight = double.tryParse(weightController.text.trim()) ?? 0.0;
                     Navigator.of(ctx).pop();
-                    onConfirm('$qty', weight == 0 ? '0.0' : '$weight');
+                    onConfirm('$qty', weight == 0 ? '0.0' : '$weight', isFavorite);
                   },
                   child: const Text('Confirm Details', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
                 ),
@@ -609,14 +894,249 @@ class _EmptyHint extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 56, color: SoftErpTheme.textSecondary),
-            const SizedBox(height: 16),
-            Text(title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: SoftErpTheme.textPrimary)),
-            const SizedBox(height: 8),
-            Text(message, textAlign: TextAlign.center, style: const TextStyle(color: SoftErpTheme.textSecondary, fontSize: 14, fontWeight: FontWeight.w500)),
           ],
         ),
       ),
     );
   }
 }
+
+class VendorBrowseScreen extends StatefulWidget {
+  final List<DeliveryChallanItem> lines;
+  const VendorBrowseScreen({super.key, required this.lines});
+
+  @override
+  State<VendorBrowseScreen> createState() => _VendorBrowseScreenState();
+}
+
+class _VendorBrowseScreenState extends State<VendorBrowseScreen> {
+  bool _reviewing = false;
+
+  Future<void> _goToChallan() async {
+    if (_reviewing) return;
+    _reviewing = true;
+    final done = await Navigator.of(context).push<dynamic>(
+      MaterialPageRoute(
+        builder: (_) => ChallanMobileEditorScreen(
+          initialItems: List<DeliveryChallanItem>.of(widget.lines),
+          lockedType: ChallanType.reception,
+        ),
+      ),
+    );
+    _reviewing = false;
+    if (!mounted) return;
+    if (done == true) {
+      widget.lines.clear();
+      Navigator.of(context).pop();
+    } else if (done is List<DeliveryChallanItem>) {
+      setState(() {
+        widget.lines.clear();
+        widget.lines.addAll(done);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vendors = context.watch<VendorsProvider>().vendors.where((v) => !v.isArchived).toList(growable: false);
+    final addedInGroup = widget.lines.length;
+
+    return Scaffold(
+      backgroundColor: SoftErpTheme.shellSurface,
+      appBar: AppBar(
+        title: const Text('Browse Vendors', style: TextStyle(fontWeight: FontWeight.w900)),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        elevation: 0,
+      ),
+      body: vendors.isEmpty
+          ? const _EmptyHint(
+              icon: Icons.storefront_outlined,
+              title: 'No vendors found',
+              message: 'Add vendors in the desktop app first.',
+            )
+          : ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: vendors.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                final v = vendors[index];
+                return _BrowseTile(
+                  icon: Icons.storefront_rounded,
+                  title: v.name,
+                  subtitle: v.gstNumber.isNotEmpty ? 'GST: ${v.gstNumber}' : 'Vendor',
+                  onTap: () async {
+                    await Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => VendorHistoryBrowseScreen(vendor: v, lines: widget.lines),
+                      ),
+                    );
+                    if (mounted) setState(() {});
+                  },
+                );
+              },
+            ),
+      bottomNavigationBar: addedInGroup == 0
+          ? null
+          : SafeArea(
+              minimum: const EdgeInsets.all(16),
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(56),
+                  backgroundColor: SoftErpTheme.accent,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                ),
+                icon: const Icon(Icons.receipt_long_rounded),
+                label: Text('Review $addedInGroup Item${addedInGroup == 1 ? '' : 's'}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                onPressed: _goToChallan,
+              ),
+            ),
+    );
+  }
+}
+
+class VendorHistoryBrowseScreen extends StatefulWidget {
+  final VendorDefinition vendor;
+  final List<DeliveryChallanItem> lines;
+
+  const VendorHistoryBrowseScreen({super.key, required this.vendor, required this.lines});
+
+  @override
+  State<VendorHistoryBrowseScreen> createState() => _VendorHistoryBrowseScreenState();
+}
+
+class _VendorHistoryBrowseScreenState extends State<VendorHistoryBrowseScreen> {
+  bool _reviewing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<VendorHistoryProvider>().loadHistoryForVendor(widget.vendor.id);
+    });
+  }
+
+  Future<void> _goToChallan() async {
+    if (_reviewing) return;
+    _reviewing = true;
+    final done = await Navigator.of(context).push<dynamic>(
+      MaterialPageRoute(
+        builder: (_) => ChallanMobileEditorScreen(
+          initialItems: List<DeliveryChallanItem>.of(widget.lines),
+          lockedType: ChallanType.reception,
+          initialVendorId: widget.vendor.id,
+        ),
+      ),
+    );
+    _reviewing = false;
+    if (!mounted) return;
+    if (done == true) {
+      widget.lines.clear();
+      // Reload the history so the newly submitted purchase appears
+      context.read<VendorHistoryProvider>().loadHistoryForVendor(widget.vendor.id);
+      
+      // pop twice to go back to groups screen
+      Navigator.of(context).pop();
+      Navigator.of(context).pop();
+    } else if (done is List<DeliveryChallanItem>) {
+      setState(() {
+        widget.lines.clear();
+        widget.lines.addAll(done);
+      });
+    }
+  }
+
+  void _pickHistoryItem(DeliveryChallanItem historyItem) {
+    showPurchaseQuantitySheet(
+      context,
+      initialFavorite: false, // You could hook this up to FavoritesProvider if desired
+      onConfirm: (qty, weight, isFav) {
+        final newItem = DeliveryChallanItem(
+          id: 0,
+          orderItemId: null,
+          productionRunId: null,
+          itemId: historyItem.itemId,
+          variationLeafNodeId: historyItem.variationLeafNodeId,
+          variationPathLabel: historyItem.variationPathLabel,
+          variationPathNodeIds: historyItem.variationPathNodeIds,
+          customVariationValues: historyItem.customVariationValues,
+          particulars: historyItem.particulars,
+          quantityPcs: qty,
+          weight: weight,
+          lineNo: widget.lines.length + 1,
+          hsnCode: '',
+          note: '',
+        );
+
+        if (isFav) {
+          context.read<FavoritesProvider>().toggleFavorite(newItem, true);
+        }
+
+        widget.lines.add(newItem);
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Added \${historyItem.particulars}'),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(milliseconds: 900),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final historyProvider = context.watch<VendorHistoryProvider>();
+    final history = historyProvider.getHistoryForVendor(widget.vendor.id);
+    final addedInGroup = widget.lines.length;
+
+    return Scaffold(
+      backgroundColor: SoftErpTheme.shellSurface,
+      appBar: AppBar(
+        title: Text(widget.vendor.name, style: const TextStyle(fontWeight: FontWeight.w900)),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        elevation: 0,
+      ),
+      body: historyProvider.isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : history.isEmpty
+              ? const _EmptyHint(
+                  icon: Icons.history_rounded,
+                  title: 'No past purchases',
+                  message: 'You have not purchased anything from this vendor yet.',
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: history.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 12),
+                  itemBuilder: (context, index) {
+                    final h = history[index];
+                    return _BrowseTile(
+                      icon: Icons.history_rounded,
+                      title: h.particulars,
+                      subtitle: h.variationPathLabel.isNotEmpty ? h.variationPathLabel : 'Standard',
+                      onTap: () => _pickHistoryItem(h),
+                    );
+                  },
+                ),
+      bottomNavigationBar: addedInGroup == 0
+          ? null
+          : SafeArea(
+              minimum: const EdgeInsets.all(16),
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(56),
+                  backgroundColor: SoftErpTheme.accent,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                ),
+                icon: const Icon(Icons.receipt_long_rounded),
+                label: Text('Review $addedInGroup Item${addedInGroup == 1 ? '' : 's'}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                onPressed: _goToChallan,
+              ),
+            ),
+    );
+  }
+}
+
