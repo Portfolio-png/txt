@@ -383,7 +383,7 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
                   useTilesForValues: true,
                   onCreateValue: ({required item, required propertyNodeId, required propertyLabel, required valueName}) {
                     return context.read<ItemsProvider>().appendVariationValue(
-                      item: item,
+                      itemId: item.id,
                       propertyNodeId: propertyNodeId,
                       valueName: valueName,
                     );
@@ -548,7 +548,7 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
               useTilesForValues: true,
               onCreateValue: ({required item, required propertyNodeId, required propertyLabel, required valueName}) {
                 return context.read<ItemsProvider>().appendVariationValue(
-                  item: item,
+                  itemId: item.id,
                   propertyNodeId: propertyNodeId,
                   valueName: valueName,
                 );

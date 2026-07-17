@@ -287,7 +287,7 @@ class _PurchaseGroupBrowseScreenState extends State<PurchaseGroupBrowseScreen> {
                 useTilesForValues: true,
                 onCreateValue: ({required item, required propertyNodeId, required propertyLabel, required valueName}) {
                   return context.read<ItemsProvider>().appendVariationValue(
-                    item: item,
+                    itemId: item.id,
                     propertyNodeId: propertyNodeId,
                     valueName: valueName,
                   );
@@ -708,7 +708,7 @@ class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
                 useTilesForValues: true,
                 onCreateValue: ({required item, required propertyNodeId, required propertyLabel, required valueName}) {
                   return context.read<ItemsProvider>().appendVariationValue(
-                    item: item,
+                    itemId: item.id,
                     propertyNodeId: propertyNodeId,
                     valueName: valueName,
                   );
