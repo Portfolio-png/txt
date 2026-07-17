@@ -693,12 +693,12 @@ class _SettingsPreferencesDialogState
     );
   }
 
-  Future<void> _handleResetAndReseed() async {
+  Future<void> _handleResetAndReseed(String scenarioId) async {
     setState(() {
       _isResetting = true;
     });
     final auth = context.read<AuthProvider>();
-    final success = await auth.resetDemoData();
+    final success = await auth.resetDemoData(scenarioId: scenarioId);
     if (!mounted) {
       return;
     }
@@ -899,7 +899,7 @@ class _SettingsPreferencesDialogState
                           OutlinedButton(
                             onPressed: _isResetting
                                 ? null
-                                : _handleResetAndReseed,
+                                : () => _handleResetAndReseed('default'),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: SoftErpTheme.accent,
                               side: const BorderSide(
@@ -911,7 +911,43 @@ class _SettingsPreferencesDialogState
                               ),
                             ),
                             child: Text(
-                              _isResetting ? 'Working…' : 'Reset + Reseed Demo',
+                              _isResetting ? 'Working…' : 'Seed Electrical',
+                            ),
+                          ),
+                          OutlinedButton(
+                            onPressed: _isResetting
+                                ? null
+                                : () => _handleResetAndReseed('manufacturing'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: SoftErpTheme.accent,
+                              side: const BorderSide(
+                                color: SoftErpTheme.accent,
+                              ),
+                              minimumSize: const Size(168, 44),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            child: Text(
+                              _isResetting ? 'Working…' : 'Seed Manufacturing',
+                            ),
+                          ),
+                          OutlinedButton(
+                            onPressed: _isResetting
+                                ? null
+                                : () => _handleResetAndReseed('mobiles'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: SoftErpTheme.accent,
+                              side: const BorderSide(
+                                color: SoftErpTheme.accent,
+                              ),
+                              minimumSize: const Size(168, 44),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            child: Text(
+                              _isResetting ? 'Working…' : 'Seed Mobiles',
                             ),
                           ),
                           FilledButton(

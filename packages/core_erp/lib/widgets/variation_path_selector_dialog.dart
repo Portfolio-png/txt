@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../core/theme/soft_erp_theme.dart';
 import '../core/widgets/app_button.dart';
 import '../core/widgets/searchable_select.dart';
@@ -53,6 +54,7 @@ class VariationPathSelectorWidget extends StatefulWidget {
     this.onCreateValue,
     this.readOnly = false,
     this.showHeaderAndFooter = false,
+    this.useTilesForValues = false,
     this.onChanged,
     this.onComplete,
     this.onCancel,
@@ -65,6 +67,7 @@ class VariationPathSelectorWidget extends StatefulWidget {
   final VariationValueCreator? onCreateValue;
   final bool readOnly;
   final bool showHeaderAndFooter;
+  final bool useTilesForValues;
   final ValueChanged<VariationPathSelectionResult>? onChanged;
   final ValueChanged<VariationPathSelectionResult>? onComplete;
   final VoidCallback? onCancel;
@@ -95,6 +98,16 @@ class _VariationPathSelectorWidgetState
   }
 
   @override
+  void didUpdateWidget(covariant VariationPathSelectorWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.item != oldWidget.item) {
+      setState(() {
+        _item = widget.item;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final steps = _allVariationSteps();
     final selectedLeaf = _resolveLeafFromSelection();
@@ -117,7 +130,7 @@ class _VariationPathSelectorWidgetState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Select Variation Path',
+                        'Choose Variety',
                         style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(
                               fontWeight: FontWeight.w700,
@@ -181,37 +194,7 @@ class _VariationPathSelectorWidgetState
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    for (
-                      var stepIndex = 0;
-                      stepIndex < steps.length;
-                      stepIndex++
-                    ) ...[
-                      if (stepIndex == 0 || steps[stepIndex].groupName != steps[stepIndex - 1].groupName) ...[
-                        if (steps[stepIndex].groupName != null) ...[
-                          Padding(
-                            padding: EdgeInsets.only(
-                              top: stepIndex == 0 ? 0 : 16,
-                              bottom: 8,
-                              left: 4,
-                            ),
-                            child: Text(
-                              steps[stepIndex].groupName!,
-                              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                color: SoftErpTheme.textSecondary,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                      _buildStepRow(
-                        title: _variationStepTitle(steps[stepIndex]),
-                        isComplete: steps[stepIndex].selectedValueId != null,
-                        child: _buildStepField(steps[stepIndex]),
-                      ),
-                      if (stepIndex != steps.length - 1)
-                        const SizedBox(height: 12),
-                    ],
+                    ..._buildStepsList(steps),
                   ],
                 ),
               ),
@@ -246,19 +229,25 @@ class _VariationPathSelectorWidgetState
               ),
             ),
             const SizedBox(height: 20),
-            Wrap(
-              alignment: WrapAlignment.end,
-              spacing: 10,
-              runSpacing: 10,
+            Row(
               children: [
+                if (!widget.readOnly) ...[
+                  AppButton(
+                    label: 'Base',
+                    variant: AppButtonVariant.secondary,
+                    onPressed: _selectBasePath,
+                  ),
+                  const SizedBox(width: 10),
+                ],
                 AppButton(
                   label: widget.readOnly ? 'Close' : 'Cancel',
                   variant: AppButtonVariant.secondary,
                   onPressed: () => widget.onCancel?.call(),
                 ),
+                const Spacer(),
                 if (!widget.readOnly)
                   AppButton(
-                    label: 'Apply Path',
+                    label: 'Apply',
                     onPressed: selectedLeaf == null ? null : _submit,
                   ),
               ],
@@ -325,6 +314,83 @@ class _VariationPathSelectorWidgetState
           }
           setState(() {});
           _notifyChanges();
+        },
+      );
+    }
+
+    if (widget.useTilesForValues && !isNumeric) {
+      final options = [
+        ...step.values.map(
+          (value) => SearchableSelectOption<int>(
+            value: value.id,
+            label: value.name.trim().isEmpty
+                ? value.displayName
+                : value.name.trim(),
+          ),
+        ),
+        if (step.selectedValueId != null &&
+            step.selectedValueId! < 0 &&
+            step.selectedValueId == -step.property.id)
+          SearchableSelectOption<int>(
+            value: -step.property.id,
+            label: _customVariationValues[step.property.id] ?? 'Custom',
+          ),
+      ];
+
+      return GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          childAspectRatio: 2.5,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
+        ),
+        itemCount: options.length,
+        itemBuilder: (context, index) {
+          final option = options[index];
+          final isSelected = step.selectedValueId == option.value;
+          return InkWell(
+            onTap: widget.readOnly
+                ? null
+                : () {
+                    setState(() {
+                      _replaceSelectionUnderProperty(
+                        step.property,
+                        <int>[option.value],
+                      );
+                    });
+                    _notifyChanges();
+                  },
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? SoftErpTheme.accentSoft
+                    : SoftErpTheme.shellSurface,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: isSelected
+                      ? SoftErpTheme.accent
+                      : SoftErpTheme.border,
+                  width: isSelected ? 2 : 1,
+                ),
+              ),
+              child: Text(
+                option.label,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: isSelected
+                      ? SoftErpTheme.accent
+                      : SoftErpTheme.textPrimary,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          );
         },
       );
     }
@@ -444,6 +510,100 @@ class _VariationPathSelectorWidgetState
     final name = step.property.name.trim();
     return name.isEmpty ? 'Property ${step.property.id}' : name;
   }
+  List<Widget> _buildStepsList(List<VariationStep> steps) {
+    if (steps.isEmpty) return const [];
+    
+    final groups = <String?, List<VariationStep>>{};
+    for (final step in steps) {
+      groups.putIfAbsent(step.groupName, () => []).add(step);
+    }
+    
+    final widgets = <Widget>[];
+    var isFirstGroup = true;
+    for (final groupEntry in groups.entries) {
+      final groupName = groupEntry.key;
+      final groupSteps = groupEntry.value;
+      
+      if (groupName != null) {
+        widgets.add(
+          Padding(
+            padding: EdgeInsets.only(
+              top: isFirstGroup ? 0 : 16,
+              bottom: 8,
+              left: 4,
+            ),
+            child: Text(
+              groupName,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: SoftErpTheme.textSecondary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        );
+      }
+      isFirstGroup = false;
+
+      if (widget.useTilesForValues) {
+        for (var i = 0; i < groupSteps.length; i += 2) {
+          final step1 = groupSteps[i];
+          final step2 = i + 1 < groupSteps.length ? groupSteps[i + 1] : null;
+          
+          widgets.add(
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _buildStepRow(
+                    title: _variationStepTitle(step1),
+                    isComplete: step1.selectedValueId != null,
+                    child: _buildStepField(step1),
+                  ),
+                ),
+                if (step2 != null) ...[
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildStepRow(
+                      title: _variationStepTitle(step2),
+                      isComplete: step2.selectedValueId != null,
+                      child: _buildStepField(step2),
+                    ),
+                  ),
+                ] else ...[
+                  const SizedBox(width: 12),
+                  const Spacer(),
+                ]
+              ],
+            )
+          );
+          if (i + 2 < groupSteps.length || groupEntry.key != groups.keys.last) {
+            widgets.add(const SizedBox(height: 12));
+          }
+        }
+      } else {
+        for (var i = 0; i < groupSteps.length; i++) {
+          final step = groupSteps[i];
+          widgets.add(
+            _buildStepRow(
+              title: _variationStepTitle(step),
+              isComplete: step.selectedValueId != null,
+              child: _buildStepField(step),
+            )
+          );
+          if (i != groupSteps.length - 1 || groupEntry.key != groups.keys.last) {
+            widgets.add(const SizedBox(height: 12));
+          }
+        }
+      }
+    }
+    
+    if (widgets.isNotEmpty && widgets.last is SizedBox) {
+      widgets.removeLast();
+    }
+    
+    return widgets;
+  }
+
 
   Widget _buildStepRow({
     required String title,
@@ -704,6 +864,41 @@ class _VariationPathSelectorWidgetState
     );
   }
 
+  void _selectBasePath() {
+    setState(() {
+      _selectedValueNodeIds.clear();
+      _customVariationValues.clear();
+
+      void traverse(ItemVariationNodeDefinition prop) {
+        final subProps = prop.activeChildren
+            .where((n) => n.kind == ItemVariationNodeKind.property);
+        if (subProps.isNotEmpty) {
+          for (final sp in subProps) {
+            traverse(sp);
+          }
+        } else {
+          final values = prop.activeChildren
+              .where((n) => n.kind == ItemVariationNodeKind.value)
+              .toList(growable: false);
+          if (values.isNotEmpty) {
+            final firstValue = values.first;
+            _selectedValueNodeIds.add(firstValue.id);
+            final nextProps = firstValue.activeChildren
+                .where((n) => n.kind == ItemVariationNodeKind.property);
+            for (final np in nextProps) {
+              traverse(np);
+            }
+          }
+        }
+      }
+
+      for (final prop in _item.topLevelProperties) {
+        traverse(prop);
+      }
+    });
+    _notifyChanges();
+  }
+
   void _submit() {
     final leaf = _resolveLeafFromSelection();
     widget.onComplete?.call(
@@ -727,6 +922,7 @@ class VariationPathSelectorDialog extends StatelessWidget {
     this.initialCustomVariationValues = const {},
     this.onCreateValue,
     this.readOnly = false,
+    this.useTilesForValues = false,
   });
 
   final ItemDefinition item;
@@ -735,19 +931,27 @@ class VariationPathSelectorDialog extends StatelessWidget {
   final Map<int, String> initialCustomVariationValues;
   final VariationValueCreator? onCreateValue;
   final bool readOnly;
+  final bool useTilesForValues;
 
   @override
   Widget build(BuildContext context) {
-    return VariationPathSelectorWidget(
-      item: item,
-      initialRootPropertyId: initialRootPropertyId,
-      initialValueNodeIds: initialValueNodeIds,
-      initialCustomVariationValues: initialCustomVariationValues,
-      onCreateValue: onCreateValue,
-      readOnly: readOnly,
-      showHeaderAndFooter: true,
-      onComplete: (result) => Navigator.of(context).pop(result),
-      onCancel: () => Navigator.of(context).pop(),
+    return Consumer<ItemsProvider>(
+      builder: (context, provider, _) {
+        final currentItem = provider.items.where((i) => i.id == item.id).firstOrNull ?? item;
+
+        return VariationPathSelectorWidget(
+          item: currentItem,
+          initialRootPropertyId: initialRootPropertyId,
+          initialValueNodeIds: initialValueNodeIds,
+          initialCustomVariationValues: initialCustomVariationValues,
+          onCreateValue: onCreateValue,
+          readOnly: readOnly,
+          useTilesForValues: useTilesForValues,
+          showHeaderAndFooter: true,
+          onComplete: (result) => Navigator.of(context).pop(result),
+          onCancel: () => Navigator.of(context).pop(),
+        );
+      },
     );
   }
 }

@@ -104,7 +104,7 @@ class AuthApi {
     }
   }
 
-  Future<void> reseedDemoData() async {
+  Future<void> reseedDemoData({String scenarioId = 'default'}) async {
     final response = await _client.post(
       Uri.parse('$baseUrl/api/admin/reseed-data'),
       headers: _authHeaders,
@@ -119,10 +119,11 @@ class AuthApi {
     }
   }
 
-  Future<void> resetDemoData() async {
+  Future<void> resetDemoData({String scenarioId = 'default'}) async {
     final response = await _client.post(
       Uri.parse('$baseUrl/api/admin/reset-demo-data'),
-      headers: _authHeaders,
+      headers: _jsonHeaders,
+      body: jsonEncode({'scenarioId': scenarioId}),
     );
     final payload = _decode(response.body);
     if (response.statusCode < 200 ||

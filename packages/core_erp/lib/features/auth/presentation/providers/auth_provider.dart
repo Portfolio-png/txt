@@ -436,7 +436,7 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> reseedDemoData() async {
+  Future<bool> reseedDemoData({String scenarioId = 'default'}) async {
     if (!can('config.write')) {
       _errorMessage = 'You do not have permission to reseed demo data.';
       notifyListeners();
@@ -446,7 +446,7 @@ class AuthProvider extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
     try {
-      await _api.reseedDemoData();
+      await _api.reseedDemoData(scenarioId: scenarioId);
       return true;
     } catch (error) {
       _errorMessage = _friendly(error, fallback: 'Failed to reseed demo data.');
@@ -457,7 +457,7 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> resetDemoData() async {
+  Future<bool> resetDemoData({String scenarioId = 'default'}) async {
     if (!can('config.write')) {
       _errorMessage = 'You do not have permission to reset demo data.';
       notifyListeners();
@@ -467,7 +467,7 @@ class AuthProvider extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
     try {
-      await _api.resetDemoData();
+      await _api.resetDemoData(scenarioId: scenarioId);
       return true;
     } catch (error) {
       _errorMessage = _friendly(error, fallback: 'Failed to reset demo data.');

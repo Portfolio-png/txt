@@ -5,6 +5,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
 import '../services/socket_service.dart';
+import 'production_screen.dart';
 
 class ChallanStagingScreen extends StatefulWidget {
   const ChallanStagingScreen({super.key});
@@ -34,7 +35,7 @@ class _ChallanStagingScreenState extends State<ChallanStagingScreen> {
     super.dispose();
   }
 
-  void _handleBarcodeScanned(String barcode) {
+  Future<void> _handleBarcodeScanned(String barcode) async {
     final trimmed = barcode.trim();
     if (trimmed.isEmpty) return;
 
@@ -45,11 +46,27 @@ class _ChallanStagingScreenState extends State<ChallanStagingScreen> {
       'timestamp': DateTime.now().toIso8601String(),
     };
 
+    final socketService = context.read<SocketService>();
+    final materialDetail = await socketService.fetchMaterialDetail(trimmed);
+
+    if (materialDetail != null && materialDetail['activePipelineRun'] != null) {
+      if (!mounted) return;
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (context) => ProductionScreen(
+          materialBarcode: trimmed,
+          pipelineRun: materialDetail['activePipelineRun'],
+        ),
+      ));
+      _scannerController.clear();
+      _scannerFocusNode.requestFocus();
+      return;
+    }
+
     setState(() {
       _stagedItems.insert(0, itemData);
     });
 
-    context.read<SocketService>().stageItem(itemData);
+    socketService.stageItem(itemData);
 
     _scannerController.clear();
     _scannerFocusNode.requestFocus();
@@ -118,6 +135,19 @@ class _ChallanStagingScreenState extends State<ChallanStagingScreen> {
             icon: Icon(Icons.camera_alt, color: SoftErpTheme.textPrimary, size: isTablet ? 28.0 : 24.0),
             onPressed: _openCameraScanner,
             tooltip: 'Camera Scanner',
+          ),
+          TextButton(
+            onPressed: () async {
+              final barcode = await socketService.seedDemoManufacturing();
+              if (barcode != null) {
+                _handleBarcodeScanned(barcode);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Failed to seed demo data.')),
+                );
+              }
+            },
+            child: const Text('demo-prod', style: TextStyle(fontWeight: FontWeight.bold, color: SoftErpTheme.accent)),
           ),
           const SizedBox(width: 8),
         ],

@@ -229,3 +229,39 @@ List<AppInfoRow> buildMaterialBarcodeInfoRows(
     ),
   ];
 }
+
+class SmallBarcodePreview extends StatelessWidget {
+  const SmallBarcodePreview({super.key, required this.value});
+
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF3C3C3C),
+          ),
+        ),
+        const SizedBox(height: 2),
+        SizedBox(
+          height: 24,
+          child: BarcodeWidget(
+            barcode: Barcode.code128(),
+            data: value,
+            drawText: false,
+            color: const Color(0xFF111827),
+          ),
+        ),
+      ],
+    );
+  }
+}

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:core_erp/core/widgets/material_barcode_toolkit.dart';
 import 'package:core_erp/core/services/config_service.dart';
 import 'package:core_erp/core/services/feature_flags.dart';
 import 'package:flutter/services.dart';
@@ -1397,7 +1398,7 @@ class _TableHeaderRow extends StatelessWidget {
             ),
           ),
           _HeaderCell(
-            'Purchase Order Number',
+            'PO no.',
             width: layout.poWidth,
             onTap: (ctx) => _showColumnFilterMenu(
               ctx,
@@ -2135,10 +2136,7 @@ void _showDeletionSummary(
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text(
-                          item.barcode,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
+                        child: SmallBarcodePreview(value: item.barcode),
                       ),
                       Text(
                         '${item.qty} units',
@@ -3008,8 +3006,6 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
             key: _formKey,
             child: ErpFormScaffold(
               title: 'Create New Order',
-              subtitle:
-                  'Capture the customer, item lines, and purchase-order context in the same workspace your team already uses.',
               bodyScrollable: false,
               bodyPadding: const EdgeInsets.fromLTRB(36, 18, 36, 22),
               errorBanner:
@@ -3947,7 +3943,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
             dialogTitle: 'Unit',
             searchHintText: 'Search unit',
             emptyText: 'No units found in Master Data matching search',
-            fieldEnabled: selectedItem != null && options.isNotEmpty,
+            fieldEnabled: selectedItem != null,
             options: options
                 .map(
                   (unit) => SearchableSelectOption<int>(
@@ -4409,6 +4405,9 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
 
     final provider = context.read<OrdersProvider>();
     final pastOrders = provider.orders;
+    final selectedClient = _selectedClient(
+      context.read<ClientsProvider>().clients,
+    );
 
     final uniqueVariations = <String, OrderEntry>{};
     for (final order in pastOrders) {
@@ -4437,6 +4436,7 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       builder: (context) {
         return _GlobalItemHistoryDialog(
           history: uniqueVariations.values.toList(),
+          clientName: selectedClient?.name,
         );
       },
     );
@@ -8567,9 +8567,10 @@ extension on OrderStatus {
 }
 
 class _GlobalItemHistoryDialog extends StatefulWidget {
-  const _GlobalItemHistoryDialog({required this.history});
+  const _GlobalItemHistoryDialog({required this.history, this.clientName});
 
   final List<OrderEntry> history;
+  final String? clientName;
 
   @override
   State<_GlobalItemHistoryDialog> createState() =>
@@ -8588,7 +8589,11 @@ class _GlobalItemHistoryDialogState extends State<_GlobalItemHistoryDialog> {
     }).toList();
 
     return AlertDialog(
-      title: const Text('Select from History'),
+      title: Text(
+        widget.clientName != null && widget.clientName!.isNotEmpty
+            ? '${widget.clientName} Past Order'
+            : 'Past Order',
+      ),
       content: SizedBox(
         width: 600,
         height: 400,

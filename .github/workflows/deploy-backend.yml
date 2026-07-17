@@ -47,6 +47,35 @@ jobs:
           source: "backend"
           target: "txt"
 
+      - name: Configure backend .env on EC2
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          PAPER_S3_BUCKET_NAME: ${{ secrets.PAPER_S3_BUCKET_NAME }}
+          PAPER_S3_REGION: ${{ secrets.PAPER_S3_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        with:
+          host: ${{ secrets.AWS_EC2_HOST }}
+          username: ${{ secrets.AWS_SSH_USER }}
+          key: ${{ secrets.AWS_SSH_KEY }}
+          envs: PAPER_S3_BUCKET_NAME,PAPER_S3_REGION,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY
+          script: |
+            cd txt/backend
+            touch .env
+            # Idempotent upsert: replace only these keys, preserve everything else in .env
+            upsert_env() {
+              key="$1"; val="$2"
+              if [ -z "$val" ]; then return 0; fi   # skip unset secrets, don't shadow IAM role
+              grep -v "^${key}=" .env > .env.tmp 2>/dev/null || true
+              mv .env.tmp .env
+              printf '%s=%s\n' "$key" "$val" >> .env
+            }
+            upsert_env PAPER_S3_BUCKET_NAME "$PAPER_S3_BUCKET_NAME"
+            upsert_env PAPER_S3_REGION "$PAPER_S3_REGION"
+            upsert_env AWS_ACCESS_KEY_ID "$AWS_ACCESS_KEY_ID"
+            upsert_env AWS_SECRET_ACCESS_KEY "$AWS_SECRET_ACCESS_KEY"
+            chmod 600 .env
+
       - name: Install Dependencies and Restart PM2
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -56,4 +85,4 @@ jobs:
           script: |
             cd txt/backend
             npm install --omit=dev
-            pm2 restart all || pm2 start server.js
+            pm2 restart all --update-env || pm2 start server.js

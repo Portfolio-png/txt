@@ -1,3 +1,4 @@
+import 'package:core_erp/core/widgets/app_settings_dialog.dart';
 import 'package:flutter/material.dart';
 
 import 'package:core_erp/app/dashboard/views/dashboard_screen.dart';
@@ -34,6 +35,20 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Factory Server'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () {
+              showDialog<void>(
+                context: context,
+                builder: (context) => const AppSettingsDialog(),
+              );
+            },
+          ),
+        ],
+      ),
       body: PageView(
         controller: _pageController,
         onPageChanged: (index) {

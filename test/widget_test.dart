@@ -3451,7 +3451,7 @@ class FakeAuthProvider extends AuthProvider {
   }
 
   @override
-  Future<bool> resetDemoData() async {
+  Future<bool> resetDemoData({String scenarioId = 'default'}) async {
     resetCalls += 1;
     _error = null;
     notifyListeners();

@@ -71,64 +71,9 @@ class VendorsProvider extends ChangeNotifier {
     }
     _initialized = true;
 
-    SocketService.instance.on('vendor_added', (data) async {
-      if (data != null && data is Map<String, dynamic> && data['id'] != null) {
-        try {
-          final id = data['id'] as int;
-          final newVendor = await _repository.getVendor(id);
-          if (newVendor != null) {
-            // Dedupe: the creator already refreshed the list, so this rail echo
-            // must replace-if-present (not blindly append) to avoid a duplicate.
-            final exists = _vendors.any((v) => v.id == newVendor.id);
-            _vendors = exists
-                ? _vendors
-                      .map((v) => v.id == newVendor.id ? newVendor : v)
-                      .toList(growable: false)
-                : [..._vendors, newVendor];
-            _sortVendors();
-            notifyListeners();
-          } else {
-            refresh();
-          }
-        } catch (_) {
-          refresh();
-        }
-      } else {
-        refresh();
-      }
-    });
-
-    SocketService.instance.on('vendor_updated', (data) async {
-      if (data != null && data is Map<String, dynamic> && data['id'] != null) {
-        try {
-          final id = data['id'] as int;
-          final updatedVendor = await _repository.getVendor(id);
-          if (updatedVendor != null) {
-            _vendors = _vendors
-                .map((v) => v.id == updatedVendor.id ? updatedVendor : v)
-                .toList(growable: false);
-            _sortVendors();
-            notifyListeners();
-          } else {
-            refresh();
-          }
-        } catch (_) {
-          refresh();
-        }
-      } else {
-        refresh();
-      }
-    });
-
-    SocketService.instance.on('vendor_deleted', (data) {
-      if (data != null && data is Map<String, dynamic> && data['id'] != null) {
-        final id = data['id'] as int;
-        _vendors = _vendors.where((v) => v.id != id).toList();
-        notifyListeners();
-      } else {
-        refresh();
-      }
-    });
+    SocketService.instance.on('vendor_added', (_) => refresh());
+    SocketService.instance.on('vendor_updated', (_) => refresh());
+    SocketService.instance.on('vendor_deleted', (_) => refresh());
 
     await refresh();
   }

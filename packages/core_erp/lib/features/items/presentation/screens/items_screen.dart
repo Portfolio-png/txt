@@ -2632,7 +2632,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   String _summaryLabelForNode(_NodeDraft node) {
     if (node.isLeafValue) {
       final leafLabel = node.displayNameController.text.trim();
-      return leafLabel.isEmpty ? _generateLeafDisplayName(node) : leafLabel;
+      final base = leafLabel.isEmpty ? _generateLeafDisplayName(node) : leafLabel;
+      final code = node.codeController.text.trim();
+      return code.isNotEmpty ? '$base [$code]' : base;
     }
     final name = node.nameController.text.trim();
     final code = node.codeController.text.trim();

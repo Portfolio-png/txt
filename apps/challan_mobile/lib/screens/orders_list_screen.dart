@@ -183,6 +183,39 @@ class _OrderCard extends StatelessWidget {
               ),
             ],
           ),
+          if (group.items.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Divider(height: 1, color: SoftErpTheme.border),
+            const SizedBox(height: 8),
+            ...group.items.map((item) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          item.variationPathLabel.isNotEmpty
+                              ? '${item.itemName} (${item.variationPathLabel})'
+                              : item.itemName,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: SoftErpTheme.textSecondary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${item.quantity} ${item.unitDisplayLabel}',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: SoftErpTheme.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                )),
+          ],
         ],
       ),
     );

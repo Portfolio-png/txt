@@ -5174,7 +5174,7 @@ class _InventoryMainDataRowState extends State<_InventoryMainDataRow> {
                       ),
                     ),
                     if (!isGroupView && !isSetView)
-                      _DataCell(
+                      _BarcodeCell(
                         _displayPrimaryId(widget.entry),
                         width: widget.metrics.barcodeWidth,
                         metrics: widget.metrics,
@@ -5648,6 +5648,29 @@ class _InventoryNameCell extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _BarcodeCell extends StatelessWidget {
+  const _BarcodeCell(this.text, {required this.width, required this.metrics});
+
+  final String text;
+  final double width;
+  final _InventoryTableMetrics metrics;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      child: Padding(
+        padding: const EdgeInsets.only(right: 16.0),
+        child: Tooltip(
+          message: text,
+          waitDuration: const Duration(milliseconds: 450),
+          child: SmallBarcodePreview(value: text),
+        ),
+      ),
     );
   }
 }

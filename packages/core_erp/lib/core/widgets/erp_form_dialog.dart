@@ -123,7 +123,7 @@ class ErpFormScaffold extends StatelessWidget {
   const ErpFormScaffold({
     super.key,
     required this.title,
-    required this.subtitle,
+    this.subtitle,
     required this.body,
     required this.footer,
     this.onClose,
@@ -137,7 +137,7 @@ class ErpFormScaffold extends StatelessWidget {
   });
 
   final String title;
-  final String subtitle;
+  final String? subtitle;
   final Widget body;
   final Widget footer;
   final VoidCallback? onClose;
@@ -192,15 +192,17 @@ class ErpFormScaffold extends StatelessWidget {
                                 color: SoftErpTheme.textPrimary,
                               ),
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          subtitle,
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                color: SoftErpTheme.textSecondary,
-                                height: 1.45,
-                              ),
-                        ),
+                        if (subtitle != null) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            subtitle!,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: SoftErpTheme.textSecondary,
+                                  height: 1.45,
+                                ),
+                          ),
+                        ],
                       ],
                     ),
                   ),

@@ -9,6 +9,7 @@ class SocketService extends ChangeNotifier {
   AuthProvider? _authProvider;
 
   bool get isConnected => _isConnected;
+  String? get baseUrl => _baseUrl;
 
   void initAuth(AuthProvider authProvider) {
     _authProvider = authProvider;
@@ -45,6 +46,27 @@ class SocketService extends ChangeNotifier {
     }
   }
 
+  Future<Map<String, dynamic>?> fetchMaterialDetail(String barcode) async {
+    if (_isConnected && _baseUrl != null) {
+      try {
+        final token = _authProvider?.token ?? '';
+        final response = await http.get(
+          Uri.parse('$_baseUrl/api/materials/$barcode/detail'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+        );
+        if (response.statusCode == 200) {
+          return jsonDecode(response.body);
+        }
+      } catch (e) {
+        debugPrint('Failed to fetch material detail: $e');
+      }
+    }
+    return null;
+  }
+
   Future<void> removeStagedItem(Map<String, dynamic> itemData) async {
     if (_isConnected && _baseUrl != null) {
       try {
@@ -61,5 +83,27 @@ class SocketService extends ChangeNotifier {
         debugPrint('Failed to remove staged item via HTTP: $e');
       }
     }
+  }
+
+  Future<String?> seedDemoManufacturing() async {
+    if (_isConnected && _baseUrl != null) {
+      try {
+        final token = _authProvider?.token ?? '';
+        final response = await http.post(
+          Uri.parse('$_baseUrl/dev/seed-manufacturing-demo'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+        );
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          return data['barcode'];
+        }
+      } catch (e) {
+        debugPrint('Failed to seed demo: $e');
+      }
+    }
+    return null;
   }
 }

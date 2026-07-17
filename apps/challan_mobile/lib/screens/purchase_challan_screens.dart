@@ -15,6 +15,7 @@ import 'package:core_erp/features/vendors/presentation/providers/vendor_history_
 import 'package:core_erp/widgets/variation_path_selector_dialog.dart';
 
 import 'challan_mobile_editor_screen.dart';
+import 'use_item_screens.dart';
 
 final List<DeliveryChallanItem> activePurchaseLines = [];
 
@@ -38,42 +39,81 @@ class ChallanTabScreen extends StatelessWidget {
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              const SizedBox(height: 8),
-              _ChoiceCard(
-                title: 'Purchase',
-                subtitle: 'Receive goods from a vendor (reception challan)',
-                icon: Icons.call_received_rounded,
-                color: SoftErpTheme.accent,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const PurchaseGroupBrowseScreen()),
-                ),
-              ),
-              const SizedBox(height: 16),
-              _ChoiceCard(
-                title: 'Sale',
-                subtitle: 'Deliver goods to a client — coming soon',
-                icon: Icons.call_made_rounded,
-                color: Colors.grey,
-                disabled: true,
-                onTap: () {},
-              ),
-              if (vendors.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                _ChoiceCard(
-                  title: 'Vendor',
-                  subtitle: 'Re-order past purchases',
-                  icon: Icons.storefront_rounded,
-                  color: const Color(0xFFE57373),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => VendorBrowseScreen(lines: activePurchaseLines),
-                    ),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              // Keep the tiles a sensible size on wide tablets instead of
+              // stretching each square to half the screen.
+              constraints: const BoxConstraints(maxWidth: 640),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 8),
+                  // Purchase and Sale share the first row (two square tiles);
+                  // Vendor takes the left tile of the second row when present.
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: AspectRatio(
+                          aspectRatio: 1,
+                          child: _ChoiceCard(
+                            title: 'Purchase',
+                            subtitle: 'Receive goods from a vendor',
+                            icon: Icons.call_received_rounded,
+                            color: SoftErpTheme.accent,
+                            onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => const PurchaseGroupBrowseScreen()),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: AspectRatio(
+                          aspectRatio: 1,
+                          child: _ChoiceCard(
+                            title: 'Use',
+                            subtitle: 'Consume raw materials',
+                            icon: Icons.precision_manufacturing_rounded,
+                            color: Colors.orange,
+                            onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => const UseInventoryBrowseScreen()),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ],
-            ],
+                  if (vendors.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: AspectRatio(
+                            aspectRatio: 1,
+                            child: _ChoiceCard(
+                              title: 'Vendor',
+                              subtitle: 'Re-order past purchases',
+                              icon: Icons.storefront_rounded,
+                              color: const Color(0xFFE57373),
+                              onTap: () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => VendorBrowseScreen(lines: activePurchaseLines),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        const Expanded(child: SizedBox()),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -109,42 +149,45 @@ class _ChoiceCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(24),
           onTap: disabled ? null : onTap,
           child: Container(
-            padding: const EdgeInsets.all(22),
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(24),
               border: Border.all(color: const Color(0xFFE8ECF5), width: 1.5),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(color: color.withOpacity(0.12), shape: BoxShape.circle),
-                  child: Icon(icon, color: color, size: 28),
-                ),
-                const SizedBox(width: 18),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: SoftErpTheme.textPrimary)),
-                          if (disabled) ...[
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(999)),
-                              child: Text('SOON', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.grey.shade600)),
-                            ),
-                          ],
-                        ],
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(color: color.withOpacity(0.12), shape: BoxShape.circle),
+                      child: Icon(icon, color: color, size: 28),
+                    ),
+                    if (disabled) ...[
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(999)),
+                        child: Text('SOON', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.grey.shade600)),
                       ),
-                      const SizedBox(height: 4),
-                      Text(subtitle, style: const TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary, fontWeight: FontWeight.w500)),
                     ],
-                  ),
+                  ],
                 ),
-                if (!disabled) const Icon(Icons.chevron_right_rounded, color: SoftErpTheme.textSecondary),
+                const Spacer(),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: SoftErpTheme.textPrimary),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 13, color: SoftErpTheme.textSecondary, fontWeight: FontWeight.w500),
+                ),
               ],
             ),
           ),
@@ -527,6 +570,7 @@ class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
                 item: item,
                 initialRootPropertyId: null,
                 initialValueNodeIds: const [],
+                useTilesForValues: true,
               ),
             ),
           ),

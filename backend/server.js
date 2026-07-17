@@ -433,6 +433,7 @@ app.disable('x-powered-by');
 app.use(morgan('combined'));
 app.use(cors(buildCorsOptions()));
 app.use(express.json());
+app.use('/public', express.static(path.join(__dirname, 'public')));
 
 app.get('/health', (_req, res) => {
   res.json({
@@ -1255,7 +1256,7 @@ async function createUserAccount({
     `
     INSERT INTO users (
       name, email, password_hash, role, is_active, created_by_user_id, created_at, updated_at, mobile_pin, client_id
-    ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
     `,
     [
       normalizedName,
@@ -1266,6 +1267,7 @@ async function createUserAccount({
       now,
       now,
       mobilePin,
+      clientId,
     ],
   );
   return get('SELECT * FROM users WHERE id = ?', [result.lastID]);
@@ -4543,12 +4545,12 @@ async function ensurePrimaryGroupAndUnit() {
   }
 }
 
-async function ensureDemoDataset() {
-  await ensureDemoUnitsPresent();
+async function ensureDemoDataset(scenarioId = 'default') {
+  await ensureDemoUnitsPresent(scenarioId);
   await backfillMaterialUnitIds();
   await ensureDemoClientsPresent();
-  await ensureDemoGroupsPresent();
-  await ensureDemoItemsPresent();
+  await ensureDemoGroupsPresent(scenarioId);
+  await ensureDemoItemsPresent(scenarioId);
   await ensureDemoOrdersPresent();
   await ensureDemoProductionRunsPresent();
   await ensureDemoMaterialsPresent();
@@ -5993,16 +5995,6 @@ async function ensureUnitRecord({
 async function ensureDemoUnitsPresent() {
   const units = [
     {
-      name: 'Kilogram',
-      symbol: 'Kg',
-      notes: 'Bulk raw materials, powders, and compounds.',
-    },
-    {
-      name: 'Sheet',
-      symbol: 'Sheet',
-      notes: 'Flat paperboard and sheet-based stock.',
-    },
-    {
       name: 'Piece',
       symbol: 'Pc',
       notes: 'Discrete finished goods and components.',
@@ -6013,26 +6005,10 @@ async function ensureDemoUnitsPresent() {
       notes: 'Packed kits and shipping cartons.',
     },
     {
-      name: 'Roll',
-      symbol: 'Roll',
-      notes: 'Coils, reels, and roll-fed substrates.',
-    },
-    {
-      name: 'Set',
-      symbol: 'Set',
-      notes: 'Bundled assemblies sold as one unit.',
-    },
-    {
-      name: 'Meter',
-      symbol: 'Mtr',
-      notes: 'Linear materials like film, tape, and sleeves.',
-    },
-    {
-      name: 'Legacy Lot',
-      symbol: 'Lot',
-      notes: 'Archived legacy measurement kept for historical data.',
-      isArchived: true,
-    },
+      name: 'Carton',
+      symbol: 'Ctn',
+      notes: 'Shipping cartons.',
+    }
   ];
 
   for (const unit of units) {
@@ -9790,6 +9766,25 @@ async function findMaterialByItemSelection(itemId, variationLeafNodeId, customVa
   );
 }
 
+async function generateBarcodeFromItemSelection(itemId, customVariationValues) {
+  if (!customVariationValues || Object.keys(customVariationValues).length === 0) return null;
+  const codes = [];
+  for (const [propName, valName] of Object.entries(customVariationValues)) {
+    const row = await get(`
+      SELECT v.code, p.position
+      FROM item_variation_nodes v
+      JOIN item_variation_nodes p ON v.parent_node_id = p.id
+      WHERE v.item_id = ? AND p.name = ? AND (v.name = ? OR v.display_name = ?)
+    `, [itemId, propName, valName, valName]);
+    if (row && row.code) {
+      codes.push({ code: row.code, position: row.position });
+    }
+  }
+  if (codes.length === 0) return null;
+  codes.sort((a, b) => a.position - b.position);
+  return codes.map(c => c.code).join('-');
+}
+
 function generateStandaloneMaterialBarcode() {
   return `MAT-${Date.now()}-${Math.floor(Math.random() * 100000)
     .toString()
@@ -9804,7 +9799,20 @@ async function ensureMaterialForItemSelection({ itemId, variationLeafNodeId = 0,
   const snapshot = await getItemSelectionSnapshot(itemId, variationLeafNodeId);
   const unit = snapshot.item.unit_id ? await getUnitRowById(snapshot.item.unit_id) : null;
   const now = new Date().toISOString();
-  const barcode = generateStandaloneMaterialBarcode();
+  
+  // Generate barcode from variation codes if possible
+  let barcode = await generateBarcodeFromItemSelection(itemId, customVariationValues);
+  if (!barcode) {
+    barcode = generateStandaloneMaterialBarcode();
+  } else {
+    // Ensure uniqueness across the system by checking if it exists
+    const existingBarcode = await getMaterialRowByBarcode(barcode);
+    if (existingBarcode) {
+      // If it exists but wasn't caught by findMaterialByItemSelection, it might be a collision.
+      // We'll append a short random string to guarantee uniqueness.
+      barcode = `${barcode}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+    }
+  }
 
   // Custom variation values (e.g. {color: "Copper"}) distinguish materials that
   // share an item + leaf node. Persist them (canonical key order, matching
@@ -13747,84 +13755,11 @@ async function ensureDemoGroupsPresent() {
   const bySymbol = new Map(
     units.map((unit) => [normalizeUnitValue(unit.symbol), unit]),
   );
-  const sheetUnit = bySymbol.get('sheet') || units[0];
-  const kilogramUnit = bySymbol.get('kg') || units[0];
   const pieceUnit = bySymbol.get('pc') || units[0];
-  const rollUnit = bySymbol.get('roll') || sheetUnit || units[0];
-  const meterUnit = bySymbol.get('mtr') || units[0];
-  if (!sheetUnit || !kilogramUnit || !pieceUnit || !rollUnit || !meterUnit) {
-    return;
-  }
-
-  const paper = await ensureGroupRecord({
-    name: 'Paper',
-    unitId: sheetUnit.id,
-  });
+  
   await ensureGroupRecord({
-    name: 'Kraft',
-    parentGroupId: paper.id,
-    unitId: sheetUnit.id,
-  });
-  await ensureGroupRecord({
-    name: 'Duplex Board',
-    parentGroupId: paper.id,
-    unitId: sheetUnit.id,
-  });
-  await ensureGroupRecord({
-    name: 'Corrugated',
-    parentGroupId: paper.id,
-    unitId: sheetUnit.id,
-  });
-
-  const chemicals = await ensureGroupRecord({
-    name: 'Chemicals',
-    unitId: kilogramUnit.id,
-  });
-  await ensureGroupRecord({
-    name: 'Adhesives',
-    parentGroupId: chemicals.id,
-    unitId: kilogramUnit.id,
-  });
-  await ensureGroupRecord({
-    name: 'Solvents',
-    parentGroupId: chemicals.id,
-    unitId: kilogramUnit.id,
-  });
-  await ensureGroupRecord({
-    name: 'Inks',
-    parentGroupId: chemicals.id,
-    unitId: kilogramUnit.id,
-  });
-
-  const packaging = await ensureGroupRecord({
-    name: 'Packaging Components',
+    name: 'Primary Group',
     unitId: pieceUnit.id,
-  });
-  await ensureGroupRecord({
-    name: 'Caps',
-    parentGroupId: packaging.id,
-    unitId: pieceUnit.id,
-  });
-  await ensureGroupRecord({
-    name: 'Sleeves',
-    parentGroupId: packaging.id,
-    unitId: meterUnit.id,
-  });
-  await ensureGroupRecord({
-    name: 'Film Rolls',
-    parentGroupId: packaging.id,
-    unitId: rollUnit.id,
-  });
-
-  await ensureGroupRecord({
-    name: 'Scrap',
-    unitId: kilogramUnit.id,
-  });
-
-  await ensureGroupRecord({
-    name: 'Legacy Group',
-    unitId: kilogramUnit.id,
-    isArchived: true,
   });
 }
 
@@ -14243,269 +14178,374 @@ async function ensureItemRecord({
   return getItemRowById(existing.id);
 }
 
-async function ensureDemoItemsPresent() {
+async function ensureDemoItemsPresent(scenarioId = 'default') {
   const groups = await getGroupsWithUsage();
   const units = await getUnitsWithUsage();
   const groupByName = new Map(
     groups.map((group) => [normalizeUnitValue(group.name), group]),
   );
-  const unitBySymbol = new Map(
-    units.map((unit) => [normalizeUnitValue(unit.symbol), unit]),
+  const primaryGroup = groupByName.get(normalizeUnitValue('Primary Group')) || groups[0];
+  const mfgGroup = groupByName.get(normalizeUnitValue('Manufacturing')) || groups[0];
+
+  const unitByName = new Map(
+    units.map((unit) => [normalizeUnitValue(unit.name), unit]),
   );
+  const piecesUnit = unitByName.get(normalizeUnitValue('Piece')) || units[0];
+  const boxUnit = unitByName.get(normalizeUnitValue('Box')) || units[0];
+  const kgUnit = unitByName.get(normalizeUnitValue('Kilogram')) || units[0];
 
-  const kraft = groupByName.get('kraft');
-  const adhesives = groupByName.get('adhesives');
-  const solvents = groupByName.get('solvents');
-  const inks = groupByName.get('inks');
-  const caps = groupByName.get('caps');
-  const sleeves = groupByName.get('sleeves');
-  const duplex = groupByName.get('duplex board') || groupByName.get('paper');
-  const sheetUnit = unitBySymbol.get('sheet');
-  const kilogramUnit = unitBySymbol.get('kg');
-  const pieceUnit = unitBySymbol.get('pc') || unitBySymbol.get('pieces');
-  const meterUnit = unitBySymbol.get('mtr');
-
-  if (!kraft || !adhesives || !solvents || !inks || !caps || !sleeves || !duplex) {
-    return;
+  if (scenarioId === 'manufacturing') {
+    const rawMaterial = {
+      baseItem: {
+        name: 'Aluminum Billet',
+        group_id: mfgGroup.id,
+        hsn_code: '7601',
+        is_active: 1,
+      },
+      variations: {
+        'Initial State': [
+          { name: 'Raw', code: 'RAW' },
+        ],
+        'Primary Process': [
+          { name: 'None', code: 'NON' },
+          { name: 'Milled', code: 'MLL' },
+        ],
+        'Finishing': [
+          { name: 'None', code: 'NON' },
+          { name: 'Anodized', code: 'ANO' },
+        ],
+      },
+      unit_id: kgUnit.id,
+    };
+    
+    const intermediate = {
+      baseItem: {
+        name: 'Copper Coil',
+        group_id: mfgGroup.id,
+        hsn_code: '7408',
+        is_active: 1,
+      },
+      variations: {
+        'State': [
+          { name: 'Drawn', code: 'DRW' },
+        ],
+        'Treatment': [
+          { name: 'Insulated', code: 'INS' },
+          { name: 'Bare', code: 'BAR' },
+        ]
+      },
+      unit_id: kgUnit.id,
+    };
+    
+    const result = [];
+    for (const data of [rawMaterial, intermediate]) {
+      const dbItem = await seedScenarioItem(data);
+      result.push(dbItem);
+    }
+    return result;
   }
-  if (!sheetUnit || !kilogramUnit || !pieceUnit || !meterUnit) {
-    return;
+
+  if (scenarioId === 'mobiles') {
+    const mobileGroup = groupByName.get(normalizeUnitValue('Mobiles')) || primaryGroup;
+    // One item exercising 5 top-level properties, each with 5 values.
+    const smartphone = {
+      baseItem: {
+        name: 'Smartphone X',
+        group_id: mobileGroup.id,
+        hsn_code: '8517',
+        is_active: 1,
+      },
+      variations: {
+        'Color': [
+          { name: 'Black', code: 'BLK' },
+          { name: 'White', code: 'WHT' },
+          { name: 'Blue', code: 'BLU' },
+          { name: 'Green', code: 'GRN' },
+          { name: 'Red', code: 'RED' },
+        ],
+        'Storage': [
+          { name: '64GB', code: '064' },
+          { name: '128GB', code: '128' },
+          { name: '256GB', code: '256' },
+          { name: '512GB', code: '512' },
+          { name: '1TB', code: '1TB' },
+        ],
+        'RAM': [
+          { name: '4GB', code: 'R04' },
+          { name: '6GB', code: 'R06' },
+          { name: '8GB', code: 'R08' },
+          { name: '12GB', code: 'R12' },
+          { name: '16GB', code: 'R16' },
+        ],
+        'Display': [
+          { name: 'LCD', code: 'LCD' },
+          { name: 'OLED', code: 'OLD' },
+          { name: 'AMOLED', code: 'AMO' },
+          { name: 'Retina', code: 'RET' },
+          { name: 'ProMotion', code: 'PRO' },
+        ],
+        'Network': [
+          { name: '4G', code: '4G' },
+          { name: '5G', code: '5G' },
+          { name: '5G Plus', code: '5GP' },
+          { name: 'WiFi Only', code: 'WIF' },
+          { name: 'Dual SIM', code: 'DUA' },
+        ],
+      },
+      unit_id: piecesUnit.id,
+    };
+
+    const dbItem = await seedScenarioItem(smartphone);
+    return [dbItem];
   }
 
-  const itemSeeds = [
+  // default scenario
+  const seedItems = [
     {
-      name: 'Epoxy Resin Base',
-      alias: 'Reactive Binder',
-      displayName: 'Epoxy Resin Base - 25',
-      quantity: 25,
-      groupId: adhesives.id,
-      unitId: kilogramUnit.id,
-      variationTree: [
-        {
-          kind: 'property',
-          name: 'Grade',
-          children: [
-            {
-              kind: 'value',
-              name: 'Standard',
-              children: [
-                {
-                  kind: 'property',
-                  name: 'Viscosity',
-                  children: [{ kind: 'value', name: 'Medium' }],
-                },
-              ],
-            },
-          ],
-        },
-      ],
+      baseItem: {
+        name: 'Anchor Roma Classic Switch 10A 1-Way',
+        group_id: primaryGroup.id,
+        hsn_code: '8536',
+        is_active: 1,
+      },
+      variations: {
+        'Color': [{name: 'White', code: 'WH'}],
+        'Module': [{name: '1M', code: '1M'}]
+      },
+      unit_id: piecesUnit.id,
+      conversions: [ { unit_id: boxUnit.id, multiplier: 10 } ],
     },
     {
-      name: 'Hardener Compound',
-      alias: 'Catalyst',
-      displayName: 'Hardener Compound - 5',
-      quantity: 5,
-      groupId: adhesives.id,
-      unitId: kilogramUnit.id,
-      variationTree: [
-        {
-          kind: 'property',
-          name: 'Reactivity',
-          children: [{ kind: 'value', name: 'Fast Set' }],
-        },
-      ],
+      baseItem: {
+        name: 'Anchor Roma Classic Switch 20A 1-Way',
+        group_id: primaryGroup.id,
+        hsn_code: '8536',
+        is_active: 1,
+      },
+      variations: {
+        'Color': [{name: 'White', code: 'WH'}],
+        'Module': [{name: '1M', code: '1M'}]
+      },
+      unit_id: piecesUnit.id,
+      conversions: [ { unit_id: boxUnit.id, multiplier: 10 } ],
     },
     {
-      name: 'Isopropyl Cleaner',
-      alias: 'Surface Prep',
-      displayName: 'Isopropyl Cleaner - 20',
-      quantity: 20,
-      groupId: solvents.id,
-      unitId: kilogramUnit.id,
-      variationTree: [
-        {
-          kind: 'property',
-          name: 'Purity',
-          children: [{ kind: 'value', name: '99%' }],
-        },
-      ],
+      baseItem: {
+        name: 'Anchor Roma Classic Socket 10A',
+        group_id: primaryGroup.id,
+        hsn_code: '8536',
+        is_active: 1,
+      },
+      variations: {
+        'Color': [{name: 'White', code: 'WH'}],
+        'Module': [{name: '2M', code: '2M'}]
+      },
+      unit_id: piecesUnit.id,
+      conversions: [ { unit_id: boxUnit.id, multiplier: 10 } ],
     },
     {
-      name: 'Cyan Flexo Ink',
-      alias: 'Press Ink',
-      displayName: 'Cyan Flexo Ink - 15',
-      quantity: 15,
-      groupId: inks.id,
-      unitId: kilogramUnit.id,
-      variationTree: [
-        {
-          kind: 'property',
-          name: 'Shade',
-          children: [{ kind: 'value', name: 'Process Cyan' }],
-        },
-      ],
+      baseItem: {
+        name: 'Anchor Roma Classic Socket 20A',
+        group_id: primaryGroup.id,
+        hsn_code: '8536',
+        is_active: 1,
+      },
+      variations: {
+        'Color': [{name: 'White', code: 'WH'}],
+        'Module': [{name: '2M', code: '2M'}]
+      },
+      unit_id: piecesUnit.id,
+      conversions: [ { unit_id: boxUnit.id, multiplier: 10 } ],
     },
     {
-      name: 'Bottle Carton',
-      alias: 'Classic Bottle',
-      displayName: 'Bottle Carton - 100',
-      quantity: 100,
-      groupId: kraft.id,
-      unitId: sheetUnit.id,
-      matchDisplayNames: ['Bottle - 100'],
-      variationTree: [
-        {
-          kind: 'property',
-          name: 'Color',
-          children: [
-            {
-              kind: 'value',
-              name: 'Black',
-              children: [
-                {
-                  kind: 'property',
-                  name: 'Finish',
-                  children: [
-                    { kind: 'value', name: 'Matte' },
-                    { kind: 'value', name: 'Glossy' },
-                  ],
-                },
-              ],
-            },
-            {
-              kind: 'value',
-              name: 'Natural',
-              children: [
-                {
-                  kind: 'property',
-                  name: 'Print',
-                  children: [
-                    { kind: 'value', name: 'Flexo' },
-                    { kind: 'value', name: 'Offset' },
-                  ],
-                },
-              ],
-            },
-          ],
-        },
-      ],
+      baseItem: {
+        name: 'Anchor Roma Penta Switch 10A',
+        group_id: primaryGroup.id,
+        hsn_code: '8536',
+        is_active: 1,
+      },
+      variations: {
+        'Color': [{name: 'White', code: 'WH'}],
+        'Module': [{name: '1M', code: '1M'}]
+      },
+      unit_id: piecesUnit.id,
+      conversions: [ { unit_id: boxUnit.id, multiplier: 10 } ],
     },
     {
-      name: 'Glue Compound',
-      alias: 'Adhesive',
-      displayName: 'Glue Compound - 25',
-      quantity: 25,
-      groupId: adhesives.id,
-      unitId: kilogramUnit.id,
-      matchDisplayNames: ['Glue Compound - 1'],
-      variationTree: [
-        {
-          kind: 'property',
-          name: 'Cure Speed',
-          children: [
-            {
-              kind: 'value',
-              name: 'Fast Cure',
-              children: [
-                {
-                  kind: 'property',
-                  name: 'Viscosity',
-                  children: [
-                    { kind: 'value', name: 'High' },
-                    { kind: 'value', name: 'Medium' },
-                  ],
-                },
-              ],
-            },
-            { kind: 'value', name: 'Standard Cure' },
-          ],
-        },
-      ],
+      baseItem: {
+        name: 'Anchor Roma Penta Switch 20A',
+        group_id: primaryGroup.id,
+        hsn_code: '8536',
+        is_active: 1,
+      },
+      variations: {
+        'Color': [{name: 'White', code: 'WH'}],
+        'Module': [{name: '1M', code: '1M'}]
+      },
+      unit_id: piecesUnit.id,
+      conversions: [ { unit_id: boxUnit.id, multiplier: 10 } ],
     },
     {
-      name: 'Flip-Top Cap',
-      alias: 'Secure Cap',
-      displayName: 'Flip-Top Cap - 500',
-      quantity: 500,
-      groupId: caps.id,
-      unitId: pieceUnit.id,
-      variationTree: [
-        {
-          kind: 'property',
-          name: 'Diameter',
-          children: [
-            {
-              kind: 'value',
-              name: '28 mm',
-              children: [
-                {
-                  kind: 'property',
-                  name: 'Color',
-                  children: [
-                    { kind: 'value', name: 'White' },
-                    { kind: 'value', name: 'Blue' },
-                  ],
-                },
-              ],
-            },
-            { kind: 'value', name: '32 mm' },
-          ],
-        },
-      ],
+      baseItem: {
+        name: 'Anchor Roma Penta Socket 10A',
+        group_id: primaryGroup.id,
+        hsn_code: '8536',
+        is_active: 1,
+      },
+      variations: {
+        'Color': [{name: 'White', code: 'WH'}],
+        'Module': [{name: '2M', code: '2M'}]
+      },
+      unit_id: piecesUnit.id,
+      conversions: [ { unit_id: boxUnit.id, multiplier: 10 } ],
     },
     {
-      name: 'Printed Sleeve',
-      alias: 'Shrink Sleeve',
-      displayName: 'Printed Sleeve - 200',
-      quantity: 200,
-      groupId: sleeves.id,
-      unitId: meterUnit.id,
-      variationTree: [
-        {
-          kind: 'property',
-          name: 'Finish',
-          children: [
-            {
-              kind: 'value',
-              name: 'Gloss',
-              children: [
-                {
-                  kind: 'property',
-                  name: 'Region',
-                  children: [
-                    { kind: 'value', name: 'Domestic' },
-                    { kind: 'value', name: 'Export' },
-                  ],
-                },
-              ],
-            },
-            { kind: 'value', name: 'Matte' },
-          ],
-        },
-      ],
+      baseItem: {
+        name: 'Anchor Roma Penta Socket 20A',
+        group_id: primaryGroup.id,
+        hsn_code: '8536',
+        is_active: 1,
+      },
+      variations: {
+        'Color': [{name: 'White', code: 'WH'}],
+        'Module': [{name: '2M', code: '2M'}]
+      },
+      unit_id: piecesUnit.id,
+      conversions: [ { unit_id: boxUnit.id, multiplier: 10 } ],
     },
     {
-      name: 'Legacy Duplex Carton',
-      alias: 'Old Mono',
-      displayName: 'Legacy Duplex Carton - 50',
-      quantity: 50,
-      groupId: duplex.id,
-      unitId: sheetUnit.id,
-      isArchived: true,
-      variationTree: [
-        {
-          kind: 'property',
-          name: 'Coating',
-          children: [{ kind: 'value', name: 'None' }],
-        },
-      ],
+      baseItem: {
+        name: 'Polycab 1.5 sq mm FR PVC Wire (90m)',
+        group_id: primaryGroup.id,
+        hsn_code: '8544',
+        is_active: 1,
+      },
+      variations: {
+        'Color': [{name: 'Red', code: 'RD'}],
+      },
+      unit_id: piecesUnit.id,
+      conversions: [ { unit_id: boxUnit.id, multiplier: 12 } ],
+    },
+    {
+      baseItem: {
+        name: 'Polycab 2.5 sq mm FR PVC Wire (90m)',
+        group_id: primaryGroup.id,
+        hsn_code: '8544',
+        is_active: 1,
+      },
+      variations: {
+        'Color': [{name: 'Red', code: 'RD'}],
+      },
+      unit_id: piecesUnit.id,
+      conversions: [ { unit_id: boxUnit.id, multiplier: 12 } ],
+    },
+    {
+      baseItem: {
+        name: 'Orient Electric 1200mm Ceiling Fan',
+        group_id: primaryGroup.id,
+        hsn_code: '8414',
+        is_active: 1,
+      },
+      variations: {
+        'Color': [{name: 'Brown', code: 'BR'}],
+      },
+      unit_id: piecesUnit.id,
+      conversions: [],
+    },
+    {
+      baseItem: {
+        name: 'Crompton Greaves 1200mm Ceiling Fan',
+        group_id: primaryGroup.id,
+        hsn_code: '8414',
+        is_active: 1,
+      },
+      variations: {
+        'Color': [{name: 'White', code: 'WH'}],
+      },
+      unit_id: piecesUnit.id,
+      conversions: [],
+    },
+    {
+      baseItem: {
+        name: 'Philips 9W LED Bulb',
+        group_id: primaryGroup.id,
+        hsn_code: '8539',
+        is_active: 1,
+      },
+      variations: {
+        'Color': [{name: 'Cool Day Light', code: 'CDL'}],
+      },
+      unit_id: piecesUnit.id,
+      conversions: [ { unit_id: boxUnit.id, multiplier: 10 } ],
     },
   ];
 
-  for (const itemSeed of itemSeeds) {
-    await ensureItemRecord(itemSeed);
+  const result = [];
+  for (const data of seedItems) {
+    const dbItem = await seedScenarioItem(data);
+    result.push(dbItem);
   }
+  return result;
 }
+
+async function seedScenarioItem(data) {
+  let [existing] = await all('SELECT id FROM items WHERE name = ?', [
+    data.baseItem.name,
+  ]);
+  
+  let itemId;
+  if (!existing) {
+    const res = await run(
+      `INSERT INTO items (name, display_name, group_id, unit_id, quantity, created_at, updated_at) 
+       VALUES (?, ?, ?, ?, 0, datetime('now'), datetime('now'))`,
+      [data.baseItem.name, data.baseItem.name, data.baseItem.group_id, data.unit_id],
+    );
+    itemId = res.lastID;
+    
+    // insert properties & values
+    let order_index = 0;
+    for (const [propName, values] of Object.entries(data.variations)) {
+      const propRes = await run(
+        `INSERT INTO item_variation_nodes 
+         (item_id, parent_node_id, kind, name, position, is_archived, created_at, updated_at)
+         VALUES (?, NULL, 'property', ?, ?, 0, datetime('now'), datetime('now'))`,
+         [itemId, propName, order_index]
+      );
+      const propId = propRes.lastID;
+      
+      let val_index = 0;
+      for (const val of values) {
+        await run(
+          `INSERT INTO item_variation_nodes 
+           (item_id, parent_node_id, kind, name, code, position, is_archived, created_at, updated_at)
+           VALUES (?, ?, 'value', ?, ?, ?, 0, datetime('now'), datetime('now'))`,
+           [itemId, propId, val.name, val.code, val_index]
+        );
+        val_index++;
+      }
+      order_index++;
+    }
+    
+
+    if (data.conversions) {
+      for (const conv of data.conversions) {
+        await run(
+          `INSERT INTO item_unit_conversions (item_id, unit_id, factor_to_primary, created_at, updated_at) VALUES (?, ?, ?, datetime('now'), datetime('now'))`,
+          [itemId, conv.unit_id, conv.multiplier],
+        );
+      }
+    }
+    await logChange('items', itemId, 'INSERT');
+  } else {
+    itemId = existing.id;
+  }
+  return getItemRowById(itemId);
+}
+
+// The real, working manufacturing inventory seed lives in
+// ensureDemoInventoryPresent (defined near reseedDemoData). The earlier
+// createOrGetMaterial/addInventory helpers here referenced a non-existent
+// `inventory` table and stale column names, so they were removed.
 
 function findLeafVariationNodes(nodes = [], currentPath = []) {
   const leaves = [];
@@ -16295,8 +16335,61 @@ async function getMaterialControlTowerDetail(barcode) {
     )?.count || 0,
   );
 
+  const activePipelineInput = await get(
+    'SELECT run_id, node_id FROM run_barcode_inputs WHERE barcode = ? ORDER BY scanned_at DESC LIMIT 1',
+    [material.barcode]
+  );
+  
+  let activePipelineRun = null;
+  if (activePipelineInput) {
+    const runId = activePipelineInput.run_id;
+    const runRow = await get('SELECT * FROM pipeline_runs WHERE id = ?', [runId]);
+    if (runRow) {
+       const orderRows = await all('SELECT order_item_id FROM order_pipeline_assignments WHERE pipeline_run_id = ?', [runId]);
+       const orderIds = orderRows.map(r => r.order_item_id);
+       
+       const template = await get('SELECT nodes_json, stage_labels_json FROM pipeline_templates WHERE id = ?', [runRow.template_id]);
+       const nodes = template ? parseJson(template.nodes_json, []) : [];
+       const stageLabels = template ? parseJson(template.stage_labels_json, []) : [];
+       const node = nodes.find(n => n.id === activePipelineInput.node_id);
+       
+       let machine = null;
+       if (node?.machineId) {
+          const m = await get('SELECT name, primary_photo_url FROM machines WHERE asset_id = ? OR name = ?', [node.machineId, node.machineId]);
+          if (m) machine = { name: m.name, photoUrls: m.primary_photo_url ? [m.primary_photo_url] : [] };
+       }
+       
+       let die = null;
+       if (node?.dieId) {
+          const d = await get('SELECT tool_code, photo_urls FROM dies WHERE tool_code = ?', [node.dieId]);
+          if (d) die = { toolCode: d.tool_code, photoUrls: parseJson(d.photo_urls, []) };
+       }
+       
+       const stages = await all('SELECT * FROM stage_reconciliations WHERE run_id = ?', [runId]);
+       
+       activePipelineRun = {
+         id: runRow.id,
+         name: runRow.name || runRow.id,
+         status: runRow.status,
+         machine,
+         die,
+         orderIds,
+         currentNodeId: activePipelineInput.node_id,
+         stages: stages.map(s => ({
+            nodeId: s.node_id,
+            producedQty: s.produced_qty || 0,
+            expectedQty: s.expected_qty || 0,
+            rejectedQty: s.rejected_qty || 0
+         })),
+         nodes,
+         stageLabels
+       };
+    }
+  }
+
   return {
     material: rowToMaterialDto(refreshed),
+    activePipelineRun,
     stockPositions: stockRows.map((row) => ({
       locationId: row.location_id || 'MAIN',
       locationName: row.location_id || 'Main Warehouse',
@@ -17355,7 +17448,7 @@ async function createRunFromTemplate(templateId, name, orderNo, orderItemId, scr
       runId,
       template.id,
       template.version,
-      name || `Run ${new Date(now).toLocaleDateString('en-IN')}`,
+      name || `Run ${new Date(now).toLocaleDateString('en-IN')} - ${Date.now()}`,
       JSON.stringify({
         actualDurationHoursByNode: {},
         batchQuantityByNode: {},
@@ -19908,9 +20001,10 @@ app.post(
   '/api/admin/reset-demo-data',
   requireRoles('super_admin', 'admin'),
   requirePermission('config.write'),
-  async (_req, res) => {
+  async (req, res) => {
     try {
-      await resetAndSeedDemoData();
+      const scenarioId = req.body?.scenarioId || 'default';
+      await resetAndSeedDemoData(scenarioId);
       res.json({ success: true, error: null });
     } catch (error) {
       res.status(error.statusCode || 500).json({
@@ -19943,9 +20037,10 @@ app.post(
   '/api/admin/reseed-data',
   requireRoles('super_admin', 'admin'),
   requirePermission('config.write'),
-  async (_req, res) => {
+  async (req, res) => {
     try {
-      await reseedDemoData();
+      const scenarioId = req.body?.scenarioId || 'default';
+      await reseedDemoData(scenarioId);
       res.json({ success: true, error: null });
     } catch (error) {
       res.status(error.statusCode || 500).json({
@@ -21867,7 +21962,7 @@ app.get('/api/vendors/:id/purchase-history', requirePermission('config.read'), a
     const uniqueItems = [];
     const seen = new Set();
     for (const item of historyItems) {
-      const key = \`\${item.itemId}_\${item.variationLeafNodeId}\`;
+      const key = `${item.itemId}_${item.variationLeafNodeId}`;
       if (!seen.has(key)) {
         seen.add(key);
         uniqueItems.push(item);
@@ -22719,6 +22814,54 @@ app.post('/runs', async (req, res) => {
     res.status(201).json({ success: true, run });
   } catch (error) {
     res.status(500).json({ success: false, run: null, error: error.message });
+  }
+});
+
+app.post('/dev/seed-manufacturing-demo', async (req, res) => {
+  try {
+    const demoBarcode = `DEMO-MAT-${Date.now()}`;
+    const demoMachine = `MCH-DEMO-${Date.now()}`;
+    const demoDie = `DIE-DEMO-${Date.now()}`;
+    
+    await run(`
+      INSERT INTO machines (
+        asset_id, name, primary_photo_url, status, created_at, updated_at
+      ) VALUES (?, ?, ?, 'active', datetime('now'), datetime('now'))
+    `, [demoMachine, 'Demo Power Press', '/public/power_press.png']);
+
+    await run(`
+      INSERT INTO dies (
+        tool_code, produced_part_numbers, photo_urls, compatible_machine_group_ids, status, ownership, created_at, updated_at
+      ) VALUES (?, '[]', ?, '[]', 'active', 'owned', datetime('now'), datetime('now'))
+    `, [demoDie, JSON.stringify(['/public/demo_die.png'])]);
+    
+    await run(`
+      INSERT INTO materials (
+        barcode, type, name, unit, kind, created_at, updated_at
+      ) VALUES (?, 'raw_material', 'Demo PVC Resin', 'kg', 'single', datetime('now'), datetime('now'))
+    `, [demoBarcode]);
+    
+    const templateId = `tpl-demo-${Date.now()}`;
+    const nodes = [
+      { id: 'node-1', type: 'operation', machineId: demoMachine, dieId: demoDie }
+    ];
+    await run(`
+      INSERT INTO pipeline_templates (
+        id, name, version, status, stage_labels_json, lane_labels_json, nodes_json, flows_json
+      ) VALUES (?, 'Demo Power Press Pipeline', 1, 'published', '["Pressing", "Inspection"]', '[]', ?, '[]')
+    `, [templateId, JSON.stringify(nodes)]);
+    
+    const pipelineRun = await createRunFromTemplate(templateId, 'Demo Production Run', null, null, 'inventory');
+    
+    await run(`
+      INSERT INTO run_barcode_inputs (
+        id, run_id, node_id, barcode, material_payload_json, scanned_at
+      ) VALUES (?, ?, 'node-1', ?, '{}', datetime('now'))
+    `, [`input-${Date.now()}`, pipelineRun.id, demoBarcode]);
+    
+    res.json({ success: true, barcode: demoBarcode });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -23880,24 +24023,369 @@ async function clearAllData() {
     await run('PRAGMA foreign_keys = ON').catch(() => {});
   }
 }
-async function reseedDemoData() {
+// "Mobiles" demo scenario: a single item (Smartphone X) exercising 5 top-level
+// variation properties, each with 5 values. Creates the Mobiles group, then
+// delegates item creation to ensureDemoItemsPresent('mobiles'). Idempotent.
+async function ensureDemoMobilesPresent(scenarioId = 'default') {
+  if (scenarioId !== 'mobiles') {
+    return;
+  }
+
+  const now = new Date().toISOString();
+
+  // Mobiles are counted in pieces; ensure that unit exists and resolve it.
+  const pieceUnit = await ensureUnitRecord({
+    name: 'Piece',
+    symbol: 'Pc',
+    notes: 'Mobiles scenario',
+  });
+
+  const mobilesGroup = await ensureGroupRecord({
+    name: 'Mobiles',
+    unitId: pieceUnit.id,
+  });
+
+  // Create the item(s) via the shared definition (5 properties x 5 values).
+  await ensureDemoItemsPresent('mobiles');
+
+  // ensureDemoItemsPresent runs before the Mobiles group exists, so the item
+  // lands in the fallback group with the fallback unit — pin both here.
+  const item = await get(
+    'SELECT id, group_id, unit_id FROM items WHERE name = ? ORDER BY id ASC LIMIT 1',
+    ['Smartphone X'],
+  );
+  if (item && (item.group_id !== mobilesGroup.id || item.unit_id !== pieceUnit.id)) {
+    await run('UPDATE items SET group_id = ?, unit_id = ?, updated_at = ? WHERE id = ?', [
+      mobilesGroup.id,
+      pieceUnit.id,
+      now,
+      item.id,
+    ]);
+  }
+}
+
+// Curated "Manufacturing Processes" demo scenario. Builds on the manufacturing
+// items defined by ensureDemoItemsPresent('manufacturing') (Aluminum Billet,
+// Copper Coil), then layers a coherent story on top: a Manufacturing group, a
+// distinct material per processing-stage combination (e.g. RAW-MLL-ANO) each
+// carrying real on-hand inventory, a dedicated pipeline template, an
+// in-progress pipeline run, and a completed production run. Idempotent.
+async function ensureDemoInventoryPresent(scenarioId = 'default') {
+  if (scenarioId !== 'manufacturing') {
+    return;
+  }
+
+  const now = new Date().toISOString();
+
+  // Manufacturing measures in kilograms, but the base demo unit set has no
+  // Kilogram unit, so ensure it exists first. ensureDemoItemsPresent then
+  // resolves it (by name) when assigning the manufacturing items' unit.
+  const kgUnit = await ensureUnitRecord({
+    name: 'Kilogram',
+    symbol: 'Kg',
+    notes: 'Manufacturing scenario',
+  });
+
+  // 1. Dedicated manufacturing group so the seeded items land somewhere sensible.
+  await ensureGroupRecord({ name: 'Manufacturing', unitId: kgUnit.id });
+
+  // 2. Ensure the manufacturing items exist. ensureDemoDataset() only seeds the
+  //    default scenario, so create the manufacturing items (Aluminum Billet,
+  //    Copper Coil) here using the shared definitions.
+  await ensureDemoItemsPresent('manufacturing');
+
+  // Local helper: create (or fetch) a distinct material for one combination of
+  // variation values on an item. We do our own exact match rather than call
+  // ensureMaterialForItemSelection because that helper's final fallback returns
+  // *any* material linked to the item, which would collapse every stage onto a
+  // single material.
+  const ensureCombinationMaterial = async (item, selections) => {
+    const ordered = {};
+    Object.keys(selections).sort().forEach((k) => { ordered[k] = selections[k]; });
+    const customJson = JSON.stringify(ordered);
+
+    const existing = await get(
+      `SELECT * FROM materials
+       WHERE linked_item_id = ?
+         AND COALESCE(linked_variation_leaf_node_id, 0) = 0
+         AND COALESCE(custom_variation_values_json, '') = ?
+       ORDER BY id ASC LIMIT 1`,
+      [item.id, customJson],
+    );
+    if (existing) {
+      return existing;
+    }
+
+    const unit = item.unit_id ? await getUnitRowById(item.unit_id) : kgUnit;
+    let barcode = await generateBarcodeFromItemSelection(item.id, selections);
+    if (!barcode) {
+      barcode = generateStandaloneMaterialBarcode();
+    }
+    if (await getMaterialRowByBarcode(barcode)) {
+      barcode = `${barcode}-${item.id}`;
+    }
+    const baseName = item.display_name || item.name;
+    const suffix = Object.values(ordered).join(' - ');
+    const name = suffix ? `${baseName} - ${suffix}` : baseName;
+
+    await run(
+      `
+      INSERT INTO materials (
+        barcode, name, type, grade, thickness, supplier, location, unit_id, unit, notes,
+        group_mode, inheritance_enabled, created_at, kind, parent_barcode, number_of_children,
+        linked_child_barcodes, scan_count, linked_group_id, linked_item_id, linked_variation_leaf_node_id,
+        custom_variation_values_json, display_stock, created_by, workflow_status, material_class, inventory_state, procurement_state,
+        traceability_mode, on_hand_qty, reserved_qty, available_to_promise_qty, incoming_qty,
+        linked_order_count, linked_pipeline_count, pending_alert_count, updated_at, last_scanned_at
+      ) VALUES (?, ?, 'Item', '', '', '', '', ?, ?, '', NULL, 0, ?, 'standalone', NULL, 0, '[]', 0, NULL, ?, NULL, ?, ?, ?, 'notStarted', 'finished_good', 'available', 'not_ordered', 'bulk', 0, 0, 0, 0, 0, 0, 0, ?, NULL)
+      `,
+      [
+        barcode,
+        name,
+        unit?.id || kgUnit.id,
+        unit?.symbol || kgUnit.symbol || '',
+        now,
+        item.id,
+        customJson,
+        unit?.symbol ? `0 ${unit.symbol}` : '0',
+        'Demo Seed',
+        now,
+      ],
+    );
+    return getMaterialRowByBarcode(barcode);
+  };
+
+  // Idempotent inventory: bring the MAIN/'' position to an absolute target so
+  // re-seeding (without a reset) never double-counts.
+  const setStageInventory = async (barcode, targetQty, unitId) => {
+    const pos = await get(
+      `SELECT on_hand_qty FROM inventory_stock_positions
+       WHERE material_barcode = ? AND location_id = 'MAIN' AND lot_code = ''`,
+      [barcode],
+    );
+    const current = pos ? Number(pos.on_hand_qty || 0) : 0;
+    const delta = targetQty - current;
+    if (delta !== 0) {
+      await upsertInventoryStockPosition({
+        materialBarcode: barcode,
+        unitId,
+        onHandDelta: delta,
+        now,
+      });
+      await recomputeMaterialInventorySummary(barcode, now);
+    }
+  };
+
+  // 3. A distinct material with on-hand inventory for each processing stage.
+  const stagePlan = {
+    'Aluminum Billet': [
+      { selections: { 'Initial State': 'Raw', 'Primary Process': 'None', 'Finishing': 'None' }, qty: 1000, label: 'Raw' },
+      { selections: { 'Initial State': 'Raw', 'Primary Process': 'Milled', 'Finishing': 'None' }, qty: 600, label: 'Milled' },
+      { selections: { 'Initial State': 'Raw', 'Primary Process': 'Milled', 'Finishing': 'Anodized' }, qty: 250, label: 'Anodized' },
+    ],
+    'Copper Coil': [
+      { selections: { 'State': 'Drawn', 'Treatment': 'Insulated' }, qty: 800, label: 'Insulated' },
+      { selections: { 'State': 'Drawn', 'Treatment': 'Bare' }, qty: 300, label: 'Bare' },
+    ],
+  };
+
+  const materialsByItem = {};
+  for (const [itemName, stages] of Object.entries(stagePlan)) {
+    const itemRow = await get(
+      'SELECT * FROM items WHERE name = ? ORDER BY id ASC LIMIT 1',
+      [itemName],
+    );
+    if (!itemRow) {
+      continue;
+    }
+    // Force kilograms. ensureDemoItemsPresent resolves the item's unit through
+    // getUnitsWithUsage(), which doesn't surface the freshly-created Kilogram
+    // unit, so the items land on the fallback (Box) — fix it directly here.
+    if (itemRow.unit_id !== kgUnit.id) {
+      await run('UPDATE items SET unit_id = ?, updated_at = ? WHERE id = ?', [
+        kgUnit.id,
+        now,
+        itemRow.id,
+      ]);
+      itemRow.unit_id = kgUnit.id;
+    }
+    materialsByItem[itemName] = { item: itemRow, stages: [] };
+    for (const stage of stages) {
+      const material = await ensureCombinationMaterial(itemRow, stage.selections);
+      if (!material?.barcode) {
+        continue;
+      }
+      await setStageInventory(material.barcode, stage.qty, itemRow.unit_id || kgUnit.id);
+      materialsByItem[itemName].stages.push({ material, stage });
+    }
+  }
+
+  // 4. Dedicated pipeline template for the aluminum anodizing line.
+  const mfgTemplate = {
+    id: 'aluminum-anodize-line',
+    factoryId: '1',
+    shopFloorId: '1',
+    name: 'Aluminum Anodizing Line',
+    description:
+      'Raw billet is milled, then anodized, then quality-checked before dispatch.',
+    version: 1,
+    status: 'published',
+    stageLabels: ['Raw Input', 'Milling', 'Anodizing', 'Quality Check'],
+    laneLabels: ['Main'],
+    nodes: [
+      { id: 'alu-input', name: 'Billet Intake', processType: 'Input', stageIndex: 0, laneIndex: 0, inputs: ['Aluminum Billet (RAW)'], outputs: ['Aluminum Billet (RAW)'], machine: 'Rack M1', durationHours: 0.5, status: 'Ready', isIntermediate: false, scannedInputs: [] },
+      { id: 'alu-mill', name: 'CNC Milling', processType: 'Machining', stageIndex: 1, laneIndex: 0, inputs: ['Aluminum Billet (RAW)'], outputs: ['Milled Billet (MLL)'], machine: 'CNC 07', durationHours: 2, status: 'Active', isIntermediate: true, scannedInputs: [] },
+      { id: 'alu-anodize', name: 'Anodizing Bath', processType: 'Finishing', stageIndex: 2, laneIndex: 0, inputs: ['Milled Billet (MLL)'], outputs: ['Anodized Billet (ANO)'], machine: 'Anodize Tank 02', durationHours: 3, status: 'Blocked', isIntermediate: true, scannedInputs: [] },
+      { id: 'alu-qc', name: 'Quality Check', processType: 'Inspection', stageIndex: 3, laneIndex: 0, inputs: ['Anodized Billet (ANO)'], outputs: ['Finished Billet'], machine: 'QC Bench', durationHours: 0.5, status: 'Queued', isIntermediate: false, scannedInputs: [] },
+    ],
+    flows: [
+      { id: 'alu-flow-1', fromNodeId: 'alu-input', toNodeId: 'alu-mill', materialName: 'Aluminum Billet (RAW)', barcode: null, isSplit: false, isMerge: false },
+      { id: 'alu-flow-2', fromNodeId: 'alu-mill', toNodeId: 'alu-anodize', materialName: 'Milled Billet (MLL)', barcode: null, isSplit: false, isMerge: false },
+      { id: 'alu-flow-3', fromNodeId: 'alu-anodize', toNodeId: 'alu-qc', materialName: 'Anodized Billet (ANO)', barcode: null, isSplit: false, isMerge: false },
+    ],
+  };
+
+  const existingTemplate = await get(
+    'SELECT id FROM pipeline_templates WHERE id = ?',
+    [mfgTemplate.id],
+  );
+  if (!existingTemplate) {
+    await run(
+      `
+      INSERT INTO pipeline_templates (
+        id, factory_id, shop_floor_id, name, description, version, status,
+        stage_labels_json, lane_labels_json, nodes_json, flows_json,
+        intermediate_naming_convention, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        mfgTemplate.id,
+        mfgTemplate.factoryId,
+        mfgTemplate.shopFloorId,
+        mfgTemplate.name,
+        mfgTemplate.description,
+        mfgTemplate.version,
+        mfgTemplate.status,
+        JSON.stringify(mfgTemplate.stageLabels),
+        JSON.stringify(mfgTemplate.laneLabels),
+        JSON.stringify(mfgTemplate.nodes),
+        JSON.stringify(mfgTemplate.flows),
+        '',
+        now,
+        now,
+      ],
+    );
+  }
+
+  // 5. In-progress pipeline run scanning the raw billet material at intake.
+  const aluminum = materialsByItem['Aluminum Billet'];
+  const rawBilletBarcode =
+    aluminum?.stages.find((s) => s.stage.label === 'Raw')?.material?.barcode || null;
+
+  await ensurePipelineRunRecord({
+    id: 'demo-anodize-run-active',
+    templateId: mfgTemplate.id,
+    name: 'Anodize Line Morning Batch',
+    status: 'inProgress',
+    createdAt: oneDayAgo(1),
+    startedAt: oneDayAgo(1),
+    nodeStatuses: {
+      'alu-input': 'completed',
+      'alu-mill': 'inProgress',
+      'alu-anodize': 'blocked',
+      'alu-qc': 'pending',
+    },
+    overrides: {
+      actualDurationHoursByNode: { 'alu-mill': 1.6 },
+      batchQuantityByNode: { 'alu-input': 600, 'alu-mill': 600 },
+      machineOverrideByNode: {},
+    },
+    barcodeAssignments: rawBilletBarcode
+      ? [
+          {
+            id: 'demo-anodize-barcode-1',
+            nodeId: 'alu-input',
+            barcode: rawBilletBarcode,
+            scannedAt: oneDayAgo(1),
+          },
+        ]
+      : [],
+  });
+
+  // 6. Completed production run for the finished (anodized) output. The
+  //    manufacturing items use parallel variation properties, so there is no
+  //    single leaf node id; record 0 with a descriptive path label instead.
+  const productionSeeds = [];
+  if (aluminum) {
+    const anodized = aluminum.stages.find((s) => s.stage.label === 'Anodized');
+    if (anodized) {
+      productionSeeds.push({
+        runCode: 'MFG-0001',
+        itemId: aluminum.item.id,
+        leafNodeId: 0,
+        pathLabel: 'Raw · Milled · Anodized',
+        outputQuantity: anodized.stage.qty,
+        completedAt: oneDayAgo(1),
+      });
+    }
+  }
+  for (const seed of productionSeeds) {
+    const exists = await get(
+      'SELECT id FROM production_runs WHERE run_code = ?',
+      [seed.runCode],
+    );
+    if (exists) {
+      continue;
+    }
+    await run(
+      `
+      INSERT INTO production_runs (
+        run_code, status, completed_at, item_id, variation_leaf_node_id,
+        variation_path_label, output_quantity, uom, location,
+        source_metadata_json, created_at, updated_at
+      ) VALUES (?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        seed.runCode,
+        seed.completedAt,
+        seed.itemId,
+        seed.leafNodeId,
+        seed.pathLabel,
+        seed.outputQuantity,
+        kgUnit.symbol || 'kg',
+        'Anodizing Line',
+        JSON.stringify({ scenario: 'manufacturing' }),
+        now,
+        now,
+      ],
+    );
+  }
+}
+
+async function reseedDemoData(scenarioId = 'default') {
   await seedMaterialsIfEmpty();
   await seedUnitsIfEmpty();
   await bootstrapUnitsFromMaterials();
   await backfillMaterialUnitIds();
   await seedClientsIfEmpty();
-  await seedGroupsIfEmpty();
-  await seedItemsIfEmpty();
+  await seedGroupsIfEmpty(scenarioId);
+  await seedItemsIfEmpty(scenarioId);
   await seedOrdersIfEmpty();
   await seedTemplatesIfEmpty();
   await seedCompanyProfileIfEmpty();
-  await ensureDemoDataset();
+  await ensureDemoDataset(scenarioId);
+  if (scenarioId === 'manufacturing') {
+    await ensureDemoInventoryPresent(scenarioId);
+  }
+  if (scenarioId === 'mobiles') {
+    await ensureDemoMobilesPresent(scenarioId);
+  }
 }
 
-async function resetAndSeedDemoData() {
+async function resetAndSeedDemoData(scenarioId = 'default') {
   await initDb();
   await clearAllData();
-  await reseedDemoData();
+  await reseedDemoData(scenarioId);
 }
 
 function rowToDepartmentDto(row) {
@@ -24949,6 +25437,8 @@ module.exports = {
   createPoDocumentReadUrl,
   ensureMockOrdersPresent,
   ensureDemoDataset,
+  ensureDemoInventoryPresent,
+  ensureDemoMobilesPresent,
   resetAndSeedDemoData,
   getOrderActivity,
   getOrders,
