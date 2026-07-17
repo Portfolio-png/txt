@@ -20,10 +20,37 @@ class UseInventoryBrowseScreen extends StatefulWidget {
 }
 
 class _UseInventoryBrowseScreenState extends State<UseInventoryBrowseScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  String _sortBy = 'name_asc'; // name_asc, name_desc, qty_desc, qty_asc
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final inventory = context.watch<InventoryProvider>();
-    final records = inventory.variationStock.where((r) => r.quantity > 0).toList();
+    final allRecords = inventory.variationStock.where((r) => r.quantity > 0).toList();
+    var records = _searchQuery.isEmpty 
+        ? List<VariationStockRecord>.of(allRecords)
+        : allRecords.where((r) => r.itemName.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+
+    records.sort((a, b) {
+      switch (_sortBy) {
+        case 'name_desc':
+          return b.itemName.compareTo(a.itemName);
+        case 'qty_desc':
+          return b.quantity.compareTo(a.quantity);
+        case 'qty_asc':
+          return a.quantity.compareTo(b.quantity);
+        case 'name_asc':
+        default:
+          return a.itemName.compareTo(b.itemName);
+      }
+    });
 
     return Scaffold(
       backgroundColor: SoftErpTheme.shellSurface,
@@ -32,41 +59,78 @@ class _UseInventoryBrowseScreenState extends State<UseInventoryBrowseScreen> {
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         elevation: 0,
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.sort_rounded, color: SoftErpTheme.accent),
+            onSelected: (val) => setState(() => _sortBy = val),
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'name_asc', child: Text('Name (A-Z)')),
+              PopupMenuItem(value: 'name_desc', child: Text('Name (Z-A)')),
+              PopupMenuItem(value: 'qty_desc', child: Text('Quantity (High to Low)')),
+              PopupMenuItem(value: 'qty_asc', child: Text('Quantity (Low to High)')),
+            ],
+          ),
+        ],
       ),
-      body: records.isEmpty
-          ? const Center(child: Text('No raw materials available in inventory.'))
-          : ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: records.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                final r = records[index];
-                return ListTile(
-                  tileColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  leading: const Icon(Icons.inventory_2_rounded, color: SoftErpTheme.accent),
-                  title: Text(r.itemName, style: const TextStyle(fontWeight: FontWeight.w800)),
-                  subtitle: Text('${r.variationPathLabel}\nAvailable: ${r.quantity}'),
-                  onTap: () {
-                    showPurchaseQuantitySheet(
-                      context,
-                      onConfirm: (qtyStr, weightStr, _) {
-                        Navigator.of(context).pop(); // close sheet
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => UseOrderSelectScreen(
-                              stockRecord: r,
-                              qtyStr: qtyStr,
-                              weightStr: weightStr,
-                            ),
-                          ),
-                        );
-                      },
-                    );
-                  },
-                );
-              },
+      body: Column(
+        children: [
+          Container(
+            color: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Search raw materials...',
+                prefixIcon: const Icon(Icons.search_rounded),
+                filled: true,
+                fillColor: SoftErpTheme.shellSurface,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              ),
+              onChanged: (val) => setState(() => _searchQuery = val.trim()),
             ),
+          ),
+          Expanded(
+            child: records.isEmpty
+                ? const Center(child: Text('No raw materials available in inventory.'))
+                : ListView.separated(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: records.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      final r = records[index];
+                      return ListTile(
+                        tileColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        leading: const Icon(Icons.inventory_2_rounded, color: SoftErpTheme.accent),
+                        title: Text(r.itemName, style: const TextStyle(fontWeight: FontWeight.w800)),
+                        subtitle: Text('${r.variationPathLabel}\nAvailable: ${r.quantity}'),
+                        onTap: () {
+                          showPurchaseQuantitySheet(
+                            context,
+                            onConfirm: (qtyStr, weightStr) {
+                              Navigator.of(context).pop(); // close sheet
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => UseOrderSelectScreen(
+                                    stockRecord: r,
+                                    qtyStr: qtyStr,
+                                    weightStr: weightStr,
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -89,6 +153,15 @@ class UseOrderSelectScreen extends StatefulWidget {
 
 class _UseOrderSelectScreenState extends State<UseOrderSelectScreen> {
   bool _creating = false;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  String _sortBy = 'date_desc'; // date_desc, date_asc, name_asc, name_desc
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   Future<void> _createInternalChallan(BuildContext context, OrderGroup orderGroup) async {
     if (_creating) return;
@@ -158,7 +231,28 @@ class _UseOrderSelectScreenState extends State<UseOrderSelectScreen> {
   @override
   Widget build(BuildContext context) {
     final ordersProvider = context.watch<OrdersProvider>();
-    final groups = ordersProvider.filteredOrderGroups;
+    final allGroups = ordersProvider.filteredOrderGroups;
+    
+    var groups = _searchQuery.isEmpty 
+        ? List<OrderGroup>.of(allGroups)
+        : allGroups.where((g) => 
+            g.orderNo.toLowerCase().contains(_searchQuery.toLowerCase()) || 
+            g.clientName.toLowerCase().contains(_searchQuery.toLowerCase())
+          ).toList();
+          
+    groups.sort((a, b) {
+      switch (_sortBy) {
+        case 'date_asc':
+          return a.createdAt.compareTo(b.createdAt);
+        case 'name_asc':
+          return a.clientName.compareTo(b.clientName);
+        case 'name_desc':
+          return b.clientName.compareTo(a.clientName);
+        case 'date_desc':
+        default:
+          return b.createdAt.compareTo(a.createdAt);
+      }
+    });
 
     return Scaffold(
       backgroundColor: SoftErpTheme.shellSurface,
@@ -167,24 +261,72 @@ class _UseOrderSelectScreenState extends State<UseOrderSelectScreen> {
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         elevation: 0,
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.sort_rounded, color: SoftErpTheme.accent),
+            onSelected: (val) => setState(() => _sortBy = val),
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'date_desc', child: Text('Newest First')),
+              PopupMenuItem(value: 'date_asc', child: Text('Oldest First')),
+              PopupMenuItem(value: 'name_asc', child: Text('Client Name (A-Z)')),
+              PopupMenuItem(value: 'name_desc', child: Text('Client Name (Z-A)')),
+            ],
+          ),
+        ],
       ),
       body: _creating
           ? const Center(child: CircularProgressIndicator())
-          : ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: groups.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                final group = groups[index];
-                return ListTile(
-                  tileColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  leading: const Icon(Icons.receipt_long_rounded, color: SoftErpTheme.accent),
-                  title: Text(group.orderNo, style: const TextStyle(fontWeight: FontWeight.w800)),
-                  subtitle: Text(group.clientName),
-                  onTap: () => _createInternalChallan(context, group),
-                );
-              },
+          : Column(
+              children: [
+                Container(
+                  color: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Search orders...',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      filled: true,
+                      fillColor: SoftErpTheme.shellSurface,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                    onChanged: (val) => setState(() => _searchQuery = val.trim()),
+                  ),
+                ),
+                Expanded(
+                  child: groups.isEmpty
+                      ? const Center(child: Text('No orders found.'))
+                      : ListView.separated(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: groups.length,
+                          separatorBuilder: (_, _) => const SizedBox(height: 12),
+                          itemBuilder: (context, index) {
+                            final group = groups[index];
+                            final dateStr = "${group.createdAt.day.toString().padLeft(2, '0')}/${group.createdAt.month.toString().padLeft(2, '0')}/${group.createdAt.year}";
+                            return ListTile(
+                              tileColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              leading: const Icon(Icons.receipt_long_rounded, color: SoftErpTheme.accent),
+                              title: Text(group.orderNo, style: const TextStyle(fontWeight: FontWeight.w800)),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(group.clientName),
+                                  const SizedBox(height: 4),
+                                  Text('Date: $dateStr', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                ],
+                              ),
+                              isThreeLine: true,
+                              onTap: () => _createInternalChallan(context, group),
+                            );
+                          },
+                        ),
+                ),
+              ],
             ),
     );
   }

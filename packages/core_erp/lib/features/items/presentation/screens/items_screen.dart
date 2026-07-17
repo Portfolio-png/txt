@@ -1936,8 +1936,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                               : _isReadOnly
                               ? 'View Item'
                               : 'Edit Item',
-                          subtitle:
-                              'Build recursive property and value branches directly inside the item.',
                         ),
                       ),
                       IconButton(

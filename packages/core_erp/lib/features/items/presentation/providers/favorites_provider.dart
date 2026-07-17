@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:collection/collection.dart';
 import 'package:core_erp/features/delivery_challans/domain/delivery_challan.dart';
 import 'package:core_erp/features/items/data/repositories/favorites_repository.dart';
 
@@ -55,14 +56,14 @@ class FavoritesProvider extends ChangeNotifier {
     }
   }
 
-  bool isFavorite(int itemId, int variationLeafNodeId) {
-    return _favorites.any((f) => f.itemId == itemId && f.variationLeafNodeId == variationLeafNodeId);
+  bool isFavorite(int itemId, List<int> variationPathNodeIds) {
+    return _favorites.any((f) => f.itemId == itemId && const ListEquality().equals(f.variationPathNodeIds, variationPathNodeIds));
   }
 
   Future<void> toggleFavorite(DeliveryChallanItem item, bool isFav) async {
     if (isFav) {
       // Add
-      if (!isFavorite(item.itemId ?? 0, item.variationLeafNodeId)) {
+      if (!isFavorite(item.itemId ?? 0, item.variationPathNodeIds)) {
         _favorites.add(item);
         notifyListeners();
         
@@ -75,13 +76,13 @@ class FavoritesProvider extends ChangeNotifier {
         );
         
         if (!success) {
-          _favorites.removeWhere((f) => f.itemId == item.itemId && f.variationLeafNodeId == item.variationLeafNodeId);
+          _favorites.removeWhere((f) => f.itemId == item.itemId && const ListEquality().equals(f.variationPathNodeIds, item.variationPathNodeIds));
           notifyListeners();
         }
       }
     } else {
       // Remove
-      final existingIndex = _favorites.indexWhere((f) => f.itemId == item.itemId && f.variationLeafNodeId == item.variationLeafNodeId);
+      final existingIndex = _favorites.indexWhere((f) => f.itemId == item.itemId && const ListEquality().equals(f.variationPathNodeIds, item.variationPathNodeIds));
       if (existingIndex >= 0) {
         final removed = _favorites.removeAt(existingIndex);
         notifyListeners();

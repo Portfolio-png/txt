@@ -9,6 +9,7 @@ import 'package:core_erp/features/delivery_challans/presentation/providers/deliv
 import 'package:core_erp/features/clients/presentation/providers/clients_provider.dart';
 import 'package:core_erp/features/vendors/presentation/providers/vendors_provider.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
+import 'package:core_erp/features/items/presentation/providers/favorites_provider.dart';
 import 'package:core_erp/features/items/domain/item_definition.dart';
 import 'package:core_erp/widgets/variation_path_selector_dialog.dart';
 
@@ -374,6 +375,32 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
                   initialRootPropertyId: null,
                   initialValueNodeIds: const [],
                   useTilesForValues: true,
+                  isFavorite: (result) => context.read<FavoritesProvider>().isFavorite(selectedItem.id, result.valueNodeIds),
+                  onFavoriteToggled: (result, isFav) {
+                    final dummyItem = DeliveryChallanItem(
+                      id: 0,
+                      orderItemId: null,
+                      productionRunId: null,
+                      itemId: selectedItem.id,
+                      variationLeafNodeId: result.leaf?.id ?? 0,
+                      variationPathLabel: result.summaryLabel,
+                      variationPathNodeIds: result.valueNodeIds,
+                      particulars: selectedItem.displayName,
+                      quantityPcs: '1',
+                      weight: '0.0',
+                      lineNo: 0,
+                      hsnCode: '',
+                      note: '',
+                    );
+                    context.read<FavoritesProvider>().toggleFavorite(dummyItem, isFav);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(isFav ? 'Variation saved to favorites' : 'Variation removed from favorites'),
+                        behavior: SnackBarBehavior.floating,
+                        margin: const EdgeInsets.only(top: 10, left: 10, right: 10),
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
@@ -391,7 +418,7 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
         productionRunId: null,
         itemId: selectedItem.id,
         variationLeafNodeId: variationResult?.leaf?.id ?? 0,
-        variationPathLabel: variationResult?.leaf?.displayName ?? '',
+        variationPathLabel: variationResult?.summaryLabel ?? '',
         variationPathNodeIds: variationResult?.valueNodeIds ?? const <int>[],
         customVariationValues: variationResult?.customVariationValues ?? const <int, String>{},
         particulars: selectedItem.displayName,
@@ -429,6 +456,32 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
                 initialRootPropertyId: null,
                 initialValueNodeIds: const [],
                 useTilesForValues: true,
+                isFavorite: (result) => context.read<FavoritesProvider>().isFavorite(selectedItem.id, result.valueNodeIds),
+                onFavoriteToggled: (result, isFav) {
+                  final dummyItem = DeliveryChallanItem(
+                    id: 0,
+                    orderItemId: null,
+                    productionRunId: null,
+                    itemId: selectedItem.id,
+                    variationLeafNodeId: result.leaf?.id ?? 0,
+                    variationPathLabel: result.summaryLabel,
+                    variationPathNodeIds: result.valueNodeIds,
+                    particulars: selectedItem.displayName,
+                    quantityPcs: '1',
+                    weight: '0.0',
+                    lineNo: 0,
+                    hsnCode: '',
+                    note: '',
+                  );
+                  context.read<FavoritesProvider>().toggleFavorite(dummyItem, isFav);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(isFav ? 'Variation saved to favorites' : 'Variation removed from favorites'),
+                      behavior: SnackBarBehavior.floating,
+                      margin: const EdgeInsets.only(top: 10, left: 10, right: 10),
+                    ),
+                  );
+                },
               ),
             ),
           ),
@@ -445,7 +498,7 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
         productionRunId: oldItem.productionRunId,
         itemId: selectedItem.id,
         variationLeafNodeId: variationResult?.leaf?.id ?? 0,
-        variationPathLabel: variationResult?.leaf?.displayName ?? '',
+        variationPathLabel: variationResult?.summaryLabel ?? '',
         variationPathNodeIds: variationResult?.valueNodeIds ?? const <int>[],
         customVariationValues: variationResult?.customVariationValues ?? const <int, String>{},
         particulars: selectedItem.displayName,
@@ -480,6 +533,32 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
               initialRootPropertyId: null,
               initialValueNodeIds: oldItem.variationPathNodeIds,
               useTilesForValues: true,
+              isFavorite: (result) => context.read<FavoritesProvider>().isFavorite(selectedItem.id, result.valueNodeIds),
+              onFavoriteToggled: (result, isFav) {
+                final dummyItem = DeliveryChallanItem(
+                  id: 0,
+                  orderItemId: null,
+                  productionRunId: null,
+                  itemId: selectedItem.id,
+                  variationLeafNodeId: result.leaf?.id ?? 0,
+                  variationPathLabel: result.summaryLabel,
+                  variationPathNodeIds: result.valueNodeIds,
+                  particulars: selectedItem.displayName,
+                  quantityPcs: '1',
+                  weight: '0.0',
+                  lineNo: 0,
+                  hsnCode: '',
+                  note: '',
+                );
+                context.read<FavoritesProvider>().toggleFavorite(dummyItem, isFav);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(isFav ? 'Variation saved to favorites' : 'Variation removed from favorites'),
+                    behavior: SnackBarBehavior.floating,
+                    margin: const EdgeInsets.only(top: 10, left: 10, right: 10),
+                  ),
+                );
+              },
             ),
           ),
         ),
@@ -495,7 +574,7 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
         productionRunId: oldItem.productionRunId,
         itemId: oldItem.itemId,
         variationLeafNodeId: variationResult.leaf?.id ?? 0,
-        variationPathLabel: variationResult.leaf?.displayName ?? '',
+        variationPathLabel: variationResult.summaryLabel,
         variationPathNodeIds: variationResult.valueNodeIds,
         customVariationValues: variationResult.customVariationValues,
         particulars: oldItem.particulars,

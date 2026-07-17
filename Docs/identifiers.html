@@ -1,0 +1,2216 @@
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#ffffff; --ink:#1a1f2b; --ink-soft:#4a5364; --ink-faint:#7c8598;
+  --line:#e4e7ec; --line-soft:#eef0f4;
+  --accent:#4f46e5; --accent-soft:#eae9fb;
+  --mono-bg:#f2f3f7; --mono-ink:#2a2140;
+  --seq:#0e7c7b; --seq-bg:#dbf1f0;
+  --bar:#7b3fb3; --bar-bg:#efe3fa;
+  --sec:#b03a5b; --sec-bg:#fbe3ea;
+  --sys:#a86412; --sys-bg:#f8ecd6;
+  --key:#3a5bb0; --key-bg:#e3e9fb;
+  --k-int:#0e7c7b; --k-text:#a86412; --k-comp:#7b3fb3;
+  --shadow:0 1px 2px rgba(20,25,40,.04),0 4px 16px rgba(20,25,40,.05);
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#0e1016; --panel:#161a23; --ink:#e9ecf2; --ink-soft:#a7b0c0; --ink-faint:#6c7688;
+    --line:#242a36; --line-soft:#1c2129;
+    --accent:#8b85ff; --accent-soft:#211f3a;
+    --mono-bg:#1b2030; --mono-ink:#cfd6ea;
+    --seq:#4fd6d4; --seq-bg:#0c2b2b; --bar:#c79bef; --bar-bg:#2a1c3c;
+    --sec:#f090ab; --sec-bg:#341a24; --sys:#e6b667; --sys-bg:#322611;
+    --key:#93aaf0; --key-bg:#1a2138;
+    --k-int:#4fd6d4; --k-text:#e6b667; --k-comp:#c79bef;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="light"]{
+  --bg:#f6f7f9; --panel:#ffffff; --ink:#1a1f2b; --ink-soft:#4a5364; --ink-faint:#7c8598;
+  --line:#e4e7ec; --line-soft:#eef0f4; --accent:#4f46e5; --accent-soft:#eae9fb;
+  --mono-bg:#f2f3f7; --mono-ink:#2a2140;
+  --seq:#0e7c7b; --seq-bg:#dbf1f0; --bar:#7b3fb3; --bar-bg:#efe3fa;
+  --sec:#b03a5b; --sec-bg:#fbe3ea; --sys:#a86412; --sys-bg:#f8ecd6;
+  --key:#3a5bb0; --key-bg:#e3e9fb; --k-int:#0e7c7b; --k-text:#a86412; --k-comp:#7b3fb3;
+  --shadow:0 1px 2px rgba(20,25,40,.04),0 4px 16px rgba(20,25,40,.05);
+}
+:root[data-theme="dark"]{
+  --bg:#0e1016; --panel:#161a23; --ink:#e9ecf2; --ink-soft:#a7b0c0; --ink-faint:#6c7688;
+  --line:#242a36; --line-soft:#1c2129; --accent:#8b85ff; --accent-soft:#211f3a;
+  --mono-bg:#1b2030; --mono-ink:#cfd6ea;
+  --seq:#4fd6d4; --seq-bg:#0c2b2b; --bar:#c79bef; --bar-bg:#2a1c3c;
+  --sec:#f090ab; --sec-bg:#341a24; --sys:#e6b667; --sys-bg:#322611;
+  --key:#93aaf0; --key-bg:#1a2138; --k-int:#4fd6d4; --k-text:#e6b667; --k-comp:#c79bef;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+body{margin:0}
+.wrap{
+  --sans:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:ui-monospace,'SF Mono',SFMono-Regular,'JetBrains Mono',Menlo,Consolas,monospace;
+  font-family:var(--sans); background:var(--bg); color:var(--ink);
+  line-height:1.55; -webkit-font-smoothing:antialiased;
+  padding:clamp(20px,4vw,56px); max-width:1160px; margin:0 auto;
+}
+code,.mono{font-family:var(--mono)}
+h1,h2,h3,h4{text-wrap:balance;margin:0}
+a{color:var(--accent);text-decoration:none}
+
+/* header */
+.masthead{margin-bottom:40px}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);font-weight:600}
+.masthead h1{font-size:clamp(28px,4.6vw,44px);font-weight:800;letter-spacing:-.02em;margin:.35em 0 .3em;line-height:1.05}
+.masthead p{color:var(--ink-soft);max-width:64ch;font-size:16px;margin:0}
+.masthead .sub{color:var(--ink-faint);font-size:13.5px;margin-top:12px;font-family:var(--mono)}
+
+/* stat tiles */
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin:28px 0 8px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;box-shadow:var(--shadow)}
+.tile .n{font-size:30px;font-weight:800;letter-spacing:-.03em;font-variant-numeric:tabular-nums;font-family:var(--mono)}
+.tile .l{font-size:12px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.06em;margin-top:2px}
+.tile.total .n{color:var(--accent)}
+.tile.db .n{color:var(--k-int)} .tile.gen .n{color:var(--sys)} .tile.bar .n{color:var(--bar)}
+.tile.auth .n{color:var(--sec)} .tile.fe .n{color:var(--key)}
+
+/* section */
+.sec{margin-top:52px}
+.sec-title{display:flex;align-items:baseline;gap:12px;border-bottom:2px solid var(--line);padding-bottom:10px;margin-bottom:6px}
+.sec-title h2{font-size:22px;font-weight:800;letter-spacing:-.01em}
+.sec-title .count{font-family:var(--mono);font-size:13px;color:var(--ink-faint)}
+.sec > .lead{color:var(--ink-soft);font-size:14.5px;max-width:74ch;margin:14px 0 4px}
+
+/* featured groups */
+.grp{margin-top:34px}
+.grp-head{margin-bottom:14px}
+.grp-head h3{font-size:15px}
+.grp-blurb{color:var(--ink-soft);font-size:13.5px;max-width:80ch;margin:8px 0 0}
+.chip{display:inline-block;padding:5px 12px;border-radius:999px;font-size:13px;font-weight:700;letter-spacing:-.01em}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;margin-top:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 16px 13px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:9px;transition:border-color .15s,transform .15s}
+.card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.card header{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.card h4{font-size:14.5px;font-weight:700;letter-spacing:-.01em;line-height:1.3}
+.fmt{background:var(--mono-bg);border-radius:9px;padding:9px 11px;overflow-x:auto}
+.fmt code{font-size:12.5px;color:var(--mono-ink);white-space:pre-wrap;word-break:break-word;line-height:1.5}
+.ex{font-size:12.5px;color:var(--ink-soft)}
+.ex .k{color:var(--ink-faint);font-family:var(--mono);font-size:11px}
+.ex code{color:var(--ink);background:var(--mono-bg);padding:1px 6px;border-radius:5px;font-size:12px}
+.gen{font-size:12.5px;color:var(--ink-soft);margin:0;line-height:1.5}
+.card footer{display:flex;justify-content:space-between;gap:10px;margin-top:auto;padding-top:8px;border-top:1px solid var(--line-soft);font-size:11.5px}
+.card .ent{color:var(--ink-soft);font-weight:600}
+.card .loc{color:var(--ink-faint);font-family:var(--mono);text-align:right}
+
+/* pills / chips */
+.pill{font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600;white-space:nowrap;background:var(--mono-bg);color:var(--ink-soft)}
+.pill.added{background:var(--accent-soft);color:var(--accent);margin-left:7px}
+.t-seq{background:var(--seq-bg);color:var(--seq)} .t-bar{background:var(--bar-bg);color:var(--bar)}
+.t-sec{background:var(--sec-bg);color:var(--sec)} .t-sys{background:var(--sys-bg);color:var(--sys)}
+.t-key{background:var(--key-bg);color:var(--key)}
+
+/* tables */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:14px;margin-top:18px;background:var(--panel);box-shadow:var(--shadow)}
+table{border-collapse:collapse;width:100%;font-size:13px;min-width:560px}
+thead th{text-align:left;font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint);font-weight:600;padding:11px 14px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
+tbody td{padding:9px 14px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:var(--accent-soft)}
+td.mono{font-family:var(--mono);font-size:12.5px;font-weight:600}
+td.dim{color:var(--ink-soft);font-weight:500}
+td.note{color:var(--ink-faint);font-size:12px;max-width:420px}
+.kchip{font-family:var(--mono);font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:5px}
+.k-int{background:var(--seq-bg);color:var(--k-int)} .k-text{background:var(--sys-bg);color:var(--k-text)} .k-comp{background:var(--bar-bg);color:var(--k-comp)}
+
+/* notes */
+.notes{list-style:none;padding:0;margin:18px 0 0;display:grid;gap:12px}
+.notes li{display:flex;gap:14px;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:0 12px 12px 0;padding:14px 16px;box-shadow:var(--shadow)}
+.nnum{font-family:var(--mono);font-weight:800;color:var(--accent);font-size:15px;flex-shrink:0;font-variant-numeric:tabular-nums}
+.nbody{font-size:13.5px;color:var(--ink-soft);line-height:1.55}
+.nbody code{background:var(--mono-bg);padding:1px 5px;border-radius:4px;font-size:12px;color:var(--mono-ink)}
+
+.legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.legend .kchip{padding:3px 9px}
+
+footer.foot{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);color:var(--ink-faint);font-size:12.5px;font-family:var(--mono)}
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <div class="eyebrow">Paper ERP · Identifier Atlas</div>
+    <h1>Every ID in the system, and how it's minted</h1>
+    <p>A census of every identifier the application assigns — database keys, human-facing sequence codes, scanned barcodes, session tokens, and the fields the frontend carries them in. Grouped by <em>how the value comes to exist</em>, because that's what determines whether it's stable, guessable, or collision-safe.</p>
+    <div class="sub">243 identifier types · backend schema + generators cross-referenced against Dart models · auto-audited</div>
+  </header>
+
+  <div class="tiles">
+    <div class="tile total"><div class="n">243</div><div class="l">Total IDs</div></div>
+    <div class="tile db"><div class="n">118</div><div class="l">DB keys</div></div>
+    <div class="tile gen"><div class="n">28</div><div class="l">Generated</div></div>
+    <div class="tile bar"><div class="n">15</div><div class="l">Barcodes</div></div>
+    <div class="tile auth"><div class="n">13</div><div class="l">Identity</div></div>
+    <div class="tile fe"><div class="n">69</div><div class="l">Frontend fields</div></div>
+  </div>
+
+  <section class="sec">
+    <div class="sec-title"><h2>ID schemes</h2><span class="count">the ones with a shape</span></div>
+    <p class="lead">These are the identifiers with a real format — the ones you'll recognize in a URL, on a label, or in a log line. Each card gives the pattern, a concrete example, how it's produced, and where in the code it lives.</p>
+    <section class="grp" id="grp-sequences">
+    <div class="grp-head">
+      <h3><span class="chip t-seq">Human-facing sequences</span></h3>
+      <p class="grp-blurb">Monotonic, zero-padded business codes derived from the last row in the table (SELECT … ORDER BY id DESC, +1). Readable and stable — but generated outside a lock, so concurrent creates can race for the same number.</p>
+    </div>
+    <div class="cards"><article class="card">
+    <header>
+      <h4>Production Run Code</h4>
+      <span class="pill t-seq">production_runs.run_code</span>
+    </header>
+    <div class="fmt"><code>'RUN-XXXXXXXX' (first 8 of run id, upper) | 'RUN-0001' | 'MFG-0001'</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>RUN-1721140800</code></div>
+    <p class="gen">Backend-generated. On pipeline completion: `RUN-${pipelineRunId.substring(0,8).toUpperCase()}` (server.js:23027), guarded by a uniqueness SELECT (:23030). Order-seed path: `RUN-${(index+1).padStart(4,'0')}` (:9663). Manufacturing demo seed: literal 'MFG-0001' (:24323).</p>
+    <footer>
+      <span class="ent">production_runs</span>
+      <span class="loc">backend/server.js:3538 (def, UNIQUE); :23027 (gen from pipeline run id); :9663 &amp; :24323 (seed variants)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Delivery / Reception / Internal Challan number</h4>
+      <span class="pill t-seq">challan_no</span>
+    </header>
+    <div class="fmt"><code>&lt;DC|RC|IC&gt;-&lt;5digit zero-padded sequence&gt;</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>DC-00001, RC-00042, IC-00007</code></div>
+    <p class="gen">generateChallanNumber(type): prefix = reception?'RC':(internal?'IC':'DC'); SELECT last challan_no LIKE '&lt;prefix&gt;-%' ORDER BY id DESC; next = match?(Number(match[1])+1):1; return `${prefix}-${String(next).padStart(5,'0')}`;</p>
+    <footer>
+      <span class="ent">delivery_challans</span>
+      <span class="loc">backend/server.js:7869-7887 (called at 9962 createOrUpdateDeliveryChallan, 23382, 23505 internal challans)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Invoice number</h4>
+      <span class="pill t-seq">invoice_no</span>
+    </header>
+    <div class="fmt"><code>INV-&lt;5digit zero-padded sequence&gt;</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>INV-00001</code></div>
+    <p class="gen">generateInvoiceNumber(): SELECT invoice_no LIKE 'INV-%' ORDER BY id DESC LIMIT 1; next = match?(Number(match[1])+1):1; return `INV-${String(next).padStart(5,'0')}`;</p>
+    <footer>
+      <span class="ent">invoice_headers</span>
+      <span class="loc">backend/server.js:10730-10743 (called at 10762 createInvoice)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Production run code (demo backfill)</h4>
+      <span class="pill t-seq">run_code</span>
+    </header>
+    <div class="fmt"><code>RUN-&lt;4digit zero-padded index&gt;</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>RUN-0001</code></div>
+    <p class="gen">ensureDemoProductionRunsPresent(): `RUN-${String(index + 1).padStart(4, '0')}` for each seeded order slice.</p>
+    <footer>
+      <span class="ent">production_runs</span>
+      <span class="loc">backend/server.js:9663 (loop 9652-9678)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Production run code (from pipeline run)</h4>
+      <span class="pill t-seq">run_code</span>
+    </header>
+    <div class="fmt"><code>RUN-&lt;first 8 chars of pipeline run id, uppercased&gt;</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>RUN-RUN-1789  (from pipeline run id 'run-1789000000000')</code></div>
+    <p class="gen">const runCode = `RUN-${req.params.id.substring(0, 8).toUpperCase()}`; then existence-checked against production_runs before insert.</p>
+    <footer>
+      <span class="ent">production_runs</span>
+      <span class="loc">backend/server.js:23027 (insert 23032-23039)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Production run code (hardcoded demo seed)</h4>
+      <span class="pill t-seq">run_code</span>
+    </header>
+    <div class="fmt"><code>MFG-&lt;4digit&gt; (single hardcoded literal)</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>MFG-0001</code></div>
+    <p class="gen">productionSeeds.push({ runCode: 'MFG-0001', ... }); existence-checked, then INSERT INTO production_runs.</p>
+    <footer>
+      <span class="ent">production_runs</span>
+      <span class="loc">backend/server.js:24323 (insert 24340-24346)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>B2B portal order number</h4>
+      <span class="pill t-seq">order_no</span>
+    </header>
+    <div class="fmt"><code>B2B-ORD-&lt;epochMs&gt;</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>B2B-ORD-1789000000000</code></div>
+    <p class="gen">const orderNo = 'B2B-ORD-' + Date.now();</p>
+    <footer>
+      <span class="ent">order_headers</span>
+      <span class="loc">backend/server.js:25023 (insert 25026)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Report group / order reference code</h4>
+      <span class="pill t-seq">reportGroupCode (source_reference)</span>
+    </header>
+    <div class="fmt"><code>ORD-&lt;orderId&gt;  |  ORDSET-&lt;id&gt;-&lt;id&gt;-...</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>ORD-42  |  ORDSET-42-43-58</code></div>
+    <p class="gen">deriveReportGroupCodesFromOrderIds(orderIds): 1 id -&gt; `ORD-${normalizedOrderIds[0]}`; multiple -&gt; `ORDSET-${normalizedOrderIds.join('-')}`.</p>
+    <footer>
+      <span class="ent">reporting / challan source_reference (derived, not stored as own column)</span>
+      <span class="loc">backend/server.js:7576, 7578 (deriveReportGroupCodesFromOrderIds 7564-7579)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Challan template PDF display reference</h4>
+      <span class="pill t-seq">displayId (REF)</span>
+    </header>
+    <div class="fmt"><code>REF: &lt;5digit zero-padded challan row id&gt;</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>REF: 00042</code></div>
+    <p class="gen">const displayId = `REF: ${String(challanDto.id || challanRow?.id || 0).padStart(5, '0')}`;</p>
+    <footer>
+      <span class="ent">delivery_challans (rendered PDF display id)</span>
+      <span class="loc">backend/server.js:9204 (generateChallanTemplatePdf)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Procurement Request Number<span class="pill added" title="Surfaced by completeness pass">edge</span></h4>
+      <span class="pill t-seq">request_number</span>
+    </header>
+    <div class="fmt"><code>TEXT, UNIQUE. Format not yet fixed by any generator (likely a human-facing PR-###### style code, by analogy to INV-/DC- schemes).</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>(none produced at runtime yet; declared column only)</code></div>
+    <p class="gen">Declared as a UNIQUE business key but there is NO INSERT INTO procurement_requests or request_number generator anywhere in server.js (route layer appears unimplemented in the current runtime). Value would be supplied/generated when the procurement feature is wired up.</p>
+    <footer>
+      <span class="ent"></span>
+      <span class="loc">backend/server.js:4270 ; also backend/migrations/001-init.sql:415 ; backend/schema.txt:416</span>
+    </footer>
+  </article></div>
+  </section>
+<section class="grp" id="grp-barcodes">
+    <div class="grp-head">
+      <h3><span class="chip t-bar">Barcodes, codes & lots</span></h3>
+      <p class="grp-blurb">How a scanned material becomes an identifier — from item variation codes composed into a barcode, to timestamp-fallback and parent/child schemes, to production/scrap lot barcodes.</p>
+    </div>
+    <div class="cards"><article class="card">
+    <header>
+      <h4>Variation-Code Composed Material Barcode</h4>
+      <span class="pill t-bar">barcode</span>
+    </header>
+    <div class="fmt"><code>&lt;code1&gt;-&lt;code2&gt;-...-&lt;codeN&gt;  where each codeK = item_variation_nodes.code of a selected value node, ordered by parent-property position; separator = '-'</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>RAW-MLL-ANO  (or  DRW-INS)</code></div>
+    <p class="gen">backend-generated by generateBarcodeFromItemSelection(itemId, customVariationValues): for each {propertyName: valueName} pair it looks up the selected value node's `code` via a self-join of item_variation_nodes (value v JOIN its parent property p), sorts the found codes by the parent property's `position`, and joins the codes with '-'. Returns null if no codes resolve. This is the PREFERRED barcode; only if it is null does the MAT- fallback run.</p>
+    <footer>
+      <span class="ent">materials (rows auto-created for an item + variation selection)</span>
+      <span class="loc">backend/server.js:9769-9786 (generateBarcodeFromItemSelection); consumed at 9804 inside ensureMaterialForItemSelection</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Standalone Material Barcode (timestamp fallback)</h4>
+      <span class="pill t-bar">barcode</span>
+    </header>
+    <div class="fmt"><code>MAT-&lt;epochMillis&gt;-&lt;rand[0..99999], zero-padded to 5&gt;</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>MAT-1721145600000-04213</code></div>
+    <p class="gen">backend-generated by generateStandaloneMaterialBarcode(): concatenates the literal 'MAT-', Date.now() epoch milliseconds, '-', and Math.floor(Math.random()*100000) zero-padded to 5 digits. Used as fallback in ensureMaterialForItemSelection when generateBarcodeFromItemSelection returns null (no variation codes).</p>
+    <footer>
+      <span class="ent">materials (auto-created material with no resolvable variation codes)</span>
+      <span class="loc">backend/server.js:9788-9792 (generateStandaloneMaterialBarcode); invoked at 9805-9806</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Collision-Disambiguated Material Barcode</h4>
+      <span class="pill t-bar">barcode</span>
+    </header>
+    <div class="fmt"><code>&lt;composedBarcode&gt;-&lt;rand[0..999], zero-padded to 3&gt;</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>RAW-MLL-ANO-042</code></div>
+    <p class="gen">backend-generated: after generateBarcodeFromItemSelection produces a code-chain barcode, ensureMaterialForItemSelection checks getMaterialRowByBarcode; if a DIFFERENT material already holds that barcode (a collision not caught by findMaterialByItemSelection), it appends '-' + Math.floor(Math.random()*1000) zero-padded to 3 digits.</p>
+    <footer>
+      <span class="ent">materials</span>
+      <span class="loc">backend/server.js:9808-9814</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Parent (Group) Material Barcode</h4>
+      <span class="pill t-bar">barcode</span>
+    </header>
+    <div class="fmt"><code>PAR-&lt;epochMillis&gt;-&lt;rand[1000..9999]&gt;</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>PAR-1721145600000-7421</code></div>
+    <p class="gen">backend-generated by generateParentBarcode(): literal 'PAR-', Date.now() epoch millis, '-', and a suffix = 1000 + Math.floor(Math.random()*9000) (a 4-digit number 1000..9999).</p>
+    <footer>
+      <span class="ent">materials (kind='parent')</span>
+      <span class="loc">backend/server.js:1521-1524 (generateParentBarcode); used at 6185 and inserted 6203-6234 in the group/parent material creation flow</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Child Material Barcode</h4>
+      <span class="pill t-bar">barcode</span>
+    </header>
+    <div class="fmt"><code>CHD-&lt;parentSuffix&gt;-&lt;index, zero-padded to 2&gt;  where parentSuffix = last '-' segment of the parent barcode</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>CHD-7421-01, CHD-7421-02  (children of PAR-1721145600000-7421)</code></div>
+    <p class="gen">backend-generated by generateChildBarcode(parentBarcode, index): splits parentBarcode on '-', takes the LAST segment as `suffix` (i.e. the parent's 4-digit random suffix), then forms 'CHD-'+suffix+'-'+index zero-padded to 2. index is 1-based (loop passes index+1).</p>
+    <footer>
+      <span class="ent">materials (kind='child'; parent_barcode column links to parent)</span>
+      <span class="loc">backend/server.js:1526-1530 (generateChildBarcode); generated at 6186-6189 and inserted 6236-6267</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Item Display Name</h4>
+      <span class="pill t-bar">display_name</span>
+    </header>
+    <div class="fmt"><code>&lt;name&gt; / &lt;alias&gt;   (the ' / &lt;alias&gt;' portion is omitted when alias is empty)</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>Aluminium Sheet / ALU-100</code></div>
+    <p class="gen">derived by buildItemDisplayName(name, alias, quantity) when an explicit displayName is not supplied: filters name and alias for non-empty and joins them with ' / '. (quantity param is currently unused in the join.)</p>
+    <footer>
+      <span class="ent">items</span>
+      <span class="loc">backend/server.js:13766-13769 (buildItemDisplayName); applied at 13799-13800 in saveItem</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Variation Path Label (node display_name)</h4>
+      <span class="pill t-bar">display_name</span>
+    </header>
+    <div class="fmt"><code>&lt;seg1&gt; | &lt;seg2&gt; | ... | &lt;segN&gt;   (value-node names along the leaf path, separator = ' | ')</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>Red | 10mm</code></div>
+    <p class="gen">derived by buildVariationPathLabel(segments): trims each ancestor value-node name, drops empties, and joins with ' | '. In sanitizeNodes a value node's display_name defaults to this path label when no explicit displayName is given. variationPathLabelForNodeIds / resolveLeafSelectionFromDb build the segment list from the value nodes along the path.</p>
+    <footer>
+      <span class="ent">item_variation_nodes (value/leaf nodes)</span>
+      <span class="loc">backend/server.js:13771-13776 (buildVariationPathLabel); sanitizeNodes default at 6991-6992; path builders at 6520-6533 and 6535-6557</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Material Name / Particulars (composition)</h4>
+      <span class="pill t-bar">name (materials) / particulars</span>
+    </header>
+    <div class="fmt"><code>&lt;itemDisplayName&gt; - &lt;variationPathLabel&gt;[ - &lt;customVal1&gt; - &lt;customVal2&gt; ...]</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>Aluminium Sheet - Red | 10mm - Copper</code></div>
+    <p class="gen">derived: getItemSelectionSnapshot sets particulars = variationPathLabel ? '&lt;item.display_name||item.name&gt; - &lt;variationPathLabel&gt;' : (item.display_name||item.name). In ensureMaterialForItemSelection the material name starts from that particulars/display name, then any customVariationValues (ordered by sorted key) are appended as a ' - '-joined suffix (only if not already present).</p>
+    <footer>
+      <span class="ent">materials (and order/challan line particulars)</span>
+      <span class="loc">backend/server.js:9577-9579 (particulars in getItemSelectionSnapshot); custom-value suffix at 9821-9831 (ensureMaterialForItemSelection)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Material Barcode Uniqueness / Normalization Key</h4>
+      <span class="pill t-bar">barcode (normalized)</span>
+    </header>
+    <div class="fmt"><code>uppercase ASCII with whitespace removed</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>'  raw-mll-ano ' -&gt; 'RAW-MLL-ANO'</code></div>
+    <p class="gen">normalizeBarcode(value): String(value) -&gt; remove all whitespace (\s+) -&gt; strip non-printable/non-ASCII ([^\x20-\x7E]) -&gt; trim -&gt; toUpperCase(). Used for equality lookups, not stored separately.</p>
+    <footer>
+      <span class="ent">materials</span>
+      <span class="loc">backend/server.js:1513-1519 (normalizeBarcode); UNIQUE constraint at 2623; getMaterialRowByBarcode at 15043-15046 (loads all materials and matches on normalized barcode); collision check at 9808-9814; incrementMaterialScanCount at 15950</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Run Barcode Input ID</h4>
+      <span class="pill t-bar">run_barcode_inputs.id</span>
+    </header>
+    <div class="fmt"><code>'barcode-&lt;epochMillis&gt;-&lt;0-999&gt;' e.g. 'barcode-1721140800000-274'; seed: '&lt;runId&gt;-&lt;stageId&gt;-&lt;barcode&gt;'</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>barcode-1721140800000-274</code></div>
+    <p class="gen">Backend-generated on scan: `barcode-${Date.now()}-${floor(rand*1000)}` (server.js:23145). Seed full-pipeline composes `${runSeed.id}-${stageId}-${barcode}` (:5350). ensurePipelineRunRecord uses caller-supplied assignment.id (demo: 'demo-anodize-barcode-1').</p>
+    <footer>
+      <span class="ent">run_barcode_inputs</span>
+      <span class="loc">backend/server.js:4245 (def); :23145 (scan gen); :5350 (seed compose)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Production Run Variation Path Label</h4>
+      <span class="pill t-bar">production_runs.variation_path_label</span>
+    </header>
+    <div class="fmt"><code>free text / ' · '-joined variation path, e.g. 'Raw · Milled · Anodized'</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>Raw · Milled · Anodized</code></div>
+    <p class="gen">Backend-derived human string: variation leaf display_name/name (server.js:23020) or a composed path when no single leaf, e.g. 'Raw · Milled · Anodized' (:24326).</p>
+    <footer>
+      <span class="ent">production_runs</span>
+      <span class="loc">backend/server.js:3543 (def); :23020 (from leaf); :24326 (composed)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Inventory Stock Position Natural Key</h4>
+      <span class="pill t-bar">inventory_stock_positions (material_barcode, location_id, lot_code)</span>
+    </header>
+    <div class="fmt"><code>(barcode, location, lot) e.g. ('RAW-MLL-ANO','MAIN','LOT-RUN-1721140800-42')</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>('MAT-1721140800000-01234','MAIN','')</code></div>
+    <p class="gen">Not generated: composed from the movement being applied. upsertInventoryStockPosition normalizes location_id (trim, fallback 'MAIN') and lot_code (trim, may be '') then SELECTs by the triple before insert/update (server.js:16074-16112).</p>
+    <footer>
+      <span class="ent">inventory_stock_positions</span>
+      <span class="loc">backend/server.js:2887 (UNIQUE def); :16064-16112 (upsert)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Material Barcode</h4>
+      <span class="pill t-bar">material_barcode / barcode</span>
+    </header>
+    <div class="fmt"><code>'PAR-&lt;ts&gt;-&lt;4d&gt;' | 'CHD-&lt;suffix&gt;-&lt;NN&gt;' | 'MAT-&lt;ts&gt;-&lt;5d&gt;' | variation codes 'RAW-MLL-ANO' | 'LOT-*'</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>RAW-MLL-ANO</code></div>
+    <p class="gen">Backend-generated, several schemes: parent `PAR-${Date.now()}-${1000+rand*9000}` (server.js:1521); child `CHD-&lt;parentSuffix&gt;-&lt;NN&gt;` (:1526); standalone `MAT-${Date.now()}-${rand5}` (:9788); variation-derived = item_variation_nodes.code joined by position, e.g. 'RAW-MLL-ANO' (generateBarcodeFromItemSelection :9769, collision suffix -NNN :9813); lot barcodes LOT-*/LOT-SCRAP-*.</p>
+    <footer>
+      <span class="ent">materials (referenced by all inventory_* tables, run_barcode_inputs, production_scrap)</span>
+      <span class="loc">backend/server.js:1521 (parent); :1526 (child); :9788 (standalone); :9769-9785 (variation-derived); :4027 (item_variation_nodes.code)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Parent material barcode</h4>
+      <span class="pill t-bar">barcode</span>
+    </header>
+    <div class="fmt"><code>PAR-&lt;epochMs&gt;-&lt;4digit 1000-9999&gt;</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>PAR-1789000000000-4821</code></div>
+    <p class="gen">generateParentBarcode(): const suffix = 1000 + Math.floor(Math.random() * 9000); return `PAR-${Date.now()}-${suffix}`;</p>
+    <footer>
+      <span class="ent">materials (kind='parent')</span>
+      <span class="loc">backend/server.js:1521-1524 (called at 6185)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Standalone material barcode</h4>
+      <span class="pill t-bar">barcode</span>
+    </header>
+    <div class="fmt"><code>MAT-&lt;epochMs&gt;-&lt;5digit zero-padded 00000-99999&gt;</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>MAT-1789000000000-04821</code></div>
+    <p class="gen">generateStandaloneMaterialBarcode(): return `MAT-${Date.now()}-${Math.floor(Math.random() * 100000).toString().padStart(5, '0')}`;</p>
+    <footer>
+      <span class="ent">materials (fallback when no variation codes)</span>
+      <span class="loc">backend/server.js:9788-9792 (called at 9806, 24122)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Item-selection variation barcode</h4>
+      <span class="pill t-bar">barcode</span>
+    </header>
+    <div class="fmt"><code>&lt;varCode&gt;-&lt;varCode&gt;-... (optionally + -&lt;3digit rand&gt; or -&lt;itemId&gt; on collision)</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>RAW-MLL-ANO  (collision: RAW-MLL-ANO-042)</code></div>
+    <p class="gen">generateBarcodeFromItemSelection(): looks up v.code for each variation prop, sorts by position, joins with '-': codes.map(c =&gt; c.code).join('-'). Collision suffixes: `${barcode}-${Math.floor(Math.random()*1000).toString().padStart(3,'0')}` (9813) or `${barcode}-${item.id}` (24125).</p>
+    <footer>
+      <span class="ent">materials (from item variation codes)</span>
+      <span class="loc">backend/server.js:9769-9785 (collision suffixes 9813, 24125)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Run barcode input id</h4>
+      <span class="pill t-bar">id</span>
+    </header>
+    <div class="fmt"><code>barcode-&lt;epochMs&gt;-&lt;0-999&gt;  |  input-&lt;epochMs&gt;  |  &lt;runId&gt;-&lt;stageId&gt;-&lt;barcode&gt;</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>barcode-1789000000000-482</code></div>
+    <p class="gen">Runtime scan: const barcodeInputId = `barcode-${Date.now()}-${Math.floor(Math.random() * 1000)}` (23145). Demo helper: `input-${Date.now()}` (22860). Full-seed composite: `${runSeed.id}-${assignment.stageId}-${assignment.barcode}` (5350). Sync path uses caller-supplied assignment.id (17573).</p>
+    <footer>
+      <span class="ent">run_barcode_inputs</span>
+      <span class="loc">backend/server.js:23145 (also 22860, seed 5350)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>run_barcode_inputs PK</h4>
+      <span class="pill t-bar">id</span>
+    </header>
+    <div class="fmt"><code>free-form id TEXT</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>id string</code></div>
+    <p class="gen">backend/client-supplied string id</p>
+    <footer>
+      <span class="ent">run_barcode_inputs</span>
+      <span class="loc">backend/server.js:4244</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Employee Barcode ID</h4>
+      <span class="pill t-bar">barcode_id</span>
+    </header>
+    <div class="fmt"><code>TEXT barcode value</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>(scanned/assigned barcode)</code></div>
+    <p class="gen">User-entered/assigned on employee create/update (not auto-generated by this server code path).</p>
+    <footer>
+      <span class="ent">employees.barcode_id</span>
+      <span class="loc">backend/server.js:3053 (column), backend/server.js:24546 (looked up from decrypted portal token), backend/server.js:24645/24678 (insert/update)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Pipeline-output &amp; scrap lot barcode<span class="pill added" title="Surfaced by completeness pass">edge</span></h4>
+      <span class="pill t-bar">barcode (material_barcode for freshly created lots)</span>
+    </header>
+    <div class="fmt"><code>`LOT-RUN-XXXXXXXX-&lt;0..999&gt;` and `LOT-SCRAP-&lt;epochMillis&gt;-&lt;0..999&gt;`</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>LOT-RUN-A1B2C3D4-742  |  LOT-SCRAP-1721140000000-317</code></div>
+    <p class="gen">On pipeline-run completion a fresh output lot barcode `LOT-${runCode}-${rand(0..999)}` (server.js:23058). On scrap capture a scrap lot barcode `LOT-SCRAP-${Date.now()}-${rand(0..999)}` (server.js:23463). runCode itself is `RUN-${pipelineRunId.substring(0,8).toUpperCase()}` (server.js:23027).</p>
+    <footer>
+      <span class="ent"></span>
+      <span class="loc">backend/server.js:23058 and :23463 (runCode at :23027)</span>
+    </footer>
+  </article></div>
+  </section>
+<section class="grp" id="grp-identity">
+    <div class="grp-head">
+      <h3><span class="chip t-sec">Identity & security</span></h3>
+      <p class="grp-blurb">Who someone is and how a session is proven. PINs, session ids, hashed tokens, and password hashes. None of these are guessable sequence numbers.</p>
+    </div>
+    <div class="cards"><article class="card">
+    <header>
+      <h4>Variation Node Code</h4>
+      <span class="pill t-sec">code</span>
+    </header>
+    <div class="fmt"><code>short free-text mnemonic token, by app convention uppercase letters, e.g. 'RAW', 'MLL', 'ANO', 'DRW', 'INS'</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>MLL</code></div>
+    <p class="gen">user-entered in the desktop item editor's variation tree; persisted verbatim (String(node.code||'').trim()) on saveItem. Never auto-derived.</p>
+    <footer>
+      <span class="ent">item_variation_nodes (per property/value node in an item's variation tree)</span>
+      <span class="loc">schema backend/server.js:4027 &amp; 4044; sanitized/carried at 6976 &amp; 6990 (sanitizeNodes) and 6412/6740 (tree read); persisted on upsert at 13986/13992 (UPDATE) and 14003/14012 (INSERT); also seeded at 14520-14522; composed into the barcode at 9774-9785</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Item Naming Format</h4>
+      <span class="pill t-sec">naming_format</span>
+    </header>
+    <div class="fmt"><code>JSON-serialized array of naming-format tokens, e.g. '[]' when unset</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>[]</code></div>
+    <p class="gen">user-entered; on saveItem it is JSON.stringify(namingFormat array) into serializedNamingFormat and written; on read it is JSON.parse'd back (guarded, returns [] on parse error).</p>
+    <footer>
+      <span class="ent">items</span>
+      <span class="loc">schema backend/server.js:4037; serialized at 13796 and written at 13912 (INSERT) / 13950 (UPDATE); parsed on read at 1975-1981; also selected for naming queries at 19320/19400/24978</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Location ID</h4>
+      <span class="pill t-sec">location_id / from_location_id / to_location_id</span>
+    </header>
+    <div class="fmt"><code>free text location token, default 'MAIN'; e.g. 'Rack B, Shelf 3'</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>MAIN</code></div>
+    <p class="gen">Not sequenced — a free-text warehouse/rack token. Resolution: payload.toLocationId else material.location else 'MAIN' (server.js:16522-16525); normalized to 'MAIN' fallback in stock upsert (:16074).</p>
+    <footer>
+      <span class="ent">inventory_stock_positions, inventory_movements</span>
+      <span class="loc">backend/server.js:2880 (stock def); :2899-2900 (movement from/to); :16522-16525 (resolution)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Lot Code</h4>
+      <span class="pill t-sec">lot_code</span>
+    </header>
+    <div class="fmt"><code>free lot token / defaults to material barcode / 'LOT-&lt;runCode&gt;-&lt;rand&gt;' / 'LOT-SCRAP-&lt;ts&gt;-&lt;rand&gt;'</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>LOT-RUN-1721140800-042</code></div>
+    <p class="gen">Backend-resolved/generated. On issue/consume without explicit lot, defaults to the material barcode (lotCode = explicitLot || barcode, server.js:16526) and issue/consume auto-picks the fullest existing lot (:16534). Fresh lots are minted as barcodes: finished-good `LOT-${runCode}-${floor(rand*1000)}` (:23058) and scrap `LOT-SCRAP-${Date.now()}-${floor(rand*1000)}` (:23463).</p>
+    <footer>
+      <span class="ent">inventory_stock_positions, inventory_movements, materials (as barcode)</span>
+      <span class="loc">backend/server.js:2881 (stock def); :2911 (movement def); :16526 (default-to-barcode); :23058 &amp; :23463 (minted lots)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>User mobile login PIN</h4>
+      <span class="pill t-sec">mobile_pin</span>
+    </header>
+    <div class="fmt"><code>&lt;4digit 1000-9999&gt;</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>4821</code></div>
+    <p class="gen">generateUniqueMobilePin(): loop up to 1000x: pin = Math.floor(1000 + Math.random()*9000).toString(); retry until no existing users row has that pin.</p>
+    <footer>
+      <span class="ent">users</span>
+      <span class="loc">backend/server.js:1204-1213 (used in createUserAccount at 1254)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Auth session id</h4>
+      <span class="pill t-sec">sessionId</span>
+    </header>
+    <div class="fmt"><code>sess-&lt;uuid v4&gt;</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>sess-3f5d710d-dee7-4ce9-93f7-c204041d8865</code></div>
+    <p class="gen">const sessionId = `sess-${crypto.randomUUID()}`;</p>
+    <footer>
+      <span class="ent">sessions (auth)</span>
+      <span class="loc">backend/server.js:1059</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>auth_sessions PK</h4>
+      <span class="pill t-sec">id</span>
+    </header>
+    <div class="fmt"><code>sess-&lt;uuid&gt;</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>sess-&lt;crypto.randomUUID()&gt;</code></div>
+    <p class="gen">backend-generated in code</p>
+    <footer>
+      <span class="ent">auth_sessions</span>
+      <span class="loc">backend/server.js:2704</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>challan_template_upload_sessions PK</h4>
+      <span class="pill t-sec">id</span>
+    </header>
+    <div class="fmt"><code>uuid/session token TEXT</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>&lt;uuid&gt;</code></div>
+    <p class="gen">backend-generated session id (TEXT)</p>
+    <footer>
+      <span class="ent">challan_template_upload_sessions</span>
+      <span class="loc">backend/server.js:3370</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>po_upload_sessions PK</h4>
+      <span class="pill t-sec">id</span>
+    </header>
+    <div class="fmt"><code>uuid/session token TEXT</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>&lt;uuid&gt;</code></div>
+    <p class="gen">backend-generated session id (TEXT)</p>
+    <footer>
+      <span class="ent">po_upload_sessions</span>
+      <span class="loc">backend/server.js:3642</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>asset_upload_sessions PK</h4>
+      <span class="pill t-sec">id</span>
+    </header>
+    <div class="fmt"><code>uuid/session token TEXT</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>&lt;uuid&gt;</code></div>
+    <p class="gen">backend-generated session id (TEXT)</p>
+    <footer>
+      <span class="ent">asset_upload_sessions</span>
+      <span class="loc">backend/server.js:3690</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Mobile PIN</h4>
+      <span class="pill t-sec">mobile_pin</span>
+    </header>
+    <div class="fmt"><code>4-digit numeric string</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>4821</code></div>
+    <p class="gen">generateUniqueMobilePin(): Math.floor(1000 + Math.random()*9000).toString(), retried up to 1000x against a uniqueness check. Assigned automatically at user creation.</p>
+    <footer>
+      <span class="ent">users.mobile_pin</span>
+      <span class="loc">backend/server.js:1204-1213 (generation), backend/server.js:1254/1269 (assigned on INSERT), backend/migrations/017-mobile-pin.sql:1-2 (column + unique index); packages/core_erp/lib/features/auth/domain/auth_user.dart:19</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Auth Token (JWT)</h4>
+      <span class="pill t-sec">token</span>
+    </header>
+    <div class="fmt"><code>base64url(header).base64url(payload).base64url(HMAC-SHA256 signature)</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.&lt;payload&gt;.&lt;sig&gt;</code></div>
+    <p class="gen">signJwt({sub:userId, role, sid:sessionId}): HS256 HMAC over base64url(header).base64url(body) using JWT_SECRET; iat/exp added, exp = now + JWT_TTL_SECONDS (default 12h = 43200s).</p>
+    <footer>
+      <span class="ent">session bearer token (not persisted raw)</span>
+      <span class="loc">backend/server.js:557-571 (signJwt), backend/server.js:574-600 (verifyJwt), backend/server.js:1060 (issued in createAuthSession), backend/server.js:1391-1402 (Bearer parse + verify in requireAuth)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>JWT Signing Secret</h4>
+      <span class="pill t-sec">JWT_SECRET</span>
+    </header>
+    <div class="fmt"><code>arbitrary string secret</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>paper-local-development-secret (dev fallback)</code></div>
+    <p class="gen">resolveJwtSecret(): uses process.env.PAPER_JWT_SECRET; falls back to the hardcoded literal 'paper-local-development-secret' when unset. Required (startup throws) only when NODE_ENV=production (ensureRuntimeConfig).</p>
+    <footer>
+      <span class="ent">JWT_SECRET (HMAC key)</span>
+      <span class="loc">backend/server.js:58 (const), backend/server.js:378-384 (resolveJwtSecret), backend/server.js:391-393 (production requirement)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Session ID</h4>
+      <span class="pill t-sec">id</span>
+    </header>
+    <div class="fmt"><code>sess-&lt;uuid-v4&gt;</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>sess-3f5d710d-dee7-4ce9-93f7-c204041d8865</code></div>
+    <p class="gen">`sess-${crypto.randomUUID()}` created in createAuthSession; a new login revokes all other sessions for that user first (single-session model).</p>
+    <footer>
+      <span class="ent">auth_sessions.id (also JWT `sid` claim) / AuthSession.id</span>
+      <span class="loc">backend/server.js:1059 (generation), backend/server.js:2704-2716 (auth_sessions schema), backend/server.js:1060 (embedded as JWT sid); packages/core_erp/lib/features/auth/domain/auth_user.dart:171</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Session Token Hash</h4>
+      <span class="pill t-sec">token_hash</span>
+    </header>
+    <div class="fmt"><code>64-char lowercase hex (SHA-256)</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08</code></div>
+    <p class="gen">hashToken(token) = crypto.createHash('sha256').update(token).digest('hex'). Computed from the issued JWT at session creation.</p>
+    <footer>
+      <span class="ent">auth_sessions.token_hash</span>
+      <span class="loc">backend/server.js:973-975 (hashToken), backend/server.js:1061 (stored), backend/server.js:1402 (re-derived for lookup)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Password Hash</h4>
+      <span class="pill t-sec">password_hash</span>
+    </header>
+    <div class="fmt"><code>pbkdf2$&lt;iterations&gt;$&lt;saltHex&gt;$&lt;hashHex&gt;</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>pbkdf2$120000$&lt;32hexsalt&gt;$&lt;64hexhash&gt;</code></div>
+    <p class="gen">hashPassword(): PBKDF2-SHA256 with a per-user 16-byte random salt (crypto.randomBytes(16)), 120000 iterations, 32-byte key. Stored as a composite string.</p>
+    <footer>
+      <span class="ent">users.password_hash</span>
+      <span class="loc">backend/server.js:602-608 (hashPassword), backend/server.js:610-624 (verifyPassword, timingSafeEqual), backend/server.js:2689 (column)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Sandbox Activation PIN</h4>
+      <span class="pill t-sec">activation_pin</span>
+    </header>
+    <div class="fmt"><code>6-digit numeric string</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>482913</code></div>
+    <p class="gen">Math.floor(100000 + Math.random()*900000).toString(); created lazily the first time a client config is saved if no PIN row exists.</p>
+    <footer>
+      <span class="ent">sandbox_client_pins.activation_pin</span>
+      <span class="loc">backend/server.js:23809-23810 (generation), backend/server.js:4462-4468 (schema), backend/server.js:23827-23830 (verified on machine activation)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Sandbox Machine Activation Token</h4>
+      <span class="pill t-sec">token</span>
+    </header>
+    <div class="fmt"><code>64-char hex (32 random bytes)</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>3b1f...&lt;64 hex&gt;</code></div>
+    <p class="gen">crypto.randomBytes(32).toString('hex') on successful activation; upserted per (client_id, machine_fingerprint). Max 3 activated machines per client.</p>
+    <footer>
+      <span class="ent">sandbox_activated_machines.token</span>
+      <span class="loc">backend/server.js:23843 (generation), backend/server.js:4470-4479 (schema), backend/server.js:23845-23849 (upsert)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Machine Fingerprint</h4>
+      <span class="pill t-sec">machine_fingerprint</span>
+    </header>
+    <div class="fmt"><code>opaque client device string</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>(client-provided)</code></div>
+    <p class="gen">Client-supplied device fingerprint (req.body.fingerprint); not generated server-side.</p>
+    <footer>
+      <span class="ent">sandbox_activated_machines.machine_fingerprint</span>
+      <span class="loc">backend/server.js:4474 (column), backend/server.js:23821/23836/23846 (used in activation)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Freelancer Portal Access Token</h4>
+      <span class="pill t-sec">token</span>
+    </header>
+    <div class="fmt"><code>&lt;ivHex&gt;:&lt;ciphertextHex&gt; (AES-256-CBC)</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>1a2b...&lt;32hex iv&gt;:9f8e...&lt;hex ciphertext&gt;</code></div>
+    <p class="gen">AES-256-CBC of an employee's barcode_id, formatted iv:ciphertext, using a HARDCODED key SECRET = 'my-very-secret-key-32charslong!!' (encryption/generation side not present in server.js; server only decrypts).</p>
+    <footer>
+      <span class="ent">encrypted employee barcode token (freelancer portal API key)</span>
+      <span class="loc">backend/server.js:24528-24546 (GET /api/freelancer-portal/data: decrypt token -&gt; barcode_id -&gt; employee lookup); hardcoded key at backend/server.js:24532</span>
+    </footer>
+  </article></div>
+  </section>
+<section class="grp" id="grp-system">
+    <div class="grp-head">
+      <h3><span class="chip t-sys">System-generated (timestamp)</span></h3>
+      <p class="grp-blurb">Internal ids minted at the call site with Date.now() + a small random tail. Fast and unique enough for single-node use, but non-monotonic and collision-prone under real concurrency.</p>
+    </div>
+    <div class="cards"><article class="card">
+    <header>
+      <h4>Pipeline Template Flow ID</h4>
+      <span class="pill t-sys">flows_json[].id (inside pipeline_templates.flows_json)</span>
+    </header>
+    <div class="fmt"><code>'{templateId}-flow-{n}' e.g. 'sheet-metal-flow-1','alu-flow-1' OR bare 'flow-1'..'flow-5' (dolly)</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>alu-flow-2</code></div>
+    <p class="gen">Seed generator builds `${pipeline.id}-flow-${index+1}` (server.js:5031); hand-authored seeds use per-template prefixes; frontend supplies for user templates. fromNodeId/toNodeId reference node ids.</p>
+    <footer>
+      <span class="ent">pipeline_templates (embedded JSON)</span>
+      <span class="loc">backend/server.js:4178 (flows_json col); :5031 (generator); :2371 (dolly flow-1); :24242 (alu-flow-1)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Pipeline Run ID</h4>
+      <span class="pill t-sys">pipeline_runs.id</span>
+    </header>
+    <div class="fmt"><code>'run-&lt;epochMillis&gt;' e.g. 'run-1721140800000'; demo rows use fixed slugs</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>run-1721140800000</code></div>
+    <p class="gen">Backend-generated `run-${Date.now()}` in createRunFromTemplate (server.js:17435). ensurePipelineRunRecord accepts a caller-supplied id (seed/demo rows use literals like 'demo-anodize-run-active'). Seed full-pipeline reuses runSeed.id.</p>
+    <footer>
+      <span class="ent">pipeline_runs</span>
+      <span class="loc">backend/server.js:4190 (def); :17435 (gen); :24286 (demo literal)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Inventory Movement ID</h4>
+      <span class="pill t-sys">inventory_movements.id</span>
+    </header>
+    <div class="fmt"><code>'mov-&lt;epochMillis&gt;-&lt;0-999&gt;'</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>mov-1721140800000-482</code></div>
+    <p class="gen">Backend-generated `mov-${Date.now()}-${floor(rand*1000)}` — three call sites: applyInventoryMovementCore (server.js:16521) and two challan/reconciliation paths (:10373, :10485).</p>
+    <footer>
+      <span class="ent">inventory_movements</span>
+      <span class="loc">backend/server.js:2893 (def); :16521, :10373, :10485 (gen)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Inventory movement id</h4>
+      <span class="pill t-sys">id</span>
+    </header>
+    <div class="fmt"><code>mov-&lt;epochMs&gt;-&lt;int 0-999&gt;</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>mov-1789000000000-482</code></div>
+    <p class="gen">const movementId = `mov-${Date.now()}-${Math.floor(Math.random() * 1000)}`;</p>
+    <footer>
+      <span class="ent">inventory_movements</span>
+      <span class="loc">backend/server.js:10373, 10485, 16521 (three call sites)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Pipeline run id</h4>
+      <span class="pill t-sys">id</span>
+    </header>
+    <div class="fmt"><code>run-&lt;epochMs&gt;</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>run-1789000000000</code></div>
+    <p class="gen">createRunFromTemplate(): const runId = `run-${Date.now()}`;</p>
+    <footer>
+      <span class="ent">pipeline_runs</span>
+      <span class="loc">backend/server.js:17435</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Freelancer job batch number</h4>
+      <span class="pill t-sys">batch_number</span>
+    </header>
+    <div class="fmt"><code>BATCH-&lt;epochMs&gt;</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>BATCH-1789000000000</code></div>
+    <p class="gen">const batch_number = 'BATCH-' + Date.now();</p>
+    <footer>
+      <span class="ent">freelancer_job_batches</span>
+      <span class="loc">backend/server.js:24450 (insert 24451-24453)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Generic upload session id</h4>
+      <span class="pill t-sys">uploadSessionId</span>
+    </header>
+    <div class="fmt"><code>generic-upload-&lt;epochMs&gt;-&lt;16 hex chars&gt;</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>generic-upload-1789000000000-9f3a1c0b7d2e4a56</code></div>
+    <p class="gen">const uploadSessionId = `generic-upload-${now.getTime()}-${crypto.randomBytes(8).toString('hex')}`; objectKey = `generic/${Date.now()}-${sha256.slice(0,12)}-${normalizedName}`.</p>
+    <footer>
+      <span class="ent">generic upload sessions / S3 presign</span>
+      <span class="loc">backend/server.js:21206 (objectKey 21202-21203)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>inventory_movements PK</h4>
+      <span class="pill t-sys">id</span>
+    </header>
+    <div class="fmt"><code>mov-&lt;epochMs&gt;-&lt;rand0-999&gt;</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>mov-1718000000000-547</code></div>
+    <p class="gen">backend-generated in code</p>
+    <footer>
+      <span class="ent">inventory_movements</span>
+      <span class="loc">backend/server.js:2892</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>S3 Object Key (asset storage key)<span class="pill added" title="Surfaced by completeness pass">edge</span></h4>
+      <span class="pill t-sys">object_key / background_object_key / asset_object_key</span>
+    </header>
+    <div class="fmt"><code>`{prefix}{Date.now()}-{sha256[0:12]}-{fileName}` generally; for ITEM_IMAGE `{prefix}{entityType}-{entityId}/{uniqueStem}-{fileName}`. Prefixes: masters/items/, orders/po-docs/, logistics/challans/, logistics/challan-templates/, masters/machines/, masters/dies/, masters/departments/</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>orders/po-docs/1721140000000-9f8 e1c2ad3b4-po.pdf  |  masters/items/item-42/1721140000000-9f8e1c2ad3b4-front.png</code></div>
+    <p class="gen">Built by buildS3ObjectKey() at server.js:12049. prefix from S3_UPLOAD_PREFIXES (server.js:64) keyed by uploadType; uniqueStem = `${Date.now()}-${sha256.slice(0,12)}`.</p>
+    <footer>
+      <span class="ent"></span>
+      <span class="loc">backend/server.js:12049 (buildS3ObjectKey), :64 (prefixes), :3681/:3634/:3648/:3698/:3377/:3394/:3416 (columns)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Machine asset-code fallback<span class="pill added" title="Surfaced by completeness pass">edge</span></h4>
+      <span class="pill t-sys">asset_id (generated)</span>
+    </header>
+    <div class="fmt"><code>`MACH-&lt;epochMillis&gt;`</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>MACH-1721140000000 (curated seeds use MAC-1001, MAC-1002 at server.js:6051/6068)</code></div>
+    <p class="gen">When the client sends no assetId on create, server generates `MACH-${Date.now()}` at server.js:19073.</p>
+    <footer>
+      <span class="ent"></span>
+      <span class="loc">backend/server.js:19073</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Die tool-code fallback<span class="pill added" title="Surfaced by completeness pass">edge</span></h4>
+      <span class="pill t-sys">tool_code (generated)</span>
+    </header>
+    <div class="fmt"><code>`DIE-&lt;epochMillis&gt;`</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>DIE-1721140000000 (curated seeds use TL-890-A, TL-102-B at server.js:6088/6107; demo uses DIE-DEMO-&lt;ts&gt; at :22824)</code></div>
+    <p class="gen">When the client sends no toolCode on create, server generates `DIE-${Date.now()}` at server.js:19198.</p>
+    <footer>
+      <span class="ent"></span>
+      <span class="loc">backend/server.js:19198</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Sentinel/virtual location ids<span class="pill added" title="Surfaced by completeness pass">edge</span></h4>
+      <span class="pill t-sys">location_id constants (e.g. SCRAP-BIN)</span>
+    </header>
+    <div class="fmt"><code>fixed string literal</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>SCRAP-BIN</code></div>
+    <p class="gen">Hardcoded string constant in the scrap flow: toLocationId 'SCRAP-BIN' (server.js:23496).</p>
+    <footer>
+      <span class="ent"></span>
+      <span class="loc">backend/server.js:23496</span>
+    </footer>
+  </article></div>
+  </section>
+<section class="grp" id="grp-keys">
+    <div class="grp-head">
+      <h3><span class="chip t-key">Natural & user-entered keys</span></h3>
+      <p class="grp-blurb">Identifiers the app does NOT generate — the user (or an upstream system) supplies them, and they are the primary key directly.</p>
+    </div>
+    <div class="cards"><article class="card">
+    <header>
+      <h4>Pipeline Template ID</h4>
+      <span class="pill t-key">pipeline_templates.id</span>
+    </header>
+    <div class="fmt"><code>human-authored kebab-case slug, e.g. 'sheet-metal-flow' | 'dolly' | 'aluminum-anodize-line'</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>dolly</code></div>
+    <p class="gen">NOT auto. Client/frontend-supplied verbatim on POST (data.id at server.js:20683) and PUT keyed on :id. Seed rows use hardcoded slug literals. Never backend-generated.</p>
+    <footer>
+      <span class="ent">pipeline_templates</span>
+      <span class="loc">backend/server.js:4168 (def); :20683 (POST accepts data.id); :2159/:2271/:24225 (seed literals)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Seed PO number</h4>
+      <span class="pill t-key">po_number</span>
+    </header>
+    <div class="fmt"><code>PO-&lt;orderNo&gt;</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>PO-SO-1001</code></div>
+    <p class="gen">`PO-${order.orderNo}` used as po_number in the full demo seed for both the order header and each order item row.</p>
+    <footer>
+      <span class="ent">order_headers / order_items</span>
+      <span class="loc">backend/server.js:5090 (header), 5106 (item)</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>report_groups PK</h4>
+      <span class="pill t-key">code</span>
+    </header>
+    <div class="fmt"><code>free-text code</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>'MONTHLY'</code></div>
+    <p class="gen">user-entered code</p>
+    <footer>
+      <span class="ent">report_groups</span>
+      <span class="loc">backend/server.js:3339</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>order_headers PK</h4>
+      <span class="pill t-key">order_no</span>
+    </header>
+    <div class="fmt"><code>free-text order number</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>'PO-1024' / client order code</code></div>
+    <p class="gen">user-entered order number (client-supplied)</p>
+    <footer>
+      <span class="ent">order_headers</span>
+      <span class="loc">backend/server.js:3580</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>pipeline_templates PK</h4>
+      <span class="pill t-key">id</span>
+    </header>
+    <div class="fmt"><code>free-form template id TEXT</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>'ptl-...' / template id</code></div>
+    <p class="gen">client/backend-supplied string id</p>
+    <footer>
+      <span class="ent">pipeline_templates</span>
+      <span class="loc">backend/server.js:4167</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>pipeline_runs PK</h4>
+      <span class="pill t-key">id</span>
+    </header>
+    <div class="fmt"><code>free-form run id TEXT</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>run id string</code></div>
+    <p class="gen">client/backend-supplied string id</p>
+    <footer>
+      <span class="ent">pipeline_runs</span>
+      <span class="loc">backend/server.js:4189</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>sandbox_client_configs PK</h4>
+      <span class="pill t-key">client_id</span>
+    </header>
+    <div class="fmt"><code>client slug TEXT</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>'default'</code></div>
+    <p class="gen">user/tenant-assigned client id</p>
+    <footer>
+      <span class="ent">sandbox_client_configs</span>
+      <span class="loc">backend/server.js:4437</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>sandbox_sync_states PK</h4>
+      <span class="pill t-key">client_id</span>
+    </header>
+    <div class="fmt"><code>client slug TEXT</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>'default'</code></div>
+    <p class="gen">tenant-assigned client id</p>
+    <footer>
+      <span class="ent">sandbox_sync_states</span>
+      <span class="loc">backend/server.js:4445</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>sandbox_client_pins PK</h4>
+      <span class="pill t-key">client_id</span>
+    </header>
+    <div class="fmt"><code>client slug TEXT</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>'default'</code></div>
+    <p class="gen">tenant-assigned client id</p>
+    <footer>
+      <span class="ent">sandbox_client_pins</span>
+      <span class="loc">backend/server.js:4463</span>
+    </footer>
+  </article>
+<article class="card">
+    <header>
+      <h4>Sandbox Client Config ID</h4>
+      <span class="pill t-key">client_id</span>
+    </header>
+    <div class="fmt"><code>free-form TEXT slug/key</code></div>
+    <div class="ex"><span class="k">e.g.</span> <code>default</code></div>
+    <p class="gen">Not auto-generated: caller/dashboard-supplied slug via req.params.clientId on the config upsert; a row with client_id='default' is seeded at DB init as fallback.</p>
+    <footer>
+      <span class="ent">sandbox_client_configs.client_id (the clientId in /sandbox-config/:clientId)</span>
+      <span class="loc">backend/server.js:4437-4442 (schema), backend/server.js:4493-4519 ('default' seed), backend/server.js:23557-23594 (GET /sandbox-config/:clientId), backend/server.js:23790-23811 (POST config upsert)</span>
+    </footer>
+  </article></div>
+  </section>
+  </section>
+
+  <section class="sec">
+    <div class="sec-title"><h2>Database primary keys</h2><span class="count">118 tables</span></div>
+    <p class="lead">The full table census. Most rows use SQLite's <code>INTEGER PRIMARY KEY AUTOINCREMENT</code> (<span class="kchip k-int">int⚙</span>) — an internal rowid you never show a user; the real business key is usually a <code>UNIQUE</code> column noted at right. A handful use a <span class="kchip k-text">TEXT</span> primary key or a <span class="kchip k-comp">composite</span> key.</p>
+    <div class="legend">
+      <span class="kchip k-int">int⚙ &nbsp;autoincrement rowid</span>
+      <span class="kchip k-text">TEXT &nbsp;string primary key</span>
+      <span class="kchip k-comp">composite &nbsp;multi-column key</span>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Table</th><th>Key field</th><th>Kind</th><th>Natural / business key &amp; notes</th></tr></thead>
+        <tbody><tr>
+    <td class="mono">asset_upload_sessions</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-text">TEXT</span></td>
+    <td class="note">Polymorphic (entity_type, entity_id) upload session.</td>
+  </tr>
+<tr>
+    <td class="mono">auth_events</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Auth audit log; actor_user_id / target_user_id -&gt; users(id).</td>
+  </tr>
+<tr>
+    <td class="mono">auth_events.id / AuthEvent.id</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Security event log id (login_success, login_blocked_lockout, etc.). Carries actor_user_id/target_user_id (FK users.id), ip_address, user_agent, metada</td>
+  </tr>
+<tr>
+    <td class="mono">auth_sessions</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-text">TEXT</span></td>
+    <td class="note">Session id generated as `sess-${crypto.randomUUID()}` (server.js:1059); user_id -&gt; users(id).</td>
+  </tr>
+<tr>
+    <td class="mono">challan_template_mappings</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE(template_id, field_key) natural key.</td>
+  </tr>
+<tr>
+    <td class="mono">challan_template_upload_sessions</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-text">TEXT</span></td>
+    <td class="note">Upload session; sha256 indexed for dedup.</td>
+  </tr>
+<tr>
+    <td class="mono">challan_templates</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Referenced by challan_template_mappings.template_id (CASCADE).</td>
+  </tr>
+<tr>
+    <td class="mono">changelog.id</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Monotonic cursor for the realtime SSE change stream; client passes it as `since`/`lastChangeId` to resume. Emitted as the SSE `id:` field.</td>
+  </tr>
+<tr>
+    <td class="mono">changelog.record_id</td>
+    <td class="mono dim">record_id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Points at the changed row (table_name + record_id) so SSE clients refetch that specific record. Carries no row data itself.</td>
+  </tr>
+<tr>
+    <td class="mono">clients</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Referenced by order_headers/order_items/vendors-relations/sub_contractors/invoice_headers etc.</td>
+  </tr>
+<tr>
+    <td class="mono">clients.id</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Master client/factory entity id. FK target for users.client_id, order_headers.client_id, order_items.client_id, delivery_challans.material_owner_clien</td>
+  </tr>
+<tr>
+    <td class="mono">company_profiles</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Company issuer profile; snapshotted into challans.</td>
+  </tr>
+<tr>
+    <td class="mono">delete_requests</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">entity_id is a generic TEXT reference (not FK-constrained).</td>
+  </tr>
+<tr>
+    <td class="mono">delete_requests.entity_id</td>
+    <td class="mono dim">entity_id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Polymorphic reference (with entity_type/entity_label) to the record proposed for deletion.</td>
+  </tr>
+<tr>
+    <td class="mono">delete_requests.id / DeleteRequest.id</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Deletion-approval workflow record. Carries requested_by_user_id/reviewed_by_user_id (FK users.id) and entity_id (TEXT) + entity_type identifying the t</td>
+  </tr>
+<tr>
+    <td class="mono">deleted_records</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Soft-delete archive; table_name + record_id (INTEGER) identify the deleted row generically (no FK).</td>
+  </tr>
+<tr>
+    <td class="mono">deleted_records.id</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Trash/undo row id; used to compensate/rollback a failed delete (server.js:1694) and to restore/list soft-deleted records.</td>
+  </tr>
+<tr>
+    <td class="mono">deleted_records.record_id</td>
+    <td class="mono dim">record_id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Identifies the source row so it can be restored. deleted_by is stored as a TEXT user NAME (req.user.name or 'System'), not a user id (server.js:1676, </td>
+  </tr>
+<tr>
+    <td class="mono">delivery_challan_activity_log</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">challan_id -&gt; delivery_challans(id) CASCADE. Re-declared at :3805.</td>
+  </tr>
+<tr>
+    <td class="mono">delivery_challan_items</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">challan_id -&gt; delivery_challans(id) CASCADE. Also declared at :3785 and re-created by quantity/weight-&gt;REAL migration at :5683.</td>
+  </tr>
+<tr>
+    <td class="mono">delivery_challan_order_items</td>
+    <td class="mono dim">(challan_id, order_id)</td>
+    <td><span class="kchip k-composite">composite</span></td>
+    <td class="note">Composite join PK; challan_id -&gt; delivery_challans(id), order_id -&gt; order_items(id). Re-declared at :3867.</td>
+  </tr>
+<tr>
+    <td class="mono">delivery_challan_report_groups</td>
+    <td class="mono dim">(challan_id, report_group_code)</td>
+    <td><span class="kchip k-composite">composite</span></td>
+    <td class="note">Composite join PK; FKs to delivery_challans(id) and report_groups(code). Re-declared at :3883.</td>
+  </tr>
+<tr>
+    <td class="mono">delivery_challans</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE identifier: challan_no (TEXT UNIQUE), generated as `&lt;DC|RC|IC&gt;-#####` per type via generateChallanNumber() (server.js:7869-7886). A second, thi</td>
+  </tr>
+<tr>
+    <td class="mono">departments</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Referenced by employees.department_id (ON DELETE CASCADE).</td>
+  </tr>
+<tr>
+    <td class="mono">dies</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE identifier: tool_code (TEXT NOT NULL UNIQUE).</td>
+  </tr>
+<tr>
+    <td class="mono">employees</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE); referenced by freelancer_job_batches.freelancer_id / freelancer_jobs.</td>
+  </tr>
+<tr>
+    <td class="mono">freelancer_job_batches</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE identifier: batch_number (TEXT UNIQUE), generated as `BATCH-${Date.now()}` (server.js:24450).</td>
+  </tr>
+<tr>
+    <td class="mono">freelancer_job_tasks</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">job_id -&gt; freelancer_jobs(id) CASCADE; item_id -&gt; items(id).</td>
+  </tr>
+<tr>
+    <td class="mono">freelancer_jobs</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">batch_id -&gt; freelancer_job_batches(id); item_id -&gt; items(id).</td>
+  </tr>
+<tr>
+    <td class="mono">global_audit_logs.entity_id</td>
+    <td class="mono dim">entity_id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Polymorphic reference to the audited record, paired with entity_type. Not a typed FK.</td>
+  </tr>
+<tr>
+    <td class="mono">global_audit_logs.id / GlobalAuditLog.id</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Audit trail row id. Row also carries actor_user_id (FK users.id), entity_type (TEXT) and entity_id (TEXT, the affected entity's id as a string). On us</td>
+  </tr>
+<tr>
+    <td class="mono">group_item_memberships</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE(group_id, item_id) natural key; FKs to groups/items.</td>
+  </tr>
+<tr>
+    <td class="mono">groups</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Self-FK parent_group_id; referenced by items.group_id, materials.linked_group_id, machines.group_id, group_item_memberships.group_id. Also re-created </td>
+  </tr>
+<tr>
+    <td class="mono">Inventory movement reference discriminator</td>
+    <td class="mono dim">reference_type (+ reference_id), reason_code, source_challan_type</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Together they form the polymorphic 'source' pointer for a stock movement/reservation and drive audit strings like `${referenceType} ${referenceId}` (s</td>
+  </tr>
+<tr>
+    <td class="mono">inventory_alerts</td>
+    <td class="mono dim">inventory_alerts.id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Open/close alert log per material_barcode; alert_type e.g. 'low_stock', severity 'warning'</td>
+  </tr>
+<tr>
+    <td class="mono">inventory_alerts</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE).</td>
+  </tr>
+<tr>
+    <td class="mono">inventory_movements</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-text">TEXT</span></td>
+    <td class="note">id generated as `mov-${Date.now()}-${rand}` (server.js:10373,10485,16521); reverses_movement_id self-references id.</td>
+  </tr>
+<tr>
+    <td class="mono">inventory_reservations</td>
+    <td class="mono dim">inventory_reservations.id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Active reservation ledger; material_barcode-&gt;materials.barcode; reference_id defaults to the movementId when caller gives none (:16638); status 'activ</td>
+  </tr>
+<tr>
+    <td class="mono">inventory_reservations</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">reference_type/reference_id are generic (non-FK) references.</td>
+  </tr>
+<tr>
+    <td class="mono">inventory_set_lines</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE(set_id, item_id, variation_leaf_node_id). Re-created by nullable-leaf migration at :5786.</td>
+  </tr>
+<tr>
+    <td class="mono">inventory_sets</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Referenced by inventory_set_lines.set_id (CASCADE).</td>
+  </tr>
+<tr>
+    <td class="mono">inventory_stock_positions</td>
+    <td class="mono dim">inventory_stock_positions.id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE key below</td>
+  </tr>
+<tr>
+    <td class="mono">inventory_stock_positions</td>
+    <td class="mono dim">inventory_stock_positions (material_barcode, location_id, lot_code)</td>
+    <td><span class="kchip k-composite">composite</span></td>
+    <td class="note">One on_hand/reserved/damaged bucket per material+location+lot; the granularity all inventory movements read/write against</td>
+  </tr>
+<tr>
+    <td class="mono">inventory_stock_positions</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE(material_barcode, location_id, lot_code) natural key.</td>
+  </tr>
+<tr>
+    <td class="mono">inventory_stock_positions, inventory_movements</td>
+    <td class="mono dim">location_id / from_location_id / to_location_id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Part of stock-position natural key; movement from/to for transfers</td>
+  </tr>
+<tr>
+    <td class="mono">invoice_headers</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE identifier: invoice_no (TEXT UNIQUE), generated as `INV-#####` via generateInvoiceNumber() (server.js:10730-10742).</td>
+  </tr>
+<tr>
+    <td class="mono">invoice_lines</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">invoice_id -&gt; invoice_headers(id) CASCADE; challan_id/challan_item_id -&gt; challan tables.</td>
+  </tr>
+<tr>
+    <td class="mono">item_bom_lines</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE(item_id, material_barcode) natural key.</td>
+  </tr>
+<tr>
+    <td class="mono">item_property_schema</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE(item_id, property_key) natural key.</td>
+  </tr>
+<tr>
+    <td class="mono">item_unit_conversions</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE(item_id, unit_id) natural key.</td>
+  </tr>
+<tr>
+    <td class="mono">item_variation_dimensions</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">item_id -&gt; items(id) CASCADE; referenced by item_variation_values.dimension_id.</td>
+  </tr>
+<tr>
+    <td class="mono">item_variation_nodes</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Self-FK parent_node_id (CASCADE); item_id -&gt; items(id); this is the variation-tree leaf id referenced everywhere as variation_leaf_node_id.</td>
+  </tr>
+<tr>
+    <td class="mono">item_variation_values</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">variation_id -&gt; item_variations(id), dimension_id -&gt; item_variation_dimensions(id), both CASCADE.</td>
+  </tr>
+<tr>
+    <td class="mono">item_variations</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">item_id -&gt; items(id) CASCADE; referenced by item_variation_values.variation_id.</td>
+  </tr>
+<tr>
+    <td class="mono">items</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Self-FK base_item_id; group_id -&gt; groups, unit_id -&gt; units; heavily referenced across order/variation/stock tables.</td>
+  </tr>
+<tr>
+    <td class="mono">machines</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE identifier: asset_id (TEXT NOT NULL UNIQUE); group_id -&gt; groups(id).</td>
+  </tr>
+<tr>
+    <td class="mono">material_activity</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE).</td>
+  </tr>
+<tr>
+    <td class="mono">material_group_item_links</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE(material_id, item_id) acts as the natural key.</td>
+  </tr>
+<tr>
+    <td class="mono">material_group_preferences</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE(material_id) — one prefs row per material.</td>
+  </tr>
+<tr>
+    <td class="mono">material_group_properties</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE(material_id, property_key) natural key.</td>
+  </tr>
+<tr>
+    <td class="mono">material_group_units</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE(material_id, unit_id) natural key.</td>
+  </tr>
+<tr>
+    <td class="mono">materials</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE identifier: barcode (TEXT NOT NULL UNIQUE) is the real scanned business key; id referenced by material_group_* tables.</td>
+  </tr>
+<tr>
+    <td class="mono">order_activity_log</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">order_id -&gt; order_items(id) CASCADE; columns backfilled via ensureColumnExists at :3820.</td>
+  </tr>
+<tr>
+    <td class="mono">order_headers</td>
+    <td class="mono dim">order_no</td>
+    <td><span class="kchip k-text">TEXT</span></td>
+    <td class="note">order_no is the natural TEXT PK (upserted via ON CONFLICT(order_no)); referenced by order_items.order_no. client_id -&gt; clients(id), sub_contractor_id </td>
+  </tr>
+<tr>
+    <td class="mono">order_items</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">The per-line order id (referred to as order_id across challan/requirement/assignment tables); order_no -&gt; order_headers(order_no), item_id -&gt; items(id</td>
+  </tr>
+<tr>
+    <td class="mono">order_material_allocations</td>
+    <td class="mono dim">id (+ order_id, requirement_id, reservation_id, material_barcode)</td>
+    <td><span class="kchip k-composite">composite</span></td>
+    <td class="note">Links an order material requirement to a concrete inventory reservation/allocation (allocated_qty/consumed_qty). Appears to be a legacy/planned table </td>
+  </tr>
+<tr>
+    <td class="mono">order_material_requirements</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">order_id -&gt; order_items(id) CASCADE; referenced by procurement_request_line_sources.requirement_id.</td>
+  </tr>
+<tr>
+    <td class="mono">order_pipeline_assignments</td>
+    <td class="mono dim">order_pipeline_assignments.id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Join row: order_item_id-&gt;order_items.id (ON DELETE CASCADE), pipeline_run_id-&gt;pipeline_runs.id (ON DELETE CASCADE); allocated_quantity apportions orde</td>
+  </tr>
+<tr>
+    <td class="mono">order_pipeline_assignments</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">order_item_id -&gt; order_items(id), pipeline_run_id -&gt; pipeline_runs(id), both CASCADE.</td>
+  </tr>
+<tr>
+    <td class="mono">order_po_documents</td>
+    <td class="mono dim">(order_id, document_id)</td>
+    <td><span class="kchip k-composite">composite</span></td>
+    <td class="note">Composite join PK; order_id -&gt; order_items(id), document_id -&gt; po_documents(id), both CASCADE.</td>
+  </tr>
+<tr>
+    <td class="mono">order_status_history</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">order_id -&gt; order_items(id) CASCADE.</td>
+  </tr>
+<tr>
+    <td class="mono">permission_template_permissions</td>
+    <td class="mono dim">(template_id, permission_key)</td>
+    <td><span class="kchip k-composite">composite</span></td>
+    <td class="note">Composite PK; template_id -&gt; permission_templates(id).</td>
+  </tr>
+<tr>
+    <td class="mono">permission_templates</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE identifier: name (TEXT NOT NULL UNIQUE).</td>
+  </tr>
+<tr>
+    <td class="mono">pipeline_runs</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-text">TEXT</span></td>
+    <td class="note">template_id -&gt; pipeline_templates(id); referenced by stage_reconciliations/production_scrap/run_barcode_inputs/order_pipeline_assignments.</td>
+  </tr>
+<tr>
+    <td class="mono">pipeline_templates</td>
+    <td class="mono dim">pipeline_templates.id</td>
+    <td><span class="kchip k-text">TEXT</span></td>
+    <td class="note">PK; referenced by pipeline_runs.template_id (:4191), and by createRunFromTemplate/ensurePipelineRunRecord lookups; delete blocked if any pipeline_runs</td>
+  </tr>
+<tr>
+    <td class="mono">pipeline_templates</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-text">TEXT</span></td>
+    <td class="note">Referenced by pipeline_runs.template_id, items.default_pipeline_id.</td>
+  </tr>
+<tr>
+    <td class="mono">pipeline_templates (embedded JSON)</td>
+    <td class="mono dim">nodes_json[].id (inside pipeline_templates.nodes_json)</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Referenced everywhere as node_id: stage_reconciliations.node_id, run_barcode_inputs.node_id, production_scrap.node_id, pipeline_runs.node_status_json </td>
+  </tr>
+<tr>
+    <td class="mono">po_documents</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE identifiers: sha256 (content hash) and object_key (storage key), both UNIQUE.</td>
+  </tr>
+<tr>
+    <td class="mono">po_upload_sessions</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-text">TEXT</span></td>
+    <td class="note">Presigned upload session; sha256 indexed.</td>
+  </tr>
+<tr>
+    <td class="mono">Procurement Request Number</td>
+    <td class="mono dim">request_number</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE reference for a procurement/purchase request, sibling to invoice_no and challan_no.</td>
+  </tr>
+<tr>
+    <td class="mono">procurement_activity_log</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">procurement_request_id -&gt; procurement_requests(id) CASCADE; actor_user_id -&gt; users(id).</td>
+  </tr>
+<tr>
+    <td class="mono">procurement_request_line_sources</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE(procurement_request_line_id, requirement_id); FKs to procurement_request_lines, order_items, order_material_requirements, all CASCADE.</td>
+  </tr>
+<tr>
+    <td class="mono">procurement_request_lines</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE(procurement_request_id, material_barcode); FK to procurement_requests(id) CASCADE.</td>
+  </tr>
+<tr>
+    <td class="mono">procurement_requests</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE identifier: request_number (TEXT NOT NULL UNIQUE, client/route-supplied — no generator in server.js); multiple *_by_user_id -&gt; users(id).</td>
+  </tr>
+<tr>
+    <td class="mono">production_runs</td>
+    <td class="mono dim">production_runs.id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Internal surrogate PK; business identity carried by run_code</td>
+  </tr>
+<tr>
+    <td class="mono">production_runs</td>
+    <td class="mono dim">production_runs.variation_leaf_node_id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Identifies the exact variation leaf produced; paired with variation_path_label; indexed with item_id (:3553)</td>
+  </tr>
+<tr>
+    <td class="mono">production_runs</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE identifier: run_code (TEXT UNIQUE), seeded as `RUN-0001` zero-padded (server.js:9663); item_id -&gt; items(id).</td>
+  </tr>
+<tr>
+    <td class="mono">production_scrap</td>
+    <td class="mono dim">production_scrap.id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Legacy scrap log; pipeline_run_id-&gt;pipeline_runs.id, node_id-&gt;template node id, material_barcode-&gt;materials.barcode. Endpoint also bridges to real inv</td>
+  </tr>
+<tr>
+    <td class="mono">production_scrap</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">pipeline_run_id -&gt; pipeline_runs(id); node_id/material_barcode unconstrained refs.</td>
+  </tr>
+<tr>
+    <td class="mono">reconciliation_conversion_overrides</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE(item_id, variation_leaf_node_id) natural key.</td>
+  </tr>
+<tr>
+    <td class="mono">reconciliation_waste_audit</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">challan_id -&gt; delivery_challans(id); client_id/item_id are unconstrained references.</td>
+  </tr>
+<tr>
+    <td class="mono">report_groups</td>
+    <td class="mono dim">code</td>
+    <td><span class="kchip k-text">TEXT</span></td>
+    <td class="note">code is the natural TEXT PK; referenced by delivery_challan_report_groups.report_group_code. Re-declared at :3875.</td>
+  </tr>
+<tr>
+    <td class="mono">role_permissions</td>
+    <td class="mono dim">(role, permission_key)</td>
+    <td><span class="kchip k-composite">composite</span></td>
+    <td class="note">Composite PK; no surrogate id. Seeded via seedRolePermissions().</td>
+  </tr>
+<tr>
+    <td class="mono">run_barcode_inputs</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-text">TEXT</span></td>
+    <td class="note">run_id -&gt; pipeline_runs(id); material_id is TEXT (unconstrained).</td>
+  </tr>
+<tr>
+    <td class="mono">sandbox_activated_machines</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE(client_id, machine_fingerprint) natural key.</td>
+  </tr>
+<tr>
+    <td class="mono">sandbox_client_configs</td>
+    <td class="mono dim">client_id</td>
+    <td><span class="kchip k-text">TEXT</span></td>
+    <td class="note">client_id is natural TEXT PK; stores per-client feature-flag config_json served by GET /sandbox-config/:clientId.</td>
+  </tr>
+<tr>
+    <td class="mono">sandbox_client_configs.client_id (the clientId in /sandbox-config/:clientId)</td>
+    <td class="mono dim">client_id</td>
+    <td><span class="kchip k-text">TEXT</span></td>
+    <td class="note">Per-client feature-flag/config partition. GET /sandbox-config/:clientId returns that client's config_json, falling back to the 'default' row then a st</td>
+  </tr>
+<tr>
+    <td class="mono">sandbox_client_pins</td>
+    <td class="mono dim">client_id</td>
+    <td><span class="kchip k-text">TEXT</span></td>
+    <td class="note">One activation_pin per client_id.</td>
+  </tr>
+<tr>
+    <td class="mono">sandbox_client_users</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE(client_id, user_email) natural key.</td>
+  </tr>
+<tr>
+    <td class="mono">sandbox_replays</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE).</td>
+  </tr>
+<tr>
+    <td class="mono">sandbox_replays.session_id</td>
+    <td class="mono dim">session_id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Groups recorded UI/session replay events for a sandbox client. The replay row's own INTEGER `id` is used to fetch a single replay (GET /api/sandbox-da</td>
+  </tr>
+<tr>
+    <td class="mono">sandbox_sync_states</td>
+    <td class="mono dim">client_id</td>
+    <td><span class="kchip k-text">TEXT</span></td>
+    <td class="note">One sync-state row per client_id.</td>
+  </tr>
+<tr>
+    <td class="mono">scan_history</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE.</td>
+  </tr>
+<tr>
+    <td class="mono">search_clicks</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">entity_id is a generic TEXT reference; user_id -&gt; users(id).</td>
+  </tr>
+<tr>
+    <td class="mono">search_history</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">user_id -&gt; users(id).</td>
+  </tr>
+<tr>
+    <td class="mono">stage_reconciliations</td>
+    <td class="mono dim">stage_reconciliations (run_id, node_id)</td>
+    <td><span class="kchip k-composite">composite</span></td>
+    <td class="note">One reconciliation row per run+node; stores allotted/output/leftover/scrap/good_yield/actual_hours etc. Mirrors legacy nodeMetrics so the app still re</td>
+  </tr>
+<tr>
+    <td class="mono">stage_reconciliations</td>
+    <td class="mono dim">(run_id, node_id)</td>
+    <td><span class="kchip k-composite">composite</span></td>
+    <td class="note">Composite PK; run_id -&gt; pipeline_runs(id).</td>
+  </tr>
+<tr>
+    <td class="mono">sub_contractors</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">client_id -&gt; clients(id) CASCADE; referenced by order_headers/order_items.sub_contractor_id.</td>
+  </tr>
+<tr>
+    <td class="mono">unit_groups</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Referenced by units.unit_group_id.</td>
+  </tr>
+<tr>
+    <td class="mono">units</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Self-FK conversion_base_unit_id; referenced by items/materials/order_items/etc.</td>
+  </tr>
+<tr>
+    <td class="mono">uploaded_assets</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE identifier: object_key (UNIQUE); polymorphic (entity_type, entity_id) target.</td>
+  </tr>
+<tr>
+    <td class="mono">user_favorite_items</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE(user_id, item_id, variation_leaf_node_id) natural key.</td>
+  </tr>
+<tr>
+    <td class="mono">user_permission_overrides</td>
+    <td class="mono dim">(user_id, permission_key)</td>
+    <td><span class="kchip k-composite">composite</span></td>
+    <td class="note">Composite PK; user_id -&gt; users(id).</td>
+  </tr>
+<tr>
+    <td class="mono">user_permission_templates</td>
+    <td class="mono dim">(user_id, template_id)</td>
+    <td><span class="kchip k-composite">composite</span></td>
+    <td class="note">Composite join PK; user_id -&gt; users(id), template_id -&gt; permission_templates(id).</td>
+  </tr>
+<tr>
+    <td class="mono">users</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE identifier: email (TEXT NOT NULL UNIQUE). Self-FK created_by_user_id; widely referenced as actor/owner FK.</td>
+  </tr>
+<tr>
+    <td class="mono">users.client_id -&gt; clients.id</td>
+    <td class="mono dim">client_id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Associates a user with a factory/client (clients table). Surfaced as `clientId`/`clientName` in the user DTO. Governs which factory a user belongs to.</td>
+  </tr>
+<tr>
+    <td class="mono">variation_stock</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">UNIQUE(item_id, variation_leaf_node_id, location_id) natural key; FKs to items/item_variation_nodes.</td>
+  </tr>
+<tr>
+    <td class="mono">vendors</td>
+    <td class="mono dim">id</td>
+    <td><span class="kchip k-int">int⚙</span></td>
+    <td class="note">Referenced by delivery_challans.vendor_id.</td>
+  </tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-title"><h2>Frontend model identifiers</h2><span class="count">69 fields</span></div>
+    <p class="lead">How the Flutter/Dart layer names and types the same IDs on domain models and DTOs. Note the split: database rowids arrive as <code>int</code>, while string keys (order numbers, pipeline/template/node ids, barcodes) arrive as <code>String</code>.</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Model / DTO</th><th>Field</th><th>Type</th></tr></thead>
+        <tbody><tr>
+    <td class="mono">OrderEntry</td>
+    <td class="mono dim">id</td>
+    <td class="note">int (Dart, non-null)</td>
+  </tr>
+<tr>
+    <td class="mono">OrderEntry / OrderGroup</td>
+    <td class="mono dim">orderNo</td>
+    <td class="note">String</td>
+  </tr>
+<tr>
+    <td class="mono">OrderEntry / OrderGroup / OrderDto</td>
+    <td class="mono dim">clientId</td>
+    <td class="note">int</td>
+  </tr>
+<tr>
+    <td class="mono">OrderEntry / OrderDto</td>
+    <td class="mono dim">subContractorId</td>
+    <td class="note">int? (nullable)</td>
+  </tr>
+<tr>
+    <td class="mono">OrderEntry / OrderDto</td>
+    <td class="mono dim">itemId</td>
+    <td class="note">int</td>
+  </tr>
+<tr>
+    <td class="mono">OrderEntry / OrderDto</td>
+    <td class="mono dim">variationLeafNodeId</td>
+    <td class="note">int</td>
+  </tr>
+<tr>
+    <td class="mono">OrderEntry / OrderDto</td>
+    <td class="mono dim">variationPathNodeIds</td>
+    <td class="note">List&lt;int&gt;</td>
+  </tr>
+<tr>
+    <td class="mono">OrderEntry / OrderDto</td>
+    <td class="mono dim">unitId</td>
+    <td class="note">int? (nullable)</td>
+  </tr>
+<tr>
+    <td class="mono">OrderDto</td>
+    <td class="mono dim">id / orderNo / clientId / subContractorId / itemId / variationLeafNodeId / variationPathNodeIds / unitId</td>
+    <td class="note">same types as domain (int, String, int?, List&lt;int&gt;)</td>
+  </tr>
+<tr>
+    <td class="mono">OrderActivityDto</td>
+    <td class="mono dim">id / orderId / actorUserId</td>
+    <td class="note">int / int / int?</td>
+  </tr>
+<tr>
+    <td class="mono">OrderStatusHistoryDto</td>
+    <td class="mono dim">id / orderId / changedByUserId</td>
+    <td class="note">int / int / int?</td>
+  </tr>
+<tr>
+    <td class="mono">PoDocumentEntry / PoDocumentDto</td>
+    <td class="mono dim">id</td>
+    <td class="note">int</td>
+  </tr>
+<tr>
+    <td class="mono">OrderReportRun</td>
+    <td class="mono dim">runId</td>
+    <td class="note">String</td>
+  </tr>
+<tr>
+    <td class="mono">OrderReportItem</td>
+    <td class="mono dim">orderItemId</td>
+    <td class="note">int</td>
+  </tr>
+<tr>
+    <td class="mono">ItemDefinition / ItemDto</td>
+    <td class="mono dim">id</td>
+    <td class="note">int</td>
+  </tr>
+<tr>
+    <td class="mono">ItemDefinition</td>
+    <td class="mono dim">groupId</td>
+    <td class="note">int</td>
+  </tr>
+<tr>
+    <td class="mono">ItemDefinition</td>
+    <td class="mono dim">combinationGroupIds</td>
+    <td class="note">List&lt;int&gt;</td>
+  </tr>
+<tr>
+    <td class="mono">ItemDefinition</td>
+    <td class="mono dim">unitId</td>
+    <td class="note">int</td>
+  </tr>
+<tr>
+    <td class="mono">ItemDefinition</td>
+    <td class="mono dim">baseItemId</td>
+    <td class="note">int? (nullable)</td>
+  </tr>
+<tr>
+    <td class="mono">ItemDefinition</td>
+    <td class="mono dim">defaultPipelineId</td>
+    <td class="note">String? (nullable)</td>
+  </tr>
+<tr>
+    <td class="mono">ItemVariationNodeDefinition / ItemVariationNodeDto</td>
+    <td class="mono dim">id</td>
+    <td class="note">int</td>
+  </tr>
+<tr>
+    <td class="mono">ItemVariationNodeDefinition</td>
+    <td class="mono dim">itemId</td>
+    <td class="note">int</td>
+  </tr>
+<tr>
+    <td class="mono">ItemVariationNodeDefinition</td>
+    <td class="mono dim">parentNodeId</td>
+    <td class="note">int? (nullable)</td>
+  </tr>
+<tr>
+    <td class="mono">ItemPropertySchemaEntry</td>
+    <td class="mono dim">unitId / sourceGroupId / sourceItemIds</td>
+    <td class="note">int? / int? / List&lt;int&gt;</td>
+  </tr>
+<tr>
+    <td class="mono">ItemAsset / ItemAssetUploadIntentInput</td>
+    <td class="mono dim">id / entityId (+ itemId on intent)</td>
+    <td class="note">int / int (itemId int? on CompleteInput)</td>
+  </tr>
+<tr>
+    <td class="mono">ItemUsageRecord</td>
+    <td class="mono dim">id</td>
+    <td class="note">String</td>
+  </tr>
+<tr>
+    <td class="mono">PipelineTemplate</td>
+    <td class="mono dim">id</td>
+    <td class="note">String</td>
+  </tr>
+<tr>
+    <td class="mono">PipelineTemplate</td>
+    <td class="mono dim">factoryId / shopFloorId</td>
+    <td class="note">String? / String?</td>
+  </tr>
+<tr>
+    <td class="mono">PipelineTemplate</td>
+    <td class="mono dim">linkedOrderId</td>
+    <td class="note">int? (nullable)</td>
+  </tr>
+<tr>
+    <td class="mono">PipelineRun</td>
+    <td class="mono dim">templateId / templateVersion</td>
+    <td class="note">String / int</td>
+  </tr>
+<tr>
+    <td class="mono">PipelineRun</td>
+    <td class="mono dim">orderItemId</td>
+    <td class="note">int? (nullable)</td>
+  </tr>
+<tr>
+    <td class="mono">ProcessNode</td>
+    <td class="mono dim">id</td>
+    <td class="note">String</td>
+  </tr>
+<tr>
+    <td class="mono">ProcessNode</td>
+    <td class="mono dim">dieId / machineGroupId (+ machine)</td>
+    <td class="note">dieId String, machineGroupId int?, machine String</td>
+  </tr>
+<tr>
+    <td class="mono">ScrapItemRef / ProcessNode</td>
+    <td class="mono dim">id (ScrapItemRef) / scrapItemId (getter)</td>
+    <td class="note">int / int?</td>
+  </tr>
+<tr>
+    <td class="mono">PipelineItemEndpoint</td>
+    <td class="mono dim">itemId / unitId / groupId / variationLeafNodeId</td>
+    <td class="note">int / int / int? / int</td>
+  </tr>
+<tr>
+    <td class="mono">MaterialBatch</td>
+    <td class="mono dim">id / currentNodeId / parentBatchId</td>
+    <td class="note">String / String / String?</td>
+  </tr>
+<tr>
+    <td class="mono">BarcodeInput</td>
+    <td class="mono dim">barcode</td>
+    <td class="note">String</td>
+  </tr>
+<tr>
+    <td class="mono">ReconcileRequest / ProductionRunCommit / offline DB helper</td>
+    <td class="mono dim">runId</td>
+    <td class="note">String</td>
+  </tr>
+<tr>
+    <td class="mono">ProductionRunCommit</td>
+    <td class="mono dim">stageId</td>
+    <td class="note">String</td>
+  </tr>
+<tr>
+    <td class="mono">Factory</td>
+    <td class="mono dim">id (+ code)</td>
+    <td class="note">String / String</td>
+  </tr>
+<tr>
+    <td class="mono">ShopFloor</td>
+    <td class="mono dim">id / factoryId (+ code)</td>
+    <td class="note">String / String / String</td>
+  </tr>
+<tr>
+    <td class="mono">FloorSummary / PipelineSummary / StationNode / ProductionZone / PipelineRoute</td>
+    <td class="mono dim">id / pipelineId / zoneId / topBottleneckPipelineId</td>
+    <td class="note">String (all)</td>
+  </tr>
+<tr>
+    <td class="mono">MaterialBase / MaterialRecord / MaterialDto</td>
+    <td class="mono dim">id</td>
+    <td class="note">int? (nullable)</td>
+  </tr>
+<tr>
+    <td class="mono">MaterialBase / MaterialRecord / MaterialDto</td>
+    <td class="mono dim">barcode</td>
+    <td class="note">String</td>
+  </tr>
+<tr>
+    <td class="mono">MaterialRecord / ParentMaterial / ChildMaterial</td>
+    <td class="mono dim">parentBarcode / linkedChildBarcodes</td>
+    <td class="note">String? / List&lt;String&gt;</td>
+  </tr>
+<tr>
+    <td class="mono">MaterialRecord / MaterialDto / InventoryMaterialModel</td>
+    <td class="mono dim">linkedGroupId / linkedItemId / linkedVariationLeafNodeId / unitId</td>
+    <td class="note">int? (all nullable)</td>
+  </tr>
+<tr>
+    <td class="mono">VariationStockRecord</td>
+    <td class="mono dim">stockId / itemId / variationLeafNodeId / variationPathNodeIds / unitId / locationId</td>
+    <td class="note">int / int / int / List&lt;int&gt; / int? / String</td>
+  </tr>
+<tr>
+    <td class="mono">VariationStockEntry / VariationStockLeaf</td>
+    <td class="mono dim">itemId / leafNodeId</td>
+    <td class="note">int / int</td>
+  </tr>
+<tr>
+    <td class="mono">InventoryMovementDto</td>
+    <td class="mono dim">fromLocationId / toLocationId / referenceId / sourceChallanId / sourceChallanLineId</td>
+    <td class="note">String? / String? / String? / int? / int?</td>
+  </tr>
+<tr>
+    <td class="mono">InventorySetDto / InventorySetLineDto</td>
+    <td class="mono dim">id (InventorySetDto) / id,itemId,variationLeafNodeId (InventorySetLineDto)</td>
+    <td class="note">int / int? / int / int</td>
+  </tr>
+<tr>
+    <td class="mono">ScanEventModel / MaterialActivityEvent / MaterialActivityEventDto</td>
+    <td class="mono dim">id (+ barcode)</td>
+    <td class="note">int? / String</td>
+  </tr>
+<tr>
+    <td class="mono">ClientDefinition</td>
+    <td class="mono dim">id</td>
+    <td class="note">int</td>
+  </tr>
+<tr>
+    <td class="mono">SubContractorDefinition</td>
+    <td class="mono dim">id / clientId</td>
+    <td class="note">int / int</td>
+  </tr>
+<tr>
+    <td class="mono">VendorDefinition</td>
+    <td class="mono dim">id</td>
+    <td class="note">int</td>
+  </tr>
+<tr>
+    <td class="mono">AuthSession</td>
+    <td class="mono dim">id / userId</td>
+    <td class="note">String / int</td>
+  </tr>
+<tr>
+    <td class="mono">AuthEvent / PermissionTemplate</td>
+    <td class="mono dim">id</td>
+    <td class="note">int</td>
+  </tr>
+<tr>
+    <td class="mono">DeleteRequest</td>
+    <td class="mono dim">id / entityId (+ entityType)</td>
+    <td class="note">int / String</td>
+  </tr>
+<tr>
+    <td class="mono">DeliveryChallan</td>
+    <td class="mono dim">id</td>
+    <td class="note">int</td>
+  </tr>
+<tr>
+    <td class="mono">DeliveryChallan</td>
+    <td class="mono dim">challanNo</td>
+    <td class="note">String</td>
+  </tr>
+<tr>
+    <td class="mono">DeliveryChallan</td>
+    <td class="mono dim">orderId / orderIds / clientId / vendorId / orderNo / orderNos</td>
+    <td class="note">int? / List&lt;int&gt; / int? / int? / String / List&lt;String&gt;</td>
+  </tr>
+<tr>
+    <td class="mono">DeliveryChallanItem</td>
+    <td class="mono dim">id / orderItemId / productionRunId / itemId / variationLeafNodeId / lineNo / variationPathNodeIds</td>
+    <td class="note">int / int? / int? / int? / int / int / List&lt;int&gt;</td>
+  </tr>
+<tr>
+    <td class="mono">CompletedProductionRun</td>
+    <td class="mono dim">id / runCode</td>
+    <td class="note">int / String</td>
+  </tr>
+<tr>
+    <td class="mono">CompanyProfile</td>
+    <td class="mono dim">id</td>
+    <td class="note">int</td>
+  </tr>
+<tr>
+    <td class="mono">DepartmentDefinition</td>
+    <td class="mono dim">id</td>
+    <td class="note">int</td>
+  </tr>
+<tr>
+    <td class="mono">EmployeeDefinition</td>
+    <td class="mono dim">id / departmentId / barcodeId</td>
+    <td class="note">int / int / String</td>
+  </tr>
+<tr>
+    <td class="mono">GroupDefinition</td>
+    <td class="mono dim">id / parentGroupId / unitId</td>
+    <td class="note">int / int? / int?</td>
+  </tr>
+<tr>
+    <td class="mono">UnitDefinition</td>
+    <td class="mono dim">id / unitGroupId / conversionBaseUnitId</td>
+    <td class="note">int / int? / int?</td>
+  </tr>
+<tr>
+    <td class="mono">Die</td>
+    <td class="mono dim">id / toolCode / compatibleMachineGroupIds</td>
+    <td class="note">String / String / List&lt;int&gt;</td>
+  </tr>
+<tr>
+    <td class="mono">Machine</td>
+    <td class="mono dim">id / assetId / groupId</td>
+    <td class="note">String / String / int?</td>
+  </tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-title"><h2>Conventions &amp; caveats</h2><span class="count">read before adding a new ID</span></div>
+    <p class="lead">Cross-cutting observations from the audit — the inconsistencies and sharp edges worth knowing before you mint another identifier.</p>
+    <ul class="notes"><li><span class="nnum">1</span><span class="nbody">Three coexisting ID families cause inconsistency: (a) SQLite INTEGER PRIMARY KEY AUTOINCREMENT rowids for almost every core table; (b) TEXT natural/business keys as PKs (order_headers PK = order_no, report_groups PK = code, sandbox_client_configs/pins/sync_states PK = client_id, asset_upload_sessions.id is TEXT); (c) timestamp-based generated codes.</span></li>
+<li><span class="nnum">2</span><span class="nbody">The timestamp-code family is large and internally inconsistent in style: PAR-${Date.now()}-${rand} (1523), CHD-${suffix}-${idx} (1529), MAT-${Date.now()}-${rand5} (9789), mov-${Date.now()}-${rand} (10373/10485), MACH-${Date.now()} (19073), DIE-${Date.now()} (19198), LOT-SCRAP-${Date.now()}-${rand} (23463), BATCH-${Date.now()} (24450), and object_key uniqueStem ${Date.now()}-${sha256[:12]} (12057). These rely on Date.now()+Math.random() for uniqueness (no DB uniqueness guarantee on most), so they are collision-prone under high throughput and non-monotonic across clock skew; contrast with the DB-sequenced monotonic schemes below.</span></li>
+<li><span class="nnum">3</span><span class="nbody">Sequential zero-padded human codes are generated via SELECT MAX/COUNT + padStart, a separate convention: DC-/RC-#####  (generateChallanNumber, 7869-7886), INV-##### (generateInvoiceNumber, 10730-10742). These are DB-derived (race-prone without a transaction/lock but monotonic), unlike the timestamp family.</span></li>
+<li><span class="nnum">4</span><span class="nbody">Barcode prefix taxonomy: PAR- (parent), CHD- (child), MAT- (standalone material), LOT-RUN-.../LOT-SCRAP-... (lot barcodes), plus item-selection/variation-composed barcodes. normalizeBarcode (1513) enforces a normalization/uniqueness key. The LOT- family overlaps conceptually with both 'Material Barcode' and 'Lot Code' entries, a potential duplicate/overlap.</span></li>
+<li><span class="nnum">5</span><span class="nbody">Migration-vs-runtime table drift: migrations/001-init.sql defines legacy tables `orders`, `delivery_challan_orders`, and `order_material_allocations` that the runtime server.js schema replaced with order_headers/order_items, delivery_challan_order_items, and inventory_reservations respectively. order_material_allocations (with its own PK+FKs) was never migrated into the inventory. The inventory was clearly generated from server.js CREATE TABLE blocks only, so migration-exclusive identifiers are systematically absent.</span></li>
+<li><span class="nnum">6</span><span class="nbody">changelog and global_audit_logs tables live only in .sql migrations (012, 016), not in server.js CREATE TABLE; their id/record_id/entity_id columns are in the list but no explicit 'changelog PK (id)' / 'global_audit_logs PK (id)' row exists, unlike every server.js table which got an explicit '&lt;table&gt; PK' entry — a labeling inconsistency in the inventory itself.</span></li>
+<li><span class="nnum">7</span><span class="nbody">object_key is UNIQUE on uploaded_assets and po_documents but merely NOT NULL (non-unique) on the *_upload_sessions staging tables and on challan_templates — same identifier, inconsistent uniqueness guarantees across tables.</span></li>
+<li><span class="nnum">8</span><span class="nbody">reason_code, source_challan_type, and reference_type on inventory_movements are free-text enum strings set at call sites with no lookup table, so they are effectively un-validated identifier-ish discriminators (e.g. 'challan-deletion' hyphenated vs 'pipeline_run' underscored — inconsistent casing/separators within the same column).</span></li></ul>
+  </section>
+
+  <footer class="foot">Generated from a static read of backend/server.js and packages/core_erp — no runtime data. Line references point at definitions/generators. ⚙ = internal, never surfaced to users.</footer>
+</div>

@@ -233,6 +233,120 @@ class PurchaseGroupBrowseScreen extends StatefulWidget {
 
 class _PurchaseGroupBrowseScreenState extends State<PurchaseGroupBrowseScreen> {
   bool _reviewing = false;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  bool _expandAll = false;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _goToChallan() async {
+    if (_reviewing) return;
+    _reviewing = true;
+    final done = await Navigator.of(context).push<dynamic>(
+      MaterialPageRoute(
+        builder: (_) => ChallanMobileEditorScreen(
+          initialItems: List<DeliveryChallanItem>.of(activePurchaseLines),
+          lockedType: ChallanType.reception,
+        ),
+      ),
+    );
+    _reviewing = false;
+    if (!mounted) return;
+    if (done == true) {
+      setState(() => activePurchaseLines.clear());
+    } else if (done is List<DeliveryChallanItem>) {
+      setState(() {
+        activePurchaseLines.clear();
+        activePurchaseLines.addAll(done);
+      });
+    }
+  }
+
+  Future<void> _pickItem(ItemDefinition item) async {
+    final favProvider = context.read<FavoritesProvider>();
+    VariationPathSelectionResult? variation;
+    if (item.topLevelProperties.isNotEmpty) {
+      variation = await showDialog<VariationPathSelectionResult>(
+        context: context,
+        builder: (ctx) => Dialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          insetPadding: const EdgeInsets.all(24),
+          child: SizedBox(
+            height: MediaQuery.of(context).size.height * 0.7,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: VariationPathSelectorDialog(
+                item: item,
+                initialRootPropertyId: null,
+                initialValueNodeIds: const [],
+                useTilesForValues: true,
+                isFavorite: (result) => favProvider.isFavorite(item.id, result.valueNodeIds),
+                onFavoriteToggled: (result, isFav) {
+                  final dummyItem = DeliveryChallanItem(
+                    id: 0,
+                    orderItemId: null,
+                    productionRunId: null,
+                    itemId: item.id,
+                    variationLeafNodeId: result.leaf?.id ?? 0,
+                    variationPathLabel: result.summaryLabel,
+                    variationPathNodeIds: result.valueNodeIds,
+                    particulars: item.displayName,
+                    quantityPcs: '1',
+                    weight: '0.0',
+                    lineNo: 0,
+                    hsnCode: '',
+                    note: '',
+                  );
+                  favProvider.toggleFavorite(dummyItem, isFav);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(isFav ? 'Variation saved to favorites' : 'Variation removed from favorites'),
+                      behavior: SnackBarBehavior.floating,
+                      margin: const EdgeInsets.only(top: 10, left: 10, right: 10),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      if (variation == null || !mounted) return;
+    }
+
+    final leafNodeId = variation?.leaf?.id ?? 0;
+
+    showPurchaseQuantitySheet(
+      context,
+      onConfirm: (qty, weight) {
+        final newItem = DeliveryChallanItem(
+          id: 0,
+          orderItemId: null,
+          productionRunId: null,
+          itemId: item.id,
+          variationLeafNodeId: leafNodeId,
+          variationPathLabel: variation?.summaryLabel ?? '',
+          variationPathNodeIds: variation?.valueNodeIds ?? const <int>[],
+          customVariationValues: variation?.customVariationValues ?? const <int, String>{},
+          particulars: item.displayName,
+          quantityPcs: qty,
+          weight: weight,
+          lineNo: activePurchaseLines.length + 1,
+          hsnCode: '',
+          note: '',
+        );
+
+        activePurchaseLines.add(newItem);
+        setState(() {});
+        _goToChallan();
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -243,58 +357,32 @@ class _PurchaseGroupBrowseScreenState extends State<PurchaseGroupBrowseScreen> {
     final purchaseItems = itemsProvider.items
         .where((i) => i.availableForPurchase && !i.isArchived)
         .toList(growable: false);
-    final groupIdsWithPurchase = purchaseItems.map((i) => i.groupId).toSet();
+        
+    final filteredItems = _searchQuery.isEmpty 
+        ? purchaseItems 
+        : purchaseItems.where((i) => i.displayName.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+
+    final groupIdsWithPurchase = filteredItems.map((i) => i.groupId).toSet();
     final groups = groupsProvider.itemGroups
         .where((g) => !g.isArchived && groupIdsWithPurchase.contains(g.id))
         .toList(growable: false);
 
-    final listItems = <Widget>[];
-
-    if (favPurchases.isNotEmpty) {
-      listItems.add(
-        _BrowseTile(
-          icon: Icons.favorite_rounded,
-          title: 'Favorites',
-          subtitle: '${favPurchases.length} item${favPurchases.length == 1 ? '' : 's'}',
-          onTap: () async {
-            await Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => FavoriteItemBrowseScreen(lines: activePurchaseLines),
-              ),
-            );
-            if (mounted) setState(() {});
-          },
-        ),
-      );
-    }
-
-
-    for (final group in groups) {
-      final count = purchaseItems.where((i) => i.groupId == group.id).length;
-      listItems.add(
-        _BrowseTile(
-          icon: Icons.folder_open_rounded,
-          title: group.name,
-          subtitle: '$count item${count == 1 ? '' : 's'}',
-          onTap: () async {
-            await Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => PurchaseItemBrowseScreen(group: group, lines: activePurchaseLines),
-              ),
-            );
-            if (mounted) setState(() {}); // refresh cart count
-          },
-        ),
-      );
-    }
+    final bool isSingleGroup = groups.length == 1;
 
     return Scaffold(
       backgroundColor: SoftErpTheme.shellSurface,
       appBar: AppBar(
-        title: const Text('Purchase — Groups', style: TextStyle(fontWeight: FontWeight.w900)),
+        title: Text(isSingleGroup ? groups.first.name : 'Purchase — Groups', style: const TextStyle(fontWeight: FontWeight.w900)),
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         elevation: 0,
+        leading: !isSingleGroup 
+            ? IconButton(
+                icon: Icon(_expandAll ? Icons.unfold_less_rounded : Icons.unfold_more_rounded, color: SoftErpTheme.accent),
+                onPressed: () => setState(() => _expandAll = !_expandAll),
+                tooltip: 'Toggle Groups',
+              )
+            : const BackButton(),
         actions: [
           if (activePurchaseLines.isNotEmpty)
             IconButton(
@@ -304,18 +392,101 @@ class _PurchaseGroupBrowseScreenState extends State<PurchaseGroupBrowseScreen> {
             ),
         ],
       ),
-      body: groups.isEmpty && favPurchases.isEmpty
-          ? const _EmptyHint(
-              icon: Icons.category_outlined,
-              title: 'No purchase items yet',
-              message: 'Mark items as "Available for purchase" in the desktop app to see them here.',
-            )
-          : ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: listItems.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 12),
-              itemBuilder: (context, index) => listItems[index],
+      body: Column(
+        children: [
+          Container(
+            color: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Search items...',
+                prefixIcon: const Icon(Icons.search_rounded),
+                filled: true,
+                fillColor: SoftErpTheme.shellSurface,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              ),
+              onChanged: (val) => setState(() => _searchQuery = val.trim()),
             ),
+          ),
+          Expanded(
+            child: groups.isEmpty && favPurchases.isEmpty
+                ? const _EmptyHint(
+                    icon: Icons.category_outlined,
+                    title: 'No purchase items',
+                    message: 'No items found matching your criteria.',
+                  )
+                : ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      if (favPurchases.isNotEmpty && _searchQuery.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _BrowseTile(
+                            icon: Icons.favorite_rounded,
+                            title: 'Favorites',
+                            subtitle: '${favPurchases.length} item${favPurchases.length == 1 ? '' : 's'}',
+                            onTap: () async {
+                              await Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => FavoriteItemBrowseScreen(lines: activePurchaseLines),
+                                ),
+                              );
+                              if (mounted) setState(() {});
+                            },
+                          ),
+                        ),
+                      if (isSingleGroup)
+                        ...filteredItems.where((i) => i.groupId == groups.first.id).map(
+                          (item) => Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _BrowseTile(
+                              icon: Icons.inventory_2_rounded,
+                              title: item.displayName,
+                              subtitle: 'ID: ${item.id}',
+                              trailing: const Icon(Icons.add_circle_outline_rounded, color: SoftErpTheme.accent),
+                              onTap: () => _pickItem(item),
+                            ),
+                          ),
+                        )
+                      else
+                        ...groups.map((group) {
+                          final groupItems = filteredItems.where((i) => i.groupId == group.id).toList();
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            elevation: 0,
+                            color: Colors.white,
+                            child: ExpansionTile(
+                              initiallyExpanded: _expandAll,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              collapsedShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              leading: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(color: SoftErpTheme.accent.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                                child: const Icon(Icons.folder_open_rounded, color: SoftErpTheme.accent),
+                              ),
+                              title: Text(group.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                              subtitle: Text('${groupItems.length} items', style: const TextStyle(fontSize: 12, color: SoftErpTheme.textSecondary)),
+                              children: groupItems.map((item) => ListTile(
+                                leading: const Icon(Icons.inventory_2_rounded, color: Colors.grey),
+                                title: Text(item.displayName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                subtitle: Text('ID: ${item.id}'),
+                                trailing: const Icon(Icons.add_circle_outline_rounded, color: SoftErpTheme.accent),
+                                onTap: () => _pickItem(item),
+                              )).toList(),
+                            ),
+                          );
+                        }),
+                    ],
+                  ),
+          ),
+        ],
+      ),
       bottomNavigationBar: activePurchaseLines.isEmpty
           ? null
           : SafeArea(
@@ -328,28 +499,7 @@ class _PurchaseGroupBrowseScreenState extends State<PurchaseGroupBrowseScreen> {
                 ),
                 icon: const Icon(Icons.receipt_long_rounded),
                 label: Text('Review Challan (${activePurchaseLines.length})', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-                onPressed: () async {
-                  if (_reviewing) return; // guard against a double-tap opening two editors
-                  _reviewing = true;
-                  final done = await Navigator.of(context).push<dynamic>(
-                    MaterialPageRoute(
-                      builder: (_) => ChallanMobileEditorScreen(
-                        initialItems: List<DeliveryChallanItem>.of(activePurchaseLines),
-                        lockedType: ChallanType.reception,
-                      ),
-                    ),
-                  );
-                  _reviewing = false;
-                  if (!mounted) return;
-                  if (done == true) {
-                    setState(() => activePurchaseLines.clear());
-                  } else if (done is List<DeliveryChallanItem>) {
-                    setState(() {
-                      activePurchaseLines.clear();
-                      activePurchaseLines.addAll(done);
-                    });
-                  }
-                },
+                onPressed: _goToChallan,
               ),
             ),
     );
@@ -396,8 +546,7 @@ class _FavoriteItemBrowseScreenState extends State<FavoriteItemBrowseScreen> {
   void _pickFav(DeliveryChallanItem favItem) {
     showPurchaseQuantitySheet(
       context,
-      initialFavorite: true,
-      onConfirm: (qty, weight, isFav) {
+      onConfirm: (qty, weight) {
         final newItem = DeliveryChallanItem(
           id: 0,
           orderItemId: null,
@@ -415,20 +564,11 @@ class _FavoriteItemBrowseScreenState extends State<FavoriteItemBrowseScreen> {
           note: '',
         );
         
-        if (!isFav) {
-          context.read<FavoritesProvider>().toggleFavorite(favItem, false);
-        }
-        
         widget.lines.add(newItem);
         setState(() {});
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Added ${favItem.particulars}'),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(milliseconds: 900),
-        ),
-      );
-    });
+        _goToChallan();
+      },
+    );
   }
 
   @override
@@ -498,7 +638,7 @@ class _FavoriteItemBrowseScreenState extends State<FavoriteItemBrowseScreen> {
                 return _BrowseTile(
                   icon: Icons.favorite_rounded,
                   title: item.particulars,
-                  subtitle: item.variationPathLabel,
+                  subtitle: item.variationPathLabel.isNotEmpty ? item.variationPathLabel : 'Standard',
                   trailing: const Icon(Icons.add_circle_outline_rounded, color: SoftErpTheme.accent),
                   onTap: () => _pickFav(item),
                 );
@@ -551,6 +691,7 @@ class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
   }
 
   Future<void> _pickItem(ItemDefinition item) async {
+    final favProvider = context.read<FavoritesProvider>();
     VariationPathSelectionResult? variation;
     // Items with no variation properties skip the picker entirely — the dialog
     // can never resolve a leaf for them, so its Confirm button would stay
@@ -571,6 +712,33 @@ class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
                 initialRootPropertyId: null,
                 initialValueNodeIds: const [],
                 useTilesForValues: true,
+                isFavorite: (result) => favProvider.isFavorite(item.id, result.valueNodeIds),
+                onFavoriteToggled: (result, isFav) {
+                  // Create dummy item just for favorite toggling
+                  final dummyItem = DeliveryChallanItem(
+                    id: 0,
+                    orderItemId: null,
+                    productionRunId: null,
+                    itemId: item.id,
+                    variationLeafNodeId: result.leaf?.id ?? 0,
+                    variationPathLabel: result.summaryLabel,
+                    variationPathNodeIds: result.valueNodeIds,
+                    particulars: item.displayName,
+                    quantityPcs: '1',
+                    weight: '0.0',
+                    lineNo: 0,
+                    hsnCode: '',
+                    note: '',
+                  );
+                  favProvider.toggleFavorite(dummyItem, isFav);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(isFav ? 'Variation saved to favorites' : 'Variation removed from favorites'),
+                      behavior: SnackBarBehavior.floating,
+                      margin: const EdgeInsets.only(top: 10, left: 10, right: 10),
+                    ),
+                  );
+                },
               ),
             ),
           ),
@@ -580,20 +748,17 @@ class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
     }
 
     final leafNodeId = variation?.leaf?.id ?? 0;
-    final favProvider = context.read<FavoritesProvider>();
-    final existingFav = favProvider.isFavorite(item.id, leafNodeId);
 
     showPurchaseQuantitySheet(
       context,
-      initialFavorite: existingFav,
-      onConfirm: (qty, weight, isFav) {
+      onConfirm: (qty, weight) {
         final newItem = DeliveryChallanItem(
           id: 0,
           orderItemId: null,
           productionRunId: null,
           itemId: item.id,
           variationLeafNodeId: leafNodeId,
-          variationPathLabel: variation?.leaf?.displayName ?? '',
+          variationPathLabel: variation?.summaryLabel ?? '',
           variationPathNodeIds: variation?.valueNodeIds ?? const <int>[],
           customVariationValues: variation?.customVariationValues ?? const <int, String>{},
           particulars: item.displayName,
@@ -604,22 +769,11 @@ class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
           note: '',
         );
 
-        if (isFav && !existingFav) {
-          favProvider.toggleFavorite(newItem, true);
-        } else if (!isFav && existingFav) {
-          favProvider.toggleFavorite(newItem, false);
-        }
-
         widget.lines.add(newItem);
         setState(() {});
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Added ${item.displayName}'),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(milliseconds: 900),
-        ),
-      );
-    });
+        _goToChallan();
+      },
+    );
   }
 
   @override
@@ -725,12 +879,10 @@ class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
 /// strings (matching DeliveryChallanItem's quantityPcs/weight).
 void showPurchaseQuantitySheet(
   BuildContext context, {
-  bool initialFavorite = false,
-  required void Function(String qty, String weight, bool isFavorite) onConfirm,
+  required void Function(String qty, String weight) onConfirm,
 }) {
   int qty = 1;
   final weightController = TextEditingController();
-  bool isFavorite = initialFavorite;
 
   showModalBottomSheet(
     context: context,
@@ -766,10 +918,6 @@ void showPurchaseQuantitySheet(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text('Set Quantity', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: SoftErpTheme.textPrimary)),
-                    IconButton(
-                      icon: Icon(isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: isFavorite ? Colors.red : Colors.grey),
-                      onPressed: () => setModalState(() => isFavorite = !isFavorite),
-                    ),
                   ],
                 ),
                 const SizedBox(height: 20),
@@ -835,7 +983,7 @@ void showPurchaseQuantitySheet(
                   onPressed: () {
                     final weight = double.tryParse(weightController.text.trim()) ?? 0.0;
                     Navigator.of(ctx).pop();
-                    onConfirm('$qty', weight == 0 ? '0.0' : '$weight', isFavorite);
+                    onConfirm('$qty', weight == 0 ? '0.0' : '$weight');
                   },
                   child: const Text('Confirm Details', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
                 ),
@@ -955,6 +1103,14 @@ class VendorBrowseScreen extends StatefulWidget {
 
 class _VendorBrowseScreenState extends State<VendorBrowseScreen> {
   bool _reviewing = false;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   Future<void> _goToChallan() async {
     if (_reviewing) return;
@@ -982,7 +1138,10 @@ class _VendorBrowseScreenState extends State<VendorBrowseScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final vendors = context.watch<VendorsProvider>().vendors.where((v) => !v.isArchived).toList(growable: false);
+    final allVendors = context.watch<VendorsProvider>().vendors.where((v) => !v.isArchived).toList(growable: false);
+    final vendors = _searchQuery.isEmpty 
+        ? allVendors 
+        : allVendors.where((v) => v.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList(growable: false);
     final addedInGroup = widget.lines.length;
 
     return Scaffold(
@@ -993,33 +1152,58 @@ class _VendorBrowseScreenState extends State<VendorBrowseScreen> {
         surfaceTintColor: Colors.white,
         elevation: 0,
       ),
-      body: vendors.isEmpty
-          ? const _EmptyHint(
-              icon: Icons.storefront_outlined,
-              title: 'No vendors found',
-              message: 'Add vendors in the desktop app first.',
-            )
-          : ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: vendors.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                final v = vendors[index];
-                return _BrowseTile(
-                  icon: Icons.storefront_rounded,
-                  title: v.name,
-                  subtitle: v.gstNumber.isNotEmpty ? 'GST: ${v.gstNumber}' : 'Vendor',
-                  onTap: () async {
-                    await Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => VendorHistoryBrowseScreen(vendor: v, lines: widget.lines),
-                      ),
-                    );
-                    if (mounted) setState(() {});
-                  },
-                );
-              },
+      body: Column(
+        children: [
+          Container(
+            color: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Search vendors...',
+                prefixIcon: const Icon(Icons.search_rounded),
+                filled: true,
+                fillColor: SoftErpTheme.shellSurface,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              ),
+              onChanged: (val) => setState(() => _searchQuery = val.trim()),
             ),
+          ),
+          Expanded(
+            child: vendors.isEmpty
+                ? const _EmptyHint(
+                    icon: Icons.storefront_outlined,
+                    title: 'No vendors found',
+                    message: 'Add vendors in the desktop app first.',
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: vendors.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      final v = vendors[index];
+                      return _BrowseTile(
+                        icon: Icons.storefront_rounded,
+                        title: v.name,
+                        subtitle: v.gstNumber.isNotEmpty ? 'GST: ${v.gstNumber}' : 'Vendor',
+                        onTap: () async {
+                          await Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => VendorHistoryBrowseScreen(vendor: v, lines: widget.lines),
+                            ),
+                          );
+                          if (mounted) setState(() {});
+                        },
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
       bottomNavigationBar: addedInGroup == 0
           ? null
           : SafeArea(
@@ -1093,8 +1277,7 @@ class _VendorHistoryBrowseScreenState extends State<VendorHistoryBrowseScreen> {
   void _pickHistoryItem(DeliveryChallanItem historyItem) {
     showPurchaseQuantitySheet(
       context,
-      initialFavorite: false, // You could hook this up to FavoritesProvider if desired
-      onConfirm: (qty, weight, isFav) {
+      onConfirm: (qty, weight) {
         final newItem = DeliveryChallanItem(
           id: 0,
           orderItemId: null,
@@ -1112,19 +1295,9 @@ class _VendorHistoryBrowseScreenState extends State<VendorHistoryBrowseScreen> {
           note: '',
         );
 
-        if (isFav) {
-          context.read<FavoritesProvider>().toggleFavorite(newItem, true);
-        }
-
         widget.lines.add(newItem);
         setState(() {});
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Added \${historyItem.particulars}'),
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(milliseconds: 900),
-          ),
-        );
+        _goToChallan();
       },
     );
   }

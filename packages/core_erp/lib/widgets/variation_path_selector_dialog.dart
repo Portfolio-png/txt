@@ -26,6 +26,7 @@ class VariationPathSelectionResult {
     required this.rootPropertyId,
     required this.valueNodeIds,
     required this.leaf,
+    required this.summaryLabel,
     this.customVariationValues = const {},
   });
 
@@ -34,6 +35,7 @@ class VariationPathSelectionResult {
   final List<int> valueNodeIds;
   final Map<int, String> customVariationValues;
   final ItemVariationNodeDefinition? leaf;
+  final String summaryLabel;
 }
 
 typedef VariationValueCreator =
@@ -58,6 +60,8 @@ class VariationPathSelectorWidget extends StatefulWidget {
     this.onChanged,
     this.onComplete,
     this.onCancel,
+    this.isFavorite,
+    this.onFavoriteToggled,
   });
 
   final ItemDefinition item;
@@ -71,6 +75,8 @@ class VariationPathSelectorWidget extends StatefulWidget {
   final ValueChanged<VariationPathSelectionResult>? onChanged;
   final ValueChanged<VariationPathSelectionResult>? onComplete;
   final VoidCallback? onCancel;
+  final bool Function(VariationPathSelectionResult result)? isFavorite;
+  final void Function(VariationPathSelectionResult result, bool isFav)? onFavoriteToggled;
 
   @override
   State<VariationPathSelectorWidget> createState() =>
@@ -166,6 +172,47 @@ class _VariationPathSelectorWidgetState
                     ),
                   ),
                 ),
+                if (widget.isFavorite != null && selectedLeaf != null) ...[
+                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: () {
+                      final result = VariationPathSelectionResult(
+                        item: _item,
+                        rootPropertyId: _selectedRootPropertyId,
+                        valueNodeIds: List<int>.from(_selectedValueNodeIds),
+                        customVariationValues: Map.from(_customVariationValues),
+                        leaf: selectedLeaf,
+                        summaryLabel: _selectionSummaryLabel(),
+                      );
+                      final isFav = widget.isFavorite!(result);
+                      widget.onFavoriteToggled?.call(result, !isFav);
+                      setState(() {});
+                    },
+                    icon: Icon(
+                      widget.isFavorite!(VariationPathSelectionResult(
+                        item: _item,
+                        rootPropertyId: _selectedRootPropertyId,
+                        valueNodeIds: List<int>.from(_selectedValueNodeIds),
+                        customVariationValues: Map.from(_customVariationValues),
+                        leaf: selectedLeaf,
+                        summaryLabel: _selectionSummaryLabel(),
+                      ))
+                          ? Icons.favorite_rounded
+                          : Icons.favorite_border_rounded,
+                      color: widget.isFavorite!(VariationPathSelectionResult(
+                        item: _item,
+                        rootPropertyId: _selectedRootPropertyId,
+                        valueNodeIds: List<int>.from(_selectedValueNodeIds),
+                        customVariationValues: Map.from(_customVariationValues),
+                        leaf: selectedLeaf,
+                        summaryLabel: _selectionSummaryLabel(),
+                      ))
+                          ? Colors.red
+                          : Colors.grey,
+                      size: isTablet ? 28.0 : 24.0,
+                    ),
+                  ),
+                ],
                 const SizedBox(width: 8),
                 IconButton(
                   onPressed: () => widget.onCancel?.call(),
@@ -337,6 +384,9 @@ class _VariationPathSelectorWidgetState
           ),
       ];
 
+      final showAddTile = widget.onCreateValue != null && !widget.readOnly;
+      final itemCount = options.length + (showAddTile ? 1 : 0);
+
       return GridView.builder(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
@@ -346,8 +396,32 @@ class _VariationPathSelectorWidgetState
           crossAxisSpacing: 8,
           mainAxisSpacing: 8,
         ),
-        itemCount: options.length,
+        itemCount: itemCount,
         itemBuilder: (context, index) {
+          if (showAddTile && index == options.length) {
+            return InkWell(
+              onTap: () => _promptCreateValue(step),
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: SoftErpTheme.shellSurface,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: SoftErpTheme.border),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.add_rounded, size: 18, color: SoftErpTheme.textSecondary),
+                    SizedBox(width: 4),
+                    Text('New', style: TextStyle(color: SoftErpTheme.textSecondary, fontWeight: FontWeight.w600, fontSize: 14)),
+                  ],
+                ),
+              ),
+            );
+          }
+
           final option = options[index];
           final isSelected = step.selectedValueId == option.value;
           return InkWell(
@@ -498,6 +572,59 @@ class _VariationPathSelectorWidgetState
         _notifyChanges();
       },
     );
+  }
+
+  Future<void> _promptCreateValue(VariationStep step) async {
+    final controller = TextEditingController();
+    final resultName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Create New Value'),
+        content: TextField(
+          controller: controller,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: 'Enter value',
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          ),
+          onSubmitted: (val) => Navigator.of(ctx).pop(val),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text),
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+
+    if (resultName != null && resultName.trim().isNotEmpty && mounted) {
+      final propertyLabel = step.property.name.trim().isEmpty
+          ? 'Property ${step.property.id}'
+          : step.property.name.trim();
+          
+      final result = await widget.onCreateValue!(
+        item: _item,
+        propertyNodeId: step.property.id,
+        propertyLabel: propertyLabel,
+        valueName: resultName.trim(),
+      );
+
+      if (!mounted || result == null) return;
+
+      setState(() {
+        _item = result.item;
+        final refreshedProperty = _findNodeById(result.item.variationTree, step.property.id);
+        _replaceSelectionUnderProperty(refreshedProperty ?? step.property, result.selectedValueNodeIds);
+      });
+      _notifyChanges();
+    }
   }
 
   List<VariationStep> _allVariationSteps() {
@@ -860,6 +987,7 @@ class _VariationPathSelectorWidgetState
         valueNodeIds: List<int>.from(_selectedValueNodeIds),
         customVariationValues: Map.from(_customVariationValues),
         leaf: leaf,
+        summaryLabel: _selectionSummaryLabel(),
       ),
     );
   }
@@ -908,6 +1036,7 @@ class _VariationPathSelectorWidgetState
         valueNodeIds: List<int>.from(_selectedValueNodeIds),
         customVariationValues: Map.from(_customVariationValues),
         leaf: leaf,
+        summaryLabel: _selectionSummaryLabel(),
       ),
     );
   }
@@ -923,6 +1052,8 @@ class VariationPathSelectorDialog extends StatelessWidget {
     this.onCreateValue,
     this.readOnly = false,
     this.useTilesForValues = false,
+    this.isFavorite,
+    this.onFavoriteToggled,
   });
 
   final ItemDefinition item;
@@ -932,6 +1063,8 @@ class VariationPathSelectorDialog extends StatelessWidget {
   final VariationValueCreator? onCreateValue;
   final bool readOnly;
   final bool useTilesForValues;
+  final bool Function(VariationPathSelectionResult result)? isFavorite;
+  final void Function(VariationPathSelectionResult result, bool isFav)? onFavoriteToggled;
 
   @override
   Widget build(BuildContext context) {
@@ -948,6 +1081,8 @@ class VariationPathSelectorDialog extends StatelessWidget {
           readOnly: readOnly,
           useTilesForValues: useTilesForValues,
           showHeaderAndFooter: true,
+          isFavorite: isFavorite,
+          onFavoriteToggled: onFavoriteToggled,
           onComplete: (result) => Navigator.of(context).pop(result),
           onCancel: () => Navigator.of(context).pop(),
         );
