@@ -1,3 +1,5 @@
+import 'package:core_erp/core/domain/uploaded_asset.dart';
+
 enum DeliveryChallanStatus { draft, issued, cancelled }
 
 /// `internal` documents assets moving within the company (production
@@ -459,6 +461,9 @@ class DeliveryChallan {
           json['itemsCount'] as int? ??
           json['items_count'] as int? ??
           items.length,
+      assets: (json['assets'] as List<dynamic>? ?? const [])
+          .map((a) => UploadedAsset.fromJson(a as Map<String, dynamic>))
+          .toList(growable: false),
       createdAt: DateTime.tryParse(json['createdAt'] as String? ?? ''),
       updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
     );
@@ -469,6 +474,7 @@ class DeliveryChallan {
     bool? usedInReport,
     List<String>? reportGroupCodes,
     ChallanPurpose? purpose,
+    List<UploadedAsset>? assets,
   }) {
     return DeliveryChallan(
       id: id,
@@ -496,6 +502,7 @@ class DeliveryChallan {
       status: status,
       items: items ?? this.items,
       itemsCount: items?.length ?? itemsCount,
+      assets: assets ?? this.assets,
       createdAt: createdAt,
       updatedAt: updatedAt,
     );
