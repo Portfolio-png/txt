@@ -285,6 +285,13 @@ class _PurchaseGroupBrowseScreenState extends State<PurchaseGroupBrowseScreen> {
                 initialRootPropertyId: null,
                 initialValueNodeIds: const [],
                 useTilesForValues: true,
+                onCreateValue: ({required item, required propertyNodeId, required propertyLabel, required valueName}) {
+                  return context.read<ItemsProvider>().appendVariationValue(
+                    item: item,
+                    propertyNodeId: propertyNodeId,
+                    valueName: valueName,
+                  );
+                },
                 isFavorite: (result) => favProvider.isFavorite(item.id, result.valueNodeIds),
                 onFavoriteToggled: (result, isFav) {
                   final dummyItem = DeliveryChallanItem(
@@ -440,20 +447,7 @@ class _PurchaseGroupBrowseScreenState extends State<PurchaseGroupBrowseScreen> {
                             },
                           ),
                         ),
-                      if (isSingleGroup)
-                        ...filteredItems.where((i) => i.groupId == groups.first.id).map(
-                          (item) => Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: _BrowseTile(
-                              icon: Icons.inventory_2_rounded,
-                              title: item.displayName,
-                              subtitle: 'ID: ${item.id}',
-                              trailing: const Icon(Icons.add_circle_outline_rounded, color: SoftErpTheme.accent),
-                              onTap: () => _pickItem(item),
-                            ),
-                          ),
-                        )
-                      else
+
                         ...groups.map((group) {
                           final groupItems = filteredItems.where((i) => i.groupId == group.id).toList();
                           return Card(
@@ -462,7 +456,7 @@ class _PurchaseGroupBrowseScreenState extends State<PurchaseGroupBrowseScreen> {
                             elevation: 0,
                             color: Colors.white,
                             child: ExpansionTile(
-                              initiallyExpanded: _expandAll,
+                              initiallyExpanded: _expandAll || isSingleGroup,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                               collapsedShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                               leading: Container(
@@ -712,6 +706,13 @@ class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
                 initialRootPropertyId: null,
                 initialValueNodeIds: const [],
                 useTilesForValues: true,
+                onCreateValue: ({required item, required propertyNodeId, required propertyLabel, required valueName}) {
+                  return context.read<ItemsProvider>().appendVariationValue(
+                    item: item,
+                    propertyNodeId: propertyNodeId,
+                    valueName: valueName,
+                  );
+                },
                 isFavorite: (result) => favProvider.isFavorite(item.id, result.valueNodeIds),
                 onFavoriteToggled: (result, isFav) {
                   // Create dummy item just for favorite toggling

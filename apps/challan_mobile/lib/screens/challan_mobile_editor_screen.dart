@@ -11,6 +11,7 @@ import 'package:core_erp/features/vendors/presentation/providers/vendors_provide
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 import 'package:core_erp/features/items/presentation/providers/favorites_provider.dart';
 import 'package:core_erp/features/items/domain/item_definition.dart';
+import 'package:core_erp/features/orders/domain/order_entry.dart';
 import 'package:core_erp/widgets/variation_path_selector_dialog.dart';
 
 class ChallanMobileEditorScreen extends StatefulWidget {
@@ -19,6 +20,7 @@ class ChallanMobileEditorScreen extends StatefulWidget {
     this.initialItems,
     this.lockedType,
     this.initialVendorId,
+    this.initialOrderGroup,
   });
 
   /// Line items pre-collected by the Purchase browse flow. When provided, the
@@ -31,6 +33,9 @@ class ChallanMobileEditorScreen extends StatefulWidget {
   
   /// Pre-select a vendor if navigating from a vendor-specific flow
   final int? initialVendorId;
+
+  /// Pre-select an order group if navigating from a use workflow
+  final OrderGroup? initialOrderGroup;
 
   @override
   State<ChallanMobileEditorScreen> createState() => _ChallanMobileEditorScreenState();
@@ -56,6 +61,7 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
   @override
   void initState() {
     super.initState();
+    if (widget.initialOrderGroup != null) _type = ChallanType.internal;
     if (widget.lockedType != null) _type = widget.lockedType!;
     if (widget.initialVendorId != null) _selectedVendorId = widget.initialVendorId;
     if (widget.initialItems != null) _items.addAll(widget.initialItems!);
@@ -375,6 +381,13 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
                   initialRootPropertyId: null,
                   initialValueNodeIds: const [],
                   useTilesForValues: true,
+                  onCreateValue: ({required item, required propertyNodeId, required propertyLabel, required valueName}) {
+                    return context.read<ItemsProvider>().appendVariationValue(
+                      item: item,
+                      propertyNodeId: propertyNodeId,
+                      valueName: valueName,
+                    );
+                  },
                   isFavorite: (result) => context.read<FavoritesProvider>().isFavorite(selectedItem.id, result.valueNodeIds),
                   onFavoriteToggled: (result, isFav) {
                     final dummyItem = DeliveryChallanItem(
@@ -533,6 +546,13 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
               initialRootPropertyId: null,
               initialValueNodeIds: oldItem.variationPathNodeIds,
               useTilesForValues: true,
+              onCreateValue: ({required item, required propertyNodeId, required propertyLabel, required valueName}) {
+                return context.read<ItemsProvider>().appendVariationValue(
+                  item: item,
+                  propertyNodeId: propertyNodeId,
+                  valueName: valueName,
+                );
+              },
               isFavorite: (result) => context.read<FavoritesProvider>().isFavorite(selectedItem.id, result.valueNodeIds),
               onFavoriteToggled: (result, isFav) {
                 final dummyItem = DeliveryChallanItem(
@@ -608,10 +628,11 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
 
     final draft = DeliveryChallanDraftInput(
       type: _type,
-      purpose: ChallanPurpose.trading,
+      purpose: widget.initialOrderGroup != null ? ChallanPurpose.manufacturing : ChallanPurpose.trading,
+      internalPurpose: widget.initialOrderGroup != null ? 'Consumption for order ${widget.initialOrderGroup!.orderNo}' : '',
       challanNo: _challanNoController.text, // User-entered or empty for auto-generate
-      orderId: 0,
-      orderIds: [],
+      orderId: widget.initialOrderGroup?.items.firstOrNull?.id ?? 0,
+      orderIds: widget.initialOrderGroup?.items.map((i) => i.id).toList(growable: false) ?? const [],
       vendorId: _selectedVendorId ?? 0,
       materialOwnerClientId: _selectedClientId,
       date: _challanDate,

@@ -11,6 +11,10 @@ import 'package:core_erp/features/delivery_challans/data/delivery_challan_reposi
 import 'package:core_erp/features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
 
 import 'purchase_challan_screens.dart' show showPurchaseQuantitySheet;
+import 'challan_mobile_editor_screen.dart';
+
+final List<DeliveryChallanItem> activeUseLines = [];
+OrderGroup? activeUseOrderGroup;
 
 class UseInventoryBrowseScreen extends StatefulWidget {
   const UseInventoryBrowseScreen({super.key});
@@ -20,6 +24,7 @@ class UseInventoryBrowseScreen extends StatefulWidget {
 }
 
 class _UseInventoryBrowseScreenState extends State<UseInventoryBrowseScreen> {
+  bool _reviewing = false;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   String _sortBy = 'name_asc'; // name_asc, name_desc, qty_desc, qty_asc
@@ -28,6 +33,33 @@ class _UseInventoryBrowseScreenState extends State<UseInventoryBrowseScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _goToChallan() async {
+    if (_reviewing) return;
+    _reviewing = true;
+    final done = await Navigator.of(context).push<dynamic>(
+      MaterialPageRoute(
+        builder: (_) => ChallanMobileEditorScreen(
+          initialItems: List<DeliveryChallanItem>.of(activeUseLines),
+          lockedType: null,
+          initialOrderGroup: activeUseOrderGroup,
+        ),
+      ),
+    );
+    _reviewing = false;
+    if (!mounted) return;
+    if (done == true) {
+      setState(() {
+        activeUseLines.clear();
+        activeUseOrderGroup = null;
+      });
+    } else if (done is List<DeliveryChallanItem>) {
+      setState(() {
+        activeUseLines.clear();
+        activeUseLines.addAll(done);
+      });
+    }
   }
 
   @override
@@ -163,69 +195,39 @@ class _UseOrderSelectScreenState extends State<UseOrderSelectScreen> {
     super.dispose();
   }
 
-  Future<void> _createInternalChallan(BuildContext context, OrderGroup orderGroup) async {
-    if (_creating) return;
-    setState(() => _creating = true);
+  void _addToChallan(BuildContext context, OrderGroup orderGroup) {
+    final item = DeliveryChallanItem(
+      id: 0,
+      orderItemId: null,
+      productionRunId: null,
+      itemId: widget.stockRecord.itemId,
+      variationLeafNodeId: widget.stockRecord.variationLeafNodeId,
+      variationPathLabel: widget.stockRecord.variationPathLabel,
+      variationPathNodeIds: widget.stockRecord.variationPathNodeIds,
+      customVariationValues: widget.stockRecord.customVariationValues.map(
+        (k, v) => MapEntry(int.tryParse(k) ?? 0, v),
+      )..removeWhere((k, v) => k == 0),
+      particulars: widget.stockRecord.itemName,
+      quantityPcs: widget.qtyStr,
+      weight: widget.weightStr,
+      lineNo: activeUseLines.length + 1,
+      hsnCode: '',
+      note: 'Consumed for order ${orderGroup.orderNo}',
+    );
 
-    try {
-      final challanProvider = context.read<DeliveryChallanProvider>();
-      
-      final item = DeliveryChallanItem(
-        id: 0,
-        orderItemId: null,
-        productionRunId: null,
-        itemId: widget.stockRecord.itemId,
-        variationLeafNodeId: widget.stockRecord.variationLeafNodeId,
-        variationPathLabel: widget.stockRecord.variationPathLabel,
-        variationPathNodeIds: widget.stockRecord.variationPathNodeIds,
-        customVariationValues: widget.stockRecord.customVariationValues.map(
-          (k, v) => MapEntry(int.tryParse(k) ?? 0, v),
-        )..removeWhere((k, v) => k == 0),
-        particulars: widget.stockRecord.itemName,
-        quantityPcs: widget.qtyStr,
-        weight: widget.weightStr,
-        lineNo: 1,
-        hsnCode: '',
-        note: '',
-      );
+    activeUseLines.add(item);
+    
+    // Store the selected order group globally so the editor can use it
+    activeUseOrderGroup = orderGroup;
 
-      final input = DeliveryChallanDraftInput(
-        type: ChallanType.internal,
-        purpose: ChallanPurpose.manufacturing,
-        internalPurpose: 'Consumption for order ${orderGroup.orderNo}',
-        challanNo: '',
-        orderId: 0,
-        orderIds: const [],
-        vendorId: 0,
-        date: DateTime.now(),
-        location: widget.stockRecord.locationId,
-        sourceReference: '',
-        notes: 'Used for order ${orderGroup.orderNo}',
-        maintainStocks: true,
-        customerName: '',
-        customerGstin: '',
-        vendorName: '',
-        vendorGstin: '',
-        items: [item],
-      );
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Added to challan (total: ${activeUseLines.length})'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
 
-      final created = await challanProvider.createChallan(input);
-      if (created != null && context.mounted) {
-        context.read<InventoryProvider>().refresh();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Raw material usage recorded successfully')),
-        );
-        Navigator.of(context).popUntil((route) => route.isFirst);
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _creating = false);
-    }
+    Navigator.of(context).pop(); // Back to UseInventoryBrowseScreen
   }
 
   @override
@@ -321,7 +323,7 @@ class _UseOrderSelectScreenState extends State<UseOrderSelectScreen> {
                                 ],
                               ),
                               isThreeLine: true,
-                              onTap: () => _createInternalChallan(context, group),
+                              onTap: () => _addToChallan(context, group),
                             );
                           },
                         ),
