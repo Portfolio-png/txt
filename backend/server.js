@@ -7823,6 +7823,13 @@ async function rowToDeliveryChallanDto(row, { includeItems = true } = {}) {
     row,
     orderIds,
   );
+  
+  const assetRows = await all(
+    "SELECT * FROM uploaded_assets WHERE entity_type = 'delivery_challan' AND entity_id = ? AND status = 'uploaded' ORDER BY created_at ASC",
+    [row.id]
+  );
+  const assets = await Promise.all(assetRows.map(rowToUploadedAssetDto));
+
   return {
     id: row.id,
     type: normalizeChallanType(row.type),
@@ -7863,6 +7870,7 @@ async function rowToDeliveryChallanDto(row, { includeItems = true } = {}) {
     updated_at: row.updated_at || null,
     items: items.map(rowToDeliveryChallanItemDto),
     items_count: Number(row.items_count || items.length || 0),
+    assets: assets,
   };
 }
 
@@ -10240,6 +10248,32 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
       reportGroupCodes = await getDeliveryChallanReportGroupCodes(challanId);
     }
     await replaceChallanReportGroups(challanId, reportGroupCodes);
+
+    const genericAssets = input.genericAssets ?? [];
+    if (Array.isArray(genericAssets) && genericAssets.length > 0) {
+      for (const asset of genericAssets) {
+        if (!asset.objectKey || !asset.fileName || !asset.contentType) continue;
+        await run(
+          `
+          INSERT OR IGNORE INTO uploaded_assets (
+            entity_type, entity_id, file_name, content_type, size_bytes, sha256,
+            object_key, status, is_primary, created_at, uploaded_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'uploaded', 0, ?, ?)
+          `,
+          [
+            'delivery_challan',
+            challanId,
+            asset.fileName,
+            asset.contentType,
+            asset.sizeBytes || 0,
+            asset.sha256 || '',
+            asset.objectKey,
+            now,
+            now,
+          ]
+        );
+      }
+    }
 
     for (const item of items) {
       await run(
@@ -12760,6 +12794,12 @@ async function assertAssetEntityExists(entityType, entityId) {
   if (entityType === 'die') {
     const die = await get('SELECT id FROM dies WHERE id = ?', [entityId]);
     if (die) {
+      return;
+    }
+  }
+  if (entityType === 'delivery_challan') {
+    const challan = await get('SELECT id FROM delivery_challans WHERE id = ?', [entityId]);
+    if (challan) {
       return;
     }
   }
@@ -21256,6 +21296,85 @@ app.post('/api/assets/upload-intent', requirePermission('config.write'), async (
     res.status(error.statusCode || 500).json({
       success: false,
       intent: null,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/delivery-challans/:id/assets/upload-intent', requirePermission('config.write'), async (req, res) => {
+  try {
+    const entityId = Number(req.params.id);
+    if (!Number.isInteger(entityId) || entityId <= 0) {
+      res.status(400).json({
+        success: false,
+        intent: null,
+        error: 'A valid challan id is required.',
+      });
+      return;
+    }
+    const requestedEntityId = req.body?.entityId;
+    if (requestedEntityId != null && Number(requestedEntityId) !== entityId) {
+      res.status(400).json({
+        success: false,
+        intent: null,
+        error: 'Request challan id does not match the upload route challan id.',
+      });
+      return;
+    }
+    const intent = await createAssetUploadIntent({
+      ...(req.body || {}),
+      entityType: 'delivery_challan',
+      entityId,
+    });
+    res.status(intent.alreadyUploaded ? 200 : 201).json({
+      success: true,
+      intent,
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      intent: null,
+      error: error.message,
+    });
+  }
+});
+
+app.post('/api/delivery-challans/:id/assets/upload-complete', requirePermission('config.write'), async (req, res) => {
+  try {
+    const entityId = Number(req.params.id);
+    if (!Number.isInteger(entityId) || entityId <= 0) {
+      res.status(400).json({
+        success: false,
+        asset: null,
+        error: 'A valid challan id is required.',
+      });
+      return;
+    }
+    const requestedEntityId = req.body?.entityId;
+    if (requestedEntityId != null && Number(requestedEntityId) !== entityId) {
+      res.status(400).json({
+        success: false,
+        asset: null,
+        error: 'Request challan id does not match the upload route challan id.',
+      });
+      return;
+    }
+    const assetRow = await handleAssetUploadComplete({
+      ...(req.body || {}),
+      entityType: 'delivery_challan',
+      entityId,
+    });
+    const assetDto = await rowToUploadedAssetDto(assetRow);
+    res.status(200).json({
+      success: true,
+      asset: assetDto,
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      asset: null,
       error: error.message,
     });
   }

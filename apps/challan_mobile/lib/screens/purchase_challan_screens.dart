@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
+import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:core_erp/features/delivery_challans/domain/delivery_challan.dart';
 import 'package:core_erp/features/groups/domain/group_definition.dart';
 import 'package:core_erp/features/groups/presentation/providers/groups_provider.dart';
@@ -310,12 +311,10 @@ class _PurchaseGroupBrowseScreenState extends State<PurchaseGroupBrowseScreen> {
                     note: '',
                   );
                   favProvider.toggleFavorite(dummyItem, isFav);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(isFav ? 'Variation saved to favorites' : 'Variation removed from favorites'),
-                      behavior: SnackBarBehavior.floating,
-                      margin: const EdgeInsets.only(top: 10, left: 10, right: 10),
-                    ),
+                  showAppToast(
+                    context, 
+                    isFav ? 'Variation saved to favorites' : 'Variation removed from favorites',
+                    kind: AppToastKind.success,
                   );
                 },
               ),
@@ -629,9 +628,11 @@ class _FavoriteItemBrowseScreenState extends State<FavoriteItemBrowseScreen> {
               separatorBuilder: (_, _) => const SizedBox(height: 12),
               itemBuilder: (context, index) {
                 final item = displayFavs[index];
+                final itemIdx = itemsProvider.items.indexWhere((i) => i.id == item.itemId);
+                final displayName = itemIdx >= 0 ? itemsProvider.items[itemIdx].displayName : item.particulars;
                 return _BrowseTile(
                   icon: Icons.favorite_rounded,
-                  title: item.particulars,
+                  title: displayName.isEmpty ? 'Unknown Item' : displayName,
                   subtitle: item.variationPathLabel.isNotEmpty ? item.variationPathLabel : 'Standard',
                   trailing: const Icon(Icons.add_circle_outline_rounded, color: SoftErpTheme.accent),
                   onTap: () => _pickFav(item),
@@ -732,12 +733,10 @@ class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
                     note: '',
                   );
                   favProvider.toggleFavorite(dummyItem, isFav);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(isFav ? 'Variation saved to favorites' : 'Variation removed from favorites'),
-                      behavior: SnackBarBehavior.floating,
-                      margin: const EdgeInsets.only(top: 10, left: 10, right: 10),
-                    ),
+                  showAppToast(
+                    context, 
+                    isFav ? 'Variation saved to favorites' : 'Variation removed from favorites',
+                    kind: AppToastKind.success,
                   );
                 },
               ),

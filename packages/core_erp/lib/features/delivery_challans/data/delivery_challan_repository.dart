@@ -167,6 +167,7 @@ class ChallanDraftInput {
     required this.vendorName,
     required this.vendorGstin,
     required this.items,
+    this.genericAssets = const [],
   });
 
   final ChallanType type;
@@ -190,6 +191,7 @@ class ChallanDraftInput {
   final String vendorName;
   final String vendorGstin;
   final List<DeliveryChallanItem> items;
+  final List<Map<String, dynamic>> genericAssets;
 
   Map<String, dynamic> toJson() {
     return {
@@ -238,6 +240,7 @@ class ChallanDraftInput {
             },
           )
           .toList(growable: false),
+      if (genericAssets.isNotEmpty) 'genericAssets': genericAssets,
     };
   }
 }

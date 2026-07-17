@@ -13,6 +13,10 @@ import 'package:core_erp/features/items/presentation/providers/favorites_provide
 import 'package:core_erp/features/items/domain/item_definition.dart';
 import 'package:core_erp/features/orders/domain/order_entry.dart';
 import 'package:core_erp/widgets/variation_path_selector_dialog.dart';
+import 'package:core_erp/core/services/generic_asset_service.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import 'package:http/http.dart' as http;
 
 class ChallanMobileEditorScreen extends StatefulWidget {
   const ChallanMobileEditorScreen({
@@ -55,6 +59,7 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
   final List<DeliveryChallanItem> _items = [];
   final GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
   bool _isSaving = false;
+  final List<XFile> _attachedImages = [];
 
   late AnimationController _fabAnimController;
 
@@ -78,6 +83,17 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
     _locationController.dispose();
     _notesController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.camera, imageQuality: 70);
+    
+    if (pickedFile != null) {
+      setState(() {
+        _attachedImages.add(pickedFile);
+      });
+    }
   }
 
   void _showQuantityBottomSheet(
@@ -621,6 +637,45 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
       return;
     }
 
+    final genericAssets = <Map<String, dynamic>>[];
+    if (_attachedImages.isNotEmpty) {
+      setState(() => _isSaving = true);
+      final assetService = context.read<GenericAssetService>();
+      try {
+        for (final img in _attachedImages) {
+          final bytes = await img.readAsBytes();
+          final fileExt = img.name.split('.').last;
+          final contentType = 'image/$fileExt';
+          
+          final intent = await assetService.createUploadIntent(
+            GenericAssetUploadIntentInput(
+              fileName: img.name,
+              contentType: contentType,
+              sizeBytes: bytes.length,
+              sha256: '', // Not strictly required
+            )
+          );
+          
+          // Upload to presigned URL
+          await http.put(intent.uploadUrl, headers: intent.headers, body: bytes);
+          
+          genericAssets.add({
+            'fileName': img.name,
+            'contentType': contentType,
+            'sizeBytes': bytes.length,
+            'objectKey': intent.objectKey,
+            'sha256': '',
+          });
+        }
+      } catch (e) {
+        setState(() => _isSaving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to upload attachments: $e'), backgroundColor: Colors.redAccent)
+        );
+        return;
+      }
+    }
+
     setState(() => _isSaving = true);
     final provider = context.read<DeliveryChallanProvider>();
     final client = _selectedClientId != null ? context.read<ClientsProvider>().clients.firstWhere((c) => c.id == _selectedClientId) : null;
@@ -645,6 +700,7 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
       vendorName: vendor?.name ?? '',
       vendorGstin: vendor?.gstNumber ?? '',
       items: _items,
+      genericAssets: genericAssets,
     );
 
     final result = await provider.createChallan(draft);
@@ -776,6 +832,17 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
     );
   }
 
+  void _removeItem(int idx) {
+    if (idx < 0 || idx >= _items.length) return;
+    final removedItem = _items.removeAt(idx);
+    _listKey.currentState?.removeItem(
+      idx, 
+      (context, anim) => _buildItemTile(removedItem, idx, anim),
+      duration: const Duration(milliseconds: 300)
+    );
+    setState(() {});
+  }
+
   Widget _buildItemTile(DeliveryChallanItem item, int idx, Animation<double> animation) {
     return SizeTransition(
       sizeFactor: animation,
@@ -794,15 +861,7 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
             margin: const EdgeInsets.symmetric(vertical: 8),
             child: const Icon(Icons.delete_sweep_rounded, color: Colors.white, size: 32),
           ),
-          onDismissed: (_) {
-            final removedItem = _items.removeAt(idx);
-            _listKey.currentState?.removeItem(
-              idx, 
-              (context, anim) => _buildItemTile(removedItem, idx, anim),
-              duration: const Duration(milliseconds: 300)
-            );
-            setState(() {});
-          },
+          onDismissed: (_) => _removeItem(idx),
           child: Container(
             margin: const EdgeInsets.symmetric(vertical: 8.0),
             decoration: BoxDecoration(
@@ -876,7 +935,9 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
                             InkWell(
                               onTap: () => _reselectVariation(idx),
                               child: Text(
-                                item.variationPathLabel, 
+                                item.variationPathLabel.isEmpty 
+                                    ? item.particulars
+                                    : '${item.particulars} - ${item.variationPathLabel}', 
                                 style: const TextStyle(
                                   color: SoftErpTheme.accent, 
                                   fontSize: 13.0,
@@ -905,7 +966,16 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
                           ],
                         ),
                       ),
-                      const Icon(Icons.edit_outlined, color: SoftErpTheme.border, size: 20),
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 24),
+                            onPressed: () => _removeItem(idx),
+                            tooltip: 'Delete Item',
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -999,6 +1069,21 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
                     ),
                   ),
                   actions: [
+                    Padding(
+                      padding: const EdgeInsets.only(right: 12.0),
+                      child: Center(
+                        child: IconButton(
+                          icon: const Icon(Icons.camera_alt_rounded, color: SoftErpTheme.textPrimary),
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            shadowColor: Colors.black.withOpacity(0.1),
+                            elevation: 4,
+                          ),
+                          onPressed: _pickImage,
+                        ),
+                      ),
+                    ),
                     Padding(
                       padding: const EdgeInsets.only(right: 24.0),
                       child: Center(
@@ -1105,6 +1190,12 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
                                   items: clients.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name, style: const TextStyle(fontWeight: FontWeight.w600)))).toList(),
                                   onChanged: (v) => setState(() => _selectedClientId = v),
                                   validator: (v) => v == null ? 'Client is required' : null,
+                                )
+                              else if (_type == ChallanType.internal)
+                                TextFormField(
+                                  initialValue: widget.initialOrderGroup?.orderNo ?? 'Internal Use',
+                                  readOnly: true,
+                                  decoration: _glassInputDecoration('Order No.', Icons.assignment_rounded),
                                 )
                               else
                                 DropdownButtonFormField<int>(
@@ -1219,6 +1310,41 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
 
                         const SizedBox(height: 24),
                         
+                        if (_attachedImages.isNotEmpty) ...[
+                          const Text('Attachments', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: SoftErpTheme.textPrimary)),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            height: 100,
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: _attachedImages.length,
+                              itemBuilder: (context, index) {
+                                final img = _attachedImages[index];
+                                return Stack(
+                                  children: [
+                                    Container(
+                                      margin: const EdgeInsets.only(right: 12),
+                                      width: 100,
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(12),
+                                        image: DecorationImage(image: FileImage(File(img.path)), fit: BoxFit.cover),
+                                      ),
+                                    ),
+                                    Positioned(
+                                      top: 4, right: 16,
+                                      child: InkWell(
+                                        onTap: () => setState(() => _attachedImages.removeAt(index)),
+                                        child: const CircleAvatar(radius: 12, backgroundColor: Colors.red, child: Icon(Icons.close, size: 16, color: Colors.white)),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                        ],
+
                         // Additional Notes Card
                         Container(
                           padding: const EdgeInsets.all(24),

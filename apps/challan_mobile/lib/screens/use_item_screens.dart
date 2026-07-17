@@ -9,6 +9,7 @@ import 'package:core_erp/features/orders/presentation/providers/orders_provider.
 import 'package:core_erp/features/delivery_challans/domain/delivery_challan.dart';
 import 'package:core_erp/features/delivery_challans/data/delivery_challan_repository.dart';
 import 'package:core_erp/features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
+import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
 
 import 'purchase_challan_screens.dart' show showPurchaseQuantitySheet;
 import 'challan_mobile_editor_screen.dart';
@@ -42,7 +43,7 @@ class _UseInventoryBrowseScreenState extends State<UseInventoryBrowseScreen> {
       MaterialPageRoute(
         builder: (_) => ChallanMobileEditorScreen(
           initialItems: List<DeliveryChallanItem>.of(activeUseLines),
-          lockedType: null,
+          lockedType: ChallanType.internal,
           initialOrderGroup: activeUseOrderGroup,
         ),
       ),
@@ -64,8 +65,9 @@ class _UseInventoryBrowseScreenState extends State<UseInventoryBrowseScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final inventory = context.watch<InventoryProvider>();
-    final allRecords = inventory.variationStock.where((r) => r.quantity > 0).toList();
+    final invProvider = context.watch<InventoryProvider>();
+    final unitsProvider = context.watch<UnitsProvider>();
+    final allRecords = invProvider.variationStock.where((r) => r.quantity > 0).toList();
     var records = _searchQuery.isEmpty 
         ? List<VariationStockRecord>.of(allRecords)
         : allRecords.where((r) => r.itemName.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
@@ -134,18 +136,20 @@ class _UseInventoryBrowseScreenState extends State<UseInventoryBrowseScreen> {
                     separatorBuilder: (_, _) => const SizedBox(height: 12),
                     itemBuilder: (context, index) {
                       final r = records[index];
+                      final unit = unitsProvider.findById(r.unitId);
+                      final unitStr = unit != null ? ' ${unit.symbol}' : '';
+
                       return ListTile(
                         tileColor: Colors.white,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                         leading: const Icon(Icons.inventory_2_rounded, color: SoftErpTheme.accent),
                         title: Text(r.itemName, style: const TextStyle(fontWeight: FontWeight.w800)),
-                        subtitle: Text('${r.variationPathLabel}\nAvailable: ${r.quantity}'),
+                        subtitle: Text('${r.variationPathLabel}\nAvailable: ${r.quantity}$unitStr'),
                         onTap: () {
                           showPurchaseQuantitySheet(
                             context,
-                            onConfirm: (qtyStr, weightStr) {
-                              Navigator.of(context).pop(); // close sheet
-                              Navigator.of(context).push(
+                            onConfirm: (qtyStr, weightStr) async {
+                              final added = await Navigator.of(context).push<bool>(
                                 MaterialPageRoute(
                                   builder: (_) => UseOrderSelectScreen(
                                     stockRecord: r,
@@ -154,6 +158,10 @@ class _UseInventoryBrowseScreenState extends State<UseInventoryBrowseScreen> {
                                   ),
                                 ),
                               );
+                              if (added == true && mounted) {
+                                setState(() {});
+                                _goToChallan();
+                              }
                             },
                           );
                         },
@@ -163,6 +171,21 @@ class _UseInventoryBrowseScreenState extends State<UseInventoryBrowseScreen> {
           ),
         ],
       ),
+      bottomNavigationBar: activeUseLines.isEmpty
+          ? null
+          : SafeArea(
+              minimum: const EdgeInsets.all(16),
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(56),
+                  backgroundColor: SoftErpTheme.accent,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                ),
+                icon: const Icon(Icons.receipt_long_rounded),
+                label: Text('Review ${activeUseLines.length} Item${activeUseLines.length == 1 ? '' : 's'}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                onPressed: _goToChallan,
+              ),
+            ),
     );
   }
 }
@@ -227,7 +250,7 @@ class _UseOrderSelectScreenState extends State<UseOrderSelectScreen> {
       ),
     );
 
-    Navigator.of(context).pop(); // Back to UseInventoryBrowseScreen
+    Navigator.of(context).pop(true); // Back to UseInventoryBrowseScreen
   }
 
   @override

@@ -320,6 +320,7 @@ class DeliveryChallan {
     required this.status,
     required this.items,
     required this.itemsCount,
+    required this.assets,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -352,6 +353,7 @@ class DeliveryChallan {
   final DeliveryChallanStatus status;
   final List<DeliveryChallanItem> items;
   final int itemsCount;
+  final List<UploadedAsset> assets;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 

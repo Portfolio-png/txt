@@ -263,7 +263,7 @@ class _VariationPathSelectorWidgetState
               child: Text(
                 selectedLeaf == null
                     ? 'Complete the path by selecting each property.'
-                    : _selectionSummaryLabel(),
+                    : '${_item.displayName} - ${_selectionSummaryLabel()}',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: selectedLeaf == null
                       ? SoftErpTheme.textSecondary
