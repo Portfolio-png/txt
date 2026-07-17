@@ -113,10 +113,6 @@ _A census of every identifier the app assigns — database keys, business sequen
 | order_headers PK | `order_no` | `free-text order number` | `'PO-1024' / client order code` | user-entered order number (client-supplied) | `backend/server.js:3580` |
 | pipeline_templates PK | `id` | `free-form template id TEXT` | `'ptl-...' / template id` | client/backend-supplied string id | `backend/server.js:4167` |
 | pipeline_runs PK | `id` | `free-form run id TEXT` | `run id string` | client/backend-supplied string id | `backend/server.js:4189` |
-| sandbox_client_configs PK | `client_id` | `client slug TEXT` | `'default'` | user/tenant-assigned client id | `backend/server.js:4437` |
-| sandbox_sync_states PK | `client_id` | `client slug TEXT` | `'default'` | tenant-assigned client id | `backend/server.js:4445` |
-| sandbox_client_pins PK | `client_id` | `client slug TEXT` | `'default'` | tenant-assigned client id | `backend/server.js:4463` |
-| Sandbox Client Config ID | `client_id` | `free-form TEXT slug/key` | `default` | Not auto-generated: caller/dashboard-supplied slug via req.params.clientId on the config upsert; a row with client_id='default' is seeded at DB init as fallback. | `backend/server.js:4437-4442 (schema), backend/server.js:4493-4519 ('default' seed), backend/server.js:23557-23594 (GET /sandbox-config/:clientId), backend/server.js:23790-23811 (POST config upsert)` |
 
 ## Database primary keys (118 tables)
 

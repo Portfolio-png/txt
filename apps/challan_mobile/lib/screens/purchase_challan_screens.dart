@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import 'package:core_erp/core/services/feature_flags.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
 import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:core_erp/features/delivery_challans/domain/delivery_challan.dart';
@@ -16,6 +17,7 @@ import 'package:core_erp/features/vendors/presentation/providers/vendor_history_
 import 'package:core_erp/widgets/variation_path_selector_dialog.dart';
 
 import 'challan_mobile_editor_screen.dart';
+import 'purchase_wizard_screens.dart';
 import 'use_item_screens.dart';
 
 final List<DeliveryChallanItem> activePurchaseLines = [];
@@ -38,10 +40,11 @@ class ChallanTabScreen extends StatelessWidget {
         elevation: 0,
       ),
       body: SafeArea(
-        child: Padding(
+        // Scrolls so the square tiles never overflow once the persistent bottom
+        // nav and app bar have taken their share of the height.
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
-          child: Align(
-            alignment: Alignment.topCenter,
+          child: Center(
             child: ConstrainedBox(
               // Keep the tiles a sensible size on wide tablets instead of
               // stretching each square to half the screen.
@@ -63,8 +66,16 @@ class ChallanTabScreen extends StatelessWidget {
                             subtitle: 'Receive goods from a vendor',
                             icon: Icons.call_received_rounded,
                             color: SoftErpTheme.accent,
+                            // Single entry point for Purchase: the flag selects
+                            // the implementation. v1 below stays live code so
+                            // turning the flag off returns a working flow.
                             onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute(builder: (_) => const PurchaseGroupBrowseScreen()),
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    FeatureFlags.isEnabled(FeatureKeys.purchaseFlowV2)
+                                        ? const PurchaseWizardScreen()
+                                        : const PurchaseGroupBrowseScreen(),
+                              ),
                             ),
                           ),
                         ),
@@ -79,7 +90,7 @@ class ChallanTabScreen extends StatelessWidget {
                             icon: Icons.precision_manufacturing_rounded,
                             color: Colors.orange,
                             onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute(builder: (_) => const UseInventoryBrowseScreen()),
+                              MaterialPageRoute(builder: (_) => const UseOrderSelectScreen()),
                             ),
                           ),
                         ),

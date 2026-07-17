@@ -53,4 +53,10 @@ const Map<String, dynamic> devConfig = {
   // Purchase items: "Available for purchase" item toggle + mobile Purchase
   // (reception) challan flow.
   'catalog': {'purchaseItems': true},
+  'purchase': {
+    // Purchase Wizard (v2): stepped vendor → items → photo → preview → barcodes
+    // flow on the mobile Purchase tile. Set false to fall back to the original
+    // browse-and-review flow.
+    'flowV2': true,
+  },
 };

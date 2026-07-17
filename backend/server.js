@@ -1890,6 +1890,12 @@ function rowToAssetDto(row, readUrlPayload = null) {
   };
 }
 
+async function rowToUploadedAssetDto(row, includeReadUrls = true) {
+  if (!row) return null;
+  const payload = includeReadUrls ? await assetReadUrlPayload(row.object_key) : null;
+  return rowToAssetDto(row, payload);
+}
+
 function rowToOrderActivityDto(row) {
   if (!row) {
     return null;
@@ -1962,6 +1968,7 @@ async function rowToItemDto(row) {
     id: row.id,
     name: row.name || '',
     alias: row.alias || '',
+    shortCode: row.short_code || '',
     displayName: row.display_name || '',
     quantity: Number(row.quantity || 0),
     groupId: row.group_id || null,
@@ -3133,6 +3140,7 @@ async function initDb() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       alias TEXT DEFAULT '',
+      short_code TEXT DEFAULT '',
       display_name TEXT NOT NULL,
       quantity REAL NOT NULL DEFAULT 0,
       group_id INTEGER NOT NULL REFERENCES groups(id),
@@ -4520,6 +4528,19 @@ async function initDb() {
       ['default', JSON.stringify(initialConfig)]
     );
   }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS piece_barcodes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      challan_item_id INTEGER NOT NULL REFERENCES delivery_challan_items(id) ON DELETE CASCADE,
+      parent_code TEXT UNIQUE NOT NULL,
+      child_code TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_piece_barcodes_parent_code ON piece_barcodes(parent_code)');
+  await run('CREATE INDEX IF NOT EXISTS idx_piece_barcodes_child_code ON piece_barcodes(child_code)');
+  await run('CREATE INDEX IF NOT EXISTS idx_piece_barcodes_challan_item_id ON piece_barcodes(challan_item_id)');
 
   await bootstrapSuperAdminIfNeeded();
   dbReady = true;
@@ -7516,7 +7537,7 @@ function normalizeChallanType(value, fallback = 'delivery') {
 }
 
 async function getDeliveryChallanItems(challanId) {
-  return all(
+  const items = await all(
     `
     SELECT *
     FROM delivery_challan_items
@@ -7525,6 +7546,23 @@ async function getDeliveryChallanItems(challanId) {
     `,
     [challanId],
   );
+  
+  if (items.length > 0) {
+    const itemIds = items.map(item => item.id);
+    const barcodes = await all(
+      `SELECT * FROM piece_barcodes WHERE challan_item_id IN (${itemIds.join(',')})`
+    );
+    
+    for (const item of items) {
+      item.piece_barcodes = barcodes.filter(b => b.challan_item_id === item.id).map(b => ({
+        id: b.id,
+        challanItemId: b.challan_item_id,
+        parentCode: b.parent_code,
+        childCode: b.child_code,
+      }));
+    }
+  }
+  return items;
 }
 
 async function getDeliveryChallanOrderIds(challanId) {
@@ -7680,6 +7718,7 @@ function rowToDeliveryChallanItemDto(row) {
     custom_variation_values: parseJson(row.custom_variation_values_json, {}),
     quantity_pcs: formatMeasure(row.quantity_pcs),
     weight: formatMeasure(row.weight),
+    piece_barcodes: row.piece_barcodes || [],
     created_at: row.created_at || null,
     updated_at: row.updated_at || null,
   };
@@ -10276,7 +10315,7 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
     }
 
     for (const item of items) {
-      await run(
+      const itemResult = await run(
         `
         INSERT INTO delivery_challan_items (
           challan_id, order_item_id, production_run_id, item_id, variation_leaf_node_id,
@@ -10303,6 +10342,18 @@ async function saveDeliveryChallan(input = {}, actor = null, req = null) {
           now,
         ],
       );
+      
+      const newChallanItemId = itemResult.lastID;
+      
+      const pieceBarcodes = item.pieceBarcodes || item.piece_barcodes || [];
+      for (const pb of pieceBarcodes) {
+        if (pb.parentCode && pb.childCode) {
+          await run(
+            `INSERT INTO piece_barcodes (challan_item_id, parent_code, child_code, created_at) VALUES (?, ?, ?, ?)`,
+            [newChallanItemId, pb.parentCode, pb.childCode, now]
+          );
+        }
+      }
     }
 
     await logDeliveryChallanActivity(challanId, existing ? 'challan_edited' : 'challan_created', actor, {
@@ -21380,6 +21431,37 @@ app.post('/api/delivery-challans/:id/assets/upload-complete', requirePermission(
   }
 });
 
+
+
+app.get('/api/barcode/lookup', requirePermission('config.read'), async (req, res) => {
+  try {
+    const { code } = req.query;
+    if (!code) {
+      return res.status(400).json({ success: false, error: 'Code is required' });
+    }
+    
+    const row = await get(`
+      SELECT pb.*, 
+             ci.item_id, ci.challan_id, ci.quantity_pcs, ci.weight, ci.note,
+             i.name as item_name, i.short_code,
+             c.order_no, c.type as challan_type, c.vendor_name
+      FROM piece_barcodes pb
+      JOIN delivery_challan_items ci ON pb.challan_item_id = ci.id
+      JOIN items i ON ci.item_id = i.id
+      JOIN delivery_challans c ON ci.challan_id = c.id
+      WHERE pb.parent_code = ? OR pb.child_code = ?
+    `, [code, code]);
+    
+    if (!row) {
+      return res.status(404).json({ success: false, error: 'Barcode not found in database.' });
+    }
+    
+    res.json({ success: true, result: row });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.post('/api/items/:id/assets/upload-intent', requirePermission('config.write'), async (req, res) => {
   try {
     const entityId = Number(req.params.id);
@@ -22232,6 +22314,39 @@ app.delete('/api/inventory/sets/:id', requirePermission('inventory.delete'), asy
       set: null,
       error: error.message,
     });
+  }
+});
+
+
+app.put('/api/items/:id/short-code', requirePermission('config.write'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const shortCode = req.body.shortCode || '';
+    
+    if (!id) {
+      return res.status(400).json({ success: false, error: 'Invalid ID' });
+    }
+
+    const item = await get('SELECT * FROM items WHERE id = ?', [id]);
+    if (!item) {
+      return res.status(404).json({ success: false, error: 'Item not found' });
+    }
+
+    await run('UPDATE items SET short_code = ?, updated_at = ? WHERE id = ?', [shortCode, new Date().toISOString(), id]);
+    
+    // Notify clients of the change
+    await logChange('items', id, 'UPDATE');
+    
+    const updatedRow = await get('SELECT * FROM items WHERE id = ?', [id]);
+    const itemDto = await rowToItemDto(updatedRow);
+    
+    if (io) {
+      io.emit('item_updated', itemDto);
+    }
+    
+    res.json({ success: true, item: itemDto, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

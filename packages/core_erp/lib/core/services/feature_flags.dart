@@ -147,6 +147,18 @@ class FeatureKeys {
         'Enable the "Available for purchase" item toggle and the mobile Purchase (reception) challan flow',
   )
   static const String catalogPurchaseItems = 'catalog.purchaseItems';
+
+  /// Selects the mobile Purchase implementation. ON routes the Purchase tile to
+  /// the guided wizard (vendor → items → challan photo → print preview →
+  /// barcodes); OFF keeps the original browse-and-review flow, which stays
+  /// live in the same file so this flag can switch back to a working v1.
+  @FeatureFlag(
+    category: 'Challan Mobile',
+    displayName: 'Purchase Wizard (v2)',
+    desc:
+        'Route the mobile Purchase tile through the stepped wizard instead of the browse-and-review flow',
+  )
+  static const String purchaseFlowV2 = 'purchase.flowV2';
 }
 
 class FeatureFlags {

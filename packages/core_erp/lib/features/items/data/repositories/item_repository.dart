@@ -9,6 +9,7 @@ abstract class ItemRepository {
   Future<ItemDefinition?> getItem(int id);
   Future<ItemDefinition> createItem(CreateItemInput input);
   Future<ItemDefinition> updateItem(UpdateItemInput input);
+  Future<ItemDefinition> updateShortCode(int id, String shortCode);
 
   Future<void> deleteItem(int id);
   Future<ItemDefinition> reassignItemGroup(int id, int groupId);

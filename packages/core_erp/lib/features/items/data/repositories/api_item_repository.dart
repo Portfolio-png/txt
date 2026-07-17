@@ -462,6 +462,61 @@ class ApiItemRepository implements ItemRepository {
   }
 
   @override
+  
+  Future<ItemDefinition> updateShortCode(int id, String shortCode) async {
+    if (useMockResponses) {
+      final index = _mockItems.indexWhere((item) => item.id == id);
+      if (index == -1) {
+        throw ItemApiException('Item not found.');
+      }
+      final current = _mockItems[index];
+      final updated = ItemDefinition(
+        id: current.id,
+        name: current.name,
+        alias: current.alias,
+        shortCode: shortCode,
+        displayName: current.displayName,
+        quantity: current.quantity,
+        groupId: current.groupId,
+        unitId: current.unitId,
+        unitConversions: current.unitConversions,
+        namingFormat: current.namingFormat,
+        isArchived: current.isArchived,
+        usageCount: current.usageCount,
+        createdAt: current.createdAt,
+        updatedAt: DateTime.now(),
+        variationTree: current.variationTree,
+        propertySchema: current.propertySchema,
+        defaultPipelineId: current.defaultPipelineId,
+        defaultPipelineName: current.defaultPipelineName,
+        baseItemId: current.baseItemId,
+        photoUrl: current.photoUrl,
+        combinationGroupIds: current.combinationGroupIds,
+      );
+      _mockItems[index] = updated;
+      return updated;
+    }
+
+    try {
+      final uri = Uri.parse('$baseUrl/api/items/$id/short-code');
+      final response = await _client.put(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'shortCode': shortCode}),
+      );
+      final payload = jsonDecode(response.body) as Map<String, dynamic>;
+      if (payload['success'] == true && payload['item'] != null) {
+        final parsed = ItemResponse.fromJson(payload);
+        return parsed.item!.toDomain();
+      } else {
+        throw ItemApiException(payload['error']?.toString() ?? 'Failed to update short code');
+      }
+    } catch (e) {
+      if (e is ItemApiException) rethrow;
+      throw ItemApiException('Network error: $e');
+    }
+  }
+
   Future<void> deleteItem(int id) async {
     if (useMockResponses) {
       _seedMockStoreIfNeeded();

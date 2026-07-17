@@ -87,6 +87,7 @@ class ItemDefinition {
     required this.id,
     required this.name,
     required this.alias,
+    this.shortCode = '',
     required this.displayName,
     required this.quantity,
     required this.groupId,
@@ -110,6 +111,7 @@ class ItemDefinition {
   final int id;
   final String name;
   final String alias;
+  final String shortCode;
   final String displayName;
   final double quantity;
   final int groupId;

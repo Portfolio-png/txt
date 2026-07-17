@@ -362,6 +362,10 @@ class ItemsProvider extends ChangeNotifier {
     return _save(() => _repository.updateItem(input));
   }
 
+  Future<ItemDefinition?> updateShortCode(int id, String shortCode) async {
+    return _save(() => _repository.updateShortCode(id, shortCode));
+  }
+
   Future<ItemDefinition?> addUnitConversion({
     required int itemId,
     required int unitId,

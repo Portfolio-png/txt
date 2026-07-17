@@ -91,6 +91,7 @@ class ItemDto {
     required this.id,
     required this.name,
     required this.alias,
+    required this.shortCode,
     required this.displayName,
     required this.quantity,
     required this.groupId,
@@ -114,6 +115,7 @@ class ItemDto {
   final int id;
   final String name;
   final String alias;
+  final String shortCode;
   final String displayName;
   final double quantity;
   final int groupId;
@@ -138,6 +140,7 @@ class ItemDto {
       id: json['id'] as int,
       name: json['name'] as String? ?? '',
       alias: json['alias'] as String? ?? '',
+      shortCode: json['shortCode'] as String? ?? json['short_code'] as String? ?? '',
       displayName: json['displayName'] as String? ?? '',
       quantity: (json['quantity'] as num? ?? 0).toDouble(),
       groupId: json['groupId'] as int? ?? 0,
@@ -189,6 +192,7 @@ class ItemDto {
       id: id,
       name: name,
       alias: alias,
+      shortCode: shortCode,
       displayName: displayName,
       quantity: quantity,
       groupId: groupId,

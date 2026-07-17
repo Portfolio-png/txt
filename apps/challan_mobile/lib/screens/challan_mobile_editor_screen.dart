@@ -17,6 +17,7 @@ import 'package:core_erp/core/services/generic_asset_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import '../widgets/piece_barcode_bottom_sheet.dart';
 
 class ChallanMobileEditorScreen extends StatefulWidget {
   const ChallanMobileEditorScreen({
@@ -832,6 +833,18 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
     );
   }
 
+  void _handleBarcodeTap(DeliveryChallanItem item, int idx) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => PieceBarcodeBottomSheet(
+        item: item,
+        orderOrigin: widget.initialOrderGroup?.toString() ?? '',
+      ),
+    );
+  }
+
   void _removeItem(int idx) {
     if (idx < 0 || idx >= _items.length) return;
     final removedItem = _items.removeAt(idx);
@@ -969,6 +982,11 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
                       Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
+                          IconButton(
+                            icon: const Icon(Icons.qr_code_2_rounded, color: SoftErpTheme.accent, size: 24),
+                            onPressed: () => _handleBarcodeTap(item, idx),
+                            tooltip: 'Print Barcode Tags',
+                          ),
                           IconButton(
                             icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 24),
                             onPressed: () => _removeItem(idx),

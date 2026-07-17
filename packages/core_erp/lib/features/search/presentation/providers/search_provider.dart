@@ -72,6 +72,19 @@ class SearchProvider extends ChangeNotifier {
     }
   }
 
+  Future<Map<String, dynamic>?> lookupBarcode(String code) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      return await _repository.lookupBarcode(code);
+    } catch (_) {
+      return null;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> recordClick(SearchResult result) async {
     try {
       await _repository.logSearchClick(_query, result);

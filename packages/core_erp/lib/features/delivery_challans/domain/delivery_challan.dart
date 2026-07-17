@@ -127,6 +127,7 @@ class DeliveryChallanItem {
     required this.note,
     required this.quantityPcs,
     required this.weight,
+    this.pieceBarcodes = const [],
   });
 
   final int id;
@@ -143,6 +144,7 @@ class DeliveryChallanItem {
   final String note;
   final String quantityPcs;
   final String weight;
+  final List<Map<String, dynamic>> pieceBarcodes;
 
   factory DeliveryChallanItem.blank(int lineNo) {
     return DeliveryChallanItem(
@@ -160,6 +162,7 @@ class DeliveryChallanItem {
       note: '',
       quantityPcs: '',
       weight: '',
+      pieceBarcodes: const [],
     );
   }
 
@@ -206,6 +209,34 @@ class DeliveryChallanItem {
           json['quantity_pcs'] as String? ??
           '',
       weight: json['weight'] as String? ?? '',
+      pieceBarcodes: (json['pieceBarcodes'] as List<dynamic>? ?? json['piece_barcodes'] as List<dynamic>? ?? [])
+          .map((e) => e as Map<String, dynamic>)
+          .toList(growable: false),
+    );
+  }
+
+  DeliveryChallanItem copyWith({
+    String? quantityPcs,
+    String? weight,
+    String? note,
+    List<Map<String, dynamic>>? pieceBarcodes,
+  }) {
+    return DeliveryChallanItem(
+      id: id,
+      orderItemId: orderItemId,
+      productionRunId: productionRunId,
+      itemId: itemId,
+      variationLeafNodeId: variationLeafNodeId,
+      lineNo: lineNo,
+      particulars: particulars,
+      hsnCode: hsnCode,
+      variationPathLabel: variationPathLabel,
+      variationPathNodeIds: variationPathNodeIds,
+      customVariationValues: customVariationValues,
+      note: note ?? this.note,
+      quantityPcs: quantityPcs ?? this.quantityPcs,
+      weight: weight ?? this.weight,
+      pieceBarcodes: pieceBarcodes ?? this.pieceBarcodes,
     );
   }
 
@@ -226,6 +257,7 @@ class DeliveryChallanItem {
       'note': note,
       'quantity_pcs': quantityPcs,
       'weight': weight,
+      'piece_barcodes': pieceBarcodes,
     };
   }
 }

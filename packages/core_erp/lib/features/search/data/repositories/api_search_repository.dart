@@ -32,6 +32,19 @@ class ApiSearchRepository implements SearchRepository {
   }
 
   @override
+  Future<Map<String, dynamic>?> lookupBarcode(String code) async {
+    final uri = Uri.parse('$baseUrl/api/barcode/lookup?code=${Uri.encodeQueryComponent(code)}');
+    final response = await _client.get(uri);
+    if (response.statusCode == 404) return null;
+    
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode >= 200 && response.statusCode < 300 && payload['success'] == true) {
+      return payload['result'] as Map<String, dynamic>;
+    }
+    throw Exception(payload['error'] ?? 'Failed to lookup barcode');
+  }
+
+  @override
   Future<List<String>> getSearchHistory() async {
     final uri = Uri.parse('$baseUrl/api/search/history');
     final response = await _client.get(uri);

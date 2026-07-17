@@ -100,5 +100,11 @@
     "displayName": "Purchase Items",
     "category": "Catalog & Inventory",
     "description": "Enable the \"Available for purchase\" item toggle and the mobile Purchase (reception) challan flow"
+  },
+  {
+    "key": "purchase.flowV2",
+    "displayName": "Purchase Wizard (v2)",
+    "category": "Challan Mobile",
+    "description": "Route the mobile Purchase tile through the stepped wizard instead of the browse-and-review flow"
   }
 ]

@@ -37,6 +37,9 @@ class _GlobalSearchOverlayState extends State<GlobalSearchOverlay>
   VariationStockRecord? _selectedStock;
   bool _isLeftPaneMinimized = false;
 
+  final TextEditingController _barcodeController = TextEditingController();
+  bool _isLookingUpBarcode = false;
+
   @override
   void initState() {
     super.initState();
@@ -126,6 +129,67 @@ class _GlobalSearchOverlayState extends State<GlobalSearchOverlay>
       return '';
     }
     return 'Properties selected';
+  }
+
+  Future<void> _handleBarcodeSubmit(String code, SearchProvider provider) async {
+    if (code.trim().isEmpty) return;
+    setState(() => _isLookingUpBarcode = true);
+    try {
+      final result = await provider.lookupBarcode(code.trim());
+      if (result == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Barcode not found')));
+        }
+      } else {
+        if (mounted) {
+          _showBarcodeResultDialog(result);
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLookingUpBarcode = false);
+        _barcodeController.clear();
+      }
+    }
+  }
+
+  void _showBarcodeResultDialog(Map<String, dynamic> result) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Barcode Details', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _detailRow('Item', result['item_name']?.toString() ?? 'Unknown'),
+            _detailRow('Parent Code', result['parent_code']?.toString() ?? '-'),
+            _detailRow('Child Code', result['child_code']?.toString() ?? '-'),
+            _detailRow('Order Origin', result['order_no']?.toString() ?? 'Unknown'),
+            _detailRow('Vendor', result['vendor_name']?.toString() ?? 'Unknown'),
+            _detailRow('Challan Type', result['challan_type']?.toString() ?? '-'),
+            _detailRow('Quantity / Weight', '${result['quantity_pcs'] ?? '-'} / ${result['weight'] ?? '-'}'),
+            _detailRow('Notes', result['note']?.toString() ?? '-'),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+        ],
+      ),
+    );
+  }
+
+  Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 120, child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey))),
+          Expanded(child: Text(value)),
+        ],
+      ),
+    );
   }
 
   @override
@@ -283,6 +347,28 @@ class _GlobalSearchOverlayState extends State<GlobalSearchOverlay>
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
                                         children: [
+                                          const Text(
+                                            'Barcode Lookup',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                              color: SoftErpTheme.textSecondary,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          TextField(
+                                            controller: _barcodeController,
+                                            decoration: InputDecoration(
+                                              hintText: 'Scan or type barcode...',
+                                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                                              suffixIcon: _isLookingUpBarcode
+                                                  ? const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator(strokeWidth: 2))
+                                                  : const Icon(Icons.qr_code_scanner),
+                                            ),
+                                            onSubmitted: (val) => _handleBarcodeSubmit(val, provider),
+                                          ),
+                                          const SizedBox(height: 24),
                                           const Text(
                                             'Select Item',
                                             style: TextStyle(

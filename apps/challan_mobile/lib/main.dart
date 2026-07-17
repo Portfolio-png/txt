@@ -38,6 +38,7 @@ import 'package:core_erp/features/search/data/repositories/search_repository.dar
 import 'package:core_erp/features/search/presentation/providers/search_provider.dart';
 
 import 'package:core_erp/core/services/socket_service.dart' as core_socket;
+import 'package:core_erp/core/services/generic_asset_service.dart';
 
 import 'screens/home_screen.dart';
 import 'package:challan_mobile/screens/passcode_screen.dart';
@@ -544,6 +545,12 @@ class MyApp extends StatelessWidget {
             client: _authClient(context.read<AuthProvider>()),
             baseUrl: apiUrl,
           ),
+        ),
+        // Challan attachment uploads (Purchase wizard photo step, editor camera).
+        // Mock mode: this backend has no generic upload-intent endpoint, so the
+        // service simulates the intent and the caller skips the real S3 PUT.
+        Provider<GenericAssetService>(
+          create: (_) => GenericAssetService(baseUrl: apiUrl),
         ),
         ChangeNotifierProvider(create: (_) => ChallanEditorCommandProvider()),
         ChangeNotifierProxyProvider<AuthProvider, SocketService>(
