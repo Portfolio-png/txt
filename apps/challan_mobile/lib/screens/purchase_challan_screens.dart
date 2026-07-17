@@ -71,10 +71,7 @@ class ChallanTabScreen extends StatelessWidget {
                             // turning the flag off returns a working flow.
                             onTap: () => Navigator.of(context).push(
                               MaterialPageRoute(
-                                builder: (_) =>
-                                    FeatureFlags.isEnabled(FeatureKeys.purchaseFlowV2)
-                                        ? const PurchaseWizardScreen()
-                                        : const PurchaseGroupBrowseScreen(),
+                                builder: (_) => const PurchaseWizardScreen(),
                               ),
                             ),
                           ),

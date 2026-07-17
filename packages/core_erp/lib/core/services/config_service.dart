@@ -121,6 +121,14 @@ class ConfigService {
     _pollingTimer?.cancel();
   }
 
+  /// Seeds [FeatureFlags] with the built-in global defaults — no backend fetch,
+  /// no polling, no clientId. Use at startup in an app that has no per-client
+  /// config source: without it, [FeatureFlags._config] is empty in a release
+  /// build and every flag reads its `false` fallback (e.g. purchase.flowV2,
+  /// leaving the Purchase tile on v1). In offline dev mode reads still come from
+  /// dev_config.dart, so calling this there is harmless.
+  void loadDefaults() => _loadDefaultConfig();
+
   void _loadDefaultConfig() {
     _config = Map<String, dynamic>.from(_globalDefaults);
     FeatureFlags.setConfig(_config);

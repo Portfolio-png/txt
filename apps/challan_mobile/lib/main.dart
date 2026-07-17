@@ -37,6 +37,7 @@ import 'package:core_erp/features/search/data/repositories/api_search_repository
 import 'package:core_erp/features/search/data/repositories/search_repository.dart';
 import 'package:core_erp/features/search/presentation/providers/search_provider.dart';
 
+import 'package:core_erp/core/services/config_service.dart';
 import 'package:core_erp/core/services/socket_service.dart' as core_socket;
 import 'package:core_erp/core/services/generic_asset_service.dart';
 
@@ -47,6 +48,11 @@ import 'services/socket_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // Seed feature flags with the global defaults so release builds read real
+  // values instead of the empty-config `false` fallback. Without this the app
+  // never populates FeatureFlags._config (it has no per-client config source),
+  // so every flag — e.g. purchase.flowV2 — stays off outside debug.
+  ConfigService.instance.loadDefaults();
   runApp(const PaperMobileBootstrap());
 }
 
