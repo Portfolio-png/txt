@@ -38,6 +38,12 @@ abstract class ChallanRepository {
 
   Future<DeliveryChallan> issueChallan(int id);
 
+  /// Settles an internal-use challan: each consumed line's quantity is split
+  /// across scrap/leftover/lost/rejection/finished-goods, reverted back into
+  /// inventory under the Primary Group's sub-groups, and the challan (and, once
+  /// all of an order's use challans are reconciled, the order) is completed.
+  Future<DeliveryChallan> reconcileChallan(int id, ChallanReconcileInput input);
+
   Future<DeliveryChallan> cancelChallan(int id, {String? actionType});
   Future<CancelChallanOptions> getCancelOptions(int id);
 
@@ -246,6 +252,51 @@ class ChallanDraftInput {
 }
 
 typedef DeliveryChallanDraftInput = ChallanDraftInput;
+
+/// One challan line's five-bucket settlement. The five amounts must sum to the
+/// line's consumed quantity (the backend rejects the reconcile otherwise).
+class ChallanReconcileLineInput {
+  const ChallanReconcileLineInput({
+    required this.challanItemId,
+    this.scrap = 0,
+    this.leftover = 0,
+    this.lost = 0,
+    this.rejection = 0,
+    this.finishedGoods = 0,
+  });
+
+  /// The `delivery_challan_items.id` (DeliveryChallanItem.id) this settles.
+  final int challanItemId;
+  final double scrap;
+  final double leftover;
+  final double lost;
+  final double rejection;
+  final double finishedGoods;
+
+  double get total => scrap + leftover + lost + rejection + finishedGoods;
+
+  Map<String, dynamic> toJson() => {
+    'challanItemId': challanItemId,
+    'buckets': {
+      'scrap': scrap,
+      'leftover': leftover,
+      'lost': lost,
+      'rejection': rejection,
+      'finishedGoods': finishedGoods,
+    },
+  };
+}
+
+/// Payload for [ChallanRepository.reconcileChallan]: one entry per challan line.
+class ChallanReconcileInput {
+  const ChallanReconcileInput({required this.lines});
+
+  final List<ChallanReconcileLineInput> lines;
+
+  Map<String, dynamic> toJson() => {
+    'lines': lines.map((line) => line.toJson()).toList(growable: false),
+  };
+}
 
 class ChallanApiException implements Exception {
   const ChallanApiException(this.message, {this.debugMessage});

@@ -30,7 +30,7 @@ class ProductionScreen extends StatelessWidget {
           children: [
             Flexible(
               child: Text(
-                pipelineRun['name'] ?? 'Production Pipeline',
+                pipelineRun['name'] ?? 'Production Line',
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: isTablet ? 24.0 : 20.0,
@@ -528,7 +528,7 @@ class ProductionScreen extends StatelessWidget {
     final labels = pipelineRun['stageLabels'] as List<dynamic>? ?? [];
 
     return _buildInfoCard(
-      title: 'Pipeline Status',
+      title: 'Line Status',
       dotColor: const Color(0xFF3EA34D), // green
       bgColor: const Color(0xFFF0F9F1), // pale green
       child: Column(

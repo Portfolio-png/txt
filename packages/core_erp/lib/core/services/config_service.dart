@@ -40,7 +40,7 @@ class ConfigService {
       "allowCustomActions": true,
     },
     "enhancements": {"catalogInventory": true},
-    "challans": {"singleTypeView": true},
+    "challans": {"singleTypeView": true, "reconciliation": true},
     "catalog": {"purchaseItems": true},
     "purchase": {"flowV2": true},
     "update": {"channel": "stable", "latest_version": "1.0.0"},

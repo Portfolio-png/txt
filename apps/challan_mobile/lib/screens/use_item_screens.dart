@@ -289,14 +289,14 @@ class _UseInventoryBrowseScreenState extends State<UseInventoryBrowseScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('Discard challan?', style: TextStyle(fontWeight: FontWeight.w700)),
+        title: const Text('Delete challan?', style: TextStyle(fontWeight: FontWeight.w700)),
         content: const Text('The items you\'ve added will be cleared.'),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Keep')),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: const Color(0xFFD64545)),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Discard'),
+            child: const Text('Delete'),
           ),
         ],
       ),
@@ -364,7 +364,7 @@ class _UseInventoryBrowseScreenState extends State<UseInventoryBrowseScreen> {
           ),
           if (activeUseLines.isNotEmpty)
             IconButton(
-              tooltip: 'Discard challan',
+              tooltip: 'Delete challan',
               icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFD64545)),
               onPressed: _discardChallan,
             ),

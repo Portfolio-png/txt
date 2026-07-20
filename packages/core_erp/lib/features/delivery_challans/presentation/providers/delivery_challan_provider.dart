@@ -222,6 +222,16 @@ class ChallanProvider extends ChangeNotifier {
     return _saveChallan(() => _repository.issueChallan(id));
   }
 
+  /// Settles an internal-use challan across the five reconciliation buckets and
+  /// reverts the quantities into inventory. On success the challan list is
+  /// refreshed; on failure [errorMessage] is set and null is returned.
+  Future<DeliveryChallan?> reconcileChallan(
+    int id,
+    ChallanReconcileInput input,
+  ) async {
+    return _saveChallan(() => _repository.reconcileChallan(id, input));
+  }
+
   Future<DeliveryChallan?> cancelChallan(int id, {String? actionType}) async {
     return _saveChallan(
       () => _repository.cancelChallan(id, actionType: actionType),

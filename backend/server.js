@@ -3857,6 +3857,10 @@ async function initDb() {
   await ensureColumnExists('delivery_challans', 'purpose', "TEXT NOT NULL DEFAULT 'trading'");
   // Internal challans — free-text purpose (production consumption / transfers).
   await ensureColumnExists('delivery_challans', 'internal_purpose', "TEXT NOT NULL DEFAULT ''");
+  // Reconciliation of an internal-use challan: JSON breakdown of each consumed
+  // line settled across scrap/leftover/lost/rejection/finished-goods. Empty
+  // until the mobile In-use reconciliation flow settles the challan.
+  await ensureColumnExists('delivery_challans', 'reconciliation_json', "TEXT NOT NULL DEFAULT ''");
   await ensureColumnExists('delivery_challan_items', 'order_item_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'production_run_id', 'INTEGER');
   await ensureColumnExists('delivery_challan_items', 'item_id', 'INTEGER');
@@ -7878,6 +7882,10 @@ async function rowToDeliveryChallanDto(row, { includeItems = true } = {}) {
     // Free-text purpose for internal challans (empty for delivery/reception).
     internal_purpose: row.internal_purpose || '',
     internalPurpose: row.internal_purpose || '',
+    // Per-line settlement breakdown once the challan has been reconciled
+    // (scrap/leftover/lost/rejection/finished-goods); empty otherwise.
+    reconciliation_json: row.reconciliation_json || '',
+    reconciliationJson: row.reconciliation_json || '',
     order_id: row.order_id || null,
     order_ids: orderIds,
     report_group_codes: reportGroupCodes,
@@ -20295,6 +20303,371 @@ const handleIssueChallan = async (req, res) => {
 
 app.post('/api/challans/:id/issue', requirePermission('config.write'), handleIssueChallan);
 app.post('/api/delivery-challans/:id/issue', requirePermission('config.write'), handleIssueChallan);
+
+// ── INTERNAL-USE CHALLAN RECONCILIATION ──
+// Settle a consumed internal-use challan: every line's taken quantity is split
+// across five buckets (scrap / leftover / lost / rejection / finished goods),
+// each bucket reverted back into inventory as a named item + lot under the
+// Primary Group's matching sub-group, then the challan is marked completed and
+// (once all of an order's use challans are reconciled) the order is completed.
+//
+// This mirrors the pipeline-run scrap/leftover mechanic (see /api/production-scrap
+// and PUT /runs/:id/node-metrics): create a `materials` lot linked to a reused
+// group + item, then apply a `receive` inventory movement. Groups/items are
+// reused when they already exist; items are named "<bucket>_<itemName>_<date>".
+const RECONCILE_BUCKETS = [
+  { key: 'scrap', prefix: 'scrap', group: 'Scrap' },
+  { key: 'leftover', prefix: 'leftover', group: 'Leftover' },
+  { key: 'lost', prefix: 'lost', group: 'Lost' },
+  { key: 'rejection', prefix: 'rejection', group: 'Rejection' },
+  { key: 'finishedGoods', prefix: 'finished_goods', group: 'Finished Goods' },
+];
+
+async function ensureReconcilePrimaryGroup() {
+  let primary = await get(
+    `SELECT id, unit_id FROM groups WHERE lower(name) = 'primary group' AND parent_group_id IS NULL ORDER BY id LIMIT 1`,
+  );
+  if (primary) return primary;
+  const fallbackUnit = await get('SELECT id FROM units ORDER BY id LIMIT 1');
+  const now = nowIso();
+  const res = await run(
+    `INSERT INTO groups (name, group_type, group_structure, description, parent_group_id, unit_id, is_archived, created_at, updated_at)
+     VALUES ('Primary Group', 'item', 'hierarchical', 'Root item group', NULL, ?, 0, ?, ?)`,
+    [fallbackUnit?.id || null, now, now],
+  );
+  return { id: res.lastID, unit_id: fallbackUnit?.id || null };
+}
+
+async function ensureReconcileSubGroup(name, parentGroupId, unitId) {
+  const existing = await get(
+    `SELECT id FROM groups WHERE lower(name) = lower(?) AND parent_group_id = ? AND group_type = 'item' ORDER BY id LIMIT 1`,
+    [name, parentGroupId],
+  );
+  if (existing) return existing.id;
+  const now = nowIso();
+  const res = await run(
+    `INSERT INTO groups (name, group_type, group_structure, description, parent_group_id, unit_id, is_archived, created_at, updated_at)
+     VALUES (?, 'item', 'hierarchical', 'Internal-use reconciliation returns', ?, ?, 0, ?, ?)`,
+    [name, parentGroupId, unitId, now, now],
+  );
+  return res.lastID;
+}
+
+async function ensureReconcileItem(name, groupId, unitId) {
+  const existing = await get(
+    `SELECT id FROM items WHERE lower(name) = lower(?) AND group_id = ? ORDER BY id LIMIT 1`,
+    [name, groupId],
+  );
+  if (existing) return existing.id;
+  const now = nowIso();
+  const res = await run(
+    `INSERT INTO items (name, alias, short_code, display_name, quantity, group_id, unit_id, is_archived, created_at, updated_at)
+     VALUES (?, '', '', ?, 0, ?, ?, 0, ?, ?)`,
+    [name, name, groupId, unitId, now, now],
+  );
+  return res.lastID;
+}
+
+// Reconciliation settles the consumed WEIGHT (kg), so the reverted lots/items
+// are measured in kilograms. Reuse an existing kg unit or create one.
+async function ensureKgUnit() {
+  const existing = await get(
+    `SELECT id FROM units WHERE lower(symbol) = 'kg' OR lower(name) IN ('kg', 'kilogram', 'kilograms') ORDER BY id LIMIT 1`,
+  );
+  if (existing) return existing.id;
+  const now = nowIso();
+  const res = await run(
+    `INSERT INTO units (name, symbol, notes, is_archived, created_at, updated_at)
+     VALUES ('Kilogram', 'kg', 'Reconciliation weight unit', 0, ?, ?)`,
+    [now, now],
+  );
+  return res.lastID;
+}
+
+// Best-effort order completion: the reconcile has already committed, so a
+// blocked lifecycle transition must not fail the request. Steps a draft/
+// notStarted line up through inProgress so it can reach the terminal completed.
+async function completeOrderItemBestEffort(orderItemId, actor) {
+  try {
+    const order = await getOrderRowById(orderItemId);
+    if (!order || order.status === 'completed') return false;
+    if (order.status === 'draft' || order.status === 'notStarted') {
+      await updateOrderLifecycle({ id: orderItemId, status: 'inProgress', actor });
+    }
+    await updateOrderLifecycle({ id: orderItemId, status: 'completed', actor });
+    return true;
+  } catch (error) {
+    console.error(`[reconcile] order ${orderItemId} completion skipped: ${error.message}`);
+    return false;
+  }
+}
+
+// The order number a use challan was consumed for. saveDeliveryChallan does not
+// persist order linkage for internal challans, so the reliable reference is the
+// "Consumption for order <orderNo>" text the Use editor writes into
+// internal_purpose. Real order-id linkage (if any) is preferred when present.
+async function resolveReconcileOrderNo(challanRow) {
+  let orderIds = await getDeliveryChallanOrderIds(challanRow.id);
+  if (orderIds.length === 0 && Number(challanRow.order_id || 0) > 0) {
+    orderIds = [Number(challanRow.order_id)];
+  }
+  if (orderIds.length > 0) {
+    const rows = await getOrderRowsByIds(orderIds);
+    const no = rows.map((r) => String(r.order_no || '').trim()).find(Boolean);
+    if (no) return no;
+  }
+  if (String(challanRow.order_no || '').trim()) {
+    return String(challanRow.order_no).trim();
+  }
+  const match = String(challanRow.internal_purpose || '').match(
+    /consumption for order\s+(.+)$/i,
+  );
+  return match ? match[1].trim() : '';
+}
+
+// How many OTHER internal-use challans for the same order are still awaiting
+// reconciliation (issued, same "Consumption for order …" reference). Zero means
+// this reconcile was the last one, so the order can be marked completed.
+async function pendingUseChallanCountForOrderNo(internalPurpose, excludeChallanId) {
+  const row = await get(
+    `SELECT COUNT(*) AS c FROM delivery_challans
+     WHERE type = 'internal' AND status = 'issued' AND id <> ?
+       AND lower(internal_purpose) = lower(?)`,
+    [excludeChallanId, internalPurpose],
+  );
+  return Number(row?.c || 0);
+}
+
+const handleReconcileChallan = async (req, res) => {
+  const challanId = Number(req.params.id);
+  try {
+    if (!Number.isInteger(challanId) || challanId <= 0) {
+      const error = new Error('Invalid challan id.');
+      error.statusCode = 400;
+      throw error;
+    }
+    const challan = await getDeliveryChallanRowById(challanId);
+    if (!challan) {
+      const error = new Error('Challan not found.');
+      error.statusCode = 404;
+      throw error;
+    }
+    if (normalizeChallanType(challan.type) !== 'internal') {
+      const error = new Error('Only internal-use challans can be settled.');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (challan.status === 'completed' || String(challan.reconciliation_json || '').trim()) {
+      const error = new Error('This challan has already been settled.');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    const items = await getDeliveryChallanItems(challanId);
+    if (items.length === 0) {
+      const error = new Error('This challan has no lines to settle.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    // Index the client's per-line splits by the challan line id they settle.
+    const requestLines = Array.isArray(req.body?.lines) ? req.body.lines : [];
+    const splitByLineId = new Map();
+    for (const line of requestLines) {
+      const lineId = Number(line?.challanItemId || line?.id || 0);
+      if (Number.isInteger(lineId) && lineId > 0) splitByLineId.set(lineId, line);
+    }
+
+    // Validate every line balances exactly before mutating anything.
+    const plan = [];
+    for (const item of items) {
+      const split = splitByLineId.get(Number(item.id));
+      if (!split) {
+        const error = new Error(`Missing amounts for line "${item.particulars || item.id}".`);
+        error.statusCode = 400;
+        throw error;
+      }
+      const buckets = split.buckets || {};
+      const amounts = {};
+      let sum = 0;
+      for (const bucket of RECONCILE_BUCKETS) {
+        const value = Number(buckets[bucket.key] || 0);
+        if (!Number.isFinite(value) || value < 0) {
+          const error = new Error(`Invalid ${bucket.key} amount for line "${item.particulars || item.id}".`);
+          error.statusCode = 400;
+          throw error;
+        }
+        amounts[bucket.key] = value;
+        sum += value;
+      }
+      // Reconciliation settles the WEIGHT taken (kg), not the piece count.
+      const taken = Number(item.weight || 0);
+      if (Math.abs(sum - taken) > 0.01) {
+        const error = new Error(
+          `Line "${item.particulars || item.id}" must settle its full ${taken} kg; got ${Number(sum.toFixed(4))} kg.`,
+        );
+        error.statusCode = 400;
+        throw error;
+      }
+      plan.push({ item, amounts, taken });
+    }
+
+    const actor = actorFromRequest(req);
+    const primaryGroup = await ensureReconcilePrimaryGroup();
+    const kgUnitId = await ensureKgUnit();
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const breakdown = [];
+    const affectedItemIds = new Set();
+    const subGroupCache = new Map();
+
+    await run('BEGIN TRANSACTION');
+    try {
+      for (const entry of plan) {
+        const { item, amounts, taken } = entry;
+        const sourceItem = item.item_id
+          ? await get(
+              `SELECT i.id, i.name, i.display_name, i.unit_id, u.symbol AS unit_symbol
+               FROM items i LEFT JOIN units u ON u.id = i.unit_id WHERE i.id = ?`,
+              [Number(item.item_id)],
+            )
+          : null;
+        const baseName = String(
+          sourceItem?.name || item.particulars || `item-${item.item_id || item.id}`,
+        ).trim();
+        // Reverted quantities are weights, so recon items/lots are in kg
+        // regardless of the source item's own unit (which may be pieces).
+        const unitId = kgUnitId;
+        const unitSymbol = 'kg';
+
+        const lineResult = {
+          challanItemId: item.id,
+          sourceItemId: item.item_id || null,
+          itemName: baseName,
+          variationLeafNodeId: Number(item.variation_leaf_node_id || 0),
+          unit: unitSymbol,
+          taken,
+          buckets: amounts,
+          reverts: [],
+        };
+
+        for (const bucket of RECONCILE_BUCKETS) {
+          const qty = amounts[bucket.key];
+          if (!(qty > 0)) continue;
+
+          let subGroupId = subGroupCache.get(bucket.group);
+          if (!subGroupId) {
+            subGroupId = await ensureReconcileSubGroup(bucket.group, primaryGroup.id, unitId);
+            subGroupCache.set(bucket.group, subGroupId);
+          }
+
+          const reconItemName = `${bucket.prefix}_${baseName}_${dateStr}`;
+          const reconItemId = await ensureReconcileItem(reconItemName, subGroupId, unitId);
+          affectedItemIds.add(reconItemId);
+
+          const lotBarcode = `LOT-RECON-${challanId}-${bucket.prefix}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+          await run(
+            `INSERT INTO materials (
+              barcode, name, type, kind, group_mode,
+              linked_group_id, linked_item_id, linked_variation_leaf_node_id,
+              unit, unit_id, inventory_state, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              lotBarcode, reconItemName, 'Reconciled', 'lot', 'tracked',
+              subGroupId, reconItemId, 0,
+              unitSymbol, unitId, 'available', nowIso(),
+            ],
+          );
+
+          await applyInventoryMovementCore(
+            {
+              barcode: lotBarcode,
+              movementType: 'receive',
+              qty,
+              primaryQty: qty,
+              uom: unitSymbol,
+              toLocationId: 'MAIN',
+              reasonCode: 'challan_reconcile',
+              referenceType: 'challan_reconcile',
+              referenceId: String(challanId),
+              lotCode: lotBarcode,
+              actor: actor?.id || null,
+            },
+            { useTransaction: false },
+          );
+
+          lineResult.reverts.push({
+            bucket: bucket.key,
+            subGroupId,
+            itemId: reconItemId,
+            itemName: reconItemName,
+            lotBarcode,
+            qty,
+          });
+        }
+
+        breakdown.push(lineResult);
+      }
+
+      const now = nowIso();
+      await run(
+        `UPDATE delivery_challans SET status = 'completed', reconciliation_json = ?, updated_by = ?, updated_at = ? WHERE id = ?`,
+        [JSON.stringify(breakdown), actor?.id || null, now, challanId],
+      );
+
+      await run('COMMIT');
+    } catch (error) {
+      await run('ROLLBACK');
+      throw error;
+    }
+
+    // Order completion runs after COMMIT because updateOrderLifecycle manages
+    // its own transaction (SQLite has no nested transactions). Once no other use
+    // challan for this order is still awaiting reconciliation, every order line
+    // for that order number is marked completed (best-effort).
+    const completedOrderIds = [];
+    const orderNo = await resolveReconcileOrderNo(challan);
+    if (orderNo) {
+      const pending = await pendingUseChallanCountForOrderNo(
+        challan.internal_purpose || '',
+        challanId,
+      );
+      if (pending === 0) {
+        const orderItems = await all(
+          `SELECT id FROM order_items WHERE order_no = ?`,
+          [orderNo],
+        );
+        for (const orderItem of orderItems) {
+          const done = await completeOrderItemBestEffort(orderItem.id, actor);
+          if (done) completedOrderIds.push(orderItem.id);
+        }
+      }
+    }
+
+    const updatedRow = await getDeliveryChallanRowById(challanId);
+    const dto = await rowToDeliveryChallanDto(updatedRow);
+    if (io) {
+      io.emit('challan_generated_ok', dto);
+      for (const itemId of affectedItemIds) io.emit('item_updated', { id: itemId });
+    }
+
+    res.json({
+      success: true,
+      data: dto,
+      reconciliation: { breakdown, completedOrderIds },
+      error: null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
+      data: null,
+      message: error.message,
+      error: error.message,
+    });
+  }
+};
+
+app.post('/api/challans/:id/reconcile', requirePermission('config.write'), handleReconcileChallan);
+app.post('/api/delivery-challans/:id/reconcile', requirePermission('config.write'), handleReconcileChallan);
 
 const handleGetCancelOptions = async (req, res) => {
   try {

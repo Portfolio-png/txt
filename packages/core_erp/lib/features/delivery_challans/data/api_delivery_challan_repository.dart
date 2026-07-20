@@ -343,6 +343,36 @@ class ApiChallanRepository implements ChallanRepository {
       _statusAction(id, 'issue', 'Failed to issue challan.');
 
   @override
+  Future<DeliveryChallan> reconcileChallan(
+    int id,
+    ChallanReconcileInput input,
+  ) async {
+    if (useMockResponses) {
+      final index = _mockChallans.indexWhere((challan) => challan.id == id);
+      if (index == -1) {
+        throw const ChallanApiException('Challan not found.');
+      }
+      // The mock backend has no 'completed' status; return the challan as-is so
+      // callers still get a value. The real backend performs the settlement.
+      return _mockChallans[index];
+    }
+    final uri = Uri.parse('$baseUrl/api/challans/$id/reconcile');
+    final response = await _sendRequest(
+      method: 'POST',
+      uri: uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode(input.toJson()),
+    );
+    final payload = _decodeApiResponse(
+      method: 'POST',
+      uri: uri,
+      response: response,
+      fallback: 'Failed to reconcile challan.',
+    );
+    return DeliveryChallan.fromJson(_dataObject(payload, 'challan'));
+  }
+
+  @override
   Future<DeliveryChallan> cancelChallan(int id, {String? actionType}) =>
       _statusAction(
         id,

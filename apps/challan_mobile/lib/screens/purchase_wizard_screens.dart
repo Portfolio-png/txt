@@ -39,7 +39,7 @@ class PurchaseWizardScreen extends StatefulWidget {
 
 enum _Step { vendor, items, photo, preview, done }
 
-const _stepLabels = <String>['Vendor', 'Items', 'Photo', 'Preview', 'Done'];
+const _stepLabels = <String>['Supplier', 'Items', 'Photo', 'Preview', 'Done'];
 
 class _PurchaseWizardScreenState extends State<PurchaseWizardScreen> {
   _Step _step = _Step.vendor;
@@ -66,14 +66,14 @@ class _PurchaseWizardScreenState extends State<PurchaseWizardScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('Discard challan?', style: TextStyle(fontWeight: FontWeight.w700)),
+        title: const Text('Delete challan?', style: TextStyle(fontWeight: FontWeight.w700)),
         content: const Text('Everything you\'ve added will be cleared.'),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Keep')),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: const Color(0xFFD64545)),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Discard'),
+            child: const Text('Delete'),
           ),
         ],
       ),
@@ -342,7 +342,7 @@ class _PurchaseWizardScreenState extends State<PurchaseWizardScreen> {
                   onPressed: _discardWizard,
                   style: TextButton.styleFrom(foregroundColor: const Color(0xFFD64545)),
                   icon: const Icon(Icons.delete_outline_rounded, size: 20),
-                  label: const Text('Discard', style: TextStyle(fontWeight: FontWeight.w800)),
+                  label: const Text('Delete', style: TextStyle(fontWeight: FontWeight.w800)),
                 ),
               ),
           ],
@@ -368,7 +368,7 @@ class _PurchaseWizardScreenState extends State<PurchaseWizardScreen> {
   String _titleForStep() {
     switch (_step) {
       case _Step.vendor:
-        return 'Select Vendor';
+        return 'Select Supplier';
       case _Step.items:
         return _vendor?.name ?? 'Items';
       case _Step.photo:
@@ -469,7 +469,7 @@ class _VendorStepState extends State<_VendorStep> {
           child: TextField(
             controller: _searchController,
             decoration: InputDecoration(
-              hintText: 'Search vendors...',
+              hintText: 'Search suppliers...',
               prefixIcon: const Icon(Icons.search_rounded),
               filled: true,
               fillColor: SoftErpTheme.shellSurface,
@@ -486,8 +486,8 @@ class _VendorStepState extends State<_VendorStep> {
           child: vendors.isEmpty
               ? const _EmptyState(
                   icon: Icons.storefront_outlined,
-                  title: 'No vendors found',
-                  message: 'Add vendors in the desktop app first.',
+                  title: 'No suppliers found',
+                  message: 'Add suppliers in the desktop app first.',
                 )
               : ListView.separated(
                   padding: const EdgeInsets.all(16),
@@ -506,7 +506,7 @@ class _VendorStepState extends State<_VendorStep> {
                       ),
                       leading: const Icon(Icons.storefront_rounded, color: SoftErpTheme.accent),
                       title: Text(v.name, style: const TextStyle(fontWeight: FontWeight.w800)),
-                      subtitle: Text(v.gstNumber.isNotEmpty ? 'GST: ${v.gstNumber}' : 'Vendor'),
+                      subtitle: Text(v.gstNumber.isNotEmpty ? 'GST: ${v.gstNumber}' : 'Supplier'),
                       trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: () => widget.onPicked(v),
                     );
@@ -573,7 +573,7 @@ class _ItemsStep extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               Text(
-                'Add the goods you received from this vendor.',
+                'Add the goods you received from this supplier.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey.shade600, fontWeight: FontWeight.w500),
               ),
@@ -1041,7 +1041,7 @@ class _PhotoStep extends StatelessWidget {
                         ),
                         const SizedBox(height: 24),
                         Text(
-                          'Photograph the vendor\'s physical challan.',
+                          'Photograph the supplier\'s physical challan.',
                           textAlign: TextAlign.center,
                           style: TextStyle(color: Colors.grey.shade600, fontWeight: FontWeight.w500),
                         ),

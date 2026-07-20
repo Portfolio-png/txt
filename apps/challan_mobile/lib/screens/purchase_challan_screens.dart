@@ -17,6 +17,7 @@ import 'package:core_erp/features/vendors/presentation/providers/vendor_history_
 import 'package:core_erp/widgets/variation_path_selector_dialog.dart';
 
 import 'challan_mobile_editor_screen.dart';
+import 'internal_use_reconciliation_screens.dart';
 import 'purchase_wizard_screens.dart';
 import 'use_item_screens.dart';
 
@@ -49,78 +50,89 @@ class ChallanTabScreen extends StatelessWidget {
               // Keep the tiles a sensible size on wide tablets instead of
               // stretching each square to half the screen.
               constraints: const BoxConstraints(maxWidth: 640),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 8),
-                  // Purchase and Sale share the first row (two square tiles);
-                  // Vendor takes the left tile of the second row when present.
-                  Row(
+              child: Builder(
+                builder: (context) {
+                  // Tiles flow two-per-row: Purchase + Use, then Vendor (when
+                  // there are vendors) and In-use (when the reconciliation flag
+                  // is on) fill the next row. Building a list keeps the layout
+                  // correct for any combination instead of nesting conditionals.
+                  final tiles = <Widget>[
+                    _ChoiceCard(
+                      title: 'Purchase',
+                      subtitle: 'Receive goods from a supplier',
+                      icon: Icons.call_received_rounded,
+                      color: SoftErpTheme.accent,
+                      // Single entry point for Purchase: the flag selects the
+                      // implementation. v1 below stays live code so turning the
+                      // flag off returns a working flow.
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const PurchaseWizardScreen(),
+                        ),
+                      ),
+                    ),
+                    _ChoiceCard(
+                      title: 'Use',
+                      subtitle: 'Consume raw materials',
+                      icon: Icons.precision_manufacturing_rounded,
+                      color: Colors.orange,
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const UseOrderSelectScreen()),
+                      ),
+                    ),
+                    if (vendors.isNotEmpty)
+                      _ChoiceCard(
+                        title: 'Supplier',
+                        subtitle: 'Re-order past purchases',
+                        icon: Icons.storefront_rounded,
+                        color: const Color(0xFFE57373),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => VendorBrowseScreen(lines: activePurchaseLines),
+                          ),
+                        ),
+                      ),
+                    // In-use: lists internal-use challans created by the Use
+                    // flow and opens the reconciliation screen. Additive and
+                    // flag-gated — hidden (Use flow unchanged) when off.
+                    if (FeatureFlags.isEnabled(FeatureKeys.challanReconciliation))
+                      _ChoiceCard(
+                        title: 'In-use',
+                        subtitle: 'Settle used materials',
+                        icon: Icons.fact_check_rounded,
+                        color: const Color(0xFF2F7DD1),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const InUseReconciliationWizard(),
+                          ),
+                        ),
+                      ),
+                  ];
+
+                  return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: AspectRatio(
-                          aspectRatio: 1,
-                          child: _ChoiceCard(
-                            title: 'Purchase',
-                            subtitle: 'Receive goods from a vendor',
-                            icon: Icons.call_received_rounded,
-                            color: SoftErpTheme.accent,
-                            // Single entry point for Purchase: the flag selects
-                            // the implementation. v1 below stays live code so
-                            // turning the flag off returns a working flow.
-                            onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => const PurchaseWizardScreen(),
-                              ),
+                      const SizedBox(height: 8),
+                      for (var i = 0; i < tiles.length; i += 2) ...[
+                        if (i > 0) const SizedBox(height: 16),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: AspectRatio(aspectRatio: 1, child: tiles[i]),
                             ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: AspectRatio(
-                          aspectRatio: 1,
-                          child: _ChoiceCard(
-                            title: 'Use',
-                            subtitle: 'Consume raw materials',
-                            icon: Icons.precision_manufacturing_rounded,
-                            color: Colors.orange,
-                            onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute(builder: (_) => const UseOrderSelectScreen()),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: i + 1 < tiles.length
+                                  ? AspectRatio(aspectRatio: 1, child: tiles[i + 1])
+                                  : const SizedBox(),
                             ),
-                          ),
+                          ],
                         ),
-                      ),
-                    ],
-                  ),
-                  if (vendors.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: AspectRatio(
-                            aspectRatio: 1,
-                            child: _ChoiceCard(
-                              title: 'Vendor',
-                              subtitle: 'Re-order past purchases',
-                              icon: Icons.storefront_rounded,
-                              color: const Color(0xFFE57373),
-                              onTap: () => Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => VendorBrowseScreen(lines: activePurchaseLines),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        const Expanded(child: SizedBox()),
                       ],
-                    ),
-                  ],
-                ],
+                    ],
+                  );
+                },
               ),
             ),
           ),
@@ -213,14 +225,14 @@ Future<void> confirmDiscardChallan(BuildContext context, List<DeliveryChallanIte
     context: context,
     builder: (ctx) => AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      title: const Text('Discard challan?', style: TextStyle(fontWeight: FontWeight.w700)),
+      title: const Text('Delete challan?', style: TextStyle(fontWeight: FontWeight.w700)),
       content: const Text('The items you\'ve added will be cleared.'),
       actions: [
         TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Keep')),
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: const Color(0xFFD64545)),
           onPressed: () => Navigator.of(ctx).pop(true),
-          child: const Text('Discard'),
+          child: const Text('Delete'),
         ),
       ],
     ),
@@ -400,7 +412,7 @@ class _PurchaseGroupBrowseScreenState extends State<PurchaseGroupBrowseScreen> {
         actions: [
           if (activePurchaseLines.isNotEmpty)
             IconButton(
-              tooltip: 'Discard challan',
+              tooltip: 'Delete challan',
               icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFD64545)),
               onPressed: () => confirmDiscardChallan(context, activePurchaseLines),
             ),
@@ -603,7 +615,7 @@ class _FavoriteItemBrowseScreenState extends State<FavoriteItemBrowseScreen> {
             ),
           if (widget.lines.isNotEmpty)
             IconButton(
-              tooltip: 'Discard challan',
+              tooltip: 'Delete challan',
               icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFD64545)),
               onPressed: () => confirmDiscardChallan(context, widget.lines),
             ),
@@ -816,7 +828,7 @@ class _PurchaseItemBrowseScreenState extends State<PurchaseItemBrowseScreen> {
             ),
           if (widget.lines.isNotEmpty)
             IconButton(
-              tooltip: 'Discard challan',
+              tooltip: 'Delete challan',
               icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFD64545)),
               onPressed: () => confirmDiscardChallan(context, widget.lines),
             ),
@@ -1168,7 +1180,7 @@ class _VendorBrowseScreenState extends State<VendorBrowseScreen> {
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: 'Search vendors...',
+                hintText: 'Search suppliers...',
                 prefixIcon: const Icon(Icons.search_rounded),
                 filled: true,
                 fillColor: SoftErpTheme.shellSurface,
@@ -1185,8 +1197,8 @@ class _VendorBrowseScreenState extends State<VendorBrowseScreen> {
             child: vendors.isEmpty
                 ? const _EmptyHint(
                     icon: Icons.storefront_outlined,
-                    title: 'No vendors found',
-                    message: 'Add vendors in the desktop app first.',
+                    title: 'No suppliers found',
+                    message: 'Add suppliers in the desktop app first.',
                   )
                 : ListView.separated(
                     padding: const EdgeInsets.all(16),
@@ -1197,7 +1209,7 @@ class _VendorBrowseScreenState extends State<VendorBrowseScreen> {
                       return _BrowseTile(
                         icon: Icons.storefront_rounded,
                         title: v.name,
-                        subtitle: v.gstNumber.isNotEmpty ? 'GST: ${v.gstNumber}' : 'Vendor',
+                        subtitle: v.gstNumber.isNotEmpty ? 'GST: ${v.gstNumber}' : 'Supplier',
                         onTap: () async {
                           await Navigator.of(context).push(
                             MaterialPageRoute(
@@ -1330,7 +1342,7 @@ class _VendorHistoryBrowseScreenState extends State<VendorHistoryBrowseScreen> {
               ? const _EmptyHint(
                   icon: Icons.history_rounded,
                   title: 'No past purchases',
-                  message: 'You have not purchased anything from this vendor yet.',
+                  message: 'You have not purchased anything from this supplier yet.',
                 )
               : ListView.separated(
                   padding: const EdgeInsets.all(16),

@@ -106,5 +106,11 @@
     "displayName": "Purchase Wizard (v2)",
     "category": "Challan Mobile",
     "description": "Route the mobile Purchase tile through the stepped wizard instead of the browse-and-review flow"
+  },
+  {
+    "key": "challans.reconciliation",
+    "displayName": "In-use Settle-up",
+    "category": "Challan Mobile",
+    "description": "Show the \"In-use\" list on the Challan tab and settle internal-use challans (scrap/leftover/lost/rejection/finished goods) back into stock"
   }
 ]

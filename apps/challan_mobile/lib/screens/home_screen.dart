@@ -110,7 +110,7 @@ class _HomeScreenState extends State<HomeScreen> {
           destinations: const [
             NavigationDestination(
               icon: Icon(Icons.qr_code_scanner),
-              label: 'Staging',
+              label: 'Scan Area',
             ),
             NavigationDestination(
               icon: Icon(Icons.edit_document),

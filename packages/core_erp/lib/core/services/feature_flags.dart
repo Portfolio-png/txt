@@ -159,6 +159,21 @@ class FeatureKeys {
         'Route the mobile Purchase tile through the stepped wizard instead of the browse-and-review flow',
   )
   static const String purchaseFlowV2 = 'purchase.flowV2';
+
+  /// Adds the "In-use" affordance to the mobile Challan tab title bar: it lists
+  /// the internal-use challans created by the Use flow, and opens a production
+  /// reconciliation screen that settles each consumed material across
+  /// scrap/leftover/lost/rejection/finished-goods, reverts those quantities
+  /// back into inventory under the Primary Group's sub-groups, and marks the
+  /// order completed once all its use challans are reconciled. Additive and OFF
+  /// by default — nothing in the existing Use flow changes when it is off.
+  @FeatureFlag(
+    category: 'Challan Mobile',
+    displayName: 'In-use Settle-up',
+    desc:
+        'Show the "In-use" list on the Challan tab and settle internal-use challans (scrap/leftover/lost/rejection/finished goods) back into stock',
+  )
+  static const String challanReconciliation = 'challans.reconciliation';
 }
 
 class FeatureFlags {

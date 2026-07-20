@@ -49,6 +49,9 @@ const Map<String, dynamic> devConfig = {
   'challans': {
     // Single-type Challan view: type selector + collapse split to one column.
     'singleTypeView': true,
+    // In-use Reconciliation: the "In-use" list + 5-bucket reconciliation flow
+    // on the mobile Challan tab. Set false to hide it (Use flow is unaffected).
+    'reconciliation': true,
   },
   // Purchase items: "Available for purchase" item toggle + mobile Purchase
   // (reception) challan flow.

@@ -102,7 +102,7 @@ class _ChallanStagingScreenState extends State<ChallanStagingScreen> {
       backgroundColor: SoftErpTheme.shellSurface,
       appBar: AppBar(
         title: Text(
-          'Live Dock Staging',
+          'Scan Area',
           style: TextStyle(
             fontSize: isTablet ? 24.0 : 20.0,
             fontWeight: FontWeight.bold,

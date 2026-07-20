@@ -671,7 +671,7 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
       } catch (e) {
         setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to upload attachments: $e'), backgroundColor: Colors.redAccent)
+          SnackBar(content: Text('Failed to upload photos: $e'), backgroundColor: Colors.redAccent)
         );
         return;
       }
@@ -781,14 +781,14 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('Discard challan?', style: TextStyle(fontWeight: FontWeight.w700)),
+        title: const Text('Delete challan?', style: TextStyle(fontWeight: FontWeight.w700)),
         content: const Text('This challan and everything you added will be cleared.'),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Keep')),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: const Color(0xFFD64545)),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Discard'),
+            child: const Text('Delete'),
           ),
         ],
       ),
@@ -1119,7 +1119,7 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
                               children: [
                                 Icon(Icons.delete_outline_rounded, color: Colors.white, size: 18),
                                 SizedBox(width: 8),
-                                Text('Discard', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+                                Text('Delete', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
                               ],
                             ),
                           ),
@@ -1219,10 +1219,10 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
                                 DropdownButtonFormField<int>(
                                   value: _selectedVendorId,
                                   icon: const Icon(Icons.keyboard_arrow_down_rounded, color: SoftErpTheme.accent),
-                                  decoration: _glassInputDecoration('Select Vendor', Icons.storefront_rounded),
+                                  decoration: _glassInputDecoration('Select Supplier', Icons.storefront_rounded),
                                   items: vendors.map((v) => DropdownMenuItem(value: v.id, child: Text(v.name, style: const TextStyle(fontWeight: FontWeight.w600)))).toList(),
                                   onChanged: (v) => setState(() => _selectedVendorId = v),
-                                  validator: (v) => v == null ? 'Vendor is required' : null,
+                                  validator: (v) => v == null ? 'Supplier is required' : null,
                                 ),
                               const SizedBox(height: 16),
                               Row(
@@ -1329,7 +1329,7 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
                         const SizedBox(height: 24),
                         
                         if (_attachedImages.isNotEmpty) ...[
-                          const Text('Attachments', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: SoftErpTheme.textPrimary)),
+                          const Text('Photos', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: SoftErpTheme.textPrimary)),
                           const SizedBox(height: 12),
                           SizedBox(
                             height: 100,
