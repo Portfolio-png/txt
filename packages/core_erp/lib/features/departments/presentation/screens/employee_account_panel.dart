@@ -6,8 +6,8 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
 import '../../../../core/widgets/soft_primitives.dart';
-import '../../../auth/domain/auth_user.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../auth/presentation/widgets/permissions_editor.dart';
 import '../../../auth/presentation/widgets/track_panel.dart';
 import '../../domain/employee_definition.dart';
 import '../providers/departments_provider.dart';
@@ -155,6 +155,8 @@ class _CreateLoginCardState extends State<_CreateLoginCard> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<DepartmentsProvider>();
+    // Only a super admin can mint an admin; an admin only creates staff.
+    final isSuperAdmin = context.watch<AuthProvider>().isSuperAdmin;
     final code = _ddmm(widget.emp.dateOfBirth);
     return ErpDialogSectionCard(
       title: 'Create login',
@@ -172,15 +174,24 @@ class _CreateLoginCardState extends State<_CreateLoginCard> {
             obscure: true,
           ),
           const SizedBox(height: 14),
-          DropdownButtonFormField<String>(
-            initialValue: _role,
-            decoration: _fieldDecoration('Access level'),
-            items: const [
-              DropdownMenuItem(value: 'user', child: Text('Staff (user)')),
-              DropdownMenuItem(value: 'admin', child: Text('Admin')),
-            ],
-            onChanged: (v) => setState(() => _role = v ?? 'user'),
-          ),
+          if (isSuperAdmin)
+            DropdownButtonFormField<String>(
+              initialValue: _role,
+              decoration: _fieldDecoration('Access level'),
+              items: const [
+                DropdownMenuItem(value: 'user', child: Text('Staff')),
+                DropdownMenuItem(value: 'admin', child: Text('Admin')),
+              ],
+              onChanged: (v) => setState(() => _role = v ?? 'user'),
+            )
+          else
+            InputDecorator(
+              decoration: _fieldDecoration('Access level'),
+              child: const Text(
+                'Staff',
+                style: TextStyle(fontSize: 14, color: SoftErpTheme.textPrimary),
+              ),
+            ),
           if (code != null) ...[
             const SizedBox(height: 12),
             Row(
@@ -229,6 +240,7 @@ class _AccountControls extends StatefulWidget {
 class _AccountControlsState extends State<_AccountControls> {
   bool? _desktopAccess;
   bool? _mobileAccess;
+  List<String> _presetNames = const [];
   bool _busy = false;
 
   @override
@@ -237,13 +249,16 @@ class _AccountControlsState extends State<_AccountControls> {
     _loadAccessFlags();
   }
 
-  /// Best-effort read of the login.desktop / login.mobile permission state so
-  /// the header can show access chips. Silent if the actor can't manage perms.
+  /// Best-effort read of the login.desktop / login.mobile permission state and
+  /// the assigned preset (named role) names for the header. Silent if the
+  /// actor can't manage permissions.
   Future<void> _loadAccessFlags() async {
     final auth = context.read<AuthProvider>();
     final userId = widget.emp.login?.userId;
     if (userId == null || !auth.can('users.manage_permissions')) return;
+    await auth.ensurePermissionCatalog();
     final states = await auth.getUserPermissions(userId);
+    final assigned = await auth.getUserPermissionTemplateIds(userId);
     if (!mounted || states.isEmpty) return;
     bool? desktop;
     bool? mobile;
@@ -251,10 +266,23 @@ class _AccountControlsState extends State<_AccountControls> {
       if (s.key == 'login.desktop') desktop = s.allowed;
       if (s.key == 'login.mobile') mobile = s.allowed;
     }
+    final names = auth.permissionTemplates
+        .where((t) => assigned.contains(t.id))
+        .map((t) => t.name)
+        .toList(growable: false);
     setState(() {
       _desktopAccess = desktop;
       _mobileAccess = mobile;
+      _presetNames = names;
     });
+  }
+
+  /// The role label to show for this account: super admins/admins show their
+  /// role; staff show their assigned preset (named role), or 'Staff' if none.
+  String _roleLabel(String rawRole) {
+    if (rawRole == 'super_admin') return 'Super Admin';
+    if (rawRole == 'admin') return 'Admin';
+    return _presetNames.isNotEmpty ? _presetNames.join(', ') : 'Staff';
   }
 
   Future<void> _guard(Future<bool> Function() action, String okMessage) async {
@@ -315,7 +343,7 @@ class _AccountControlsState extends State<_AccountControls> {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          login.role,
+                          _roleLabel(login.role),
                           style: const TextStyle(
                             color: SoftErpTheme.textSecondary,
                             fontSize: 12.5,
@@ -391,10 +419,10 @@ class _AccountControlsState extends State<_AccountControls> {
                 subtitle: 'Edit permissions, incl. desktop / mobile access.',
                 onTap: auth.can('users.manage_permissions')
                     ? () async {
-                        await _showPermissions(
+                        await showPermissionsEditor(
                           context,
-                          userId,
-                          widget.emp.name,
+                          userId: userId,
+                          displayName: widget.emp.name,
                         );
                         _loadAccessFlags();
                       }
@@ -573,134 +601,6 @@ Future<void> _showSessions(
           child: const Text('Revoke all'),
         ),
       ],
-    ),
-  );
-}
-
-Future<void> _showPermissions(
-  BuildContext context,
-  int userId,
-  String name,
-) async {
-  final auth = context.read<AuthProvider>();
-  await auth.ensurePermissionCatalog();
-  final states = await auth.getUserPermissions(userId);
-  final selectedTemplateIds = await auth.getUserPermissionTemplateIds(userId);
-  if (!context.mounted) return;
-  final catalog = auth.permissionDescriptors;
-  final templates = auth.permissionTemplates;
-  if (catalog.isEmpty || states.isEmpty) {
-    showGlobalToast(
-      auth.errorMessage ?? 'No editable permissions were returned.',
-      kind: AppToastKind.error,
-    );
-    return;
-  }
-  final sortedStates = [...states]..sort((a, b) => a.key.compareTo(b.key));
-  final toggles = <String, bool>{
-    for (final state in sortedStates) state.key: state.allowed,
-  };
-  final assignedTemplates = <int>{...selectedTemplateIds};
-  await showDialog<void>(
-    context: context,
-    builder: (dialogContext) => StatefulBuilder(
-      builder: (dialogContext, setStateDialog) => AlertDialog(
-        title: Text('Permissions for $name'),
-        content: SizedBox(
-          width: 600,
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(4, 4, 4, 10),
-                child: Text(
-                  'Permission Templates',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-              ...templates.map(
-                (template) => CheckboxListTile(
-                  value: assignedTemplates.contains(template.id),
-                  onChanged: (value) => setStateDialog(() {
-                    if (value == true) {
-                      assignedTemplates.add(template.id);
-                    } else {
-                      assignedTemplates.remove(template.id);
-                    }
-                  }),
-                  title: Text(template.name),
-                  subtitle: Text(template.description),
-                  controlAffinity: ListTileControlAffinity.leading,
-                ),
-              ),
-              const Divider(),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(4, 6, 4, 10),
-                child: Text(
-                  'Advanced Permission Overrides',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-              ...sortedStates.map((state) {
-                PermissionDescriptor? descriptor;
-                for (final item in catalog) {
-                  if (item.key == state.key) {
-                    descriptor = item;
-                    break;
-                  }
-                }
-                return CheckboxListTile(
-                  value: toggles[state.key] ?? false,
-                  onChanged: (value) => setStateDialog(
-                    () => toggles[state.key] = value == true,
-                  ),
-                  title: Text(descriptor?.label ?? state.key),
-                  subtitle: Text(descriptor?.description ?? state.key),
-                  controlAffinity: ListTileControlAffinity.leading,
-                );
-              }),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              final templatesSaved = await auth.updateUserPermissionTemplates(
-                userId: userId,
-                templateIds: assignedTemplates.toList(growable: false),
-              );
-              if (!templatesSaved) return;
-              final nextStates = sortedStates
-                  .map(
-                    (state) => UserPermissionState(
-                      key: state.key,
-                      allowed: toggles[state.key] ?? state.allowed,
-                      source: state.source,
-                    ),
-                  )
-                  .toList(growable: false);
-              final ok = await auth.updateUserPermissions(
-                userId: userId,
-                states: nextStates,
-              );
-              if (dialogContext.mounted && ok) {
-                Navigator.of(dialogContext).pop();
-              }
-              showGlobalToast(
-                ok
-                    ? 'Permissions updated.'
-                    : (auth.errorMessage ?? 'Could not save permissions.'),
-                kind: ok ? AppToastKind.success : AppToastKind.error,
-              );
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
     ),
   );
 }

@@ -46,17 +46,36 @@ class PermissionDescriptor {
     required this.key,
     required this.label,
     required this.description,
+    this.category = 'capability',
+    this.module,
+    this.moduleLabel,
+    this.op,
   });
 
   final String key;
   final String label;
   final String description;
 
+  /// 'module' (part of the per-module CRUD grid) or 'capability'.
+  final String category;
+
+  /// For module keys: the module id ('orders'), its label ('Orders'), and the
+  /// CRUD op ('create'|'read'|'update'|'delete').
+  final String? module;
+  final String? moduleLabel;
+  final String? op;
+
+  bool get isModule => category == 'module';
+
   factory PermissionDescriptor.fromJson(Map<String, dynamic> json) {
     return PermissionDescriptor(
       key: json['key'] as String? ?? '',
       label: json['label'] as String? ?? '',
       description: json['description'] as String? ?? '',
+      category: json['category'] as String? ?? 'capability',
+      module: json['module'] as String?,
+      moduleLabel: json['moduleLabel'] as String?,
+      op: json['op'] as String?,
     );
   }
 }

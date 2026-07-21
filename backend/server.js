@@ -125,43 +125,47 @@ async function logChange(tableName, recordId, eventType) {
 }
 
 const USER_ROLES = new Set(['super_admin', 'admin', 'user']);
-const PERMISSION_KEYS = [
-  'inventory.read',
-  'inventory.create',
-  'inventory.update',
-  'inventory.delete',
-  'inventory.request_delete',
-  'delete_requests.review',
-  'users.read',
-  'users.create_user',
-  'users.create_admin',
-  'users.update_status',
-  'users.reset_password',
-  'users.manage_permissions',
-  'sessions.manage',
-  'audit.read',
-  'config.read',
-  'config.write',
-  'login.mobile',
-  'login.desktop',
+
+// --- Per-module CRUD permission model -------------------------------------
+// Every top-level module has create/read/update/delete keys. These are the
+// keys shown as the module x CRUD grid in a user's Account & Access pane, and
+// are enforced centrally by requireApiModulePermission (request path -> module,
+// HTTP method -> op). The `login.*` and account-management keys below are
+// capabilities, not module CRUD, and are shown/managed separately.
+const CRUD_MODULES = [
+  'orders',
+  'inventory',
+  'masters',
+  'production',
+  'jobs',
+  'challans',
+  'people',
+  'action_center',
 ];
-const PERMISSION_DESCRIPTORS = {
-  'inventory.read': {
-    label: 'View inventory',
-    description: 'Read inventory records and detail pages.',
-  },
-  'inventory.create': {
-    label: 'Create inventory',
-    description: 'Create parent or child inventory records.',
-  },
-  'inventory.update': {
-    label: 'Update inventory',
-    description: 'Edit inventory records, links, scans, and movements.',
-  },
-  'inventory.delete': {
-    label: 'Delete inventory',
-    description: 'Delete inventory records directly.',
-  },
+const CRUD_OPS = ['create', 'read', 'update', 'delete'];
+const MODULE_LABELS = {
+  orders: 'Orders',
+  inventory: 'Inventory',
+  masters: 'Masters',
+  production: 'Production',
+  jobs: 'Jobs',
+  challans: 'Delivery Challans',
+  people: 'People / Users',
+  action_center: 'Action Center',
+};
+const OP_LABELS = {
+  create: 'Create',
+  read: 'View',
+  update: 'Update',
+  delete: 'Delete',
+};
+const MODULE_PERMISSION_KEYS = CRUD_MODULES.flatMap((m) =>
+  CRUD_OPS.map((op) => `${m}.${op}`),
+);
+const MODULE_PERMISSION_SET = new Set(MODULE_PERMISSION_KEYS);
+
+// Capability keys — signed off individually, NOT part of the module CRUD grid.
+const CAPABILITY_DESCRIPTORS = {
   'inventory.request_delete': {
     label: 'Request inventory deletion',
     description: 'Create delete requests for inventory records.',
@@ -171,20 +175,20 @@ const PERMISSION_DESCRIPTORS = {
     description: 'Approve or reject pending delete requests.',
   },
   'users.read': {
-    label: 'View users',
-    description: 'Read user directory and account summaries.',
+    label: 'View accounts',
+    description: 'Read the account directory.',
   },
   'users.create_user': {
-    label: 'Create users',
-    description: 'Register user accounts.',
+    label: 'Create staff logins',
+    description: 'Create staff login accounts.',
   },
   'users.create_admin': {
     label: 'Create admins',
-    description: 'Register admin accounts.',
+    description: 'Create admin accounts (super admin only).',
   },
   'users.update_status': {
-    label: 'Update user status',
-    description: 'Activate or deactivate user accounts.',
+    label: 'Activate / deactivate accounts',
+    description: 'Enable or disable login accounts.',
   },
   'users.reset_password': {
     label: 'Reset passwords',
@@ -192,141 +196,107 @@ const PERMISSION_DESCRIPTORS = {
   },
   'users.manage_permissions': {
     label: 'Manage permissions',
-    description: 'Edit per-user permission overrides.',
+    description: "Edit other users' permissions and roles.",
   },
   'sessions.manage': {
     label: 'Manage sessions',
     description: 'View and revoke user sessions.',
   },
   'audit.read': {
-    label: 'View security activity',
-    description: 'Read authentication and security events.',
+    label: 'View Track / activity',
+    description: 'Read activity and security events.',
   },
   'config.read': {
-    label: 'View configuration',
-    description: 'Read units, clients, groups, items, orders, templates, and runs.',
+    label: 'Legacy config read',
+    description: 'Internal legacy key (superseded by per-module View).',
   },
   'config.write': {
-    label: 'Modify system config',
-    description: 'Edit application-wide settings (units, tax rates).',
+    label: 'Legacy config write',
+    description: 'Internal legacy key (superseded by module Create/Update/Delete).',
   },
   'login.mobile': {
-    label: 'Mobile Login Access',
-    description: 'Allow the user to log in from the mobile app.',
+    label: 'Mobile login access',
+    description: 'Allow the user to sign in from the mobile app.',
   },
   'login.desktop': {
-    label: 'Desktop Login Access',
-    description: 'Allow the user to log in from the desktop or web app.',
+    label: 'Desktop login access',
+    description: 'Allow the user to sign in from the desktop/web app.',
   },
 };
+const CAPABILITY_PERMISSION_KEYS = Object.keys(CAPABILITY_DESCRIPTORS);
+
+const PERMISSION_KEYS = [
+  ...MODULE_PERMISSION_KEYS,
+  ...CAPABILITY_PERMISSION_KEYS,
+];
+
+// Legacy route-guard keys whose per-route requirePermission() is now a no-op:
+// enforcement moved to the central per-module CRUD middleware. The keys remain
+// valid so hasPermission()/role defaults keep working.
+const LEGACY_GUARD_PASSTHROUGH = new Set(['config.read', 'config.write']);
+
 const DEFAULT_ROLE_PERMISSIONS = {
   super_admin: Object.fromEntries(PERMISSION_KEYS.map((key) => [key, true])),
-  admin: {
-    'inventory.read': true,
-    'inventory.create': true,
-    'inventory.update': true,
-    'inventory.delete': true,
-    'inventory.request_delete': true,
-    'delete_requests.review': true,
-    'users.read': true,
-    'users.create_user': true,
-    'users.create_admin': false,
-    'users.update_status': true,
-    'users.reset_password': true,
-    'users.manage_permissions': true,
-    'sessions.manage': true,
-    'audit.read': true,
-    'config.read': true,
-    'config.write': true,
-    'login.mobile': true,
-    'login.desktop': true,
-  },
-  user: {
-    'inventory.read': true,
-    'inventory.create': false,
-    'inventory.update': false,
-    'inventory.delete': false,
-    'inventory.request_delete': true,
-    'delete_requests.review': false,
-    'users.read': false,
-    'users.create_user': false,
-    'users.create_admin': false,
-    'users.update_status': false,
-    'users.reset_password': false,
-    'users.manage_permissions': false,
-    'sessions.manage': false,
-    'audit.read': false,
-    'config.read': true,
-    'config.write': false,
-    'login.mobile': true,
-    'login.desktop': true,
-  },
+  // Admin: everything except minting other admins.
+  admin: Object.fromEntries(
+    PERMISSION_KEYS.map((key) => [key, key !== 'users.create_admin']),
+  ),
+  // Staff: read every module, write nothing by default; sign-in + request
+  // deletes. Admins grant specific create/update/delete per staff via the grid.
+  user: Object.fromEntries(
+    PERMISSION_KEYS.map((key) => {
+      if (MODULE_PERMISSION_SET.has(key)) return [key, key.endsWith('.read')];
+      const staffCaps = new Set([
+        'inventory.request_delete',
+        'config.read',
+        'login.mobile',
+        'login.desktop',
+      ]);
+      return [key, staffCaps.has(key)];
+    }),
+  ),
 };
+
+// Seed presets (admins can create their own named roles on top of these).
 const DEFAULT_PERMISSION_TEMPLATES = [
   {
-    name: 'Inventory Viewer',
-    description: 'Can view inventory and basic configuration records.',
-    permissions: {
-      'inventory.read': true,
-      'inventory.request_delete': false,
-      'config.read': true,
-    },
+    name: 'Viewer',
+    description: 'Read-only access across every module.',
+    permissions: Object.fromEntries(CRUD_MODULES.map((m) => [`${m}.read`, true])),
   },
   {
     name: 'Inventory Operator',
-    description: 'Can work inventory records and request deletes.',
+    description: 'Full inventory; view masters and orders.',
     permissions: {
       'inventory.read': true,
       'inventory.create': true,
       'inventory.update': true,
       'inventory.request_delete': true,
-      'config.read': true,
+      'masters.read': true,
+      'orders.read': true,
     },
   },
   {
-    name: 'Inventory Manager',
-    description: 'Can run full inventory workflow including direct deletes and approvals.',
+    name: 'Masters Manager',
+    description: 'Full masters (items, clients, vendors, units, machines, dies, pipelines).',
     permissions: {
-      'inventory.read': true,
-      'inventory.create': true,
-      'inventory.update': true,
-      'inventory.delete': true,
-      'inventory.request_delete': true,
-      'delete_requests.review': true,
-      'config.read': true,
-    },
-  },
-  {
-    name: 'Configurator Manager',
-    description: 'Can edit units, groups, clients, items, orders, templates, and runs.',
-    permissions: {
-      'config.read': true,
-      'config.write': true,
+      'masters.read': true,
+      'masters.create': true,
+      'masters.update': true,
+      'masters.delete': true,
       'inventory.read': true,
     },
   },
   {
-    name: 'User Admin',
-    description: 'Can manage user accounts, session controls, and permission overrides.',
+    name: 'Orders Manager',
+    description: 'Full orders; view masters and inventory.',
     permissions: {
-      'users.read': true,
-      'users.create_user': true,
-      'users.update_status': true,
-      'users.reset_password': true,
-      'users.manage_permissions': true,
-      'sessions.manage': true,
-      'audit.read': true,
-    },
-  },
-  {
-    name: 'Auditor',
-    description: 'Can view and export security activity and delete requests.',
-    permissions: {
-      'audit.read': true,
-      'delete_requests.review': true,
-      'users.read': true,
+      'orders.read': true,
+      'orders.create': true,
+      'orders.update': true,
+      'orders.delete': true,
+      'masters.read': true,
       'inventory.read': true,
-      'config.read': true,
     },
   },
 ];
@@ -735,12 +705,33 @@ function isPrimaryGroupNameForType(name = '', groupType = 'item') {
   );
 }
 
-function permissionDescriptors() {
-  return PERMISSION_KEYS.map((key) => ({
+function permissionDescriptorFor(key) {
+  if (MODULE_PERMISSION_SET.has(key)) {
+    const [module, op] = key.split('.');
+    return {
+      key,
+      label: `${OP_LABELS[op] || op} ${MODULE_LABELS[module] || module}`,
+      description: `${OP_LABELS[op] || op} ${(MODULE_LABELS[module] || module).toLowerCase()} records.`,
+      category: 'module',
+      module,
+      moduleLabel: MODULE_LABELS[module] || module,
+      op,
+    };
+  }
+  const cap = CAPABILITY_DESCRIPTORS[key] || {};
+  return {
     key,
-    label: PERMISSION_DESCRIPTORS[key]?.label || key,
-    description: PERMISSION_DESCRIPTORS[key]?.description || '',
-  }));
+    label: cap.label || key,
+    description: cap.description || '',
+    category: 'capability',
+    module: null,
+    moduleLabel: null,
+    op: null,
+  };
+}
+
+function permissionDescriptors() {
+  return PERMISSION_KEYS.map(permissionDescriptorFor);
 }
 
 async function getRolePermissionMap(role) {
@@ -751,7 +742,13 @@ async function getRolePermissionMap(role) {
     'SELECT permission_key, is_allowed FROM role_permissions WHERE role = ?',
     [role],
   );
-  const defaults = createEmptyPermissionMap();
+  // Start from the coded defaults so newly-added keys (e.g. the per-module CRUD
+  // keys) resolve to a sane value even on a DB seeded before they existed;
+  // stored rows then override. Prevents lockouts pre-reseed.
+  const defaults = {
+    ...createEmptyPermissionMap(),
+    ...(DEFAULT_ROLE_PERMISSIONS[role] || {}),
+  };
   for (const row of rows) {
     const key = normalizePermissionKey(row.permission_key);
     if (!isKnownPermissionKey(key)) {
@@ -1644,6 +1641,13 @@ function requirePermission(permissionKey) {
       res.status(401).json({ success: false, error: 'Authentication required.' });
       return;
     }
+    // Legacy config.read/config.write guards are now no-ops: per-module CRUD
+    // enforcement happens centrally in requireApiModulePermission. Keeping this
+    // pass-through avoids editing ~170 individual routes and double-gating.
+    if (LEGACY_GUARD_PASSTHROUGH.has(key)) {
+      next();
+      return;
+    }
     if (!isKnownPermissionKey(key)) {
       res.status(500).json({ success: false, error: `Unknown permission key: ${key}` });
       return;
@@ -1656,7 +1660,81 @@ function requirePermission(permissionKey) {
   };
 }
 
+// Maps an /api request to its (module, op) for central per-module CRUD
+// enforcement. `req.path` here is already stripped of the /api mount prefix
+// (e.g. '/items/5'). Returns null to SKIP module enforcement — auth, account
+// management, Track, generic asset/upload, and unknown paths keep their own
+// guards / legacy write gate.
+function moduleOpForRequest(req) {
+  const path = req.path || '';
+  const seg = path.split('/')[1] || '';
+  const EXCLUDED = new Set([
+    '', 'auth', 'me', 'users', 'admins', 'permissions', 'permission-templates',
+    'audit', 'sessions', 'track', 'delete-requests', 'assets', 'upload',
+    'delete-s3-object', 'favorites', 'sandbox-config', 'notifications', 'health',
+  ]);
+  if (EXCLUDED.has(seg)) return null;
+  // Employee account sub-actions stay capability-gated (create/link/unlink login).
+  if (seg === 'employees' && /\/(create-login|link-login|unlink-login)/.test(path)) {
+    return null;
+  }
+
+  let module = null;
+  if (['orders', 'order-items', 'order-po-uploads', 'order-po-documents'].includes(seg)) {
+    module = 'orders';
+  } else if (['inventory', 'materials', 'barcode'].includes(seg)) {
+    module = 'inventory';
+  } else if (seg === 'production' && /^\/production\/pipeline-templates/.test(path)) {
+    module = 'masters'; // the pipeline designer is a master
+  } else if (['production', 'production-runs', 'pipeline-runs', 'telemetry'].includes(seg)) {
+    module = 'production';
+  } else if (['items', 'clients', 'vendors', 'units', 'groups', 'machines', 'dies', 'sub-contractors', 'company-profile'].includes(seg)) {
+    module = 'masters';
+  } else if (seg === 'jobs') {
+    module = 'jobs';
+  } else if (['challans', 'delivery-challans', 'invoices', 'reconciliation', 'challan-templates', 'reports', 'templates'].includes(seg)) {
+    module = 'challans';
+  } else if (['employees', 'departments'].includes(seg)) {
+    module = 'people';
+  } else if (['action-center', 'trash'].includes(seg)) {
+    module = 'action_center';
+  }
+  if (!module) return null;
+
+  const m = req.method;
+  let op = 'read';
+  if (m === 'POST') op = 'create';
+  else if (m === 'PUT' || m === 'PATCH') op = 'update';
+  else if (m === 'DELETE') op = 'delete';
+  return { module, op, key: `${module}.${op}` };
+}
+
+// Central per-module CRUD gate. Runs for every /api request; enforces the
+// module.op permission for mapped business paths, and marks the request so the
+// legacy write gate doesn't double-check it.
+function requireApiModulePermission(req, res, next) {
+  const mo = moduleOpForRequest(req);
+  if (!mo) {
+    next();
+    return;
+  }
+  req._moduleGated = true;
+  if (hasPermission(req, mo.key)) {
+    next();
+    return;
+  }
+  res.status(403).json({
+    success: false,
+    error: `You do not have ${mo.op} access to the ${MODULE_LABELS[mo.module] || mo.module} module.`,
+  });
+}
+
 function requireApiWritePermission(req, res, next) {
+  // Per-module CRUD is already enforced by requireApiModulePermission for
+  // mapped business paths; don't double-gate them with the legacy write check.
+  if (req._moduleGated) {
+    return next();
+  }
   // Bypass write check for local development sandbox sync, replays, and dashboard configs
   if (req.path.startsWith('/sandbox-sync') ||
       req.path.startsWith('/session-replay') ||
@@ -18186,6 +18264,7 @@ app.use('/api', (req, res, next) => {
   next();
 });
 app.use('/api', requireAuth);
+app.use('/api', requireApiModulePermission);
 app.use('/api', requireApiWritePermission);
 
 app.use('/api', (req, res, next) => {
@@ -18755,6 +18834,106 @@ app.get('/api/permission-templates', requirePermission('users.manage_permissions
     res.json({ success: true, templates, error: null });
   } catch (error) {
     res.status(500).json({ success: false, templates: [], error: error.message });
+  }
+});
+
+// --- Named presets (admin-authored roles) ----------------------------------
+function normalizeTemplatePermissionKeys(input) {
+  const requested = Array.isArray(input)
+    ? input
+    : Object.entries(input || {})
+        .filter(([, v]) => v === true)
+        .map(([k]) => k);
+  return [
+    ...new Set(
+      requested.map((k) => normalizePermissionKey(k)).filter(isKnownPermissionKey),
+    ),
+  ];
+}
+
+// A non-super_admin cannot bake a permission they lack into a preset.
+function firstUngrantableKey(req, keys) {
+  if (req.user.role === 'super_admin') return null;
+  return keys.find((k) => req.userPermissions?.[k] !== true) || null;
+}
+
+app.post('/api/permission-templates', requirePermission('users.manage_permissions'), async (req, res) => {
+  try {
+    const name = String(req.body?.name || '').trim();
+    if (!name) return res.status(400).json({ success: false, error: 'A name is required.' });
+    const description = String(req.body?.description || '').trim();
+    const keys = normalizeTemplatePermissionKeys(req.body?.permissions);
+    const lacking = firstUngrantableKey(req, keys);
+    if (lacking) {
+      return res.status(403).json({ success: false, error: `You cannot grant a permission you do not have (${lacking}).` });
+    }
+    const existing = await get('SELECT id FROM permission_templates WHERE LOWER(name) = LOWER(?)', [name]);
+    if (existing) return res.status(409).json({ success: false, error: 'A preset with that name already exists.' });
+    const now = nowIso();
+    const info = await run(
+      'INSERT INTO permission_templates (name, description, is_system_default, created_at, updated_at) VALUES (?, ?, 0, ?, ?)',
+      [name, description, now, now],
+    );
+    const templateId = info.lastID;
+    for (const key of keys) {
+      await run(
+        'INSERT INTO permission_template_permissions (template_id, permission_key, is_allowed, created_at, updated_at) VALUES (?, ?, 1, ?, ?)',
+        [templateId, key, now, now],
+      );
+    }
+    res.status(201).json({ success: true, id: templateId, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.patch('/api/permission-templates/:id', requirePermission('users.manage_permissions'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const tpl = await get('SELECT * FROM permission_templates WHERE id = ?', [id]);
+    if (!tpl) return res.status(404).json({ success: false, error: 'Preset not found.' });
+    if (Number(tpl.is_system_default || 0) === 1) {
+      return res.status(403).json({ success: false, error: 'Built-in presets cannot be edited.' });
+    }
+    const now = nowIso();
+    const name = req.body?.name !== undefined ? String(req.body.name).trim() : tpl.name;
+    if (!name) return res.status(400).json({ success: false, error: 'A name is required.' });
+    const description = req.body?.description !== undefined ? String(req.body.description).trim() : tpl.description;
+    await run('UPDATE permission_templates SET name = ?, description = ?, updated_at = ? WHERE id = ?', [name, description, now, id]);
+    if (req.body?.permissions !== undefined) {
+      const keys = normalizeTemplatePermissionKeys(req.body.permissions);
+      const lacking = firstUngrantableKey(req, keys);
+      if (lacking) {
+        return res.status(403).json({ success: false, error: `You cannot grant a permission you do not have (${lacking}).` });
+      }
+      await run('DELETE FROM permission_template_permissions WHERE template_id = ?', [id]);
+      for (const key of keys) {
+        await run(
+          'INSERT INTO permission_template_permissions (template_id, permission_key, is_allowed, created_at, updated_at) VALUES (?, ?, 1, ?, ?)',
+          [id, key, now, now],
+        );
+      }
+    }
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.delete('/api/permission-templates/:id', requirePermission('users.manage_permissions'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const tpl = await get('SELECT * FROM permission_templates WHERE id = ?', [id]);
+    if (!tpl) return res.status(404).json({ success: false, error: 'Preset not found.' });
+    if (Number(tpl.is_system_default || 0) === 1) {
+      return res.status(403).json({ success: false, error: 'Built-in presets cannot be deleted.' });
+    }
+    await run('DELETE FROM permission_template_permissions WHERE template_id = ?', [id]);
+    await run('DELETE FROM user_permission_templates WHERE template_id = ?', [id]);
+    await run('DELETE FROM permission_templates WHERE id = ?', [id]);
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -25724,8 +25903,8 @@ app.post(
       if (role === 'super_admin') {
         return res.status(403).json({ success: false, error: 'Cannot create a super admin from an employee.' });
       }
-      if (role === 'admin' && !hasPermission(req, 'users.create_admin')) {
-        return res.status(403).json({ success: false, error: 'You cannot grant admin access.' });
+      if (role === 'admin' && req.user.role !== 'super_admin') {
+        return res.status(403).json({ success: false, error: 'Only a super admin can grant admin access.' });
       }
       if (role !== 'admin') role = 'user';
 

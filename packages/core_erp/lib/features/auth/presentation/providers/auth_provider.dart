@@ -607,6 +607,67 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> reloadPermissionTemplates() async {
+    try {
+      _permissionTemplates = await _api.getPermissionTemplates();
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  Future<bool> createPermissionPreset({
+    required String name,
+    required String description,
+    required List<String> permissions,
+  }) async {
+    try {
+      await _api.createPermissionTemplate(
+        name: name,
+        description: description,
+        permissions: permissions,
+      );
+      await reloadPermissionTemplates();
+      return true;
+    } catch (error) {
+      _errorMessage = _friendly(error, fallback: 'Failed to create preset.');
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> updatePermissionPreset({
+    required int id,
+    String? name,
+    String? description,
+    List<String>? permissions,
+  }) async {
+    try {
+      await _api.updatePermissionTemplate(
+        id: id,
+        name: name,
+        description: description,
+        permissions: permissions,
+      );
+      await reloadPermissionTemplates();
+      return true;
+    } catch (error) {
+      _errorMessage = _friendly(error, fallback: 'Failed to update preset.');
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> deletePermissionPreset(int id) async {
+    try {
+      await _api.deletePermissionTemplate(id);
+      await reloadPermissionTemplates();
+      return true;
+    } catch (error) {
+      _errorMessage = _friendly(error, fallback: 'Failed to delete preset.');
+      notifyListeners();
+      return false;
+    }
+  }
+
   /// Track feed for one master record (the "Track" tab on a master screen).
   Future<List<TrackEvent>> getEntityTrack(
     String entityType,

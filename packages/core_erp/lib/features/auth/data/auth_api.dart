@@ -623,6 +623,71 @@ class AuthApi {
         .toList(growable: false);
   }
 
+  Future<int> createPermissionTemplate({
+    required String name,
+    required String description,
+    required List<String> permissions,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/permission-templates'),
+      headers: _jsonHeaders,
+      body: jsonEncode({
+        'name': name,
+        'description': description,
+        'permissions': permissions,
+      }),
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to create preset.',
+      );
+    }
+    return payload['id'] as int? ?? 0;
+  }
+
+  Future<void> updatePermissionTemplate({
+    required int id,
+    String? name,
+    String? description,
+    List<String>? permissions,
+  }) async {
+    final response = await _client.patch(
+      Uri.parse('$baseUrl/api/permission-templates/$id'),
+      headers: _jsonHeaders,
+      body: jsonEncode({
+        if (name != null) 'name': name,
+        if (description != null) 'description': description,
+        if (permissions != null) 'permissions': permissions,
+      }),
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to update preset.',
+      );
+    }
+  }
+
+  Future<void> deletePermissionTemplate(int id) async {
+    final response = await _client.delete(
+      Uri.parse('$baseUrl/api/permission-templates/$id'),
+      headers: _jsonHeaders,
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to delete preset.',
+      );
+    }
+  }
+
   Future<List<UserPermissionState>> getUserPermissions(int userId) async {
     final response = await _client.get(
       Uri.parse('$baseUrl/api/users/$userId/permissions'),
