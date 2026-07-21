@@ -90,6 +90,12 @@
     "description": "Group-scoped item picker, combination groups, measurable units, inventory audit trail"
   },
   {
+    "key": "enhancements.boardingPassCards",
+    "displayName": "Boarding-pass Cards",
+    "category": "Catalog & Inventory",
+    "description": "Redesigned item & inventory card view (large image, ticket details, material barcode) with a column-count resize slider"
+  },
+  {
     "key": "challans.singleTypeView",
     "displayName": "Single-type Challan View",
     "category": "Challans Screen",

@@ -16,6 +16,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController(text: 'super@paper.local');
   final _passwordController = TextEditingController();
   final _passwordFocusNode = FocusNode();
+  final _codeController = TextEditingController();
+  bool _staffCodeMode = false;
   final _formKey = GlobalKey<FormState>();
 
   @override
@@ -23,6 +25,7 @@ class _LoginScreenState extends State<LoginScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _passwordFocusNode.dispose();
+    _codeController.dispose();
     super.dispose();
   }
 
@@ -31,10 +34,14 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
     final auth = context.read<AuthProvider>();
-    await auth.login(
-      email: _emailController.text,
-      password: _passwordController.text,
-    );
+    if (_staffCodeMode) {
+      await auth.loginWithPin(pin: _codeController.text.trim());
+    } else {
+      await auth.login(
+        email: _emailController.text,
+        password: _passwordController.text,
+      );
+    }
   }
 
   Future<void> _quickLoginWith(String email) async {
@@ -88,30 +95,65 @@ class _LoginScreenState extends State<LoginScreen> {
                         'Sign in with your admin or user account.',
                         style: TextStyle(color: Color(0xFF6B7280)),
                       ),
-                      const SizedBox(height: 24),
-                      TextFormField(
-                        controller: _emailController,
-                        decoration: const InputDecoration(labelText: 'Email'),
-                        keyboardType: TextInputType.emailAddress,
-                        validator: (value) =>
-                            value == null || value.trim().isEmpty
-                            ? 'Enter an email.'
-                            : null,
-                        onFieldSubmitted: (_) => _submit(),
+                      const SizedBox(height: 20),
+                      SegmentedButton<bool>(
+                        segments: const [
+                          ButtonSegment<bool>(
+                            value: false,
+                            label: Text('Email & password'),
+                          ),
+                          ButtonSegment<bool>(
+                            value: true,
+                            label: Text('Staff code'),
+                          ),
+                        ],
+                        selected: {_staffCodeMode},
+                        showSelectedIcon: false,
+                        onSelectionChanged: (selection) {
+                          setState(() => _staffCodeMode = selection.first);
+                        },
                       ),
-                      const SizedBox(height: 14),
-                      TextFormField(
-                        controller: _passwordController,
-                        focusNode: _passwordFocusNode,
-                        decoration: const InputDecoration(
-                          labelText: 'Password',
+                      const SizedBox(height: 18),
+                      if (_staffCodeMode)
+                        TextFormField(
+                          controller: _codeController,
+                          decoration: const InputDecoration(
+                            labelText: 'Staff code (4 digits)',
+                            hintText: 'Day + month of your birthday · e.g. 1503',
+                          ),
+                          keyboardType: TextInputType.number,
+                          maxLength: 4,
+                          validator: (value) =>
+                              value == null || value.trim().length != 4
+                              ? 'Enter your 4-digit code.'
+                              : null,
+                          onFieldSubmitted: (_) => _submit(),
+                        )
+                      else ...[
+                        TextFormField(
+                          controller: _emailController,
+                          decoration: const InputDecoration(labelText: 'Email'),
+                          keyboardType: TextInputType.emailAddress,
+                          validator: (value) =>
+                              value == null || value.trim().isEmpty
+                              ? 'Enter an email.'
+                              : null,
+                          onFieldSubmitted: (_) => _submit(),
                         ),
-                        obscureText: true,
-                        validator: (value) => value == null || value.length < 8
-                            ? 'Enter at least 8 characters.'
-                            : null,
-                        onFieldSubmitted: (_) => _submit(),
-                      ),
+                        const SizedBox(height: 14),
+                        TextFormField(
+                          controller: _passwordController,
+                          focusNode: _passwordFocusNode,
+                          decoration: const InputDecoration(
+                            labelText: 'Password',
+                          ),
+                          obscureText: true,
+                          validator: (value) => value == null || value.length < 8
+                              ? 'Enter at least 8 characters.'
+                              : null,
+                          onFieldSubmitted: (_) => _submit(),
+                        ),
+                      ],
                       if (auth.errorMessage != null) ...[
                         const SizedBox(height: 14),
                         Text(

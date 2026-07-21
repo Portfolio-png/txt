@@ -179,8 +179,10 @@ class DepartmentsProvider extends ChangeNotifier {
     String address,
     String employeePhotoUrl,
     String employmentType,
-    String barcodeId,
-  ) async {
+    String barcodeId, {
+    String email = '',
+    String dateOfBirth = '',
+  }) async {
     _setSaving(true);
     _clearError();
     try {
@@ -197,6 +199,8 @@ class DepartmentsProvider extends ChangeNotifier {
         employeePhotoUrl,
         employmentType,
         barcodeId,
+        email: email,
+        dateOfBirth: dateOfBirth,
       );
       _employees.add(emp);
       _sortLists();
@@ -222,8 +226,10 @@ class DepartmentsProvider extends ChangeNotifier {
     String address,
     String employeePhotoUrl,
     String employmentType,
-    String barcodeId,
-  ) async {
+    String barcodeId, {
+    String? email,
+    String? dateOfBirth,
+  }) async {
     _setSaving(true);
     _clearError();
     try {
@@ -241,6 +247,8 @@ class DepartmentsProvider extends ChangeNotifier {
         employeePhotoUrl,
         employmentType,
         barcodeId,
+        email: email,
+        dateOfBirth: dateOfBirth,
       );
       final index = _employees.indexWhere((e) => e.id == id);
       if (index >= 0) {
@@ -263,6 +271,66 @@ class DepartmentsProvider extends ChangeNotifier {
       await _repository.deleteEmployee(id);
       _employees.removeWhere((e) => e.id == id);
       notifyListeners();
+      return true;
+    } catch (e) {
+      _setError(e.toString());
+      return false;
+    } finally {
+      _setSaving(false);
+    }
+  }
+
+  void _replaceEmployee(EmployeeDefinition emp) {
+    final index = _employees.indexWhere((e) => e.id == emp.id);
+    if (index >= 0) {
+      _employees[index] = emp;
+      notifyListeners();
+    }
+  }
+
+  /// Create + link a new login/profile account for an in-house employee.
+  Future<bool> createEmployeeLogin(
+    int employeeId, {
+    required String email,
+    required String password,
+    String role = 'user',
+  }) async {
+    _setSaving(true);
+    _clearError();
+    try {
+      _replaceEmployee(await _repository.createEmployeeLogin(
+        employeeId, email: email, password: password, role: role,
+      ));
+      return true;
+    } catch (e) {
+      _setError(e.toString());
+      return false;
+    } finally {
+      _setSaving(false);
+    }
+  }
+
+  /// Link an in-house employee to an existing login account.
+  Future<bool> linkEmployeeLogin(int employeeId, int userId) async {
+    _setSaving(true);
+    _clearError();
+    try {
+      _replaceEmployee(await _repository.linkEmployeeLogin(employeeId, userId));
+      return true;
+    } catch (e) {
+      _setError(e.toString());
+      return false;
+    } finally {
+      _setSaving(false);
+    }
+  }
+
+  /// Unlink an employee from its login (the account is kept).
+  Future<bool> unlinkEmployeeLogin(int employeeId) async {
+    _setSaving(true);
+    _clearError();
+    try {
+      _replaceEmployee(await _repository.unlinkEmployeeLogin(employeeId));
       return true;
     } catch (e) {
       _setError(e.toString());

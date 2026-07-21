@@ -1,0 +1,14 @@
+{
+  "name": "paper-control-plane",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Falcon View — vendor-side control plane that ingests telemetry from Paper client deployments and renders fleet benchmarks + user roster.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "sqlite3": "^5.1.7"
+  }
+}

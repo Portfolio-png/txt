@@ -23,9 +23,10 @@ const Map<String, dynamic> devConfig = {
     'masters': true,
     'inventory': true,
     'production': true,
-    'pm': true,
+    'pm': false,
     'jobs': true,
     'delivery_challans': true,
+    'actionCenter': true,
   },
   'orders': {
     // Change this and save — the orders board recolors live. Proof it works.
@@ -45,7 +46,7 @@ const Map<String, dynamic> devConfig = {
   // combination groups, measurable units, primary-unit cleanup, movement audit
   // trail). Only honoured in offline dev mode; for a real backend run, enable
   // "Catalog & Inventory Enhancements" for the client in the dashboard instead.
-  'enhancements': {'catalogInventory': true},
+  'enhancements': {'catalogInventory': true, 'boardingPassCards': true},
   'challans': {
     // Single-type Challan view: type selector + collapse split to one column.
     'singleTypeView': true,

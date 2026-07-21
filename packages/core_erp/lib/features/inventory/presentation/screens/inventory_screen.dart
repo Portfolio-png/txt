@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import '../providers/inventory_create_command_provider.dart';
 import '../../../../app/preferences/preferences_provider.dart';
 import '../../../../core/services/feature_flags.dart';
+import '../../../../core/widgets/boarding_pass_card.dart';
 import '../../../../core/theme/soft_erp_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_empty_state.dart';
@@ -4196,17 +4197,31 @@ class _InventoryCardGrid extends StatelessWidget {
         icon: Icons.inventory_2_outlined,
       );
     }
+    final boardingPass = FeatureFlags.isEnabled(FeatureKeys.boardingPassCards);
     return GridView.builder(
       padding: EdgeInsets.zero,
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 320,
-        mainAxisExtent: 158,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-      ),
+      gridDelegate: boardingPass
+          ? const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 380,
+              mainAxisExtent: 320,
+              crossAxisSpacing: 14,
+              mainAxisSpacing: 14,
+            )
+          : const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 320,
+              mainAxisExtent: 158,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+            ),
       itemCount: rows.length,
       itemBuilder: (context, index) {
         final entry = rows[index];
+        if (boardingPass) {
+          return _InventoryBoardingCard(
+            entry: entry,
+            onTap: () => onOpenChallans(entry.record),
+          );
+        }
         return _InventoryItemCard(
           entry: entry,
           onTap: () => onOpenChallans(entry.record),
@@ -4215,6 +4230,195 @@ class _InventoryCardGrid extends StatelessWidget {
       },
     );
   }
+}
+
+/// Boarding-pass style inventory card: large hero image, ticket-style details,
+/// and the material's scannable barcode. Gated behind the boardingPassCards flag.
+class _InventoryBoardingCard extends StatefulWidget {
+  const _InventoryBoardingCard({required this.entry, required this.onTap});
+
+  final _InventoryRowEntry entry;
+  final VoidCallback onTap;
+
+  @override
+  State<_InventoryBoardingCard> createState() => _InventoryBoardingCardState();
+}
+
+class _InventoryBoardingCardState extends State<_InventoryBoardingCard> {
+  bool _requestedAssets = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _ensureAssetsLoaded();
+    });
+  }
+
+  void _ensureAssetsLoaded() {
+    final itemId = widget.entry.record.linkedItemId;
+    if (itemId == null || _requestedAssets) return;
+    final provider = context.read<ItemsProvider>();
+    if (provider.assetsForItem(itemId).isNotEmpty) return;
+    _requestedAssets = true;
+    provider.loadItemAssets(itemId);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final record = widget.entry.record;
+    final itemId = record.linkedItemId;
+    // The material's own composed name is often "… not recorded … not recorded"
+    // because the variation values were never captured. Build the item's ideal
+    // name instead — its naming format from the item master applied to whatever
+    // IS recorded (buildLabelForLeaf omits, rather than prints, missing values).
+    final naming = context.select<ItemsProvider, ({String title, String subtitle})?>((provider) {
+      if (itemId == null) return null;
+      final item = provider.items.where((i) => i.id == itemId).firstOrNull;
+      if (item == null) return null;
+      final baseName = item.displayName.trim().isEmpty
+          ? item.name.trim()
+          : item.displayName.trim();
+      final full = NamingFormatHelper.buildLabelForLeaf(
+        item,
+        record.linkedVariationLeafNodeId ?? 0,
+        _boardingCustomValues(record.customVariationValues, item),
+        false,
+      ).trim();
+      final title = full.isEmpty ? baseName : full;
+      if (title.isEmpty) return null;
+      // If the naming format added recorded values, the title carries the
+      // variation. If nothing was recorded (title == base name), show the
+      // variation property names so the dimensions are still visible.
+      final hasRecordedValues = full.isNotEmpty && full != baseName;
+      if (hasRecordedValues) {
+        return (title: title, subtitle: 'Variation');
+      }
+      final props = _boardingPropertyNames(item);
+      return (
+        title: title,
+        subtitle: props.isEmpty ? 'Variation' : props.join(' / '),
+      );
+    });
+    final title = naming?.title ?? widget.entry.displayName ?? record.name;
+    final subtitle = naming?.subtitle ??
+        (record.type.trim().isEmpty ? 'Material' : record.type.trim());
+    final barcode = widget.entry.displayId ?? record.barcode;
+    final stock = _stripPrimaryUnitFromLabel(
+      _round2Decimals(
+        widget.entry.aggregateStockLabel ??
+            (record.displayStock.trim().isNotEmpty
+                ? record.displayStock
+                : '${record.onHand} ${_effectiveUnitSymbol(record.unit)}'.trim()),
+      ),
+    );
+    final imageUrl = context.select<ItemsProvider, String?>((provider) {
+      if (itemId == null) return null;
+      final assets = provider.assetsForItem(itemId);
+      final asset =
+          assets.where((a) => a.isPrimary).firstOrNull ?? assets.firstOrNull;
+      return asset?.readUrl?.toString();
+    });
+
+    return BoardingPassCard(
+      title: title,
+      subtitle: subtitle,
+      imageUrl: imageUrl,
+      token: _boardingInitialsInv(title),
+      caption: title,
+      details: [
+        BoardingPassDetail('Stock', stock.isEmpty ? '—' : stock),
+        if (record.grade.trim().isNotEmpty)
+          BoardingPassDetail('Grade', record.grade.trim())
+        else if (record.supplier.trim().isNotEmpty)
+          BoardingPassDetail('Supplier', record.supplier.trim())
+        else
+          BoardingPassDetail('Unit', _effectiveUnitSymbol(record.unit)),
+        BoardingPassDetail(
+          'Location',
+          record.location.trim().isEmpty ? '—' : record.location.trim(),
+        ),
+      ],
+      barcode: barcode,
+      onTap: widget.onTap,
+    );
+  }
+}
+
+/// Maps a material's free-text custom variation values (keyed by property name
+/// or id) to the property-id map the naming-format builder expects, dropping
+/// empty values so they simply don't appear (no "not recorded" placeholder).
+Map<int, String> _boardingCustomValues(
+  Map<String, String>? values,
+  ItemDefinition item,
+) {
+  if (values == null || values.isEmpty) return const <int, String>{};
+  String norm(String v) => v
+      .replaceAll('[', '')
+      .replaceAll(']', '')
+      .replaceAll('_', ' ')
+      .replaceAll('-', ' ')
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'\s+'), ' ');
+  final propertyByName = <String, int>{};
+  void collect(ItemVariationNodeDefinition node) {
+    if (node.kind == ItemVariationNodeKind.property) {
+      for (final key in [node.id.toString(), node.name, node.displayName]) {
+        final nk = norm(key);
+        if (nk.isNotEmpty) propertyByName[nk] = node.id;
+      }
+    }
+    for (final child in node.activeChildren) {
+      collect(child);
+    }
+  }
+
+  for (final root in item.activeVariationTree) {
+    collect(root);
+  }
+  final result = <int, String>{};
+  for (final entry in values.entries) {
+    final value = entry.value.trim();
+    if (value.isEmpty) continue;
+    final id = int.tryParse(entry.key) ?? propertyByName[norm(entry.key)];
+    if (id != null) result[id] = value;
+  }
+  return result;
+}
+
+/// The variation property (dimension) names of an item, in tree order — shown
+/// as the card subtitle when a material's values were never recorded, so you
+/// can still see which dimensions the variation has.
+List<String> _boardingPropertyNames(ItemDefinition item) {
+  final names = <String>[];
+  final seen = <int>{};
+  void walk(ItemVariationNodeDefinition node) {
+    if (node.kind == ItemVariationNodeKind.property && seen.add(node.id)) {
+      final name = node.displayName.trim().isEmpty
+          ? node.name.trim()
+          : node.displayName.trim();
+      if (name.isNotEmpty) names.add(name);
+    }
+    for (final child in node.activeChildren) {
+      walk(child);
+    }
+  }
+
+  for (final root in item.activeVariationTree) {
+    walk(root);
+  }
+  return names;
+}
+
+String _boardingInitialsInv(String source) {
+  final parts = source
+      .split(RegExp(r'\s+'))
+      .where((p) => p.trim().isNotEmpty)
+      .take(2)
+      .map((p) => p.substring(0, 1).toUpperCase())
+      .toList(growable: false);
+  return parts.isEmpty ? 'MT' : parts.join();
 }
 
 class _InventoryItemCard extends StatefulWidget {

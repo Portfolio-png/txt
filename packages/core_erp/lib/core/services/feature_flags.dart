@@ -126,6 +126,19 @@ class FeatureKeys {
   static const String catalogInventoryEnhancements =
       'enhancements.catalogInventory';
 
+  /// Selector flag for the boarding-pass card redesign of the Items (item
+  /// master) and Inventory card views: a large hero image, ticket-style detail
+  /// strip, a scannable barcode on inventory materials, and a column-count
+  /// resize slider (10 -> 1 columns) in place of the old width/height sliders.
+  /// OFF keeps the original cards + sliders untouched.
+  @FeatureFlag(
+    category: 'Catalog & Inventory',
+    displayName: 'Boarding-pass Cards',
+    desc:
+        'Redesigned item & inventory card view (large image, ticket details, material barcode) with a column-count resize slider',
+  )
+  static const String boardingPassCards = 'enhancements.boardingPassCards';
+
   /// When ON, the Challans screen shows a type selector (All / Reception /
   /// Delivery) and picking a single type collapses the split Reception|Delivery
   /// view to that one type, full-width. OFF keeps the side-by-side layout.

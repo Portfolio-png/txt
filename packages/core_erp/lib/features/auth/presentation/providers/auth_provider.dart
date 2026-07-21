@@ -436,6 +436,24 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Clears only the current user's own data. No special permission required —
+  /// every signed-in user can reset their personal favorites and search history.
+  Future<bool> clearMyData() async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      await _api.clearMyData();
+      return true;
+    } catch (error) {
+      _errorMessage = _friendly(error, fallback: 'Failed to clear your data.');
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<bool> reseedDemoData({String scenarioId = 'default'}) async {
     if (!can('config.write')) {
       _errorMessage = 'You do not have permission to reseed demo data.';

@@ -104,6 +104,23 @@ class AuthApi {
     }
   }
 
+  /// Clears only the signed-in user's own account-scoped data (favorites,
+  /// search history). Available to every role, including staff.
+  Future<void> clearMyData() async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/me/clear-data'),
+      headers: _authHeaders,
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to clear your data.',
+      );
+    }
+  }
+
   Future<void> reseedDemoData({String scenarioId = 'default'}) async {
     final response = await _client.post(
       Uri.parse('$baseUrl/api/admin/reseed-data'),

@@ -480,7 +480,29 @@ class TopStripProfileCard extends StatelessWidget {
         final compact = constraints.maxWidth < 190;
         return Align(
           alignment: Alignment.centerRight,
-          child: Container(
+          child: PopupMenuButton<String>(
+            tooltip: 'Account',
+            position: PopupMenuPosition.under,
+            onSelected: (value) => _onAccountAction(context, value),
+            itemBuilder: (menuContext) => const [
+              PopupMenuItem<String>(
+                value: 'clear_mine',
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.cleaning_services_outlined),
+                  title: Text('Clear my data'),
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'sign_out',
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.logout),
+                  title: Text('Sign out'),
+                ),
+              ),
+            ],
+            child: Container(
             padding: EdgeInsets.symmetric(
               horizontal: compact ? 8 : 10,
               vertical: compact ? 5 : 6,
@@ -539,9 +561,52 @@ class TopStripProfileCard extends StatelessWidget {
               ],
             ),
           ),
+          ),
         );
       },
     );
+  }
+
+  Future<void> _onAccountAction(BuildContext context, String value) async {
+    final auth = context.read<AuthProvider>();
+    if (value == 'sign_out') {
+      await auth.logoutRemote();
+      return;
+    }
+    if (value == 'clear_mine') {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Clear my data?'),
+          content: const Text(
+            'This removes only your personal data on this account — your saved '
+            'favorites and search history. Shared business records are not affected.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Clear my data'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !context.mounted) return;
+      final ok = await auth.clearMyData();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ok
+                ? 'Your data was cleared.'
+                : (auth.errorMessage ?? 'Could not clear your data.'),
+          ),
+        ),
+      );
+    }
   }
 
   String _roleLabel(String role) {

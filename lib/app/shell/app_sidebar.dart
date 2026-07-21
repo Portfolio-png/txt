@@ -68,7 +68,7 @@ class _AppSidebarState extends State<AppSidebar> {
   ];
 
   static const List<_SidebarItemData> _configuratorItems = <_SidebarItemData>[
-    _SidebarItemData('configurator_employees', 'Employees', Icons.badge_outlined),
+    _SidebarItemData('configurator_employees', 'People', Icons.badge_outlined),
     _SidebarItemData('configurator_clients', 'Clients', Icons.groups_outlined),
     _SidebarItemData(
       'configurator_vendors',
@@ -210,6 +210,11 @@ class _AppSidebarState extends State<AppSidebar> {
     final canManageUsers = context.select<AuthProvider, bool>(
       (auth) => auth.canAccessUserManagement,
     );
+    // Settings & Preferences exposes destructive Workspace Data Controls
+    // (Clear Data / Reset + Reseed), so keep it out of a staff member's sidebar.
+    final canOpenSettings = context.select<AuthProvider, bool>(
+      (auth) => auth.can('config.write'),
+    );
     final mastersOn = ConfigService.instance.isModuleEnabled('masters');
     final isConfiguratorExpanded = _isConfiguratorExpanded;
 
@@ -297,7 +302,7 @@ class _AppSidebarState extends State<AppSidebar> {
                           ),
                         ),
                       ),
-                      if (!widget.compact) ...[
+                      if (!widget.compact && canOpenSettings) ...[
                         const SizedBox(height: 8),
                         InkWell(
                           borderRadius: BorderRadius.circular(30),

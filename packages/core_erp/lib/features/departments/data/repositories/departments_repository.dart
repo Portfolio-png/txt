@@ -178,8 +178,10 @@ class DepartmentsRepository {
     String address,
     String employeePhotoUrl,
     String employmentType,
-    String barcodeId,
-  ) async {
+    String barcodeId, {
+    String email = '',
+    String dateOfBirth = '',
+  }) async {
     if (useMockResponses) {
       await Future<void>.delayed(const Duration(milliseconds: 400));
       final newEmp = EmployeeDefinition(
@@ -196,6 +198,8 @@ class DepartmentsRepository {
         employeePhotoUrl: employeePhotoUrl,
         employmentType: employmentType,
         barcodeId: barcodeId,
+        email: email,
+        dateOfBirth: dateOfBirth,
         createdAt: DateTime.now().toIso8601String(),
         updatedAt: DateTime.now().toIso8601String(),
       );
@@ -219,6 +223,8 @@ class DepartmentsRepository {
         'employeePhotoUrl': employeePhotoUrl,
         'employmentType': employmentType,
         'barcodeId': barcodeId,
+        'email': email,
+        'dateOfBirth': dateOfBirth,
       }),
     );
     final payload = _decodeJsonObject(response.body);
@@ -247,8 +253,10 @@ class DepartmentsRepository {
     String address,
     String employeePhotoUrl,
     String employmentType,
-    String barcodeId,
-  ) async {
+    String barcodeId, {
+    String? email,
+    String? dateOfBirth,
+  }) async {
     if (useMockResponses) {
       await Future<void>.delayed(const Duration(milliseconds: 400));
       final idx = _mockEmployees.indexWhere((e) => e.id == id);
@@ -266,6 +274,8 @@ class DepartmentsRepository {
         employeePhotoUrl: employeePhotoUrl,
         employmentType: employmentType,
         barcodeId: barcodeId,
+        email: email,
+        dateOfBirth: dateOfBirth,
         updatedAt: DateTime.now().toIso8601String(),
       );
       _mockEmployees[idx] = updated;
@@ -288,6 +298,8 @@ class DepartmentsRepository {
         'employeePhotoUrl': employeePhotoUrl,
         'employmentType': employmentType,
         'barcodeId': barcodeId,
+        if (email != null) 'email': email,
+        if (dateOfBirth != null) 'dateOfBirth': dateOfBirth,
       }),
     );
     final payload = _decodeJsonObject(response.body);
@@ -301,6 +313,64 @@ class DepartmentsRepository {
     return EmployeeDefinition.fromJson(
       payload['employee'] as Map<String, dynamic>,
     );
+  }
+
+  /// Create a brand-new login account for an in-house employee and link it.
+  Future<EmployeeDefinition> createEmployeeLogin(
+    int employeeId, {
+    required String email,
+    required String password,
+    String role = 'user',
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/employees/$employeeId/create-login');
+    final response = await _client.post(
+      uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({'email': email, 'password': password, 'role': role}),
+    );
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw DepartmentsApiException(
+        payload['error'] as String? ?? 'Failed to create login.',
+      );
+    }
+    return EmployeeDefinition.fromJson(payload['employee'] as Map<String, dynamic>);
+  }
+
+  /// Link an in-house employee to an existing login account.
+  Future<EmployeeDefinition> linkEmployeeLogin(int employeeId, int userId) async {
+    final uri = Uri.parse('$baseUrl/api/employees/$employeeId/link-login');
+    final response = await _client.post(
+      uri,
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({'userId': userId}),
+    );
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw DepartmentsApiException(
+        payload['error'] as String? ?? 'Failed to link login.',
+      );
+    }
+    return EmployeeDefinition.fromJson(payload['employee'] as Map<String, dynamic>);
+  }
+
+  /// Unlink an employee from its login (the account itself is kept).
+  Future<EmployeeDefinition> unlinkEmployeeLogin(int employeeId) async {
+    final uri = Uri.parse('$baseUrl/api/employees/$employeeId/unlink-login');
+    final response = await _client.post(uri, headers: const {'Content-Type': 'application/json'});
+    final payload = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw DepartmentsApiException(
+        payload['error'] as String? ?? 'Failed to unlink login.',
+      );
+    }
+    return EmployeeDefinition.fromJson(payload['employee'] as Map<String, dynamic>);
   }
 
   Future<void> deleteEmployee(int id) async {

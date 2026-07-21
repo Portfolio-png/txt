@@ -233,7 +233,7 @@ const DEFAULT_ROLE_PERMISSIONS = {
     'users.create_admin': false,
     'users.update_status': true,
     'users.reset_password': true,
-    'users.manage_permissions': false,
+    'users.manage_permissions': true,
     'sessions.manage': true,
     'audit.read': true,
     'config.read': true,
@@ -1212,6 +1212,36 @@ async function generateUniqueMobilePin() {
   throw new Error('Unable to generate a unique 4-digit mobile PIN.');
 }
 
+// Derive a staff member's simple login code from an ISO date of birth: the
+// DDMM (day + month), e.g. '1990-03-15' -> '1503'.
+function deriveDobPin(dob) {
+  const m = String(dob || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  return `${m[3]}${m[2]}`;
+}
+
+// Return `preferred` if that 4-digit code is free, else the next free code
+// (wrapping through 0000-9999, skipping 0000 which is reserved for the super
+// admin). Excludes a user so re-deriving that user's own code is a no-op.
+async function nextFreeMobilePin(preferred, excludeUserId = null) {
+  const isFree = async (pin) => {
+    if (pin === '0000') return false;
+    const row = await get(
+      'SELECT id FROM users WHERE mobile_pin = ? AND (? IS NULL OR id != ?)',
+      [pin, excludeUserId, excludeUserId],
+    );
+    return !row;
+  };
+  const start = Number(preferred);
+  if (Number.isFinite(start) && String(preferred).length === 4) {
+    for (let i = 0; i < 10000; i++) {
+      const candidate = String((start + i) % 10000).padStart(4, '0');
+      if (await isFree(candidate)) return candidate;
+    }
+  }
+  return generateUniqueMobilePin();
+}
+
 async function createUserAccount({
   name,
   email,
@@ -1307,20 +1337,42 @@ async function bootstrapSuperAdminIfNeeded() {
   if (Number(countRow?.count || 0) > 0) {
     return;
   }
-  const email = process.env.PAPER_SUPER_ADMIN_EMAIL || 'super@paper.local';
-  const password = process.env.PAPER_SUPER_ADMIN_PASSWORD || 'Paper@12345';
-  const name = process.env.PAPER_SUPER_ADMIN_NAME || 'Super Admin';
+  const email = String(process.env.PAPER_SUPER_ADMIN_EMAIL || '').trim();
+  const password = String(process.env.PAPER_SUPER_ADMIN_PASSWORD || '').trim();
+
+  // Explicit break-glass super admin (any environment) when both are provided.
+  if (email && password) {
+    const name = process.env.PAPER_SUPER_ADMIN_NAME || 'Super Admin';
+    await createUserAccount({ name, email, password, role: 'super_admin' });
+    console.log('[bootstrap] Break-glass super admin created from PAPER_SUPER_ADMIN_* env.');
+    return;
+  }
+
+  // Managed client deployment (reports to the control plane) or explicitly told
+  // to skip: NO baked-in god login. The deployment starts with no users and the
+  // vendor provisions the first admin from the Falcon View. Break-glass is
+  // always available by setting PAPER_SUPER_ADMIN_EMAIL + _PASSWORD.
+  const isManaged =
+    !!String(process.env.CONTROL_PLANE_URL || '').trim() ||
+    parseBooleanEnv(process.env.PAPER_DISABLE_DEFAULT_SUPERADMIN, false);
+  if (isManaged) {
+    console.log(
+      '[bootstrap] Managed deployment — no default super admin. Provision the first admin from the control plane (or set PAPER_SUPER_ADMIN_* for break-glass).',
+    );
+    return;
+  }
+
+  // Dev / standalone (no control plane): keep the convenient default so local
+  // runs can sign in immediately.
   await createUserAccount({
-    name,
-    email,
-    password,
+    name: 'Super Admin',
+    email: 'super@paper.local',
+    password: 'Paper@12345',
     role: 'super_admin',
   });
-  if (!process.env.PAPER_SUPER_ADMIN_PASSWORD) {
-    console.warn(
-      'Bootstrapped default super admin: super@paper.local / Paper@12345. Set PAPER_SUPER_ADMIN_* before production use.',
-    );
-  }
+  console.warn(
+    'Bootstrapped default super admin: super@paper.local / Paper@12345 (DEV ONLY). Set PAPER_SUPER_ADMIN_* or CONTROL_PLANE_URL for managed deployments.',
+  );
 }
 
 async function seedRolePermissions() {
@@ -17809,11 +17861,9 @@ app.post('/api/auth/login', async (req, res) => {
 
     let user;
     if (pin && pin.length === 4) {
-      if (pin === '0000') {
-        user = await get('SELECT * FROM users WHERE role = ? LIMIT 1', ['super_admin']);
-      } else {
-        user = await get('SELECT * FROM users WHERE mobile_pin = ?', [pin]);
-      }
+      // Code login: match the user's assigned 4-digit code. (No hardcoded
+      // master PIN — that was a backdoor into the super admin account.)
+      user = await get('SELECT * FROM users WHERE mobile_pin = ?', [pin]);
     } else {
       user = await get('SELECT * FROM users WHERE email = ?', [email]);
     }
@@ -18767,7 +18817,13 @@ app.delete('/api/users/:id', requireRoles('super_admin', 'admin'), requirePermis
     if (!target) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
-    
+    if (targetId === req.user.id) {
+      return res.status(400).json({ success: false, error: 'You cannot delete your own account.' });
+    }
+    if (!canManageUser(req.user.role, target.role)) {
+      return res.status(403).json({ success: false, error: 'You can only delete accounts below your own role level.' });
+    }
+
     const fs = require('fs');
     const path = require('path');
     const backupDir = path.join(__dirname, 'backups');
@@ -18825,8 +18881,8 @@ app.patch('/api/users/:id/password', requirePermission('users.reset_password'), 
       res.status(404).json({ success: false, error: 'User not found.' });
       return;
     }
-    if (req.user.role === 'admin' && target.role !== 'user') {
-      res.status(403).json({ success: false, error: 'Admins can reset user passwords only.' });
+    if (!canManageUser(req.user.role, target.role)) {
+      res.status(403).json({ success: false, error: 'You can only reset passwords for accounts below your own role level.' });
       return;
     }
     const newPassword = String(req.body?.newPassword || req.body?.password || '');
@@ -18870,8 +18926,8 @@ app.patch('/api/users/:id/status', requirePermission('users.update_status'), asy
       res.status(400).json({ success: false, user: null, error: 'You cannot deactivate your own account.' });
       return;
     }
-    if (req.user.role === 'admin' && target.role !== 'user') {
-      res.status(403).json({ success: false, user: null, error: 'Admins can update user accounts only.' });
+    if (!canManageUser(req.user.role, target.role)) {
+      res.status(403).json({ success: false, user: null, error: 'You can only update accounts below your own role level.' });
       return;
     }
     await run('UPDATE users SET is_active = ?, updated_at = ? WHERE id = ?', [
@@ -20131,6 +20187,28 @@ app.post(
     }
   },
 );
+
+// Personal data reset: any signed-in user (including staff) can wipe THEIR OWN
+// account-scoped data — favorites and search history — without touching shared
+// business records. Admins use /api/admin/clear-data for a full workspace wipe.
+app.post('/api/me/clear-data', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    await run('BEGIN TRANSACTION');
+    try {
+      await run('DELETE FROM user_favorite_items WHERE user_id = ?', [userId]);
+      await run('DELETE FROM search_history WHERE user_id = ?', [userId]);
+      await run('DELETE FROM search_clicks WHERE user_id = ?', [userId]);
+      await run('COMMIT');
+    } catch (inner) {
+      await run('ROLLBACK');
+      throw inner;
+    }
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, error: error.message });
+  }
+});
 
 app.post(
   '/api/admin/reseed-data',
@@ -25025,10 +25103,36 @@ function rowToEmployeeDto(row) {
     employmentType: row.employment_type || 'in-house',
     status: row.status || 'active',
     barcodeId: row.barcode_id || '',
+    email: row.email || '',
+    dateOfBirth: row.date_of_birth || '',
     isArchived: Number(row.is_archived || 0) === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    // Unified People: the linked login/profile account (null when none).
+    userId: row.user_id != null ? Number(row.user_id) : null,
+    login: row.user_id != null
+      ? {
+          userId: Number(row.user_id),
+          email: row.login_email || '',
+          role: row.login_role || '',
+          isActive: Number(row.login_is_active || 0) === 1,
+          // The simple 4-digit staff login code (from DOB, adjusted on clash).
+          loginCode: row.login_mobile_pin || '',
+        }
+      : null,
   };
+}
+
+// Re-fetch an employee joined to its linked login account (for DTOs that need
+// the unified People shape after a write).
+async function getEmployeeWithLogin(id) {
+  return get(
+    `SELECT e.*, u.email AS login_email, u.role AS login_role,
+            u.is_active AS login_is_active, u.mobile_pin AS login_mobile_pin
+       FROM employees e LEFT JOIN users u ON u.id = e.user_id
+      WHERE e.id = ?`,
+    [id],
+  );
 }
 
 app.get('/api/departments', requirePermission('config.read'), async (_req, res) => {
@@ -25234,7 +25338,18 @@ app.delete('/api/departments/:id', requirePermission('config.write'), async (req
 
 app.get('/api/employees', requirePermission('config.read'), async (_req, res) => {
   try {
-    const rows = await all('SELECT * FROM employees WHERE is_archived = 0 ORDER BY name ASC');
+    // Unified People read: each employee joined to its login account (if any).
+    const rows = await all(
+      `SELECT e.*,
+              u.email AS login_email,
+              u.role AS login_role,
+              u.is_active AS login_is_active,
+              u.mobile_pin AS login_mobile_pin
+         FROM employees e
+         LEFT JOIN users u ON u.id = e.user_id
+        WHERE e.is_archived = 0
+        ORDER BY e.name ASC`,
+    );
     res.json({ success: true, employees: rows.map(rowToEmployeeDto), error: null });
   } catch (error) {
     res.status(500).json({ success: false, employees: [], error: error.message });
@@ -25243,16 +25358,16 @@ app.get('/api/employees', requirePermission('config.read'), async (_req, res) =>
 
 app.post('/api/employees', requirePermission('config.write'), async (req, res) => {
   try {
-    const { departmentId, name, role = '', phone = '', aadharNumber = '', aadharPhotoUrl = '', panNumber = '', panPhotoUrl = '', address = '', employeePhotoUrl = '', employmentType = 'in-house', status = 'active', barcodeId = '' } = req.body;
+    const { departmentId, name, role = '', phone = '', aadharNumber = '', aadharPhotoUrl = '', panNumber = '', panPhotoUrl = '', address = '', employeePhotoUrl = '', employmentType = 'in-house', status = 'active', barcodeId = '', email = '', dateOfBirth = '' } = req.body;
     if (!name || !departmentId) {
       return res.status(400).json({ success: false, error: 'Name and departmentId are required' });
     }
     const now = new Date().toISOString();
     const result = await run(
-      'INSERT INTO employees (department_id, name, role, phone, aadhar_number, aadhar_photo_url, pan_number, pan_photo_url, address, employee_photo_url, employment_type, status, barcode_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [departmentId, name.trim(), role.trim(), phone.trim(), aadharNumber.trim(), aadharPhotoUrl, panNumber.trim(), panPhotoUrl, address.trim(), employeePhotoUrl, employmentType, status, barcodeId.trim(), now, now]
+      'INSERT INTO employees (department_id, name, role, phone, aadhar_number, aadhar_photo_url, pan_number, pan_photo_url, address, employee_photo_url, employment_type, status, barcode_id, email, date_of_birth, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [departmentId, name.trim(), role.trim(), phone.trim(), aadharNumber.trim(), aadharPhotoUrl, panNumber.trim(), panPhotoUrl, address.trim(), employeePhotoUrl, employmentType, status, barcodeId.trim(), String(email || '').trim(), String(dateOfBirth || '').trim(), now, now]
     );
-    const row = await get('SELECT * FROM employees WHERE id = ?', [result.lastID]);
+    const row = await getEmployeeWithLogin(result.lastID);
     res.status(201).json({ success: true, employee: rowToEmployeeDto(row), error: null });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -25262,11 +25377,13 @@ app.post('/api/employees', requirePermission('config.write'), async (req, res) =
 app.patch('/api/employees/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const { name, role, phone, aadharNumber, aadharPhotoUrl, panNumber, panPhotoUrl, address, employeePhotoUrl, employmentType, status, departmentId, barcodeId } = req.body;
+    const { name, role, phone, aadharNumber, aadharPhotoUrl, panNumber, panPhotoUrl, address, employeePhotoUrl, employmentType, status, departmentId, barcodeId, email, dateOfBirth } = req.body;
     const existing = await get('SELECT * FROM employees WHERE id = ?', [id]);
     if (!existing) {
       return res.status(404).json({ success: false, error: 'Employee not found' });
     }
+    const newEmail = email !== undefined ? String(email || '').trim() : (existing.email || '');
+    const newDob = dateOfBirth !== undefined ? String(dateOfBirth || '').trim() : (existing.date_of_birth || '');
     const newName = name !== undefined ? name.trim() : existing.name;
     const newRole = role !== undefined ? role.trim() : existing.role;
     const newPhone = phone !== undefined ? phone.trim() : existing.phone;
@@ -25282,10 +25399,19 @@ app.patch('/api/employees/:id', requirePermission('config.write'), async (req, r
     const newBarcodeId = barcodeId !== undefined ? barcodeId.trim() : existing.barcode_id;
 
     await run(
-      'UPDATE employees SET name = ?, role = ?, phone = ?, aadhar_number = ?, aadhar_photo_url = ?, pan_number = ?, pan_photo_url = ?, address = ?, employee_photo_url = ?, employment_type = ?, status = ?, department_id = ?, barcode_id = ?, updated_at = ? WHERE id = ?',
-      [newName, newRole, newPhone, newAadhar, newAadharPhoto, newPan, newPanPhoto, newAddress, newEmployeePhoto, newEmpType, newStatus, newDep, newBarcodeId, new Date().toISOString(), id]
+      'UPDATE employees SET name = ?, role = ?, phone = ?, aadhar_number = ?, aadhar_photo_url = ?, pan_number = ?, pan_photo_url = ?, address = ?, employee_photo_url = ?, employment_type = ?, status = ?, department_id = ?, barcode_id = ?, email = ?, date_of_birth = ?, updated_at = ? WHERE id = ?',
+      [newName, newRole, newPhone, newAadhar, newAadharPhoto, newPan, newPanPhoto, newAddress, newEmployeePhoto, newEmpType, newStatus, newDep, newBarcodeId, newEmail, newDob, new Date().toISOString(), id]
     );
-    const row = await get('SELECT * FROM employees WHERE id = ?', [id]);
+    // Keep the staff login code in sync with DOB: if the birth date changed and
+    // this employee has a linked login, re-derive their DDMM code (next free).
+    if (existing.user_id && newDob !== (existing.date_of_birth || '')) {
+      const dobPin = deriveDobPin(newDob);
+      if (dobPin) {
+        const pin = await nextFreeMobilePin(dobPin, existing.user_id);
+        await run('UPDATE users SET mobile_pin = ?, updated_at = ? WHERE id = ?', [pin, new Date().toISOString(), existing.user_id]);
+      }
+    }
+    const row = await getEmployeeWithLogin(id);
     res.json({ success: true, employee: rowToEmployeeDto(row), error: null });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -25301,6 +25427,119 @@ app.delete('/api/employees/:id', requirePermission('config.write'), async (req, 
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+// ---- Unified People: connect an in-house employee to a login/profile ---------
+
+// Create a brand-new login account for an in-house employee and link it.
+app.post(
+  '/api/employees/:id/create-login',
+  requireRoles('super_admin', 'admin'),
+  requirePermission('users.create_user'),
+  async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const emp = await get('SELECT * FROM employees WHERE id = ?', [id]);
+      if (!emp) return res.status(404).json({ success: false, error: 'Employee not found.' });
+      if ((emp.employment_type || 'in-house') !== 'in-house') {
+        return res.status(400).json({ success: false, error: 'Only in-house employees can be given a login.' });
+      }
+      if (emp.user_id) {
+        return res.status(409).json({ success: false, error: 'This employee already has a linked login.' });
+      }
+      const email = String(req.body?.email || emp.email || '').trim();
+      if (!email) return res.status(400).json({ success: false, error: 'An email is required to create a login.' });
+      const password = String(req.body?.password || '');
+      // Employee logins default to the 'user' (staff) role. Elevating to 'admin'
+      // requires the admin-creation permission; super_admin cannot be created here.
+      let role = String(req.body?.role || 'user').trim();
+      if (role === 'super_admin') {
+        return res.status(403).json({ success: false, error: 'Cannot create a super admin from an employee.' });
+      }
+      if (role === 'admin' && !hasPermission(req, 'users.create_admin')) {
+        return res.status(403).json({ success: false, error: 'You cannot grant admin access.' });
+      }
+      if (role !== 'admin') role = 'user';
+
+      const user = await createUserAccount({
+        name: emp.name,
+        email,
+        password,
+        role,
+        createdByUserId: req.user.id,
+      });
+      await run('UPDATE employees SET user_id = ?, email = ?, updated_at = ? WHERE id = ?', [
+        user.id, email, new Date().toISOString(), id,
+      ]);
+      // Simple staff login: use the employee's DDMM (from DOB) as their 4-digit
+      // code, or the next free code if that one is already taken.
+      const dobPin = deriveDobPin(emp.date_of_birth);
+      if (dobPin) {
+        const pin = await nextFreeMobilePin(dobPin, user.id);
+        await run('UPDATE users SET mobile_pin = ? WHERE id = ?', [pin, user.id]);
+      }
+      await logAuthEvent({
+        eventType: 'user_created',
+        actorUserId: req.user.id,
+        targetUserId: user.id,
+        ipAddress: getRequestIp(req),
+        userAgent: getRequestUserAgent(req),
+        metadata: { role, viaEmployee: id },
+      });
+      const row = await getEmployeeWithLogin(id);
+      res.status(201).json({ success: true, employee: rowToEmployeeDto(row), error: null });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({ success: false, error: error.message });
+    }
+  },
+);
+
+// Link an in-house employee to an EXISTING login account.
+app.post(
+  '/api/employees/:id/link-login',
+  requireRoles('super_admin', 'admin'),
+  requirePermission('config.write'),
+  async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const userId = Number(req.body?.userId);
+      const emp = await get('SELECT * FROM employees WHERE id = ?', [id]);
+      if (!emp) return res.status(404).json({ success: false, error: 'Employee not found.' });
+      if ((emp.employment_type || 'in-house') !== 'in-house') {
+        return res.status(400).json({ success: false, error: 'Only in-house employees can be linked to a login.' });
+      }
+      if (!Number.isFinite(userId)) return res.status(400).json({ success: false, error: 'userId is required.' });
+      const user = await get('SELECT id FROM users WHERE id = ?', [userId]);
+      if (!user) return res.status(404).json({ success: false, error: 'Login account not found.' });
+      const other = await get('SELECT id FROM employees WHERE user_id = ? AND id != ?', [userId, id]);
+      if (other) return res.status(409).json({ success: false, error: 'That login is already linked to another employee.' });
+
+      await run('UPDATE employees SET user_id = ?, updated_at = ? WHERE id = ?', [userId, new Date().toISOString(), id]);
+      const row = await getEmployeeWithLogin(id);
+      res.json({ success: true, employee: rowToEmployeeDto(row), error: null });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({ success: false, error: error.message });
+    }
+  },
+);
+
+// Unlink an employee from its login (the login account itself is kept).
+app.post(
+  '/api/employees/:id/unlink-login',
+  requireRoles('super_admin', 'admin'),
+  requirePermission('config.write'),
+  async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const emp = await get('SELECT * FROM employees WHERE id = ?', [id]);
+      if (!emp) return res.status(404).json({ success: false, error: 'Employee not found.' });
+      await run('UPDATE employees SET user_id = NULL, updated_at = ? WHERE id = ?', [new Date().toISOString(), id]);
+      const row = await getEmployeeWithLogin(id);
+      res.json({ success: true, employee: rowToEmployeeDto(row), error: null });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({ success: false, error: error.message });
+    }
+  },
+);
 
 app.post('/api/mobile/stage-item', requireAuth, async (req, res) => {
   try {
@@ -25758,6 +25997,7 @@ function startServer() {
         dbReady = true;
         console.log('Database schema ready.');
         console.log(`Paper backend running on port ${PORT} using ${DB_PATH}`);
+        startTelemetryEmitter();
       } catch (error) {
         dbInitError = error;
         console.error('Failed to initialize backend database/migrations:', error);
@@ -25766,6 +26006,235 @@ function startServer() {
     });
     server.on('error', reject);
   });
+}
+
+// ============================================================================
+// Control-plane telemetry emitter (OPT-IN, disclosed benchmarking).
+// Pushes a periodic snapshot — business KPIs + user roster — to the vendor
+// Falcon View control plane. Disabled unless CONTROL_PLANE_URL + DEPLOYMENT_KEY
+// are set, so it never runs for a client who has not agreed. See
+// control-plane/README.md.
+// ============================================================================
+const CONTROL_PLANE_URL = process.env.CONTROL_PLANE_URL || '';
+const TELEMETRY_INTERVAL_MS = Number(process.env.TELEMETRY_INTERVAL_MS || 3600000);
+// Resolved once the emitter starts (see getOrCreateDeploymentIdentity).
+let DEPLOYMENT_ID = '';
+let DEPLOYMENT_KEY = '';
+let DEPLOYMENT_NAME = '';
+
+// Zero-friction enrollment: the deployment generates and persists its own id +
+// key on first run (a small file beside the data volume), so onboarding a
+// client only needs CONTROL_PLANE_URL — no per-client key to hand off or manage.
+// Explicit DEPLOYMENT_* env vars still win if the vendor wants to pin them.
+function getOrCreateDeploymentIdentity() {
+  let id = String(process.env.DEPLOYMENT_ID || '').trim();
+  let key = String(process.env.DEPLOYMENT_KEY || '').trim();
+  let name = String(process.env.DEPLOYMENT_NAME || '').trim();
+  if (id && key) return { id, key, name: name || id };
+  const identityPath = path.join(path.dirname(DB_PATH), 'deployment-identity.json');
+  try {
+    if (fs.existsSync(identityPath)) {
+      const saved = JSON.parse(fs.readFileSync(identityPath, 'utf8'));
+      id = id || saved.id || '';
+      key = key || saved.key || '';
+      name = name || saved.name || '';
+    }
+  } catch (_) { /* fall through and regenerate */ }
+  if (!key) key = 'dk_' + crypto.randomBytes(16).toString('hex');
+  if (!id) id = 'dep_' + crypto.randomBytes(6).toString('hex');
+  if (!name) name = id;
+  try {
+    fs.writeFileSync(identityPath, JSON.stringify({ id, key, name }, null, 2));
+  } catch (_) { /* non-fatal; will regenerate next boot */ }
+  return { id, key, name };
+}
+
+async function telemetryCount(sql, params = []) {
+  try {
+    const row = await get(sql, params);
+    return Number((row && Object.values(row)[0]) || 0);
+  } catch (_) {
+    return 0;
+  }
+}
+
+async function computeTelemetrySnapshot() {
+  const metrics = {
+    orders: await telemetryCount('SELECT COUNT(*) c FROM order_headers'),
+    ordersOpen: await telemetryCount("SELECT COUNT(DISTINCT order_no) c FROM order_items WHERE COALESCE(status,'') != 'completed'"),
+    challans: await telemetryCount('SELECT COUNT(*) c FROM delivery_challans'),
+    items: await telemetryCount('SELECT COUNT(*) c FROM items WHERE COALESCE(is_archived,0)=0'),
+    inventoryOnHand: Math.round(await telemetryCount('SELECT COALESCE(SUM(on_hand_qty),0) c FROM materials')),
+    productionRuns: await telemetryCount('SELECT COUNT(*) c FROM production_runs'),
+    clients: await telemetryCount('SELECT COUNT(*) c FROM clients'),
+    activeUsers: await telemetryCount('SELECT COUNT(*) c FROM users WHERE is_active=1'),
+  };
+  let users = [];
+  try {
+    const rows = await all('SELECT id, name, email, role, is_active FROM users');
+    for (const u of rows) {
+      let lastLogin = '';
+      try {
+        const s = await get('SELECT MAX(created_at) t FROM auth_sessions WHERE user_id = ?', [u.id]);
+        lastLogin = s && s.t ? s.t : '';
+      } catch (_) { /* auth_sessions may be absent */ }
+      users.push({
+        id: u.id, name: u.name, email: u.email, role: u.role,
+        isActive: Number(u.is_active) !== 0, lastLogin,
+      });
+    }
+  } catch (_) { users = []; }
+  return {
+    deploymentId: DEPLOYMENT_ID,
+    deploymentName: DEPLOYMENT_NAME,
+    appVersion: process.env.APP_VERSION || '',
+    capturedAt: new Date().toISOString(),
+    metrics,
+    users,
+  };
+}
+
+function postTelemetryJson(urlStr, headers, bodyObj) {
+  return new Promise((resolve, reject) => {
+    try {
+      const u = new URL(urlStr);
+      const lib = u.protocol === 'https:' ? require('https') : require('http');
+      const data = Buffer.from(JSON.stringify(bodyObj));
+      const request = lib.request(
+        {
+          hostname: u.hostname,
+          port: u.port || (u.protocol === 'https:' ? 443 : 80),
+          path: u.pathname + u.search,
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'content-length': data.length, ...headers },
+        },
+        (r) => { r.resume(); r.on('end', () => resolve(r.statusCode)); },
+      );
+      request.on('error', reject);
+      request.setTimeout(15000, () => request.destroy(new Error('telemetry push timeout')));
+      request.write(data);
+      request.end();
+    } catch (e) { reject(e); }
+  });
+}
+
+async function pushTelemetryOnce() {
+  if (!CONTROL_PLANE_URL || !DEPLOYMENT_KEY) return;
+  try {
+    const snapshot = await computeTelemetrySnapshot();
+    const status = await postTelemetryJson(
+      CONTROL_PLANE_URL.replace(/\/$/, '') + '/api/ingest',
+      { 'x-deployment-key': DEPLOYMENT_KEY },
+      snapshot,
+    );
+    console.log('[telemetry] snapshot pushed to control plane (status ' + status + ')');
+  } catch (e) {
+    console.warn('[telemetry] push failed:', e.message);
+  }
+}
+
+// Generic request helper (GET/POST) to the control plane.
+function controlPlaneRequest(method, urlStr, headers, bodyObj) {
+  return new Promise((resolve, reject) => {
+    try {
+      const u = new URL(urlStr);
+      const lib = u.protocol === 'https:' ? require('https') : require('http');
+      const data = bodyObj ? Buffer.from(JSON.stringify(bodyObj)) : null;
+      const h = { ...headers };
+      if (data) { h['content-type'] = 'application/json'; h['content-length'] = data.length; }
+      const request = lib.request(
+        {
+          hostname: u.hostname,
+          port: u.port || (u.protocol === 'https:' ? 443 : 80),
+          path: u.pathname + u.search,
+          method,
+          headers: h,
+        },
+        (r) => {
+          let raw = '';
+          r.on('data', (c) => { raw += c; });
+          r.on('end', () => resolve({ status: r.statusCode, body: raw }));
+        },
+      );
+      request.on('error', reject);
+      request.setTimeout(15000, () => request.destroy(new Error('control plane request timeout')));
+      if (data) request.write(data);
+      request.end();
+    } catch (e) { reject(e); }
+  });
+}
+
+// Pull vendor-issued commands from the control plane and apply them. Today the
+// only command is create_admin — the vendor provisions an admin login from the
+// Falcon View; the client applies it here (no inbound connection to the client).
+async function pullAndApplyControlCommands() {
+  if (!CONTROL_PLANE_URL || !DEPLOYMENT_KEY) return;
+  const base = CONTROL_PLANE_URL.replace(/\/$/, '');
+  try {
+    const res = await controlPlaneRequest('GET', base + '/api/commands', { 'x-deployment-key': DEPLOYMENT_KEY });
+    if (res.status !== 200) return;
+    let payload = {};
+    try { payload = JSON.parse(res.body); } catch (_) { return; }
+    const commands = Array.isArray(payload.commands) ? payload.commands : [];
+    for (const cmd of commands) {
+      let status = 'done';
+      let result = '';
+      try {
+        if (cmd.type === 'create_admin') {
+          const p = cmd.payload || {};
+          const email = normalizeEmail(p.email || '');
+          const existing = await get('SELECT id FROM users WHERE email = ?', [email]);
+          if (existing) {
+            result = 'admin already exists';
+          } else {
+            const user = await createUserAccount({
+              name: p.name || email,
+              email,
+              password: p.password,
+              role: 'admin',
+            });
+            result = 'admin created id=' + user.id;
+          }
+        } else {
+          status = 'failed';
+          result = 'unsupported command type: ' + cmd.type;
+        }
+      } catch (e) {
+        status = 'failed';
+        result = String((e && e.message) || e).slice(0, 300);
+      }
+      await controlPlaneRequest(
+        'POST',
+        base + '/api/commands/' + encodeURIComponent(cmd.id) + '/ack',
+        { 'x-deployment-key': DEPLOYMENT_KEY },
+        { status, result },
+      ).catch(() => {});
+    }
+    if (commands.length) {
+      console.log('[control] applied ' + commands.length + ' command(s) from control plane');
+    }
+  } catch (e) {
+    console.warn('[control] command pull failed:', e.message);
+  }
+}
+
+function startTelemetryEmitter() {
+  if (!CONTROL_PLANE_URL) {
+    console.log('[telemetry] disabled — set CONTROL_PLANE_URL to enable disclosed benchmarking + control-plane provisioning.');
+    return;
+  }
+  const identity = getOrCreateDeploymentIdentity();
+  DEPLOYMENT_ID = identity.id;
+  DEPLOYMENT_KEY = identity.key;
+  DEPLOYMENT_NAME = identity.name;
+  console.log('[telemetry] deployment id ' + DEPLOYMENT_ID + ' (self-enrolled)');
+  const cmdMs = Number(process.env.COMMAND_POLL_MS || 60000);
+  setTimeout(() => { pushTelemetryOnce(); pullAndApplyControlCommands(); }, 10000);
+  setInterval(() => { pushTelemetryOnce(); }, TELEMETRY_INTERVAL_MS);
+  setInterval(() => { pullAndApplyControlCommands(); }, cmdMs);
+  console.log('[telemetry] emitter enabled -> ' + CONTROL_PLANE_URL
+    + ' (telemetry every ' + Math.round(TELEMETRY_INTERVAL_MS / 60000) + 'm, commands every '
+    + Math.round(cmdMs / 1000) + 's)');
 }
 
 if (require.main === module) {

@@ -27,6 +27,8 @@ import '../../domain/item_definition.dart';
 import '../../domain/item_inputs.dart';
 
 import '../providers/items_provider.dart';
+import '../../../../core/widgets/boarding_pass_card.dart';
+import '../../domain/item_asset.dart';
 import '../widgets/item_card.dart';
 import '../widgets/item_detail_panel.dart';
 
@@ -94,6 +96,9 @@ class _ItemsScreenState extends State<ItemsScreen> {
   bool _isGridView = false;
   double _cardWidth = 200;
   double _cardHeight = 250;
+  // Boarding-pass card view: number of columns the resize slider requests
+  // (clamped to what the desktop width can fit). 1 = full-width hero, up to 10.
+  int _columnCount = 4;
 
   @override
   Widget build(BuildContext context) {
@@ -157,8 +162,10 @@ class _ItemsScreenState extends State<ItemsScreen> {
             ),
             toolbar: _ItemsToolbar(
               isGridView: _isGridView,
+              boardingPass: FeatureFlags.isEnabled(FeatureKeys.boardingPassCards),
               cardWidth: _cardWidth,
               cardHeight: _cardHeight,
+              columnCount: _columnCount,
               onToggleView: () {
                 setState(() {
                   _isGridView = !_isGridView;
@@ -172,6 +179,11 @@ class _ItemsScreenState extends State<ItemsScreen> {
               onCardHeightChanged: (value) {
                 setState(() {
                   _cardHeight = value;
+                });
+              },
+              onColumnCountChanged: (value) {
+                setState(() {
+                  _columnCount = value;
                 });
               },
             ),
@@ -190,12 +202,18 @@ class _ItemsScreenState extends State<ItemsScreen> {
                     icon: Icons.inventory_outlined,
                   )
                 : _isGridView
-                ? _ItemsGrid(
-                    items: items.filteredItems,
-                    cardWidth: _cardWidth,
-                    cardHeight: _cardHeight,
-                    onCreatePipeline: widget.onCreatePipeline,
-                  )
+                ? (FeatureFlags.isEnabled(FeatureKeys.boardingPassCards)
+                      ? _ItemsBoardingGrid(
+                          items: items.filteredItems,
+                          columnCount: _columnCount,
+                          onCreatePipeline: widget.onCreatePipeline,
+                        )
+                      : _ItemsGrid(
+                          items: items.filteredItems,
+                          cardWidth: _cardWidth,
+                          cardHeight: _cardHeight,
+                          onCreatePipeline: widget.onCreatePipeline,
+                        ))
                 : _ItemsTable(
                     items: items.filteredItems,
                     onCreatePipeline: widget.onCreatePipeline,
@@ -210,19 +228,25 @@ class _ItemsScreenState extends State<ItemsScreen> {
 class _ItemsToolbar extends StatelessWidget {
   const _ItemsToolbar({
     required this.isGridView,
+    required this.boardingPass,
     required this.cardWidth,
     required this.cardHeight,
+    required this.columnCount,
     required this.onToggleView,
     required this.onCardWidthChanged,
     required this.onCardHeightChanged,
+    required this.onColumnCountChanged,
   });
 
   final bool isGridView;
+  final bool boardingPass;
   final double cardWidth;
   final double cardHeight;
+  final int columnCount;
   final VoidCallback onToggleView;
   final ValueChanged<double> onCardWidthChanged;
   final ValueChanged<double> onCardHeightChanged;
+  final ValueChanged<int> onColumnCountChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -261,7 +285,13 @@ class _ItemsToolbar extends StatelessWidget {
           ),
 
         _ItemsViewToggleButton(isGridView: isGridView, onTap: onToggleView),
-        if (isGridView)
+        if (isGridView && boardingPass)
+          _ItemsColumnSlider(
+            columnCount: columnCount,
+            maxColumns: _maxColumnsForWidth(MediaQuery.of(context).size.width),
+            onChanged: onColumnCountChanged,
+          )
+        else if (isGridView)
           _ItemsGridSizeControls(
             cardWidth: cardWidth,
             cardHeight: cardHeight,
@@ -269,6 +299,82 @@ class _ItemsToolbar extends StatelessWidget {
             onCardHeightChanged: onCardHeightChanged,
           ),
       ],
+    );
+  }
+}
+
+/// Max columns the current desktop width can reasonably show (>= ~150px/card),
+/// capped at 10. The slider runs 1..this.
+int _maxColumnsForWidth(double width) {
+  return (width / 170).floor().clamp(1, 10);
+}
+
+/// A single "columns" resize slider (1 -> full-width hero, up to N) that drives
+/// the boarding-pass card grid density. Replaces the old width/height sliders.
+class _ItemsColumnSlider extends StatelessWidget {
+  const _ItemsColumnSlider({
+    required this.columnCount,
+    required this.maxColumns,
+    required this.onChanged,
+  });
+
+  final int columnCount;
+  final int maxColumns;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final max = maxColumns < 1 ? 1 : maxColumns;
+    final value = columnCount.clamp(1, max).toDouble();
+    return Container(
+      key: const ValueKey<String>('items-column-slider'),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: SoftErpTheme.cardSurface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.grid_view_rounded, size: 18, color: SoftErpTheme.textSecondary),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 200,
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                activeTrackColor: const Color(0xFFE4C17C),
+                thumbColor: const Color(0xFFE4C17C),
+                overlayColor: const Color(0xFFE4C17C).withValues(alpha: 0.18),
+                inactiveTrackColor: const Color(0xFFE9E7DF),
+                trackHeight: 2.5,
+              ),
+              child: Slider.adaptive(
+                key: const ValueKey<String>('items-column-count-slider'),
+                value: value,
+                min: 1,
+                max: max.toDouble(),
+                divisions: max > 1 ? max - 1 : null,
+                label: '${value.round()} col${value.round() == 1 ? '' : 's'}',
+                onChanged: (v) => onChanged(v.round().clamp(1, max)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 30,
+            child: Text(
+              '${value.round()}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: SoftErpTheme.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -550,6 +656,154 @@ class _GridItemCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Boarding-pass card grid for the item master. Column count is driven by the
+/// resize slider, clamped to what the width can fit; the tile aspect ratio (and
+/// therefore the card layout) adapts so 1 column is a wide ticket and many
+/// columns are compact portrait heroes.
+class _ItemsBoardingGrid extends StatelessWidget {
+  const _ItemsBoardingGrid({
+    required this.items,
+    required this.columnCount,
+    this.onCreatePipeline,
+  });
+
+  final List<ItemDefinition> items;
+  final int columnCount;
+  final Future<String?> Function()? onCreatePipeline;
+
+  @override
+  Widget build(BuildContext context) {
+    final topLevelItems = items.where((i) => i.baseItemId == null).toList();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final maxCols = (width / 150).floor().clamp(1, 10);
+        final cols = columnCount.clamp(1, maxCols);
+        final spacing = width >= 1200 ? 18.0 : 14.0;
+        final aspect = cols == 1
+            ? 2.4
+            : cols == 2
+            ? 1.15
+            : 0.72;
+        return GridView.builder(
+          key: const ValueKey<String>('items-boarding-grid'),
+          padding: const EdgeInsets.only(bottom: 12),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: cols,
+            crossAxisSpacing: spacing,
+            mainAxisSpacing: spacing,
+            childAspectRatio: aspect,
+          ),
+          itemCount: topLevelItems.length,
+          itemBuilder: (context, index) => _BoardingItemCard(
+            item: topLevelItems[index],
+            onCreatePipeline: onCreatePipeline,
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _BoardingItemCard extends StatefulWidget {
+  const _BoardingItemCard({required this.item, this.onCreatePipeline});
+
+  final ItemDefinition item;
+  final Future<String?> Function()? onCreatePipeline;
+
+  @override
+  State<_BoardingItemCard> createState() => _BoardingItemCardState();
+}
+
+class _BoardingItemCardState extends State<_BoardingItemCard> {
+  bool _requestedAssets = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _ensureAssetsLoaded();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _BoardingItemCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.item.id != widget.item.id) {
+      _requestedAssets = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _ensureAssetsLoaded();
+      });
+    }
+  }
+
+  void _ensureAssetsLoaded() {
+    final provider = context.read<ItemsProvider>();
+    if (_requestedAssets || provider.assetsForItem(widget.item.id).isNotEmpty) {
+      return;
+    }
+    _requestedAssets = true;
+    provider.loadItemAssets(widget.item.id);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    final asset = context.select<ItemsProvider, ItemAsset?>((provider) {
+      final assets = provider.assetsForItem(item.id);
+      return assets.where((a) => a.isPrimary).firstOrNull ?? assets.firstOrNull;
+    });
+    final imageUrl = asset?.readUrl?.toString() ?? item.photoUrl;
+    final groupName =
+        context.read<GroupsProvider>().findById(item.groupId)?.name ?? '—';
+    final unitLabel =
+        context
+            .read<UnitsProvider>()
+            .units
+            .where((u) => u.id == item.unitId)
+            .firstOrNull
+            ?.displayLabel ??
+        '—';
+    final leafCount = item.leafVariationNodes.length;
+    final title = item.displayName.trim().isEmpty ? item.name : item.displayName;
+
+    return BoardingPassCard(
+      title: title,
+      subtitle: leafCount == 0 ? 'Base item' : '$leafCount variant${leafCount == 1 ? '' : 's'}',
+      imageUrl: imageUrl,
+      token: _boardingInitials(item.name.trim().isEmpty ? title : item.name),
+      caption: item.alias.trim().isEmpty ? 'No image' : item.alias,
+      details: [
+        BoardingPassDetail('Group', groupName),
+        BoardingPassDetail('Unit', unitLabel),
+        BoardingPassDetail('Variants', leafCount == 0 ? 'Base' : '$leafCount'),
+      ],
+      // Item master items have no barcode — the design stays consistent, the
+      // barcode block is simply omitted.
+      barcode: null,
+      onTap: () => showItemDetailPanel(
+        context,
+        item: item,
+        onEdit: () => ItemsScreen.openEditor(
+          context,
+          item: item,
+          onCreatePipeline: widget.onCreatePipeline,
+        ),
+      ),
+    );
+  }
+}
+
+String _boardingInitials(String source) {
+  final parts = source
+      .split(RegExp(r'\s+'))
+      .where((p) => p.trim().isNotEmpty)
+      .take(2)
+      .map((p) => p.substring(0, 1).toUpperCase())
+      .toList(growable: false);
+  return parts.isEmpty ? 'IT' : parts.join();
 }
 
 class _ItemRow extends StatelessWidget {

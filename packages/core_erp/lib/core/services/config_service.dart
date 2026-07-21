@@ -21,15 +21,24 @@ class ConfigService {
       ? _deepMerge(Map<String, dynamic>.from(_config), devConfig)
       : _config;
 
+  // FROZEN PRODUCT SURFACE (handover build).
+  // Every feature flag is pinned to the state the app actually ships in, so a
+  // RELEASE build (where dev_config.dart is tree-shaken out) delivers exactly
+  // the current experience instead of falling back to a leaner default set.
+  // Values mirror dev_config.dart. `true` = shipped/on, `false` = not delivered.
+  // To ship a feature that is currently off, flip it to true here (single
+  // source of truth); to re-enable per-client overrides, restore the leaner
+  // defaults from git history.
   static const Map<String, dynamic> _globalDefaults = {
     "modules": {
       "orders": true,
       "masters": true,
       "inventory": true,
       "production": true,
-      "pm": true,
+      "pm": false,
       "jobs": true,
       "delivery_challans": true,
+      "actionCenter": true,
     },
     "orders": {
       "statusColors": {
@@ -38,8 +47,15 @@ class ConfigService {
         "completed": "#32CD32",
       },
       "allowCustomActions": true,
+      "allowOrdersCreation": true,
+      "showReport": true,
     },
-    "enhancements": {"catalogInventory": true},
+    "features": {"disableMachineCustomFields": false},
+    "production": {
+      "multiScrapItems": true,
+      "materialVariationPaths": true,
+    },
+    "enhancements": {"catalogInventory": true, "boardingPassCards": true},
     "challans": {"singleTypeView": true, "reconciliation": true},
     "catalog": {"purchaseItems": true},
     "purchase": {"flowV2": true},

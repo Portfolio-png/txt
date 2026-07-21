@@ -70,7 +70,9 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
   final _panPhotoUrlController = TextEditingController();
   final _employeePhotoUrlController = TextEditingController();
   final _barcodeIdController = TextEditingController();
+  final _emailController = TextEditingController();
   String _employmentType = 'in-house';
+  String _dateOfBirth = '';
 
   @override
   void initState() {
@@ -87,6 +89,8 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
       _panPhotoUrlController.text = emp.panPhotoUrl;
       _employeePhotoUrlController.text = emp.employeePhotoUrl;
       _barcodeIdController.text = emp.barcodeId;
+      _emailController.text = emp.email;
+      _dateOfBirth = emp.dateOfBirth;
       _employmentType = emp.employmentType;
     }
   }
@@ -103,11 +107,197 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
     _panPhotoUrlController.dispose();
     _employeePhotoUrlController.dispose();
     _barcodeIdController.dispose();
+    _emailController.dispose();
     super.dispose();
   }
 
   String _generateBarcode() =>
       'FR-${DateTime.now().millisecondsSinceEpoch.toString().substring(5)}';
+
+  /// The DDMM code (day+month of DOB) previewed next to the date field.
+  String? get _ddmmPreview {
+    final m = RegExp(r'^(\d{4})-(\d{2})-(\d{2})').firstMatch(_dateOfBirth.trim());
+    return m == null ? null : '${m.group(3)}${m.group(2)}';
+  }
+
+  Future<void> _pickDateOfBirth() async {
+    final now = DateTime.now();
+    DateTime initial = DateTime(now.year - 25, now.month, now.day);
+    final parsed = DateTime.tryParse(_dateOfBirth);
+    if (parsed != null) initial = parsed;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(1940),
+      lastDate: now,
+      helpText: 'Select date of birth',
+    );
+    if (picked != null) {
+      setState(() {
+        _dateOfBirth = '${picked.year.toString().padLeft(4, '0')}-'
+            '${picked.month.toString().padLeft(2, '0')}-'
+            '${picked.day.toString().padLeft(2, '0')}';
+      });
+    }
+  }
+
+  Widget _buildLoginSection(
+    BuildContext context,
+    DepartmentsProvider provider,
+    EmployeeDefinition emp,
+  ) {
+    final login = emp.login;
+    return ErpDialogSectionCard(
+      title: 'Login & Access',
+      child: login == null
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'This in-house employee has no login yet. Create one so they can '
+                  'sign in — their profile stays connected to this record.',
+                  style: TextStyle(
+                    color: SoftErpTheme.textSecondary,
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                AppButton(
+                  label: 'Create login',
+                  icon: Icons.person_add_alt_1_outlined,
+                  variant: AppButtonVariant.secondary,
+                  onPressed: () => _createLoginDialog(context, provider, emp),
+                ),
+              ],
+            )
+          : Row(
+              children: [
+                const Icon(
+                  Icons.verified_user_outlined,
+                  size: 18,
+                  color: SoftErpTheme.textSecondary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        login.email.isEmpty ? '(no email)' : login.email,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: SoftErpTheme.textPrimary,
+                        ),
+                      ),
+                      Text(
+                        '${login.role} · ${login.isActive ? 'Active' : 'Disabled'}'
+                        '${login.loginCode.isEmpty ? '' : ' · code ${login.loginCode}'}',
+                        style: const TextStyle(
+                          color: SoftErpTheme.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    final ok = await provider.unlinkEmployeeLogin(emp.id);
+                    if (ok && context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Login unlinked (the account was kept).'),
+                        ),
+                      );
+                    }
+                  },
+                  child: const Text('Unlink'),
+                ),
+              ],
+            ),
+    );
+  }
+
+  Future<void> _createLoginDialog(
+    BuildContext context,
+    DepartmentsProvider provider,
+    EmployeeDefinition emp,
+  ) async {
+    final emailCtrl = TextEditingController(
+      text: emp.email.isNotEmpty ? emp.email : _emailController.text.trim(),
+    );
+    final passCtrl = TextEditingController();
+    String role = 'user';
+    final created = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setLocal) => AlertDialog(
+          title: const Text('Create login'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: emailCtrl,
+                keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(labelText: 'Email'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: passCtrl,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: 'Temporary password'),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: role,
+                decoration: const InputDecoration(labelText: 'Access level'),
+                items: const [
+                  DropdownMenuItem(value: 'user', child: Text('Staff (user)')),
+                  DropdownMenuItem(value: 'admin', child: Text('Admin')),
+                ],
+                onChanged: (v) => setLocal(() => role = v ?? 'user'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Create login'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (created != true) {
+      emailCtrl.dispose();
+      passCtrl.dispose();
+      return;
+    }
+    final ok = await provider.createEmployeeLogin(
+      emp.id,
+      email: emailCtrl.text.trim(),
+      password: passCtrl.text,
+      role: role,
+    );
+    emailCtrl.dispose();
+    passCtrl.dispose();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ok
+                ? 'Login created and linked.'
+                : (provider.errorMessage ?? 'Could not create login.'),
+          ),
+        ),
+      );
+    }
+  }
 
   Future<void> _save() async {
     final name = _nameController.text.trim();
@@ -128,6 +318,8 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
             _employeePhotoUrlController.text.trim(),
             _employmentType,
             _barcodeIdController.text.trim(),
+            email: _emailController.text.trim(),
+            dateOfBirth: _dateOfBirth,
           )
         : await provider.updateEmployee(
             widget.employee!.id,
@@ -143,6 +335,8 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
             _employeePhotoUrlController.text.trim(),
             _employmentType,
             _barcodeIdController.text.trim(),
+            email: _emailController.text.trim(),
+            dateOfBirth: _dateOfBirth,
           );
 
     if (success && mounted) {
@@ -154,6 +348,18 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
   Widget build(BuildContext context) {
     final provider = context.watch<DepartmentsProvider>();
     final isFreelancer = _employmentType == 'freelancer';
+
+    // Unified People: an existing in-house employee can hold a login/profile.
+    // Read the live copy from the provider so create/unlink reflect immediately.
+    final editing = widget.employee != null;
+    final liveEmp = editing
+        ? provider.employees.firstWhere(
+            (e) => e.id == widget.employee!.id,
+            orElse: () => widget.employee!,
+          )
+        : null;
+    final showLoginSection =
+        editing && _employmentType == 'in-house';
 
     return ErpFormScaffold(
       title: widget.employee == null ? 'New Employee' : 'Edit Employee',
@@ -195,6 +401,53 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
                             ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 14),
+                      const SizedBox(height: 14),
+                      _Field(
+                        controller: _emailController,
+                        label: 'Email (for login/profile)',
+                        keyboardType: TextInputType.emailAddress,
+                      ),
+                      const SizedBox(height: 14),
+                      InkWell(
+                        onTap: _pickDateOfBirth,
+                        child: InputDecorator(
+                          decoration:
+                              _decoration('Date of Birth (sets staff login code)'),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _dateOfBirth.isEmpty ? 'Not set' : _dateOfBirth,
+                                  style: TextStyle(
+                                    color: _dateOfBirth.isEmpty
+                                        ? SoftErpTheme.textSecondary
+                                        : SoftErpTheme.textPrimary,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                              if (_ddmmPreview != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: Text(
+                                    'code ${_ddmmPreview!}',
+                                    style: const TextStyle(
+                                      color: SoftErpTheme.textSecondary,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              const Icon(
+                                Icons.calendar_today_outlined,
+                                size: 16,
+                                color: SoftErpTheme.textSecondary,
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                       const SizedBox(height: 14),
                       _Field(
@@ -319,6 +572,10 @@ class _EmployeeEditorSheetState extends State<_EmployeeEditorSheet> {
                     ],
                   ),
                 ),
+                if (showLoginSection) ...[
+                  const SizedBox(height: 16),
+                  _buildLoginSection(context, provider, liveEmp!),
+                ],
               ],
             ),
           ),
