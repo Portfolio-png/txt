@@ -5855,7 +5855,7 @@ class _OrderDetailsModalState extends State<_OrderDetailsModal> {
   @override
   Widget build(BuildContext context) {
     final group = widget.orderGroup;
-    final tabs = ['Details', 'Timeline', 'Audit'];
+    final tabs = ['Details', 'Timeline', 'Track'];
 
     final selectedContent = switch (_selectedTab) {
       0 => _OrderDetailsContent(
@@ -6699,7 +6699,7 @@ class _OrderAuditContent extends StatelessWidget {
         }
         final history = snapshot.data ?? const <OrderStatusHistoryEntry>[];
         if (history.isEmpty) {
-          return const _OrderDetailEmptyState(message: 'No audit records yet');
+          return const _OrderDetailEmptyState(message: 'No track records yet');
         }
         return _OrderDetailPanelCard(
           child: ListView.separated(

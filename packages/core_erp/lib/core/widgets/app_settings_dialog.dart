@@ -139,7 +139,7 @@ class AppSettingsDialogState
               ),
               const SizedBox(height: 10),
               Text(
-                'Clear operational data or rebuild a fresh demo workspace. Users, sessions, permissions, and audit data stay intact.',
+                'Clear operational data or rebuild a fresh demo workspace. Users, sessions, permissions, and track data stay intact.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: SoftErpTheme.textSecondary,
                   height: 1.45,

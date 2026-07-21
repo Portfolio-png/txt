@@ -149,6 +149,23 @@ class EmployeeViewDialog extends StatelessWidget {
             ),
             const SizedBox(width: 8),
           ],
+          if (employee.employmentType == 'in-house') ...[
+            AppButton(
+              label: 'Account',
+              icon: Icons.manage_accounts_outlined,
+              variant: AppButtonVariant.secondary,
+              onPressed: () {
+                Navigator.of(context).pop(); // Close view
+                EmployeeEditorDialog.open(
+                  context,
+                  departmentId: departmentId,
+                  employee: employee,
+                  openAccount: true,
+                );
+              },
+            ),
+            const SizedBox(width: 8),
+          ],
           AppButton(
             label: 'Edit',
             icon: Icons.edit_outlined,

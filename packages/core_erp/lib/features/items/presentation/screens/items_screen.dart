@@ -18,6 +18,7 @@ import '../../../../core/services/feature_flags.dart';
 import '../../../groups/domain/group_definition.dart';
 import '../../../groups/domain/group_inputs.dart';
 import '../../../groups/presentation/screens/groups_screen.dart';
+import '../../../auth/presentation/widgets/track_panel.dart';
 import '../../../groups/presentation/providers/groups_provider.dart';
 import '../../../inventory/domain/group_property_draft.dart' as governance;
 import '../../../inventory/presentation/providers/inventory_provider.dart';
@@ -2409,6 +2410,17 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                       );
                     },
                   ),
+                  if (widget.item != null) ...[
+                    const SizedBox(height: 16),
+                    _SectionCard(
+                      title: 'Track',
+                      child: TrackPanel.entity(
+                        entityType: 'items',
+                        entityId: '${widget.item!.id}',
+                        showHeader: false,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 20),
                   Wrap(
                     spacing: 12,

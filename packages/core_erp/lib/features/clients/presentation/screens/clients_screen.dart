@@ -8,6 +8,7 @@ import 'package:mime/mime.dart';
 
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_toast.dart';
+import '../../../auth/presentation/widgets/track_panel.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/confirm_dialog.dart';
 import '../../../../core/widgets/erp_form_dialog.dart';
@@ -522,6 +523,17 @@ class _ClientEditorSheetState extends State<_ClientEditorSheet> {
                 ],
               ),
             ),
+            if (widget.client != null) ...[
+              const SizedBox(height: 16),
+              ErpDialogSectionCard(
+                title: 'Track',
+                child: TrackPanel.entity(
+                  entityType: 'clients',
+                  entityId: '${widget.client!.id}',
+                  showHeader: false,
+                ),
+              ),
+            ],
           ],
         ),
         footer: Wrap(

@@ -9,6 +9,7 @@ import '../../../../core/services/generic_asset_service.dart';
 import '../../../../core/widgets/export_preview_dialog.dart';
 
 import '../../../../core/widgets/app_button.dart';
+import '../../../auth/presentation/widgets/track_panel.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/confirm_dialog.dart';
@@ -456,6 +457,17 @@ class _VendorEditorSheetState extends State<_VendorEditorSheet> {
                 ],
               ),
             ),
+            if (widget.vendor != null) ...[
+              const SizedBox(height: 16),
+              ErpDialogSectionCard(
+                title: 'Track',
+                child: TrackPanel.entity(
+                  entityType: 'vendors',
+                  entityId: '${widget.vendor!.id}',
+                  showHeader: false,
+                ),
+              ),
+            ],
           ],
         ),
         footer: Wrap(

@@ -1053,6 +1053,152 @@ async function logGlobalAudit({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Track: rich, per-entity activity log (field-level create/update/delete feed)
+// shown as the "Track" tab on each master and on a person's People profile.
+// Written explicitly by the master CRUD handlers via trackCreate/Update/Delete.
+// ---------------------------------------------------------------------------
+
+// Human label per tracked entity type (table name -> singular noun).
+const TRACK_ENTITY_LABELS = {
+  items: 'Item',
+  clients: 'Client',
+  vendors: 'Vendor',
+  units: 'Unit',
+  machines: 'Machine',
+  dies: 'Die',
+  pipeline_templates: 'Pipeline',
+  employees: 'Person',
+};
+
+// Columns never worth surfacing in a diff.
+const TRACK_SKIP_FIELDS = new Set(['id', 'created_at', 'updated_at']);
+
+function trackNormalizeValue(v) {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'boolean') return v ? 'Yes' : 'No';
+  return String(v);
+}
+
+// snake_case / camelCase column -> "Title Case" label.
+function trackPrettyField(field) {
+  return String(field)
+    .replace(/_/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .trim();
+}
+
+// Field-level diff between two DB rows. Skips ids/timestamps and *_json blobs
+// (variation trees etc.) so the feed stays readable.
+function diffRows(before, after) {
+  const changes = [];
+  const keys = new Set([
+    ...Object.keys(before || {}),
+    ...Object.keys(after || {}),
+  ]);
+  for (const f of keys) {
+    if (TRACK_SKIP_FIELDS.has(f) || f.endsWith('_json')) continue;
+    const from = trackNormalizeValue(before ? before[f] : undefined);
+    const to = trackNormalizeValue(after ? after[f] : undefined);
+    if (from !== to) changes.push({ field: trackPrettyField(f), from, to });
+  }
+  return changes;
+}
+
+function trackLabelFor(row, entityType, entityId) {
+  const name = row && (row.name || row.display_name || row.title);
+  const noun = TRACK_ENTITY_LABELS[entityType] || 'Record';
+  return name ? String(name) : `${noun} #${entityId}`;
+}
+
+async function logEntityActivity({
+  entityType,
+  entityId,
+  action,
+  req = null,
+  changes = null,
+  details = {},
+}) {
+  try {
+    await run(
+      `INSERT INTO entity_activity_log
+        (entity_type, entity_id, action, actor_user_id, actor_name, actor_role, changes_json, details_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        String(entityType || ''),
+        String(entityId ?? ''),
+        String(action || ''),
+        req && req.user ? req.user.id : null,
+        req && req.user ? req.user.name : '',
+        req && req.user ? req.user.role : '',
+        changes ? JSON.stringify(changes) : null,
+        JSON.stringify(details || {}),
+        nowIso(),
+      ],
+    );
+  } catch (e) {
+    console.error('[Track] log failed:', e.message);
+  }
+}
+
+// Fire-and-forget convenience wrappers used by the master CRUD handlers.
+function trackCreate(entityType, entityId, afterRow, req) {
+  logEntityActivity({
+    entityType,
+    entityId,
+    action: 'created',
+    req,
+    details: { label: trackLabelFor(afterRow, entityType, entityId) },
+  });
+}
+
+function trackUpdate(entityType, entityId, beforeRow, afterRow, req) {
+  const changes = diffRows(beforeRow, afterRow);
+  if (!changes.length) return; // nothing user-visible changed
+  logEntityActivity({
+    entityType,
+    entityId,
+    action: 'updated',
+    req,
+    changes,
+    details: { label: trackLabelFor(afterRow, entityType, entityId) },
+  });
+}
+
+function trackDelete(entityType, entityId, beforeRow, req) {
+  logEntityActivity({
+    entityType,
+    entityId,
+    action: 'deleted',
+    req,
+    details: { label: trackLabelFor(beforeRow, entityType, entityId) },
+  });
+}
+
+function rowToEntityActivityDto(row) {
+  let changes = [];
+  let details = {};
+  try {
+    changes = row.changes_json ? JSON.parse(row.changes_json) : [];
+  } catch (_) {}
+  try {
+    details = row.details_json ? JSON.parse(row.details_json) : {};
+  } catch (_) {}
+  return {
+    id: row.id,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    action: row.action,
+    actorUserId: row.actor_user_id,
+    actorName: row.actor_name || '',
+    actorRole: row.actor_role || '',
+    changes,
+    details,
+    createdAt: row.created_at,
+  };
+}
+
 
 async function createAuthSession({ user, req }) {
   await revokeSessionsForUser(user.id, { reason: 'new_login_revoked_others' });
@@ -3873,6 +4019,25 @@ async function initDb() {
       created_at TEXT NOT NULL
     )
   `);
+
+  // Track: generic per-entity activity log powering the "Track" tab on masters
+  // and a person's People profile. Written by trackCreate/Update/Delete.
+  await run(`
+    CREATE TABLE IF NOT EXISTS entity_activity_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      actor_user_id INTEGER,
+      actor_name TEXT,
+      actor_role TEXT,
+      changes_json TEXT,
+      details_json TEXT,
+      created_at TEXT NOT NULL
+    )
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_entity_activity_log_entity ON entity_activity_log(entity_type, entity_id, created_at)');
+  await run('CREATE INDEX IF NOT EXISTS idx_entity_activity_log_actor ON entity_activity_log(actor_user_id, created_at)');
 
   // --- Column migrations for order_activity_log on pre-existing databases ---
   // The CREATE TABLE above is skipped if the table already exists. These
@@ -18261,6 +18426,53 @@ app.get('/api/audit/global', requirePermission('audit.read'), async (req, res) =
   }
 });
 
+// --- Track: per-entity + per-person activity feeds --------------------------
+// Per-person "overall" track — everything this user changed, newest first.
+// Defined before the generic /:entityType route so "actor" isn't swallowed.
+app.get('/api/track/actor/:userId', requirePermission('audit.read'), async (req, res) => {
+  try {
+    const userId = Number(req.params.userId);
+    const limit = Math.min(Number(req.query.limit) || 200, 500);
+    const rows = await all(
+      `SELECT * FROM entity_activity_log
+       WHERE actor_user_id = ?
+       ORDER BY created_at DESC, id DESC
+       LIMIT ?`,
+      [userId, limit],
+    );
+    res.json({
+      success: true,
+      events: rows.map(rowToEntityActivityDto),
+      error: null,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, events: [], error: error.message });
+  }
+});
+
+// Per-record track — the "Track" tab on a master (Item, Vendor, Client, ...).
+app.get('/api/track/:entityType/:id', requirePermission('config.read'), async (req, res) => {
+  try {
+    const entityType = String(req.params.entityType || '');
+    const entityId = String(req.params.id || '');
+    const limit = Math.min(Number(req.query.limit) || 200, 500);
+    const rows = await all(
+      `SELECT * FROM entity_activity_log
+       WHERE entity_type = ? AND entity_id = ?
+       ORDER BY created_at DESC, id DESC
+       LIMIT ?`,
+      [entityType, entityId, limit],
+    );
+    res.json({
+      success: true,
+      events: rows.map(rowToEntityActivityDto),
+      error: null,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, events: [], error: error.message });
+  }
+});
+
 app.get('/api/auth/events', requirePermission('audit.read'), async (req, res) => {
   try {
     const params = [];
@@ -19228,8 +19440,11 @@ app.post('/api/machines', requirePermission('config.write'), async (req, res) =>
       finalAssetId = `MACH-${Date.now()}`;
     }
     let resultId = id;
-    if (id && id.trim() !== '' && !id.startsWith('temp_') && isNaN(Number(id)) === false) {
+    let beforeRow = null;
+    const isUpdate = id && id.trim() !== '' && !id.startsWith('temp_') && isNaN(Number(id)) === false;
+    if (isUpdate) {
       // Update
+      beforeRow = await get('SELECT * FROM machines WHERE id = ?', [Number(id)]);
       await run(
         `UPDATE machines SET name = ?, asset_id = ?, primary_photo_url = ?, group_id = ?, make_model = ?, serial_number = ?, location = ?, installation_date = ?, status = ?, report_output_per_hour = ?, setup_minutes = ?, labor_count = ?, power_kw = ?, report_notes = ?, custom_properties = ?, updated_at = ? WHERE id = ?`,
         [name, finalAssetId, primaryPhotoUrl, groupId, makeModel, serialNumber, location, installationDate, status, reportOutputPerHour ?? null, setupMinutes ?? null, laborCount ?? null, powerKw ?? null, reportNotes || '', JSON.stringify(customProperties || []), now, Number(id)]
@@ -19244,6 +19459,11 @@ app.post('/api/machines', requirePermission('config.write'), async (req, res) =>
     }
     const r = await get('SELECT * FROM machines WHERE id = ?', [resultId]);
     const machine = machineRowToDto(r);
+    if (isUpdate) {
+      trackUpdate('machines', resultId, beforeRow, r, req);
+    } else {
+      trackCreate('machines', resultId, r, req);
+    }
     res.json({ success: true, machine, error: null });
   } catch (error) {
     res.status(500).json({ success: false, machine: null, error: error.message });
@@ -19263,7 +19483,9 @@ app.delete('/api/machines/:id', requirePermission('config.write'), async (req, r
         }
       }
     }
+    const before = await get('SELECT * FROM machines WHERE id = ?', [id]);
     await run('DELETE FROM machines WHERE id = ?', [id]);
+    trackDelete('machines', id, before, req);
     res.json({ success: true, error: null });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -19353,8 +19575,11 @@ app.post('/api/dies', requirePermission('config.write'), async (req, res) => {
       finalToolCode = `DIE-${Date.now()}`;
     }
     let resultId = id;
-    if (id && id.trim() !== '' && !id.startsWith('temp_') && isNaN(Number(id)) === false) {
+    let beforeRow = null;
+    const isUpdate = id && id.trim() !== '' && !id.startsWith('temp_') && isNaN(Number(id)) === false;
+    if (isUpdate) {
       // Update
+      beforeRow = await get('SELECT * FROM dies WHERE id = ?', [Number(id)]);
       await run(
         `UPDATE dies SET tool_code = ?, produced_part_numbers = ?, photo_urls = ?, operational_notes = ?, compatible_machine_group_ids = ?, storage_location = ?, number_of_cavities = ?, stroke_count = ?, max_strokes = ?, strokes_per_piece = ?, setup_minutes = ?, report_notes = ?, physical_specs = ?, status = ?, ownership = ?, updated_at = ? WHERE id = ?`,
         [finalToolCode, JSON.stringify(producedPartNumbers || []), JSON.stringify(photoUrls || []), operationalNotes, JSON.stringify(compatibleMachineGroupIds || []), storageLocation, numberOfCavities, strokeCount || 0, maxStrokes || 0, strokesPerPiece ?? null, setupMinutes ?? null, reportNotes || '', JSON.stringify(physicalSpecs || {}), status, ownership, now, Number(id)]
@@ -19369,6 +19594,11 @@ app.post('/api/dies', requirePermission('config.write'), async (req, res) => {
     }
     const r = await get('SELECT * FROM dies WHERE id = ?', [resultId]);
     const die = dieRowToDto(r);
+    if (isUpdate) {
+      trackUpdate('dies', resultId, beforeRow, r, req);
+    } else {
+      trackCreate('dies', resultId, r, req);
+    }
     res.json({ success: true, die, error: null });
   } catch (error) {
     res.status(500).json({ success: false, die: null, error: error.message });
@@ -19387,7 +19617,9 @@ app.delete('/api/dies/:id', requirePermission('config.write'), async (req, res) 
         }
       }
     }
+    const before = await get('SELECT * FROM dies WHERE id = ?', [id]);
     await run('DELETE FROM dies WHERE id = ?', [id]);
+    trackDelete('dies', id, before, req);
     res.json({ success: true, error: null });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -19856,6 +20088,7 @@ app.get('/api/units', requirePermission('config.read'), async (req, res) => {
 app.post('/api/units', requirePermission('config.write'), async (req, res) => {
   try {
     const unit = await saveUnit(req.body || {});
+    trackCreate('units', unit.id, unit, req);
     res.status(201).json({ success: true, unit: rowToUnitDto(unit), error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({
@@ -19868,10 +20101,14 @@ app.post('/api/units', requirePermission('config.write'), async (req, res) => {
 
 app.patch('/api/units/:id', requirePermission('config.write'), async (req, res) => {
   try {
+    const id = Number(req.params.id);
+    const before = await get('SELECT * FROM units WHERE id = ?', [id]);
     const unit = await saveUnit({
       ...(req.body || {}),
-      id: Number(req.params.id),
+      id,
     });
+    const after = await get('SELECT * FROM units WHERE id = ?', [id]);
+    trackUpdate('units', id, before, after, req);
     res.json({ success: true, unit: rowToUnitDto(unit), error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({
@@ -19967,7 +20204,9 @@ app.delete('/api/favorites/:itemId/:variationLeafNodeId', async (req, res) => {
 app.delete('/api/units/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
+    const before = await get('SELECT * FROM units WHERE id = ?', [id]);
     await trashAndDelete('units', id, req);
+    trackDelete('units', id, before, req);
     res.json({ success: true, error: null });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -21240,6 +21479,7 @@ app.post('/api/production/pipeline-templates', requirePermission('config.write')
     );
 
     const row = await get('SELECT * FROM pipeline_templates WHERE id = ?', [data.id]);
+    trackCreate('pipeline_templates', row.id, row, req);
     res.json({ success: true, template: rowToTemplate(row), error: null });
   } catch (error) {
     res.status(500).json({ success: false, template: null, error: error.message });
@@ -21282,6 +21522,7 @@ app.put('/api/production/pipeline-templates/:id', requirePermission('config.writ
     );
 
     const row = await get('SELECT * FROM pipeline_templates WHERE id = ?', [id]);
+    trackUpdate('pipeline_templates', id, existing, row, req);
     res.json({ success: true, template: rowToTemplate(row), error: null });
   } catch (error) {
     res.status(500).json({ success: false, template: null, error: error.message });
@@ -21295,7 +21536,9 @@ app.delete('/api/production/pipeline-templates/:id', requirePermission('config.w
     if (runsCount && runsCount.count > 0) {
       return res.status(400).json({ success: false, error: 'Cannot delete pipeline template: there are ongoing or historical runs using it.' });
     }
+    const before = await get('SELECT * FROM pipeline_templates WHERE id = ?', [id]);
     await run('DELETE FROM pipeline_templates WHERE id = ?', [id]);
+    trackDelete('pipeline_templates', id, before, req);
     res.json({ success: true, error: null });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -22512,6 +22755,7 @@ app.post('/api/clients', requirePermission('config.write'), async (req, res) => 
     if (io) {
       io.emit('client_added', clientDto);
     }
+    trackCreate('clients', client.id, client, req);
     res.status(201).json({ success: true, client: clientDto, error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({
@@ -22524,7 +22768,9 @@ app.post('/api/clients', requirePermission('config.write'), async (req, res) => 
 app.delete('/api/clients/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
+    const before = await get('SELECT * FROM clients WHERE id = ?', [id]);
     await trashAndDelete('clients', id, req);
+    trackDelete('clients', id, before, req);
     if (io) {
       io.emit('client_deleted', { id });
     }
@@ -22536,14 +22782,18 @@ app.delete('/api/clients/:id', requirePermission('config.write'), async (req, re
 
 app.patch('/api/clients/:id', requirePermission('config.write'), async (req, res) => {
   try {
+    const id = Number(req.params.id);
+    const before = await get('SELECT * FROM clients WHERE id = ?', [id]);
     const client = await saveClient({
       ...(req.body || {}),
-      id: Number(req.params.id),
+      id,
     });
     const clientDto = rowToClientDto(client);
     if (io) {
       io.emit('client_updated', clientDto);
     }
+    const after = await get('SELECT * FROM clients WHERE id = ?', [id]);
+    trackUpdate('clients', id, before, after, req);
     res.json({ success: true, client: clientDto, error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({
@@ -22634,6 +22884,7 @@ app.post('/api/vendors', requirePermission('config.write'), async (req, res) => 
     if (io) {
       io.emit('vendor_added', vendorDto);
     }
+    trackCreate('vendors', vendor.id, vendor, req);
     res.status(201).json({ success: true, vendor: vendorDto, error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({ success: false, vendor: null, error: error.message });
@@ -22642,7 +22893,9 @@ app.post('/api/vendors', requirePermission('config.write'), async (req, res) => 
 app.delete('/api/vendors/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
+    const before = await get('SELECT * FROM vendors WHERE id = ?', [id]);
     await trashAndDelete('vendors', id, req);
+    trackDelete('vendors', id, before, req);
     if (io) {
       io.emit('vendor_deleted', { id });
     }
@@ -22654,14 +22907,18 @@ app.delete('/api/vendors/:id', requirePermission('config.write'), async (req, re
 
 app.patch('/api/vendors/:id', requirePermission('config.write'), async (req, res) => {
   try {
+    const id = Number(req.params.id);
+    const before = await get('SELECT * FROM vendors WHERE id = ?', [id]);
     const vendor = await saveVendor({
       ...(req.body || {}),
-      id: Number(req.params.id),
+      id,
     });
     const vendorDto = rowToVendorDto(vendor);
     if (io) {
       io.emit('vendor_updated', vendorDto);
     }
+    const after = await get('SELECT * FROM vendors WHERE id = ?', [id]);
+    trackUpdate('vendors', id, before, after, req);
     res.json({ success: true, vendor: vendorDto, error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({ success: false, vendor: null, error: error.message });
@@ -22808,6 +23065,7 @@ app.post('/api/items', requirePermission('config.write'), async (req, res) => {
     if (io) {
       io.emit('item_added', itemDto);
     }
+    trackCreate('items', item.id, item, req);
     res.status(201).json({ success: true, item: itemDto, error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({
@@ -22820,14 +23078,18 @@ app.post('/api/items', requirePermission('config.write'), async (req, res) => {
 
 app.patch('/api/items/:id', requirePermission('config.write'), async (req, res) => {
   try {
+    const id = Number(req.params.id);
+    const before = await get('SELECT * FROM items WHERE id = ?', [id]);
     const item = await saveItem({
       ...(req.body || {}),
-      id: Number(req.params.id),
+      id,
     });
     const itemDto = await rowToItemDto(item);
     if (io) {
       io.emit('item_updated', itemDto);
     }
+    const after = await get('SELECT * FROM items WHERE id = ?', [id]);
+    trackUpdate('items', id, before, after, req);
     res.json({ success: true, item: itemDto, error: null });
   } catch (error) {
     res.status(error.statusCode || 500).json({
@@ -22841,7 +23103,8 @@ app.patch('/api/items/:id', requirePermission('config.write'), async (req, res) 
 app.delete('/api/items/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
-    
+    const before = await get('SELECT * FROM items WHERE id = ?', [id]);
+
     const nodeIds = (await all('SELECT id FROM item_variation_nodes WHERE item_id = ?', [id])).map(r => r.id);
     await trashAndDeleteMany('item_variation_nodes', nodeIds, req);
     
@@ -22855,7 +23118,8 @@ app.delete('/api/items/:id', requirePermission('config.write'), async (req, res)
     await trashAndDeleteMany('uploaded_assets', assetIds, req);
     
     await trashAndDelete('items', id, req);
-    
+    trackDelete('items', id, before, req);
+
     if (io) {
       io.emit('item_deleted', { id });
     }
@@ -25368,6 +25632,7 @@ app.post('/api/employees', requirePermission('config.write'), async (req, res) =
       [departmentId, name.trim(), role.trim(), phone.trim(), aadharNumber.trim(), aadharPhotoUrl, panNumber.trim(), panPhotoUrl, address.trim(), employeePhotoUrl, employmentType, status, barcodeId.trim(), String(email || '').trim(), String(dateOfBirth || '').trim(), now, now]
     );
     const row = await getEmployeeWithLogin(result.lastID);
+    trackCreate('employees', result.lastID, row, req);
     res.status(201).json({ success: true, employee: rowToEmployeeDto(row), error: null });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -25411,6 +25676,8 @@ app.patch('/api/employees/:id', requirePermission('config.write'), async (req, r
         await run('UPDATE users SET mobile_pin = ?, updated_at = ? WHERE id = ?', [pin, new Date().toISOString(), existing.user_id]);
       }
     }
+    const afterRow = await get('SELECT * FROM employees WHERE id = ?', [id]);
+    trackUpdate('employees', id, existing, afterRow, req);
     const row = await getEmployeeWithLogin(id);
     res.json({ success: true, employee: rowToEmployeeDto(row), error: null });
   } catch (error) {
@@ -25421,7 +25688,9 @@ app.patch('/api/employees/:id', requirePermission('config.write'), async (req, r
 app.delete('/api/employees/:id', requirePermission('config.write'), async (req, res) => {
   try {
     const id = Number(req.params.id);
+    const before = await get('SELECT * FROM employees WHERE id = ?', [id]);
     await trashAndDelete('employees', id, req);
+    trackDelete('employees', id, before, req);
     res.json({ success: true, error: null });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

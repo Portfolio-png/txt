@@ -19,7 +19,6 @@ const List<String> kSidebarNavigationOrder = <String>[
   'configurator_machine_groups',
   'configurator_dies',
   'production_pipelines',
-  'user_management',
   'action_center',
 ];
 

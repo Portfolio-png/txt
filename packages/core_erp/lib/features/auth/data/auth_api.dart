@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../domain/auth_user.dart';
 import '../domain/global_audit_log.dart';
+import '../domain/track_event.dart';
 
 class AuthApiException implements Exception {
   const AuthApiException(this.message);
@@ -536,6 +537,50 @@ class AuthApi {
       logs: logs,
       total: payload['total'] as int? ?? logs.length,
     );
+  }
+
+  /// Track feed for one master record (the "Track" tab on a master).
+  Future<List<TrackEvent>> getEntityTrack(
+    String entityType,
+    String entityId, {
+    int limit = 200,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/track/$entityType/$entityId').replace(
+      queryParameters: {'limit': '$limit'},
+    );
+    final response = await _client.get(uri, headers: _authHeaders);
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to load track.',
+      );
+    }
+    return (payload['events'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(TrackEvent.fromJson)
+        .toList(growable: false);
+  }
+
+  /// Track feed for one person — everything they changed across the app.
+  Future<List<TrackEvent>> getActorTrack(int userId, {int limit = 200}) async {
+    final uri = Uri.parse('$baseUrl/api/track/actor/$userId').replace(
+      queryParameters: {'limit': '$limit'},
+    );
+    final response = await _client.get(uri, headers: _authHeaders);
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to load track.',
+      );
+    }
+    return (payload['events'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(TrackEvent.fromJson)
+        .toList(growable: false);
   }
 
   Future<List<PermissionDescriptor>> getPermissionDescriptors() async {

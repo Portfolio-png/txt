@@ -68,14 +68,6 @@ class _AppSidebarState extends State<AppSidebar> {
     _SidebarItemData('configurator_units', 'Units', Icons.straighten_outlined),
   ];
 
-  static const List<_SidebarItemData> _adminItems = <_SidebarItemData>[
-    _SidebarItemData(
-      'user_management',
-      'Users',
-      Icons.admin_panel_settings_outlined,
-    ),
-  ];
-
   @override
   void dispose() {
     for (final focusNode in _focusNodes.values) {
@@ -93,12 +85,10 @@ class _AppSidebarState extends State<AppSidebar> {
   }
 
   List<String> _visibleSidebarKeys({required bool isConfiguratorExpanded}) {
-    final auth = context.read<AuthProvider>();
     return <String>[
       ..._moduleItems.map((item) => item.key),
       'configurator',
       if (isConfiguratorExpanded) ..._configuratorItems.map((item) => item.key),
-      if (auth.canAccessUserManagement) ..._adminItems.map((item) => item.key),
     ];
   }
 
@@ -184,9 +174,6 @@ class _AppSidebarState extends State<AppSidebar> {
     final selectedKey = context.select<NavigationProvider, String>(
       (navigation) => navigation.selectedKey,
     );
-    final canManageUsers = context.select<AuthProvider, bool>(
-      (auth) => auth.canAccessUserManagement,
-    );
     final isConfiguratorExpanded = _isConfiguratorExpanded;
 
     return FocusScope(
@@ -255,17 +242,6 @@ class _AppSidebarState extends State<AppSidebar> {
                                 onSelected: _selectKey,
                                 focusNodeForKey: _focusNodeFor,
                               ),
-                              if (canManageUsers) ...[
-                                const SizedBox(height: 10),
-                                _SidebarSection(
-                                  title: 'Admin',
-                                  compact: widget.compact,
-                                  children: _adminItems,
-                                  selectedKey: selectedKey,
-                                  onSelected: _selectKey,
-                                  focusNodeForKey: _focusNodeFor,
-                                ),
-                              ],
                             ],
                           ),
                         ),

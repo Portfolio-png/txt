@@ -7,10 +7,12 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_empty_state.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/soft_master_data.dart';
+import '../../../auth/domain/auth_user.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../domain/action_center_models.dart';
 import '../providers/action_center_provider.dart';
 
-enum _AcView { issues, trash }
+enum _AcView { requests, issues, trash }
 
 /// Maps the table that owns a broken reference to the sidebar nav key of the
 /// screen where the user can fix it (the "Resolve" action). Tables with no
@@ -38,23 +40,34 @@ class _ActionCenterScreenState extends State<ActionCenterScreen> {
     super.initState();
     // Refresh every time the screen opens so data is never stale across sessions.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.read<ActionCenterProvider>().refresh();
+      if (!mounted) return;
+      context.read<ActionCenterProvider>().refresh();
+      // Pending delete requests live on AuthProvider; pull just that queue.
+      context.read<AuthProvider>().refreshDeleteRequests();
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<ActionCenterProvider>(
-      builder: (context, provider, _) {
+    return Consumer2<ActionCenterProvider, AuthProvider>(
+      builder: (context, provider, auth, _) {
+        final canReview = auth.can('delete_requests.review');
+        // Non-reviewers never see the Requests segment; keep them on a valid tab.
+        if (!canReview && _view == _AcView.requests) {
+          _view = _AcView.issues;
+        }
         return SoftMasterDataPage(
           title: 'Action Center',
           subtitle:
-              'Recover deleted records from the trash and resolve broken references left behind by hard deletes.',
+              'Review pending delete requests, recover deleted records from the trash, and resolve broken references left behind by hard deletes.',
           action: AppButton(
             label: 'Refresh',
             icon: Icons.refresh,
             isLoading: provider.isLoading,
-            onPressed: () => provider.refresh(),
+            onPressed: () {
+              provider.refresh();
+              auth.refreshDeleteRequests();
+            },
           ),
           toolbar: SoftMasterToolbar(
             children: [
@@ -62,6 +75,12 @@ class _ActionCenterScreenState extends State<ActionCenterScreen> {
                 selected: _view,
                 onChanged: (value) => setState(() => _view = value),
                 options: [
+                  if (canReview)
+                    SoftSegmentOption(
+                      value: _AcView.requests,
+                      label: 'Delete Requests',
+                      count: auth.deleteRequests.length,
+                    ),
                   SoftSegmentOption(
                     value: _AcView.issues,
                     label: 'Issues',
@@ -84,20 +103,115 @@ class _ActionCenterScreenState extends State<ActionCenterScreen> {
           messages: [
             if (provider.errorMessage != null)
               _Banner(message: provider.errorMessage!),
+            if (auth.errorMessage != null && _view == _AcView.requests)
+              _Banner(message: auth.errorMessage!),
           ],
-          body: _buildBody(context, provider),
+          body: _buildBody(context, provider, auth),
         );
       },
     );
   }
 
-  Widget _buildBody(BuildContext context, ActionCenterProvider provider) {
+  Widget _buildBody(
+    BuildContext context,
+    ActionCenterProvider provider,
+    AuthProvider auth,
+  ) {
     if (provider.isLoading && !provider.hasLoaded) {
       return const Center(child: CircularProgressIndicator());
     }
-    return _view == _AcView.issues
-        ? _buildIssues(context, provider)
-        : _buildTrash(context, provider);
+    switch (_view) {
+      case _AcView.requests:
+        return _buildRequests(context, auth);
+      case _AcView.issues:
+        return _buildIssues(context, provider);
+      case _AcView.trash:
+        return _buildTrash(context, provider);
+    }
+  }
+
+  Widget _buildRequests(BuildContext context, AuthProvider auth) {
+    final requests = auth.deleteRequests;
+    if (requests.isEmpty) {
+      return const AppEmptyState(
+        icon: Icons.task_alt_outlined,
+        title: 'No pending delete requests',
+        message: 'When someone requests a deletion that needs approval, it '
+            'shows up here for review.',
+      );
+    }
+    return ListView.separated(
+      itemCount: requests.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        final request = requests[index];
+        return _DeleteRequestCard(
+          request: request,
+          onApprove: () => _review(context, auth, request, approve: true),
+          onReject: () => _review(context, auth, request, approve: false),
+        );
+      },
+    );
+  }
+
+  Future<void> _review(
+    BuildContext context,
+    AuthProvider auth,
+    DeleteRequest request, {
+    required bool approve,
+  }) async {
+    final note = await _promptReviewNote(context, approve: approve);
+    if (note == null) return; // cancelled
+    if (!context.mounted) return;
+    final ok = await auth.reviewDeleteRequest(
+      request.id,
+      approve: approve,
+      reviewedNote: note,
+    );
+    if (!context.mounted) return;
+    showGlobalToast(
+      ok
+          ? (approve
+                ? 'Approved deletion of ${request.entityLabel}.'
+                : 'Rejected deletion of ${request.entityLabel}.')
+          : (auth.errorMessage ?? 'Could not update the request.'),
+      kind: ok ? AppToastKind.success : AppToastKind.error,
+    );
+  }
+
+  Future<String?> _promptReviewNote(
+    BuildContext context, {
+    required bool approve,
+  }) {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(approve ? 'Approve deletion' : 'Reject deletion'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'Note (optional)',
+              hintText: 'Optional note kept on the request for tracking.',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(controller.text.trim()),
+              child: Text(approve ? 'Approve' : 'Reject'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Widget _buildIssues(BuildContext context, ActionCenterProvider provider) {
@@ -317,6 +431,71 @@ class _TrashCard extends StatelessWidget {
                   child: CircularProgressIndicator(strokeWidth: 2.2),
                 )
               : SoftActionLink(label: 'Restore', onTap: onRestore),
+        ],
+      ),
+    );
+  }
+}
+
+class _DeleteRequestCard extends StatelessWidget {
+  const _DeleteRequestCard({
+    required this.request,
+    required this.onApprove,
+    required this.onReject,
+  });
+
+  final DeleteRequest request;
+  final VoidCallback onApprove;
+  final VoidCallback onReject;
+
+  @override
+  Widget build(BuildContext context) {
+    final requester = request.requestedByName.trim().isEmpty
+        ? 'Someone'
+        : request.requestedByName.trim();
+    final parts = <String>[
+      'Requested by $requester',
+      if (request.entityType.trim().isNotEmpty) request.entityType.trim(),
+      if (request.reason.trim().isNotEmpty) request.reason.trim(),
+    ];
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(
+        color: SoftErpTheme.cardSurface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: SoftErpTheme.border),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.delete_forever_outlined,
+            color: Color(0xFFD64545),
+            size: 22,
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SoftInlineText(request.entityLabel, weight: FontWeight.w700),
+                const SizedBox(height: 3),
+                Text(
+                  parts.join(' · '),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: SoftErpTheme.textSecondary,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          SoftActionLink(label: 'Reject', onTap: onReject),
+          const SizedBox(width: 8),
+          SoftActionLink(label: 'Approve', onTap: onApprove),
         ],
       ),
     );

@@ -144,17 +144,6 @@ ShellTopStripConfig resolveTopStrip(String selectedKey, BuildContext context) {
       return const ShellTopStripConfig(title: 'Configurator');
     case 'configurator_vendors':
       return const ShellTopStripConfig(title: 'Vendors');
-    case 'user_management':
-      return ShellTopStripConfig(
-        title: 'User Management',
-        actions: [
-          ShellTopStripAction(
-            label: 'Sign out',
-            icon: Icons.logout,
-            onPressed: () => context.read<AuthProvider>().logoutRemote(),
-          ),
-        ],
-      );
     default:
       return const ShellTopStripConfig(title: 'Dashboard');
   }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../data/auth_api.dart';
 import '../../domain/auth_user.dart';
 import '../../domain/global_audit_log.dart';
+import '../../domain/track_event.dart';
 
 class AuthProvider extends ChangeNotifier {
   AuthProvider({
@@ -182,7 +183,37 @@ class AuthProvider extends ChangeNotifier {
 
   void updateDeleteRequestFilter(String status) {
     _deleteStatusFilter = status.trim();
-    loadManagementData();
+    refreshDeleteRequests();
+  }
+
+  /// Focused fetch of just the delete-request queue, without pulling the full
+  /// user-management payload (users, audit, sessions, permissions). Used by the
+  /// Action Center, which surfaces pending delete requests as actionable items.
+  Future<void> refreshDeleteRequests() async {
+    if (_demoMode || !can('delete_requests.review')) {
+      _deleteRequests = const [];
+      _deleteRequestsTotal = 0;
+      _deleteRequestsHasMore = false;
+      notifyListeners();
+      return;
+    }
+    try {
+      final response = await _api.getDeleteRequests(
+        status: _deleteStatusFilter,
+        limit: 50,
+        offset: 0,
+      );
+      _deleteRequests = response.requests;
+      _deleteRequestsTotal = response.total;
+      _deleteRequestsHasMore = response.hasMore;
+      notifyListeners();
+    } catch (error) {
+      _errorMessage = _friendly(
+        error,
+        fallback: 'Failed to load delete requests.',
+      );
+      notifyListeners();
+    }
   }
 
   void updateEventTypeFilter(String eventType) {
@@ -542,7 +573,7 @@ class AuthProvider extends ChangeNotifier {
         approve: approve,
         reviewedNote: reviewedNote,
       );
-      await loadManagementData();
+      await refreshDeleteRequests();
       return true;
     } catch (error) {
       _errorMessage = _friendly(
@@ -551,6 +582,53 @@ class AuthProvider extends ChangeNotifier {
       );
       notifyListeners();
       return false;
+    }
+  }
+
+  /// Loads the permission descriptor catalog + templates on demand, so the
+  /// permissions editor works from anywhere (e.g. the People account panel)
+  /// without first opening the old user-management screen.
+  Future<void> ensurePermissionCatalog() async {
+    if (_demoMode || !can('users.manage_permissions')) return;
+    try {
+      if (_permissionDescriptors.isEmpty) {
+        _permissionDescriptors = await _api.getPermissionDescriptors();
+      }
+      if (_permissionTemplates.isEmpty) {
+        _permissionTemplates = await _api.getPermissionTemplates();
+      }
+      notifyListeners();
+    } catch (error) {
+      _errorMessage = _friendly(
+        error,
+        fallback: 'Failed to load the permission catalog.',
+      );
+      notifyListeners();
+    }
+  }
+
+  /// Track feed for one master record (the "Track" tab on a master screen).
+  Future<List<TrackEvent>> getEntityTrack(
+    String entityType,
+    String entityId,
+  ) async {
+    try {
+      return await _api.getEntityTrack(entityType, entityId);
+    } catch (error) {
+      _errorMessage = _friendly(error, fallback: 'Failed to load track.');
+      notifyListeners();
+      return const [];
+    }
+  }
+
+  /// Track feed for one person — everything they changed across the app.
+  Future<List<TrackEvent>> getActorTrack(int userId) async {
+    try {
+      return await _api.getActorTrack(userId);
+    } catch (error) {
+      _errorMessage = _friendly(error, fallback: 'Failed to load track.');
+      notifyListeners();
+      return const [];
     }
   }
 

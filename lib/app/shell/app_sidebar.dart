@@ -90,14 +90,6 @@ class _AppSidebarState extends State<AppSidebar> {
     ),
   ];
 
-  static const List<_SidebarItemData> _adminItems = <_SidebarItemData>[
-    _SidebarItemData(
-      'user_management',
-      'Users',
-      Icons.admin_panel_settings_outlined,
-    ),
-  ];
-
   @override
   void dispose() {
     for (final focusNode in _focusNodes.values) {
@@ -115,13 +107,11 @@ class _AppSidebarState extends State<AppSidebar> {
   }
 
   List<String> _visibleSidebarKeys({required bool isConfiguratorExpanded}) {
-    final auth = context.read<AuthProvider>();
     final mastersOn = ConfigService.instance.isModuleEnabled('masters');
     return <String>[
       ..._moduleItems.where((item) => ConfigService.instance.isModuleEnabled(item.key)).map((item) => item.key),
       if (mastersOn) 'configurator',
       if (mastersOn && isConfiguratorExpanded) ..._configuratorItems.map((item) => item.key),
-      if (auth.canAccessUserManagement) ..._adminItems.map((item) => item.key),
     ];
   }
 
@@ -207,9 +197,6 @@ class _AppSidebarState extends State<AppSidebar> {
     final selectedKey = context.select<NavigationProvider, String>(
       (navigation) => navigation.selectedKey,
     );
-    final canManageUsers = context.select<AuthProvider, bool>(
-      (auth) => auth.canAccessUserManagement,
-    );
     // Settings & Preferences exposes destructive Workspace Data Controls
     // (Clear Data / Reset + Reseed), so keep it out of a staff member's sidebar.
     final canOpenSettings = context.select<AuthProvider, bool>(
@@ -283,17 +270,6 @@ class _AppSidebarState extends State<AppSidebar> {
                                           !_isConfiguratorExpanded;
                                     });
                                   },
-                                  onSelected: _selectKey,
-                                  focusNodeForKey: _focusNodeFor,
-                                ),
-                              ],
-                              if (canManageUsers) ...[
-                                const SizedBox(height: 10),
-                                _SidebarSection(
-                                  title: 'Admin',
-                                  compact: widget.compact,
-                                  children: _adminItems,
-                                  selectedKey: selectedKey,
                                   onSelected: _selectKey,
                                   focusNodeForKey: _focusNodeFor,
                                 ),

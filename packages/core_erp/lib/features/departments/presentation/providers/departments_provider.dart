@@ -34,6 +34,19 @@ class DepartmentsProvider extends ChangeNotifier {
   DepartmentDefinition? _selectedDepartment;
   DepartmentDefinition? get selectedDepartment => _selectedDepartment;
 
+  /// The employee produced by the most recent create/update. Lets the editor's
+  /// avatar → account flow grab the freshly-saved record (and its new id)
+  /// without re-querying after a create.
+  EmployeeDefinition? _lastUpsertedEmployee;
+  EmployeeDefinition? get lastUpsertedEmployee => _lastUpsertedEmployee;
+
+  EmployeeDefinition? employeeById(int id) {
+    for (final e in _employees) {
+      if (e.id == id) return e;
+    }
+    return null;
+  }
+
   Future<void> load() async {
     _setLoading(true);
     _clearError();
@@ -203,6 +216,7 @@ class DepartmentsProvider extends ChangeNotifier {
         dateOfBirth: dateOfBirth,
       );
       _employees.add(emp);
+      _lastUpsertedEmployee = emp;
       _sortLists();
       return true;
     } catch (e) {
@@ -250,6 +264,7 @@ class DepartmentsProvider extends ChangeNotifier {
         email: email,
         dateOfBirth: dateOfBirth,
       );
+      _lastUpsertedEmployee = emp;
       final index = _employees.indexWhere((e) => e.id == id);
       if (index >= 0) {
         _employees[index] = emp;
