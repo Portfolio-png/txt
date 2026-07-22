@@ -688,6 +688,70 @@ class AuthApi {
     }
   }
 
+  Future<List<RecordGrant>> getUserRecordPermissions(int userId) async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/users/$userId/record-permissions'),
+      headers: _authHeaders,
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to load record permissions.',
+      );
+    }
+    return (payload['records'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(RecordGrant.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<void> updateUserRecordPermissions(
+    int userId,
+    List<Map<String, String>> records,
+  ) async {
+    final response = await _client.put(
+      Uri.parse('$baseUrl/api/users/$userId/record-permissions'),
+      headers: _jsonHeaders,
+      body: jsonEncode({'records': records}),
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to save record permissions.',
+      );
+    }
+  }
+
+  Future<List<RecordOption>> getRecordOptions(
+    String entityType, {
+    String query = '',
+    int limit = 50,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/record-options/$entityType').replace(
+      queryParameters: {
+        if (query.trim().isNotEmpty) 'query': query.trim(),
+        'limit': '$limit',
+      },
+    );
+    final response = await _client.get(uri, headers: _authHeaders);
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to load records.',
+      );
+    }
+    return (payload['options'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(RecordOption.fromJson)
+        .toList(growable: false);
+  }
+
   Future<List<UserPermissionState>> getUserPermissions(int userId) async {
     final response = await _client.get(
       Uri.parse('$baseUrl/api/users/$userId/permissions'),

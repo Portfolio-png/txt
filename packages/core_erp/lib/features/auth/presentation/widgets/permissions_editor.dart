@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -134,11 +136,12 @@ class _PermissionTreeState extends State<PermissionTree> {
       children: [
         Table(
           columnWidths: const {
-            0: FlexColumnWidth(),
-            1: FixedColumnWidth(56),
+            0: FixedColumnWidth(46),
+            1: FlexColumnWidth(),
             2: FixedColumnWidth(56),
             3: FixedColumnWidth(56),
             4: FixedColumnWidth(56),
+            5: FixedColumnWidth(56),
           },
           defaultVerticalAlignment: TableCellVerticalAlignment.middle,
           children: rows,
@@ -166,6 +169,18 @@ class _PermissionTreeState extends State<PermissionTree> {
   TableRow _headerRow() {
     return TableRow(
       children: [
+        const Padding(
+          padding: EdgeInsets.only(bottom: 6),
+          child: Text(
+            'All',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: SoftErpTheme.textSecondary,
+            ),
+          ),
+        ),
         const SizedBox.shrink(),
         for (final op in _ops)
           Padding(
@@ -191,6 +206,7 @@ class _PermissionTreeState extends State<PermissionTree> {
   }) {
     return TableRow(
       children: [
+        _triCell([for (final d in ops.values) d.key]),
         Padding(
           padding: EdgeInsets.only(left: indent, top: 4, bottom: 4),
           child: Text(
@@ -215,6 +231,10 @@ class _PermissionTreeState extends State<PermissionTree> {
     final expanded = _isExpanded('group:$group');
     return TableRow(
       children: [
+        _triCell([
+          for (final m in members)
+            for (final d in byModule[m]!.values) d.key,
+        ]),
         InkWell(
           onTap: () => _toggleExpand('group:$group'),
           child: Padding(
@@ -293,6 +313,256 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
+// Modules that support per-record grants (must match backend RECORD_OPTION_SOURCES).
+const Map<String, String> _recordModules = {
+  'orders': 'Orders',
+  'inventory': 'Inventory',
+  'challans': 'Delivery Challans',
+  'items': 'Items',
+  'clients': 'Clients',
+  'vendors': 'Vendors',
+  'units': 'Units',
+  'machines': 'Machines',
+  'dies': 'Dies',
+  'pipelines': 'Pipelines',
+  'people': 'People',
+};
+const List<String> _recordOps = ['read', 'update', 'delete'];
+const Map<String, String> _recordOpLabels = {
+  'read': 'View',
+  'update': 'Update',
+  'delete': 'Delete',
+};
+
+/// Per-record (row-level) grants for one person: pick a module, search its
+/// actual records, and grant View/Update/Delete on individual ones — on top of
+/// the module grid ("can see all, edit only these").
+class _RecordGrantsSection extends StatefulWidget {
+  const _RecordGrantsSection({required this.grants, required this.onChanged});
+
+  final Map<String, RecordGrant> grants; // keyed by RecordGrant.key, mutated
+  final VoidCallback onChanged;
+
+  @override
+  State<_RecordGrantsSection> createState() => _RecordGrantsSectionState();
+}
+
+class _RecordGrantsSectionState extends State<_RecordGrantsSection> {
+  String _module = 'items';
+  final _searchCtrl = TextEditingController();
+  List<RecordOption> _options = const [];
+  bool _loading = false;
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetch();
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetch() async {
+    setState(() => _loading = true);
+    final opts = await context
+        .read<AuthProvider>()
+        .getRecordOptions(_module, query: _searchCtrl.text);
+    if (!mounted) return;
+    setState(() {
+      _options = opts;
+      _loading = false;
+    });
+  }
+
+  void _onSearchChanged(String _) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), _fetch);
+  }
+
+  void _toggle(String entityId, String op, String label, bool on) {
+    final key = '$_module:$entityId:$op';
+    setState(() {
+      if (on) {
+        widget.grants[key] = RecordGrant(
+          entityType: _module,
+          entityId: entityId,
+          op: op,
+          label: label,
+        );
+      } else {
+        widget.grants.remove(key);
+      }
+    });
+    widget.onChanged();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final grants = widget.grants.values.toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionLabel('Specific records (this person only)'),
+        const SizedBox(height: 4),
+        const Text(
+          'Grant View / Update / Delete on individual records, on top of the '
+          'module grid — e.g. "can see all items, edit only these".',
+          style: TextStyle(fontSize: 12, color: SoftErpTheme.textSecondary),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            SizedBox(
+              width: 150,
+              child: DropdownButtonFormField<String>(
+                initialValue: _module,
+                isDense: true,
+                decoration: const InputDecoration(
+                  labelText: 'Module',
+                  isDense: true,
+                ),
+                items: [
+                  for (final e in _recordModules.entries)
+                    DropdownMenuItem(value: e.key, child: Text(e.value)),
+                ],
+                onChanged: (v) {
+                  if (v != null) {
+                    setState(() => _module = v);
+                    _fetch();
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: TextField(
+                controller: _searchCtrl,
+                decoration: const InputDecoration(
+                  hintText: 'Search records…',
+                  isDense: true,
+                  prefixIcon: Icon(Icons.search, size: 18),
+                ),
+                onChanged: _onSearchChanged,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (_loading)
+          const Padding(
+            padding: EdgeInsets.all(12),
+            child: Center(
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          )
+        else if (_options.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              'No records found.',
+              style: TextStyle(fontSize: 12, color: SoftErpTheme.textSecondary),
+            ),
+          )
+        else
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 220),
+            child: SingleChildScrollView(
+              child: Table(
+                columnWidths: const {
+                  0: FlexColumnWidth(),
+                  1: FixedColumnWidth(56),
+                  2: FixedColumnWidth(56),
+                  3: FixedColumnWidth(56),
+                },
+                defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+                children: [
+                  TableRow(
+                    children: [
+                      const SizedBox.shrink(),
+                      for (final op in _recordOps)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(
+                            _recordOpLabels[op]!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              color: SoftErpTheme.textSecondary,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  for (final o in _options)
+                    TableRow(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Text(o.label,
+                              style: const TextStyle(fontSize: 13)),
+                        ),
+                        for (final op in _recordOps)
+                          Center(
+                            child: Checkbox(
+                              value: widget.grants
+                                  .containsKey('$_module:${o.id}:$op'),
+                              visualDensity: VisualDensity.compact,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                              onChanged: (v) =>
+                                  _toggle(o.id, op, o.label, v == true),
+                            ),
+                          ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ),
+        if (grants.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Text(
+            'Granted records (${grants.length})',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: SoftErpTheme.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final g in grants)
+                InputChip(
+                  label: Text(
+                    '${g.label} · ${_recordOpLabels[g.op] ?? g.op}',
+                    style: const TextStyle(fontSize: 11.5),
+                  ),
+                  onDeleted: () {
+                    setState(() => widget.grants.remove(g.key));
+                    widget.onChanged();
+                  },
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 /// Per-user permissions editor: assign named presets + a module CRUD grid of
 /// per-user overrides. Replaces the old flat permission-key checklist.
 Future<void> showPermissionsEditor(
@@ -304,6 +574,7 @@ Future<void> showPermissionsEditor(
   await auth.ensurePermissionCatalog();
   final states = await auth.getUserPermissions(userId);
   final assigned = await auth.getUserPermissionTemplateIds(userId);
+  final recordGrantList = await auth.getUserRecordPermissions(userId);
   if (!context.mounted) return;
   final descriptors = auth.permissionDescriptors;
   if (descriptors.isEmpty || states.isEmpty) {
@@ -315,6 +586,9 @@ Future<void> showPermissionsEditor(
   }
   final toggles = <String, bool>{for (final s in states) s.key: s.allowed};
   final assignedTemplates = <int>{...assigned};
+  final recordGrants = <String, RecordGrant>{
+    for (final g in recordGrantList) g.key: g,
+  };
 
   await showDialog<void>(
     context: context,
@@ -329,52 +603,12 @@ Future<void> showPermissionsEditor(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      const Expanded(child: _SectionLabel('Presets (named roles)')),
-                      TextButton.icon(
-                        onPressed: () => showPresetManager(dialogContext),
-                        icon: const Icon(Icons.tune, size: 16),
-                        label: const Text('Manage'),
-                      ),
-                    ],
-                  ),
-                  if (templates.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 6),
-                      child: Text(
-                        'No presets yet. Use Manage to create a named role.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: SoftErpTheme.textSecondary,
-                        ),
-                      ),
-                    ),
-                  for (final t in templates)
-                    CheckboxListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      controlAffinity: ListTileControlAffinity.leading,
-                      value: assignedTemplates.contains(t.id),
-                      onChanged: (v) => setLocal(() {
-                        if (v == true) {
-                          assignedTemplates.add(t.id);
-                        } else {
-                          assignedTemplates.remove(t.id);
-                        }
-                      }),
-                      title: Text(
-                        t.isSystemDefault ? '${t.name} · built-in' : t.name,
-                        style: const TextStyle(fontSize: 13),
-                      ),
-                      subtitle: t.description.isEmpty
-                          ? null
-                          : Text(t.description,
-                              style: const TextStyle(fontSize: 11.5)),
-                    ),
-                  const Divider(height: 24),
+                  // Primary / default way: the module × CRUD grid.
+                  const _SectionLabel('Module permissions'),
+                  const SizedBox(height: 4),
                   const Text(
-                    'Fine-tune access for just this person (overrides presets):',
+                    'Columns are Create · View · Update · Delete. Tick exactly '
+                    'what this person can do.',
                     style: TextStyle(
                       fontSize: 12,
                       color: SoftErpTheme.textSecondary,
@@ -385,6 +619,68 @@ Future<void> showPermissionsEditor(
                     descriptors: descriptors,
                     toggles: toggles,
                     onChanged: () => setLocal(() {}),
+                  ),
+                  const Divider(height: 24),
+                  // Deeper granularity: per-record grants for this person.
+                  _RecordGrantsSection(
+                    grants: recordGrants,
+                    onChanged: () => setLocal(() {}),
+                  ),
+                  const Divider(height: 24),
+                  // Secondary: presets are just a shortcut that fills the grid.
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: _SectionLabel('Shortcut · apply a preset'),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => showPresetManager(dialogContext),
+                        icon: const Icon(Icons.tune, size: 16),
+                        label: const Text('Manage'),
+                      ),
+                    ],
+                  ),
+                  if (templates.isEmpty)
+                    const Text(
+                      'No presets yet. Use Manage to create a named role.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: SoftErpTheme.textSecondary,
+                      ),
+                    )
+                  else
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final t in templates)
+                          FilterChip(
+                            label: Text(
+                              t.isSystemDefault
+                                  ? '${t.name} · built-in'
+                                  : t.name,
+                            ),
+                            selected: assignedTemplates.contains(t.id),
+                            onSelected: (sel) => setLocal(() {
+                              if (sel) {
+                                assignedTemplates.add(t.id);
+                                for (final k in t.permissions) {
+                                  toggles[k] = true; // stamp the grid above
+                                }
+                              } else {
+                                assignedTemplates.remove(t.id);
+                              }
+                            }),
+                          ),
+                      ],
+                    ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'A preset just fills the grid above — tweak any box after.',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: SoftErpTheme.textSecondary,
+                    ),
                   ),
                 ],
               ),
@@ -412,6 +708,17 @@ Future<void> showPermissionsEditor(
                 final ok = await auth.updateUserPermissions(
                   userId: userId,
                   states: nextStates,
+                );
+                // Persist per-record grants alongside the module grid.
+                await auth.updateUserRecordPermissions(
+                  userId,
+                  recordGrants.values
+                      .map((g) => {
+                            'entityType': g.entityType,
+                            'entityId': g.entityId,
+                            'op': g.op,
+                          })
+                      .toList(growable: false),
                 );
                 if (dialogContext.mounted && ok) {
                   Navigator.of(dialogContext).pop();

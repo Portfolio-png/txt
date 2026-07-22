@@ -1685,6 +1685,7 @@ function moduleOpForRequest(req) {
     '', 'auth', 'me', 'users', 'admins', 'permissions', 'permission-templates',
     'audit', 'sessions', 'track', 'delete-requests', 'assets', 'upload',
     'delete-s3-object', 'favorites', 'sandbox-config', 'notifications', 'health',
+    'record-options',
   ]);
   if (EXCLUDED.has(seg)) return null;
   // Employee account sub-actions stay capability-gated (create/link/unlink login).
@@ -1736,21 +1737,73 @@ function moduleOpForRequest(req) {
 // Central per-module CRUD gate. Runs for every /api request; enforces the
 // module.op permission for mapped business paths, and marks the request so the
 // legacy write gate doesn't double-check it.
-function requireApiModulePermission(req, res, next) {
-  const mo = moduleOpForRequest(req);
-  if (!mo) {
-    next();
-    return;
+// Modules that support per-record (row-level) grants, and how to list/label
+// their records for the picker. entity_type == the module key.
+const RECORD_OPTION_SOURCES = {
+  items: { table: 'items', idCol: 'id', label: "COALESCE(NULLIF(TRIM(display_name), ''), name)" },
+  clients: { table: 'clients', idCol: 'id', label: 'name' },
+  vendors: { table: 'vendors', idCol: 'id', label: 'name' },
+  units: { table: 'units', idCol: 'id', label: 'name' },
+  machines: { table: 'machines', idCol: 'id', label: 'name' },
+  dies: { table: 'dies', idCol: 'id', label: "COALESCE(NULLIF(TRIM(tool_code), ''), 'Die ' || id)" },
+  people: { table: 'employees', idCol: 'id', label: 'name' },
+  orders: { table: 'order_items', idCol: 'id', label: "COALESCE(NULLIF(TRIM(order_no), ''), 'Order ' || id)" },
+  challans: { table: 'delivery_challans', idCol: 'id', label: "COALESCE(NULLIF(TRIM(challan_no), ''), 'Challan ' || id)" },
+  inventory: { table: 'materials', idCol: 'barcode', label: "COALESCE(NULLIF(TRIM(name), ''), barcode)" },
+  pipelines: { table: 'pipeline_templates', idCol: 'id', label: 'name' },
+};
+const RECORD_PERMISSION_OPS = new Set(['read', 'update', 'delete']);
+
+// The record id targeted by a request. Usually the segment right after the
+// module (/items/42 -> 42; /materials/BC-1 -> BC-1), but pipelines nest one
+// deeper (/production/pipeline-templates/:id). null for collection/create.
+function recordIdForRequest(req, module) {
+  const parts = (req.path || '').split('/');
+  if (module === 'pipelines') return parts[3] ? String(parts[3]) : null;
+  const id = parts[2];
+  return id ? String(id) : null;
+}
+
+async function hasRecordPermission(userId, entityType, entityId, op) {
+  if (!userId || !entityId) return false;
+  const row = await get(
+    'SELECT 1 FROM user_record_permissions WHERE user_id = ? AND entity_type = ? AND entity_id = ? AND op = ? LIMIT 1',
+    [userId, String(entityType), String(entityId), op],
+  );
+  return !!row;
+}
+
+async function requireApiModulePermission(req, res, next) {
+  try {
+    const mo = moduleOpForRequest(req);
+    if (!mo) {
+      next();
+      return;
+    }
+    req._moduleGated = true;
+    if (hasPermission(req, mo.key)) {
+      next();
+      return;
+    }
+    // Per-record fallback: an id-scoped read/update/delete on a specific record
+    // this user was granted individually, even without the module-level right.
+    if (RECORD_PERMISSION_OPS.has(mo.op) && RECORD_OPTION_SOURCES[mo.module]) {
+      const recordId = recordIdForRequest(req, mo.module);
+      if (
+        recordId &&
+        (await hasRecordPermission(req.user.id, mo.module, recordId, mo.op))
+      ) {
+        next();
+        return;
+      }
+    }
+    res.status(403).json({
+      success: false,
+      error: `You do not have ${mo.op} access to the ${MODULE_LABELS[mo.module] || mo.module} module.`,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
-  req._moduleGated = true;
-  if (hasPermission(req, mo.key)) {
-    next();
-    return;
-  }
-  res.status(403).json({
-    success: false,
-    error: `You do not have ${mo.op} access to the ${MODULE_LABELS[mo.module] || mo.module} module.`,
-  });
 }
 
 function requireApiWritePermission(req, res, next) {
@@ -4140,6 +4193,19 @@ async function initDb() {
   `);
   await run('CREATE INDEX IF NOT EXISTS idx_entity_activity_log_entity ON entity_activity_log(entity_type, entity_id, created_at)');
   await run('CREATE INDEX IF NOT EXISTS idx_entity_activity_log_actor ON entity_activity_log(actor_user_id, created_at)');
+
+  // Per-record (row-level) permission grants for an individual user.
+  await run(`
+    CREATE TABLE IF NOT EXISTS user_record_permissions (
+      user_id INTEGER NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      op TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (user_id, entity_type, entity_id, op)
+    )
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_user_record_permissions_user ON user_record_permissions(user_id)');
 
   // --- Column migrations for order_activity_log on pre-existing databases ---
   // The CREATE TABLE above is skipped if the table already exists. These
@@ -19097,6 +19163,99 @@ app.get('/api/users/:id/permissions', requirePermission('users.manage_permission
     });
   } catch (error) {
     res.status(500).json({ success: false, permissions: [], error: error.message });
+  }
+});
+
+// --- Per-record (row-level) grants for a single user -----------------------
+app.get('/api/users/:id/record-permissions', requirePermission('users.manage_permissions'), async (req, res) => {
+  try {
+    const targetId = Number(req.params.id);
+    const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
+    if (!target) return res.status(404).json({ success: false, records: [], error: 'User not found.' });
+    if (!canManageUser(req.user.role, target.role)) {
+      return res.status(403).json({ success: false, records: [], error: 'You do not have permission to manage this user.' });
+    }
+    const rows = await all(
+      'SELECT entity_type, entity_id, op FROM user_record_permissions WHERE user_id = ? ORDER BY entity_type, entity_id',
+      [targetId],
+    );
+    const records = [];
+    for (const r of rows) {
+      const src = RECORD_OPTION_SOURCES[r.entity_type];
+      let label = `#${r.entity_id}`;
+      if (src) {
+        try {
+          const row = await get(`SELECT ${src.label} AS label FROM ${src.table} WHERE ${src.idCol || 'id'} = ?`, [r.entity_id]);
+          if (row && row.label) label = row.label;
+        } catch (_) {}
+      }
+      records.push({ entityType: r.entity_type, entityId: String(r.entity_id), op: r.op, label });
+    }
+    res.json({ success: true, records, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, records: [], error: error.message });
+  }
+});
+
+app.put('/api/users/:id/record-permissions', requirePermission('users.manage_permissions'), async (req, res) => {
+  try {
+    const targetId = Number(req.params.id);
+    const target = await get('SELECT * FROM users WHERE id = ?', [targetId]);
+    if (!target) return res.status(404).json({ success: false, error: 'User not found.' });
+    if (!canManageUser(req.user.role, target.role)) {
+      return res.status(403).json({ success: false, error: 'You do not have permission to manage this user.' });
+    }
+    const requested = Array.isArray(req.body?.records) ? req.body.records : [];
+    const clean = [];
+    for (const r of requested) {
+      const entityType = String(r?.entityType || '').trim();
+      const entityId = String(r?.entityId ?? '').trim();
+      const op = String(r?.op || '').trim();
+      if (!RECORD_OPTION_SOURCES[entityType] || !RECORD_PERMISSION_OPS.has(op) || !entityId) continue;
+      if (req.user.role !== 'super_admin' && req.userPermissions?.[`${entityType}.${op}`] !== true) {
+        return res.status(403).json({ success: false, error: `You cannot grant ${op} on ${entityType} that you do not have yourself.` });
+      }
+      clean.push({ entityType, entityId, op });
+    }
+    const now = nowIso();
+    await run('DELETE FROM user_record_permissions WHERE user_id = ?', [targetId]);
+    for (const r of clean) {
+      await run(
+        'INSERT OR IGNORE INTO user_record_permissions (user_id, entity_type, entity_id, op, created_at) VALUES (?, ?, ?, ?, ?)',
+        [targetId, r.entityType, r.entityId, r.op, now],
+      );
+    }
+    res.json({ success: true, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Searchable record list for the per-record picker (id + label per module).
+app.get('/api/record-options/:entityType', requirePermission('users.manage_permissions'), async (req, res) => {
+  try {
+    const src = RECORD_OPTION_SOURCES[String(req.params.entityType)];
+    if (!src) return res.json({ success: true, options: [], error: null });
+    const q = String(req.query.query || '').trim().toLowerCase();
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const params = [];
+    let where = '';
+    if (q) {
+      where = `WHERE LOWER(${src.label}) LIKE ?`;
+      params.push(`%${q}%`);
+    }
+    params.push(limit);
+    const rows = await all(
+      `SELECT ${src.idCol || 'id'} AS id, ${src.label} AS label FROM ${src.table} ${where} ORDER BY label LIMIT ?`,
+      params,
+    );
+    res.json({
+      success: true,
+      options: rows.map((r) => ({ id: String(r.id), label: r.label || `#${r.id}` })),
+      error: null,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, options: [], error: error.message });
   }
 });
 

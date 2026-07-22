@@ -131,6 +131,47 @@ class UserPermissionState {
   }
 }
 
+/// A per-record (row-level) grant: this user may `op` this specific record.
+class RecordGrant {
+  const RecordGrant({
+    required this.entityType,
+    required this.entityId,
+    required this.op,
+    required this.label,
+  });
+
+  final String entityType;
+  final String entityId;
+  final String op; // 'read' | 'update' | 'delete'
+  final String label;
+
+  String get key => '$entityType:$entityId:$op';
+
+  factory RecordGrant.fromJson(Map<String, dynamic> json) {
+    return RecordGrant(
+      entityType: json['entityType'] as String? ?? '',
+      entityId: (json['entityId'] ?? '').toString(),
+      op: json['op'] as String? ?? '',
+      label: json['label'] as String? ?? '',
+    );
+  }
+}
+
+/// One selectable record in the per-record picker (id + display label).
+class RecordOption {
+  const RecordOption({required this.id, required this.label});
+
+  final String id;
+  final String label;
+
+  factory RecordOption.fromJson(Map<String, dynamic> json) {
+    return RecordOption(
+      id: (json['id'] ?? '').toString(),
+      label: json['label'] as String? ?? '',
+    );
+  }
+}
+
 class DeleteRequest {
   const DeleteRequest({
     required this.id,

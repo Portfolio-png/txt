@@ -668,6 +668,45 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<List<RecordGrant>> getUserRecordPermissions(int userId) async {
+    try {
+      return await _api.getUserRecordPermissions(userId);
+    } catch (error) {
+      _errorMessage =
+          _friendly(error, fallback: 'Failed to load record permissions.');
+      notifyListeners();
+      return const [];
+    }
+  }
+
+  Future<bool> updateUserRecordPermissions(
+    int userId,
+    List<Map<String, String>> records,
+  ) async {
+    try {
+      await _api.updateUserRecordPermissions(userId, records);
+      return true;
+    } catch (error) {
+      _errorMessage =
+          _friendly(error, fallback: 'Failed to save record permissions.');
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<List<RecordOption>> getRecordOptions(
+    String entityType, {
+    String query = '',
+  }) async {
+    try {
+      return await _api.getRecordOptions(entityType, query: query);
+    } catch (error) {
+      _errorMessage = _friendly(error, fallback: 'Failed to load records.');
+      notifyListeners();
+      return const [];
+    }
+  }
+
   /// Track feed for one master record (the "Track" tab on a master screen).
   Future<List<TrackEvent>> getEntityTrack(
     String entityType,
