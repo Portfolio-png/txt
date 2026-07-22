@@ -148,8 +148,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             labelText: 'Password',
                           ),
                           obscureText: true,
-                          validator: (value) => value == null || value.length < 8
-                              ? 'Enter at least 8 characters.'
+                          validator: (value) => value == null || value.isEmpty
+                              ? 'Enter your password.'
                               : null,
                           onFieldSubmitted: (_) => _submit(),
                         ),

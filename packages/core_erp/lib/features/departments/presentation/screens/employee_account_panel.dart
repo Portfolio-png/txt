@@ -115,6 +115,16 @@ class _CreateLoginCardState extends State<_CreateLoginCard> {
   );
   final _passCtrl = TextEditingController();
   String _role = 'user';
+  final Set<int> _selectedPresetIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    // Load the preset (named role) catalog so it can be picked at creation.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<AuthProvider>().ensurePermissionCatalog();
+    });
+  }
 
   @override
   void dispose() {
@@ -129,20 +139,28 @@ class _CreateLoginCardState extends State<_CreateLoginCard> {
       showGlobalToast('Enter an email for the login.', kind: AppToastKind.error);
       return;
     }
-    if (_passCtrl.text.trim().length < 8) {
-      showGlobalToast(
-        'Use a temporary password of at least 8 characters.',
-        kind: AppToastKind.error,
-      );
+    if (_passCtrl.text.isEmpty) {
+      showGlobalToast('Enter a temporary password.', kind: AppToastKind.error);
       return;
     }
     final provider = context.read<DepartmentsProvider>();
+    final auth = context.read<AuthProvider>();
     final ok = await provider.createEmployeeLogin(
       widget.emp.id,
       email: email,
       password: _passCtrl.text,
       role: _role,
     );
+    // Apply the chosen role presets to the freshly-created account.
+    if (ok && _selectedPresetIds.isNotEmpty) {
+      final userId = provider.employeeById(widget.emp.id)?.login?.userId;
+      if (userId != null) {
+        await auth.updateUserPermissionTemplates(
+          userId: userId,
+          templateIds: _selectedPresetIds.toList(growable: false),
+        );
+      }
+    }
     if (!mounted) return;
     showGlobalToast(
       ok
@@ -155,8 +173,10 @@ class _CreateLoginCardState extends State<_CreateLoginCard> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<DepartmentsProvider>();
+    final auth = context.watch<AuthProvider>();
     // Only a super admin can mint an admin; an admin only creates staff.
-    final isSuperAdmin = context.watch<AuthProvider>().isSuperAdmin;
+    final isSuperAdmin = auth.isSuperAdmin;
+    final templates = auth.permissionTemplates;
     final code = _ddmm(widget.emp.dateOfBirth);
     return ErpDialogSectionCard(
       title: 'Create login',
@@ -212,6 +232,54 @@ class _CreateLoginCardState extends State<_CreateLoginCard> {
               ],
             ),
           ],
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Role preset (optional)',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => showPresetManager(context),
+                icon: const Icon(Icons.tune, size: 15),
+                label: const Text('Manage'),
+              ),
+            ],
+          ),
+          if (templates.isEmpty)
+            const Text(
+              'No presets yet — create one, or set per-module permissions '
+              'right after the login is made.',
+              style: TextStyle(fontSize: 12, color: SoftErpTheme.textSecondary),
+            )
+          else
+            ...templates.map(
+              (t) => CheckboxListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                value: _selectedPresetIds.contains(t.id),
+                onChanged: (v) => setState(() {
+                  if (v == true) {
+                    _selectedPresetIds.add(t.id);
+                  } else {
+                    _selectedPresetIds.remove(t.id);
+                  }
+                }),
+                title: Text(t.name, style: const TextStyle(fontSize: 13)),
+                subtitle: t.description.isEmpty
+                    ? null
+                    : Text(t.description, style: const TextStyle(fontSize: 11.5)),
+              ),
+            ),
+          const SizedBox(height: 4),
+          const Text(
+            'After creating the login you can fine-tune per-module permissions '
+            'from Permissions & access.',
+            style: TextStyle(fontSize: 11.5, color: SoftErpTheme.textSecondary),
+          ),
           const SizedBox(height: 16),
           Align(
             alignment: Alignment.centerLeft,
@@ -506,9 +574,8 @@ Future<void> _showResetPassword(
           controller: controller,
           decoration: const InputDecoration(labelText: 'New password'),
           obscureText: true,
-          validator: (value) => (value == null || value.trim().length < 8)
-              ? 'Use at least 8 characters.'
-              : null,
+          validator: (value) =>
+              (value == null || value.isEmpty) ? 'Enter a password.' : null,
         ),
       ),
       actions: [

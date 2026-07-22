@@ -49,6 +49,7 @@ class PermissionDescriptor {
     this.category = 'capability',
     this.module,
     this.moduleLabel,
+    this.group,
     this.op,
   });
 
@@ -56,13 +57,14 @@ class PermissionDescriptor {
   final String label;
   final String description;
 
-  /// 'module' (part of the per-module CRUD grid) or 'capability'.
+  /// 'module' (part of the per-module CRUD tree) or 'capability'.
   final String category;
 
-  /// For module keys: the module id ('orders'), its label ('Orders'), and the
-  /// CRUD op ('create'|'read'|'update'|'delete').
+  /// For module keys: the module id ('items'), its label ('Items'), the UI
+  /// group it nests under ('Masters' or null), and the CRUD op.
   final String? module;
   final String? moduleLabel;
+  final String? group;
   final String? op;
 
   bool get isModule => category == 'module';
@@ -75,6 +77,7 @@ class PermissionDescriptor {
       category: json['category'] as String? ?? 'capability',
       module: json['module'] as String?,
       moduleLabel: json['moduleLabel'] as String?,
+      group: json['group'] as String?,
       op: json['op'] as String?,
     );
   }

@@ -699,7 +699,7 @@ class _ItemPickerScreenState extends State<_ItemPickerScreen> {
                 item: item,
                 initialRootPropertyId: null,
                 initialValueNodeIds: const [],
-                useTilesForValues: true,
+                useTilesForValues: false, // desktop dropdown on mobile: no keyboard until search is tapped
                 onCreateValue: ({required item, required propertyNodeId, required propertyLabel, required valueName}) {
                   return context.read<ItemsProvider>().appendVariationValue(
                         itemId: item.id,

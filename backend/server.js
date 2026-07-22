@@ -135,23 +135,47 @@ const USER_ROLES = new Set(['super_admin', 'admin', 'user']);
 const CRUD_MODULES = [
   'orders',
   'inventory',
-  'masters',
+  'challans',
   'production',
   'jobs',
-  'challans',
-  'people',
   'action_center',
+  // Masters sub-entities (grouped under "Masters" in the UI tree):
+  'people',
+  'clients',
+  'vendors',
+  'items',
+  'units',
+  'machines',
+  'dies',
+  'pipelines',
 ];
 const CRUD_OPS = ['create', 'read', 'update', 'delete'];
 const MODULE_LABELS = {
   orders: 'Orders',
   inventory: 'Inventory',
-  masters: 'Masters',
+  challans: 'Delivery Challans',
   production: 'Production',
   jobs: 'Jobs',
-  challans: 'Delivery Challans',
-  people: 'People / Users',
   action_center: 'Action Center',
+  people: 'People',
+  clients: 'Clients',
+  vendors: 'Vendors',
+  items: 'Items',
+  units: 'Units',
+  machines: 'Machines',
+  dies: 'Dies',
+  pipelines: 'Pipelines',
+};
+// UI tree grouping: these modules render under a collapsible "Masters" parent.
+const MODULE_GROUPS = {
+  people: 'Masters',
+  clients: 'Masters',
+  vendors: 'Masters',
+  items: 'Masters',
+  units: 'Masters',
+  machines: 'Masters',
+  dies: 'Masters',
+  pipelines: 'Masters',
 };
 const OP_LABELS = {
   create: 'Create',
@@ -266,36 +290,34 @@ const DEFAULT_PERMISSION_TEMPLATES = [
   },
   {
     name: 'Inventory Operator',
-    description: 'Full inventory; view masters and orders.',
+    description: 'Full inventory; view items and orders.',
     permissions: {
       'inventory.read': true,
       'inventory.create': true,
       'inventory.update': true,
       'inventory.request_delete': true,
-      'masters.read': true,
+      'items.read': true,
       'orders.read': true,
     },
   },
   {
     name: 'Masters Manager',
-    description: 'Full masters (items, clients, vendors, units, machines, dies, pipelines).',
-    permissions: {
-      'masters.read': true,
-      'masters.create': true,
-      'masters.update': true,
-      'masters.delete': true,
-      'inventory.read': true,
-    },
+    description: 'Full masters (people, clients, vendors, items, units, machines, dies, pipelines).',
+    permissions: Object.fromEntries(
+      ['people', 'clients', 'vendors', 'items', 'units', 'machines', 'dies', 'pipelines']
+        .flatMap((m) => CRUD_OPS.map((op) => [`${m}.${op}`, true])),
+    ),
   },
   {
     name: 'Orders Manager',
-    description: 'Full orders; view masters and inventory.',
+    description: 'Full orders; view items, clients and inventory.',
     permissions: {
       'orders.read': true,
       'orders.create': true,
       'orders.update': true,
       'orders.delete': true,
-      'masters.read': true,
+      'items.read': true,
+      'clients.read': true,
       'inventory.read': true,
     },
   },
@@ -597,22 +619,11 @@ function normalizeEmail(value = '') {
   return String(value).trim().toLowerCase();
 }
 
-function validatePasswordPolicy(password, { email = '', role = 'user' } = {}) {
-  if (role === 'admin' || role === 'super_admin') return null;
-  const value = String(password || '');
-  const normalized = value.toLowerCase();
-  if (value.length < 10) {
-    return PASSWORD_POLICY_ERROR;
-  }
-  if (!/[a-z]/i.test(value) || !/[0-9]/.test(value)) {
-    return PASSWORD_POLICY_ERROR;
-  }
-  const emailPrefix = String(email || '').split('@')[0].trim().toLowerCase();
-  if (emailPrefix && emailPrefix.length >= 3 && normalized.includes(emailPrefix)) {
-    return PASSWORD_POLICY_ERROR;
-  }
-  if (COMMON_WEAK_PASSWORDS.has(normalized)) {
-    return PASSWORD_POLICY_ERROR;
+function validatePasswordPolicy(password /* , { email, role } */) {
+  // Password strength requirements intentionally removed: any non-empty
+  // password is accepted (short/weak/4-digit codes are fine).
+  if (String(password || '').length < 1) {
+    return 'Enter a password.';
   }
   return null;
 }
@@ -715,6 +726,7 @@ function permissionDescriptorFor(key) {
       category: 'module',
       module,
       moduleLabel: MODULE_LABELS[module] || module,
+      group: MODULE_GROUPS[module] || null,
       op,
     };
   }
@@ -726,6 +738,7 @@ function permissionDescriptorFor(key) {
     category: 'capability',
     module: null,
     moduleLabel: null,
+    group: null,
     op: null,
   };
 }
@@ -1685,11 +1698,21 @@ function moduleOpForRequest(req) {
   } else if (['inventory', 'materials', 'barcode'].includes(seg)) {
     module = 'inventory';
   } else if (seg === 'production' && /^\/production\/pipeline-templates/.test(path)) {
-    module = 'masters'; // the pipeline designer is a master
+    module = 'pipelines'; // the pipeline designer is a master
   } else if (['production', 'production-runs', 'pipeline-runs', 'telemetry'].includes(seg)) {
     module = 'production';
-  } else if (['items', 'clients', 'vendors', 'units', 'groups', 'machines', 'dies', 'sub-contractors', 'company-profile'].includes(seg)) {
-    module = 'masters';
+  } else if (['items', 'groups'].includes(seg)) {
+    module = 'items';
+  } else if (['clients', 'sub-contractors'].includes(seg)) {
+    module = 'clients';
+  } else if (seg === 'vendors') {
+    module = 'vendors';
+  } else if (seg === 'units') {
+    module = 'units';
+  } else if (seg === 'machines') {
+    module = 'machines';
+  } else if (seg === 'dies') {
+    module = 'dies';
   } else if (seg === 'jobs') {
     module = 'jobs';
   } else if (['challans', 'delivery-challans', 'invoices', 'reconciliation', 'challan-templates', 'reports', 'templates'].includes(seg)) {
@@ -1699,6 +1722,7 @@ function moduleOpForRequest(req) {
   } else if (['action-center', 'trash'].includes(seg)) {
     module = 'action_center';
   }
+  // company-profile + any unmapped path -> null -> legacy write gate.
   if (!module) return null;
 
   const m = req.method;

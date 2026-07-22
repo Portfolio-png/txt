@@ -6,15 +6,24 @@ import '../../../../core/widgets/app_toast.dart';
 import '../../domain/auth_user.dart';
 import '../providers/auth_provider.dart';
 
-const List<String> _moduleOrder = [
+// Top-level module order (mirrors the nav bar); masters nest under a group.
+const List<String> _topModuleOrder = [
   'orders',
   'inventory',
-  'masters',
+  'challans',
   'production',
   'jobs',
-  'challans',
-  'people',
   'action_center',
+];
+const List<String> _mastersModuleOrder = [
+  'people',
+  'clients',
+  'vendors',
+  'items',
+  'units',
+  'machines',
+  'dies',
+  'pipelines',
 ];
 const List<String> _ops = ['create', 'read', 'update', 'delete'];
 const Map<String, String> _opLabels = {
@@ -30,10 +39,13 @@ const Set<String> _hiddenKeys = {
   'users.create_admin',
 };
 
-/// A module × CRUD grid + a capabilities section, driven by [toggles].
-/// Reused by the per-user permissions editor and the preset editor.
-class PermissionMatrix extends StatelessWidget {
-  const PermissionMatrix({
+/// An expandable permission tree (old-Windows-installer style): each module
+/// from the nav expands to its CRUD checkboxes; the masters nest under a
+/// "Masters" group. Parent rows are tri-state (all / some / none) and toggle
+/// their whole subtree. A capabilities section follows. Reused by the per-user
+/// editor and the preset editor.
+class PermissionTree extends StatefulWidget {
+  const PermissionTree({
     super.key,
     required this.descriptors,
     required this.toggles,
@@ -41,91 +53,106 @@ class PermissionMatrix extends StatelessWidget {
   });
 
   final List<PermissionDescriptor> descriptors;
-  final Map<String, bool> toggles;
-  final void Function(String key, bool value) onChanged;
+  final Map<String, bool> toggles; // mutated in place
+  final VoidCallback onChanged;
+
+  @override
+  State<PermissionTree> createState() => _PermissionTreeState();
+}
+
+class _PermissionTreeState extends State<PermissionTree> {
+  final Set<String> _expanded = {};
+
+  Map<String, bool> get _t => widget.toggles;
+
+  bool? _tri(List<String> keys) {
+    if (keys.isEmpty) return false;
+    var on = 0;
+    for (final k in keys) {
+      if (_t[k] == true) on++;
+    }
+    if (on == 0) return false;
+    if (on == keys.length) return true;
+    return null; // some on → indeterminate
+  }
+
+  void _setAll(List<String> keys, bool value) {
+    setState(() {
+      for (final k in keys) {
+        _t[k] = value;
+      }
+    });
+    widget.onChanged();
+  }
+
+  void _setOne(String key, bool value) {
+    setState(() => _t[key] = value);
+    widget.onChanged();
+  }
+
+  bool _isExpanded(String id) => _expanded.contains(id);
+  void _toggleExpand(String id) => setState(() {
+        if (!_expanded.remove(id)) _expanded.add(id);
+      });
 
   @override
   Widget build(BuildContext context) {
     final byModule = <String, Map<String, PermissionDescriptor>>{};
-    final byModuleLabel = <String, String>{};
+    final labels = <String, String>{};
     final caps = <PermissionDescriptor>[];
-    for (final d in descriptors) {
+    for (final d in widget.descriptors) {
       if (d.isModule && d.module != null && d.op != null) {
         byModule.putIfAbsent(d.module!, () => {})[d.op!] = d;
-        byModuleLabel[d.module!] = d.moduleLabel ?? d.module!;
+        labels[d.module!] = d.moduleLabel ?? d.module!;
       } else if (!d.isModule && !_hiddenKeys.contains(d.key)) {
         caps.add(d);
       }
     }
-    final modules = [
-      ..._moduleOrder.where(byModule.containsKey),
-      ...byModule.keys.where((m) => !_moduleOrder.contains(m)),
+    final topModules = [
+      ..._topModuleOrder.where(byModule.containsKey),
+      ...byModule.keys.where((m) =>
+          !_topModuleOrder.contains(m) && !_mastersModuleOrder.contains(m)),
     ];
+    final masterModules =
+        _mastersModuleOrder.where(byModule.containsKey).toList();
+
+    final rows = <TableRow>[_headerRow()];
+    for (final m in topModules) {
+      rows.add(_moduleRow(labels[m] ?? m, byModule[m]!, indent: 4));
+    }
+    if (masterModules.isNotEmpty) {
+      rows.add(_groupRow('Masters', masterModules, byModule));
+      if (_isExpanded('group:Masters')) {
+        for (final m in masterModules) {
+          rows.add(_moduleRow(labels[m] ?? m, byModule[m]!, indent: 30));
+        }
+      }
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _SectionLabel('Modules'),
-        const SizedBox(height: 6),
         Table(
           columnWidths: const {
             0: FlexColumnWidth(),
-            1: FixedColumnWidth(62),
-            2: FixedColumnWidth(62),
-            3: FixedColumnWidth(62),
-            4: FixedColumnWidth(62),
+            1: FixedColumnWidth(56),
+            2: FixedColumnWidth(56),
+            3: FixedColumnWidth(56),
+            4: FixedColumnWidth(56),
           },
           defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-          children: [
-            TableRow(
-              children: [
-                const SizedBox.shrink(),
-                for (final op in _ops)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      _opLabels[op]!,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: SoftErpTheme.textSecondary,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            for (final m in modules)
-              TableRow(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Text(
-                      byModuleLabel[m] ?? m,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: SoftErpTheme.textPrimary,
-                      ),
-                    ),
-                  ),
-                  for (final op in _ops)
-                    _cell(byModule[m]?[op]),
-                ],
-              ),
-          ],
+          children: rows,
         ),
         if (caps.isNotEmpty) ...[
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           const _SectionLabel('Capabilities'),
-          const SizedBox(height: 2),
           for (final c in caps)
             CheckboxListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
               controlAffinity: ListTileControlAffinity.leading,
-              value: toggles[c.key] ?? false,
-              onChanged: (v) => onChanged(c.key, v == true),
+              value: _t[c.key] ?? false,
+              onChanged: (v) => _setOne(c.key, v == true),
               title: Text(c.label, style: const TextStyle(fontSize: 13)),
               subtitle: c.description.isEmpty
                   ? null
@@ -136,13 +163,115 @@ class PermissionMatrix extends StatelessWidget {
     );
   }
 
+  TableRow _headerRow() {
+    return TableRow(
+      children: [
+        const SizedBox.shrink(),
+        for (final op in _ops)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(
+              _opLabels[op]!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: SoftErpTheme.textSecondary,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  TableRow _moduleRow(
+    String label,
+    Map<String, PermissionDescriptor> ops, {
+    double indent = 0,
+  }) {
+    return TableRow(
+      children: [
+        Padding(
+          padding: EdgeInsets.only(left: indent, top: 4, bottom: 4),
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: SoftErpTheme.textPrimary,
+            ),
+          ),
+        ),
+        for (final op in _ops) _cell(ops[op]),
+      ],
+    );
+  }
+
+  TableRow _groupRow(
+    String group,
+    List<String> members,
+    Map<String, Map<String, PermissionDescriptor>> byModule,
+  ) {
+    final expanded = _isExpanded('group:$group');
+    return TableRow(
+      children: [
+        InkWell(
+          onTap: () => _toggleExpand('group:$group'),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                Icon(
+                  expanded
+                      ? Icons.keyboard_arrow_down_rounded
+                      : Icons.chevron_right_rounded,
+                  size: 20,
+                  color: SoftErpTheme.textSecondary,
+                ),
+                Text(
+                  group,
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                    color: SoftErpTheme.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        for (final op in _ops)
+          _triCell([
+            for (final m in members)
+              if (byModule[m]?[op] != null) byModule[m]![op]!.key,
+          ]),
+      ],
+    );
+  }
+
   Widget _cell(PermissionDescriptor? d) {
     if (d == null) return const SizedBox.shrink();
-    return Checkbox(
-      value: toggles[d.key] ?? false,
-      onChanged: (v) => onChanged(d.key, v == true),
-      visualDensity: VisualDensity.compact,
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    return Center(
+      child: Checkbox(
+        value: _t[d.key] ?? false,
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        onChanged: (v) => _setOne(d.key, v == true),
+      ),
+    );
+  }
+
+  Widget _triCell(List<String> keys) {
+    if (keys.isEmpty) return const SizedBox.shrink();
+    final tri = _tri(keys);
+    return Center(
+      child: Checkbox(
+        tristate: true,
+        value: tri,
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        onChanged: (_) => _setAll(keys, tri != true),
+      ),
     );
   }
 }
@@ -252,10 +381,10 @@ Future<void> showPermissionsEditor(
                     ),
                   ),
                   const SizedBox(height: 10),
-                  PermissionMatrix(
+                  PermissionTree(
                     descriptors: descriptors,
                     toggles: toggles,
-                    onChanged: (key, value) => setLocal(() => toggles[key] = value),
+                    onChanged: () => setLocal(() {}),
                   ),
                 ],
               ),
@@ -438,10 +567,10 @@ Future<void> _showPresetEditor(
                       const InputDecoration(labelText: 'Description (optional)'),
                 ),
                 const SizedBox(height: 14),
-                PermissionMatrix(
+                PermissionTree(
                   descriptors: descriptors,
                   toggles: toggles,
-                  onChanged: (key, value) => setLocal(() => toggles[key] = value),
+                  onChanged: () => setLocal(() {}),
                 ),
               ],
             ),
