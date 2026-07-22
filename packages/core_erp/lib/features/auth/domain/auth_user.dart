@@ -51,13 +51,15 @@ class PermissionDescriptor {
     this.moduleLabel,
     this.group,
     this.op,
+    this.parentOp,
+    this.parentKey,
   });
 
   final String key;
   final String label;
   final String description;
 
-  /// 'module' (part of the per-module CRUD tree) or 'capability'.
+  /// 'module' (part of the per-module CRUD tree), 'fine' (sub-action override), or 'capability'.
   final String category;
 
   /// For module keys: the module id ('items'), its label ('Items'), the UI
@@ -66,6 +68,10 @@ class PermissionDescriptor {
   final String? moduleLabel;
   final String? group;
   final String? op;
+
+  /// For fine keys: parentOp ('update') and parentKey ('items.update').
+  final String? parentOp;
+  final String? parentKey;
 
   bool get isModule => category == 'module';
 
@@ -79,6 +85,8 @@ class PermissionDescriptor {
       moduleLabel: json['moduleLabel'] as String?,
       group: json['group'] as String?,
       op: json['op'] as String?,
+      parentOp: json['parentOp'] as String?,
+      parentKey: json['parentKey'] as String?,
     );
   }
 }

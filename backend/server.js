@@ -251,11 +251,76 @@ const CAPABILITY_DESCRIPTORS = {
     description: 'Allow the user to sign in from the desktop/web app.',
   },
 };
+const FINE_PERMISSION_DESCRIPTORS = {
+  'orders.status_change': { module: 'orders', parentOp: 'update', label: 'Change order status', description: 'Change order status across workflow stages.' },
+  'orders.po_upload': { module: 'orders', parentOp: 'update', label: 'Upload PO documents', description: 'Attach PO documents to an order.' },
+  'orders.po_download': { module: 'orders', parentOp: 'read', label: 'Download PO documents', description: 'Download attached PO documents.' },
+  'orders.report.view': { module: 'orders', parentOp: 'read', label: 'View production reports', description: 'View order production summary reports.' },
+  'orders.report.export': { module: 'orders', parentOp: 'read', label: 'Export production reports', description: 'Export order production reports to PDF/CSV.' },
+  'orders.item_history.read': { module: 'orders', parentOp: 'read', label: 'View item history', description: 'View historical variation line changes.' },
+  'orders.production.read': { module: 'orders', parentOp: 'read', label: 'View order pipeline runs', description: 'View linked production runs for an order.' },
+
+  'challans.issue': { module: 'challans', parentOp: 'update', label: 'Issue delivery challan', description: 'Transition draft challans to issued state.' },
+  'challans.cancel': { module: 'challans', parentOp: 'update', label: 'Cancel delivery challan', description: 'Cancel issued delivery challans.' },
+  'challans.assign_report_group': { module: 'challans', parentOp: 'update', label: 'Assign report group', description: 'Assign report group tags to challans.' },
+  'challans.print': { module: 'challans', parentOp: 'read', label: 'Print delivery challan', description: 'Print or preview delivery challans.' },
+  'challans.asset.upload': { module: 'challans', parentOp: 'update', label: 'Upload challan assets', description: 'Attach signatures or files to a challan.' },
+
+  'inventory.stock.read': { module: 'inventory', parentOp: 'read', label: 'View stock overview', description: 'View aggregate inventory stock balances.' },
+  'inventory.health.read': { module: 'inventory', parentOp: 'read', label: 'View inventory health KPIs', description: 'View health indicators and alerts.' },
+  'inventory.material.read': { module: 'inventory', parentOp: 'read', label: 'View material details', description: 'View material master details.' },
+  'inventory.material.activity.read': { module: 'inventory', parentOp: 'read', label: 'View material activity', description: 'View audit activity log for materials.' },
+  'inventory.barcode.lookup': { module: 'inventory', parentOp: 'read', label: 'Lookup barcodes', description: 'Scan and resolve material barcodes.' },
+  'inventory.material.create': { module: 'inventory', parentOp: 'create', label: 'Create materials', description: 'Add new material master records.' },
+  'inventory.material.update': { module: 'inventory', parentOp: 'update', label: 'Update materials', description: 'Edit existing material properties.' },
+  'inventory.material.delete': { module: 'inventory', parentOp: 'delete', label: 'Delete materials', description: 'Hard delete material records.' },
+  'inventory.material.scan': { module: 'inventory', parentOp: 'update', label: 'Scan material stock', description: 'Perform material barcode scans.' },
+  'inventory.material.link': { module: 'inventory', parentOp: 'update', label: 'Link materials', description: 'Link parent/child material relationships.' },
+  'inventory.material.unlink': { module: 'inventory', parentOp: 'update', label: 'Unlink materials', description: 'Remove material linkages.' },
+  'inventory.movement.create': { module: 'inventory', parentOp: 'create', label: 'Create stock movements', description: 'Log manual inventory transfers/movements.' },
+  'inventory.set.read': { module: 'inventory', parentOp: 'read', label: 'View inventory sets', description: 'View material sets.' },
+  'inventory.set.create': { module: 'inventory', parentOp: 'create', label: 'Create inventory sets', description: 'Create new material sets.' },
+  'inventory.set.update': { module: 'inventory', parentOp: 'update', label: 'Update inventory sets', description: 'Modify material set definitions.' },
+  'inventory.set.delete': { module: 'inventory', parentOp: 'delete', label: 'Delete inventory sets', description: 'Delete material sets.' },
+
+  'items.short_code.set': { module: 'items', parentOp: 'update', label: 'Set item short code', description: 'Assign or update item short codes.' },
+  'items.group.reassign': { module: 'items', parentOp: 'update', label: 'Reassign item group', description: 'Change item group assignments.' },
+  'items.variation.manage': { module: 'items', parentOp: 'update', label: 'Manage variation nodes', description: 'Configure item variation trees.' },
+  'items.unit.manage': { module: 'items', parentOp: 'update', label: 'Manage item units', description: 'Set primary/secondary units for items.' },
+  'items.available_for_purchase.toggle': { module: 'items', parentOp: 'update', label: 'Toggle purchase status', description: 'Mark items available for purchase.' },
+  'items.asset.upload': { module: 'items', parentOp: 'update', label: 'Upload item images/assets', description: 'Attach images or files to items.' },
+  'items.asset.list': { module: 'items', parentOp: 'read', label: 'View item assets', description: 'List attached item images and files.' },
+  'items.track.read': { module: 'items', parentOp: 'read', label: 'View item track history', description: 'View audit log for items.' },
+
+  'people.employee.read': { module: 'people', parentOp: 'read', label: 'View employee directory', description: 'List employee staff records.' },
+  'people.employee.create': { module: 'people', parentOp: 'create', label: 'Create employees', description: 'Add new staff employee records.' },
+  'people.employee.update': { module: 'people', parentOp: 'update', label: 'Update employees', description: 'Edit employee staff details.' },
+  'people.employee.delete': { module: 'people', parentOp: 'delete', label: 'Delete employees', description: 'Remove employee staff records.' },
+  'people.department.read': { module: 'people', parentOp: 'read', label: 'View departments', description: 'View department structure.' },
+  'people.department.create': { module: 'people', parentOp: 'create', label: 'Create departments', description: 'Add new department units.' },
+  'people.department.update': { module: 'people', parentOp: 'update', label: 'Update departments', description: 'Edit department details.' },
+  'people.department.delete': { module: 'people', parentOp: 'delete', label: 'Delete departments', description: 'Delete department units.' },
+
+  'users.delete': { module: 'people', parentOp: 'delete', label: 'Delete user login accounts', description: 'Permanently remove login accounts.' },
+  'users.link_login': { module: 'people', parentOp: 'update', label: 'Link employee login', description: 'Link staff employee to a login account.' },
+  'users.unlink_login': { module: 'people', parentOp: 'update', label: 'Unlink employee login', description: 'Unlink employee staff from a login account.' },
+
+  'audit.export': { module: 'action_center', parentOp: 'read', label: 'Export audit logs', description: 'Download Track/Audit logs as CSV.' },
+};
+const FINE_PERMISSION_KEYS = Object.keys(FINE_PERMISSION_DESCRIPTORS);
+const FINE_KEY_TO_COARSE_MAP = Object.fromEntries(
+  Object.entries(FINE_PERMISSION_DESCRIPTORS).map(([key, info]) => [
+    key,
+    `${info.module}.${info.parentOp}`,
+  ]),
+);
+
 const CAPABILITY_PERMISSION_KEYS = Object.keys(CAPABILITY_DESCRIPTORS);
 
 const PERMISSION_KEYS = [
   ...MODULE_PERMISSION_KEYS,
   ...CAPABILITY_PERMISSION_KEYS,
+  ...FINE_PERMISSION_KEYS,
 ];
 
 // Legacy route-guard keys whose per-route requirePermission() is now a no-op:
@@ -732,6 +797,20 @@ function permissionDescriptorFor(key) {
       moduleLabel: MODULE_LABELS[module] || module,
       group: MODULE_GROUPS[module] || null,
       op,
+    };
+  }
+  const fine = FINE_PERMISSION_DESCRIPTORS[key];
+  if (fine) {
+    return {
+      key,
+      label: fine.label,
+      description: fine.description,
+      category: 'fine',
+      module: fine.module,
+      moduleLabel: MODULE_LABELS[fine.module] || fine.module,
+      group: MODULE_GROUPS[fine.module] || null,
+      parentOp: fine.parentOp,
+      parentKey: `${fine.module}.${fine.parentOp}`,
     };
   }
   const cap = CAPABILITY_DESCRIPTORS[key] || {};
@@ -1648,7 +1727,17 @@ function hasPermission(req, permissionKey) {
     return true;
   }
   const key = normalizePermissionKey(permissionKey);
-  return req.userPermissions?.[key] === true;
+  if (req.userPermissions?.[key] === true) {
+    return true;
+  }
+  if (req.userPermissions?.[key] === false) {
+    return false;
+  }
+  const coarseFallback = FINE_KEY_TO_COARSE_MAP[key];
+  if (coarseFallback && req.userPermissions?.[coarseFallback] === true) {
+    return true;
+  }
+  return false;
 }
 
 function requirePermission(permissionKey) {

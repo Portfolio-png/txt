@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
+import 'package:core_erp/features/auth/presentation/providers/auth_provider.dart';
 import 'package:core_erp/features/delivery_challans/domain/delivery_challan.dart';
 import 'package:core_erp/features/delivery_challans/data/delivery_challan_repository.dart';
 import 'package:core_erp/features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
@@ -70,7 +71,7 @@ class _InUseReconciliationWizardState extends State<InUseReconciliationWizard> {
   void _handleBack() {
     switch (_step) {
       case _ReconStep.select:
-        Navigator.of(context).maybePop();
+        Navigator.of(context).pop();
         break;
       case _ReconStep.reconcile:
         setState(() {
@@ -107,8 +108,44 @@ class _InUseReconciliationWizardState extends State<InUseReconciliationWizard> {
 
   @override
   Widget build(BuildContext context) {
+    final canReconcile = context.watch<AuthProvider>().can('challans.reconcile');
+    if (!canReconcile) {
+      return Scaffold(
+        backgroundColor: SoftErpTheme.shellSurface,
+        appBar: AppBar(
+          title: const Text('In-use Challans', style: TextStyle(fontWeight: FontWeight.w900)),
+          backgroundColor: Colors.white,
+          elevation: 0,
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.lock_outline_rounded, size: 48, color: SoftErpTheme.textSecondary),
+                const SizedBox(height: 12),
+                const Text('Permission Required', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                const Text(
+                  'You do not have permission to reconcile in-use challans. Please ask your administrator for the "In-use reconciliation" capability.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: SoftErpTheme.textSecondary),
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Go Back'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return PopScope(
-      canPop: false,
+      canPop: _step == _ReconStep.select,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _handleBack();
       },
@@ -127,7 +164,7 @@ class _InUseReconciliationWizardState extends State<InUseReconciliationWizard> {
                   ? IconButton(
                       icon: const Icon(Icons.close_rounded),
                       tooltip: 'Close',
-                      onPressed: () => Navigator.of(context).maybePop(),
+                      onPressed: () => Navigator.of(context).pop(),
                     )
                   : IconButton(
                       icon: const Icon(Icons.arrow_back_rounded),

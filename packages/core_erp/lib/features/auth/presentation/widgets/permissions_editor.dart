@@ -34,6 +34,7 @@ const Map<String, String> _opLabels = {
   'update': 'Update',
   'delete': 'Delete',
 };
+
 // Legacy / reserved keys never shown in the editor.
 const Set<String> _hiddenKeys = {
   'config.read',
@@ -41,11 +42,10 @@ const Set<String> _hiddenKeys = {
   'users.create_admin',
 };
 
-/// An expandable permission tree (old-Windows-installer style): each module
-/// from the nav expands to its CRUD checkboxes; the masters nest under a
-/// "Masters" group. Parent rows are tri-state (all / some / none) and toggle
-/// their whole subtree. A capabilities section follows. Reused by the per-user
-/// editor and the preset editor.
+/// An expandable CRUD permission grid: each module renders as a row with
+/// Create, View, Update, and Delete columns. Tri-state group rows (Masters)
+/// and module-level "All" checkboxes allow rapid toggling. An "Advanced" section
+/// reveals fine-grained split keys under each module.
 class PermissionTree extends StatefulWidget {
   const PermissionTree({
     super.key,
@@ -67,6 +67,11 @@ class _PermissionTreeState extends State<PermissionTree> {
 
   Map<String, bool> get _t => widget.toggles;
 
+  bool _isActorAuthorized(String key, AuthProvider auth) {
+    if (auth.user?.isSuperAdmin == true) return true;
+    return auth.can(key);
+  }
+
   bool? _tri(List<String> keys) {
     if (keys.isEmpty) return false;
     var on = 0;
@@ -78,16 +83,19 @@ class _PermissionTreeState extends State<PermissionTree> {
     return null; // some on → indeterminate
   }
 
-  void _setAll(List<String> keys, bool value) {
+  void _setAll(List<String> keys, bool value, AuthProvider auth) {
     setState(() {
       for (final k in keys) {
-        _t[k] = value;
+        if (_isActorAuthorized(k, auth)) {
+          _t[k] = value;
+        }
       }
     });
     widget.onChanged();
   }
 
-  void _setOne(String key, bool value) {
+  void _setOne(String key, bool value, AuthProvider auth) {
+    if (!_isActorAuthorized(key, auth)) return;
     setState(() => _t[key] = value);
     widget.onChanged();
   }
@@ -99,37 +107,31 @@ class _PermissionTreeState extends State<PermissionTree> {
 
   @override
   Widget build(BuildContext context) {
-    final byModule = <String, Map<String, PermissionDescriptor>>{};
+    final auth = context.watch<AuthProvider>();
+    final byModuleCoarse = <String, Map<String, PermissionDescriptor>>{};
+    final byModuleFine = <String, List<PermissionDescriptor>>{};
     final labels = <String, String>{};
     final caps = <PermissionDescriptor>[];
+
     for (final d in widget.descriptors) {
       if (d.isModule && d.module != null && d.op != null) {
-        byModule.putIfAbsent(d.module!, () => {})[d.op!] = d;
+        byModuleCoarse.putIfAbsent(d.module!, () => {})[d.op!] = d;
         labels[d.module!] = d.moduleLabel ?? d.module!;
-      } else if (!d.isModule && !_hiddenKeys.contains(d.key)) {
+      } else if (d.category == 'fine' && d.module != null) {
+        byModuleFine.putIfAbsent(d.module!, () => []).add(d);
+        labels[d.module!] = d.moduleLabel ?? d.module!;
+      } else if (d.category == 'capability' && !_hiddenKeys.contains(d.key)) {
         caps.add(d);
       }
     }
+
     final topModules = [
-      ..._topModuleOrder.where(byModule.containsKey),
-      ...byModule.keys.where((m) =>
+      ..._topModuleOrder.where(byModuleCoarse.containsKey),
+      ...byModuleCoarse.keys.where((m) =>
           !_topModuleOrder.contains(m) && !_mastersModuleOrder.contains(m)),
     ];
     final masterModules =
-        _mastersModuleOrder.where(byModule.containsKey).toList();
-
-    final rows = <TableRow>[_headerRow()];
-    for (final m in topModules) {
-      rows.add(_moduleRow(labels[m] ?? m, byModule[m]!, indent: 4));
-    }
-    if (masterModules.isNotEmpty) {
-      rows.add(_groupRow('Masters', masterModules, byModule));
-      if (_isExpanded('group:Masters')) {
-        for (final m in masterModules) {
-          rows.add(_moduleRow(labels[m] ?? m, byModule[m]!, indent: 30));
-        }
-      }
-    }
+        _mastersModuleOrder.where(byModuleCoarse.containsKey).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -142,20 +144,39 @@ class _PermissionTreeState extends State<PermissionTree> {
             3: FixedColumnWidth(56),
             4: FixedColumnWidth(56),
             5: FixedColumnWidth(56),
+            6: FixedColumnWidth(36),
           },
           defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-          children: rows,
+          children: [
+            _headerRow(),
+            for (final m in topModules) ...[
+              _moduleRow(labels[m] ?? m, m, byModuleCoarse[m]!, byModuleFine[m] ?? const [], auth, indent: 4),
+              if (_isExpanded('fine:$m') && (byModuleFine[m]?.isNotEmpty ?? false))
+                _fineDetailsRow(m, byModuleFine[m]!, auth, indent: 24),
+            ],
+            if (masterModules.isNotEmpty) ...[
+              _groupRow('Masters', masterModules, byModuleCoarse, auth),
+              if (_isExpanded('group:Masters'))
+                for (final m in masterModules) ...[
+                  _moduleRow(labels[m] ?? m, m, byModuleCoarse[m]!, byModuleFine[m] ?? const [], auth, indent: 28),
+                  if (_isExpanded('fine:$m') && (byModuleFine[m]?.isNotEmpty ?? false))
+                    _fineDetailsRow(m, byModuleFine[m]!, auth, indent: 44),
+                ],
+            ],
+          ],
         ),
         if (caps.isNotEmpty) ...[
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           const _SectionLabel('Capabilities'),
+          const SizedBox(height: 4),
           for (final c in caps)
             CheckboxListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
               controlAffinity: ListTileControlAffinity.leading,
               value: _t[c.key] ?? false,
-              onChanged: (v) => _setOne(c.key, v == true),
+              enabled: _isActorAuthorized(c.key, auth),
+              onChanged: (v) => _setOne(c.key, v == true, auth),
               title: Text(c.label, style: const TextStyle(fontSize: 13)),
               subtitle: c.description.isEmpty
                   ? null
@@ -195,18 +216,29 @@ class _PermissionTreeState extends State<PermissionTree> {
               ),
             ),
           ),
+        const SizedBox.shrink(),
       ],
     );
   }
 
   TableRow _moduleRow(
     String label,
-    Map<String, PermissionDescriptor> ops, {
+    String moduleKey,
+    Map<String, PermissionDescriptor> ops,
+    List<PermissionDescriptor> fineKeys,
+    AuthProvider auth, {
     double indent = 0,
   }) {
+    final allKeys = [
+      ...ops.values.map((d) => d.key),
+      ...fineKeys.map((d) => d.key),
+    ];
+    final hasFine = fineKeys.isNotEmpty;
+    final fineExpanded = _isExpanded('fine:$moduleKey');
+
     return TableRow(
       children: [
-        _triCell([for (final d in ops.values) d.key]),
+        _triCell(allKeys, auth),
         Padding(
           padding: EdgeInsets.only(left: indent, top: 4, bottom: 4),
           child: Text(
@@ -218,7 +250,76 @@ class _PermissionTreeState extends State<PermissionTree> {
             ),
           ),
         ),
-        for (final op in _ops) _cell(ops[op]),
+        for (final op in _ops)
+          _coarseCell(ops[op], fineKeys.where((f) => f.parentOp == op).map((f) => f.key).toList(), auth),
+        hasFine
+            ? IconButton(
+                icon: Icon(
+                  fineExpanded ? Icons.tune : Icons.tune_outlined,
+                  size: 16,
+                  color: fineExpanded ? SoftErpTheme.accent : SoftErpTheme.textSecondary,
+                ),
+                tooltip: fineExpanded ? 'Hide fine keys' : 'Advanced permissions',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => _toggleExpand('fine:$moduleKey'),
+              )
+            : const SizedBox.shrink(),
+      ],
+    );
+  }
+
+  TableRow _fineDetailsRow(
+    String moduleKey,
+    List<PermissionDescriptor> fineKeys,
+    AuthProvider auth, {
+    double indent = 24,
+  }) {
+    return TableRow(
+      children: [
+        const SizedBox.shrink(),
+        Container(
+          margin: EdgeInsets.only(left: indent, top: 2, bottom: 6, right: 8),
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: SoftErpTheme.shellSurface,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'FINE-GRAINED OVERRIDES',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                  color: SoftErpTheme.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              for (final f in fineKeys)
+                CheckboxListTile(
+                  dense: true,
+                  visualDensity: VisualDensity.compact,
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  value: _t[f.key] ?? (_t[f.parentKey] == true),
+                  enabled: _isActorAuthorized(f.key, auth),
+                  onChanged: (v) => _setOne(f.key, v == true, auth),
+                  title: Text(f.label, style: const TextStyle(fontSize: 12)),
+                  subtitle: f.description.isEmpty
+                      ? null
+                      : Text(f.description, style: const TextStyle(fontSize: 11)),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox.shrink(),
+        const SizedBox.shrink(),
+        const SizedBox.shrink(),
+        const SizedBox.shrink(),
+        const SizedBox.shrink(),
       ],
     );
   }
@@ -227,6 +328,7 @@ class _PermissionTreeState extends State<PermissionTree> {
     String group,
     List<String> members,
     Map<String, Map<String, PermissionDescriptor>> byModule,
+    AuthProvider auth,
   ) {
     final expanded = _isExpanded('group:$group');
     return TableRow(
@@ -234,7 +336,7 @@ class _PermissionTreeState extends State<PermissionTree> {
         _triCell([
           for (final m in members)
             for (final d in byModule[m]!.values) d.key,
-        ]),
+        ], auth),
         InkWell(
           onTap: () => _toggleExpand('group:$group'),
           child: Padding(
@@ -264,33 +366,50 @@ class _PermissionTreeState extends State<PermissionTree> {
           _triCell([
             for (final m in members)
               if (byModule[m]?[op] != null) byModule[m]![op]!.key,
-          ]),
+          ], auth),
+        const SizedBox.shrink(),
       ],
     );
   }
 
-  Widget _cell(PermissionDescriptor? d) {
+  Widget _coarseCell(PermissionDescriptor? d, List<String> childFineKeys, AuthProvider auth) {
     if (d == null) return const SizedBox.shrink();
+    final isAuthorized = _isActorAuthorized(d.key, auth);
+
+    // If there are fine keys, evaluate if all fine keys match the coarse key
+    bool? triValue = _t[d.key] ?? false;
+    if (childFineKeys.isNotEmpty && _t[d.key] == true) {
+      var offFine = 0;
+      for (final fk in childFineKeys) {
+        if (_t[fk] == false) offFine++;
+      }
+      if (offFine > 0) {
+        triValue = null; // Indeterminate when some fine key is denied
+      }
+    }
+
     return Center(
       child: Checkbox(
-        value: _t[d.key] ?? false,
+        tristate: childFineKeys.isNotEmpty,
+        value: triValue,
         visualDensity: VisualDensity.compact,
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        onChanged: (v) => _setOne(d.key, v == true),
+        onChanged: isAuthorized ? (v) => _setOne(d.key, v == true, auth) : null,
       ),
     );
   }
 
-  Widget _triCell(List<String> keys) {
+  Widget _triCell(List<String> keys, AuthProvider auth) {
     if (keys.isEmpty) return const SizedBox.shrink();
     final tri = _tri(keys);
+    final anyAuthorized = keys.any((k) => _isActorAuthorized(k, auth));
     return Center(
       child: Checkbox(
         tristate: true,
         value: tri,
         visualDensity: VisualDensity.compact,
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        onChanged: (_) => _setAll(keys, tri != true),
+        onChanged: anyAuthorized ? (_) => _setAll(keys, tri != true, auth) : null,
       ),
     );
   }
@@ -334,9 +453,7 @@ const Map<String, String> _recordOpLabels = {
   'delete': 'Delete',
 };
 
-/// Per-record (row-level) grants for one person: pick a module, search its
-/// actual records, and grant View/Update/Delete on individual ones — on top of
-/// the module grid ("can see all, edit only these").
+/// Per-record (row-level) grants for one person.
 class _RecordGrantsSection extends StatefulWidget {
   const _RecordGrantsSection({required this.grants, required this.onChanged});
 
@@ -563,8 +680,7 @@ class _RecordGrantsSectionState extends State<_RecordGrantsSection> {
   }
 }
 
-/// Per-user permissions editor: assign named presets + a module CRUD grid of
-/// per-user overrides. Replaces the old flat permission-key checklist.
+/// Per-user permissions editor.
 Future<void> showPermissionsEditor(
   BuildContext context, {
   required int userId,
@@ -598,17 +714,17 @@ Future<void> showPermissionsEditor(
         return AlertDialog(
           title: Text('Permissions · $displayName'),
           content: SizedBox(
-            width: 620,
+            width: 680,
             child: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Primary / default way: the module × CRUD grid.
-                  const _SectionLabel('Module permissions'),
+                  // Primary / default: the CRUD grid.
+                  const _SectionLabel('Module CRUD Grid'),
                   const SizedBox(height: 4),
                   const Text(
-                    'Columns are Create · View · Update · Delete. Tick exactly '
-                    'what this person can do.',
+                    'Columns are Create · View · Update · Delete. Use "All" to toggle a row, '
+                    'or tap the tune icon to expand fine-grained overrides.',
                     style: TextStyle(
                       fontSize: 12,
                       color: SoftErpTheme.textSecondary,
@@ -621,28 +737,28 @@ Future<void> showPermissionsEditor(
                     onChanged: () => setLocal(() {}),
                   ),
                   const Divider(height: 24),
-                  // Deeper granularity: per-record grants for this person.
-                  _RecordGrantsSection(
-                    grants: recordGrants,
-                    onChanged: () => setLocal(() {}),
-                  ),
-                  const Divider(height: 24),
-                  // Secondary: presets are just a shortcut that fills the grid.
+                  // Presets chip row below grid.
                   Row(
                     children: [
                       const Expanded(
-                        child: _SectionLabel('Shortcut · apply a preset'),
+                        child: _SectionLabel('Preset Shortcuts'),
                       ),
+                      TextButton.icon(
+                        onPressed: () => _saveCurrentAsPresetDialog(dialogContext, toggles),
+                        icon: const Icon(Icons.bookmark_add_outlined, size: 16),
+                        label: const Text('Save as preset'),
+                      ),
+                      const SizedBox(width: 4),
                       TextButton.icon(
                         onPressed: () => showPresetManager(dialogContext),
                         icon: const Icon(Icons.tune, size: 16),
-                        label: const Text('Manage'),
+                        label: const Text('Manage presets'),
                       ),
                     ],
                   ),
                   if (templates.isEmpty)
                     const Text(
-                      'No presets yet. Use Manage to create a named role.',
+                      'No presets yet. Apply built-in roles or save current grid as a preset.',
                       style: TextStyle(
                         fontSize: 12,
                         color: SoftErpTheme.textSecondary,
@@ -657,7 +773,7 @@ Future<void> showPermissionsEditor(
                           FilterChip(
                             label: Text(
                               t.isSystemDefault
-                                  ? '${t.name} · built-in'
+                                  ? '${t.name} (Built-in)'
                                   : t.name,
                             ),
                             selected: assignedTemplates.contains(t.id),
@@ -665,7 +781,7 @@ Future<void> showPermissionsEditor(
                               if (sel) {
                                 assignedTemplates.add(t.id);
                                 for (final k in t.permissions) {
-                                  toggles[k] = true; // stamp the grid above
+                                  toggles[k] = true;
                                 }
                               } else {
                                 assignedTemplates.remove(t.id);
@@ -676,11 +792,17 @@ Future<void> showPermissionsEditor(
                     ),
                   const SizedBox(height: 4),
                   const Text(
-                    'A preset just fills the grid above — tweak any box after.',
+                    'Applying a preset fills the grid client-side. You can tweak individual cells before saving.',
                     style: TextStyle(
                       fontSize: 11.5,
                       color: SoftErpTheme.textSecondary,
                     ),
+                  ),
+                  const Divider(height: 24),
+                  // Deeper granularity: per-record grants for this person.
+                  _RecordGrantsSection(
+                    grants: recordGrants,
+                    onChanged: () => setLocal(() {}),
                   ),
                 ],
               ),
@@ -709,7 +831,6 @@ Future<void> showPermissionsEditor(
                   userId: userId,
                   states: nextStates,
                 );
-                // Persist per-record grants alongside the module grid.
                 await auth.updateUserRecordPermissions(
                   userId,
                   recordGrants.values
@@ -737,6 +858,69 @@ Future<void> showPermissionsEditor(
       },
     ),
   );
+}
+
+Future<void> _saveCurrentAsPresetDialog(
+  BuildContext context,
+  Map<String, bool> toggles,
+) async {
+  final auth = context.read<AuthProvider>();
+  final nameCtrl = TextEditingController();
+  final descCtrl = TextEditingController();
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Save Current Grid as Preset'),
+      content: SizedBox(
+        width: 400,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameCtrl,
+              decoration: const InputDecoration(labelText: 'Preset Name'),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: descCtrl,
+              decoration: const InputDecoration(labelText: 'Description (optional)'),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () async {
+            final name = nameCtrl.text.trim();
+            if (name.isEmpty) return;
+            final activeKeys = toggles.entries
+                .where((e) => e.value)
+                .map((e) => e.key)
+                .toList(growable: false);
+            final ok = await auth.createPermissionPreset(
+              name: name,
+              description: descCtrl.text.trim(),
+              permissions: activeKeys,
+            );
+            if (dialogContext.mounted && ok) {
+              Navigator.of(dialogContext).pop();
+            }
+            showGlobalToast(
+              ok ? 'Preset created.' : (auth.errorMessage ?? 'Failed to create preset.'),
+              kind: ok ? AppToastKind.success : AppToastKind.error,
+            );
+          },
+          child: const Text('Save Preset'),
+        ),
+      ],
+    ),
+  );
+  nameCtrl.dispose();
+  descCtrl.dispose();
 }
 
 /// Lists named presets and lets an admin create / edit / delete them.

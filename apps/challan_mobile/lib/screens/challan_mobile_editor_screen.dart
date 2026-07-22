@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'dart:ui';
 
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
+import 'package:core_erp/features/auth/presentation/providers/auth_provider.dart';
 import 'package:core_erp/features/delivery_challans/domain/delivery_challan.dart';
 import 'package:core_erp/features/delivery_challans/data/delivery_challan_repository.dart';
 import 'package:core_erp/features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
@@ -675,6 +676,18 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
         );
         return;
       }
+    }
+
+    final auth = context.read<AuthProvider>();
+    if (!auth.can('challans.create')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Permission denied: You do not have permission to create challans.'),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
     }
 
     setState(() => _isSaving = true);
