@@ -21,7 +21,7 @@ import 'challan_book_screen.dart';
 import 'challan_mobile_editor_screen.dart';
 import 'internal_use_reconciliation_screens.dart';
 import 'purchase_wizard_screens.dart';
-import 'use_item_screens.dart';
+import 'use_raw_material_wizard_screen.dart';
 
 final List<DeliveryChallanItem> activePurchaseLines = [];
 
@@ -82,33 +82,22 @@ class ChallanTabScreen extends StatelessWidget {
                     ),
                     if (canCreate)
                     _ChoiceCard(
-                      title: 'Use',
+                      title: 'Use Raw material',
                       subtitle: 'Consume raw materials',
                       icon: Icons.precision_manufacturing_rounded,
                       color: Colors.orange,
                       onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const UseOrderSelectScreen()),
+                        MaterialPageRoute(builder: (_) => const UseRawMaterialWizardScreen()),
                       ),
                     ),
-                    if (canCreate && vendors.isNotEmpty)
-                      _ChoiceCard(
-                        title: 'Supplier',
-                        subtitle: 'Re-order past purchases',
-                        icon: Icons.storefront_rounded,
-                        color: const Color(0xFFE57373),
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => VendorBrowseScreen(lines: activePurchaseLines),
-                          ),
-                        ),
-                      ),
+
                     // In-use: lists internal-use challans created by the Use
                     // flow and opens the reconciliation screen. Additive and
                     // flag-gated — hidden (Use flow unchanged) when off.
                     if (FeatureFlags.isEnabled(FeatureKeys.challanReconciliation) &&
                         canReconcile)
                       _ChoiceCard(
-                        title: 'In-use',
+                        title: 'Settle Production',
                         subtitle: 'Settle used materials',
                         icon: Icons.fact_check_rounded,
                         color: const Color(0xFF2F7DD1),

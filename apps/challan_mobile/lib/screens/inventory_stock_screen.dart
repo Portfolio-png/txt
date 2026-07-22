@@ -5,6 +5,7 @@ import 'package:core_erp/core/theme/soft_erp_theme.dart';
 import 'package:core_erp/features/inventory/domain/variation_stock_record.dart';
 import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
 import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
+import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
 
 /// Simplest mobile stock view: each item grouped as a card showing its total
 /// stock, with the per-variation breakdown beneath — mirroring the desktop
@@ -23,13 +24,29 @@ class InventoryStockScreen extends StatefulWidget {
   static List<_ItemStock> _buildGroups(
     List<VariationStockRecord> records,
     Map<int, String> unitSymbolById,
+    ItemsProvider itemsProvider,
   ) {
     final byItem = <int, _ItemStock>{};
     for (final r in records) {
       final symbol = (unitSymbolById[r.unitId] ?? '').trim();
       final item = byItem.putIfAbsent(
         r.itemId,
-        () => _ItemStock(itemName: r.itemName, unitSymbol: symbol),
+        () {
+          final def = itemsProvider.findById(r.itemId);
+          String secondaryUnitSymbol = 'kg';
+          double factor = 1.0;
+          if (def != null && def.unitConversions.isNotEmpty) {
+            secondaryUnitSymbol = def.unitConversions.first.unitSymbol;
+            factor = def.unitConversions.first.factorToPrimary;
+            if (factor <= 0) factor = 1.0;
+          }
+          return _ItemStock(
+            itemName: r.itemName,
+            unitSymbol: symbol,
+            secondaryUnitSymbol: secondaryUnitSymbol,
+            factorToPrimary: factor,
+          );
+        },
       );
       if (item.unitSymbol.isEmpty && symbol.isNotEmpty) item.unitSymbol = symbol;
 
@@ -62,6 +79,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
       if (mounted) {
         context.read<InventoryProvider>().refresh();
         context.read<UnitsProvider>().refresh();
+        context.read<ItemsProvider>().refresh();
       }
     });
   }
@@ -75,7 +93,9 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
         unit.id: unit.symbol.trim().isNotEmpty ? unit.symbol : unit.name,
     };
 
-    final groups = InventoryStockScreen._buildGroups(inventory.variationStock, unitSymbolById);
+    final itemsProvider = context.watch<ItemsProvider>();
+
+    final groups = InventoryStockScreen._buildGroups(inventory.variationStock, unitSymbolById, itemsProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -138,10 +158,17 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
 }
 
 class _ItemStock {
-  _ItemStock({required this.itemName, required this.unitSymbol});
+  _ItemStock({
+    required this.itemName,
+    required this.unitSymbol,
+    this.secondaryUnitSymbol = '',
+    this.factorToPrimary = 1.0,
+  });
 
   final String itemName;
   String unitSymbol;
+  String secondaryUnitSymbol;
+  double factorToPrimary;
   final Map<int, _VariationStock> variations = {};
 
   double get total =>
@@ -210,6 +237,17 @@ class _ItemStockCard extends StatelessWidget {
                     ),
                   ),
                 ],
+                if (item.secondaryUnitSymbol.isNotEmpty) ...[
+                  const SizedBox(width: 4),
+                  Text(
+                    '| ${InventoryStockScreen._formatQty(item.total / item.factorToPrimary)} ${item.secondaryUnitSymbol}',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: SoftErpTheme.textSecondary,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -242,6 +280,17 @@ class _ItemStockCard extends StatelessWidget {
                       color: SoftErpTheme.textPrimary,
                     ),
                   ),
+                  if (item.secondaryUnitSymbol.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    Text(
+                      '(${InventoryStockScreen._formatQty(v.quantity / item.factorToPrimary)} ${item.secondaryUnitSymbol})',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
+                        color: SoftErpTheme.textSecondary,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

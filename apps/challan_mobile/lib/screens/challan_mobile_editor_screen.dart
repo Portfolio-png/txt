@@ -98,11 +98,23 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
     }
   }
 
+  ItemDefinition? _getItemDef(int? itemId) {
+    if (itemId == null) return null;
+    return context.read<ItemsProvider>().findById(itemId);
+  }
+
   void _showQuantityBottomSheet(
     BuildContext context, 
     DeliveryChallanItem? existingItem, 
     Function(String qty, String weight) onConfirm
   ) {
+    String unitName = '';
+    if (existingItem != null) {
+      final def = _getItemDef(existingItem.itemId);
+      if (def != null && def.unitConversions.isNotEmpty) {
+        unitName = def.unitConversions.first.unitSymbol;
+      }
+    }
     int qty = int.tryParse(existingItem?.quantityPcs ?? '1') ?? 1;
     double weight = double.tryParse(existingItem?.weight ?? '0.0') ?? 0.0;
     final isTablet = MediaQuery.of(context).size.width >= 600;
@@ -199,7 +211,7 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
                         child: TextField(
                           style: const TextStyle(fontSize: 18.0, fontWeight: FontWeight.w600, color: SoftErpTheme.textPrimary),
                           decoration: InputDecoration(
-                            labelText: 'Weight (kg)',
+                            labelText: 'Weight${unitName.isNotEmpty ? ' ($unitName)' : ''}',
                             labelStyle: const TextStyle(color: SoftErpTheme.textSecondary, fontWeight: FontWeight.normal),
                             filled: true,
                             fillColor: SoftErpTheme.shellSurface,
@@ -982,11 +994,15 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
                                 ),
                                 const SizedBox(width: 8),
                                 if (item.weight != '0' && item.weight != '0.0')
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                    decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(10)),
-                                    child: Text('Wt: ${item.weight} kg', style: TextStyle(color: Colors.orange.shade800, fontWeight: FontWeight.bold, fontSize: 13)),
-                                  ),
+                                  Builder(builder: (context) {
+                                    final def = _getItemDef(item.itemId);
+                                    final unit = (def != null && def.unitConversions.isNotEmpty) ? def.unitConversions.first.unitSymbol : 'kg';
+                                    return Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                      decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(10)),
+                                      child: Text('Wt: ${item.weight} $unit', style: TextStyle(color: Colors.orange.shade800, fontWeight: FontWeight.bold, fontSize: 13)),
+                                    );
+                                  }),
                               ],
                             ),
                           ],

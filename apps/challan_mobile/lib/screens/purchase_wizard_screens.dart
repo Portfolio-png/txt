@@ -592,6 +592,8 @@ class _ItemsStep extends StatelessWidget {
             separatorBuilder: (_, _) => const SizedBox(height: 12),
             itemBuilder: (context, i) {
               final line = lines[i];
+              final def = context.read<ItemsProvider>().findById(line.itemId);
+              final unit = (def != null && def.unitConversions.isNotEmpty) ? def.unitConversions.first.unitSymbol : 'kg';
               return ListTile(
                 tileColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -601,7 +603,7 @@ class _ItemsStep extends StatelessWidget {
                   [
                     if (line.variationPathLabel.isNotEmpty) line.variationPathLabel,
                     'Qty: ${line.quantityPcs}',
-                    if (line.weight != '0' && line.weight != '0.0') 'Wt: ${line.weight} kg',
+                    if (line.weight != '0' && line.weight != '0.0') 'Wt: ${line.weight} $unit',
                   ].join('  ·  '),
                 ),
                 trailing: IconButton(

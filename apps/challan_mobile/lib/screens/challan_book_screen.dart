@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
 import 'package:core_erp/features/delivery_challans/domain/delivery_challan.dart';
 import 'package:core_erp/features/delivery_challans/presentation/providers/delivery_challan_provider.dart';
+import 'package:core_erp/features/delivery_challans/presentation/widgets/challan_printable_document.dart';
 
 /// "Challan Book" — every challan THE CURRENT USER created (server-scoped via
 /// ?mine=1), newest first. Read-only history for the person on this device.
@@ -96,15 +97,25 @@ class _ChallanBookScreenState extends State<ChallanBookScreen> {
       padding: const EdgeInsets.all(16),
       itemCount: _challans.length,
       separatorBuilder: (_, _) => const SizedBox(height: 10),
-      itemBuilder: (context, i) => _ChallanTile(challan: _challans[i]),
+      itemBuilder: (context, i) => _ChallanTile(
+        challan: _challans[i],
+        allChallans: _challans,
+        index: i,
+      ),
     );
   }
 }
 
 class _ChallanTile extends StatelessWidget {
-  const _ChallanTile({required this.challan});
+  const _ChallanTile({
+    required this.challan,
+    required this.allChallans,
+    required this.index,
+  });
 
   final DeliveryChallan challan;
+  final List<DeliveryChallan> allChallans;
+  final int index;
 
   @override
   Widget build(BuildContext context) {
@@ -115,51 +126,124 @@ class _ChallanTile extends StatelessWidget {
             : challan.orderNo.trim().isNotEmpty
                 ? 'Order ${challan.orderNo.trim()}'
                 : '—';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return GestureDetector(
+      onTap: () {
+        Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => _ChallanPreviewScreen(
+            allChallans: allChallans,
+            initialIndex: index,
+          ),
+        ));
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    challan.challanNo.trim().isEmpty
+                        ? '(no number)'
+                        : challan.challanNo.trim(),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w800, fontSize: 15),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '${_typeLabel(challan.type)} · $party',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: SoftErpTheme.textSecondary, fontSize: 12.5),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  challan.challanNo.trim().isEmpty
-                      ? '(no number)'
-                      : challan.challanNo.trim(),
+                  _fmtDate(challan.date),
                   style: const TextStyle(
-                      fontWeight: FontWeight.w800, fontSize: 15),
+                      fontSize: 12, color: SoftErpTheme.textSecondary),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  '${_typeLabel(challan.type)} · $party',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      color: SoftErpTheme.textSecondary, fontSize: 12.5),
-                ),
+                const SizedBox(height: 5),
+                _StatusPill(status: challan.status.name),
               ],
             ),
-          ),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                _fmtDate(challan.date),
-                style: const TextStyle(
-                    fontSize: 12, color: SoftErpTheme.textSecondary),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ChallanPreviewScreen extends StatefulWidget {
+  final List<DeliveryChallan> allChallans;
+  final int initialIndex;
+
+  const _ChallanPreviewScreen({
+    required this.allChallans,
+    required this.initialIndex,
+  });
+
+  @override
+  State<_ChallanPreviewScreen> createState() => _ChallanPreviewScreenState();
+}
+
+class _ChallanPreviewScreenState extends State<_ChallanPreviewScreen> {
+  late PageController _pageController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(initialPage: widget.initialIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: SoftErpTheme.shellSurface,
+      appBar: AppBar(
+        title: const Text('Challan Preview', style: TextStyle(fontWeight: FontWeight.w900)),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+      ),
+      body: PageView.builder(
+        controller: _pageController,
+        itemCount: widget.allChallans.length,
+        itemBuilder: (context, index) {
+          final challan = widget.allChallans[index];
+          return InteractiveViewer(
+            minScale: 0.4,
+            maxScale: 3,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.topCenter,
+                child: Material(
+                  elevation: 3,
+                  child: ChallanPrintableDocument(challan: challan),
+                ),
               ),
-              const SizedBox(height: 5),
-              _StatusPill(status: challan.status.name),
-            ],
-          ),
-        ],
+            ),
+          );
+        },
       ),
     );
   }

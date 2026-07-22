@@ -23,9 +23,6 @@ class _ChallanStagingScreenState extends State<ChallanStagingScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scannerFocusNode.requestFocus();
-    });
   }
 
   @override
@@ -322,7 +319,6 @@ class _ChallanStagingScreenState extends State<ChallanStagingScreen> {
                 child: TextField(
                   controller: _scannerController,
                   focusNode: _scannerFocusNode,
-                  autofocus: true,
                   onSubmitted: _handleBarcodeScanned,
                 ),
               ),

@@ -65,6 +65,11 @@ class ItemsProvider extends ChangeNotifier {
 
   bool _initialized = false;
 
+  ItemDefinition? findById(int? id) {
+    if (id == null) return null;
+    return _items.where((item) => item.id == id).firstOrNull;
+  }
+
   List<ItemDefinition> get items => _items;
   List<ItemAsset> assetsForItem(int itemId) =>
       _assetsByItemId[itemId] ?? const <ItemAsset>[];
