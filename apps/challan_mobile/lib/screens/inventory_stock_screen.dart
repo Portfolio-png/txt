@@ -9,7 +9,7 @@ import 'package:core_erp/features/units/presentation/providers/units_provider.da
 /// Simplest mobile stock view: each item grouped as a card showing its total
 /// stock, with the per-variation breakdown beneath — mirroring the desktop
 /// Inventory item → variation hierarchy. Pull to refresh.
-class InventoryStockScreen extends StatelessWidget {
+class InventoryStockScreen extends StatefulWidget {
   const InventoryStockScreen({super.key});
 
   static String _formatQty(double value) {
@@ -20,8 +20,6 @@ class InventoryStockScreen extends StatelessWidget {
         .replaceAll(RegExp(r'\.$'), '');
   }
 
-  /// Group per-variation stock rows by item. Rows sharing the same variation
-  /// leaf (e.g. the same variation across locations) are summed into one line.
   static List<_ItemStock> _buildGroups(
     List<VariationStockRecord> records,
     Map<int, String> unitSymbolById,
@@ -53,6 +51,22 @@ class InventoryStockScreen extends StatelessWidget {
   }
 
   @override
+  State<InventoryStockScreen> createState() => _InventoryStockScreenState();
+}
+
+class _InventoryStockScreenState extends State<InventoryStockScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<InventoryProvider>().refresh();
+        context.read<UnitsProvider>().refresh();
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final inventory = context.watch<InventoryProvider>();
 
@@ -61,12 +75,16 @@ class InventoryStockScreen extends StatelessWidget {
         unit.id: unit.symbol.trim().isNotEmpty ? unit.symbol : unit.name,
     };
 
-    final groups = _buildGroups(inventory.variationStock, unitSymbolById);
+    final groups = InventoryStockScreen._buildGroups(inventory.variationStock, unitSymbolById);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Stock'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () => context.read<InventoryProvider>().refresh(),
+          ),
           if (groups.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(right: 16),

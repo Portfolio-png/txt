@@ -306,6 +306,17 @@ class _UseInventoryBrowseScreenState extends State<UseInventoryBrowseScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<InventoryProvider>().refresh();
+        context.read<UnitsProvider>().refresh();
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final invProvider = context.watch<InventoryProvider>();
     final unitsProvider = context.watch<UnitsProvider>();

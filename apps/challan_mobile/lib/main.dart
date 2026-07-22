@@ -575,49 +575,85 @@ class MyApp extends StatelessWidget {
             return localSocket;
           },
         ),
-        ChangeNotifierProxyProvider<OrderRepository, OrdersProvider>(
-          create: (context) => OrdersProvider(repository: context.read<OrderRepository>())..initialize(),
-          update: (context, repository, previous) => previous ?? OrdersProvider(repository: repository)..initialize(),
+        ChangeNotifierProxyProvider2<AuthProvider, OrderRepository, OrdersProvider>(
+          create: (context) => OrdersProvider(repository: context.read<OrderRepository>()),
+          update: (context, auth, repository, previous) {
+            final p = previous ?? OrdersProvider(repository: repository);
+            if (auth.isAuthenticated) p.refresh();
+            return p;
+          },
         ),
-        ChangeNotifierProxyProvider<InventoryRepository, InventoryProvider>(
-          create: (context) => InventoryProvider(repository: context.read<InventoryRepository>())..initialize(),
-          update: (context, repository, previous) => previous ?? InventoryProvider(repository: repository)..initialize(),
+        ChangeNotifierProxyProvider2<AuthProvider, InventoryRepository, InventoryProvider>(
+          create: (context) => InventoryProvider(repository: context.read<InventoryRepository>()),
+          update: (context, auth, repository, previous) {
+            final p = previous ?? InventoryProvider(repository: repository);
+            if (auth.isAuthenticated) p.refresh();
+            return p;
+          },
         ),
-        ChangeNotifierProxyProvider<UnitRepository, UnitsProvider>(
-          create: (context) => UnitsProvider(repository: context.read<UnitRepository>())..initialize(),
-          update: (context, repository, previous) => previous ?? UnitsProvider(repository: repository)..initialize(),
+        ChangeNotifierProxyProvider2<AuthProvider, UnitRepository, UnitsProvider>(
+          create: (context) => UnitsProvider(repository: context.read<UnitRepository>()),
+          update: (context, auth, repository, previous) {
+            final p = previous ?? UnitsProvider(repository: repository);
+            if (auth.isAuthenticated) p.refresh();
+            return p;
+          },
         ),
-        ChangeNotifierProxyProvider<GroupRepository, GroupsProvider>(
-          create: (context) => GroupsProvider(repository: context.read<GroupRepository>())..initialize(),
-          update: (context, repository, previous) => previous ?? GroupsProvider(repository: repository)..initialize(),
+        ChangeNotifierProxyProvider2<AuthProvider, GroupRepository, GroupsProvider>(
+          create: (context) => GroupsProvider(repository: context.read<GroupRepository>()),
+          update: (context, auth, repository, previous) {
+            final p = previous ?? GroupsProvider(repository: repository);
+            if (auth.isAuthenticated) p.refresh();
+            return p;
+          },
         ),
-        ChangeNotifierProxyProvider<ClientRepository, ClientsProvider>(
-          create: (context) => ClientsProvider(repository: context.read<ClientRepository>())..initialize(),
-          update: (context, repository, previous) => previous ?? ClientsProvider(repository: repository)..initialize(),
+        ChangeNotifierProxyProvider2<AuthProvider, ClientRepository, ClientsProvider>(
+          create: (context) => ClientsProvider(repository: context.read<ClientRepository>()),
+          update: (context, auth, repository, previous) {
+            final p = previous ?? ClientsProvider(repository: repository);
+            if (auth.isAuthenticated) p.refresh();
+            return p;
+          },
         ),
-        ChangeNotifierProxyProvider<VendorRepository, VendorsProvider>(
-          create: (context) => VendorsProvider(repository: context.read<VendorRepository>())..initialize(),
-          update: (context, repository, previous) => previous ?? VendorsProvider(repository: repository)..initialize(),
+        ChangeNotifierProxyProvider2<AuthProvider, VendorRepository, VendorsProvider>(
+          create: (context) => VendorsProvider(repository: context.read<VendorRepository>()),
+          update: (context, auth, repository, previous) {
+            final p = previous ?? VendorsProvider(repository: repository);
+            if (auth.isAuthenticated) p.refresh();
+            return p;
+          },
         ),
-        ChangeNotifierProxyProvider<VendorHistoryRepository, VendorHistoryProvider>(
+        ChangeNotifierProxyProvider2<AuthProvider, VendorHistoryRepository, VendorHistoryProvider>(
           create: (context) => VendorHistoryProvider(repository: context.read<VendorHistoryRepository>()),
-          update: (context, repository, previous) => previous ?? VendorHistoryProvider(repository: repository),
+          update: (context, auth, repository, previous) => previous ?? VendorHistoryProvider(repository: repository),
         ),
-        ChangeNotifierProxyProvider<ItemRepository, ItemsProvider>(
-          create: (context) => ItemsProvider(repository: context.read<ItemRepository>())..initialize(),
-          update: (context, repository, previous) => previous ?? ItemsProvider(repository: repository)..initialize(),
+        ChangeNotifierProxyProvider2<AuthProvider, ItemRepository, ItemsProvider>(
+          create: (context) => ItemsProvider(repository: context.read<ItemRepository>()),
+          update: (context, auth, repository, previous) {
+            final p = previous ?? ItemsProvider(repository: repository);
+            if (auth.isAuthenticated) p.refresh();
+            return p;
+          },
         ),
-        ChangeNotifierProxyProvider<FavoritesRepository, FavoritesProvider>(
-          create: (context) => FavoritesProvider(repository: context.read<FavoritesRepository>())..initialize(),
-          update: (context, repository, previous) => previous ?? FavoritesProvider(repository: repository)..initialize(),
+        ChangeNotifierProxyProvider2<AuthProvider, FavoritesRepository, FavoritesProvider>(
+          create: (context) => FavoritesProvider(repository: context.read<FavoritesRepository>()),
+          update: (context, auth, repository, previous) {
+            final p = previous ?? FavoritesProvider(repository: repository);
+            if (auth.isAuthenticated) p.refresh();
+            return p;
+          },
         ),
-        ChangeNotifierProxyProvider<ChallanRepository, DeliveryChallanProvider>(
-          create: (context) => DeliveryChallanProvider(repository: context.read<ChallanRepository>())..initialize(),
-          update: (context, repository, previous) => previous ?? DeliveryChallanProvider(repository: repository)..initialize(),
+        ChangeNotifierProxyProvider2<AuthProvider, ChallanRepository, DeliveryChallanProvider>(
+          create: (context) => DeliveryChallanProvider(repository: context.read<ChallanRepository>()),
+          update: (context, auth, repository, previous) {
+            final p = previous ?? DeliveryChallanProvider(repository: repository);
+            if (auth.isAuthenticated) p.refresh();
+            return p;
+          },
         ),
-        ChangeNotifierProxyProvider<SearchRepository, SearchProvider>(
+        ChangeNotifierProxyProvider2<AuthProvider, SearchRepository, SearchProvider>(
           create: (context) => SearchProvider(repository: context.read<SearchRepository>()),
-          update: (context, repository, previous) => previous ?? SearchProvider(repository: repository),
+          update: (context, auth, repository, previous) => previous ?? SearchProvider(repository: repository),
         ),
       ],
       child: MaterialApp(

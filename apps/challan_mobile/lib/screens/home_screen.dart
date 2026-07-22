@@ -1,6 +1,8 @@
-import 'package:core_erp/core/widgets/app_settings_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import 'package:core_erp/core/widgets/app_settings_dialog.dart';
+import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
 
 import 'challan_staging_screen.dart';
 import 'inventory_stock_screen.dart';
@@ -41,6 +43,16 @@ class _HomeScreenState extends State<HomeScreen> {
   late final List<GlobalKey<NavigatorState>> _navKeys =
       List.generate(_roots.length, (_) => GlobalKey<NavigatorState>());
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<InventoryProvider>().refresh();
+      }
+    });
+  }
+
   void _onDestinationSelected(int index) {
     if (index == _currentIndex) {
       // Re-tapping the active tab steps back one route via maybePop, which
@@ -50,6 +62,9 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
     setState(() => _currentIndex = index);
+    if (index == 3 && mounted) {
+      context.read<InventoryProvider>().refresh();
+    }
   }
 
   // Back routes into the active tab first (so a deep flow steps back within the
