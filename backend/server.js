@@ -190,6 +190,10 @@ const MODULE_PERMISSION_SET = new Set(MODULE_PERMISSION_KEYS);
 
 // Capability keys — signed off individually, NOT part of the module CRUD grid.
 const CAPABILITY_DESCRIPTORS = {
+  'challans.reconcile': {
+    label: 'In-use reconciliation',
+    description: 'Settle internal-use (in-use) challans back into inventory.',
+  },
   'inventory.request_delete': {
     label: 'Request inventory deletion',
     description: 'Create delete requests for inventory records.',
@@ -1691,6 +1695,10 @@ function moduleOpForRequest(req) {
   // Employee account sub-actions stay capability-gated (create/link/unlink login).
   if (seg === 'employees' && /\/(create-login|link-login|unlink-login)/.test(path)) {
     return null;
+  }
+  // In-use reconciliation is gated by a dedicated capability, not challans.create.
+  if (/^\/(challans|delivery-challans)\/[^/]+\/reconcile/.test(path)) {
+    return { module: 'challans', op: 'reconcile', key: 'challans.reconcile' };
   }
 
   let module = null;
@@ -9817,6 +9825,7 @@ async function listDeliveryChallans({
   vendorId,
   itemId,
   variationLeafNodeId,
+  createdBy,
 } = {}) {
   const where = [];
   const params = [];
@@ -9875,6 +9884,12 @@ async function listDeliveryChallans({
   if (Number.isInteger(normalizedVendorId) && normalizedVendorId > 0) {
     where.push('dc.vendor_id = ?');
     params.push(normalizedVendorId);
+  }
+  // Challan Book: only challans this user created.
+  const normalizedCreatedBy = Number(createdBy || 0);
+  if (Number.isInteger(normalizedCreatedBy) && normalizedCreatedBy > 0) {
+    where.push('dc.created_by = ?');
+    params.push(normalizedCreatedBy);
   }
   if (status && DELIVERY_CHALLAN_STATUSES.has(status)) {
     where.push('dc.status = ?');
@@ -20842,6 +20857,10 @@ const handleListChallans = async (req, res) => {
       itemId: req.query.item_id || req.query.itemId,
       variationLeafNodeId:
         req.query.variation_leaf_node_id || req.query.variationLeafNodeId,
+      // Challan Book: ?mine=1 scopes to the caller; or an explicit created_by.
+      createdBy: (req.query.mine === '1' || req.query.mine === 'true')
+        ? req.user?.id
+        : (req.query.created_by || req.query.createdBy),
     });
     res.json({ success: true, data: challans, error: null });
   } catch (error) {

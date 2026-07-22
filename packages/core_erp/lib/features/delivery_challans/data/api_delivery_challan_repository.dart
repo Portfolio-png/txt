@@ -130,6 +130,7 @@ class ApiChallanRepository implements ChallanRepository {
     int? orderId,
     int? itemId,
     int? variationLeafNodeId,
+    bool mineOnly = false,
   }) async {
     if (useMockResponses) {
       final query = search.trim().toLowerCase();
@@ -179,6 +180,7 @@ class ApiChallanRepository implements ChallanRepository {
         if (itemId != null) 'item_id': '$itemId',
         if (variationLeafNodeId != null)
           'variation_leaf_node_id': '$variationLeafNodeId',
+        if (mineOnly) 'mine': '1',
       },
     );
     final response = await _sendRequest(method: 'GET', uri: uri);

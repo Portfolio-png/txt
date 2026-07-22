@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import 'package:core_erp/core/services/feature_flags.dart';
 import 'package:core_erp/core/theme/soft_erp_theme.dart';
+import 'package:core_erp/features/auth/presentation/providers/auth_provider.dart';
 import 'package:core_erp/core/widgets/app_toast.dart';
 import 'package:core_erp/features/delivery_challans/domain/delivery_challan.dart';
 import 'package:core_erp/features/groups/domain/group_definition.dart';
@@ -16,6 +17,7 @@ import 'package:core_erp/features/vendors/presentation/providers/vendors_provide
 import 'package:core_erp/features/vendors/presentation/providers/vendor_history_provider.dart';
 import 'package:core_erp/widgets/variation_path_selector_dialog.dart';
 
+import 'challan_book_screen.dart';
 import 'challan_mobile_editor_screen.dart';
 import 'internal_use_reconciliation_screens.dart';
 import 'purchase_wizard_screens.dart';
@@ -31,6 +33,12 @@ class ChallanTabScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final vendors = context.watch<VendorsProvider>().vendors.where((v) => !v.isArchived).toList(growable: false);
+    // Gate each action by permission so a read-only staff member never taps a
+    // flow that 403s (which is what was crashing on In-use).
+    final auth = context.watch<AuthProvider>();
+    final canCreate = auth.can('challans.create');
+    final canReconcile = auth.can('challans.reconcile');
+    final canRead = auth.can('challans.read');
 
     return Scaffold(
       backgroundColor: SoftErpTheme.shellSurface,
@@ -57,6 +65,7 @@ class ChallanTabScreen extends StatelessWidget {
                   // is on) fill the next row. Building a list keeps the layout
                   // correct for any combination instead of nesting conditionals.
                   final tiles = <Widget>[
+                    if (canCreate)
                     _ChoiceCard(
                       title: 'Purchase',
                       subtitle: 'Receive goods from a supplier',
@@ -71,6 +80,7 @@ class ChallanTabScreen extends StatelessWidget {
                         ),
                       ),
                     ),
+                    if (canCreate)
                     _ChoiceCard(
                       title: 'Use',
                       subtitle: 'Consume raw materials',
@@ -80,7 +90,7 @@ class ChallanTabScreen extends StatelessWidget {
                         MaterialPageRoute(builder: (_) => const UseOrderSelectScreen()),
                       ),
                     ),
-                    if (vendors.isNotEmpty)
+                    if (canCreate && vendors.isNotEmpty)
                       _ChoiceCard(
                         title: 'Supplier',
                         subtitle: 'Re-order past purchases',
@@ -95,7 +105,8 @@ class ChallanTabScreen extends StatelessWidget {
                     // In-use: lists internal-use challans created by the Use
                     // flow and opens the reconciliation screen. Additive and
                     // flag-gated — hidden (Use flow unchanged) when off.
-                    if (FeatureFlags.isEnabled(FeatureKeys.challanReconciliation))
+                    if (FeatureFlags.isEnabled(FeatureKeys.challanReconciliation) &&
+                        canReconcile)
                       _ChoiceCard(
                         title: 'In-use',
                         subtitle: 'Settle used materials',
@@ -107,7 +118,39 @@ class ChallanTabScreen extends StatelessWidget {
                           ),
                         ),
                       ),
+                    // Challan Book: every challan this person created.
+                    if (canRead)
+                      _ChoiceCard(
+                        title: 'Challan Book',
+                        subtitle: 'Challans you created',
+                        icon: Icons.menu_book_rounded,
+                        color: const Color(0xFF6B5BD2),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const ChallanBookScreen(),
+                          ),
+                        ),
+                      ),
                   ];
+
+                  if (tiles.isEmpty) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 48),
+                      child: Column(
+                        children: [
+                          Icon(Icons.lock_outline_rounded,
+                              size: 42, color: SoftErpTheme.textSecondary),
+                          SizedBox(height: 12),
+                          Text('No challan actions available',
+                              style: TextStyle(fontWeight: FontWeight.w800)),
+                          SizedBox(height: 6),
+                          Text('Ask your admin to grant challan access.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: SoftErpTheme.textSecondary)),
+                        ],
+                      ),
+                    );
+                  }
 
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,

@@ -23,6 +23,7 @@ abstract class ChallanRepository {
     int? orderId,
     int? itemId,
     int? variationLeafNodeId,
+    bool mineOnly = false,
   });
 
   Future<List<DeliveryChallan>> getOrderChallans(int orderId);
