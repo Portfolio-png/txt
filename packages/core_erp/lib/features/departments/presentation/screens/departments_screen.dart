@@ -308,10 +308,16 @@ class _DepartmentList extends StatelessWidget {
     final depts = provider.filteredDepartments;
 
     if (depts.isEmpty) {
-      return const AppEmptyState(
+      return AppEmptyState(
         title: 'No departments',
         message: 'Create a department to get started.',
         icon: Icons.business_outlined,
+        action: AppButton(
+          label: 'Add Department',
+          icon: Icons.add,
+          variant: AppButtonVariant.secondary,
+          onPressed: () => DepartmentEditorDialog.open(context),
+        ),
       );
     }
 

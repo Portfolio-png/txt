@@ -1,14 +1,7 @@
 import '../annotations/feature_annotation.dart';
 import 'dev_config.dart';
 
-/// RULE: every user-facing feature/module ships behind a flag — nothing reaches
-/// a client build ungated. To add one: declare an `@FeatureFlag` key here, gate
-/// the feature with `FeatureFlags.isEnabled(...)`, then publish it to the
-/// dashboard with `dart run bin/generate_registry.dart`. See CLAUDE.md.
-///
-/// Replacing a working flow? Use a SELECTOR flag (default off) and branch at the
-/// flow's single entry point — add a new file, never edit the old one, so the
-/// current flow keeps working. See CLAUDE.md → "Replacing a working flow".
+
 class FeatureKeys {
   @FeatureFlag(
     category: 'Modules',

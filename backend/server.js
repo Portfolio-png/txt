@@ -4983,36 +4983,79 @@ async function initDb() {
     )
   `);
 
-  // Insert default client config if not exists
-  const defaultConf = await get('SELECT client_id FROM sandbox_client_configs WHERE client_id = ?', ['default']);
-  if (!defaultConf) {
-    const initialConfig = {
-      "modules": {
-        "orders": true,
-        "masters": true,
-        "inventory": true,
-        "production": true,
-        "pm": true,
-        "jobs": true,
-        "delivery_challans": true
+  // Insert default client config if not exists, or update existing default config with all new feature flags
+  const initialConfig = {
+    "modules": {
+      "orders": true,
+      "masters": true,
+      "inventory": true,
+      "production": true,
+      "pm": true,
+      "jobs": true,
+      "delivery_challans": true,
+      "actionCenter": true
+    },
+    "orders": {
+      "statusColors": {
+        "pending": "#FFA500",
+        "in_progress": "#1E90FF",
+        "completed": "#32CD32"
       },
-      "orders": {
-        "statusColors": {
-          "pending": "#FFA500",
-          "in_progress": "#1E90FF",
-          "completed": "#32CD32"
-        },
-        "allowCustomActions": true
-      },
-      "update": {
-        "channel": "stable",
-        "latest_version": "1.0.0"
-      }
-    };
+      "allowCustomActions": true,
+      "allowOrdersCreation": true,
+      "showReport": true
+    },
+    "features": {
+      "disableMachineCustomFields": false
+    },
+    "production": {
+      "multiScrapItems": true,
+      "materialVariationPaths": true
+    },
+    "enhancements": {
+      "catalogInventory": true,
+      "boardingPassCards": true
+    },
+    "challans": {
+      "singleTypeView": true,
+      "reconciliation": true
+    },
+    "catalog": {
+      "purchaseItems": true
+    },
+    "purchase": {
+      "flowV2": true
+    },
+    "update": {
+      "channel": "stable",
+      "latest_version": "1.0.0"
+    }
+  };
+
+  const defaultConfRow = await get('SELECT config_json FROM sandbox_client_configs WHERE client_id = ?', ['default']);
+  if (!defaultConfRow) {
     await run(
       'INSERT INTO sandbox_client_configs (client_id, config_json, updated_at) VALUES (?, ?, datetime(\'now\'))',
       ['default', JSON.stringify(initialConfig)]
     );
+  } else {
+    try {
+      const existing = JSON.parse(defaultConfRow.config_json);
+      const merged = Object.assign({}, initialConfig, existing);
+      // Ensure nested keys present
+      merged.modules = Object.assign({}, initialConfig.modules, existing.modules || {});
+      merged.orders = Object.assign({}, initialConfig.orders, existing.orders || {});
+      merged.features = Object.assign({}, initialConfig.features, existing.features || {});
+      merged.production = Object.assign({}, initialConfig.production, existing.production || {});
+      merged.enhancements = Object.assign({}, initialConfig.enhancements, existing.enhancements || {});
+      merged.challans = Object.assign({}, initialConfig.challans, existing.challans || {});
+      merged.catalog = Object.assign({}, initialConfig.catalog, existing.catalog || {});
+      merged.purchase = Object.assign({}, initialConfig.purchase, existing.purchase || {});
+      await run(
+        'UPDATE sandbox_client_configs SET config_json = ?, updated_at = datetime(\'now\') WHERE client_id = ?',
+        [JSON.stringify(merged), 'default']
+      );
+    } catch (_) {}
   }
 
   await run(`
@@ -10944,10 +10987,37 @@ async function issueDeliveryChallan(id, actor = null) {
     if (maintainStocks) for (const item of items) {
       const quantity = Number(item.quantity_pcs);
       const weight = Number(item.weight);
-      const movementQty = Number.isFinite(quantity) && quantity > 0 ? quantity : weight;
-      const movementUom = Number.isFinite(quantity) && quantity > 0 ? 'pcs' : 'weight';
-
       const itemId = Number(item.item_id || 0);
+
+      let isWeightUnit = false;
+      let unitSymbol = 'pcs';
+      if (itemId > 0) {
+        const itemRow = await get(`
+          SELECT u.symbol
+          FROM items i
+          JOIN units u ON i.unit_id = u.id
+          WHERE i.id = ?
+        `, [itemId]);
+        if (itemRow) {
+          unitSymbol = String(itemRow.symbol || '').trim().toLowerCase();
+          isWeightUnit = ['kg', 'g', 'mg', 'ton', 'tons', 't', 'lbs', 'oz', 'weight'].includes(unitSymbol);
+        }
+      }
+
+      let movementQty = 0;
+      let movementUom = 'pcs';
+      if (isWeightUnit) {
+        // If the item is tracked by weight, prefer the weight field over quantity_pcs
+        movementQty = Number.isFinite(weight) && weight > 0 ? weight : quantity;
+        movementUom = unitSymbol;
+      } else {
+        // If it's a piece-tracked item, prefer quantity_pcs
+        movementQty = Number.isFinite(quantity) && quantity > 0 ? quantity : weight;
+        movementUom = unitSymbol || 'pcs';
+      }
+
+      console.log(`[Challan Debug] Item ID ${itemId} unit is '${unitSymbol}'. Input: Qty=${quantity}, Weight=${weight}. Resolved Movement: ${movementQty} ${movementUom}.`);
+
       const leafNodeId = Number(item.variation_leaf_node_id || 0);
       const locationId = String(existing.location || '').trim() || 'MAIN';
       const isReception = normalizeChallanType(existing.type) === 'reception';
@@ -20875,6 +20945,23 @@ app.post(
   },
 );
 
+console.log('Registering /api/admin/factory-reset route...');
+app.post(
+  '/api/admin/factory-reset',
+  requireRoles('super_admin'),
+  async (_req, res) => {
+    try {
+      await factoryResetData();
+      res.json({ success: true, error: null });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  },
+);
+
 console.log('Registering /api/admin/clear-data route...');
 app.post(
   '/api/admin/clear-data',
@@ -24996,7 +25083,8 @@ app.get('/sandbox-config/:clientId', async (req, res) => {
         "production": true,
         "pm": true,
         "jobs": true,
-        "delivery_challans": true
+        "delivery_challans": true,
+        "actionCenter": true
       },
       "orders": {
         "statusColors": {
@@ -25004,7 +25092,30 @@ app.get('/sandbox-config/:clientId', async (req, res) => {
           "in_progress": "#1E90FF",
           "completed": "#32CD32"
         },
-        "allowCustomActions": true
+        "allowCustomActions": true,
+        "allowOrdersCreation": true,
+        "showReport": true
+      },
+      "features": {
+        "disableMachineCustomFields": false
+      },
+      "production": {
+        "multiScrapItems": true,
+        "materialVariationPaths": true
+      },
+      "enhancements": {
+        "catalogInventory": true,
+        "boardingPassCards": true
+      },
+      "challans": {
+        "singleTypeView": true,
+        "reconciliation": true
+      },
+      "catalog": {
+        "purchaseItems": true
+      },
+      "purchase": {
+        "flowV2": true
       },
       "update": {
         "channel": "stable",
@@ -25412,6 +25523,24 @@ app.use('/api', (error, req, res, _next) => {
   });
 });
 
+async function factoryResetData() {
+  await run('PRAGMA foreign_keys = OFF');
+  await run('BEGIN TRANSACTION');
+  try {
+    const allTables = await all("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'");
+    for (const table of allTables) {
+      await run("DELETE FROM " + table.name + "");
+    }
+    await bootstrapSuperAdminIfNeeded();
+    await ensurePrimaryGroupAndUnit();
+    await run('COMMIT');
+  } catch (error) {
+    await run('ROLLBACK');
+    throw error;
+  } finally {
+    await run('PRAGMA foreign_keys = ON').catch(() => {});
+  }
+}
 
 async function clearAllData() {
   await run('PRAGMA foreign_keys = OFF');

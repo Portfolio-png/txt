@@ -467,6 +467,30 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> factoryResetDatabase() async {
+    if (!can('config.write')) {
+      _errorMessage = 'You do not have permission to factory reset the database.';
+      notifyListeners();
+      return false;
+    }
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      await _api.factoryResetDatabase();
+      return true;
+    } catch (error) {
+      _errorMessage = _friendly(
+        error,
+        fallback: 'Failed to factory reset database.',
+      );
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   /// Clears only the current user's own data. No special permission required —
   /// every signed-in user can reset their personal favorites and search history.
   Future<bool> clearMyData() async {

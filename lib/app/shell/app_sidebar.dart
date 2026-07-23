@@ -674,6 +674,39 @@ class _SettingsPreferencesDialogState
     );
   }
 
+  Future<void> _handleFactoryReset() async {
+    setState(() {
+      _isResetting = true;
+    });
+    final auth = context.read<AuthProvider>();
+    final success = await auth.factoryResetDatabase();
+    if (!mounted) {
+      return;
+    }
+    if (!success) {
+      setState(() {
+        _isResetting = false;
+      });
+      showAppSnack(
+        SnackBar(
+          content: Text(
+            auth.errorMessage ?? 'Failed to factory reset database.',
+          ),
+        ),
+      );
+      return;
+    }
+    
+    // Force logout since the user account was likely deleted.
+    await auth.logout();
+    
+    if (!mounted) return;
+    
+    showAppSnack(
+      const SnackBar(content: Text('Factory reset complete. Please log in again.')),
+    );
+  }
+
   Future<void> _handleResetAndReseed(String scenarioId) async {
     setState(() {
       _isResetting = true;
@@ -943,6 +976,20 @@ class _SettingsPreferencesDialogState
                             ),
                             child: Text(
                               _isResetting ? 'Working…' : 'Clear Data',
+                            ),
+                          ),
+                          FilledButton(
+                            onPressed: _isResetting ? null : _handleFactoryReset,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.red.shade700,
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size(140, 44),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            child: Text(
+                              _isResetting ? 'Working…' : 'Factory Reset',
                             ),
                           ),
                         ],

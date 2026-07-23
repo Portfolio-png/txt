@@ -58,6 +58,10 @@ class DepartmentsProvider extends ChangeNotifier {
       _departments = futures[0] as List<DepartmentDefinition>;
       _employees = futures[1] as List<EmployeeDefinition>;
       _sortLists();
+      if (_selectedDepartment != null &&
+          !_departments.any((d) => d.id == _selectedDepartment!.id)) {
+        _selectedDepartment = null;
+      }
     } catch (e) {
       _setError(e.toString());
     } finally {

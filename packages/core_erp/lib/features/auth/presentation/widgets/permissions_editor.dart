@@ -2024,6 +2024,7 @@ Future<void> _showPresetEditor(
   final toggles = <String, bool>{
     for (final key in template?.permissions ?? const <String>[]) key: true,
   };
+  String selectedPlatformView = 'desktop';
 
   await showDialog<void>(
     context: context,
@@ -2031,29 +2032,152 @@ Future<void> _showPresetEditor(
       builder: (dialogContext, setLocal) => AlertDialog(
         title: Text(template == null ? 'New preset' : 'Edit ${template.name}'),
         content: SizedBox(
-          width: 620,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(labelText: 'Role name'),
+          width: 920,
+          height: 620,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: nameCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Role name',
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: TextField(
+                      controller: descCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Description (optional)',
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // LEFT SIDEBAR (PLATFORM CONTROL)
+                    SizedBox(
+                      width: 260,
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const _SectionLabel('Select Platform'),
+                            const SizedBox(height: 8),
+                            _sidebarPlatformCard(
+                              title: 'Desktop ERP',
+                              subtitle: 'Web & Desktop App',
+                              isSelected: selectedPlatformView == 'desktop',
+                              isAllowed: toggles['login.desktop'] ?? false,
+                              color: const Color(0xFF2563EB),
+                              onTap: () => setLocal(() => selectedPlatformView = 'desktop'),
+                              onToggleLogin: (v) => setLocal(() => toggles['login.desktop'] = v),
+                            ),
+                            const SizedBox(height: 10),
+                            _sidebarPlatformCard(
+                              title: 'Mobile App',
+                              subtitle: 'Challan Mobile Worker',
+                              isSelected: selectedPlatformView == 'mobile',
+                              isAllowed: toggles['login.mobile'] ?? false,
+                              color: const Color(0xFF7C3AED),
+                              onTap: () => setLocal(() => selectedPlatformView = 'mobile'),
+                              onToggleLogin: (v) => setLocal(() => toggles['login.mobile'] = v),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const VerticalDivider(width: 24, thickness: 1),
+                    // RIGHT CONTENT PANE
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (selectedPlatformView == 'desktop') ...[
+                              Row(
+                                children: [
+                                  const Icon(Icons.desktop_windows, size: 18, color: Color(0xFF2563EB)),
+                                  const SizedBox(width: 8),
+                                  const Text(
+                                    'Desktop & Web ERP Permissions Matrix',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w800,
+                                      color: SoftErpTheme.textPrimary,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Text(
+                                    (toggles['login.desktop'] ?? false) ? 'Desktop Login Enabled' : 'Desktop Login Disabled',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: (toggles['login.desktop'] ?? false) ? Colors.green.shade800 : Colors.red.shade800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              PermissionTree(
+                                descriptors: descriptors,
+                                toggles: toggles,
+                                onChanged: () => setLocal(() {}),
+                              ),
+                            ] else ...[
+                              Row(
+                                children: [
+                                  const Icon(Icons.phone_android, size: 18, color: Color(0xFF7C3AED)),
+                                  const SizedBox(width: 8),
+                                  const Text(
+                                    'Challan Mobile App Permissions Matrix',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w800,
+                                      color: SoftErpTheme.textPrimary,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Text(
+                                    (toggles['login.mobile'] ?? false) ? 'Mobile PIN Login Enabled' : 'Mobile PIN Login Disabled',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: (toggles['login.mobile'] ?? false) ? Colors.purple.shade800 : Colors.red.shade800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Opacity(
+                                opacity: (toggles['login.mobile'] ?? false) ? 1.0 : 0.45,
+                                child: PermissionTree(
+                                  descriptors: descriptors
+                                      .where((d) => ['challans', 'inventory', 'orders', 'action_center', 'items'].contains(d.module))
+                                      .toList(),
+                                  toggles: toggles,
+                                  onChanged: () => setLocal(() {}),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: descCtrl,
-                  decoration:
-                      const InputDecoration(labelText: 'Description (optional)'),
-                ),
-                const SizedBox(height: 14),
-                PermissionTree(
-                  descriptors: descriptors,
-                  toggles: toggles,
-                  onChanged: () => setLocal(() {}),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
         actions: [

@@ -105,6 +105,21 @@ class AuthApi {
     }
   }
 
+  Future<void> factoryResetDatabase() async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/admin/factory-reset'),
+      headers: _authHeaders,
+    );
+    final payload = _decode(response.body);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        payload['success'] != true) {
+      throw AuthApiException(
+        payload['error'] as String? ?? 'Failed to factory reset database.',
+      );
+    }
+  }
+
   /// Clears only the signed-in user's own account-scoped data (favorites,
   /// search history). Available to every role, including staff.
   Future<void> clearMyData() async {

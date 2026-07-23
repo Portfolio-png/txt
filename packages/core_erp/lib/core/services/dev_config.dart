@@ -23,7 +23,7 @@ const Map<String, dynamic> devConfig = {
     'masters': true,
     'inventory': true,
     'production': true,
-    'pm': false,
+    'pm': true,
     'jobs': true,
     'delivery_challans': true,
     'actionCenter': true,
