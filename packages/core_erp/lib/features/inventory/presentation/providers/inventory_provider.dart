@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/services/socket_service.dart';
 import '../../data/repositories/inventory_repository.dart';
 import '../../domain/create_parent_material_input.dart';
 import '../../domain/effective_group_schema.dart';
@@ -58,6 +59,10 @@ class InventoryProvider extends ChangeNotifier {
     if (_initialized) {
       return;
     }
+
+    SocketService.instance.on('inventory_updated', (data) => refresh());
+    SocketService.instance.on('challan_updated', (data) => refresh());
+    SocketService.instance.on('challan_generated_ok', (data) => refresh());
 
     _initialized = true;
     _isLoading = true;
@@ -614,6 +619,14 @@ class InventoryProvider extends ChangeNotifier {
     }
 
     return withoutPrefix.replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  @override
+  void dispose() {
+    SocketService.instance.off('inventory_updated');
+    SocketService.instance.off('challan_updated');
+    SocketService.instance.off('challan_generated_ok');
+    super.dispose();
   }
 }
 

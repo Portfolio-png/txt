@@ -698,7 +698,7 @@ class _SettingsPreferencesDialogState
     }
     
     // Force logout since the user account was likely deleted.
-    await auth.logout();
+    auth.logout();
     
     if (!mounted) return;
     

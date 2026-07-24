@@ -2135,9 +2135,7 @@ void _showDeletionSummary(
                         color: SoftErpTheme.textSecondary,
                       ),
                       const SizedBox(width: 8),
-                      Expanded(
-                        child: SmallBarcodePreview(value: item.barcode),
-                      ),
+                      Expanded(child: SmallBarcodePreview(value: item.barcode)),
                       Text(
                         '${item.qty} units',
                         style: const TextStyle(fontWeight: FontWeight.w500),
@@ -5131,27 +5129,43 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
       return false;
     }
     final selectedValueIds = valueNodeIds.toSet();
-    for (final root in item.topLevelProperties) {
-      ItemVariationNodeDefinition currentProperty = root;
-      while (true) {
-        final selectedValue = currentProperty.activeChildren
-            .where((node) => node.kind == ItemVariationNodeKind.value)
-            .where((node) => selectedValueIds.contains(node.id))
-            .firstOrNull;
-        if (selectedValue == null) {
-          return false;
+
+    bool isPathCompleteForProp(ItemVariationNodeDefinition prop) {
+      final subProps = prop.activeChildren
+          .where((node) => node.kind == ItemVariationNodeKind.property)
+          .toList(growable: false);
+      if (subProps.isNotEmpty) {
+        for (final sp in subProps) {
+          if (!isPathCompleteForProp(sp)) return false;
         }
-        final nextProperty = selectedValue.activeChildren
-            .where((node) => node.kind == ItemVariationNodeKind.property)
-            .firstOrNull;
-        if (nextProperty == null) {
-          if (!selectedValue.isLeafValue) {
-            return false;
-          }
-          break;
-        }
-        currentProperty = nextProperty;
+        return true;
       }
+
+      final selectedValue = prop.activeChildren
+          .where((node) => node.kind == ItemVariationNodeKind.value)
+          .where((node) => selectedValueIds.contains(node.id))
+          .firstOrNull;
+
+      if (selectedValue == null) {
+        return selectedValueIds.contains(-prop.id);
+      }
+
+      final nextProps = selectedValue.activeChildren
+          .where((node) => node.kind == ItemVariationNodeKind.property)
+          .toList(growable: false);
+
+      if (nextProps.isEmpty) {
+        return selectedValue.isLeafValue;
+      }
+
+      for (final np in nextProps) {
+        if (!isPathCompleteForProp(np)) return false;
+      }
+      return true;
+    }
+
+    for (final root in item.topLevelProperties) {
+      if (!isPathCompleteForProp(root)) return false;
     }
     return true;
   }
@@ -5181,28 +5195,38 @@ class _OrderEditorSheetState extends State<_OrderEditorSheet> {
     ItemDefinition item,
     List<int> valueNodeIds,
   ) {
+    if (valueNodeIds.isEmpty) return const <int>[];
     final selectedValueIds = valueNodeIds.toSet();
     final nodeIds = <int>[];
-    for (final root in item.topLevelProperties) {
-      ItemVariationNodeDefinition currentProperty = root;
-      while (true) {
-        final selectedValue = currentProperty.activeChildren
-            .where((node) => node.kind == ItemVariationNodeKind.value)
-            .where((node) => selectedValueIds.contains(node.id))
-            .firstOrNull;
-        if (selectedValue == null) {
-          break;
-        }
-        // Bug 8 fix: only push value node IDs, not property node IDs
-        nodeIds.add(selectedValue.id);
-        final nextProperty = selectedValue.activeChildren
-            .where((node) => node.kind == ItemVariationNodeKind.property)
-            .firstOrNull;
-        if (nextProperty == null) {
-          break;
-        }
-        currentProperty = nextProperty;
+
+    void extractIds(ItemVariationNodeDefinition prop) {
+      final subProps = prop.activeChildren.where(
+        (n) => n.kind == ItemVariationNodeKind.property,
+      );
+      if (subProps.isNotEmpty) {
+        for (final sp in subProps) extractIds(sp);
+        return;
       }
+      final selectedValue = prop.activeChildren
+          .where((n) => n.kind == ItemVariationNodeKind.value)
+          .where((n) => selectedValueIds.contains(n.id))
+          .firstOrNull;
+      if (selectedValue == null) {
+        final tempId = -prop.id;
+        if (selectedValueIds.contains(tempId)) {
+          nodeIds.add(tempId);
+        }
+        return;
+      }
+      nodeIds.add(selectedValue.id);
+      final nextProps = selectedValue.activeChildren.where(
+        (node) => node.kind == ItemVariationNodeKind.property,
+      );
+      for (final np in nextProps) extractIds(np);
+    }
+
+    for (final root in item.topLevelProperties) {
+      extractIds(root);
     }
     return nodeIds;
   }

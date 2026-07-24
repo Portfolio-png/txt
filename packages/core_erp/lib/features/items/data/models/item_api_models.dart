@@ -25,6 +25,7 @@ class ItemVariationNodeDto {
     required this.createdAt,
     required this.updatedAt,
     required this.children,
+    this.inputType = 'Text',
   });
 
   final int id;
@@ -39,6 +40,7 @@ class ItemVariationNodeDto {
   final DateTime createdAt;
   final DateTime updatedAt;
   final List<ItemVariationNodeDto> children;
+  final String inputType;
 
   factory ItemVariationNodeDto.fromJson(Map<String, dynamic> json) {
     return ItemVariationNodeDto(
@@ -63,6 +65,7 @@ class ItemVariationNodeDto {
                 ItemVariationNodeDto.fromJson(item as Map<String, dynamic>),
           )
           .toList(growable: false),
+      inputType: json['inputType'] as String? ?? 'Text',
     );
   }
 
@@ -82,6 +85,7 @@ class ItemVariationNodeDto {
       children: children
           .map((entry) => entry.toDomain())
           .toList(growable: false),
+      inputType: inputType,
     );
   }
 }

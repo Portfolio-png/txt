@@ -692,6 +692,7 @@ class ApiItemRepository implements ItemRepository {
             createdAt: current?.createdAt ?? timestamp,
             updatedAt: timestamp,
             children: builtChildren,
+            inputType: input.inputType,
           );
         })
         .toList(growable: false);

@@ -402,14 +402,17 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
         children: [
           const Icon(Icons.grid_on_rounded, color: SoftErpTheme.accent),
           const SizedBox(width: 12),
-          Text(
-            widget.title,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w900,
-              color: SoftErpTheme.textPrimary,
+          Expanded(
+            child: Text(
+              widget.title,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w900,
+                color: SoftErpTheme.textPrimary,
+              ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
-          const Spacer(),
+          const SizedBox(width: 8),
           SoftPill(
             label: '${_fullChallans.length} Challans',
             background: SoftErpTheme.accent.withValues(alpha: 0.1),
@@ -517,6 +520,31 @@ class _ChallanExcelViewState extends State<ChallanExcelView> {
                         _selectedPreviewChallan?.id == row.challan.id),
                 onSelectChanged: (_) {
                   if (!_focusNode.hasFocus) _focusNode.requestFocus();
+                  if (!widget.isEmbedded) {
+                    showDialog(
+                      context: context,
+                      builder: (context) => Dialog(
+                        insetPadding: const EdgeInsets.all(16),
+                        clipBehavior: Clip.antiAlias,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        child: Stack(
+                          children: [
+                            ChallanPrintableDocument(challan: row.challan),
+                            Positioned(
+                              top: 8,
+                              right: 8,
+                              child: IconButton(
+                                icon: const Icon(Icons.close_rounded),
+                                onPressed: () => Navigator.of(context).pop(),
+                                tooltip: 'Close',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                    return;
+                  }
                   setState(() {
                     _selectedIndex = index;
                     if (_isPreviewOpen &&

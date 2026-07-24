@@ -6,6 +6,7 @@ import 'package:core_erp/features/inventory/domain/variation_stock_record.dart';
 import 'package:core_erp/features/inventory/presentation/providers/inventory_provider.dart';
 import 'package:core_erp/features/units/presentation/providers/units_provider.dart';
 import 'package:core_erp/features/items/presentation/providers/items_provider.dart';
+import 'package:core_erp/features/delivery_challans/presentation/widgets/challan_excel_view.dart';
 
 /// Simplest mobile stock view: each item grouped as a card showing its total
 /// stock, with the per-variation breakdown beneath — mirroring the desktop
@@ -29,30 +30,30 @@ class InventoryStockScreen extends StatefulWidget {
     final byItem = <int, _ItemStock>{};
     for (final r in records) {
       final symbol = (unitSymbolById[r.unitId] ?? '').trim();
-      final item = byItem.putIfAbsent(
-        r.itemId,
-        () {
-          final def = itemsProvider.findById(r.itemId);
-          String secondaryUnitSymbol = 'kg';
-          double factor = 1.0;
-          if (def != null && def.unitConversions.isNotEmpty) {
-            secondaryUnitSymbol = def.unitConversions.first.unitSymbol;
-            factor = def.unitConversions.first.factorToPrimary;
-            if (factor <= 0) factor = 1.0;
-          }
-          return _ItemStock(
-            itemName: r.itemName,
-            unitSymbol: symbol,
-            secondaryUnitSymbol: secondaryUnitSymbol,
-            factorToPrimary: factor,
-          );
-        },
-      );
-      if (item.unitSymbol.isEmpty && symbol.isNotEmpty) item.unitSymbol = symbol;
+      final item = byItem.putIfAbsent(r.itemId, () {
+        final def = itemsProvider.findById(r.itemId);
+        String secondaryUnitSymbol = 'kg';
+        double factor = 1.0;
+        if (def != null && def.unitConversions.isNotEmpty) {
+          secondaryUnitSymbol = def.unitConversions.first.unitSymbol;
+          factor = def.unitConversions.first.factorToPrimary;
+          if (factor <= 0) factor = 1.0;
+        }
+        return _ItemStock(
+          itemId: r.itemId,
+          itemName: r.itemName,
+          unitSymbol: symbol,
+          secondaryUnitSymbol: secondaryUnitSymbol,
+          factorToPrimary: factor,
+        );
+      });
+      if (item.unitSymbol.isEmpty && symbol.isNotEmpty)
+        item.unitSymbol = symbol;
 
       final existing = item.variations[r.variationLeafNodeId];
       if (existing == null) {
         item.variations[r.variationLeafNodeId] = _VariationStock(
+          leafNodeId: r.variationLeafNodeId,
           label: r.variationPathLabel,
           quantity: r.quantity,
         );
@@ -62,8 +63,9 @@ class InventoryStockScreen extends StatefulWidget {
     }
 
     final groups = byItem.values.toList()
-      ..sort((a, b) =>
-          a.itemName.toLowerCase().compareTo(b.itemName.toLowerCase()));
+      ..sort(
+        (a, b) => a.itemName.toLowerCase().compareTo(b.itemName.toLowerCase()),
+      );
     return groups;
   }
 
@@ -95,7 +97,11 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
 
     final itemsProvider = context.watch<ItemsProvider>();
 
-    final groups = InventoryStockScreen._buildGroups(inventory.variationStock, unitSymbolById, itemsProvider);
+    final groups = InventoryStockScreen._buildGroups(
+      inventory.variationStock,
+      unitSymbolById,
+      itemsProvider,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -159,25 +165,31 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
 
 class _ItemStock {
   _ItemStock({
+    required this.itemId,
     required this.itemName,
     required this.unitSymbol,
     this.secondaryUnitSymbol = '',
     this.factorToPrimary = 1.0,
   });
 
+  final int itemId;
   final String itemName;
   String unitSymbol;
   String secondaryUnitSymbol;
   double factorToPrimary;
   final Map<int, _VariationStock> variations = {};
 
-  double get total =>
-      variations.values.fold(0.0, (sum, v) => sum + v.quantity);
+  double get total => variations.values.fold(0.0, (sum, v) => sum + v.quantity);
 }
 
 class _VariationStock {
-  _VariationStock({required this.label, required this.quantity});
+  _VariationStock({
+    required this.leafNodeId,
+    required this.label,
+    required this.quantity,
+  });
 
+  final int leafNodeId;
   final String label;
   double quantity;
 }
@@ -189,8 +201,9 @@ class _ItemStockCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final title =
-        item.itemName.trim().isEmpty ? 'Unnamed item' : item.itemName.trim();
+    final title = item.itemName.trim().isEmpty
+        ? 'Unnamed item'
+        : item.itemName.trim();
     final unit = item.unitSymbol;
     final variations = item.variations.values.toList()
       ..sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
@@ -204,94 +217,116 @@ class _ItemStockCard extends StatelessWidget {
       child: Column(
         children: [
           // Item header with total.
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 15.5,
-                      fontWeight: FontWeight.w800,
-                      color: SoftErpTheme.textPrimary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  InventoryStockScreen._formatQty(item.total),
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: SoftErpTheme.accent,
-                  ),
-                ),
-                if (unit.isNotEmpty) ...[
-                  const SizedBox(width: 4),
-                  Text(
-                    unit,
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      color: SoftErpTheme.textSecondary,
-                    ),
-                  ),
-                ],
-                if (item.secondaryUnitSymbol.isNotEmpty) ...[
-                  const SizedBox(width: 4),
-                  Text(
-                    '| ${InventoryStockScreen._formatQty(item.total / item.factorToPrimary)} ${item.secondaryUnitSymbol}',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: SoftErpTheme.textSecondary,
-                    ),
-                  ),
-                ],
-              ],
+          InkWell(
+            onTap: () => ChallanExcelView.show(
+              context,
+              filterItemId: item.itemId,
+              title: '$title Ledger',
             ),
-          ),
-          const Divider(height: 1, color: SoftErpTheme.border),
-          // Per-variation breakdown.
-          for (final v in variations)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
               child: Row(
                 children: [
-                  const Icon(Icons.subdirectory_arrow_right,
-                      size: 16, color: SoftErpTheme.textSecondary),
-                  const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      v.label.trim().isEmpty ? 'Default' : v.label.trim(),
+                      title,
                       style: const TextStyle(
-                        fontSize: 13.5,
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w800,
                         color: SoftErpTheme.textPrimary,
                       ),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    InventoryStockScreen._formatQty(v.quantity) +
-                        (unit.isEmpty ? '' : ' $unit'),
+                    InventoryStockScreen._formatQty(item.total),
                     style: const TextStyle(
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w700,
-                      color: SoftErpTheme.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: SoftErpTheme.accent,
                     ),
                   ),
-                  if (item.secondaryUnitSymbol.isNotEmpty) ...[
-                    const SizedBox(width: 6),
+                  if (unit.isNotEmpty) ...[
+                    const SizedBox(width: 4),
                     Text(
-                      '(${InventoryStockScreen._formatQty(v.quantity / item.factorToPrimary)} ${item.secondaryUnitSymbol})',
+                      unit,
                       style: const TextStyle(
                         fontSize: 12.5,
-                        fontWeight: FontWeight.w500,
+                        color: SoftErpTheme.textSecondary,
+                      ),
+                    ),
+                  ],
+                  if (item.secondaryUnitSymbol.isNotEmpty) ...[
+                    const SizedBox(width: 4),
+                    Text(
+                      '| ${InventoryStockScreen._formatQty(item.total / item.factorToPrimary)} ${item.secondaryUnitSymbol}',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
                         color: SoftErpTheme.textSecondary,
                       ),
                     ),
                   ],
                 ],
+              ),
+            ),
+          ),
+          const Divider(height: 1, color: SoftErpTheme.border),
+          // Per-variation breakdown.
+          for (final v in variations)
+            InkWell(
+              onTap: () => ChallanExcelView.show(
+                context,
+                filterItemId: item.itemId,
+                filterVariationLeafNodeId: v.leafNodeId,
+                title:
+                    '$title - ${v.label.trim().isEmpty ? 'Default' : v.label.trim()} Ledger',
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 11,
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.subdirectory_arrow_right,
+                      size: 16,
+                      color: SoftErpTheme.textSecondary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        v.label.trim().isEmpty ? 'Default' : v.label.trim(),
+                        style: const TextStyle(
+                          fontSize: 13.5,
+                          color: SoftErpTheme.textPrimary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      InventoryStockScreen._formatQty(v.quantity) +
+                          (unit.isEmpty ? '' : ' $unit'),
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        color: SoftErpTheme.textPrimary,
+                      ),
+                    ),
+                    if (item.secondaryUnitSymbol.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                        '(${InventoryStockScreen._formatQty(v.quantity / item.factorToPrimary)} ${item.secondaryUnitSymbol})',
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w500,
+                          color: SoftErpTheme.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
         ],

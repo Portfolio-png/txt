@@ -2371,6 +2371,10 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                   detailsSection,
                                   const SizedBox(height: 16),
                                   photoSection,
+                                  if (!isRawMaterialGroup) ...[
+                                    const SizedBox(height: 16),
+                                    defaultPipelineSection,
+                                  ],
                                 ],
                               ),
                             ),
@@ -2382,10 +2386,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                                   variationTreeSection,
                                   const SizedBox(height: 16),
                                   namingFormatSection,
-                                  if (!isRawMaterialGroup) ...[
-                                    const SizedBox(height: 16),
-                                    defaultPipelineSection,
-                                  ],
                                 ],
                               ),
                             ),

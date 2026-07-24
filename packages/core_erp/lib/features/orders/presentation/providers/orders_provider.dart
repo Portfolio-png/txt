@@ -9,6 +9,8 @@ import '../../data/repositories/order_repository.dart';
 
 import '../../data/models/order_api_models.dart';
 
+import '../../../../core/services/socket_service.dart';
+
 class OrdersProvider extends ChangeNotifier {
   OrdersProvider({required OrderRepository repository})
     : _repository = repository;
@@ -87,6 +89,8 @@ class OrdersProvider extends ChangeNotifier {
       return;
     }
     _initialized = true;
+    SocketService.instance.on('orders_changed', (data) => refresh());
+
     await refresh();
   }
 

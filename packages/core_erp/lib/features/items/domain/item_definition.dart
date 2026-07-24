@@ -14,6 +14,7 @@ class ItemVariationNodeDefinition {
     required this.createdAt,
     required this.updatedAt,
     required this.children,
+    this.inputType = 'Text',
   });
 
   final int id;
@@ -28,9 +29,10 @@ class ItemVariationNodeDefinition {
   final DateTime createdAt;
   final DateTime updatedAt;
   final List<ItemVariationNodeDefinition> children;
+  final String inputType;
 
   bool get isLeafValue =>
-      kind == ItemVariationNodeKind.value && children.isEmpty;
+      kind == ItemVariationNodeKind.value && activeChildren.isEmpty;
 
   List<ItemVariationNodeDefinition> get activeChildren =>
       children.where((node) => !node.isArchived).toList(growable: false);
@@ -38,7 +40,7 @@ class ItemVariationNodeDefinition {
   List<ItemVariationNodeDefinition> get leafValueNodes {
     final leaves = <ItemVariationNodeDefinition>[];
     void visit(ItemVariationNodeDefinition node) {
-      if (node.kind == ItemVariationNodeKind.value && node.children.isEmpty) {
+      if (node.kind == ItemVariationNodeKind.value && node.activeChildren.isEmpty) {
         leaves.add(node);
         return;
       }
@@ -151,7 +153,7 @@ class ItemDefinition {
     final leaves = <ItemVariationNodeDefinition>[];
 
     void visit(ItemVariationNodeDefinition node) {
-      if (node.kind == ItemVariationNodeKind.value && node.children.isEmpty) {
+      if (node.kind == ItemVariationNodeKind.value && node.activeChildren.isEmpty) {
         leaves.add(node);
         return;
       }

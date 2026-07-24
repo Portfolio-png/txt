@@ -56,7 +56,7 @@ class VariationPathSelectorWidget extends StatefulWidget {
     this.onCreateValue,
     this.readOnly = false,
     this.showHeaderAndFooter = false,
-    this.useTilesForValues = false,
+    this.useTilesForValues,
     this.onChanged,
     this.onComplete,
     this.onCancel,
@@ -71,7 +71,7 @@ class VariationPathSelectorWidget extends StatefulWidget {
   final VariationValueCreator? onCreateValue;
   final bool readOnly;
   final bool showHeaderAndFooter;
-  final bool useTilesForValues;
+  final bool? useTilesForValues;
   final ValueChanged<VariationPathSelectionResult>? onChanged;
   final ValueChanged<VariationPathSelectionResult>? onComplete;
   final VoidCallback? onCancel;
@@ -311,13 +311,7 @@ class _VariationPathSelectorWidgetState
       'orders-variation-step-${step.property.id}',
     );
 
-    String propertyKey(String name) =>
-        name.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '_');
-    final key = propertyKey(step.property.name);
-    final schemaEntry = _item.propertySchema
-        .where((e) => propertyKey(e.propertyKey) == key)
-        .firstOrNull;
-    final isNumeric = schemaEntry?.inputType == 'Numeric';
+    final isNumeric = step.property.inputType == 'Numeric';
 
     if (isNumeric) {
       final existingVal =
@@ -332,10 +326,10 @@ class _VariationPathSelectorWidgetState
       return TextFormField(
         key: fieldKey,
         initialValue: existingVal,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        keyboardType: isNumeric ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
         enabled: !widget.readOnly,
         decoration: InputDecoration(
-          hintText: 'Enter numeric value',
+          hintText: isNumeric ? 'Enter numeric value' : 'Enter value',
           filled: true,
           fillColor: Colors.white,
           isDense: true,
@@ -365,7 +359,7 @@ class _VariationPathSelectorWidgetState
       );
     }
 
-    if (widget.useTilesForValues && !isNumeric) {
+    if (widget.useTilesForValues == true && !isNumeric) {
       final options = [
         ...step.values.map(
           (value) => SearchableSelectOption<int>(
@@ -385,90 +379,143 @@ class _VariationPathSelectorWidgetState
       ];
 
       final showAddTile = widget.onCreateValue != null && !widget.readOnly;
-      final itemCount = options.length + (showAddTile ? 1 : 0);
+      
+      Widget buildTiles(List<SearchableSelectOption<int>> tileOptions, bool includeAddTile) {
+        final itemCount = tileOptions.length + (includeAddTile ? 1 : 0);
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            childAspectRatio: 2.5,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+          ),
+          itemCount: itemCount,
+          itemBuilder: (context, index) {
+            if (includeAddTile && index == tileOptions.length) {
+              return InkWell(
+                onTap: () => _promptCreateValue(step),
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: SoftErpTheme.shellSurface,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: SoftErpTheme.border),
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.add_rounded, size: 18, color: SoftErpTheme.textSecondary),
+                      SizedBox(width: 4),
+                      Text('New', style: TextStyle(color: SoftErpTheme.textSecondary, fontWeight: FontWeight.w600, fontSize: 14)),
+                    ],
+                  ),
+                ),
+              );
+            }
 
-      return GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          childAspectRatio: 2.5,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
-        ),
-        itemCount: itemCount,
-        itemBuilder: (context, index) {
-          if (showAddTile && index == options.length) {
+            final option = tileOptions[index];
+            final isSelected = step.selectedValueId == option.value;
             return InkWell(
-              onTap: () => _promptCreateValue(step),
+              onTap: widget.readOnly
+                  ? null
+                  : () {
+                      setState(() {
+                        _replaceSelectionUnderProperty(
+                          step.property,
+                          <int>[option.value],
+                        );
+                      });
+                      _notifyChanges();
+                    },
               borderRadius: BorderRadius.circular(8),
               child: Container(
                 alignment: Alignment.center,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 decoration: BoxDecoration(
-                  color: SoftErpTheme.shellSurface,
+                  color: isSelected
+                      ? SoftErpTheme.accentSoft
+                      : SoftErpTheme.shellSurface,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: SoftErpTheme.border),
+                  border: Border.all(
+                    color: isSelected
+                        ? SoftErpTheme.accent
+                        : SoftErpTheme.border,
+                    width: isSelected ? 2 : 1,
+                  ),
                 ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.add_rounded, size: 18, color: SoftErpTheme.textSecondary),
-                    SizedBox(width: 4),
-                    Text('New', style: TextStyle(color: SoftErpTheme.textSecondary, fontWeight: FontWeight.w600, fontSize: 14)),
-                  ],
+                child: Text(
+                  option.label,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: isSelected
+                        ? SoftErpTheme.accent
+                        : SoftErpTheme.textPrimary,
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                    fontSize: 14,
+                  ),
                 ),
               ),
             );
-          }
+          },
+        );
+      }
 
-          final option = options[index];
-          final isSelected = step.selectedValueId == option.value;
-          return InkWell(
-            onTap: widget.readOnly
-                ? null
-                : () {
-                    setState(() {
-                      _replaceSelectionUnderProperty(
-                        step.property,
-                        <int>[option.value],
-                      );
-                    });
-                    _notifyChanges();
-                  },
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              alignment: Alignment.center,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? SoftErpTheme.accentSoft
-                    : SoftErpTheme.shellSurface,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: isSelected
-                      ? SoftErpTheme.accent
-                      : SoftErpTheme.border,
-                  width: isSelected ? 2 : 1,
-                ),
-              ),
-              child: Text(
-                option.label,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: isSelected
-                      ? SoftErpTheme.accent
-                      : SoftErpTheme.textPrimary,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  fontSize: 14,
-                ),
-              ),
+      if (options.length <= 5) {
+        return buildTiles(options, showAddTile);
+      } else {
+        final topOptions = options.sublist(0, 5);
+        final isSelectedInDropdown = step.selectedValueId != null && 
+                                     !topOptions.any((o) => o.value == step.selectedValueId);
+                                     
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            buildTiles(topOptions, false),
+            const SizedBox(height: 12),
+            SearchableSelectField<int>(
+              options: options,
+              value: isSelectedInDropdown ? step.selectedValueId : null,
+              label: 'More options...',
+              hint: 'Select variation...',
+              canCreateOption: widget.onCreateValue != null && !widget.readOnly
+                  ? (query, opts) => query.trim().isNotEmpty
+                  : null,
+              createLabelBuilder: (query) => 'Create "$query"',
+              onCreateOption: (query) async {
+                final newValue = await widget.onCreateValue!(
+                  step.property,
+                  query.trim(),
+                );
+                if (newValue != null) {
+                  return SearchableSelectOption<int>(
+                    value: newValue.id,
+                    label: newValue.name,
+                  );
+                }
+                return null;
+              },
+              onChanged: widget.readOnly
+                  ? null
+                  : (val) {
+                      if (val != null) {
+                        setState(() {
+                          _replaceSelectionUnderProperty(
+                            step.property,
+                            <int>[val],
+                          );
+                        });
+                        _notifyChanges();
+                      }
+                    },
             ),
-          );
-        },
-      );
+          ],
+        );
+      }
     }
-
     return SearchableSelectField<int>(
       key: fieldKey,
       tapTargetKey: fieldKey,
@@ -582,7 +629,9 @@ class _VariationPathSelectorWidgetState
         title: const Text('Create New Value'),
         content: TextField(
           controller: controller,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          keyboardType: step.property.inputType == 'Numeric' 
+              ? const TextInputType.numberWithOptions(decimal: true) 
+              : TextInputType.text,
           autofocus: true,
           decoration: InputDecoration(
             hintText: 'Enter value',
@@ -671,7 +720,7 @@ class _VariationPathSelectorWidgetState
       }
       isFirstGroup = false;
 
-      if (widget.useTilesForValues) {
+      if (widget.useTilesForValues == true) {
         for (var i = 0; i < groupSteps.length; i += 2) {
           final step1 = groupSteps[i];
           final step2 = i + 1 < groupSteps.length ? groupSteps[i + 1] : null;
@@ -1051,7 +1100,7 @@ class VariationPathSelectorDialog extends StatelessWidget {
     this.initialCustomVariationValues = const {},
     this.onCreateValue,
     this.readOnly = false,
-    this.useTilesForValues = false,
+    this.useTilesForValues,
     this.isFavorite,
     this.onFavoriteToggled,
   });
@@ -1062,7 +1111,7 @@ class VariationPathSelectorDialog extends StatelessWidget {
   final Map<int, String> initialCustomVariationValues;
   final VariationValueCreator? onCreateValue;
   final bool readOnly;
-  final bool useTilesForValues;
+  final bool? useTilesForValues;
   final bool Function(VariationPathSelectionResult result)? isFavorite;
   final void Function(VariationPathSelectionResult result, bool isFav)? onFavoriteToggled;
 
@@ -1079,7 +1128,7 @@ class VariationPathSelectorDialog extends StatelessWidget {
           initialCustomVariationValues: initialCustomVariationValues,
           onCreateValue: onCreateValue,
           readOnly: readOnly,
-          useTilesForValues: useTilesForValues,
+          useTilesForValues: useTilesForValues ?? MediaQuery.sizeOf(context).shortestSide < 600,
           showHeaderAndFooter: true,
           isFavorite: isFavorite,
           onFavoriteToggled: onFavoriteToggled,

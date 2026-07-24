@@ -1276,7 +1276,7 @@ class ApiChallanRepository implements ChallanRepository {
     required String mode,
   }) {
     return Uri.parse(
-      '$baseUrl/api/challans/$challanId/print-template-preview',
+      '$baseUrl/api/challans/$challanId/print-preview',
     ).replace(
       queryParameters: <String, String>{
         'mode': mode,

@@ -6961,6 +6961,7 @@ async function getItemVariationTree(itemId) {
       name: row.name || '',
       code: row.code || '',
       displayName: row.display_name || '',
+      inputType: row.input_type || 'Text',
       position: row.position || 0,
       isArchived: Boolean(row.is_archived),
       createdAt: row.created_at,
@@ -7154,7 +7155,7 @@ async function applyVariationStockDelta({
   const normalizedDelta = Number(delta || 0);
   const normalizedVariationPathLabel = String(variationPathLabel || '').trim();
   const normalizedVariationPathNodeIds = Array.isArray(variationPathNodeIds)
-    ? variationPathNodeIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+    ? variationPathNodeIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id !== 0)
     : [];
   const normalizedCustomVariationValues = normalizeCustomVariationValues(customVariationValues || {});
   if (!Number.isFinite(normalizedDelta) || normalizedDelta === 0) {
@@ -7237,9 +7238,10 @@ async function resolveOrderVariationSelection({
 
   const tree = await getItemVariationTree(item.id);
   const hasActiveVariationProperties = activeTopLevelVariationProperties(tree).length > 0;
-  const normalizedPathNodeIds = Array.isArray(variationPathNodeIds)
-    ? variationPathNodeIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+  const pathNodeIdsWithCustom = Array.isArray(variationPathNodeIds)
+    ? variationPathNodeIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id !== 0)
     : [];
+  const normalizedPathNodeIds = pathNodeIdsWithCustom.filter(id => id > 0);
   let normalizedLeafId = Number(variationLeafNodeId || 0);
 
   if (!hasActiveVariationProperties) {
@@ -7255,7 +7257,6 @@ async function resolveOrderVariationSelection({
   if ((!Number.isFinite(normalizedLeafId) || normalizedLeafId <= 0) && normalizedPathNodeIds.length > 0) {
     normalizedLeafId = normalizedPathNodeIds[normalizedPathNodeIds.length - 1];
   }
-
   const isDraft = status === 'draft';
   if (!Number.isFinite(normalizedLeafId) || normalizedLeafId <= 0) {
     if (isDraft) {
@@ -7309,8 +7310,8 @@ async function resolveOrderVariationSelection({
   return {
     item,
     variationLeafNodeId: normalizedLeafId,
-    variationPathNodeIds: normalizedPathNodeIds.length > 0 ? normalizedPathNodeIds : leafSelection.nodeIds,
-    variationPathNodeIdsJson: JSON.stringify(normalizedPathNodeIds.length > 0 ? normalizedPathNodeIds : leafSelection.nodeIds),
+    variationPathNodeIds: pathNodeIdsWithCustom.length > 0 ? pathNodeIdsWithCustom : leafSelection.nodeIds,
+    variationPathNodeIdsJson: JSON.stringify(pathNodeIdsWithCustom.length > 0 ? pathNodeIdsWithCustom : leafSelection.nodeIds),
     variationPathLabel: variationPathLabel ? String(variationPathLabel).trim() : buildVariationPathLabel(leafSelection.segments),
   };
 }
@@ -8537,7 +8538,7 @@ function normalizeDeliveryChallanItems(items = []) {
         [],
       )
         .map((id) => Number(id))
-        .filter((id) => Number.isFinite(id) && id > 0),
+        .filter((id) => Number.isFinite(id) && id !== 0),
       customVariationValues: normalizeCustomVariationValues(
         item.customVariationValues ?? item.custom_variation_values ?? item.custom_variation_values_json ?? {},
       ),
@@ -14641,7 +14642,7 @@ async function saveItem({
           await run(
             `
             UPDATE item_variation_nodes
-            SET parent_node_id = ?, name = ?, code = ?, display_name = ?, position = ?, updated_at = ?
+            SET parent_node_id = ?, name = ?, code = ?, display_name = ?, input_type = ?, position = ?, updated_at = ?
             WHERE id = ?
             `,
             [
@@ -14649,6 +14650,7 @@ async function saveItem({
               node.name,
               node.code || '',
               node.displayName,
+              node.inputType || 'Text',
               node.position,
               now,
               nodeId,
@@ -14658,9 +14660,9 @@ async function saveItem({
           const result = await run(
             `
             INSERT INTO item_variation_nodes (
-              item_id, parent_node_id, kind, name, code, display_name, position,
+              item_id, parent_node_id, kind, name, code, display_name, input_type, position,
               is_archived, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
             `,
             [
               itemId,
@@ -14669,6 +14671,7 @@ async function saveItem({
               node.name,
               node.code || '',
               node.displayName,
+              node.inputType || 'Text',
               node.position,
               now,
               now,
@@ -15165,8 +15168,8 @@ async function seedScenarioItem(data) {
     for (const [propName, values] of Object.entries(data.variations)) {
       const propRes = await run(
         `INSERT INTO item_variation_nodes 
-         (item_id, parent_node_id, kind, name, position, is_archived, created_at, updated_at)
-         VALUES (?, NULL, 'property', ?, ?, 0, datetime('now'), datetime('now'))`,
+         (item_id, parent_node_id, kind, name, input_type, position, is_archived, created_at, updated_at)
+         VALUES (?, NULL, 'property', ?, 'Text', ?, 0, datetime('now'), datetime('now'))`,
          [itemId, propName, order_index]
       );
       const propId = propRes.lastID;
@@ -15175,8 +15178,8 @@ async function seedScenarioItem(data) {
       for (const val of values) {
         await run(
           `INSERT INTO item_variation_nodes 
-           (item_id, parent_node_id, kind, name, code, position, is_archived, created_at, updated_at)
-           VALUES (?, ?, 'value', ?, ?, ?, 0, datetime('now'), datetime('now'))`,
+           (item_id, parent_node_id, kind, name, code, input_type, position, is_archived, created_at, updated_at)
+           VALUES (?, ?, 'value', ?, ?, 'Text', ?, 0, datetime('now'), datetime('now'))`,
            [itemId, propId, val.name, val.code, val_index]
         );
         val_index++;
@@ -22482,6 +22485,7 @@ app.post('/api/orders', requirePermission('config.write'), async (req, res) => {
       source: 'api'
     };
     const result = await saveOrder({ ...(req.body || {}), actor }, { returnMeta: true });
+    if (io) io.emit('orders_changed');
     res.status(result.merged ? 200 : 201).json({
       success: true,
       order: rowToOrderDto(result.orderRow),
@@ -23214,6 +23218,7 @@ app.put('/api/orders/:id', requirePermission('config.write'), async (req, res) =
     await run('COMMIT');
     const orders = await getOrders();
     const updated = orders.find(o => o.id === orderId);
+    if (io) io.emit('orders_changed');
     res.json({ success: true, order: updated, error: null });
   } catch (error) {
     await run('ROLLBACK').catch(() => {});
@@ -23299,6 +23304,7 @@ app.delete('/api/orders/:id', requirePermission('config.write'), async (req, res
     ).catch(() => {});
 
     await run('COMMIT');
+    if (io) io.emit('orders_changed');
     res.json({ success: true, recoveredMovements, error: null });
   } catch (error) {
     await run('ROLLBACK').catch(() => {});
