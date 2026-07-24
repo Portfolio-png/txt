@@ -38,6 +38,7 @@ Future<SearchableSelectOption<T>?> showSearchableSelectDialog<T>({
   SearchableSelectCreateOption<T>? onSecondaryCreateOption,
   SearchableSelectCreateLabelBuilder? secondaryCreateOptionLabelBuilder,
   Rect? anchorRect,
+  TextInputType? keyboardType,
 }) {
   final overlayState = Overlay.maybeOf(context, rootOverlay: true);
   final overlayContext = overlayState?.context ?? context;
@@ -68,6 +69,7 @@ Future<SearchableSelectOption<T>?> showSearchableSelectDialog<T>({
           createOptionLabelBuilder: createOptionLabelBuilder,
           onSecondaryCreateOption: onSecondaryCreateOption,
           secondaryCreateOptionLabelBuilder: secondaryCreateOptionLabelBuilder,
+          keyboardType: keyboardType,
         ),
     transitionBuilder: (dialogContext, animation, secondaryAnimation, child) {
       final curvedAnimation = CurvedAnimation(
@@ -102,6 +104,7 @@ class SearchableSelectField<T> extends FormField<T> {
     this.createOptionLabelBuilder,
     this.onSecondaryCreateOption,
     this.secondaryCreateOptionLabelBuilder,
+    this.keyboardType,
     super.validator,
   }) : super(
          initialValue: value,
@@ -193,6 +196,7 @@ class SearchableSelectField<T> extends FormField<T> {
   final SearchableSelectCreateLabelBuilder? createOptionLabelBuilder;
   final SearchableSelectCreateOption<T>? onSecondaryCreateOption;
   final SearchableSelectCreateLabelBuilder? secondaryCreateOptionLabelBuilder;
+  final TextInputType? keyboardType;
 
   @override
   FormFieldState<T> createState() => _SearchableSelectFieldState<T>();
@@ -233,6 +237,7 @@ class _SearchableSelectFieldState<T> extends FormFieldState<T> {
       onSecondaryCreateOption: widget.onSecondaryCreateOption,
       secondaryCreateOptionLabelBuilder:
           widget.secondaryCreateOptionLabelBuilder,
+      keyboardType: widget.keyboardType,
     );
     if (selected == null) {
       return;
@@ -255,6 +260,7 @@ class _SearchableSelectDialog<T> extends StatefulWidget {
     this.onSecondaryCreateOption,
     this.secondaryCreateOptionLabelBuilder,
     this.title,
+    this.keyboardType,
   });
 
   final List<SearchableSelectOption<T>> options;
@@ -268,6 +274,7 @@ class _SearchableSelectDialog<T> extends StatefulWidget {
   final SearchableSelectCreateLabelBuilder? createOptionLabelBuilder;
   final SearchableSelectCreateOption<T>? onSecondaryCreateOption;
   final SearchableSelectCreateLabelBuilder? secondaryCreateOptionLabelBuilder;
+  final TextInputType? keyboardType;
 
   @override
   State<_SearchableSelectDialog<T>> createState() =>
@@ -320,6 +327,7 @@ class _SearchableSelectDialogState<T>
             onSecondaryCreateOption: widget.onSecondaryCreateOption,
             secondaryCreateOptionLabelBuilder:
                 widget.secondaryCreateOptionLabelBuilder,
+            keyboardType: widget.keyboardType,
           );
 
           if (layout.centered) {
@@ -416,6 +424,7 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
     this.onSecondaryCreateOption,
     this.secondaryCreateOptionLabelBuilder,
     this.title,
+    this.keyboardType,
   });
 
   final List<SearchableSelectOption<T>> options;
@@ -432,6 +441,7 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
   final SearchableSelectCreateLabelBuilder? createOptionLabelBuilder;
   final SearchableSelectCreateOption<T>? onSecondaryCreateOption;
   final SearchableSelectCreateLabelBuilder? secondaryCreateOptionLabelBuilder;
+  final TextInputType? keyboardType;
 
   @override
   Widget build(BuildContext context) {
@@ -510,6 +520,7 @@ class _SearchableSelectMenu<T> extends StatelessWidget {
                       : 40.0,
                   child: TextField(
                     controller: searchController,
+                    keyboardType: keyboardType,
                     autofocus:
                         Theme.of(context).platform != TargetPlatform.android &&
                         Theme.of(context).platform != TargetPlatform.iOS,

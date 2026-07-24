@@ -1148,13 +1148,15 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     ItemVariationNodeDefinition node,
     _NodeDraft? parent,
   ) {
-    String inputType = 'Text';
+    String inputType = node.inputType;
     if (node.kind == ItemVariationNodeKind.property) {
       final key = _propertyKey(node.name);
       final schemaEntry = widget.item?.propertySchema
           .where((e) => _propertyKey(e.propertyKey) == key)
           .firstOrNull;
-      inputType = schemaEntry?.inputType ?? 'Text';
+      if (schemaEntry != null) {
+        inputType = schemaEntry.inputType;
+      }
     }
 
     final draft = _NodeDraft(
@@ -2157,6 +2159,20 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                           onMoveDown: index == _rootNodes.length - 1
                               ? null
                               : () => _moveNode(_rootNodes, index, index + 1),
+                          onToggleInputType:
+                              _rootNodes[index].kind == ItemVariationNodeKind.property &&
+                                      !_isReadOnly &&
+                                      !_rootNodes[index].isLockedInheritedProperty
+                                  ? () {
+                                      setState(() {
+                                        _rootNodes[index].inputType =
+                                            _rootNodes[index].inputType == 'Numeric'
+                                                ? 'Text'
+                                                : 'Numeric';
+                                      });
+                                      _handleChange();
+                                    }
+                                  : null,
                           onRemove: () => _removeNode(_rootNodes, index),
                           buildChildEditor: _buildChildEditor,
                         ),

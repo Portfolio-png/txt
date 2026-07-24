@@ -410,7 +410,7 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
                   item: selectedItem,
                   initialRootPropertyId: null,
                   initialValueNodeIds: const [],
-                  useTilesForValues: false, // desktop dropdown on mobile: no keyboard until search is tapped
+
                   onCreateValue: ({required item, required propertyNodeId, required propertyLabel, required valueName}) {
                     return context.read<ItemsProvider>().appendVariationValue(
                       itemId: item.id,
@@ -498,7 +498,7 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
                 item: selectedItem,
                 initialRootPropertyId: null,
                 initialValueNodeIds: const [],
-                useTilesForValues: false, // desktop dropdown on mobile: no keyboard until search is tapped
+
                 isFavorite: (result) => context.read<FavoritesProvider>().isFavorite(selectedItem.id, result.valueNodeIds),
                 onFavoriteToggled: (result, isFav) {
                   final dummyItem = DeliveryChallanItem(
@@ -575,7 +575,7 @@ class _ChallanMobileEditorScreenState extends State<ChallanMobileEditorScreen> w
               item: selectedItem,
               initialRootPropertyId: null,
               initialValueNodeIds: oldItem.variationPathNodeIds,
-              useTilesForValues: false, // desktop dropdown on mobile: no keyboard until search is tapped
+
               onCreateValue: ({required item, required propertyNodeId, required propertyLabel, required valueName}) {
                 return context.read<ItemsProvider>().appendVariationValue(
                   itemId: item.id,

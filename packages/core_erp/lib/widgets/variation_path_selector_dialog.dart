@@ -310,56 +310,7 @@ class _VariationPathSelectorWidgetState
     final fieldKey = ValueKey<String>(
       'orders-variation-step-${step.property.id}',
     );
-
-    final isNumeric = step.property.inputType == 'Numeric';
-
-    if (isNumeric) {
-      final existingVal =
-          _customVariationValues[step.property.id] ??
-          (step.selectedValueId != null && step.selectedValueId! > 0
-              ? step.values
-                        .where((v) => v.id == step.selectedValueId)
-                        .firstOrNull
-                        ?.name ??
-                    ''
-              : '');
-      return TextFormField(
-        key: fieldKey,
-        initialValue: existingVal,
-        keyboardType: isNumeric ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
-        enabled: !widget.readOnly,
-        decoration: InputDecoration(
-          hintText: isNumeric ? 'Enter numeric value' : 'Enter value',
-          filled: true,
-          fillColor: Colors.white,
-          isDense: true,
-          contentPadding: EdgeInsets.symmetric(
-            horizontal: isTablet ? 18.0 : 14.0,
-            vertical: isTablet ? 16.0 : 12.0,
-          ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-          ),
-        ),
-        onChanged: (val) {
-          final text = val.trim();
-          if (text.isEmpty) {
-            _customVariationValues.remove(step.property.id);
-            _replaceSelectionUnderProperty(step.property, const <int>[]);
-          } else {
-            _customVariationValues[step.property.id] = text;
-            _replaceSelectionUnderProperty(step.property, <int>[
-              -step.property.id,
-            ]);
-          }
-          setState(() {});
-          _notifyChanges();
-        },
-      );
-    }
-
-    if (widget.useTilesForValues == true && !isNumeric) {
+    if (widget.useTilesForValues == true) {
       final options = [
         ...step.values.map(
           (value) => SearchableSelectOption<int>(
@@ -463,64 +414,16 @@ class _VariationPathSelectorWidgetState
           },
         );
       }
-
-      if (options.length <= 5) {
-        return buildTiles(options, showAddTile);
-      } else {
-        final topOptions = options.sublist(0, 5);
-        final isSelectedInDropdown = step.selectedValueId != null && 
-                                     !topOptions.any((o) => o.value == step.selectedValueId);
-                                     
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            buildTiles(topOptions, false),
-            const SizedBox(height: 12),
-            SearchableSelectField<int>(
-              options: options,
-              value: isSelectedInDropdown ? step.selectedValueId : null,
-              label: 'More options...',
-              hint: 'Select variation...',
-              canCreateOption: widget.onCreateValue != null && !widget.readOnly
-                  ? (query, opts) => query.trim().isNotEmpty
-                  : null,
-              createLabelBuilder: (query) => 'Create "$query"',
-              onCreateOption: (query) async {
-                final newValue = await widget.onCreateValue!(
-                  step.property,
-                  query.trim(),
-                );
-                if (newValue != null) {
-                  return SearchableSelectOption<int>(
-                    value: newValue.id,
-                    label: newValue.name,
-                  );
-                }
-                return null;
-              },
-              onChanged: widget.readOnly
-                  ? null
-                  : (val) {
-                      if (val != null) {
-                        setState(() {
-                          _replaceSelectionUnderProperty(
-                            step.property,
-                            <int>[val],
-                          );
-                        });
-                        _notifyChanges();
-                      }
-                    },
-            ),
-          ],
-        );
-      }
+      return buildTiles(options, showAddTile);
     }
     return SearchableSelectField<int>(
       key: fieldKey,
       tapTargetKey: fieldKey,
       value: step.selectedValueId,
       fieldEnabled: !widget.readOnly,
+      keyboardType: step.property.inputType == 'Numeric' 
+          ? const TextInputType.numberWithOptions(decimal: true)
+          : TextInputType.text,
       decoration: InputDecoration(
         hintText: 'Select value',
         hintStyle: TextStyle(fontSize: isTablet ? 16.0 : 14.0),
@@ -1128,7 +1031,7 @@ class VariationPathSelectorDialog extends StatelessWidget {
           initialCustomVariationValues: initialCustomVariationValues,
           onCreateValue: onCreateValue,
           readOnly: readOnly,
-          useTilesForValues: useTilesForValues ?? MediaQuery.sizeOf(context).shortestSide < 600,
+          useTilesForValues: useTilesForValues ?? true,
           showHeaderAndFooter: true,
           isFavorite: isFavorite,
           onFavoriteToggled: onFavoriteToggled,
